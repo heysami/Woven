@@ -1016,6 +1016,35 @@ button {
 .newproj-ds-toggle-title { font: 600 13px/1.3 var(--font-sans); }
 .newproj-ds-toggle-sub { font: 400 12px/1.4 var(--font-sans); opacity: 0.66; }
 
+/* ── New-project: global design-system picker (step 1, dsMode=global) ── */
+.newproj-gds-picker { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.newproj-gds-list {
+  display: flex; flex-direction: column; gap: 2px; max-height: 168px; overflow-y: auto;
+  border: 1px solid var(--border, rgba(0,0,0,0.12)); border-radius: 6px; padding: 3px;
+  background: rgba(0,0,0,0.02);
+}
+.newproj-gds-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; text-align: left; cursor: pointer;
+  background: transparent; border: 1px solid transparent; border-radius: 4px;
+  color: var(--text, #1a1a1a); font: 400 12px/1.3 var(--font-sans);
+}
+.newproj-gds-item:hover:not(:disabled) { background: rgba(0,0,0,0.05); }
+.newproj-gds-item.is-selected {
+  border-color: var(--accent, #2c5fff);
+  background: color-mix(in srgb, var(--accent, #2c5fff) 8%, transparent);
+}
+.newproj-gds-item-label { font-weight: 600; flex: 0 0 auto; }
+.newproj-gds-item-genre {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; opacity: 0.6;
+}
+.newproj-gds-item-meta { flex: 0 0 auto; opacity: 0.5; font-size: 11px; font-variant-numeric: tabular-nums; }
+.newproj-gds-preview {
+  width: 100%; height: 220px; border: 1px solid var(--border, rgba(0,0,0,0.12));
+  border-radius: 6px; background: #fff;
+}
+
 /* ── New-project: DS customizer (step 2) - wide split overlay ── */
 .dscz-overlay {
   position: fixed; inset: 0; z-index: 210;
@@ -30483,3 +30512,159 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   color: var(--accent-text);
   background: var(--accent-soft);
 }
+
+/* ── Global design-system library (landing "Design systems" tab) ────────── */
+.gds-landing { display: flex; flex-direction: column; gap: 12px; }
+.gds-list { display: flex; flex-direction: column; gap: 4px; }
+.gds-row {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border: 1px solid var(--border, rgba(0,0,0,0.12)); border-radius: 8px;
+  background: var(--panel, #fff); cursor: pointer;
+  font: 400 13px/1.3 var(--font-sans); color: var(--text, #1a1a1a);
+  transition: border-color 0.12s, background 0.12s;
+}
+.gds-row:hover { border-color: color-mix(in srgb, var(--accent, #2c5fff) 45%, var(--border, rgba(0,0,0,0.12))); }
+.gds-row-glyph { flex: 0 0 auto; display: flex; opacity: 0.6; }
+.gds-row-label { font-weight: 600; flex: 0 0 auto; }
+.gds-row-id { flex: 0 0 auto; font-family: var(--font-mono); font-size: 11px; opacity: 0.55; }
+.gds-row-genre {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; opacity: 0.6; font-size: 12px;
+}
+.gds-row-origin, .gds-row-git {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 7px; border-radius: 999px; font-size: 11px;
+  border: 1px solid var(--border, rgba(0,0,0,0.14)); opacity: 0.75;
+}
+.gds-row-meta { flex: 0 0 auto; opacity: 0.5; font-size: 11px; font-variant-numeric: tabular-nums; }
+.gds-row-actions { flex: 0 0 auto; display: flex; gap: 4px; margin-left: 4px; }
+.gds-row-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 6px; cursor: pointer;
+  background: transparent; border: 1px solid transparent; color: inherit; opacity: 0.6;
+}
+.gds-row-btn:hover { opacity: 1; border-color: var(--border, rgba(0,0,0,0.16)); background: rgba(0,0,0,0.04); }
+.gds-row-btn-danger:hover { color: var(--danger, #c0392b); }
+
+/* Viewer */
+.gds-viewer { display: flex; flex-direction: column; gap: 0; min-height: 70vh; }
+.gds-viewer-head { display: flex; align-items: center; gap: 10px; padding: 0 0 10px; }
+.gds-back {
+  display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px;
+  border: 1px solid var(--border, rgba(0,0,0,0.16)); border-radius: 6px;
+  background: transparent; color: inherit; cursor: pointer; font: 500 12px/1 var(--font-sans);
+}
+.gds-back:hover { background: rgba(0,0,0,0.04); }
+.gds-viewer-title { font: 600 16px/1.2 var(--font-sans); }
+.gds-viewer-tabs {
+  display: flex; align-items: center; gap: 2px;
+  border-bottom: 1px solid var(--border, rgba(0,0,0,0.12)); padding: 0 2px;
+}
+.gds-viewer-tab {
+  padding: 7px 12px; border: none; border-bottom: 2px solid transparent;
+  background: transparent; color: inherit; opacity: 0.6; cursor: pointer;
+  font: 500 12.5px/1 var(--font-sans); margin-bottom: -1px;
+}
+.gds-viewer-tab:hover { opacity: 0.9; }
+.gds-viewer-tab.is-active { opacity: 1; border-bottom-color: var(--accent, #2c5fff); }
+.gds-viewer-raw { margin-left: auto; border: 1px solid var(--border, rgba(0,0,0,0.14)); border-radius: 6px; padding: 4px 9px; margin-bottom: 4px; }
+.gds-viewer-raw.is-active { border-color: var(--accent, #2c5fff); opacity: 1; }
+.gds-viewer-open { margin-left: auto; align-self: center; padding-bottom: 4px; }
+.gds-viewer-body { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; padding-top: 12px; }
+.gds-viewer-iframe {
+  flex: 1 1 auto; width: 100%; min-height: 64vh; border: 1px solid var(--border, rgba(0,0,0,0.12));
+  border-radius: 8px; background: #fff;
+}
+.gds-viewer-doc { flex: 1 1 auto; overflow: auto; max-height: 68vh; }
+.gds-code {
+  margin: 0; padding: 14px; border: 1px solid var(--border, rgba(0,0,0,0.12)); border-radius: 8px;
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word; background: var(--panel, #fff);
+}
+.gds-md { padding: 4px 8px; max-width: 860px; }
+.gds-dim { opacity: 0.55; font-size: 12.5px; }
+
+/* History tab */
+.gds-history { display: flex; flex-direction: column; gap: 3px; max-width: 980px; }
+.gds-history-row {
+  display: flex; align-items: center; gap: 10px; padding: 7px 12px;
+  border: 1px solid var(--border, rgba(0,0,0,0.1)); border-radius: 7px;
+  font: 400 12px/1.3 var(--font-sans); background: var(--panel, #fff);
+}
+.gds-evt {
+  flex: 0 0 auto; min-width: 78px; text-align: center; padding: 2px 8px;
+  border-radius: 999px; font-size: 11px; font-weight: 600;
+  border: 1px solid var(--border, rgba(0,0,0,0.14));
+}
+.gds-evt-promote   { background: color-mix(in srgb, #7c4dff 12%, transparent); }
+.gds-evt-push      { background: color-mix(in srgb, #2c5fff 12%, transparent); }
+.gds-evt-pull      { background: color-mix(in srgb, #00a870 12%, transparent); }
+.gds-evt-import    { background: color-mix(in srgb, #f5a623 15%, transparent); }
+.gds-evt-reconcile { background: color-mix(in srgb, #e0405a 12%, transparent); }
+.gds-history-proj { flex: 0 0 auto; font-family: var(--font-mono); font-size: 11px; opacity: 0.75; }
+.gds-history-vers { flex: 0 0 auto; font-family: var(--font-mono); font-size: 11px; font-variant-numeric: tabular-nums; }
+.gds-history-note { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.6; }
+.gds-history-at { flex: 0 0 auto; margin-left: auto; opacity: 0.5; font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* Git tab hosts the shared GitPanel via its embedded mode (absolute inset:0
+   inside a positioned parent - same contract as the dock tiles). */
+.gds-viewer-git { position: relative; max-width: 760px; height: 68vh; }
+.gds-viewer-git .th-rail-panel-embedded { border: 1px solid var(--border, rgba(0,0,0,0.12)); border-radius: 8px; }
+
+/* ── Project ↔ global DS sync (chip + actions + reconcile dialog) ───────── */
+.gds-sync { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.gds-sync-compact { margin-left: 0; }
+.gds-sync-btn {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px;
+  border: 1px solid var(--border, rgba(0,0,0,0.16)); border-radius: 6px;
+  background: transparent; color: inherit; cursor: pointer;
+  font: 500 11.5px/1 var(--font-sans); white-space: nowrap;
+}
+.gds-sync-btn:hover:not(:disabled) { background: rgba(0,0,0,0.05); }
+.gds-sync-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.gds-sync-btn-primary { border-color: var(--accent, #2c5fff); color: var(--accent-text, var(--accent, #2c5fff)); }
+.gds-sync-chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+  border-radius: 999px; font: 600 11px/1.2 var(--font-sans); white-space: nowrap;
+  border: 1px solid var(--border, rgba(0,0,0,0.14));
+}
+.gds-sync-chip.is-synced   { background: color-mix(in srgb, #00a870 12%, transparent); }
+.gds-sync-chip.is-ahead    { background: color-mix(in srgb, #2c5fff 12%, transparent); }
+.gds-sync-chip.is-behind   { background: color-mix(in srgb, #f5a623 15%, transparent); }
+.gds-sync-chip.is-diverged { background: color-mix(in srgb, #e0405a 12%, transparent); }
+.gds-sync-chip.is-missing  { background: rgba(0,0,0,0.06); opacity: 0.75; }
+
+/* Reconcile dialog */
+.gds-rec-overlay {
+  position: fixed; inset: 0; z-index: 240;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(8, 10, 14, 0.55); padding: 20px;
+}
+.gds-rec-card {
+  width: min(980px, 96vw); height: min(720px, 92vh);
+  background: var(--bg, #fff); color: var(--text, #1a1a1a);
+  border: 1px solid var(--border, rgba(0,0,0,0.14)); border-radius: 10px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.4);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.gds-rec-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px 10px;
+}
+.gds-rec-head h3 { margin: 0; font: 600 15px/1.2 var(--font-sans); }
+.gds-rec-sides { display: flex; gap: 20px; padding: 0 18px 10px; }
+.gds-rec-side { display: flex; flex-direction: column; gap: 2px; font: 400 12px/1.3 var(--font-sans); }
+.gds-rec-side b { font-size: 12.5px; }
+.gds-rec-side span { opacity: 0.65; font-variant-numeric: tabular-nums; }
+.gds-rec-tabs { display: flex; gap: 2px; padding: 0 14px; border-bottom: 1px solid var(--border, rgba(0,0,0,0.1)); }
+.gds-rec-body { flex: 1 1 auto; overflow: auto; padding: 12px 18px; }
+.gds-rec-foot {
+  display: flex; align-items: center; gap: 8px; padding: 12px 18px;
+  border-top: 1px solid var(--border, rgba(0,0,0,0.1));
+}
+.gds-rec-foot .gds-sync-btn { padding: 7px 12px; font-size: 12px; }
+.gds-rec-foot-hint { margin-right: auto; font: 400 11.5px/1.3 var(--font-sans); opacity: 0.55; }
+.gds-rec-merging { font: 500 12.5px/1.4 var(--font-sans); opacity: 0.75; }
+/* DS node footer - second action row hosting the global-sync chip set */
+.workflow-node-ds-sync-row { margin-top: 4px; }
+.workflow-node-ds-sync-row .gds-sync { flex-wrap: wrap; }

@@ -19,6 +19,7 @@ When the editor's daemon is launched with `TH_WORKSPACE_DIR=<path>`, the install
 - **Useful env vars** set on every spawn: `TH_PROJECT_ROOT` (absolute path to cwd), `TH_PROTOCOL_ROOT` (the shared protocol mount), `TH_PROJECT_ID` (workspace id), `TH_DAEMON_URL` (http://127.0.0.1:PORT), `TH_RUN_ID`.
 - **Every daemon POST that writes into `source/` MUST include `?project=$TH_PROJECT_ID`** in the URL. `/__asset_generate`, `/__llm_run`, `/__write_text`, `/__copy_file`, `/__replace_exposed_svg`, `/__mkdir`, `/__rmdir`, `/__rename_dir` now 400 without it when more than one project exists. There used to be a silent fallback to the alphabetically-first project - that's gone because it caused subagent-generated assets to land in the wrong project's tree.
 - **Cross-project work is forbidden.** Stay within cwd. Don't read or write under sibling project dirs even if the workspace path is visible.
+- **Global design systems** live at `<WORKSPACE_DIR>/design-systems/<gid>/` (sibling of `projects/` and the global `fonts/`) - promoted from projects and linked back via each project DS's `meta.json → globalRef`. Never write that folder directly: promote/push/pull go through `POST /__global_ds/*` so version stamps, the per-DS sync log, undo history, and the runtime mirror stay consistent. See `docs/agents/data-schema.md → Global (workspace-level) design systems`.
 
 In single-project mode (no `TH_WORKSPACE_DIR`) the install root and the project root coincide and these distinctions collapse to today's behavior - every path is repo-relative as before.
 

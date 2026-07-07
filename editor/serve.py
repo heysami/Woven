@@ -45,6 +45,7 @@ if _sys.version_info < (3, 9):
 
 import atexit
 import datetime as _dt
+import difflib
 import hashlib
 import http.server
 import json
@@ -3167,6 +3168,134 @@ def _list_local_fonts(project_root):
                 f"/design-systems/{ds_id}/fonts/_fontface.css"))
     out.extend(_list_global_fonts())
     return out
+
+
+# ── Global design-system library (workspace level) ──────────────────────
+# Promoted design systems live at <WORKSPACE_DIR>/design-systems/<gid>/ -
+# a full copy of a project DS tree (trio + shells/ + templates/ + themes/ +
+# assets/ + fonts/), OUTSIDE every project root, exactly like the global
+# fonts/ sibling. Each folder is optionally its OWN git repo (per-DS remote)
+# and carries a sync-log.json recording every promote/push/pull/import/
+# reconcile event. The project side records the link in its DS meta.json
+# under "globalRef" {id, globalBaseVersion, projectBaseVersion, syncedAt};
+# three-way conflict detection is pure string comparison of stored hashes.
+# NOTE: meta writes on the GLOBAL side are not history-bracketed (.history/
+# is per-project infrastructure) - the per-DS git repo covers undo there.
+GDS_TRIO_NAMES = ("styles.css", "gallery.html", "DESIGN.md")
+# Bookkeeping entries that never travel between the two sides: preserved in
+# the destination when present, never copied from the source either.
+_GDS_COPY_SKIP = {".git", ".staging", ".history", "sync-log.json",
+                  "__pycache__", ".DS_Store", ".trash"}
+_GDS_LOCK = threading.Lock()
+
+
+def _global_ds_root(*, must_exist=False):
+    """Workspace-level DS library dir. Raises ValueError outside workspace
+    mode - a single-project install has no cross-project library to offer."""
+    if not WORKSPACE_DIR:
+        raise ValueError("global design systems need workspace mode "
+                         "(set TH_WORKSPACE_DIR on the daemon)")
+    root = os.path.join(WORKSPACE_DIR, "design-systems")
+    if must_exist and not os.path.isdir(root):
+        raise ValueError("no global design systems yet")
+    return root
+
+
+def _global_ds_dir(gid, *, must_exist=False):
+    gid = (gid or "").strip().lower()
+    if not gid or not SLUG_OK.match(gid):
+        raise ValueError(f"invalid global design system id: {gid!r}")
+    d = _safe_join(_global_ds_root(), gid)
+    if must_exist and not os.path.isdir(d):
+        raise ValueError(f"no such global design system: {gid}")
+    return d
+
+
+def _gds_read_meta(gds_dir):
+    return _read_json_dict(os.path.join(gds_dir, "meta.json"), {})
+
+
+def _gds_trio_built(ds_dir):
+    return os.path.isdir(ds_dir) and all(
+        os.path.isfile(os.path.join(ds_dir, n)) for n in GDS_TRIO_NAMES)
+
+
+def _gds_read_sync_log(gds_dir):
+    try:
+        with open(os.path.join(gds_dir, "sync-log.json"), "r", encoding="utf-8") as f:
+            rows = json.load(f)
+        return rows if isinstance(rows, list) else []
+    except Exception:
+        return []
+
+
+def _gds_log_append(gds_dir, event):
+    """Append one sync event to <gid>/sync-log.json (append-only history the
+    viewer's History tab renders). Read-modify-write under a module lock."""
+    with _GDS_LOCK:
+        rows = _gds_read_sync_log(gds_dir)
+        evt = dict(event)
+        evt.setdefault("at", _dt.datetime.now().isoformat(timespec="seconds"))
+        rows.append(evt)
+        with open(os.path.join(gds_dir, "sync-log.json"), "w", encoding="utf-8") as f:
+            json.dump(rows, f, indent=2)
+
+
+def _ds_trio_version(styles_css, gallery_html):
+    """Canonical DS content version - sha256 of stylesCss + galleryHtml
+    (DESIGN.md is derived, so excluding it keeps re-export from bumping the
+    version). 16-char convention, shared by POST /__design_system and every
+    global-DS sync write. NEVER compare a recomputed hash against a stored
+    one from another writer (_seed_default_ds stamps 12 chars) - sync checks
+    compare stored strings only."""
+    h = hashlib.sha256()
+    h.update((styles_css or "").encode("utf-8", errors="replace"))
+    h.update(b"\x00")
+    h.update((gallery_html or "").encode("utf-8", errors="replace"))
+    return h.hexdigest()[:16]
+
+
+def _copy_ds_tree(src, dst, skip_extra=()):
+    """Replace dst's design-system content with src's, top-level entry by
+    entry. Entries in _GDS_COPY_SKIP (git repo, sync log, history, staging)
+    are preserved in dst and never copied from src; `skip_extra` names are
+    additionally left untouched on BOTH sides (pull uses it to keep meta.json
+    + the trio for the bracketed writer). Defensive: a dirty dst entry that
+    fails to delete is surfaced, not silently merged over."""
+    skip = set(_GDS_COPY_SKIP) | set(skip_extra)
+    if not os.path.isdir(src):
+        raise ValueError(f"source design system missing: {src}")
+    os.makedirs(dst, exist_ok=True)
+    for e in sorted(os.listdir(dst)):
+        if e in skip:
+            continue
+        p = os.path.join(dst, e)
+        if os.path.isdir(p) and not os.path.islink(p):
+            shutil.rmtree(p)
+        else:
+            os.remove(p)
+    for e in sorted(os.listdir(src)):
+        if e in skip:
+            continue
+        sp = os.path.join(src, e)
+        dp = os.path.join(dst, e)
+        if os.path.isdir(sp) and not os.path.islink(sp):
+            shutil.copytree(sp, dp)
+        else:
+            shutil.copy2(sp, dp)
+
+
+def _resolve_git_root(qs_or_body):
+    """Root resolver for the /__git/* + /__github/* handlers: `?gds=<id>`
+    targets a global design system's folder (its own repo), everything else
+    falls through to the normal per-project resolution. Downstream git_ops
+    calls are per-root already; the pid-gated live-session guards and
+    workflow broadcasts inside _git_op stay inert for gds roots because
+    `project` is unset on those requests."""
+    gds = (_qs_get(qs_or_body, "gds") or "").strip()
+    if gds:
+        return _global_ds_dir(gds, must_exist=True)
+    return resolve_project_root(qs_or_body, require_explicit=True)
 
 
 def _prune_baked_ds(ds_dir, style_id):
@@ -11025,6 +11154,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             m = re.match(r"^/__groups/([a-z0-9][a-z0-9-]{0,60})/delete$", parsed.path)
             if m:
                 return self._group_delete(qs, m.group(1))
+            m_gdsop = re.match(r"^/__global_ds/(promote|push|pull|unlink|rename|delete)$", parsed.path)
+            if m_gdsop:
+                return self._global_ds_op(m_gdsop.group(1), qs)
             if parsed.path == "/__projects/new":
                 return self._project_create(qs)
             if parsed.path == "/__projects/clone":
@@ -11258,6 +11390,17 @@ class H(http.server.SimpleHTTPRequestHandler):
         # relative styles.css / shells/ / templates/ it links resolve here.
         if url_path == "/__default_ds" or url_path.startswith("/__default_ds/"):
             return self._default_ds_file(url_path[len("/__default_ds"):])
+        # Global (workspace-level) design-system library. Exact routes first -
+        # the file regex below would otherwise read "status"/"diff" as a DS id.
+        if url_path == "/__global_ds":
+            return self._global_ds_get(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__global_ds/status":
+            return self._global_ds_status(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__global_ds/diff":
+            return self._global_ds_diff(urllib.parse.parse_qs(parsed.query))
+        m_gds = re.match(r"^/__global_ds/([a-z0-9][a-z0-9-]{0,40})(/.*)?$", url_path)
+        if m_gds:
+            return self._global_ds_file(m_gds.group(1), m_gds.group(2) or "")
         if url_path == "/__ds_proposals":
             return self._ds_proposals_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__resolve_font":
@@ -14798,6 +14941,126 @@ class H(http.server.SimpleHTTPRequestHandler):
             "exists": True,
         })
 
+    def _ds_write_into_project(self, project_root, ds_id, styles_css, gallery_html,
+                               design_md, label, spec=None, meta_overrides=None,
+                               history_label=None, mirror_note=None):
+        """Canonical project-DS trio writer, shared by POST /__design_system
+        and the global-DS pull path: staging writes, content-hash version,
+        meta merge + updates[] append, history bracket, atomic promote, and
+        the editor/design-systems/<id>.js runtime mirror. `meta_overrides`
+        keys are applied last (a None value deletes the key) - pull uses it
+        to carry the global meta's descriptive fields + the restamped
+        globalRef. Raises RuntimeError on any write failure (the bracket's
+        __exit__ then skips recording, so history never records a half-write).
+        Returns {version, meta, dsDir, mirrorPath}."""
+        spec = spec if isinstance(spec, dict) else {}
+        # Atomic writes - write to .staging/ first, then rename into place.
+        ds_dir      = os.path.join(project_root, "design-systems", ds_id)
+        staging_dir = os.path.join(ds_dir, ".staging")
+        try:
+            os.makedirs(staging_dir, exist_ok=True)
+        except Exception as e:
+            raise RuntimeError(f"could not create staging dir: {e}")
+        try:
+            with open(os.path.join(staging_dir, "styles.css"),   "w", encoding="utf-8") as f: f.write(styles_css)
+            with open(os.path.join(staging_dir, "gallery.html"), "w", encoding="utf-8") as f: f.write(gallery_html)
+            with open(os.path.join(staging_dir, "DESIGN.md"),    "w", encoding="utf-8") as f: f.write(design_md)
+        except Exception as e:
+            raise RuntimeError(f"could not write staging files: {e}")
+        version = _ds_trio_version(styles_css, gallery_html)
+        # Preserve existing builtFrom + updates if present; append an updates
+        # entry recording this write.
+        prev_meta = self._design_system_read_meta(ds_dir)
+        meta = {
+            "id":        ds_id,
+            "version":   version,
+            "label":     label,
+            "genre":     (spec.get("genre") or "") or prev_meta.get("genre") or "",
+            "builtFrom": spec if spec else (prev_meta.get("builtFrom") or []),
+            "parentRef": spec.get("parentRef") or prev_meta.get("parentRef"),
+            "updates":   prev_meta.get("updates") or [],
+        }
+        # The global-library link must survive DS rebuilds (a POST from a DS
+        # build agent knows nothing about the link) - carry it forward unless
+        # the caller explicitly restamps/removes it via meta_overrides.
+        if prev_meta.get("globalRef") is not None:
+            meta["globalRef"] = prev_meta.get("globalRef")
+        meta["updates"].append({
+            "version":    version,
+            "label":      label,
+            "appliedAt":  _dt.datetime.now().isoformat(timespec="seconds"),
+        })
+        if isinstance(meta_overrides, dict):
+            for k, v in meta_overrides.items():
+                if v is None:
+                    meta.pop(k, None)
+                else:
+                    meta[k] = v
+        try:
+            with open(os.path.join(staging_dir, "meta.json"), "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2)
+        except Exception as e:
+            raise RuntimeError(f"could not write meta.json: {e}")
+        # Promote staging → live, one file at a time. os.replace is atomic
+        # within the same filesystem. Wrap the promote + mirror write block
+        # with a history bracket so undo restores the whole DS trio + mirror
+        # atomically - DS edits should never be reverted half-way.
+        mirror_dir  = os.path.join(project_root, "editor", "design-systems")
+        try:
+            os.makedirs(mirror_dir, exist_ok=True)
+        except Exception:
+            pass
+        mirror_path = os.path.join(mirror_dir, ds_id + ".js")
+        ds_paths = [
+            os.path.relpath(os.path.join(ds_dir, n), project_root)
+            for n in ("styles.css", "gallery.html", "DESIGN.md", "meta.json")
+        ] + [os.path.relpath(mirror_path, project_root)]
+        bracket_cm = _history_bracket(
+            project_root, ds_paths,
+            kind="workflow-op",
+            label=history_label or f"DS update: {ds_id} → {label}",
+            source="workflow",
+            extra={"dsId": ds_id, "version": version},
+        )
+        with bracket_cm:
+            for name in ("styles.css", "gallery.html", "DESIGN.md", "meta.json"):
+                src = os.path.join(staging_dir, name)
+                dst = os.path.join(ds_dir, name)
+                try:
+                    os.replace(src, dst)
+                except Exception as e:
+                    raise RuntimeError(f"could not promote {name}: {e}")
+            try:
+                os.rmdir(staging_dir)
+            except Exception:
+                pass  # leave .staging/ around if rmdir fails - harmless.
+            # Runtime mirror - write editor/design-systems/<id>.js so the editor
+            # can load the DS via a synchronous <script> tag at boot. Schema
+            # mirrors window.EDITOR_DS_<id> in docs/agents/data-schema.md.
+            mirror_body = (
+                "// EDITOR_DS_" + ds_id + " - runtime mirror of design-systems/" + ds_id + "/.\n"
+                "// Written by daemon on " + _dt.datetime.now().isoformat(timespec="seconds")
+                + " (" + (mirror_note or "POST /__design_system") + ").\n"
+                "// The trio inlines the canonical files; tokens / primitives are derived offline.\n"
+                "window.EDITOR_DS_" + ds_id + " = " + json.dumps({
+                    "id":      ds_id,
+                    "version": version,
+                    "label":   label,
+                    "trio": {
+                        "stylesCss":   styles_css,
+                        "galleryHtml": gallery_html,
+                        "designMd":    design_md,
+                    },
+                    "meta": meta,
+                }, ensure_ascii=False, indent=2) + ";\n"
+            )
+            try:
+                with open(mirror_path, "w", encoding="utf-8") as f:
+                    f.write(mirror_body)
+            except Exception as e:
+                raise RuntimeError(f"could not write runtime mirror: {e}")
+        return {"version": version, "meta": meta, "dsDir": ds_dir, "mirrorPath": mirror_path}
+
     def _design_system_save(self, qs):
         try:
             project_root = resolve_project_root(qs)
@@ -14823,116 +15086,24 @@ class H(http.server.SimpleHTTPRequestHandler):
         design_md    = trio.get("designMd") or ""
         spec         = body.get("spec") or {}
         label        = (body.get("label") or "").strip() or "v1"
-        # Atomic writes - write to .staging/ first, then rename into place.
-        ds_dir       = os.path.join(project_root, "design-systems", ds_id)
-        staging_dir  = os.path.join(ds_dir, ".staging")
         try:
-            os.makedirs(staging_dir, exist_ok=True)
-        except Exception as e:
-            return self._reply(500, {"error": f"could not create staging dir: {e}"})
-        try:
-            with open(os.path.join(staging_dir, "styles.css"),   "w", encoding="utf-8") as f: f.write(styles_css)
-            with open(os.path.join(staging_dir, "gallery.html"), "w", encoding="utf-8") as f: f.write(gallery_html)
-            with open(os.path.join(staging_dir, "DESIGN.md"),    "w", encoding="utf-8") as f: f.write(design_md)
-        except Exception as e:
-            return self._reply(500, {"error": f"could not write staging files: {e}"})
-        # Content hash = sha256 of stylesCss + galleryHtml (DESIGN.md is
-        # derived, so excluding it keeps re-export from bumping the version).
-        h = hashlib.sha256()
-        h.update(styles_css.encode("utf-8", errors="replace"))
-        h.update(b"\x00")
-        h.update(gallery_html.encode("utf-8", errors="replace"))
-        version = h.hexdigest()[:16]
-        # Preserve existing builtFrom + updates if present; append an updates
-        # entry recording this write.
-        prev_meta = self._design_system_read_meta(ds_dir)
-        meta = {
-            "id":        ds_id,
-            "version":   version,
-            "label":     label,
-            "genre":     (spec.get("genre") if isinstance(spec, dict) else "") or prev_meta.get("genre") or "",
-            "builtFrom": spec if isinstance(spec, dict) and spec else (prev_meta.get("builtFrom") or []),
-            "parentRef": (spec.get("parentRef") if isinstance(spec, dict) else None) or prev_meta.get("parentRef"),
-            "updates":   prev_meta.get("updates") or [],
-        }
-        meta["updates"].append({
-            "version":    version,
-            "label":      label,
-            "appliedAt":  _dt.datetime.now().isoformat(timespec="seconds"),
-        })
-        try:
-            with open(os.path.join(staging_dir, "meta.json"), "w", encoding="utf-8") as f:
-                json.dump(meta, f, indent=2)
-        except Exception as e:
-            return self._reply(500, {"error": f"could not write meta.json: {e}"})
-        # Promote staging → live, one file at a time. os.replace is atomic
-        # within the same filesystem. Wrap the promote + mirror write block
-        # with a history bracket so undo restores the whole DS trio + mirror
-        # atomically - DS edits should never be reverted half-way.
-        mirror_dir  = os.path.join(project_root, "editor", "design-systems")
-        try:
-            os.makedirs(mirror_dir, exist_ok=True)
-        except Exception:
-            pass
-        mirror_path = os.path.join(mirror_dir, ds_id + ".js")
-        ds_paths = [
-            os.path.relpath(os.path.join(ds_dir, n), project_root)
-            for n in ("styles.css", "gallery.html", "DESIGN.md", "meta.json")
-        ] + [os.path.relpath(mirror_path, project_root)]
-        bracket_cm = _history_bracket(
-            project_root, ds_paths,
-            kind="workflow-op",
-            label=f"DS update: {ds_id} → {label}",
-            source="workflow",
-            extra={"dsId": ds_id, "version": version},
-        )
-        with bracket_cm:
-            for name in ("styles.css", "gallery.html", "DESIGN.md", "meta.json"):
-                src = os.path.join(staging_dir, name)
-                dst = os.path.join(ds_dir, name)
-                try:
-                    os.replace(src, dst)
-                except Exception as e:
-                    return self._reply(500, {"error": f"could not promote {name}: {e}"})
-            try:
-                os.rmdir(staging_dir)
-            except Exception:
-                pass  # leave .staging/ around if rmdir fails - harmless.
-            # Runtime mirror - write editor/design-systems/<id>.js so the editor
-            # can load the DS via a synchronous <script> tag at boot. Schema
-            # mirrors window.EDITOR_DS_<id> in docs/agents/data-schema.md.
-            mirror_body = (
-                "// EDITOR_DS_" + ds_id + " - runtime mirror of design-systems/" + ds_id + "/.\n"
-                "// Written by daemon on " + _dt.datetime.now().isoformat(timespec="seconds") + " (POST /__design_system).\n"
-                "// The trio inlines the canonical files; tokens / primitives are derived offline.\n"
-                "window.EDITOR_DS_" + ds_id + " = " + json.dumps({
-                    "id":      ds_id,
-                    "version": version,
-                    "label":   label,
-                    "trio": {
-                        "stylesCss":   styles_css,
-                        "galleryHtml": gallery_html,
-                        "designMd":    design_md,
-                    },
-                    "meta": meta,
-                }, ensure_ascii=False, indent=2) + ";\n"
-            )
-            try:
-                with open(mirror_path, "w", encoding="utf-8") as f:
-                    f.write(mirror_body)
-            except Exception as e:
-                return self._reply(500, {"error": f"could not write runtime mirror: {e}"})
+            res = self._ds_write_into_project(
+                project_root, ds_id, styles_css, gallery_html, design_md, label,
+                spec=spec if isinstance(spec, dict) else {})
+        except RuntimeError as e:
+            return self._reply(500, {"error": str(e)})
+        ds_dir = res["dsDir"]
         return self._reply(200, {
             "ok":      True,
             "id":      ds_id,
-            "version": version,
+            "version": res["version"],
             "label":   label,
             "paths": {
                 "stylesCss":   os.path.relpath(os.path.join(ds_dir, "styles.css"),   project_root),
                 "galleryHtml": os.path.relpath(os.path.join(ds_dir, "gallery.html"), project_root),
                 "designMd":    os.path.relpath(os.path.join(ds_dir, "DESIGN.md"),    project_root),
                 "meta":        os.path.relpath(os.path.join(ds_dir, "meta.json"),    project_root),
-                "mirror":      os.path.relpath(mirror_path, project_root),
+                "mirror":      os.path.relpath(res["mirrorPath"], project_root),
             },
         })
 
@@ -15571,6 +15742,502 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(data)
+
+    # ── Global design-system library endpoints ───────────────────────────
+    # GET  /__global_ds                     → list every promoted DS
+    # GET  /__global_ds?id=<gid>            → detail incl. syncLog + git summary
+    # GET  /__global_ds/status?project=&dsId=  → link state for one project DS
+    # GET  /__global_ds/diff?project=&dsId=    → per-file project↔global diffs
+    # GET  /__global_ds/<gid>[/<relpath>]   → static serve (gallery preview)
+    # POST /__global_ds/(promote|push|pull|unlink|rename|delete)
+    # Git for a global DS folder rides the normal /__git/* + /__github/*
+    # endpoints with ?gds=<gid> instead of ?project= (see _resolve_git_root).
+
+    # GET /__global_ds/<gid>[/<relpath>] - static serve from the workspace
+    # library, modeled on _default_ds_file: gallery.html + its relative
+    # styles.css / all.css / shells/ / templates/ / assets/ links all resolve
+    # back through this same route, so NO ?project= stamping is needed.
+    # Read-only; traversal rejected.
+    def _global_ds_file(self, gid, rel):
+        try:
+            base = _global_ds_dir(gid, must_exist=True)
+        except ValueError as e:
+            return self._reply(404, {"error": str(e)})
+        rel = (rel or "").lstrip("/")
+        if not rel:
+            rel = "gallery.html"
+        try:
+            path = _safe_join(base, rel)
+        except ValueError:
+            return self._reply(400, {"error": "bad path"})
+        if not os.path.isfile(path):
+            return self._reply(404, {"error": "not found", "file": rel})
+        ext = path.rsplit(".", 1)[-1].lower() if "." in os.path.basename(path) else ""
+        ctype = {
+            "html": "text/html; charset=utf-8",
+            "css":  "text/css; charset=utf-8",
+            "js":   "application/javascript; charset=utf-8",
+            "json": "application/json; charset=utf-8",
+            "svg":  "image/svg+xml",
+            "png":  "image/png",
+            "jpg":  "image/jpeg",
+            "jpeg": "image/jpeg",
+            "webp": "image/webp",
+            "woff2": "font/woff2",
+            "woff": "font/woff",
+            "ttf":  "font/ttf",
+            "otf":  "font/otf",
+            "md":   "text/plain; charset=utf-8",
+        }.get(ext, "application/octet-stream")
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except Exception as e:
+            return self._reply(500, {"error": f"read failed: {e}"})
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _global_ds_get(self, qs):
+        try:
+            root = _global_ds_root()
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        gid = (_qs_get(qs, "id") or "").strip().lower()
+        if gid:
+            # Detail mode - meta + sync history + full git summary.
+            try:
+                gdir = _global_ds_dir(gid, must_exist=True)
+            except ValueError as e:
+                return self._reply(404, {"error": str(e)})
+            meta = _gds_read_meta(gdir)
+            git = {"repo": False}
+            try:
+                if _gitops.is_repo(gdir):
+                    git = _gitops.status(gdir)
+                    git["githubConfigured"] = _gitops.oauth_configured()
+            except Exception:
+                pass
+            return self._reply(200, {
+                "id": gid,
+                "label": meta.get("label") or "",
+                "genre": meta.get("genre") or "",
+                "version": meta.get("version") or "",
+                "defaultStyle": meta.get("defaultStyle") or "",
+                "origin": meta.get("origin") or None,
+                "updates": meta.get("updates") or [],
+                "syncLog": _gds_read_sync_log(gdir),
+                "git": git,
+                "hasGallery": os.path.isfile(os.path.join(gdir, "gallery.html")),
+                "hasDesignMd": os.path.isfile(os.path.join(gdir, "DESIGN.md")),
+                "exists": True,
+            })
+        items = []
+        if os.path.isdir(root):
+            for entry in sorted(os.listdir(root)):
+                sub = os.path.join(root, entry)
+                if not os.path.isdir(sub) or not SLUG_OK.match(entry):
+                    continue
+                if not _gds_trio_built(sub):
+                    continue
+                meta = _gds_read_meta(sub)
+                updated = ""
+                try:
+                    updated = _dt.datetime.fromtimestamp(
+                        os.path.getmtime(os.path.join(sub, "meta.json"))
+                    ).isoformat(timespec="seconds")
+                except Exception:
+                    pass
+                items.append({
+                    "id": entry,
+                    "label": meta.get("label") or "",
+                    "genre": meta.get("genre") or "",
+                    "version": meta.get("version") or "",
+                    "defaultStyle": meta.get("defaultStyle") or "",
+                    "origin": meta.get("origin") or None,
+                    "updatedAt": updated,
+                    # Cheap chip only in list mode - a full git status is a
+                    # subprocess per DS; the detail view pays that price.
+                    "gitRepo": bool(_gitops.is_repo(sub)),
+                })
+        return self._reply(200, {"items": items})
+
+    # Shared link-state reader for status / push / pull. Returns (state, err):
+    # state has everything the truth table needs; err is a (code, payload)
+    # reply tuple when the project DS is unreadable.
+    def _gds_link_state(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return None, (400, {"error": str(e)})
+        ds_id = (_qs_get(qs, "dsId") or "").strip().lower()
+        if not ds_id or not SLUG_OK.match(ds_id):
+            return None, (400, {"error": "missing or invalid dsId", "dsId": ds_id})
+        ds_dir = os.path.join(project_root, "design-systems", ds_id)
+        meta = self._design_system_read_meta(ds_dir)
+        ref = meta.get("globalRef") if isinstance(meta.get("globalRef"), dict) else None
+        state = {
+            "projectRoot": project_root,
+            "projectId": (_qs_get(qs, "project") or "").strip() or os.path.basename(project_root),
+            "dsId": ds_id,
+            "dsDir": ds_dir,
+            "meta": meta,
+            "built": _gds_trio_built(ds_dir),
+            "ref": ref,
+            "gid": (ref or {}).get("id") or "",
+            "gdir": None,
+            "gmeta": {},
+            "globalExists": False,
+            "projectChanged": False,
+            "globalChanged": False,
+        }
+        if ref:
+            try:
+                gdir = _global_ds_dir(state["gid"])
+            except ValueError:
+                gdir = None
+            state["gdir"] = gdir
+            if gdir and _gds_trio_built(gdir):
+                state["globalExists"] = True
+                state["gmeta"] = _gds_read_meta(gdir)
+            # Stored-string comparison only (see _ds_trio_version note).
+            state["projectChanged"] = (meta.get("version") or "") != (ref.get("projectBaseVersion") or "")
+            state["globalChanged"] = state["globalExists"] and \
+                (state["gmeta"].get("version") or "") != (ref.get("globalBaseVersion") or "")
+        return state, None
+
+    # GET /__global_ds/status?project=<pid>&dsId=<id> - drives the DS-view
+    # sync chip + the DS node affordances. Absolute paths ride along for the
+    # reconcile merge-agent prompt (the agent works on both folders).
+    def _global_ds_status(self, qs):
+        st, err = self._gds_link_state(qs)
+        if err:
+            return self._reply(err[0], err[1])
+        ref = st["ref"]
+        if not ref:
+            return self._reply(200, {
+                "linked": False, "dsId": st["dsId"], "built": st["built"],
+                "projectVersion": st["meta"].get("version") or "",
+            })
+        return self._reply(200, {
+            "linked": True,
+            "dsId": st["dsId"],
+            "built": st["built"],
+            "globalId": st["gid"],
+            "globalExists": st["globalExists"],
+            "projectVersion": st["meta"].get("version") or "",
+            "globalVersion": st["gmeta"].get("version") or "",
+            "globalLabel": st["gmeta"].get("label") or "",
+            "projectChanged": st["projectChanged"],
+            "globalChanged": st["globalChanged"],
+            "inSync": st["globalExists"] and not st["projectChanged"] and not st["globalChanged"],
+            "syncedAt": ref.get("syncedAt") or "",
+            "projectDsPath": st["dsDir"],
+            "globalDsPath": st["gdir"] or "",
+        })
+
+    # GET /__global_ds/diff?project=<pid>&dsId=<id> - read-only per-file
+    # unified diffs (project → global: "what pull would change"). The
+    # reconcile dialog labels both sides explicitly.
+    def _global_ds_diff(self, qs):
+        st, err = self._gds_link_state(qs)
+        if err:
+            return self._reply(err[0], err[1])
+        if not st["ref"]:
+            return self._reply(400, {"error": "design system is not linked to a global one", "dsId": st["dsId"]})
+        if not st["globalExists"]:
+            return self._reply(404, {"error": "global design system missing", "id": st["gid"]})
+
+        def _read(base, name):
+            try:
+                with open(os.path.join(base, name), "r", encoding="utf-8", errors="replace") as f:
+                    return f.read()
+            except Exception:
+                return ""
+
+        files = []
+        for name in GDS_TRIO_NAMES:
+            a = _read(st["dsDir"], name)
+            b = _read(st["gdir"], name)
+            if a == b:
+                files.append({"name": name, "changed": False, "diff": ""})
+                continue
+            diff = "".join(difflib.unified_diff(
+                a.splitlines(keepends=True), b.splitlines(keepends=True),
+                fromfile="project/" + name, tofile="global/" + name, n=3))
+            files.append({"name": name, "changed": True, "diff": diff})
+
+        def _updated(meta_dir):
+            try:
+                return _dt.datetime.fromtimestamp(
+                    os.path.getmtime(os.path.join(meta_dir, "meta.json"))
+                ).isoformat(timespec="seconds")
+            except Exception:
+                return ""
+
+        return self._reply(200, {
+            "files": files,
+            "project": {
+                "version": st["meta"].get("version") or "",
+                "label": st["meta"].get("label") or "",
+                "updatedAt": _updated(st["dsDir"]),
+                "changed": st["projectChanged"],
+            },
+            "global": {
+                "version": st["gmeta"].get("version") or "",
+                "label": st["gmeta"].get("label") or "",
+                "updatedAt": _updated(st["gdir"]),
+                "changed": st["globalChanged"],
+            },
+        })
+
+    # POST /__global_ds/(promote|push|pull|unlink|rename|delete)
+    def _global_ds_op(self, op, qs):
+        try:
+            _global_ds_root()  # workspace-mode gate for every op
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body(max_bytes=64 * 1024)
+        except ValueError:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        now = _dt.datetime.now().isoformat(timespec="seconds")
+
+        # rename / delete operate on the global side only - no project context.
+        if op == "rename":
+            gid = (body.get("id") or "").strip().lower()
+            label = (body.get("label") or "").strip()
+            if not label:
+                return self._reply(400, {"error": "label required"})
+            try:
+                gdir = _global_ds_dir(gid, must_exist=True)
+            except ValueError as e:
+                return self._reply(404, {"error": str(e)})
+            meta = _gds_read_meta(gdir)
+            meta["label"] = label
+            with open(os.path.join(gdir, "meta.json"), "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2)
+            return self._reply(200, {"ok": True, "id": gid, "label": label})
+        if op == "delete":
+            gid = (body.get("id") or "").strip().lower()
+            try:
+                gdir = _global_ds_dir(gid, must_exist=True)
+            except ValueError as e:
+                return self._reply(404, {"error": str(e)})
+            # Soft delete, like projects: design-systems/.trash/<gid>-<stamp>/.
+            # Linked projects keep a dangling globalRef - /__global_ds/status
+            # reports globalExists:false and the UI offers Unlink.
+            trash_dir = os.path.join(_global_ds_root(), ".trash")
+            os.makedirs(trash_dir, exist_ok=True)
+            stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+            target = os.path.join(trash_dir, f"{gid}-{stamp}")
+            try:
+                shutil.move(gdir, target)
+            except OSError as e:
+                return self._reply(500, {"error": f"move failed: {type(e).__name__}: {e}"})
+            return self._reply(200, {"ok": True, "id": gid, "trashedTo": target})
+
+        # promote / push / pull / unlink need the project side. dsId rides in
+        # the POST body; merge it into qs so the shared reader sees it.
+        if not (_qs_get(qs, "dsId") or "").strip():
+            qs = dict(qs)
+            qs["dsId"] = [str(body.get("dsId") or "")]
+        st, err = self._gds_link_state(qs)
+        if err:
+            return self._reply(err[0], err[1])
+        pid, ds_id, ds_dir, meta = st["projectId"], st["dsId"], st["dsDir"], st["meta"]
+
+        if op == "unlink":
+            if not st["ref"]:
+                return self._reply(200, {"ok": True, "dsId": ds_id, "note": "already unlinked"})
+            meta.pop("globalRef", None)
+            rel_meta = os.path.relpath(os.path.join(ds_dir, "meta.json"), st["projectRoot"])
+            with _history_bracket(st["projectRoot"], [rel_meta], kind="workflow-op",
+                                  label=f"DS unlink: {ds_id}", source="editor",
+                                  extra={"dsId": ds_id}):
+                with open(os.path.join(ds_dir, "meta.json"), "w", encoding="utf-8") as f:
+                    json.dump(meta, f, indent=2)
+            return self._reply(200, {"ok": True, "dsId": ds_id})
+
+        if not st["built"]:
+            return self._reply(400, {"error": "design system is not built yet (trio missing)", "dsId": ds_id})
+
+        def _stamp_project_link(gid, project_version, global_version, history_label):
+            """Restamp meta.globalRef on the project side (bracketed)."""
+            meta["globalRef"] = {
+                "id": gid,
+                "globalBaseVersion": global_version,
+                "projectBaseVersion": project_version,
+                "syncedAt": now,
+            }
+            rel_meta = os.path.relpath(os.path.join(ds_dir, "meta.json"), st["projectRoot"])
+            with _history_bracket(st["projectRoot"], [rel_meta], kind="workflow-op",
+                                  label=history_label, source="editor",
+                                  extra={"dsId": ds_id, "globalId": gid}):
+                with open(os.path.join(ds_dir, "meta.json"), "w", encoding="utf-8") as f:
+                    json.dump(meta, f, indent=2)
+
+        if op == "promote":
+            gid = (body.get("globalId") or ds_id).strip().lower()
+            try:
+                gdir = _global_ds_dir(gid)
+            except ValueError as e:
+                return self._reply(400, {"error": str(e)})
+            if os.path.isdir(gdir):
+                return self._reply(409, {"error": "global design system already exists", "id": gid})
+            # A DS written by a non-endpoint path may lack a stored version -
+            # stamp one now so the link's base versions are meaningful.
+            if not meta.get("version"):
+                meta["version"] = _ds_trio_version(
+                    self._design_system_read_file(ds_dir, "styles.css"),
+                    self._design_system_read_file(ds_dir, "gallery.html"))
+            os.makedirs(_global_ds_root(), exist_ok=True)
+            try:
+                _copy_ds_tree(ds_dir, gdir)
+            except Exception as e:
+                shutil.rmtree(gdir, ignore_errors=True)
+                return self._reply(500, {"error": f"copy failed: {type(e).__name__}: {e}"})
+            gmeta = dict(meta)
+            gmeta["id"] = gid
+            gmeta.pop("globalRef", None)
+            gmeta["origin"] = {"project": pid, "dsId": ds_id, "promotedAt": now}
+            with open(os.path.join(gdir, "meta.json"), "w", encoding="utf-8") as f:
+                json.dump(gmeta, f, indent=2)
+            _gds_log_append(gdir, {
+                "type": "promote", "project": pid, "dsId": ds_id,
+                "fromVersion": None, "toVersion": meta.get("version") or "",
+                "label": meta.get("label") or "", "note": (body.get("note") or "").strip(),
+            })
+            _stamp_project_link(gid, meta.get("version") or "", meta.get("version") or "",
+                                f"DS promote: {ds_id} → global {gid}")
+            # Best-effort per-DS git repo so the library is versioned from birth.
+            committed = False
+            try:
+                if _gitops.git_available():
+                    _gitops.connect(gdir)
+                    res = _gitops.commit(gdir, f"Promote from {pid}/{ds_id} ({meta.get('label') or meta.get('version') or ''})")
+                    committed = bool(res.get("ok", True))
+            except Exception:
+                pass
+            return self._reply(200, {"ok": True, "globalId": gid,
+                                     "version": meta.get("version") or "", "committed": committed})
+
+        # push / pull require an existing link.
+        if not st["ref"]:
+            return self._reply(400, {"error": "design system is not linked to a global one - promote it first", "dsId": ds_id})
+        gid, gdir, gmeta = st["gid"], st["gdir"], st["gmeta"]
+        if not st["globalExists"]:
+            return self._reply(404, {"error": "global design system missing - unlink or re-promote", "id": gid})
+        force = (body.get("force") or "").strip()
+        note = (body.get("note") or "").strip()
+
+        def _conflict_payload():
+            return {
+                "conflict": True,
+                "reason": "both-changed",
+                "dsId": ds_id,
+                "globalId": gid,
+                "project": {"version": meta.get("version") or "", "label": meta.get("label") or ""},
+                "global": {"version": gmeta.get("version") or "", "label": gmeta.get("label") or ""},
+            }
+
+        if op == "push":
+            if not st["projectChanged"] and not force:
+                return self._reply(200, {"ok": True, "noop": True, "dsId": ds_id, "globalId": gid,
+                                         "version": meta.get("version") or ""})
+            if st["globalChanged"] and force != "project":
+                return self._reply(409, _conflict_payload())
+            try:
+                _copy_ds_tree(ds_dir, gdir)
+            except Exception as e:
+                return self._reply(500, {"error": f"copy failed: {type(e).__name__}: {e}"})
+            new_gmeta = dict(meta)
+            new_gmeta["id"] = gid
+            new_gmeta.pop("globalRef", None)
+            new_gmeta["origin"] = gmeta.get("origin") or {"project": pid, "dsId": ds_id, "promotedAt": now}
+            # The global keeps its OWN updates history (the project's history
+            # is not this library's history) - append one entry per push.
+            new_gmeta["updates"] = list(gmeta.get("updates") or [])
+            new_gmeta["updates"].append({
+                "version": meta.get("version") or "",
+                "label": meta.get("label") or "",
+                "appliedAt": now,
+            })
+            with open(os.path.join(gdir, "meta.json"), "w", encoding="utf-8") as f:
+                json.dump(new_gmeta, f, indent=2)
+            _gds_log_append(gdir, {
+                "type": "reconcile" if force else "push", "project": pid, "dsId": ds_id,
+                "fromVersion": gmeta.get("version") or "", "toVersion": meta.get("version") or "",
+                "label": meta.get("label") or "", "note": note,
+            })
+            _stamp_project_link(gid, meta.get("version") or "", meta.get("version") or "",
+                                f"DS push: {ds_id} → global {gid}")
+            committed = False
+            try:
+                if _gitops.is_repo(gdir):
+                    res = _gitops.commit(gdir, f"Push from {pid}/{ds_id}: {meta.get('label') or meta.get('version') or ''}"
+                                               + (f" ({note})" if note else ""))
+                    committed = bool(res.get("ok", True))
+            except Exception:
+                pass
+            return self._reply(200, {"ok": True, "dsId": ds_id, "globalId": gid,
+                                     "version": meta.get("version") or "", "committed": committed})
+
+        if op == "pull":
+            if not st["globalChanged"] and not force:
+                return self._reply(200, {"ok": True, "noop": True, "dsId": ds_id, "globalId": gid,
+                                         "version": meta.get("version") or ""})
+            if st["projectChanged"] and force != "global":
+                return self._reply(409, _conflict_payload())
+            g_styles  = self._design_system_read_file(gdir, "styles.css")
+            g_gallery = self._design_system_read_file(gdir, "gallery.html")
+            g_md      = self._design_system_read_file(gdir, "DESIGN.md")
+            # Non-trio tree first (shells/, templates/, themes/, assets/,
+            # components/, all.css, ...), then the trio through the shared
+            # bracketed writer so history undo + the runtime mirror stay
+            # consistent. meta.json is rebuilt by the writer, not copied.
+            try:
+                _copy_ds_tree(gdir, ds_dir, skip_extra=("meta.json",) + GDS_TRIO_NAMES)
+            except Exception as e:
+                return self._reply(500, {"error": f"copy failed: {type(e).__name__}: {e}"})
+            new_version = _ds_trio_version(g_styles, g_gallery)
+            overrides = {}
+            for k in ("genre", "builtFrom", "parentRef", "defaultStyle",
+                      "defaultStyleContract", "styleContract", "buildPolicy",
+                      "fonts", "schemes", "defaultScheme", "styles",
+                      "components", "shells", "templates"):
+                if k in gmeta:
+                    overrides[k] = gmeta.get(k)
+            overrides["globalRef"] = {
+                "id": gid,
+                "globalBaseVersion": gmeta.get("version") or "",
+                "projectBaseVersion": new_version,
+                "syncedAt": now,
+            }
+            label = (gmeta.get("label") or meta.get("label") or "v1")
+            try:
+                res = self._ds_write_into_project(
+                    st["projectRoot"], ds_id, g_styles, g_gallery, g_md, label,
+                    meta_overrides=overrides,
+                    history_label=f"DS pull: {ds_id} ← global {gid} ({label})",
+                    mirror_note="POST /__global_ds/pull")
+            except RuntimeError as e:
+                return self._reply(500, {"error": str(e)})
+            _gds_log_append(gdir, {
+                "type": "reconcile" if force else "pull", "project": pid, "dsId": ds_id,
+                "fromVersion": meta.get("version") or "", "toVersion": gmeta.get("version") or "",
+                "label": label, "note": note,
+            })
+            return self._reply(200, {"ok": True, "dsId": ds_id, "globalId": gid,
+                                     "version": res["version"], "label": label})
+
+        return self._reply(404, {"error": f"unknown global-ds op: {op}"})
 
     # ── Phase 4a - BYOK media config + asset generation ──────────────────
     # GET  /__media_config            → masked config status (has_key/last_test_*)
@@ -19164,7 +19831,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # GET /__git/status?project=<id>
     def _git_status(self, qs):
         try:
-            root = resolve_project_root(qs, require_explicit=True)
+            root = _resolve_git_root(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         try:
@@ -19413,7 +20080,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if op == "connect_repo":
                 # Point THIS project's origin at an existing repo (per-project remote).
                 try:
-                    root = resolve_project_root(qs, require_explicit=True)
+                    root = _resolve_git_root(qs)
                 except ValueError as e:
                     return self._reply(400, {"error": str(e)})
                 remote = (body.get("clone_url") or body.get("remote") or "").strip()
@@ -19424,7 +20091,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._reply(200, {"ok": True, "status": st})
             if op == "create_repo":
                 try:
-                    root = resolve_project_root(qs, require_explicit=True)
+                    root = _resolve_git_root(qs)
                 except ValueError as e:
                     return self._reply(400, {"error": str(e)})
                 tok = _gitops.host_token()
@@ -19442,7 +20109,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # (for contributing to a repo you don't own). Reports the fork URL;
                 # the user decides whether to re-point origin from the picker.
                 try:
-                    root = resolve_project_root(qs, require_explicit=True)
+                    root = _resolve_git_root(qs)
                 except ValueError as e:
                     return self._reply(400, {"error": str(e)})
                 tok = _gitops.host_token()
@@ -19458,7 +20125,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # Push the current branch, then open a PR back to the base branch
                 # on origin (the GitHub-side merge path for fork/branch work).
                 try:
-                    root = resolve_project_root(qs, require_explicit=True)
+                    root = _resolve_git_root(qs)
                 except ValueError as e:
                     return self._reply(400, {"error": str(e)})
                 tok = _gitops.host_token()
@@ -19492,7 +20159,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # GET /__git/log?project=<id>&limit=<n>
     def _git_log(self, qs):
         try:
-            root = resolve_project_root(qs, require_explicit=True)
+            root = _resolve_git_root(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         try:
@@ -19511,7 +20178,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # unchanged - this just lets the user SEE what changed / what's incoming.
     def _git_diff(self, qs):
         try:
-            root = resolve_project_root(qs, require_explicit=True)
+            root = _resolve_git_root(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         kind = (_qs_get(qs, "kind") or "working").strip()
@@ -19534,7 +20201,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # POST /__git/(connect|commit|publish|resolve|pull)?project=<id>
     def _git_op(self, op, qs):
         try:
-            root = resolve_project_root(qs, require_explicit=True)
+            root = _resolve_git_root(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         try:
@@ -23537,6 +24204,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                     ds_ref = self._seed_default_ds(dest, body)
                 except Exception as e:
                     ds_warning = f"default design system not seeded: {type(e).__name__}: {e}"
+            # Or: verbatim import of a promoted workspace-level DS. Records
+            # the globalRef link so the project can push/pull later.
+            elif body.get("globalDsId"):
+                try:
+                    ds_ref = self._seed_global_ds(dest, body)
+                except Exception as e:
+                    ds_warning = f"global design system not imported: {type(e).__name__}: {e}"
             meta_inner = (
                 f'project: {json.dumps(label)}, sourceRoot: "../source/prototype/", sourceEntry: "index.html"'
             )
@@ -24151,6 +24825,68 @@ class H(http.server.SimpleHTTPRequestHandler):
         with open(os.path.join(mirror_dir, ds_id + ".js"), "w", encoding="utf-8") as f:
             f.write(mirror_body)
 
+        return {"id": ds_id, "version": version, "pinned": False}
+
+    # Seed <project>/design-systems/<gid>/ as a VERBATIM copy of a promoted
+    # workspace-level DS (no customizer bake on top - a customized copy would
+    # diverge from the global immediately and turn the first push into a
+    # conflict). Records meta.globalRef so push/pull work from birth, writes
+    # the editor/design-systems/<gid>.js runtime mirror, and logs an `import`
+    # event on the global side. Returns the dsRef dict for data.js meta.
+    def _seed_global_ds(self, dest, body):
+        gid = (body.get("globalDsId") or "").strip().lower()
+        gdir = _global_ds_dir(gid, must_exist=True)
+        if not _gds_trio_built(gdir):
+            raise ValueError(f"global design system is incomplete (trio missing): {gid}")
+        gmeta = _gds_read_meta(gdir)
+        ds_id = gid
+        ds_dir = os.path.join(dest, "design-systems", ds_id)
+        _copy_ds_tree(gdir, ds_dir)  # .git/ + sync-log.json never travel
+        styles_css   = self._design_system_read_file(ds_dir, "styles.css")
+        gallery_html = self._design_system_read_file(ds_dir, "gallery.html")
+        design_md    = self._design_system_read_file(ds_dir, "DESIGN.md")
+        version = gmeta.get("version") or _ds_trio_version(styles_css, gallery_html)
+        ds_label = gmeta.get("label") or gid
+        now = _dt.datetime.now().isoformat(timespec="seconds")
+        meta = dict(gmeta)
+        meta["id"] = ds_id
+        meta["version"] = version
+        meta.pop("origin", None)
+        meta["globalRef"] = {
+            "id": gid,
+            "globalBaseVersion": version,
+            "projectBaseVersion": version,
+            "syncedAt": now,
+        }
+        with open(os.path.join(ds_dir, "meta.json"), "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2)
+        # Runtime mirror - same schema as _seed_default_ds / POST /__design_system.
+        mirror_dir = _safe_join(dest, "editor", "design-systems")
+        os.makedirs(mirror_dir, exist_ok=True)
+        mirror_body = (
+            "// EDITOR_DS_" + ds_id + " - runtime mirror of design-systems/" + ds_id + "/.\n"
+            "// Written by /__projects/new (imported from global DS '" + gid + "').\n"
+            "window.EDITOR_DS_" + ds_id + " = " + json.dumps({
+                "id":      ds_id,
+                "version": version,
+                "label":   ds_label,
+                "trio": {
+                    "stylesCss":   styles_css,
+                    "galleryHtml": gallery_html,
+                    "designMd":    design_md,
+                },
+                "meta": meta,
+            }, ensure_ascii=False, indent=2) + ";\n"
+        )
+        with open(os.path.join(mirror_dir, ds_id + ".js"), "w", encoding="utf-8") as f:
+            f.write(mirror_body)
+        _gds_log_append(gdir, {
+            "type": "import",
+            "project": (body.get("id") or os.path.basename(dest) or "").strip(),
+            "dsId": ds_id,
+            "fromVersion": version, "toVersion": version,
+            "label": ds_label, "note": "new project import",
+        })
         return {"id": ds_id, "version": version, "pinned": False}
 
     # POST /__projects/rename  body: { id, label }

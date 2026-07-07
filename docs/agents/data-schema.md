@@ -262,6 +262,15 @@ The DS library node is written exclusively by Workflows 0 and 6b. No view subage
 | `editor/data.js → meta.dsRef` | Orchestrator (Workflow 1) | Editor, Subagent 1, Subagent 6 |
 | `DS_PROPOSAL.md` (at project root) | Subagent 6 (audit) | Workflow 6 (review) |
 
+### Global (workspace-level) design systems
+
+A project DS can be **promoted** to the workspace library at `<WORKSPACE_DIR>/design-systems/<gid>/` - a full copy of the DS tree, sibling of `projects/` and the global `fonts/`. Promoted systems are importable at project creation (verbatim copy) and stay linked for **push** (project → global) and **pull** (global → project) with three-way conflict detection; a conflict is resolved by keep-project / take-global / a merge agent (the reconcile dialog).
+
+- The **project side** records the link in `design-systems/<id>/meta.json` under `globalRef: { id, globalBaseVersion, projectBaseVersion, syncedAt }`. The daemon preserves `globalRef` across DS rebuilds (POST `/__design_system`); it is restamped on every successful sync.
+- The **global side** carries `origin: { project, dsId, promotedAt }` in its meta.json plus an append-only `sync-log.json` (`{ type: promote|push|pull|import|reconcile, project, dsId, fromVersion, toVersion, label, at, note }`). Each global DS folder is its own git repo (optional GitHub remote) - the normal `/__git/*` + `/__github/*` endpoints accept `?gds=<gid>` in place of `?project=`.
+- Daemon surface: `GET /__global_ds` (list) / `?id=` (detail) / `/__global_ds/<gid>/<path>` (static serve, gallery preview) / `/status` / `/diff`, and `POST /__global_ds/(promote|push|pull|unlink|rename|delete)`. Conflicts reply 409 `{ conflict: true }`.
+- Agents never write `<WORKSPACE_DIR>/design-systems/` directly - sync goes through the endpoints so version stamps, sync logs, undo history, and the runtime mirror stay consistent.
+
 ---
 
 ## `source/prototype.json`

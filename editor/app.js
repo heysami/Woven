@@ -2917,6 +2917,7 @@ function DSViewLibrary({ dsRefId }) {
       <div className="ds-library-bar">
         <span className="ds-library-eyebrow">Canonical library</span>
         <span className="ds-library-path"><code>design-systems/${dsRefId}/gallery.html</code></span>
+        <${GlobalDsSyncActions} dsId=${dsRefId}/>
         <a className="ds-library-open" href=${src} target="_blank" rel="noopener" title="Open the gallery in a new tab">↗ Open in new tab</a>
       </div>
       <iframe className="ds-library-iframe"
@@ -2925,6 +2926,282 @@ function DSViewLibrary({ dsRefId }) {
         sandbox="allow-scripts allow-same-origin"/>
     </div>
   `;
+}
+
+/* ── Project ↔ global DS sync (promote / push / pull / reconcile) ─────────
+   The project side of the workspace-level DS library. Sync state lives in
+   the project DS's meta.json ("globalRef" - stamped by the daemon, survives
+   rebuilds) and is read via GET /__global_ds/status. Conflict detection is
+   three-way on stored version hashes; a 409 from push/pull opens the
+   reconcile dialog (diff + keep-project / take-global / merge agent). */
+async function globalDsOp(op, body) {
+  try {
+    const r = await fetch(apiUrl("/__global_ds/" + op), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await r.json().catch(() => ({}));
+    return { ok: r.ok, code: r.status, data };
+  } catch (e) {
+    return { ok: false, code: 0, data: { error: String((e && e.message) || e) } };
+  }
+}
+
+function useGlobalDsSync(dsId) {
+  const [status, setStatus] = useState(null);  // null until the daemon answers
+  const reload = useCallback(() => {
+    if (!dsId) return;
+    fetch(apiUrl("/__global_ds/status?dsId=" + encodeURIComponent(dsId)))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setStatus(j))
+      .catch(() => setStatus(null));
+  }, [dsId]);
+  useEffect(() => {
+    reload();
+    const onR = () => reload();
+    window.addEventListener("th:ds-refresh", onR);
+    return () => window.removeEventListener("th:ds-refresh", onR);
+  }, [reload]);
+  return { status, reload };
+}
+
+/* One compact chip + action set, shared by the DS view's library bar and the
+   design-system node's footer. Renders nothing until the status endpoint
+   answers (single-project daemons have no global library → stays hidden). */
+function GlobalDsSyncActions({ dsId, compact }) {
+  const { status, reload } = useGlobalDsSync(dsId);
+  const [busy, setBusy] = useState("");
+  const [reconcile, setReconcile] = useState(null); // "push" | "pull" while dialog open
+
+  if (!status || !status.built) return null;
+
+  const done = (changed) => {
+    setBusy("");
+    reload();
+    if (changed) window.dispatchEvent(new CustomEvent("th:ds-refresh"));
+  };
+
+  const doPromote = async () => {
+    const gid = await uiPrompt(
+      "Promote this design system to the workspace library.\nGlobal id (lowercase, letters/digits/hyphens):",
+      status.dsId);
+    if (gid == null || !gid.trim()) return;
+    setBusy("promote");
+    const res = await globalDsOp("promote", { dsId, globalId: gid.trim().toLowerCase() });
+    if (!res.ok) await uiAlert(res.data.error || "promote failed");
+    done(res.ok);
+  };
+  const doPush = async () => {
+    const ok = await uiConfirm(
+      "Push \"" + dsId + "\" to the global design system \"" + status.globalId + "\"?\n\n" +
+      "The global copy is replaced with this project's version (and committed to its git repo when one exists).");
+    if (!ok) return;
+    setBusy("push");
+    const res = await globalDsOp("push", { dsId });
+    if (res.code === 409 && res.data.conflict) { setBusy(""); setReconcile("push"); return; }
+    if (!res.ok) await uiAlert(res.data.error || "push failed");
+    else if (res.data.noop) await uiAlert("Nothing to push - the project copy has no changes since the last sync.");
+    done(res.ok);
+  };
+  const doPull = async () => {
+    const ok = await uiConfirm(
+      "Pull the global design system \"" + status.globalId + "\" into \"" + dsId + "\"?\n\n" +
+      "This project's copy is replaced (undoable from History).");
+    if (!ok) return;
+    setBusy("pull");
+    const res = await globalDsOp("pull", { dsId });
+    if (res.code === 409 && res.data.conflict) { setBusy(""); setReconcile("pull"); return; }
+    if (!res.ok) await uiAlert(res.data.error || "pull failed");
+    else if (res.data.noop) await uiAlert("Nothing to pull - the global copy has no changes since the last sync.");
+    done(res.ok);
+  };
+  const doUnlink = async () => {
+    const ok = await uiConfirm(
+      "The linked global design system \"" + status.globalId + "\" no longer exists.\n\nRemove the link?");
+    if (!ok) return;
+    setBusy("unlink");
+    const res = await globalDsOp("unlink", { dsId });
+    if (!res.ok) await uiAlert(res.data.error || "unlink failed");
+    done(res.ok);
+  };
+
+  const chip = !status.linked ? null
+    : !status.globalExists ? { cls: "is-missing", text: "Global missing" }
+    : status.inSync ? { cls: "is-synced", text: "In sync" }
+    : status.projectChanged && status.globalChanged ? { cls: "is-diverged", text: "Diverged" }
+    : status.projectChanged ? { cls: "is-ahead", text: "Local changes" }
+    : { cls: "is-behind", text: "Global updated" };
+
+  return html`
+    <span className=${"gds-sync" + (compact ? " gds-sync-compact" : "")}>
+      ${!status.linked && html`
+        <button className="gds-sync-btn" disabled=${!!busy} title="Copy this design system to the workspace library so other projects can import it and stay in sync."
+          onClick=${(e) => { e.stopPropagation(); doPromote(); }}>
+          <${Icon.Globe}/> ${busy === "promote" ? "Promoting…" : "Promote to global"}
+        </button>
+      `}
+      ${status.linked && html`
+        <span className=${"gds-sync-chip " + chip.cls} title=${"Linked to global \"" + status.globalId + "\"" + (status.syncedAt ? " · last synced " + status.syncedAt.replace("T", " ") : "")}>
+          <${Icon.Globe}/> ${chip.text}
+        </span>
+      `}
+      ${status.linked && status.globalExists && html`
+        <button className="gds-sync-btn" disabled=${!!busy || (status.inSync && !status.projectChanged)}
+          title=${"Push this project's version to the global \"" + status.globalId + "\""}
+          onClick=${(e) => { e.stopPropagation(); doPush(); }}>
+          <${Icon.ArrowUp}/> ${busy === "push" ? "Pushing…" : "Push"}
+        </button>
+        <button className="gds-sync-btn" disabled=${!!busy || (status.inSync && !status.globalChanged)}
+          title=${"Pull the global \"" + status.globalId + "\" version into this project"}
+          onClick=${(e) => { e.stopPropagation(); doPull(); }}>
+          <${Icon.Download}/> ${busy === "pull" ? "Pulling…" : "Pull"}
+        </button>
+      `}
+      ${status.linked && !status.globalExists && html`
+        <button className="gds-sync-btn" disabled=${!!busy} title="Remove the dangling link"
+          onClick=${(e) => { e.stopPropagation(); doUnlink(); }}>Unlink</button>
+      `}
+      ${reconcile && html`<${DsReconcileDialog}
+        dsId=${dsId}
+        status=${status}
+        onClose=${() => setReconcile(null)}
+        onResolved=${() => { setReconcile(null); done(true); }}/>`}
+    </span>
+  `;
+}
+
+/* Reconcile dialog - shown when push/pull 409s because BOTH sides changed
+   since the last sync. Read-only per-file diff plus three resolutions:
+   keep project (force push), take global (force pull), or dispatch a merge
+   agent (system-scope run that writes a merged trio through the daemon and
+   force-pushes it, so both sides converge and the event is logged). */
+function DsReconcileDialog({ dsId, status, onClose, onResolved }) {
+  const [diff, setDiff] = useState(null);   // /__global_ds/diff payload
+  const [tab, setTab] = useState("styles.css");
+  const [busy, setBusy] = useState("");
+  const [merging, setMerging] = useState(false);
+  const pollRef = useRef(0);
+  useEffect(() => {
+    fetch(apiUrl("/__global_ds/diff?dsId=" + encodeURIComponent(dsId)))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setDiff(j))
+      .catch(() => setDiff(null));
+  }, [dsId]);
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  const resolve = async (kind) => {
+    setBusy(kind);
+    const res = kind === "keep-project"
+      ? await globalDsOp("push", { dsId, force: "project", note: "reconcile: kept project" })
+      : await globalDsOp("pull", { dsId, force: "global", note: "reconcile: took global" });
+    setBusy("");
+    if (!res.ok) { await uiAlert(res.data.error || "reconcile failed"); return; }
+    onResolved && onResolved();
+  };
+
+  const mergeWithAgent = async () => {
+    setBusy("merge");
+    const origin = (typeof location !== "undefined" && location.origin) || "http://127.0.0.1:5731";
+    const pid = activeProjectId() || "";
+    const prompt = [
+      "Reconcile a Woven design system that diverged between a project and the workspace global library.",
+      "",
+      "Project copy:  " + (status.projectDsPath || "") + "  (project \"" + pid + "\", ds id \"" + dsId + "\", version " + (status.projectVersion || "?") + ")",
+      "Global copy:   " + (status.globalDsPath || "") + "  (global id \"" + status.globalId + "\", version " + (status.globalVersion || "?") + ")",
+      "",
+      "1. Read both sides' trio files (styles.css, gallery.html, DESIGN.md) and identify what each side changed since they diverged.",
+      "2. Produce ONE merged trio that honors both sides' intent. Where both changed the same rule, pick the variant that keeps the system coherent with its committed genre; never drop a change silently - fold it in or note why it lost.",
+      "3. Write the merged trio to the PROJECT through the daemon (this preserves undo history and the runtime mirror - do NOT edit the project files directly):",
+      "   POST " + origin + "/__design_system?project=" + encodeURIComponent(pid) + "&id=" + encodeURIComponent(dsId),
+      "   JSON body: {\"trio\": {\"stylesCss\": \"...\", \"galleryHtml\": \"...\", \"designMd\": \"...\"}, \"label\": \"<bump the current vN label>\"}",
+      "   (Write the body to a temp file and curl with --data @file - the trio is large.)",
+      "4. Sync both sides:",
+      "   POST " + origin + "/__global_ds/push?project=" + encodeURIComponent(pid),
+      "   JSON body: {\"dsId\": \"" + dsId + "\", \"force\": \"project\", \"note\": \"agent merge\"}",
+      "5. Verify: GET " + origin + "/__global_ds/status?project=" + encodeURIComponent(pid) + "&dsId=" + dsId + " must report inSync true.",
+      "",
+      "Non-trio files (shells/, templates/, themes/, assets/, all.css) also differ when a side changed them; merge those on disk in the PROJECT folder before step 4 (the push copies the whole tree up).",
+    ].join("\n");
+    const res = await fetch("/__run", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scope: "system", section: "design-systems",
+        title: "Merge DS " + dsId + " with global " + status.globalId,
+        prompt, agentId: "claude", kind: "freeform", permissionMode: "bypassPermissions",
+      }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      setBusy("");
+      await uiAlert(j.error || "could not dispatch the merge agent");
+      return;
+    }
+    setMerging(true);
+    // Poll until the sides converge (the agent force-pushes at the end).
+    pollRef.current = setInterval(async () => {
+      try {
+        const r = await fetch(apiUrl("/__global_ds/status?dsId=" + encodeURIComponent(dsId)));
+        const j = r.ok ? await r.json() : null;
+        if (j && j.inSync) {
+          clearInterval(pollRef.current); pollRef.current = 0;
+          onResolved && onResolved();
+        }
+      } catch {}
+    }, 5000);
+  };
+
+  const files = (diff && diff.files) || [];
+  const cur = files.find((f) => f.name === tab) || files[0] || null;
+  const side = (label, s) => html`
+    <span className="gds-rec-side">
+      <b>${label}</b>
+      <span>${(s && s.label) || ""} · ${((s && s.version) || "").slice(0, 7)}${s && s.updatedAt ? " · " + s.updatedAt.replace("T", " ") : ""}</span>
+    </span>`;
+  return createPortal(html`
+    <div className="gds-rec-overlay" onClick=${(e) => { if (e.target === e.currentTarget && !merging) onClose(); }}>
+      <div className="gds-rec-card" role="dialog" aria-label="Reconcile design system">
+        <header className="gds-rec-head">
+          <h3>Both sides changed since the last sync</h3>
+          <button className="newproj-close" onClick=${onClose} aria-label="Close" disabled=${merging}>×</button>
+        </header>
+        <div className="gds-rec-sides">
+          ${side("Project · " + dsId, diff && diff.project)}
+          ${side("Global · " + status.globalId, diff && diff.global)}
+        </div>
+        <div className="gds-rec-tabs">
+          ${files.map((f) => html`
+            <button key=${f.name}
+              className=${"gds-viewer-tab" + ((cur && cur.name === f.name) ? " is-active" : "")}
+              onClick=${() => setTab(f.name)}>
+              ${f.name}${f.changed ? "" : " (same)"}
+            </button>
+          `)}
+        </div>
+        <div className="gds-rec-body">
+          ${diff == null && html`<div className="gds-dim">Loading diff…</div>`}
+          ${diff != null && cur && !cur.changed && html`<div className="gds-dim">This file is identical on both sides.</div>`}
+          ${diff != null && cur && cur.changed && html`<${UnifiedDiff} text=${cur.diff}/>`}
+        </div>
+        <footer className="gds-rec-foot">
+          ${merging
+            ? html`<span className="gds-rec-merging">Merge agent running - watch it in the Runs menu. This closes when both sides are back in sync.</span>`
+            : html`
+              <span className="gds-rec-foot-hint">The diff reads project as before, global as after.</span>
+              <button className="gds-sync-btn" disabled=${!!busy} onClick=${() => resolve("keep-project")}>
+                ${busy === "keep-project" ? "Pushing…" : "Keep project version"}
+              </button>
+              <button className="gds-sync-btn" disabled=${!!busy} onClick=${() => resolve("take-global")}>
+                ${busy === "take-global" ? "Pulling…" : "Take global version"}
+              </button>
+              <button className="gds-sync-btn gds-sync-btn-primary" disabled=${!!busy} onClick=${mergeWithAgent}
+                title="Dispatch an agent that reads both sides, writes a merged version to the project, then pushes it to the global.">
+                <${Icon.Bot}/> ${busy === "merge" ? "Dispatching…" : "Merge with agent"}
+              </button>
+            `}
+        </footer>
+      </div>
+    </div>
+  `, document.body);
 }
 
 /* Fonts pane - the LOCAL FONT LIBRARY. Two scopes share this component:
@@ -11671,7 +11948,14 @@ function DiffBody({ d }) {
    we never merge remote history on top of in-flight edits. Commits credit any
    active live-session guests as Co-authored-by via the share's id. Available in
    both editor + workflow modes through the shared rail. */
-function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded }) {
+function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffix }) {
+  // urlSuffix targets a NON-project git root: "gds=<id>" points every
+  // /__git/* + /__github/* call at a global design system's folder (its own
+  // repo). Without it, apiUrl() scopes to the active project as before.
+  const gurl = useCallback((p) => {
+    if (!urlSuffix) return apiUrl(p);
+    return p + (p.includes("?") ? "&" : "?") + urlSuffix;
+  }, [urlSuffix]);
   const [st, setSt] = useState(null);        // /__git/status, null = loading
   const [gh, setGh] = useState(null);        // /__github/status {configured,signedIn,login,avatar}
   const [commits, setCommits] = useState(null);
@@ -11700,24 +11984,24 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded }) {
   const isGuest = typeof window !== "undefined" && !!window.__thLiveActive;
 
   const loadGh = useCallback(() => {
-    fetch(apiUrl("/__github/status"))
+    fetch(gurl("/__github/status"))
       .then(r => (r.ok ? r.json() : null))
       .then(j => setGh(j || {}))
       .catch(() => setGh({}));
-  }, []);
+  }, [gurl]);
   const reload = useCallback(() => {
-    fetch(apiUrl("/__git/status"))
+    fetch(gurl("/__git/status"))
       .then(r => (r.ok ? r.json() : null))
       .then(j => {
         setSt(j || { repo: false });
         if (j && !msgTouched.current) setMsg(j.draftMessage || "");
       })
       .catch(() => setSt({ repo: false }));
-    fetch(apiUrl("/__git/log") + "&limit=40")
+    fetch(gurl("/__git/log?limit=40"))
       .then(r => (r.ok ? r.json() : { commits: [] }))
       .then(j => setCommits(j.commits || []))
       .catch(() => setCommits([]));
-  }, []);
+  }, [gurl]);
   useEffect(() => {
     reload(); loadGh();
     const t = setInterval(reload, 8000);
@@ -11741,7 +12025,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded }) {
   const post = async (base, kind, body) => {
     setBusy(kind); setErr(null);
     try {
-      const r = await fetch(apiUrl("/__" + base + "/" + kind), {
+      const r = await fetch(gurl("/__" + base + "/" + kind), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body || {}),
       });
@@ -11761,7 +12045,9 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded }) {
   // Reveal the manual remote-URL editor, pre-filled with the current remote.
   const startManualEdit = () => { setRemote(st && st.remote ? st.remote : ""); setPicking(false); setEditingRemote(true); };
   const doCommit = async () => {
-    const shareId = await activeShareId();
+    // Live-session guest credits are a PROJECT concept - a global-DS commit
+    // (urlSuffix) never picks up another project's share coauthors.
+    const shareId = urlSuffix ? null : await activeShareId();
     const j = await op("commit", { message: msg, shareId });
     if (j) {
       flashNote(j.empty ? "Nothing to commit" : "Committed " + (j.sha || "").slice(0, 7));
@@ -11888,7 +12174,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded }) {
   const openDiff = async (params, title) => {
     setDiff({ title, loading: true, data: null, error: null });
     try {
-      const base = apiUrl("/__git/diff");
+      const base = gurl("/__git/diff");
       const sep = base.includes("?") ? "&" : "?";
       const q = Object.entries(params).map(([k, v]) => k + "=" + encodeURIComponent(v)).join("&");
       const r = await fetch(base + sep + q);
@@ -11903,7 +12189,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded }) {
   const pollDevice = (interval) => {
     devTimer.current = setTimeout(async () => {
       try {
-        const r = await fetch(apiUrl("/__github/device/poll"), {
+        const r = await fetch(gurl("/__github/device/poll"), {
           method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
         const j = await r.json().catch(() => ({}));
         if (j.status === "ok") { setDevice(null); flashNote("Signed in as " + j.login); loadGh(); return; }
@@ -11939,7 +12225,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded }) {
   const fetchRepos = useCallback(async (q) => {
     setRepos(null);
     try {
-      const base = apiUrl("/__github/repos");
+      const base = gurl("/__github/repos");
       const url = q ? base + (base.includes("?") ? "&" : "?") + "q=" + encodeURIComponent(q) : base;
       const r = await fetch(url);
       const j = await r.json().catch(() => ({}));
@@ -23714,6 +24000,217 @@ function ProjectsHousekeeping({ onClose }) {
   `, document.body);
 }
 
+/* ── Global design-system library (landing "Design systems" tab) ──────────
+   Promoted design systems live at <workspace>/design-systems/<gid>/ - the
+   workspace-level siblings of projects/ and fonts/. This tab is a READ-ONLY
+   browse surface: a compact list, and a viewer with the live gallery,
+   DESIGN.md, styles.css, the push/pull/reconcile history, and per-DS git
+   (each global DS folder is its own repo). Promotion + push/pull happen
+   from a project's DS view / DS node - never from here. */
+const GDS_EVENT_META = {
+  promote:   { label: "Promoted",   cls: "gds-evt-promote" },
+  push:      { label: "Push",       cls: "gds-evt-push" },
+  pull:      { label: "Pull",       cls: "gds-evt-pull" },
+  import:    { label: "Imported",   cls: "gds-evt-import" },
+  reconcile: { label: "Reconciled", cls: "gds-evt-reconcile" },
+};
+
+function GlobalDsLanding({ onCountChange }) {
+  const [items, setItems] = useState(null);   // null = loading
+  const [openId, setOpenId] = useState(null); // viewer target
+  const [err, flashErr] = useFlash();
+  const reload = useCallback(() => {
+    fetch("/__global_ds")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("daemon unreachable"))))
+      .then((j) => {
+        setItems(j.items || []);
+        if (onCountChange) onCountChange((j.items || []).length);
+      })
+      .catch(() => {});
+  }, [onCountChange]);
+  useEffect(() => { reload(); }, [reload]);
+
+  const rename = async (g) => {
+    const label = await uiPrompt("New label for " + g.id, g.label || g.id);
+    if (label == null || !label.trim()) return;
+    try {
+      const r = await fetch("/__global_ds/rename", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: g.id, label: label.trim() }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "rename failed");
+      reload();
+    } catch (e) { flashErr(String(e.message || e)); }
+  };
+  const remove = async (g) => {
+    const ok = await uiConfirm(
+      "Delete global design system \"" + (g.label || g.id) + "\"?\n\n" +
+      "It moves to design-systems/.trash/ (recoverable). Projects that imported it keep their copy; their link goes dangling until they unlink or it is re-promoted.");
+    if (!ok) return;
+    try {
+      const r = await fetch("/__global_ds/delete", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: g.id }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "delete failed");
+      reload();
+    } catch (e) { flashErr(String(e.message || e)); }
+  };
+
+  if (openId) {
+    return html`<${GlobalDsViewer} gdsId=${openId} onBack=${() => { setOpenId(null); reload(); }}/>`;
+  }
+  return html`
+    <div className="gds-landing">
+      ${err && html`<div className="shares-error-banner">${err}</div>`}
+      ${items && items.length === 0 && html`
+        <div className="shares-empty">
+          <div className="shares-empty-glyph"><${Icon.Palette}/></div>
+          <b>No global design systems yet</b>
+          <p>
+            Promote a project's design system to make it available to every
+            project: open the project's <b>DS view</b> (or select its design
+            system node) and hit <b>Promote to global</b>. Promoted systems can
+            be imported when creating a new project, then kept in sync with
+            push and pull.
+          </p>
+        </div>
+      `}
+      ${items && items.length > 0 && html`
+        <div className="gds-list">
+          ${items.map((g) => html`
+            <div key=${g.id} className="gds-row" onClick=${() => setOpenId(g.id)} role="button" tabIndex="0"
+              onKeyDown=${(e) => { if (e.key === "Enter") setOpenId(g.id); }}>
+              <span className="gds-row-glyph"><${Icon.Palette}/></span>
+              <span className="gds-row-label">${g.label || g.id}</span>
+              <code className="gds-row-id">${g.id}</code>
+              ${g.genre && html`<span className="gds-row-genre" title=${g.genre}>${g.genre}</span>`}
+              ${g.origin && g.origin.project && html`
+                <span className="gds-row-origin" title=${"Promoted from project " + g.origin.project}>
+                  from ${g.origin.project}</span>`}
+              ${g.gitRepo && html`<span className="gds-row-git" title="This design system is a git repository"><${Icon.Branch}/> git</span>`}
+              <span className="gds-row-meta">
+                ${g.version ? g.version.slice(0, 7) : ""}${g.updatedAt ? " · " + g.updatedAt.slice(0, 10) : ""}
+              </span>
+              <span className="gds-row-actions" onClick=${(e) => e.stopPropagation()}>
+                <button className="gds-row-btn" title="Rename" onClick=${() => rename(g)}><${Icon.Pen}/></button>
+                <button className="gds-row-btn gds-row-btn-danger" title="Delete (moves to trash)" onClick=${() => remove(g)}><${Icon.Trash}/></button>
+              </span>
+            </div>
+          `)}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+/* Read-only viewer for ONE global design system: live gallery iframe,
+   DESIGN.md (rendered / raw), styles.css, the sync history, and the per-DS
+   git panel (commit + GitHub push via ?gds= on the normal git endpoints).
+   Deliberately no editing features - the library is written only by
+   promote/push from projects. */
+function GlobalDsViewer({ gdsId, onBack }) {
+  const [tab, setTab] = useState("gallery");
+  const [detail, setDetail] = useState(null);
+  const [files, setFiles] = useState({});   // tab → fetched text
+  const [mdRaw, setMdRaw] = useState(false);
+  const reload = useCallback(() => {
+    fetch("/__global_ds?id=" + encodeURIComponent(gdsId))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j) setDetail(j); })
+      .catch(() => {});
+  }, [gdsId]);
+  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    const name = tab === "design" ? "DESIGN.md" : tab === "styles" ? "styles.css" : null;
+    if (!name || files[tab] != null) return;
+    fetch("/__global_ds/" + encodeURIComponent(gdsId) + "/" + name)
+      .then((r) => (r.ok ? r.text() : ""))
+      .then((t) => setFiles((f) => ({ ...f, [tab]: t })))
+      .catch(() => {});
+  }, [tab, gdsId, files]);
+
+  const galleryUrl = "/__global_ds/" + encodeURIComponent(gdsId) + "/gallery.html";
+  const syncLog = ((detail && detail.syncLog) || []).slice().reverse();
+  const TABS = [
+    ["gallery", "Gallery"],
+    ["design", "DESIGN.md"],
+    ["styles", "styles.css"],
+    ["history", "History"],
+    ["git", "Git"],
+  ];
+  return html`
+    <div className="gds-viewer">
+      <div className="gds-viewer-head">
+        <button className="gds-back" onClick=${onBack} title="Back to the library"><${Icon.Back}/> Library</button>
+        <span className="gds-viewer-title">${(detail && detail.label) || gdsId}</span>
+        <code className="gds-row-id">${gdsId}</code>
+        ${detail && detail.genre && html`<span className="gds-row-genre" title=${detail.genre}>${detail.genre}</span>`}
+        <span className="gds-row-meta">${detail && detail.version ? "v " + detail.version.slice(0, 7) : ""}</span>
+      </div>
+      <div className="gds-viewer-tabs" role="tablist">
+        ${TABS.map(([id, label]) => html`
+          <button key=${id} role="tab" aria-selected=${tab === id}
+            className=${"gds-viewer-tab" + (tab === id ? " is-active" : "")}
+            onClick=${() => setTab(id)}>${label}</button>
+        `)}
+        ${tab === "design" && html`
+          <button className=${"gds-viewer-tab gds-viewer-raw" + (mdRaw ? " is-active" : "")}
+            onClick=${() => setMdRaw(v => !v)} title="Toggle raw markdown">Raw</button>`}
+        ${tab === "gallery" && html`
+          <a className="ds-library-open gds-viewer-open" href=${galleryUrl} target="_blank" rel="noopener"
+            title="Open the gallery in a new tab">↗ Open in new tab</a>`}
+      </div>
+      <div className="gds-viewer-body">
+        ${tab === "gallery" && html`
+          <iframe className="gds-viewer-iframe" src=${galleryUrl}
+            title=${"Global design system · " + gdsId}
+            sandbox="allow-scripts allow-same-origin"/>
+        `}
+        ${tab === "design" && html`
+          <div className="gds-viewer-doc">
+            ${files.design == null ? html`<span className="gds-dim">Loading…</span>`
+              : mdRaw ? html`<pre className="gds-code">${files.design}</pre>`
+              : html`<div className="gds-md"><${Markdown} text=${files.design}/></div>`}
+          </div>
+        `}
+        ${tab === "styles" && html`
+          <div className="gds-viewer-doc">
+            ${files.styles == null ? html`<span className="gds-dim">Loading…</span>`
+              : html`<pre className="gds-code">${files.styles}</pre>`}
+          </div>
+        `}
+        ${tab === "history" && html`
+          <div className="gds-history">
+            ${syncLog.length === 0 && html`<span className="gds-dim">No sync events yet.</span>`}
+            ${syncLog.map((e, i) => {
+              const m = GDS_EVENT_META[e.type] || { label: e.type || "event", cls: "" };
+              return html`
+                <div key=${i} className="gds-history-row">
+                  <span className=${"gds-evt " + m.cls}>${m.label}</span>
+                  <span className="gds-history-proj">${e.project || ""}${e.dsId ? "/" + e.dsId : ""}</span>
+                  <span className="gds-history-vers">
+                    ${(e.fromVersion || "").slice(0, 7) || "·"} <span className="gds-dim">to</span> ${(e.toVersion || "").slice(0, 7) || "·"}
+                  </span>
+                  ${e.note && html`<span className="gds-history-note" title=${e.note}>${e.note}</span>`}
+                  <span className="gds-history-at">${(e.at || "").replace("T", " ")}</span>
+                </div>
+              `;
+            })}
+          </div>
+        `}
+        ${tab === "git" && html`
+          <div className="gds-viewer-git">
+            <${GitPanel} embedded=${true} urlSuffix=${"gds=" + encodeURIComponent(gdsId)}/>
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+}
+
 function ProjectsLanding({ info, projects, onReload }) {
   const [creating, setCreating] = useState(false);
   const [cloningGithub, setCloningGithub] = useState(false);  // "From GitHub" dialog
@@ -23737,6 +24234,16 @@ function ProjectsLanding({ info, projects, onReload }) {
       .then((j) => { if (j) setShareCount((j.shares || []).filter(s => !s.liveOnly).length); })
       .catch(() => {});
   }, []);
+  // Global design systems - count for the tab chip. null until the endpoint
+  // answers; single-project daemons 400 (no workspace library) and the tab
+  // hides entirely in that mode.
+  const [gdsCount, setGdsCount] = useState(null);
+  useEffect(() => {
+    if (!(info && info.workspaceDir)) return;
+    fetch("/__global_ds").then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j) setGdsCount((j.items || []).length); })
+      .catch(() => {});
+  }, [info && info.workspaceDir]);
 
   // Workspace SYSTEM AGENT threads, lifted to the landing root so the
   // shared Bot icon button in the title row and both System-tab section
@@ -24164,6 +24671,17 @@ function ProjectsLanding({ info, projects, onReload }) {
                 <span className="landing-tab-label">Shares</span>
                 ${shareCount != null && shareCount > 0 && html`<span className="landing-tab-count">${shareCount}</span>`}
               </button>
+              ${!!(info && info.workspaceDir) && html`
+                <button
+                  className=${"landing-tab" + (activeTab === "designsystems" ? " is-active" : "")}
+                  onClick=${() => setActiveTab("designsystems")}
+                  aria-pressed=${activeTab === "designsystems"}
+                  title="Global design systems - promoted from projects, importable into new ones, synced with push and pull."
+                >
+                  <span className="landing-tab-label">Design systems</span>
+                  ${gdsCount != null && gdsCount > 0 && html`<span className="landing-tab-count">${gdsCount}</span>`}
+                </button>
+              `}
               <button
                 className=${"landing-tab" + (activeTab === "system" ? " is-active" : "")}
                 onClick=${() => setActiveTab("system")}
@@ -24248,6 +24766,7 @@ function ProjectsLanding({ info, projects, onReload }) {
         <div className="landing-main-inner">
 
         ${activeTab === "shares" && html`<${SharesLanding} onCountChange=${setShareCount}/>`}
+        ${activeTab === "designsystems" && html`<${GlobalDsLanding} onCountChange=${setGdsCount}/>`}
         ${activeTab === "system" && html`<${SystemLanding} onSpawnSystemThread=${spawnSystemThread}/>`}
 
         ${activeTab === "projects" && creating && html`<${NewProjectWizard}
@@ -75249,6 +75768,11 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
             onClick=${(e) => { e.stopPropagation(); refresh(); }}
           >Refresh<//>
         </div>
+        ${status.exists && html`
+          <div className="workflow-node-ds-actions workflow-node-ds-sync-row">
+            <${GlobalDsSyncActions} dsId=${dsId} compact=${true}/>
+          </div>
+        `}
         ${upstreamDirection && upstreamDirection.length > 0 && html`
           <div className="workflow-node-ds-upstream" title="Direction nodes wired into this DS - their content is inlined into the Build prompt">
             <span className="workflow-node-ds-upstream-label">Wired:</span>
