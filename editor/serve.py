@@ -34,8 +34,6 @@ if _sys.version_info < (3, 9):
         "  old one - just make a 3.9+ interpreter available:\n"
         "    macOS   : system python3 is usually 3.9+; else `brew install python@3.12`\n"
         "              or an installer from https://www.python.org/downloads/\n"
-        "    Windows : https://www.python.org/downloads/ (tick 'Add python.exe to PATH')\n"
-        "    Linux   : `sudo apt install python3` / `sudo dnf install python3`\n"
         "\n"
         "  If `python3` still points at the old one, run the new one explicitly:\n"
         "    python3.12 editor/serve.py\n"

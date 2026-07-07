@@ -1,5 +1,12 @@
 <div align="center">
   <img src="docs/woven-mark.svg?v=2" alt="Woven" width="280" />
+  <p>
+    <img alt="requirement: macOS" src="https://img.shields.io/badge/requirement-macOS-000000?logo=apple&logoColor=white" />
+    <img alt="requirement: Python 3.9+" src="https://img.shields.io/badge/requirement-Python%203.9%2B-3776AB?logo=python&logoColor=white" />
+    <img alt="requirement: npm" src="https://img.shields.io/badge/requirement-npm-CB3837?logo=npm&logoColor=white" />
+    <img alt="requirement: Homebrew" src="https://img.shields.io/badge/requirement-Homebrew-FBB040?logo=homebrew&logoColor=white" />
+    <img alt="requirement: Claude · Codex · opencode" src="https://img.shields.io/badge/requirement-Claude%20%C2%B7%20Codex%20%C2%B7%20opencode-8A63D2" />
+  </p>
 </div>
 
 # Woven
@@ -25,7 +32,7 @@ This README walks through your first run end-to-end, from install to the Ghibli-
 5. [Step 1 · connect a model](#5-step-1--connect-a-model)
 6. [Step 2 · add asset-provider keys (image · video · SVG)](#6-step-2--add-asset-provider-keys-image--video--svg)
 7. [Step 3 · review orchestrators](#7-step-3--review-orchestrators)
-8. [Step 4 · install local skills](#8-step-4--install-local-skills)
+8. [Step 5 · finish onboarding](#8-step-5--finish-onboarding)
 9. [Create your first project](#9-create-your-first-project)
 10. [Open the workflow and send your first prompt](#10-open-the-workflow-and-send-your-first-prompt)
 11. [The final prototype](#11-the-final-prototype)
@@ -34,28 +41,17 @@ This README walks through your first run end-to-end, from install to the Ghibli-
 
 ## 1. What you need before starting
 
-There are **three things to launch the editor**, plus **four local skills** the first-run wizard installs for you (these gate project creation, see [Step 4](#8-step-4--install-local-skills)). The three launch requirements:
+Here's what you need before launching the editor. On first run the wizard also installs a few local tools for you automatically (see [Step 4](#8-step-5--finish-onboarding)), so there's nothing to install by hand there.
 
 | Requirement      | Minimum                                              | Why                                                                          | How to check                          |
 | ---------------- | --------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
+| **macOS**        | a recent version                                     | Woven is macOS-only. The daemon, launch scripts, and setup tooling assume a Mac. | `sw_vers`                             |
 | **Python**       | **3.9 or newer**                                    | The editor daemon (`serve.py` + sibling modules) is pure Python, stdlib only. 3.9 is the floor (it matches the system `python3` on a clean macOS); 3.11+ is fine and what most dev machines already have. | `python3 --version`                   |
-| **A modern browser** | Chrome / Edge / Safari / Firefox, last ~2 years | Renders the editor UI. The daemon serves it; the browser is just the front-end. | (no command, just open it)            |
 | **A model connection** | **one of:** Claude Code CLI · Codex CLI · opencode CLI · an Anthropic / OpenAI API key | At least one way to reach a text model so the agent can run workflows. **A CLI is the required path for agentic workflows** (a pasted API key only powers single-shot "simple prompt" nodes). You'll wire this up in [Step 1](#5-step-1--connect-a-model). | `claude --version` / `codex --version` / `opencode --version` |
+| **Homebrew**     | any recent ([brew.sh](https://brew.sh))             | Package manager used to install a model CLI and other tools.                 | `brew --version`                      |
+| **Node.js**      | current LTS ([nodejs.org](https://nodejs.org))      | Runs the headless shader render-check the daemon installs on first launch.    | `node --version`                      |
 
-The **editor itself** has no build step; it ships as static HTML + pure-Python files (stdlib only). Of the four required local skills below, three install with **no package manager at all** (a pinned, checksum-verified direct download or a `pip --user` into your user-site). Only **shader-verify** needs **[Node.js](https://nodejs.org)** on your machine - so that is the one extra tool to have ready for a complete setup. **Homebrew is not required** (it's used only as a fallback where a direct build doesn't exist, and by the optional voice-transcription tool in User Testing mode).
-
-### Local skills the wizard installs (Step 4)
-
-On first run the onboarding wizard installs four local skills the asset / sharing / shader pipelines depend on. **All four are required gates**: the **+ New project** button stays disabled until every one is present. The wizard installs them **automatically** when its Step 4 opens - each row shows live install progress; a skill whose prerequisite is missing (only shader-verify has one - Node.js) waits with a hint and a manual Install button instead.
-
-| Skill            | Installs via                                   | Prereq    | Covers                                                                 |
-| ---------------- | ---------------------------------------------- | --------- | --------------------------------------------------------------------- |
-| **rembg**        | pip (`pip3 install --user rembg`)              | Python    | background removal in the `raster-foreground` pipeline; ~170 MB model on first use |
-| **cloudflared**  | direct download into `editor/tools/bin`        | none      | Share-mode quick tunnels (publish a prototype for review / multiplayer) |
-| **glslang**      | direct download into `editor/tools/bin`        | none      | GLSL compile-check for the post-run shader lint                       |
-| **shader-verify**| npm + a Chromium download                      | Node.js   | headless render-check (shader compiles AND isn't blank); ~150 MB Chromium |
-
-The direct-download skills (cloudflared, glslang) pull the official pinned release, verify its SHA-256, and drop the binary under `editor/tools/bin/` - no Homebrew, no `sudo`, works the same on macOS, Linux, and Windows.
+The **editor itself** has no build step; it ships as static HTML + pure-Python files (stdlib only). [Homebrew](https://brew.sh) and [Node.js](https://nodejs.org) are used by tools the daemon installs for you on first launch (background removal and a headless shader render-check), so have both ready for a complete setup.
 
 ### If your Python is too old (below 3.9)
 
@@ -65,11 +61,7 @@ Check first:
 python3 --version
 ```
 
-If it prints **3.8 or lower** (or `python3` isn't found), install a newer one. You don't have to remove the old Python; just make a 3.9+ interpreter available:
-
-- **macOS** - the system `python3` is usually 3.9 already. If yours is older, install via [Homebrew](https://brew.sh): `brew install python@3.12`, or grab the installer from [python.org/downloads](https://www.python.org/downloads/).
-- **Windows** - install from [python.org/downloads](https://www.python.org/downloads/) (tick **"Add python.exe to PATH"** in the installer), or `winget install Python.Python.3.12`.
-- **Linux** - use your package manager (`sudo apt install python3` / `sudo dnf install python3`), or [pyenv](https://github.com/pyenv/pyenv) if your distro's version is stuck below 3.9.
+If it prints **3.8 or lower** (or `python3` isn't found), install a newer one. You don't have to remove the old Python; just make a 3.9+ interpreter available. The system `python3` on a clean macOS is usually 3.9 already. If yours is older, install via [Homebrew](https://brew.sh): `brew install python@3.12`, or grab the installer from [python.org/downloads](https://www.python.org/downloads/).
 
 Then launch the daemon with the newer interpreter explicitly if `python3` still points at the old one - e.g. `python3.12 editor/serve.py`. Everything is stdlib only, so there is nothing else to install for the daemon itself.
 
@@ -77,7 +69,7 @@ Then launch the daemon with the newer interpreter explicitly if `python3` still 
 
 ## 2. Install
 
-### Step 1 · Get the editor (download the zip - do NOT clone)
+### Step 1 · Get the editor (download the zip)
 
 **Download the latest release zip** from the [Releases page](https://github.com/heysami/Woven/releases/latest) and unpack it wherever you like:
 
@@ -87,9 +79,7 @@ unzip Woven-*.zip
 cd Woven-*        # the unpacked folder
 ```
 
-> **Don't `git clone` to install.** The repository's full history is over 1 GB, so a clone is slow and huge. The release zip is a flat snapshot of the code with none of that weight - it's the right way to *install*. Clone only if you intend to *contribute* to Woven itself (`git clone https://github.com/heysami/Woven.git`).
-
-### Step 2 · (Optional) install one of the supported model CLIs
+### Step 2 · install one of the supported model CLIs
 
 Pick **ONE** - you only need one connection path to a model. A CLI is the recommended path (it powers agentic workflows; a pasted API key alone runs only single-shot "simple prompt" nodes).
 
@@ -98,8 +88,8 @@ Pick **ONE** - you only need one connection path to a model. A CLI is the recomm
 curl -fsSL https://claude.ai/install.sh | bash
 claude login
 
-# or Codex:
-npm install -g @openai/codex
+# or Codex - standalone installer, no npm required:
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
 codex login
 
 # or opencode (multi-provider):
@@ -115,7 +105,7 @@ If you'd rather paste an API key instead of installing a CLI, skip this step; yo
 
 ## 3. Start the editor
 
-From the repo root:
+Navigate into the folder you unzipped, then:
 
 ```bash
 # macOS: double-click in Finder
@@ -143,7 +133,7 @@ The card is a single wizard with five numbered pips across the top:
 
 **1 Agent model · 2 Asset keys · 3 Orchestrators · 4 Local skills · 5 Done**
 
-Click any pip to jump to that step, or use **← Back / Next →** at the bottom. Only **Step 1 (a CLI)** and **Step 4 (the four local skills)** are required gates; Steps 2 and 3 are optional and never block. The next five sections walk through each step.
+Click any pip to jump to that step, or use **← Back / Next →** at the bottom. **Step 1 (a CLI)** is the required gate for agentic workflows; Steps 2 and 3 are optional and never block, and Step 4 auto-installs a few local tools for you. The sections below walk through the steps that need your input.
 
 ---
 
@@ -210,22 +200,9 @@ Rows whose pipeline depends on a key you haven't set in Step 2 (photography and 
 
 ---
 
-## 8. Step 4 · install local skills
+## 8. Step 5 · finish onboarding
 
-The wizard's **Step 4 · Local skills** lists on-demand tools the daemon installs for you. **Four are required gates** (each shows a red **REQUIRED** badge until present) and the **+ New project** button stays disabled until all four are installed:
-
-| Skill            | Auto-install runs                     | Needs    | What breaks without it                                          |
-| ---------------- | ------------------------------------- | -------- | -------------------------------------------------------------- |
-| **rembg**        | `pip3 install --user rembg`           | Python   | foreground asset generation falls over at the cutout stage (~170 MB model first run) |
-| **cloudflared**  | direct download → `editor/tools/bin`  | none     | Share mode can't open a public review tunnel                   |
-| **glslang**      | direct download → `editor/tools/bin`  | none     | the shader lint can't catch real GLSL compile errors          |
-| **shader-verify**| npm install + Chromium download       | Node.js  | no headless render-check for compiles-but-blank shaders (~150 MB Chromium) |
-
-![Onboarding · Step 4 · Local skills](docs/screenshots/03b-onboarding-local-skills.png)
-
-Opening Step 4 **starts the installs automatically** - each row shows a spinner and flips green as it lands (`shader-verify` is the slowest, it pulls a Chromium; give it a minute or three). **cloudflared** and **glslang** need no package manager: the daemon downloads the official pinned release, verifies its SHA-256, and drops the binary under `editor/tools/bin/` (Homebrew is used only as a fallback where no direct build exists for your platform). Only **shader-verify** has a prerequisite - **[Node.js](https://nodejs.org)** on your machine; if it's missing that one row skips auto-install and shows a hint + manual **Install** button - install Node, then hit **Re-check**.
-
-A fifth skill, **whisper-cpp** (offline transcription for User Testing), is **optional**, install it later from the gear icon → Settings if you use that feature.
+**Step 4 · Local skills** installs a handful of on-demand tools (background removal, share tunnels, shader lint + render-check) automatically in the background - each row shows live progress and flips green as it lands. You don't need to do anything there beyond letting it finish.
 
 Once the required steps are satisfied, **Step 5 · Done** confirms you're set (**"All set!"** when a CLI is connected, or **"Continue without agents"** if you finished on a key alone). It also carries the optional **User testing mode** toggle. Click **Got it** to dismiss the card, and the **+ New project** button lights up.
 
@@ -235,7 +212,7 @@ Once the required steps are satisfied, **Step 5 · Done** confirms you're set (*
 
 ## 9. Create your first project
 
-Once a model is configured and the four required local skills are installed, the top-right warning pill disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up. The header carries tabs for **Projects** (your gallery), **Shares**, and **Capabilities** (a bundled reference for the orchestrators, skills, subagents, and node kinds the editor ships with), reachable from anywhere on the landing.
+Once a model is configured, the top-right warning pill disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up. The header carries tabs for **Projects** (your gallery), **Shares**, and **Capabilities** (a bundled reference for the orchestrators, skills, subagents, and node kinds the editor ships with), reachable from anywhere on the landing.
 
 ![Projects landing · model configured, + New project enabled](docs/screenshots/04-projects-landing.png)
 
@@ -296,9 +273,10 @@ The fourth tab, **Feed**, is the playable loop: drag a food from your pantry ont
 
 | Symptom                                              | Fix                                                                                                    |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Trouble installing (a tool missing or out of date)   | Check the versions first: `python3 --version` · `node --version` · `brew --version`. Update all of them with `brew update && brew upgrade python node` (refreshes Homebrew, then Python + Node). If one is missing entirely, install it with `brew install python node`. |
 | Top-right pill stays red after pasting a key         | Click the **gear icon → Test** on that provider row in Settings to verify the key.                     |
-| **Claude CLI missing** chip is amber                 | `which claude`. If empty, run `npm install -g @anthropic-ai/claude-code` then `claude login`. (Shows **Codex CLI missing** or **opencode CLI missing** if that's your preferred CLI, install via `npm install -g @openai/codex` / `brew install sst/tap/opencode` then its login command.) |
-| **Daemon down** chip is red                          | The Python server crashed or was stopped. Re-run `python3 editor/serve.py` from the repo root.         |
+| **Claude CLI missing** chip is amber                 | `which claude`. If empty, run `curl -fsSL https://claude.ai/install.sh \| bash` then `claude login`. (Shows **Codex CLI missing** or **opencode CLI missing** if that's your preferred CLI, install via `curl -fsSL https://chatgpt.com/codex/install.sh \| sh` / `curl -fsSL https://opencode.ai/install \| bash` then its login command.) |
+| **Daemon down** chip is red                          | The Python server crashed or was stopped. Re-run `python3 editor/serve.py` from the unpacked folder.   |
 | Port 5731 already in use                             | Set a different port: `EDITOR_PORT=5740 python3 editor/serve.py`.                                      |
 | Image / video / SVG nodes fail with "no API key"     | Open **Settings (gear)** and add the relevant provider key (see [Step 2](#6-step-2--add-asset-provider-keys-image--video--svg)). |
 
@@ -306,7 +284,7 @@ The fourth tab, **Feed**, is the playable loop: drag a food from your pantry ont
 
 ## Where things live on disk
 
-In multi-project mode the workspace dir (`TH_WORKSPACE_DIR`) is **separate from the cloned repo** and holds only the daemon-managed data below. (If you run from the repo root with no workspace dir, this same `projects/` tree lives alongside the repo's own `editor/`, `PROTOTYPE.md`, `design-library/`, etc.)
+In multi-project mode the workspace dir (`TH_WORKSPACE_DIR`) is **separate from the editor folder** and holds only the daemon-managed data below. (If you run from the unpacked folder with no workspace dir, this same `projects/` tree lives alongside the editor's own `editor/`, `PROTOTYPE.md`, `design-library/`, etc.)
 
 ```
 <workspace-dir>/
