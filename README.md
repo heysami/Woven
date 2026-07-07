@@ -29,11 +29,11 @@ This README walks through your first run end-to-end, from install to the Ghibli-
 1. [What you need before starting](#1-what-you-need-before-starting)
 2. [Install](#2-install)
 3. [Start the editor](#3-start-the-editor)
-4. [Step 1 · connect a model](#4-step-1--connect-a-model)
-5. [Step 2 · add asset-provider keys (image · video · SVG)](#5-step-2--add-asset-provider-keys-image--video--svg)
-6. [Step 3 · review orchestrators](#6-step-3--review-orchestrators)
-7. [Step 4 · local skills](#7-step-4--local-skills)
-8. [Step 5 · finish onboarding](#8-step-5--finish-onboarding)
+4. [Connect a model](#4-connect-a-model)
+5. [Add asset-provider keys (image · video · SVG)](#5-add-asset-provider-keys-image--video--svg)
+6. [Review orchestrators](#6-review-orchestrators)
+7. [Local skills](#7-local-skills)
+8. [Finish onboarding](#8-finish-onboarding)
 9. [Create your first project](#9-create-your-first-project)
 10. [Open the workflow and send your first prompt](#10-open-the-workflow-and-send-your-first-prompt)
 11. [The final prototype](#11-the-final-prototype)
@@ -42,13 +42,13 @@ This README walks through your first run end-to-end, from install to the Ghibli-
 
 ## 1. What you need before starting
 
-Here's what you need before launching the editor. On first run the wizard also installs a few local tools for you automatically (see [Step 4](#7-step-4--local-skills)), so there's nothing to install by hand there.
+Here's what you need before launching the editor. On first run the wizard also installs a few local tools for you automatically (see [Local skills](#7-local-skills)), so there's nothing to install by hand there.
 
 | Requirement      | Minimum                                              | Why                                                                          | How to check                          |
 | ---------------- | --------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
 | **macOS**        | a recent version                                     | Woven is macOS-only. The daemon, launch scripts, and setup tooling assume a Mac. | `sw_vers`                             |
 | **Python**       | **3.9 or newer**                                    | The editor daemon (`serve.py` + sibling modules) is pure Python, stdlib only. 3.9 is the floor (it matches the system `python3` on a clean macOS); 3.11+ is fine and what most dev machines already have. | `python3 --version`                   |
-| **A model connection** | **one of:** Claude Code CLI · Codex CLI · opencode CLI · an Anthropic / OpenAI API key | At least one way to reach a text model so the agent can run workflows. **A CLI is the required path for agentic workflows** (a pasted API key only powers single-shot "simple prompt" nodes). You'll wire this up in [Step 1](#4-step-1--connect-a-model). | `claude --version` / `codex --version` / `opencode --version` |
+| **A model connection** | **one of:** Claude Code CLI · Codex CLI · opencode CLI · an Anthropic / OpenAI API key | At least one way to reach a text model so the agent can run workflows. **A CLI is the required path for agentic workflows** (a pasted API key only powers single-shot "simple prompt" nodes). You'll wire this up when you [connect a model](#4-connect-a-model). | `claude --version` / `codex --version` / `opencode --version` |
 | **Homebrew**     | any recent ([brew.sh](https://brew.sh))             | Package manager used to install a model CLI and other tools.                 | `brew --version`                      |
 | **Node.js**      | **18 or newer** ([nodejs.org](https://nodejs.org)) | Runs the headless shader render-check the daemon installs on first launch (Playwright needs Node 18+; npm ships with Node). | `node --version`                      |
 
@@ -84,13 +84,13 @@ TH_WORKSPACE_DIR="$HOME/my-prototypes" python3 editor/serve.py
 
 ---
 
-## 4. Step 1 · connect a model
+## 4. Connect a model
 
-On first launch the **Projects** page shows a setup card that walks you through connecting a model, adding asset keys, and reviewing orchestrators. Until a model is connected the top-right pill reads **No model configured** and the **+ New project** button stays disabled. It opens on **Step 1**:
+On first launch the **Projects** page shows a setup card that walks you through connecting a model, adding asset keys, and reviewing orchestrators. Until a model is connected the top-right pill reads **No model configured** and the **+ New project** button stays disabled. It opens on connecting a model:
 
-![Onboarding · Step 1 · agent model](docs/screenshots/01-onboarding-step1.png)
+![Onboarding · connect a model](docs/screenshots/01-onboarding-step1.png)
 
-Step 1 wires up the model the agent runs on. There are two paths, and they are **not** equivalent:
+This wires up the model the agent runs on. There are two paths, and they are **not** equivalent:
 
 ### 4a · Install a CLI (required for agents)
 
@@ -114,7 +114,7 @@ opencode is a multi-provider harness: it manages its own auth and default model,
 
 In the app you can click **Install a CLI** to open the **Install a model CLI** popup (it lists the same commands); once you've run them, click **I've installed it · refresh** (or **I've already set one up · refresh**) and the status dot flips to green.
 
-![Onboarding · Step 1 · install-a-CLI popup](docs/screenshots/02-onboarding-cli-picker.png)
+![Onboarding · install-a-CLI popup](docs/screenshots/02-onboarding-cli-picker.png)
 
 ### 4b · Paste an API key (simple prompts only)
 
@@ -124,11 +124,11 @@ A key on its own runs **single-shot "simple prompt" nodes** only - it does **not
 
 ---
 
-## 5. Step 2 · add asset-provider keys (image · video · SVG)
+## 5. Add asset-provider keys (image · video · SVG)
 
-Step 1 only covers the **agent's text model**. To unlock image generation, video, vector SVG, audio, etc., add the relevant provider keys in **Step 2**:
+Connecting a model only covers the **agent's text model**. To unlock image generation, video, vector SVG, audio, etc., add the relevant provider keys here:
 
-![Onboarding · Step 2 · asset providers](docs/screenshots/03-onboarding-asset-providers.png)
+![Onboarding · asset providers](docs/screenshots/03-onboarding-asset-providers.png)
 
 Each row shows what the provider covers and lets you paste a key inline, no need to leave the page:
 
@@ -146,9 +146,9 @@ These are **optional**. Projects can still be created without them; you just won
 
 ---
 
-## 6. Step 3 · review orchestrators
+## 6. Review orchestrators
 
-**Step 3** is an optional review step. Orchestrators dispatch whole families of subagents for richer artefacts. The editor ships **17** of them, auto-discovered from their manifests, so the list stays current as new ones land:
+This is an optional review step. Orchestrators dispatch whole families of subagents for richer artefacts. The editor ships **17** of them, auto-discovered from their manifests, so the list stays current as new ones land:
 
 - **Art direction & assets** - Art Director, Visual, Photography, Illustration, Illustrative shaders, Creative visual, Material
 - **Immersive & interactive** - Simulation, Narrative experience, Game experience, Interactive media, Motion Studio, Scrapbook experience
@@ -157,27 +157,27 @@ These are **optional**. Projects can still be created without them; you just won
 
 Each row has a toggle, so you can turn off any family you don't want auto-dispatched - you can still invoke them by name later.
 
-![Onboarding · Step 3 · orchestrators](docs/screenshots/03c-onboarding-orchestrators.png)
+![Onboarding · orchestrators](docs/screenshots/03c-onboarding-orchestrators.png)
 
-Rows whose pipeline depends on a key you haven't set in Step 2 (photography and illustration need an image model; audio-bearing families need an audio key) are shown as **limited** with a short note about what's missing. Nothing here blocks project creation; if in doubt, leave the defaults and click **Next →**.
+Rows whose pipeline depends on a key you haven't added under asset keys (photography and illustration need an image model; audio-bearing families need an audio key) are shown as **limited** with a short note about what's missing. Nothing here blocks project creation; if in doubt, leave the defaults and click **Next →**.
 
 ---
 
-## 7. Step 4 · local skills
+## 7. Local skills
 
-**Step 4 · Local skills** installs a handful of on-demand tools the asset / sharing / shader pipelines depend on - background removal (rembg), share tunnels (cloudflared), and the shader lint + headless render-check (glslang + shader-verify). They install **automatically** when the step opens: each row shows live progress and flips green as it lands (the render-check pulls a Chromium, so it's the slowest - give it a minute or three).
+The **Local skills** step installs a handful of on-demand tools the asset / sharing / shader pipelines depend on - background removal (rembg), share tunnels (cloudflared), and the shader lint + headless render-check (glslang + shader-verify). They install **automatically** when the step opens: each row shows live progress and flips green as it lands (the render-check pulls a Chromium, so it's the slowest - give it a minute or three).
 
 You don't have to run anything by hand, but do glance over this step before moving on: if a row stalls or shows an error (for example shader-verify when Node.js is missing), it surfaces a hint and a manual **Install** button - fix the prerequisite, hit **Re-check**, and wait for green.
 
-![Onboarding · Step 4 · Local skills](docs/screenshots/03b-onboarding-local-skills.png)
+![Onboarding · local skills](docs/screenshots/03b-onboarding-local-skills.png)
 
 ---
 
-## 8. Step 5 · finish onboarding
+## 8. Finish onboarding
 
-Once the required steps are satisfied, **Step 5 · Done** confirms you're set (**"All set!"** when a CLI is connected, or **"Continue without agents"** if you finished on a key alone). It also carries the optional **User testing mode** toggle. Click **Got it** to dismiss the card, and the **+ New project** button lights up.
+Once the required steps are satisfied, the **Done** step confirms you're set (**"All set!"** when a CLI is connected, or **"Continue without agents"** if you finished on a key alone). It also carries the optional **User testing mode** toggle. Click **Got it** to dismiss the card, and the **+ New project** button lights up.
 
-![Onboarding · Step 5 · Done](docs/screenshots/03d-onboarding-done.png)
+![Onboarding · done](docs/screenshots/03d-onboarding-done.png)
 
 ---
 
@@ -249,7 +249,7 @@ The fourth tab, **Feed**, is the playable loop: drag a food from your pantry ont
 | **Claude CLI missing** chip is amber                 | `which claude`. If empty, run `curl -fsSL https://claude.ai/install.sh \| bash` then `claude login`. (Shows **Codex CLI missing** or **opencode CLI missing** if that's your preferred CLI, install via `curl -fsSL https://chatgpt.com/codex/install.sh \| sh` / `curl -fsSL https://opencode.ai/install \| bash` then its login command.) |
 | **Daemon down** chip is red                          | The Python server crashed or was stopped. Re-run `python3 editor/serve.py` from the unpacked folder.   |
 | Port 5731 already in use                             | Set a different port: `EDITOR_PORT=5740 python3 editor/serve.py`.                                      |
-| Image / video / SVG nodes fail with "no API key"     | Open **Settings (gear)** and add the relevant provider key (see [Step 2](#5-step-2--add-asset-provider-keys-image--video--svg)). |
+| Image / video / SVG nodes fail with "no API key"     | Open **Settings (gear)** and add the relevant provider key (see [Add asset-provider keys](#5-add-asset-provider-keys-image--video--svg)). |
 
 ---
 
