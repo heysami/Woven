@@ -29,7 +29,7 @@ This README walks through your first run end-to-end, from install to the Ghibli-
 1. [What you need before starting](#1-what-you-need-before-starting)
 2. [Install](#2-install)
 3. [Start the editor](#3-start-the-editor)
-4. [First-run onboarding: the 5-step setup wizard](#4-first-run-onboarding-the-5-step-setup-wizard)
+4. [Install a supported model CLI](#4-install-a-supported-model-cli)
 5. [Step 1 · connect a model](#5-step-1--connect-a-model)
 6. [Step 2 · add asset-provider keys (image · video · SVG)](#6-step-2--add-asset-provider-keys-image--video--svg)
 7. [Step 3 · review orchestrators](#7-step-3--review-orchestrators)
@@ -70,11 +70,33 @@ Then launch the daemon with the newer interpreter explicitly if `python3` still 
 
 ## 2. Install
 
-### Step 1 · Get the editor
-
 **[Download the latest release](https://github.com/heysami/Woven/releases/latest)** and unpack it wherever you like.
 
-### Step 2 · install one of the supported model CLIs
+---
+
+## 3. Start the editor
+
+Navigate into the folder you unzipped, then:
+
+```bash
+# macOS: double-click in Finder
+open editor/serve.command
+
+# or from a terminal
+python3 editor/serve.py
+```
+
+The daemon prints the URL it's listening on (default **http://localhost:5731/editor/**) and a Finder window / browser tab opens automatically.
+
+To run with a separate workspace folder (multi-project mode), set `TH_WORKSPACE_DIR`:
+
+```bash
+TH_WORKSPACE_DIR="$HOME/my-prototypes" python3 editor/serve.py
+```
+
+---
+
+## 4. Install a supported model CLI
 
 Pick **ONE** - you only need one connection path to a model. A CLI is the recommended path (it powers agentic workflows; a pasted API key alone runs only single-shot "simple prompt" nodes).
 
@@ -94,45 +116,13 @@ opencode auth login                                # then `opencode models` to p
 
 opencode is a multi-provider harness: it manages its own auth and default model, so after `opencode auth login` you connect any provider it supports (Anthropic, OpenAI, etc.) and Woven shells out to it for text-output runs.
 
-If you'd rather paste an API key instead of installing a CLI, skip this step; you'll paste the key in the onboarding UI in [Step 1](#5-step-1--connect-a-model). Note that a key alone runs **simple prompt** nodes only - agentic workflows (node runs, chat, orchestrators) still need a CLI.
-
----
-
-## 3. Start the editor
-
-Navigate into the folder you unzipped, then:
-
-```bash
-# macOS: double-click in Finder
-open editor/serve.command
-
-# any platform: from a terminal
-python3 editor/serve.py
-```
-
-The daemon prints the URL it's listening on (default **http://localhost:5731/editor/**) and a Finder window / browser tab opens automatically.
-
-To run with a separate workspace folder (multi-project mode), set `TH_WORKSPACE_DIR`:
-
-```bash
-TH_WORKSPACE_DIR="$HOME/my-prototypes" python3 editor/serve.py
-```
-
----
-
-## 4. First-run onboarding: the 5-step setup wizard
-
-On the very first launch, the **Projects** page shows a setup card. The top-right pill reads **No model configured** in red - your cue that nothing will run until you wire up a connection. While anything required is still missing, the **+ New project** button stays disabled.
-
-The card is a single wizard with five numbered pips across the top:
-
-**1 Agent model · 2 Asset keys · 3 Orchestrators · 4 Local skills · 5 Done**
-
-Click any pip to jump to that step, or use **← Back / Next →** at the bottom. **Step 1 (a CLI)** is the required gate for agentic workflows; Steps 2 and 3 are optional and never block, and Step 4 auto-installs a few local tools for you. The sections below walk through the steps that need your input.
+You'll link this to Woven in the app on first launch (see [Step 1 · connect a model](#5-step-1--connect-a-model)). If you'd rather paste an API key than install a CLI, skip this and paste the key in that same step - but a key alone runs **simple prompt** nodes only; agentic workflows (node runs, chat, orchestrators) still need a CLI.
 
 ---
 
 ## 5. Step 1 · connect a model
+
+On first launch the **Projects** page shows a setup card that walks you through connecting a model, adding asset keys, and reviewing orchestrators. Until a model is connected the top-right pill reads **No model configured** and the **+ New project** button stays disabled. It opens on **Step 1**:
 
 ![Onboarding · Step 1 · agent model](docs/screenshots/01-onboarding-step1.png)
 
