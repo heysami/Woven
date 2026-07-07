@@ -2654,7 +2654,7 @@ const DS_SECTIONS = [
 // Categorization is by `p.category` if declared, else by name pattern.
 // Names are case-insensitive; the first match wins.
 const PRIMITIVE_CATEGORY_PATTERNS = [
-  { cat: "overlay", re: /^(modal|sheet|popover|overlay|drawer|dialog|toast|tooltip|menu)/i },
+  { cat: "overlay", re: /^(modal|sheet|popover|overlay|drawer|dialog|toast|tooltip|menu|slideout|slide-out|flyout)/i },
   { cat: "shell",   re: /^(shell|chrome|appshell|sidebar|topbar|navbar|header|footer|rail)/i },
   { cat: "page",    re: /^(page|screen|view|layout|sample)/i },
 ];
@@ -2799,6 +2799,9 @@ const OVERLAY_CONTAINMENT_CSS = `
   [class*="scrim" i],
   [class*="overlay" i],
   [class*="modal-bg" i],
+  [class*="slideout" i],
+  [class*="slide-out" i],
+  [class*="flyout" i],
   [class~="modal"],
   [class~="sheet"],
   [class~="dialog"],

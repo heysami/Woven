@@ -19178,6 +19178,13 @@ a.ds-badge:hover, button.ds-badge:hover {
   padding: 20px;
   background: var(--surface-2);
   display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  /* Backstop for EVERY bucket, not just overlays: a live-extracted primitive
+     whose source CSS says position:fixed (e.g. a "Slideout" panel at 90vw,
+     z-index 1000) would otherwise anchor to the viewport and blank out the
+     whole editor. `contain: paint` makes this card the containing block for
+     fixed descendants - including ones inside the preview's shadow root. */
+  position: relative;
+  contain: paint;
 }
 /* Wrapper around each variant - hosts the live/stale badge */
 .primitive-variant { position: relative; display: inline-flex; align-items: center; gap: 6px; }
