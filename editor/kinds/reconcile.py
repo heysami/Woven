@@ -26,6 +26,19 @@ from .registry import KINDS, kind_contract
 from . import versioning as _vsn
 
 
+def _write_json_atomic(path, data):
+    """tmp + os.replace so no reader ever sees a truncated workflow.json.
+    A plain open("w") truncates first and streams the dump; the /__workflow
+    GET handler reading mid-write parses garbage and QUARANTINES the file
+    (heal moves it to .broken-N.bak and resets to an empty graph) - the
+    writer then finishes into the renamed inode. Mirrors serve.py's helper;
+    local copy because kinds/ must not import serve."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, path)
+
+
 # ── Drift types ─────────────────────────────────────────────────────────
 ORPHAN_VARIANT     = "ORPHAN_VARIANT"
 LYING_STATUS       = "LYING_STATUS"
@@ -1105,8 +1118,7 @@ def apply_auto_heals(project_root):
 
     if mutated:
         try:
-            with open(wf_path, "w", encoding="utf-8") as f:
-                json.dump(workflow, f, indent=2)
+            _write_json_atomic(wf_path, workflow)
         except Exception as e:
             out.append({"drift": "WRITE_BACK_FAILED", "applied": False, "error": str(e)})
 
@@ -1152,8 +1164,7 @@ def apply_versioning_migration(project_root):
             continue
     if actions:
         try:
-            with open(wf_path, "w", encoding="utf-8") as f:
-                json.dump(workflow, f, indent=2)
+            _write_json_atomic(wf_path, workflow)
         except Exception:
             return []
     return actions

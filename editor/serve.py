@@ -6778,8 +6778,7 @@ def _file_watcher_loop():
                                         snaps += flush_pending_scope_snapshots(
                                             project_root, wf_for_vsn)
                                         if snaps:
-                                            with open(wf_path, "w", encoding="utf-8") as f:
-                                                json.dump(wf_for_vsn, f, indent=2)
+                                            _write_json_atomic(wf_path, wf_for_vsn)
                                             print(f"[asset-versioning] project={project_id} "
                                                   f"snapshots={len(snaps)}", flush=True)
                                 except Exception as _vsn_err:
@@ -6813,8 +6812,7 @@ def _file_watcher_loop():
                                 deferred = flush_pending_scope_snapshots(
                                     project_root, wf_for_flush)
                                 if deferred:
-                                    with open(wf_path, "w", encoding="utf-8") as f:
-                                        json.dump(wf_for_flush, f, indent=2)
+                                    _write_json_atomic(wf_path, wf_for_flush)
                                     print(f"[asset-versioning] project={project_id} "
                                           f"deferred-flush={len(deferred)}", flush=True)
                                     to_emit_workflow = True
@@ -8956,8 +8954,7 @@ def _fire_node_completion_hook(state, *, exit_code):
                            label=f"Node finish: {target.get('title') or wf_node_id} → {target['runStatus']}",
                            source="workflow",
                            extra={"nodeId": wf_node_id, "runId": state.run_id, "exitCode": exit_code}):
-         with open(wf_path, "w", encoding="utf-8") as f:
-             json.dump(wf, f, indent=2)
+         _write_json_atomic(wf_path, wf)
     # notify SSE subscribers that workflow.json changed (outside the lock)
     _broadcast_workflow_change(state.project_id)
     # daemon-side build-chain. If this node carried a chain and exited
@@ -13253,8 +13250,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                                    label=f"Run node: {node.get('title') or node_id}",
                                    source="workflow",
                                    extra={"nodeId": node_id, "kind": kind}):
-                with open(wf_path, "w", encoding="utf-8") as f:
-                    json.dump(wf, f, indent=2)
+                _write_json_atomic(wf_path, wf)
         except Exception as e:
             return self._reply(500, {"error": f"failed to persist workflow.json: {e}"})
         # notify SSE subscribers
@@ -13723,8 +13719,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                                        label=f"Node status: {node.get('title') or node_id} → {changed.get('runStatus') or 'updated'}",
                                        source="workflow",
                                        extra={"nodeId": node_id, "changed": list(changed.keys())}):
-                    with open(wf_path, "w", encoding="utf-8") as f:
-                        json.dump(wf, f, indent=2)
+                    _write_json_atomic(wf_path, wf)
             except Exception as e:
                 return self._reply(500, {"error": f"failed to persist workflow.json: {e}"})
             # notify SSE subscribers
@@ -14007,8 +14002,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                                      label=f"Commit: {node.get('title') or node_id} → {run_status}",
                                      source="workflow-commit",
                                      extra={"nodeId": node_id, "requestId": getattr(self, "request_id", None)}):
-                with open(wf_path, "w", encoding="utf-8") as f:
-                  json.dump(wf, f, indent=2)
+                _write_json_atomic(wf_path, wf)
             except Exception as e:
               return self._reply(500, {"error": f"failed to persist workflow.json: {e}"})
 
@@ -14086,8 +14080,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                               label=label,
                               source="versioning",
                               extra={"requestId": getattr(self, "request_id", None)}):
-            with open(wf_path, "w", encoding="utf-8") as f:
-                json.dump(wf, f, indent=2)
+            _write_json_atomic(wf_path, wf)
         _broadcast_workflow_change(project_id)
 
     def _versioning_body(self):
@@ -17094,8 +17087,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         author=_v_author,
                     )
                     if snapshot_info:
-                        with open(wf_path, "w", encoding="utf-8") as f:
-                            json.dump(wf, f, indent=2)
+                        _write_json_atomic(wf_path, wf)
                 if snapshot_info:
                     _broadcast_workflow_change(project_id)
         except Exception as _vsn_err:
