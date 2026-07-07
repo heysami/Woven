@@ -53,18 +53,6 @@ Here's what you need before launching the editor. On first run the wizard also i
 
 The **editor itself** has no build step; it ships as static HTML + pure-Python files (stdlib only). [Homebrew](https://brew.sh) and [Node.js](https://nodejs.org) are used by tools the daemon installs for you on first launch (background removal and a headless shader render-check), so have both ready for a complete setup.
 
-### If your Python is too old (below 3.9)
-
-Check first:
-
-```bash
-python3 --version
-```
-
-If it prints **3.8 or lower** (or `python3` isn't found), install a newer one. You don't have to remove the old Python; just make a 3.9+ interpreter available. The system `python3` on a clean macOS is usually 3.9 already. If yours is older, install via [Homebrew](https://brew.sh): `brew install python@3.12`, or grab the installer from [python.org/downloads](https://www.python.org/downloads/).
-
-Then launch the daemon with the newer interpreter explicitly if `python3` still points at the old one - e.g. `python3.12 editor/serve.py`. Everything is stdlib only, so there is nothing else to install for the daemon itself.
-
 ---
 
 ## 2. Install
