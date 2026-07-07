@@ -133,6 +133,20 @@
       "url": "/editor/index.html"
     },
     {
+      "name": "testds-static",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4742",
+        "--directory",
+        "/Users/sami/Documents/Woven IN USE/projects/testds"
+      ],
+      "cwd": ".",
+      "port": 4742,
+      "url": "/source/finance-dashboard/index.html"
+    },
+    {
       "name": "wovenweb-preview",
       "runtimeExecutable": "/opt/homebrew/bin/python3",
       "runtimeArgs": [

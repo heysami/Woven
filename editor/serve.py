@@ -3266,8 +3266,9 @@ def _resolve_style_contract(ds_dir, meta):
     default style is baked (the DS is its neutral base look).
 
     Two bake shapes (see the 2c block in /__projects bake):
-      • CSS-only style → folded UNSCOPED into styles.css at bake time. Linking
-        styles.css is enough; no attribute or script needed.
+      • CSS-only style → folded into styles.css at bake time with its
+        [data-theme] scope rewritten to :root (same specificity, always on).
+        Linking styles.css is enough; no attribute or script needed.
       • JS-backed style (themes/<id>.js exists - e.g. glassmorphism's WebGL
         dispersion-prism) → CANNOT fold into static CSS, so it stays a scoped
         [data-theme="<id>"] overlay. A consuming page MUST link all.css, stamp
@@ -3311,8 +3312,9 @@ def _resolve_style_contract(ds_dir, meta):
             "shell) or [data-glass]; the glass overlay binds by those names, so "
             "a bespoke chrome namespace renders flat."
             if has_js else
-            "CSS-only style: folded unscoped into styles.css at bake time - "
-            "linking styles.css renders this look by default, no attribute needed."
+            "CSS-only style: folded into styles.css at bake time (scope "
+            "rewritten to :root, keeping the overlay's specificity) - linking "
+            "styles.css renders this look by default, no attribute needed."
         ),
     }
     if has_js:
@@ -23978,9 +23980,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         # 2c) Style overlay - if the user picked a named style (pastel, glass-
         #     morphism, neumorphism, …), fold that theme's overlay into
         #     styles.css as the DEFAULT look. The overlay ships scoped under
-        #     [data-theme="<id>"]; strip that scoping so every rule applies
-        #     unconditionally - the baked DS simply IS that style (no attribute
-        #     needed, so the editor's single-file styles.css preview renders it).
+        #     [data-theme="<id>"]; rewrite that scope to :root so every rule
+        #     applies unconditionally at UNCHANGED specificity - the baked DS
+        #     simply IS that style (no attribute needed, so the editor's
+        #     single-file styles.css preview renders it).
         #     Mirrors the dark-scheme bake, but as a string axis recorded in
         #     meta.defaultStyle. Palette/scheme tuning above already landed in
         #     :root{}; surface-only styles layer on top, palette-defining styles
@@ -24027,14 +24030,25 @@ class H(http.server.SimpleHTTPRequestHandler):
                                 except Exception:
                                     pass
                 else:
-                    # CSS-only: fold themes/<id>.css into styles.css UNSCOPED as
-                    # the default look ("[data-theme=x] .c" -> ".c").
+                    # CSS-only: fold themes/<id>.css into styles.css as the
+                    # default look, replacing the [data-theme=x] scope with
+                    # :root ("[data-theme=x] .c" -> ":root .c") rather than
+                    # stripping it. :root always matches, so the style applies
+                    # unconditionally - but it KEEPS the (0,1,0) specificity the
+                    # attribute selector carried. Stripping it demoted every
+                    # overlay rule to a tie with the base/component/shell rules
+                    # for the same selector, and since shells/*.css + the
+                    # components/* partials load AFTER styles.css, chrome
+                    # (.sidebar/.topbar/.nav-link) and component overrides
+                    # (.kpi-strip, .table--flat, ...) silently reverted to the
+                    # base look (testds nav bug). ':root[data-theme=x]' becomes
+                    # ':root:root' - valid, same specificity as the original.
                     try:
                         with open(theme_path, "r", encoding="utf-8") as f:
                             theme_css = f.read()
                         theme_css = re.sub(
-                            r'\[data-theme="' + re.escape(style_id) + r'"\]\s*',
-                            "", theme_css)
+                            r'\[data-theme="' + re.escape(style_id) + r'"\]',
+                            ":root", theme_css)
                         styles_css = styles_css.rstrip() + (
                             "\n\n/* ===== Baked style: " + style_id
                             + " (folded from themes/" + style_id + ".css) ===== */\n"

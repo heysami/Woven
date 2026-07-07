@@ -18739,7 +18739,8 @@ function dsBuildBakePayload(s, custom, label) {
   ];
   if (!p.dsSchemes.length) p.dsSchemes = ["light"];
   // Style overlay (pastel / glassmorphism / …) - baked as the project's
-  // DEFAULT look: the server folds themes/<id>.css into styles.css unscoped.
+  // DEFAULT look: the server folds themes/<id>.css into styles.css with the
+  // [data-theme] scope rewritten to :root (specificity preserved).
   p.dsStyleId = s.styleId || null;
   // Build policy (step 3) - imagery / polish / orchestrators a build on this
   // DS may use. The server normalizes + drops it when everything is "auto".

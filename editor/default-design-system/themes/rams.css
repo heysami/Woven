@@ -46,12 +46,15 @@
      :root; we read those steps so the device greys track the chosen grey LEVEL
      (and stay subtle - the page is only a hair darker than the keys, depth comes
      from bevel + shadow, not from heavy colour steps). We do NOT re-define
-     --neutral-* here (that would break the link + loop the var refs). */
-  --ram-deep:var(--neutral-200);    /* deepest recess tone / cast shadow body */
-  --ram-groove:var(--neutral-100);  /* recessed well floor (grooves, tracks)  */
-  --ram-bg:var(--neutral-80);       /* page substrate (the desk)              */
-  --ram-face:var(--neutral-70);     /* panel / card face                      */
-  --ram-key:var(--neutral-50);      /* raised key body                        */
+     --neutral-* here (that would break the link + loop the var refs).
+     Each step is mixed toward white so the face reads light warm porcelain
+     rather than flat grey - the darker the step, the less white it gets, so
+     the deep>groove>bg>face>key depth ordering survives the lightening. */
+  --ram-deep:color-mix(in srgb,var(--neutral-200) 74%,#fff);   /* deepest recess tone / cast shadow body */
+  --ram-groove:color-mix(in srgb,var(--neutral-100) 66%,#fff); /* recessed well floor (grooves, tracks)  */
+  --ram-bg:color-mix(in srgb,var(--neutral-80) 58%,#fff);      /* page substrate (the desk)              */
+  --ram-face:color-mix(in srgb,var(--neutral-70) 50%,#fff);    /* panel / card face                      */
+  --ram-key:color-mix(in srgb,var(--neutral-50) 40%,#fff);     /* raised key body                        */
   --ram-key-top:#FFFFFF;            /* gradient top of a raised key (lit)     */
 
   /* ---- bevel + cast tones (neutral graphite, never pure #000/#FFF) ---- */
