@@ -32,16 +32,17 @@ This README walks through your first run end-to-end, from install to the Ghibli-
 4. [Step 1 · connect a model](#4-step-1--connect-a-model)
 5. [Step 2 · add asset-provider keys (image · video · SVG)](#5-step-2--add-asset-provider-keys-image--video--svg)
 6. [Step 3 · review orchestrators](#6-step-3--review-orchestrators)
-7. [Step 5 · finish onboarding](#7-step-5--finish-onboarding)
-8. [Create your first project](#8-create-your-first-project)
-9. [Open the workflow and send your first prompt](#9-open-the-workflow-and-send-your-first-prompt)
-10. [The final prototype](#10-the-final-prototype)
+7. [Step 4 · local skills](#7-step-4--local-skills)
+8. [Step 5 · finish onboarding](#8-step-5--finish-onboarding)
+9. [Create your first project](#9-create-your-first-project)
+10. [Open the workflow and send your first prompt](#10-open-the-workflow-and-send-your-first-prompt)
+11. [The final prototype](#11-the-final-prototype)
 
 ---
 
 ## 1. What you need before starting
 
-Here's what you need before launching the editor. On first run the wizard also installs a few local tools for you automatically (see [Step 4](#7-step-5--finish-onboarding)), so there's nothing to install by hand there.
+Here's what you need before launching the editor. On first run the wizard also installs a few local tools for you automatically (see [Step 4](#7-step-4--local-skills)), so there's nothing to install by hand there.
 
 | Requirement      | Minimum                                              | Why                                                                          | How to check                          |
 | ---------------- | --------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------- |
@@ -162,9 +163,17 @@ Rows whose pipeline depends on a key you haven't set in Step 2 (photography and 
 
 ---
 
-## 7. Step 5 · finish onboarding
+## 7. Step 4 · local skills
 
-**Step 4 · Local skills** installs a handful of on-demand tools (background removal, share tunnels, shader lint + render-check) automatically in the background - each row shows live progress and flips green as it lands. You don't need to do anything there beyond letting it finish.
+**Step 4 · Local skills** installs a handful of on-demand tools the asset / sharing / shader pipelines depend on - background removal (rembg), share tunnels (cloudflared), and the shader lint + headless render-check (glslang + shader-verify). They install **automatically** when the step opens: each row shows live progress and flips green as it lands (the render-check pulls a Chromium, so it's the slowest - give it a minute or three).
+
+You don't have to run anything by hand, but do glance over this step before moving on: if a row stalls or shows an error (for example shader-verify when Node.js is missing), it surfaces a hint and a manual **Install** button - fix the prerequisite, hit **Re-check**, and wait for green.
+
+![Onboarding · Step 4 · Local skills](docs/screenshots/03b-onboarding-local-skills.png)
+
+---
+
+## 8. Step 5 · finish onboarding
 
 Once the required steps are satisfied, **Step 5 · Done** confirms you're set (**"All set!"** when a CLI is connected, or **"Continue without agents"** if you finished on a key alone). It also carries the optional **User testing mode** toggle. Click **Got it** to dismiss the card, and the **+ New project** button lights up.
 
@@ -172,7 +181,7 @@ Once the required steps are satisfied, **Step 5 · Done** confirms you're set (*
 
 ---
 
-## 8. Create your first project
+## 9. Create your first project
 
 Once a model is configured, the top-right warning pill disappears, the daemon + CLI chips both go green, and the **+ New project** button lights up. The header carries tabs for **Projects** (your gallery), **Shares**, and **Capabilities** (a bundled reference for the orchestrators, skills, subagents, and node kinds the editor ships with), reachable from anywhere on the landing.
 
@@ -194,7 +203,7 @@ With the toggle **on**, the button reads **Customize →** and advances to a wid
 
 ---
 
-## 9. Open the workflow and send your first prompt
+## 10. Open the workflow and send your first prompt
 
 The editor drops you into **workflow mode**. The left sidebar is the **Library** of node types (basic tools, asset generators, iterators, and more…). In the middle of the empty canvas, the editor shows a **"Your workflow is empty"** card with a composer right where you need it. No menus to open, no drawers to expand.
 
@@ -210,7 +219,7 @@ Press **⌘/Ctrl + Enter** (or click **Send**) and the agent gets to work, gener
 
 ---
 
-## 10. The final prototype
+## 11. The final prototype
 
 After the run finishes (marked **Done** at 28 turns), the workflow canvas holds every step that produced the app: a column of **Generate image** nodes (one per painted asset: Totoro under the camphor tree, the pantry shelf, the ambient leaf borders, each food cutout…), with **Remove background** nodes cleaning the food sprites into transparent PNGs, all feeding the live phone-mockup of **Totoro's Wood** on the right. The chat drawer records how it was built and can be reopened to continue the same session.
 
