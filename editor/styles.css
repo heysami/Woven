@@ -30668,3 +30668,14 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 /* DS node footer - second action row hosting the global-sync chip set */
 .workflow-node-ds-sync-row { margin-top: 4px; }
 .workflow-node-ds-sync-row .gds-sync { flex-wrap: wrap; }
+/* Global-DS empty state - left-aligned prose (the centered shares layout
+   reads badly with this longer copy) */
+.gds-empty { text-align: left; margin: 0; max-width: 560px; }
+.gds-empty p { margin: 8px 0 0; line-height: 1.55; }
+/* DS gallery asset card - slim sync strip between the bar and the thumb */
+.workflow-asset-sync-row {
+  display: flex; align-items: center; padding: 4px 8px;
+  border-bottom: 1px solid var(--border, rgba(0,0,0,0.1));
+  background: var(--panel, rgba(255,255,255,0.6));
+}
+.workflow-asset-sync-row .gds-sync { margin-left: 0; flex-wrap: wrap; }

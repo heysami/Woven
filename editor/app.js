@@ -24066,15 +24066,16 @@ function GlobalDsLanding({ onCountChange }) {
     <div className="gds-landing">
       ${err && html`<div className="shares-error-banner">${err}</div>`}
       ${items && items.length === 0 && html`
-        <div className="shares-empty">
+        <div className="shares-empty gds-empty">
           <div className="shares-empty-glyph"><${Icon.Palette}/></div>
           <b>No global design systems yet</b>
           <p>
-            Promote a project's design system to make it available to every
-            project: open the project's <b>DS view</b> (or select its design
-            system node) and hit <b>Promote to global</b>. Promoted systems can
-            be imported when creating a new project, then kept in sync with
-            push and pull.
+            Promote a project's design system to make it available to every project:
+            open the project, switch to the Architecture view, open its Design system
+            tab, and hit "Promote to global". The same button sits on the design
+            system node and on its gallery card on the workflow canvas. Promoted
+            systems can be imported when creating a new project, then kept in sync
+            with push and pull.
           </p>
         </div>
       `}
@@ -61226,6 +61227,11 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           onMouseDown=${(e) => e.stopPropagation()}
         >×<//>
       </div>
+      ${isDsGallery && dsDir && html`
+        <div className="workflow-asset-sync-row" onMouseDown=${(e) => e.stopPropagation()}>
+          <${GlobalDsSyncActions} dsId=${(dsDir.split("/").pop() || "").toLowerCase()} compact=${true}/>
+        </div>
+      `}
       <div
         className="workflow-node-asset-body"
         data-transparent-bg=${bgTransparent ? "true" : "false"}
