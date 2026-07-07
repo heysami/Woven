@@ -141,6 +141,132 @@ _GITIGNORE_LOCAL = [
     "__pycache__/",
 ]
 
+
+def _strip_git_conflict_markers(text):
+    """Return `text` with every git conflict-marker hunk resolved to OUR side
+    (the local `<<<<<<< HEAD` half): drop the marker lines and the incoming
+    half. Used to recover a workflow.json a cosmetic merge left with markers
+    baked in. Keeping our side matches the daemon's host-authoritative stance,
+    and for the canvas layout that produces these conflicts either side is
+    equally valid."""
+    out = []
+    mode = "keep"   # keep | ours | theirs
+    for ln in text.splitlines(keepends=True):
+        if ln.startswith("<<<<<<<"):
+            mode = "ours"; continue
+        if mode != "keep" and ln.startswith("======="):
+            mode = "theirs"; continue
+        if ln.startswith(">>>>>>>"):
+            mode = "keep"; continue
+        if mode in ("keep", "ours"):
+            out.append(ln)
+    return "".join(out)
+
+
+def _heal_workflow_json(path):
+    """Make a corrupt workflow.json readable IN PLACE before the canvas loads it.
+
+    A synced project can acquire git conflict markers in workflow.json when a
+    merge git can't auto-resolve (historically the cosmetic canvas `pan`) is
+    committed with the markers still in the file; left alone json.load raises
+    and the whole workflow/preview surface 500s. Recover without losing the
+    graph when possible:
+
+      1. Already parses -> do nothing (idempotent; the common path).
+      2. Strip conflict markers (keep our side). If THAT parses, rewrite the
+         clean file atomically - the graph is fully preserved.
+      3. Unrecoverable -> set the bad file aside as workflow.json.broken[-N].bak
+         and write an empty graph so the canvas opens instead of bricking.
+
+    Best-effort; returns True when it changed the file. The caller only needs to
+    log. See git_ops.conflict_marker_files (the commit-time guard) for the other
+    half of this defense."""
+    if not os.path.isfile(path):
+        return False
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = f.read()
+    except OSError:
+        return False
+    try:
+        json.loads(raw)
+        return False   # already valid - nothing to do
+    except Exception:
+        pass
+    # Step 2: strip conflict markers, keep our side.
+    if ("<<<<<<<" in raw) or (">>>>>>>" in raw):
+        try:
+            data = json.loads(_strip_git_conflict_markers(raw))
+        except Exception:
+            data = None
+        if isinstance(data, (dict, list)):
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp, path)
+            print(f"[workflow-heal] recovered {path} by resolving conflict markers", flush=True)
+            return True
+    # Step 3: unrecoverable - preserve the bytes, open with an empty graph.
+    bak = path + ".broken.bak"
+    _i = 0
+    while os.path.exists(bak):
+        _i += 1
+        bak = path + f".broken-{_i}.bak"
+    try:
+        os.replace(path, bak)
+    except OSError:
+        bak = None
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"pan": {"x": 0, "y": 0}, "zoom": 1,
+                   "nodes": [], "edges": [], "wb": []}, f, indent=2)
+    os.replace(tmp, path)
+    print(f"[workflow-heal] {path} unrecoverable; backed up to {bak} and reset to empty graph", flush=True)
+    return True
+
+
+def _sidecar_layout(project_root):
+    """Return the per-machine node layout map {id: {x, y}} from the gitignored
+    viewport sidecar (workflow/viewport.json), or {} if absent.
+
+    Node POSITION lives in the sidecar, NOT in the synced workflow.json (see
+    _workflow_save), so any server-side consumer that reasons about node
+    geometry - io_resolve section containment, canvas placement - must consult
+    this or every migrated node reads as if it were at the origin. Callers
+    resolve a node's position as: the node's OWN x/y when present (a freshly
+    scaffolded agent node the editor hasn't re-saved yet), else this map, else
+    0. They must NOT write these positions back onto the node dicts they persist
+    - that would re-pollute the synced file with the churn we just removed."""
+    try:
+        vp_path = os.path.join(project_root, "workflow", "viewport.json")
+        if os.path.isfile(vp_path):
+            with open(vp_path, "r", encoding="utf-8") as vf:
+                vp = json.load(vf)
+            if isinstance(vp, dict) and isinstance(vp.get("layout"), dict):
+                return vp["layout"]
+    except Exception:
+        pass
+    return {}
+
+
+def _node_xy(node, layout, dx=0.0, dy=0.0):
+    """(x, y) for a node, honouring the position-in-sidecar split. Precedence:
+    the node's own x/y, else `layout[id]`, else 0. Non-mutating - reads only.
+    `dx/dy` are unused defaults kept for call-site symmetry."""
+    if not isinstance(node, dict):
+        return 0.0, 0.0
+    x = node.get("x"); y = node.get("y")
+    if x is None or y is None:
+        lp = layout.get(node.get("id")) if isinstance(layout, dict) else None
+        if isinstance(lp, dict):
+            if x is None: x = lp.get("x")
+            if y is None: y = lp.get("y")
+    def _f(v):
+        try: return float(v if v not in (None, "") else 0)
+        except Exception: return 0.0
+    return _f(x), _f(y)
+
+
 # In-flight git ops, keyed by project root → {"op", "startedAt"}. Lets the Git
 # panel show "Committing…/Pulling…/Pushing…" after a tab reload (the op runs on
 # the daemon, not the tab) and serialises ops so a second request is refused
@@ -5944,17 +6070,22 @@ def _wb_text_height(text, width_px, font_px=14.0, line_height=1.35):
     return lines * font_px * line_height
 
 
-def _wb_clear_origin(workflow, gap=80.0, default=(160.0, 160.0)):
+def _wb_clear_origin(workflow, gap=80.0, default=(160.0, 160.0), layout=None):
     """An (x, y) just to the right of all existing canvas content (free-floating
     nodes + wb items; cell-bound items are skipped as they live inside a table),
     so a freshly dropped block never overlaps what's already there. Falls back to
-    `default` on an empty canvas. Reused for the user-testing insights board."""
+    `default` on an empty canvas. Reused for the user-testing insights board.
+
+    `layout` is the per-machine node-position map (from _sidecar_layout): node
+    x/y no longer live in workflow.json, so it must be supplied to place clear of
+    existing nodes. wb items keep their own x/y (still tracked)."""
+    layout = layout or {}
     rights, tops = [], []
     for n in (workflow.get("nodes") or []):
         if not isinstance(n, dict):
             continue
         try:
-            x, y = float(n.get("x") or 0), float(n.get("y") or 0)
+            x, y = _node_xy(n, layout)
             rights.append(x + float(n.get("w") or 320)); tops.append(y)
         except Exception:
             pass
@@ -6127,7 +6258,8 @@ def _ut_build_insights(session, bundle, project_root):
     # Drop the board clear of whatever is already on the canvas (and step it
     # further out on each run) instead of a fixed origin that overlaps content.
     try:
-        origin = _wb_clear_origin(_live_read_workflow(project_root))
+        origin = _wb_clear_origin(_live_read_workflow(project_root),
+                                  layout=_sidecar_layout(project_root))
     except Exception:
         origin = (160.0, 160.0)
     items, table_id = _ut_insights_to_wb(session, columns, rows, data.get("cells") or [], origin=origin)
@@ -11556,7 +11688,17 @@ class H(http.server.SimpleHTTPRequestHandler):
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception as e:
-            return self._reply(500, {"error": f"workflow.json unreadable: {e}"})
+            # Corrupt on disk - typically git conflict markers baked in by a
+            # cosmetic merge. Heal in place (recover the graph when possible,
+            # else back up + empty) and re-read. NEVER 500 the canvas over it.
+            try:
+                _heal_workflow_json(path)
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception as e2:
+                print(f"[workflow] unreadable after heal ({e}); serving empty: {e2}", flush=True)
+                return self._reply(200, {"pan": {"x": 0, "y": 0}, "zoom": 1,
+                                         "nodes": [], "edges": [], "wb": []})
         # Tolerate missing top-level keys - frontend treats them as empty defaults.
         if not isinstance(data, dict):
             data = {}
@@ -11569,6 +11711,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # by _workflow_save. Falls back to any pan/zoom still in workflow.json
         # (legacy / pre-split files, which migrate out on the next save) or the
         # defaults above - so the client always receives pan/zoom as before.
+        vp_layout = {}
         try:
             vp_path = os.path.join(os.path.dirname(path), "viewport.json")
             if os.path.isfile(vp_path):
@@ -11579,8 +11722,40 @@ class H(http.server.SimpleHTTPRequestHandler):
                         data["pan"] = vp["pan"]
                     if vp.get("zoom") is not None:
                         data["zoom"] = vp["zoom"]
+                    if isinstance(vp.get("layout"), dict):
+                        vp_layout = vp["layout"]
         except Exception:
             pass  # sidecar unreadable - fall back to workflow.json / defaults
+        # Rehydrate per-node canvas position (x/y) from the gitignored viewport
+        # sidecar. Node POSITION is per-machine: it lives in viewport.json (never
+        # committed) so dragging nodes around can't churn the synced workflow.json
+        # or produce the merge conflicts that used to corrupt it. Precedence: a
+        # node's own x/y in workflow.json WINS when present (a background agent
+        # that just scaffolded the node wrote it there and the editor hasn't
+        # re-saved yet, migrating it to the sidecar); else the sidecar supplies
+        # it; else we lay the node out on a fallback grid so a machine WITHOUT
+        # the sidecar (a fresh clone) doesn't stack every node at the origin.
+        # (w/h stay in workflow.json - low churn, and node SIZE should survive a
+        # clone even when POSITION doesn't.)
+        try:
+            _need_pos = []
+            for _n in (data.get("nodes") or []):
+                if not isinstance(_n, dict):
+                    continue
+                if _n.get("x") is None or _n.get("y") is None:
+                    _lp = vp_layout.get(_n.get("id"))
+                    if isinstance(_lp, dict):
+                        if _lp.get("x") is not None:
+                            _n["x"] = _lp["x"]
+                        if _lp.get("y") is not None:
+                            _n["y"] = _lp["y"]
+                if _n.get("x") is None or _n.get("y") is None:
+                    _need_pos.append(_n)
+            for _i, _n in enumerate(_need_pos):
+                _n["x"] = float((_i % 6) * 360)
+                _n["y"] = float((_i // 6) * 320)
+        except Exception:
+            pass  # geometry rehydration must never break the GET
         # backward-compat projection for `runId`. Older daemons (pre-
         # v2.20) wrote only `runRunId` when dispatching agent-kind nodes;
         # WorkflowAgentNode reads `node.runId`. Project the value on the wire
@@ -12131,6 +12306,42 @@ class H(http.server.SimpleHTTPRequestHandler):
                 for s in _raw_dismissed:
                     if isinstance(s, str) and s.strip() and s.strip() not in _seen_d:
                         _seen_d.add(s.strip()); clean_dismissed.append(s.strip())
+            # Node canvas POSITION (x/y) is per-machine, like pan/zoom: collect
+            # it into the gitignored viewport sidecar and STRIP it from the
+            # synced workflow.json. This keeps cosmetic canvas moves out of git
+            # entirely, so they can never churn the tracked file or produce the
+            # merge conflicts that used to corrupt it. Positions of preserved
+            # background-agent nodes whose geometry already migrated to the
+            # sidecar (so their dict has no x/y) are read back from the existing
+            # sidecar so a save that doesn't carry them doesn't lose them. w/h
+            # stay in workflow.json - low churn, and node SIZE should survive a
+            # clone even when POSITION doesn't.
+            _existing_layout = {}
+            try:
+                _vp_read = os.path.join(wf_dir, "viewport.json")
+                if os.path.isfile(_vp_read):
+                    with open(_vp_read, "r", encoding="utf-8") as _vf:
+                        _vp_prev = json.load(_vf)
+                    if isinstance(_vp_prev, dict) and isinstance(_vp_prev.get("layout"), dict):
+                        _existing_layout = _vp_prev["layout"]
+            except Exception:
+                _existing_layout = {}
+            layout = {}
+            for n in clean_nodes:
+                if not isinstance(n, dict):
+                    continue
+                nid = n.get("id")
+                if not isinstance(nid, str):
+                    continue
+                gx = n.get("x"); gy = n.get("y")
+                if gx is None or gy is None:
+                    prev = _existing_layout.get(nid)
+                    if isinstance(prev, dict):
+                        if gx is None: gx = prev.get("x")
+                        if gy is None: gy = prev.get("y")
+                if gx is not None and gy is not None:
+                    layout[nid] = {"x": gx, "y": gy}
+                n.pop("x", None); n.pop("y", None)
             out = {"nodes": clean_nodes, "edges": clean_edges, "wb": clean_wb}
             if clean_dismissed:
                 out["dismissedPrototypeSlugs"] = clean_dismissed
@@ -12147,7 +12358,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 vp_path = os.path.join(wf_dir, "viewport.json")
                 vp_tmp = vp_path + ".tmp"
                 with open(vp_tmp, "w", encoding="utf-8") as vf:
-                    json.dump({"pan": pan, "zoom": zoom}, vf, indent=2)
+                    json.dump({"pan": pan, "zoom": zoom, "layout": layout}, vf, indent=2)
                 os.replace(vp_tmp, vp_path)
                 _gitops.ensure_gitignore(project_root, _GITIGNORE_LOCAL)
             except Exception:
@@ -12250,12 +12461,16 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # nodes. dx/dy are the offset applied to every node's x/y;
                 # they stay 0 when no `placement` is requested (legacy: write
                 # caller-supplied absolute coords verbatim).
+                # Existing-node positions live in the gitignored sidecar (not
+                # workflow.json); read them so batch placement clears real
+                # content instead of piling every new trio at the origin.
+                _place_layout = _sidecar_layout(project_root)
                 def _box(n):
                     def _f(v, d):
                         try: return float(v if v not in (None, "") else d)
                         except Exception: return float(d)
-                    return (_f(n.get("x"), 0), _f(n.get("y"), 0),
-                            _f(n.get("w"), 280), _f(n.get("h"), 200))
+                    bx, by = _node_xy(n, _place_layout)
+                    return (bx, by, _f(n.get("w"), 280), _f(n.get("h"), 200))
                 GAP = 48.0
                 dx = dy = 0.0
                 placement = body.get("placement")
@@ -14094,9 +14309,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             }
             new_version["compositions"].append(new_composition)
 
-            # Compute placement: below source + collision shift.
-            src_x = float(node.get("x") or 0)
-            src_y = float(node.get("y") or 0)
+            # Compute placement: below source + collision shift. Positions live
+            # in the gitignored sidecar (not workflow.json), so read them there.
+            _dup_layout = _sidecar_layout(project_root)
+            src_x, src_y = _node_xy(node, _dup_layout)
             src_w = float(node.get("w") or 320)
             src_h = float(node.get("h") or 240)
             new_x, new_y = src_x, src_y + src_h + 80
@@ -14104,7 +14320,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             def _collides(x, y, w, h):
                 for nn in (wf.get("nodes") or []):
                     if not isinstance(nn, dict): continue
-                    nx = float(nn.get("x") or 0); ny = float(nn.get("y") or 0)
+                    nx, ny = _node_xy(nn, _dup_layout)
                     nw = float(nn.get("w") or 320); nh = float(nn.get("h") or 240)
                     if (x < nx + nw and x + w > nx and y < ny + nh and y + h > ny):
                         return True

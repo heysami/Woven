@@ -208,19 +208,56 @@ def _section_line(cn, ctx):
     return None
 
 
+def _ctx_layout(ctx):
+    """Per-machine node positions from the gitignored viewport sidecar. Node
+    x/y live in workflow/viewport.json, NOT the synced workflow.json (see
+    serve._workflow_save), so section containment must consult this map or every
+    node reads as if it sat at the origin. Cached on ctx; read-only."""
+    if "_node_layout" in ctx:
+        return ctx["_node_layout"]
+    layout = {}
+    try:
+        vp = os.path.join(ctx.get("project_root") or "", "workflow", "viewport.json")
+        if os.path.isfile(vp):
+            with open(vp, "r", encoding="utf-8") as f:
+                d = json.load(f)
+            if isinstance(d, dict) and isinstance(d.get("layout"), dict):
+                layout = d["layout"]
+    except Exception:
+        layout = {}
+    ctx["_node_layout"] = layout
+    return layout
+
+
+def _node_pos(node, ctx):
+    """(x, y) for a node: its own x/y (a fresh agent node), else the sidecar
+    layout, else 0. Non-mutating."""
+    x = node.get("x"); y = node.get("y")
+    if x is None or y is None:
+        lp = _ctx_layout(ctx).get(node.get("id"))
+        if isinstance(lp, dict):
+            if x is None: x = lp.get("x")
+            if y is None: y = lp.get("y")
+    def _f(v):
+        try: return float(v if v not in (None, "") else 0)
+        except Exception: return 0.0
+    return _f(x), _f(y)
+
+
 def _r_section(up, prov, ctx):
     """A section frame wired upstream: the combination of every node whose
     CENTER sits inside the frame rect (same containment rule as the editor's
     group-drag)."""
     wf = ctx["wf"]
-    sx0 = float(up.get("x") or 0); sy0 = float(up.get("y") or 0)
+    sx0, sy0 = _node_pos(up, ctx)
     sx1 = sx0 + float(up.get("w") or 880); sy1 = sy0 + float(up.get("h") or 560)
     parts = []
     for cn in (wf.get("nodes") or []):
         if not cn or cn.get("id") == up.get("id") or cn.get("kind") == "section":
             continue
-        cx = float(cn.get("x") or 0) + float(cn.get("w") or 280) / 2
-        cy = float(cn.get("y") or 0) + float(cn.get("h") or 200) / 2
+        _cx0, _cy0 = _node_pos(cn, ctx)
+        cx = _cx0 + float(cn.get("w") or 280) / 2
+        cy = _cy0 + float(cn.get("h") or 200) / 2
         if not (sx0 <= cx <= sx1 and sy0 <= cy <= sy1):
             continue
         line = _section_line(cn, ctx)
@@ -316,12 +353,12 @@ def resolve_upstream(wf, node_id, ctx) -> str:
 
 # ── downstream instructors: consumer node -> instruction (str) or None ───────
 
-def _section_grid_instr(node_id, dn):
+def _section_grid_instr(node_id, dn, ctx):
     """Build the sectionWrite instruction from the declared `authoring` contract
     (single source of truth in registry._SECTION_AUTHORING), injecting the live
     canvas rect + this section's node id. Falls back to a minimal line if the
     contract somehow lacks authoring (the import-time check forbids that)."""
-    sx = float(dn.get("x") or 0); sy = float(dn.get("y") or 0)
+    sx, sy = _node_pos(dn, ctx)   # position lives in the sidecar, not workflow.json
     sw = float(dn.get("w") or 880); sh = float(dn.get("h") or 560)
     dlabel = _label(dn)
     rect = f"“{dlabel}” - canvas rect x={sx:.0f} y={sy:.0f} w={sw:.0f} h={sh:.0f}"
@@ -355,7 +392,7 @@ def resolve_downstream(wf, node_id, node, ctx) -> str:
 
         # Section frame: generate INTO it (verbatim layout contract).
         if dkind == "section":
-            targets.append(_section_grid_instr(node_id, dn))
+            targets.append(_section_grid_instr(node_id, dn, ctx))
             continue
 
         # Agent wired INTO a complex node = EDIT it. The agent rewrites the

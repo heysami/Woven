@@ -17,9 +17,13 @@ Two layers:
 Design choices that match the doc:
   • Commit is DELIBERATE - there is no auto-commit anywhere here; serve.py only
     calls commit() when the host presses the button.
-  • Canvas layout (workflow.json node positions) is cosmetic; we still commit it
-    (it's one file) but never special-case merges for it - git's line merge on
-    the indent=2 JSON is good enough and the doc accepts last-writer-wins there.
+  • Canvas layout is per-machine and NO LONGER lives in the synced file: node
+    positions (x/y) and pan/zoom are written to workflow/viewport.json, which is
+    gitignored (see serve._GITIGNORE_LOCAL / _workflow_save). So cosmetic canvas
+    moves can't churn workflow.json or produce the line-merge conflicts that used
+    to corrupt it. workflow.json now carries only the durable graph (node data +
+    edges + wb), which merges meaningfully; a real conflict is surfaced by
+    conflicted_files() and, as a backstop, healed on load by serve._heal_workflow_json.
   • Agent-assisted conflict resolution: conflicted_files() surfaces the paths;
     serve.py hands them to the host agent. We never hand-merge LLM-regenerated
     HTML/CSS/JS ourselves.
