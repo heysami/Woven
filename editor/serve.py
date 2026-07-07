@@ -184,16 +184,26 @@ def _heal_workflow_json(path):
     half of this defense."""
     if not os.path.isfile(path):
         return False
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            raw = f.read()
-    except OSError:
-        return False
-    try:
-        json.loads(raw)
-        return False   # already valid - nothing to do
-    except Exception:
-        pass
+    # Read + parse with a short retry ladder. A non-atomic writer (an agent's
+    # Write tool mid-scaffold - unlike our own tmp+os.replace saves) can hand
+    # us a truncated read; quarantining THAT throws away a perfectly good
+    # graph (the writer finishes into the renamed .bak inode and the canvas
+    # opens empty - happened to suss-cal, 23 nodes). Only treat the file as
+    # corrupt if it still fails after the writer has had time to finish.
+    raw = None
+    for _attempt in range(3):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw = f.read()
+        except OSError:
+            return False
+        try:
+            json.loads(raw)
+            return False   # already valid - nothing to do
+        except Exception:
+            pass
+        if _attempt < 2:
+            time.sleep(0.4)
     # Step 2: strip conflict markers, keep our side.
     if ("<<<<<<<" in raw) or (">>>>>>>" in raw):
         try:
