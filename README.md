@@ -69,15 +69,9 @@ Then launch the daemon with the newer interpreter explicitly if `python3` still 
 
 ## 2. Install
 
-### Step 1 · Get the editor (download the zip)
+### Step 1 · Get the editor
 
-**Download the latest release zip** from the [Releases page](https://github.com/heysami/Woven/releases/latest) and unpack it wherever you like:
-
-```bash
-# Download "Source code (zip)" from the Releases page, then:
-unzip Woven-*.zip
-cd Woven-*        # the unpacked folder
-```
+**[Download the latest release](https://github.com/heysami/Woven/releases/latest)** and unpack it wherever you like.
 
 ### Step 2 · install one of the supported model CLIs
 
