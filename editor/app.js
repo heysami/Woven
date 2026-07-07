@@ -3332,7 +3332,7 @@ function DSViewPrototype({ model, setEdits, hasContent }) {
               </div>
             `)}
           </div>
-        </div>
+        </section>
 
         <section id="text" className="ds-section">
           <div className="ds-section-h"><h2>Text</h2><span className="ds-section-meta">${t.text.length} tokens</span></div>
