@@ -1,5 +1,6 @@
 <div align="center">
   <img src="docs/woven-mark.svg?v=2" alt="Woven" width="280" />
+  <hr width="720" />
   <p>
     <img alt="requirement: macOS" src="https://img.shields.io/badge/requirement-macOS-000000?logo=apple&logoColor=white" />
     <img alt="requirement: Python 3.9+" src="https://img.shields.io/badge/requirement-Python%203.9%2B-3776AB?logo=python&logoColor=white" />
