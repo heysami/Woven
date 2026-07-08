@@ -28258,7 +28258,7 @@ const WORKFLOW_NODE_FACTORY = {
   },
   "design-system": (p) => ({
     kind: "design-system", w: 360, h: 720,
-    dsId: (p.dsId || "main").toLowerCase(),
+    dsId: (p.dsId || projectPrimaryDsId()).toLowerCase(),
     spec: {
       genre:           p.spec?.genre || "",
       tokenPreference: p.spec?.tokenPreference || "",
@@ -31899,6 +31899,22 @@ function allDsIds() {
     const ds = (typeof listDesignSystems === "function" ? listDesignSystems() : []);
     return ds.map(d => d.id);
   } catch { return []; }
+}
+
+/* The project's PRIMARY design system id: meta.dsRef when wired (the
+   canonical library reference), else the first runtime-registry entry,
+   else "main". Design-system nodes default to this so a fresh node
+   represents the project's REAL design system - the old hardcoded "main"
+   pointed at a design-systems/main/ folder that never exists on dsRef'd
+   projects, leaving the node stuck at Draft with no gallery and no
+   promote/push/pull row. */
+function projectPrimaryDsId() {
+  try {
+    const ref = D && D.meta && D.meta.dsRef;
+    if (ref && ref.id) return String(ref.id).toLowerCase();
+  } catch {}
+  const ids = allDsIds();
+  return String(ids[0] || "main").toLowerCase();
 }
 
 /* WorkflowPickedElementActionBar: same 4 quick-action buttons as
@@ -75606,7 +75622,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
   // Single source of truth for attaching the SSE stream - both the fresh
   // build() dispatch and the page-refresh resume call this. Resets the
   // event buffer (with an optional `initial` line) then wires up the
-  const dsId = (node.dsId || "main").toLowerCase();
+  const dsId = (node.dsId || projectPrimaryDsId()).toLowerCase();
   const spec = node.spec || {};
   const attachments = Array.isArray(spec.attachments) ? spec.attachments : [];
   // Default + floor heights raised so the body's seven sections
