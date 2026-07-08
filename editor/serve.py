@@ -136,6 +136,7 @@ _GITIGNORE_LOCAL = [
     "workflow/viewport.json",   # per-machine canvas viewport (see _workflow_save)
     "workflow/runs/",           # generated run artifacts (assets/thumbnails) - GBs
     "workflow/views/",          # generated per-version prototype snapshots - GBs
+    "editor/chat.jsonl",        # local chat transcript - large, machine-local, never sync
     ".history/",                # undo stack - transient (matches duplicate's skip set)
     ".trash/",                  # transient scratch
     ".DS_Store",                # macOS junk

@@ -459,19 +459,31 @@ def ensure_gitignore(root, lines):
         existing = ""
     have = {ln.strip() for ln in existing.splitlines()}
     add = [ln for ln in lines if ln.strip() and ln.strip() not in have]
-    if not add:
-        return
-    block = ""
-    if existing and not existing.endswith("\n"):
-        block += "\n"
-    if "# Woven - per-machine local state" not in existing:
-        block += "# Woven - per-machine local state (never sync)\n"
-    block += "\n".join(add) + "\n"
-    try:
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(block)
-    except OSError:
-        pass
+    if add:
+        block = ""
+        if existing and not existing.endswith("\n"):
+            block += "\n"
+        if "# Woven - per-machine local state" not in existing:
+            block += "# Woven - per-machine local state (never sync)\n"
+        block += "\n".join(add) + "\n"
+        try:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(block)
+        except OSError:
+            pass
+    # A path added to .gitignore that git is ALREADY tracking keeps getting
+    # committed - ignore rules only suppress UNtracked files. Untrack any
+    # now-ignored-but-still-tracked path (e.g. a legacy repo that committed
+    # editor/chat.jsonl before it was ignored) so the next commit drops it.
+    # `-c` = cached/tracked, `-i --exclude-standard` = filtered to .gitignore
+    # matches; `rm --cached` removes only the index entry, keeping the file on
+    # disk. Runs even when `add` is empty so already-listed-but-tracked files
+    # still self-heal.
+    code, out, _e = _git(root, "ls-files", "-z", "-ci", "--exclude-standard")
+    if code == 0 and out:
+        tracked_ignored = [p for p in out.split("\0") if p]
+        if tracked_ignored:
+            _git(root, "rm", "--cached", "-r", "--quiet", "--", *tracked_ignored)
 
 
 def log(root, limit=30):
