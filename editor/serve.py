@@ -20645,6 +20645,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                         share_id,
                         quick=(bool(body["quickOn"]) if "quickOn" in body else None),
                         woven=(bool(body["wovenOn"]) if "wovenOn" in body else None),
+                        # Flipping the randomised link on is a deliberate user
+                        # act - treat the fresh URL as acknowledged so it does
+                        # not immediately raise a stale "Need refresh" badge.
+                        user_refresh=("quickOn" in body and bool(body["quickOn"])),
                     )
                 except Exception as e:
                     return self._reply(500, {"error": str(e)})

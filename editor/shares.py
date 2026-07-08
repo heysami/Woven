@@ -429,11 +429,17 @@ def _persist_modes(share_id, quick, woven):
     })
 
 
-def set_modes(share_id, *, quick=None, woven=None):
+def set_modes(share_id, *, quick=None, woven=None, user_refresh=False):
     """Set the share's two link intents independently (None = leave unchanged),
     then reconcile the running tunnels to match. Either, both, or neither may be
     on; with neither on the share is effectively stopped. Raises on tunnel
-    failure (cloudflared/broker)."""
+    failure (cloudflared/broker).
+
+    user_refresh=True marks a freshly-spawned quick tunnel's URL as already
+    acknowledged - used when the caller is a deliberate user toggle (flip the
+    randomised link off then on), so re-minting the URL does NOT leave a stale
+    "Need refresh" badge. Boot restore leaves it False on purpose: a URL that
+    silently changed across a daemon restart SHOULD raise the badge."""
     rec = share_get(share_id)
     if rec is None:
         raise ValueError(f"unknown share: {share_id}")
@@ -444,7 +450,7 @@ def set_modes(share_id, *, quick=None, woven=None):
     # we decide whether to tear the shared tunnel down.
     _persist_modes(share_id, q, w)
     if q:
-        _quick_start(share_id)
+        _quick_start(share_id, user_refresh=user_refresh)
     else:
         _quick_stop(share_id)
     if w:

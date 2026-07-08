@@ -23484,6 +23484,9 @@ function SharesLanding({ onCountChange }) {
                     <code key="url" className="shares-url" title=${s.shareUrl}>${s.shareUrl}</code>
                     <button key="copy" className="shares-btn" onClick=${() => copyUrl(s)}>${copiedId === s.id ? "Copied ✓" : "Copy"}</button>
                     <button key="open" className="shares-btn" onClick=${() => window.open(s.shareUrl, "_blank")}>Open</button>
+                    ${s.quickOn && html`<button key="refresh" className="shares-btn" disabled=${isBusy}
+                      onClick=${() => op(s.id, "refresh_url")}
+                      title="Generate a new randomised URL (the old link stops working) and clear the refresh warning">↻ Refresh</button>`}
                   `
                 : html`<span className="shares-url-none">
                     ${s.status === "starting" ? "Waiting for tunnel URL…"
