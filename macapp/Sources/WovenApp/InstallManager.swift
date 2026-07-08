@@ -271,7 +271,32 @@ final class InstallManager: NSObject, URLSessionDownloadDelegate {
         try fm.moveItem(atPath: root, toPath: tagDir)
         if root != unpackDir { try? fm.removeItem(atPath: unpackDir) }
 
+        migrateLocalTools(into: tagDir)
         try swapCurrent(to: tag)
+    }
+
+    /// Carry the gitignored tree-local tooling from the outgoing install into
+    /// the new one. These live inside editor/tools and are NOT in the release
+    /// zip (direct-downloaded binaries in tools/bin, npm-installed
+    /// shader-verify in tools/node_modules), so a plain tree swap silently
+    /// uninstalled them and re-gated onboarding on "Install shader-verify".
+    private func migrateLocalTools(into tagDir: String) {
+        let fm = FileManager.default
+        guard var currentTarget = try? fm.destinationOfSymbolicLink(atPath: WovenPaths.currentLink) else { return }
+        if !currentTarget.hasPrefix("/") {
+            currentTarget = WovenPaths.installRoot + "/" + currentTarget
+        }
+        guard currentTarget != tagDir else { return }
+        let oldTools = currentTarget + "/editor/tools"
+        let newTools = tagDir + "/editor/tools"
+        for rel in ["bin", "node_modules", "package.json", "package-lock.json"] {
+            let src = oldTools + "/" + rel
+            let dst = newTools + "/" + rel
+            guard fm.fileExists(atPath: src), !fm.fileExists(atPath: dst) else { continue }
+            try? fm.createDirectory(atPath: (dst as NSString).deletingLastPathComponent,
+                                    withIntermediateDirectories: true)
+            try? fm.copyItem(atPath: src, toPath: dst)
+        }
     }
 
     /// current -> <tag> via symlink + POSIX rename(2), which atomically
