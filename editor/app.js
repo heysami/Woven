@@ -62561,6 +62561,26 @@ function setCanvasDraggingSync(active) {
 // signal once this session has proven the field reliable (a move with
 // buttons>0 has been seen). Chromium proves it on the first move, so behavior
 // there is unchanged.
+// WebKit aborts an HTML5 drag session immediately after dragstart when the
+// dragged element contains a live <iframe> (the prototype / html / design-
+// system library cards carry same-origin iframe thumbs): dragstart fires,
+// then the session dies before a single dragover - no ghost, no drop.
+// Chromium is unaffected. Providing a sanitized setDragImage clone does NOT
+// help (tried - WebKit still aborts); what works is hiding the iframes for
+// the instant the session forms. visibility (not display) keeps layout
+// intact, and the frames are restored on dragend plus a failsafe timeout.
+// Generic on purpose: any draggable element with iframe content gets it.
+document.addEventListener("dragstart", (e) => {
+  const src = e.target && e.target.closest ? e.target.closest('[draggable="true"]') : null;
+  if (!src) return;
+  const frames = src.querySelectorAll("iframe");
+  if (!frames.length) return;
+  for (const f of frames) f.style.visibility = "hidden";
+  const restore = () => { for (const f of frames) f.style.visibility = ""; };
+  src.addEventListener("dragend", restore, { once: true });
+  setTimeout(restore, 400);
+}, true);
+
 let _mouseButtonsReliable = false;
 function isReleasedDuringMove(ev) {
   if (!(ev && typeof ev.buttons === "number")) return false;
