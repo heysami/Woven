@@ -11583,8 +11583,16 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # Match `src="..."`, `href="..."`, `data-src="..."`, etc. - single-URL
     # attrs we should stamp with ?project=. Captures the URL value in group 3.
+    # (?<![.$]) rejects JavaScript property assignments in inline scripts:
+    # `f.src = 'shells/app-shell.html'` is byte-identical to an HTML src=
+    # attribute as far as \b can tell, so the stamper used to rewrite script
+    # literals too. Pages that then append location.search at runtime (the DS
+    # gallery live-previews) produced a doubled ?project=..?project=.. and
+    # 404ed. HTML attributes are never preceded by a dot or dollar; JS
+    # property access always is. Runtime-built URLs that lose the param are
+    # covered by the Referer fallback + the document-level 302 restore.
     _HTML_URL_ATTR_RE = re.compile(
-        rb"""\b(src|href|data-src|data-href|poster)\s*=\s*(['"])([^'"]+)\2""",
+        rb"""(?<![.$])\b(src|href|data-src|data-href|poster)\s*=\s*(['"])([^'"]+)\2""",
         re.IGNORECASE,
     )
 
