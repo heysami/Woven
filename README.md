@@ -262,6 +262,7 @@ In multi-project mode the workspace dir (`TH_WORKSPACE_DIR`) is **separate from 
 ├── workspace.json                          # project registry (auto-managed)
 ├── shares.json                             # live-share registry (auto-managed)
 ├── .trash/                                 # recoverable deleted projects (Housekeeping → empty)
+├── design-systems/<gds-id>/                # workspace-wide DS library (promoted / pushed / pulled across projects)
 └── projects/
     └── <project-id>/
         ├── source/prototype/               # the generated prototype HTML/CSS/JS (one dir per prototype; default "prototype")
