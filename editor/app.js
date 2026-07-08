@@ -1827,7 +1827,7 @@ function ArrowLayer({ frames, arrows, dimNonSelected, gridMeta,
               <stop offset="0%"   stopColor=${isSel ? "var(--accent-text)" : "oklch(54% 0.16 252)"} stopOpacity="0.1"/>
               <stop offset="100%" stopColor=${isSel ? "var(--accent-text)" : "oklch(54% 0.16 252)"} stopOpacity="1"/>
             </linearGradient>
-            <path d=${`M ${s.fx} ${s.fy} C ${s.c1x} ${s.c1y}, ${s.c2x} ${s.c2y}, ${s.tx} ${s.ty}`}
+            <path className="edge-flow" d=${`M ${s.fx} ${s.fy} C ${s.c1x} ${s.c1y}, ${s.c2x} ${s.c2y}, ${s.tx} ${s.ty}`}
                   fill="none" stroke=${`url(#${gid})`}
                   strokeWidth=${isSel ? "2.6" : "2"}
                   markerEnd=${isSel ? "url(#arr-sel)" : "url(#arr)"}
@@ -3963,6 +3963,10 @@ function EntitiesView({ model, setEdits }) {
 
   const queue = (ed) => setEdits(es => [...es, ed]);
   const [linking, setLinking] = useState(null);   // null | { from: entityId }
+  const [linkPt, setLinkPt] = useState(null);      // cursor in canvas coords while linking (rubber-band)
+  // Latest pan/zoom for the mousemove handler without re-subscribing per tick.
+  const viewRef = useRef({ pan, zoom });
+  viewRef.current = { pan, zoom };
   const [selectedEntityId, setSelectedEntityId] = useState(null);
   // Edge selection - keyed by the same `l.key` used to render each line.
   // Stores the line object so the tool bar can read its `from`, `to`, and
@@ -4133,6 +4137,20 @@ function EntitiesView({ model, setEdits }) {
     setCommentAt(null);
   };
 
+  // While linking (source entity picked), track the cursor in canvas space so
+  // we can draw a rubber-band line from the source card to the pointer.
+  useEffect(() => {
+    if (!linking?.from) { setLinkPt(null); return; }
+    const onMove = (ev) => {
+      const wrap = wrapRef.current; if (!wrap) return;
+      const r = wrap.getBoundingClientRect();
+      const { pan: p, zoom: z } = viewRef.current;
+      setLinkPt({ x: (ev.clientX - r.left - p.x) / z, y: (ev.clientY - r.top - p.y) / z });
+    };
+    window.addEventListener("mousemove", onMove);
+    return () => window.removeEventListener("mousemove", onMove);
+  }, [linking?.from]);
+
   const startLink = (entityId) => setLinking({ from: entityId });
   const completeLink = (toId) => {
     if (!linking || linking.from === toId) { setLinking(null); return; }
@@ -4183,10 +4201,10 @@ function EntitiesView({ model, setEdits }) {
                   <stop offset="0%"   stopColor=${color} stopOpacity="0.1"/>
                   <stop offset="100%" stopColor=${color} stopOpacity="1"/>
                 </linearGradient>
-                <path d=${`M ${l.fx} ${l.fy} C ${l.c1x} ${l.c1y}, ${l.c2x} ${l.c2y}, ${l.tx} ${l.ty}`}
+                <path className="edge-flow" d=${`M ${l.fx} ${l.fy} C ${l.c1x} ${l.c1y}, ${l.c2x} ${l.c2y}, ${l.tx} ${l.ty}`}
                       fill="none" stroke=${`url(#${gid})`}
                       strokeWidth=${isSel ? "2.4" : "1.5"}
-                      strokeDasharray=${l.kind === "inherit" ? "4 3" : l.kind === "weak-link" ? "3 4" : "none"} markerEnd=${marker}
+                      markerEnd=${marker}
                       style=${{ pointerEvents: "none" }}/>
                 ${l.label && l.labelBBox && html`
                   <!-- Invisible click-pad behind the chip - extends the
@@ -4238,6 +4256,22 @@ function EntitiesView({ model, setEdits }) {
               </g>
             `;
           })}
+          ${linking?.from && linkPt && (() => {
+            // Rubber-band from the source card to the cursor, anchored on the
+            // side of the card facing the pointer. Card height mirrors cardRect.
+            const src = entities.find(e => e.id === linking.from);
+            if (!src) return null;
+            const h = 38 + src.fields.length * 22 + 8;
+            const cxC = src.x + src.w / 2, cyC = src.y + h / 2;
+            const sx = linkPt.x >= cxC ? src.x + src.w : src.x;
+            const sy = cyC;
+            return html`
+              <g key="link-rubber" style=${{ pointerEvents: "none" }}>
+                <circle cx=${sx} cy=${sy} r="4" fill="oklch(54% 0.16 252)"/>
+                <path d=${`M ${sx} ${sy} L ${linkPt.x} ${linkPt.y}`} fill="none"
+                      stroke="oklch(54% 0.16 252)" strokeWidth="2" strokeDasharray="6 4" markerEnd="url(#ent-arr)"/>
+              </g>`;
+          })()}
         </svg>
         ${entities.map(e => {
           const isLinkingTarget = linking && linking.from && linking.from !== e.id;
@@ -4265,7 +4299,7 @@ function EntitiesView({ model, setEdits }) {
                   <button title="Rename"        onClick=${(ev) => { ev.stopPropagation(); renameEntity(e.id); }}><${Icon.Pen}/></button>
                   <button title="Link from here" onClick=${(ev) => { ev.stopPropagation(); startLink(e.id); }}>↔</button>
                   <button title="Comment"       onClick=${(ev) => { ev.stopPropagation(); openComment("entity:" + e.id, e.id, ev.currentTarget.getBoundingClientRect()); }}><${Icon.Comment}/></button>
-                  <button title="Delete"        onClick=${(ev) => { ev.stopPropagation(); deleteEntity(e.id); }} className="entity-head-x">×</button>
+                  <button title="Delete"        onClick=${(ev) => { ev.stopPropagation(); deleteEntity(e.id); }} className="entity-head-x"><${Icon.Trash}/></button>
                 </div>
               </div>
               <div className="entity-fields">
@@ -4279,7 +4313,7 @@ function EntitiesView({ model, setEdits }) {
                       <div className="entity-field-actions">
                         <button title="Rename"  onClick=${(ev) => { ev.stopPropagation(); renameProperty(e.id, f.name); }}><${Icon.Pen}/></button>
                         <button title="Comment" onClick=${(ev) => { ev.stopPropagation(); openComment(`field:${e.id}.${f.name}`, `${e.id}.${f.name}`, ev.currentTarget.getBoundingClientRect()); }}><${Icon.Comment}/></button>
-                        <button title="Delete"  onClick=${(ev) => { ev.stopPropagation(); deleteProperty(e.id, f.name); }}>×</button>
+                        <button title="Delete"  onClick=${(ev) => { ev.stopPropagation(); deleteProperty(e.id, f.name); }}><${Icon.Trash}/></button>
                       </div>
                     </div>
                   `;
@@ -4623,18 +4657,44 @@ function FlowView({ model, setEdits }) {
 
   // Pan + zoom - same model as Canvas / Entity. Wheel pans, cmd+wheel zooms,
   // space+drag (or alt-drag / middle-mouse / background drag) pans.
-  const { wrapRef, pan, zoom, panning, spaceHeld } = useEndlessCanvas({ x: 40, y: 40, z: 1 });
+  const { wrapRef, pan, zoom, setPan, panning, spaceHeld } = useEndlessCanvas({ x: 40, y: 40, z: 1 });
+  // Latest pan/zoom for the keyboard handler to read without re-subscribing
+  // the listener on every pan tick.
+  const viewRef = useRef({ pan, zoom });
+  viewRef.current = { pan, zoom };
 
   const [selectedNode, setSelectedNode] = useState(null);   // frameId
 
-  // When a node is selected, dim everything not connected via an arrow.
+  // When a node is selected, highlight the WHOLE flow it sits on: every step
+  // reachable downstream (follow arrows to the end, across ALL branches) AND
+  // every step upstream (walk back to the start). Everything else dims.
   const connectedFlow = useMemo(() => {
     if (!selectedNode) return null;
-    const s = new Set([selectedNode]);
+    // Adjacency both ways so we can walk forward and backward.
+    const outAdj = new Map();  // from → [to]
+    const inAdj  = new Map();  // to   → [from]
     arrows.forEach(a => {
-      if (a.from === selectedNode) s.add(a.to);
-      if (a.to === selectedNode)   s.add(a.from);
+      if (!outAdj.has(a.from)) outAdj.set(a.from, []);
+      if (!inAdj.has(a.to))    inAdj.set(a.to, []);
+      outAdj.get(a.from).push(a.to);
+      inAdj.get(a.to).push(a.from);
     });
+    const s = new Set([selectedNode]);
+    // BFS/DFS in one direction over the given adjacency; the per-walk `seen`
+    // set guards against cycles (wizard-style Next/Prev loops).
+    const walk = (adj) => {
+      const stack = [selectedNode];
+      const seen = new Set([selectedNode]);
+      while (stack.length) {
+        const cur = stack.pop();
+        (adj.get(cur) || []).forEach(nxt => {
+          s.add(nxt);
+          if (!seen.has(nxt)) { seen.add(nxt); stack.push(nxt); }
+        });
+      }
+    };
+    walk(outAdj);  // downstream to the end (all branches)
+    walk(inAdj);   // upstream to the start
     return s;
   }, [selectedNode, arrows]);
   const [selectedArrow, setSelectedArrow] = useState(null); // arrowId
@@ -4644,6 +4704,7 @@ function FlowView({ model, setEdits }) {
   const [commentAt, setCommentAt] = useState(null);
   const [splitFor, setSplitFor] = useState(null);           // { arrow } for between-step insertion
   const [addNextFor, setAddNextFor] = useState(null);       // { frameId, label } - kind-picker popover anchored to a selected node
+  const [connectPt, setConnectPt] = useState(null);         // cursor in canvas coords while wiring a new arrow (→ connect)
 
   // Figure out each frame's lane. Default to the first lane.
   const laneIdOf = (f) => {
@@ -4787,6 +4848,91 @@ function FlowView({ model, setEdits }) {
   }, [frames, arrows, lanes, rank]);
 
   const decisionCount = layout.nodes.filter(n => n.isDecision).length;
+
+  // ───── keyboard navigation ─────
+  // With a node selected, arrow keys walk the flow:
+  //   → / ←  follow outgoing / incoming arrows (next / previous step). At a
+  //          branch, the target nearest the current node's row is taken; use
+  //          ↑ / ↓ to switch between the branches.
+  //   ↑ / ↓  move between immediate siblings - nodes stacked in the same
+  //          column (same rank), ordered top-to-bottom.
+  useEffect(() => {
+    if (!selectedNode) return;
+    const onKey = (ev) => {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(ev.key)) return;
+      if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      // Don't hijack arrows while typing (arrow-label editor, prompts, etc).
+      const ae = document.activeElement;
+      if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable)) return;
+      const cur = layout.nodes.find(n => n.id === selectedNode);
+      if (!cur) return;
+      let targetId = null;
+      if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") {
+        // Neighbours along the flow: outgoing for →, incoming for ←.
+        const fwd = ev.key === "ArrowRight";
+        const neighborIds = new Set(arrows
+          .filter(a => (fwd ? a.from : a.to) === selectedNode)
+          .map(a => fwd ? a.to : a.from));
+        const cands = layout.nodes.filter(n => neighborIds.has(n.id));
+        // Prefer the neighbour closest in y to the current node so the eye
+        // stays on the same horizontal track when the flow branches.
+        if (cands.length) {
+          targetId = cands.reduce((best, n) =>
+            Math.abs(n.y - cur.y) < Math.abs(best.y - cur.y) ? n : best).id;
+        }
+      } else {
+        // ↑ / ↓: immediate siblings share the current node's column (rank).
+        const curRank = rank.get(selectedNode);
+        const col = layout.nodes
+          .filter(n => n.id !== selectedNode && rank.get(n.id) === curRank)
+          .sort((p, q) => p.y - q.y);
+        if (ev.key === "ArrowUp") {
+          const above = col.filter(n => n.y < cur.y);
+          if (above.length) targetId = above[above.length - 1].id;
+        } else {
+          const below = col.filter(n => n.y > cur.y);
+          if (below.length) targetId = below[0].id;
+        }
+      }
+      if (!targetId) return;
+      ev.preventDefault();
+      setSelectedNode(targetId);
+      setSelectedArrow(null);
+      // Keep the newly selected node on screen (pan only if it lands near/off
+      // an edge of the viewport).
+      const t = layout.nodes.find(n => n.id === targetId);
+      const wrap = wrapRef.current;
+      if (t && wrap) {
+        const { pan: p, zoom: z } = viewRef.current;
+        const r = wrap.getBoundingClientRect();
+        const cx = (t.x + t.w / 2) * z + p.x;
+        const cy = (t.y + t.h / 2) * z + p.y;
+        const pad = 90;
+        let nx = p.x, ny = p.y;
+        if (cx < pad) nx = p.x + (pad - cx);
+        else if (cx > r.width - pad)  nx = p.x - (cx - (r.width - pad));
+        if (cy < pad) ny = p.y + (pad - cy);
+        else if (cy > r.height - pad) ny = p.y - (cy - (r.height - pad));
+        if (nx !== p.x || ny !== p.y) setPan({ x: nx, y: ny });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedNode, layout, arrows, rank]);
+
+  // While wiring a new arrow (→ connect), track the cursor in canvas space so
+  // we can draw a rubber-band line from the source node to the pointer.
+  useEffect(() => {
+    if (!arrowFrom) { setConnectPt(null); return; }
+    const onMove = (ev) => {
+      const wrap = wrapRef.current; if (!wrap) return;
+      const r = wrap.getBoundingClientRect();
+      const { pan: p, zoom: z } = viewRef.current;
+      setConnectPt({ x: (ev.clientX - r.left - p.x) / z, y: (ev.clientY - r.top - p.y) / z });
+    };
+    window.addEventListener("mousemove", onMove);
+    return () => window.removeEventListener("mousemove", onMove);
+  }, [arrowFrom]);
 
   // ───── mutations ─────
   const addLane = async () => {
@@ -5061,11 +5207,10 @@ function FlowView({ model, setEdits }) {
           <stop offset="0%"   stopColor=${edgeColor} stopOpacity="0.1"/>
           <stop offset="100%" stopColor=${edgeColor} stopOpacity="1"/>
         </linearGradient>
-        <path d=${`M ${e.fx} ${e.fy} C ${e.c1x} ${e.c1y}, ${e.c2x} ${e.c2y}, ${e.tx} ${e.ty}`}
+        <path className="edge-flow" d=${`M ${e.fx} ${e.fy} C ${e.c1x} ${e.c1y}, ${e.c2x} ${e.c2y}, ${e.tx} ${e.ty}`}
               fill="none"
               stroke=${`url(#${gid})`}
               strokeWidth=${isDropTarget ? "3.5" : (isSel ? "2.2" : "1.6")}
-              strokeDasharray=${e.isDecisionBranch ? "5 4" : "none"}
               markerEnd="url(#flow-arr)"
               style=${{ pointerEvents: "none" }}/>
         ${!isEditing && html`
@@ -5122,7 +5267,7 @@ function FlowView({ model, setEdits }) {
               <span className="flow-lane-label">${l.label}</span>
               ${!embed && html`<span className="flow-lane-actions">
                 <button title="Rename lane" onClick=${() => renameLane(l.id)}><${Icon.Pen}/></button>
-                <button title="Delete lane" onClick=${() => deleteLane(l.id)} className="flow-lane-x">×</button>
+                <button title="Delete lane" onClick=${() => deleteLane(l.id)} className="flow-lane-x"><${Icon.Trash}/></button>
               </span>`}
             </div>
           `)}
@@ -5318,16 +5463,16 @@ function FlowView({ model, setEdits }) {
                   <circle cx=${n.w - 14} cy="14" r="4.5" fill="var(--warning, oklch(70% 0.14 75))"/>
                 `}
                 ${isSel && html`
-                  <foreignObject x="-12" y=${n.h + 4} width=${n.w + 60} height="80">
-                    <div xmlns="http://www.w3.org/1999/xhtml" className="flow-node-tools" onClick=${ev => ev.stopPropagation()} onMouseDown=${ev => ev.stopPropagation()}>
+                  <foreignObject x="-12" y=${n.h + 4} width=${Math.max(n.w + 60, 210)} height=${addNextFor?.frameId === n.id ? 380 : 80} style=${{ overflow: "visible", pointerEvents: "none" }}>
+                    <div xmlns="http://www.w3.org/1999/xhtml" className="flow-node-tools" style=${{ pointerEvents: "auto" }} onClick=${ev => ev.stopPropagation()} onMouseDown=${ev => ev.stopPropagation()}>
                       <button title="Rename" onClick=${() => renameStep(n.id)}><${Icon.Pen}/></button>
                       <button title="Add next step (after this one)" onClick=${() => setAddNextFor({ frameId: n.id, label: n.label })}>+ next ▾</button>
                       <button title="Connect to an existing step" onClick=${() => startArrow(n.id)}>→ connect</button>
                       <button title="Comment for the LLM" onClick=${() => setCommentAt({ key: "frame:" + n.id, label: n.label })}><${Icon.Comment}/></button>
-                      <button title="Delete" onClick=${() => deleteStep(n.id)} className="flow-node-x">×</button>
+                      <button title="Delete" onClick=${() => deleteStep(n.id)} className="flow-node-x"><${Icon.Trash}/></button>
                     </div>
                     ${addNextFor?.frameId === n.id && html`
-                      <div xmlns="http://www.w3.org/1999/xhtml" className="flow-node-kind-pop" onClick=${ev => ev.stopPropagation()} onMouseDown=${ev => ev.stopPropagation()}>
+                      <div xmlns="http://www.w3.org/1999/xhtml" className="flow-node-kind-pop" style=${{ pointerEvents: "auto" }} onClick=${ev => ev.stopPropagation()} onMouseDown=${ev => ev.stopPropagation()}>
                         <button onClick=${() => { addNextStep(n.id, "page");         setAddNextFor(null); }}>▢ Step</button>
                         <button onClick=${() => { addNextStep(n.id, "form");         setAddNextFor(null); }}>▤ Form</button>
                         <button onClick=${() => { addNextStep(n.id, "substep");      setAddNextFor(null); }}>· Substep</button>
@@ -5346,6 +5491,21 @@ function FlowView({ model, setEdits }) {
             `;
           })}
           ${hasFlowSelection ? renderFlowEdges() : null}
+          ${arrowFrom && connectPt && (() => {
+            // Rubber-band from the source node to the cursor: anchor on whichever
+            // side of the node faces the pointer so the line never crosses the box.
+            const n = layout.nodes.find(x => x.id === arrowFrom);
+            if (!n) return null;
+            const cxC = n.x + n.w / 2, cyC = n.y + n.h / 2;
+            const sx = connectPt.x >= cxC ? n.x + n.w : n.x;
+            const sy = cyC;
+            return html`
+              <g key="connect-rubber" style=${{ pointerEvents: "none" }}>
+                <circle cx=${sx} cy=${sy} r="4" fill="var(--accent)"/>
+                <path d=${`M ${sx} ${sy} L ${connectPt.x} ${connectPt.y}`} fill="none"
+                      stroke="var(--accent)" strokeWidth="2" strokeDasharray="6 4" markerEnd="url(#flow-arr)"/>
+              </g>`;
+          })()}
         </svg>
         </div>
         <${ZoomPill} zoom=${zoom}/>
@@ -5775,7 +5935,7 @@ function IAView({ model, setEdits }) {
                         ${!n.isRoot && html`<button title="Add overlay"    onClick=${() => addChild(n.id, "overlay")}>+ overlay</button>`}
                         ${!n.isRoot && html`<button title="Rename"         onClick=${() => renameFrame(n.id)}><${Icon.Pen}/></button>`}
                         ${!n.isRoot && html`<button title="Comment"        onClick=${() => setCommentAt({ key: "ia:" + n.id, label: n.label })}><${Icon.Comment}/></button>`}
-                        ${!n.isRoot && html`<button title="Delete"         onClick=${() => deleteFrame(n.id)} className="ia-tree-action-x">×</button>`}
+                        ${!n.isRoot && html`<button title="Delete"         onClick=${() => deleteFrame(n.id)} className="ia-tree-action-x"><${Icon.Trash}/></button>`}
                       </div>
                     `}
                   </div>
@@ -5799,7 +5959,7 @@ function IAView({ model, setEdits }) {
                     <stop offset="0%"   stopColor="var(--border-strong)" stopOpacity="0.1"/>
                     <stop offset="100%" stopColor="var(--border-strong)" stopOpacity="1"/>
                   </linearGradient>
-                  <path d=${`M ${fx} ${fy} C ${fx} ${midY}, ${tx} ${midY}, ${tx} ${ty}`}
+                  <path className="edge-flow" d=${`M ${fx} ${fy} C ${fx} ${midY}, ${tx} ${midY}, ${tx} ${ty}`}
                         fill="none" stroke=${`url(#${gid})`} strokeWidth="1.2"/>
                 </g>
               `;
@@ -5848,7 +6008,7 @@ function IAView({ model, setEdits }) {
               <div className="ia-content-actions">
                 <button className="tbtn" onClick=${() => renameFrame(active.id)} title="Rename"><${Icon.Pen}/></button>
                 <button className="tbtn" onClick=${() => setCommentAt({ key: "ia:" + active.id, label: active.label })} title="Comment"><${Icon.Comment}/></button>
-                <button className="tbtn tbtn-danger" onClick=${() => deleteFrame(active.id)} title="Delete">×</button>
+                <button className="tbtn tbtn-danger" onClick=${() => deleteFrame(active.id)} title="Delete"><${Icon.Trash}/></button>
               </div>
             </header>
 
@@ -54353,6 +54513,27 @@ function UtBufferedTextarea({ value, commit, className, placeholder, rows }) {
     onInput=${(e) => setV(e.target.value)}
     onBlur=${() => { focused.current = false; commit(v); }}/>`;
 }
+/* Inline "add person" row - two fields (name, email) live on the screen so you
+   can add, add, add without a chain of native prompts. Both fields optional;
+   Enter in either submits. After add, fields clear and focus returns to name. */
+function UtAddPersonRow({ onAdd }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const nameRef = useRef(null);
+  const submit = () => {
+    onAdd(name.trim() || undefined, email.trim() || undefined);
+    setName(""); setEmail("");
+    if (nameRef.current) nameRef.current.focus();
+  };
+  const onKey = (e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } };
+  return html`<div className="ut-add-person">
+    <input ref=${nameRef} className="ut-add-person-name" type="text" placeholder="Name (optional)"
+      value=${name} onInput=${(e) => setName(e.target.value)} onKeyDown=${onKey}/>
+    <input className="ut-add-person-email" type="email" placeholder="Email (optional)"
+      value=${email} onInput=${(e) => setEmail(e.target.value)} onKeyDown=${onKey}/>
+    <button className="tbtn ut-btn-sm ut-add-person-btn" onClick=${submit}><${Icon.Plus}/> Add</button>
+  </div>`;
+}
 
 /* User Testing - dedicated FULL-SCREEN workspace (createPortal over the
    canvas). Opened from a prototype node's User-testing action (scoped to that
@@ -54585,7 +54766,6 @@ function UserTestingScreen({ slug, onClose, info }) {
                         <div className="ut-cohort-head">
                           <${UtBufferedInput} className="ut-cohort-name" value=${c.name} placeholder="List name"
                             commit=${(v) => op({ op: "cohort-update", sessionId: active.id, cohortId: c.id, name: v })}/>
-                          <button className="tbtn ut-btn-sm" onClick=${async () => { const name = await uiPrompt("Participant name (optional):", ""); if (name === null) return; const email = await uiPrompt("Participant email (optional):", ""); if (email === null) return; op({ op: "participant-add", sessionId: active.id, cohortId: c.id, name: name || undefined, email: email || undefined }); }}><${Icon.Plus}/> Add person</button>
                           <button className="tbtn ut-btn-danger ut-btn-icon" title="Delete list" onClick=${async () => { if (!await uiConfirm(`Delete list "${c.name || c.id}" and its participants?`)) return; op({ op: "cohort-delete", sessionId: active.id, cohortId: c.id }); }}><${Icon.Trash}/></button>
                         </div>
                         <div className="ut-people-list">
@@ -54617,6 +54797,7 @@ function UserTestingScreen({ slug, onClose, info }) {
                               </div>
                             </div>`;
                           })}
+                          <${UtAddPersonRow} onAdd=${(name, email) => op({ op: "participant-add", sessionId: active.id, cohortId: c.id, name, email })}/>
                         </div>
                       </div>`)}
                     <button className="tbtn ut-add-cohort" onClick=${async () => { const name = await uiPrompt("Participant list name:", "List " + (cohorts.length + 1)); if (name === null) return; op({ op: "cohort-add", sessionId: active.id, name: name || undefined }); }}><${Icon.Plus}/> Add participant list</button>
@@ -55065,14 +55246,6 @@ function WorkflowUserTestingPanel({ node, onClose, zoom }) {
                         placeholder="Cohort"
                         onChange=${(e) => op({ op: "cohort-update", sessionId: s.id, cohortId: c.id, name: e.target.value })}
                       />
-                      <button className="shares-btn" title="Add participant"
-                        onClick=${async () => {
-                          const name = await uiPrompt("Participant name (optional):", "");
-                          if (name === null) return;
-                          const email = await uiPrompt("Participant email (optional):", "");
-                          if (email === null) return;
-                          op({ op: "participant-add", sessionId: s.id, cohortId: c.id, name: name || undefined, email: email || undefined });
-                        }}><${Icon.Plus}/></button>
                       <button className="shares-btn" title="Delete cohort"
                         onClick=${async () => {
                           if (!await uiConfirm(`Delete cohort "${c.name || c.id}" and its participants?`)) return;
@@ -55110,6 +55283,7 @@ function WorkflowUserTestingPanel({ node, onClose, zoom }) {
                         </div>
                       </div>
                     `)}
+                    <${UtAddPersonRow} onAdd=${(name, email) => op({ op: "participant-add", sessionId: s.id, cohortId: c.id, name, email })}/>
                   </div>
                 `)}
 
