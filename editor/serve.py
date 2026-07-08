@@ -3182,6 +3182,36 @@ _GDS_COPY_SKIP = {".git", ".staging", ".history", "sync-log.json",
 _GDS_LOCK = threading.Lock()
 
 
+def _gds_tree_digest(ds_dir):
+    """Whole-tree DS content digest: sha256 over every (relpath, sha256(file))
+    pair, sorted, skipping exactly what sync never transfers (_GDS_COPY_SKIP)
+    plus meta.json (it carries the project-only globalRef stamp, so otherwise
+    identical trees would hash differently). This is the drift currency for
+    global-DS sync: unlike the trio hash it sees edits to shells/, templates/,
+    components/, themes/ and assets/ - all of which push/pull DO transfer."""
+    if not os.path.isdir(ds_dir):
+        return ""
+    h = hashlib.sha256()
+    skip = set(_GDS_COPY_SKIP) | {"meta.json"}
+    for root, dirs, files in os.walk(ds_dir):
+        dirs[:] = sorted(d for d in dirs if d not in skip)
+        rel_root = os.path.relpath(root, ds_dir)
+        for name in sorted(files):
+            if name in skip:
+                continue
+            rel = name if rel_root == "." else rel_root + "/" + name
+            try:
+                with open(os.path.join(root, name), "rb") as f:
+                    fh = hashlib.sha256(f.read()).hexdigest()
+            except OSError:
+                continue
+            h.update(rel.encode("utf-8", "replace"))
+            h.update(b"\x00")
+            h.update(fh.encode("ascii"))
+            h.update(b"\x00")
+    return h.hexdigest()[:16]
+
+
 def _global_ds_root(*, must_exist=False):
     """Workspace-level DS library dir. Raises ValueError outside workspace
     mode - a single-project install has no cross-project library to offer."""
@@ -15989,28 +16019,35 @@ class H(http.server.SimpleHTTPRequestHandler):
                 g_heal = self._gds_refresh_version(gdir, gmeta)
                 if g_heal is not None:
                     self._gds_write_meta_atomic(gdir, gmeta)
-                    # The global's cache only moves via daemon sync writes, so
-                    # cache==baseline means no sync since the stamp: the heal
-                    # is a format refresh of the SAME content (12-char seed
-                    # stamp -> 16-char trio hash) - carry the baseline across
-                    # the rename instead of fabricating "Global updated".
-                    # Never do this for the PROJECT side: its files are
-                    # exactly what agents edit, a stale cache there IS drift.
-                    if (ref.get("globalBaseVersion") or "") == g_heal[0]:
-                        ref["globalBaseVersion"] = g_heal[1]
-                        meta_dirty = True
-            live_p = meta.get("version") or ""
-            live_g = state["gmeta"].get("version") or ""
+            # Drift currency: WHOLE-TREE digests, so edits confined to
+            # shells/ templates/ components/ themes/ assets/ count as drift
+            # too (push/pull transfer them; the trio hash never saw them).
+            live_p = _gds_tree_digest(ds_dir)
+            live_g = _gds_tree_digest(gdir) if state["globalExists"] else ""
+            state["projectDigest"] = live_p
+            state["globalDigest"] = live_g
             if state["globalExists"] and live_p and live_p == live_g:
                 # Content-identical trees are in sync BY DEFINITION, whatever
                 # format the stored baselines carry - migrate the stamps
-                # quietly (covers links promoted before live recompute).
+                # quietly (covers links stamped in trio/seed currency).
                 if (ref.get("projectBaseVersion") or "") != live_p or \
                    (ref.get("globalBaseVersion") or "") != live_g:
                     ref["projectBaseVersion"] = live_p
                     ref["globalBaseVersion"] = live_g
                     meta_dirty = True
             else:
+                base_g = ref.get("globalBaseVersion") or ""
+                if state["globalExists"] and base_g and base_g != live_g and \
+                   base_g == (state["gmeta"].get("version") or ""):
+                    # Stamp-era bridge: the baseline predates tree digests
+                    # (trio/seed currency) but equals the global's live trio
+                    # hash - its sync-transferred trio is unchanged since the
+                    # stamp, so carry the baseline to digest currency instead
+                    # of fabricating "Global updated". Never bridge the
+                    # PROJECT side: its files are exactly what agents edit,
+                    # and a mismatch there IS the drift being reported.
+                    ref["globalBaseVersion"] = base_g = live_g
+                    meta_dirty = True
                 state["projectChanged"] = live_p != (ref.get("projectBaseVersion") or "")
                 state["globalChanged"] = state["globalExists"] and \
                     live_g != (ref.get("globalBaseVersion") or "")
@@ -16255,7 +16292,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "fromVersion": None, "toVersion": meta.get("version") or "",
                 "label": meta.get("label") or "", "note": (body.get("note") or "").strip(),
             })
-            _stamp_project_link(gid, meta.get("version") or "", meta.get("version") or "",
+            # Baselines are stamped in tree-digest currency (what push/pull
+            # actually transfer); post-copy both trees digest identically.
+            dg = _gds_tree_digest(ds_dir)
+            _stamp_project_link(gid, dg, dg,
                                 f"DS promote: {ds_id} → global {gid}")
             # Best-effort per-DS git repo so the library is versioned from birth.
             committed = False
@@ -16317,7 +16357,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "fromVersion": gmeta.get("version") or "", "toVersion": meta.get("version") or "",
                 "label": meta.get("label") or "", "note": note,
             })
-            _stamp_project_link(gid, meta.get("version") or "", meta.get("version") or "",
+            dg = _gds_tree_digest(ds_dir)
+            _stamp_project_link(gid, dg, dg,
                                 f"DS push: {ds_id} → global {gid}")
             committed = False
             try:
@@ -16347,7 +16388,6 @@ class H(http.server.SimpleHTTPRequestHandler):
                 _copy_ds_tree(gdir, ds_dir, skip_extra=("meta.json",) + GDS_TRIO_NAMES)
             except Exception as e:
                 return self._reply(500, {"error": f"copy failed: {type(e).__name__}: {e}"})
-            new_version = _ds_trio_version(g_styles, g_gallery)
             overrides = {}
             for k in ("genre", "builtFrom", "parentRef", "defaultStyle",
                       "defaultStyleContract", "styleContract", "buildPolicy",
@@ -16355,10 +16395,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                       "components", "shells", "templates"):
                 if k in gmeta:
                     overrides[k] = gmeta.get(k)
+            # Baselines in tree-digest currency: post-pull the project tree
+            # equals the global tree (whole tree copied + trio written
+            # byte-identical; meta.json is outside the digest), so one digest
+            # of the SOURCE stamps both sides.
+            dg = _gds_tree_digest(gdir)
             overrides["globalRef"] = {
                 "id": gid,
-                "globalBaseVersion": gmeta.get("version") or "",
-                "projectBaseVersion": new_version,
+                "globalBaseVersion": dg,
+                "projectBaseVersion": dg,
                 "syncedAt": now,
             }
             label = (gmeta.get("label") or meta.get("label") or "v1")
