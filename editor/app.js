@@ -61493,6 +61493,11 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         <//>`}
         <span className="workflow-node-asset-name" title=${path}>${basename}</span>
         ${node.animated && html`<span className="workflow-node-asset-tag" title="SMIL animation detected">◐</span>`}
+        ${isDsGallery && dsDir && html`
+          <span className="workflow-node-asset-gds" onMouseDown=${(e) => e.stopPropagation()}>
+            <${GlobalDsSyncActions} dsId=${(dsDir.split("/").pop() || "").toLowerCase()} compact=${true}/>
+          </span>
+        `}
         <span className="workflow-node-bar-spacer"/>
         <${WorkflowAssetBgColorPicker}
           nodeId=${node.id}
@@ -61602,11 +61607,6 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
           onMouseDown=${(e) => e.stopPropagation()}
         >×<//>
       </div>
-      ${isDsGallery && dsDir && html`
-        <div className="workflow-asset-sync-row" onMouseDown=${(e) => e.stopPropagation()}>
-          <${GlobalDsSyncActions} dsId=${(dsDir.split("/").pop() || "").toLowerCase()} compact=${true}/>
-        </div>
-      `}
       <div
         className="workflow-node-asset-body"
         data-transparent-bg=${bgTransparent ? "true" : "false"}

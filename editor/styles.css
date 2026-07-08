@@ -30804,10 +30804,11 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
    reads badly with this longer copy) */
 .gds-empty { text-align: left; margin: 0; max-width: 560px; }
 .gds-empty p { margin: 8px 0 0; line-height: 1.55; }
-/* DS gallery asset card - slim sync strip between the bar and the thumb */
-.workflow-asset-sync-row {
-  display: flex; align-items: center; padding: 4px 8px;
-  border-bottom: 1px solid var(--border, rgba(0,0,0,0.1));
-  background: var(--panel, rgba(255,255,255,0.6));
-}
-.workflow-asset-sync-row .gds-sync { margin-left: 0; flex-wrap: wrap; }
+/* DS gallery asset card - global-sync chip set lives IN the floating card
+   bar (the card body is position:absolute inset:0, so any in-flow strip
+   under the bar paints BENEATH the iframe - invisible). Tightened to the
+   bar's 26px height. */
+.workflow-node-asset-gds { display: inline-flex; align-items: center; flex: 0 0 auto; margin-left: 6px; }
+.workflow-node-asset-gds .gds-sync { margin-left: 0; flex-wrap: nowrap; gap: 4px; }
+.workflow-node-asset-gds .gds-sync-btn { padding: 2px 7px; font-size: 11px; }
+.workflow-node-asset-gds .gds-sync-chip { font-size: 11px; }
