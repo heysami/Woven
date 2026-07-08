@@ -11505,13 +11505,32 @@ class H(http.server.SimpleHTTPRequestHandler):
                 qs = urllib.parse.parse_qs(parsed.query)
                 project_id = _qs_get(qs, "project") or ""
                 if not project_id and WORKSPACE_DIR:
-                    # Last-resort: probe the Referer (covers the rare case
-                    # where the iframe URL itself lacks ?project=).
+                    # Probe the Referer (covers the case where the document
+                    # URL itself lacks ?project=).
                     try:
                         ref_q = urllib.parse.parse_qs(urllib.parse.urlparse(self.headers.get("Referer", "")).query)
                         project_id = _qs_get(ref_q, "project") or ""
                     except Exception:
                         project_id = ""
+                    if project_id:
+                        # Don't serve the document on borrowed context -
+                        # redirect once with ?project= RESTORED. Referer grace
+                        # only survives one hop: the page would load, but its
+                        # location.search would be empty, so every URL its
+                        # scripts build at runtime (the gallery live-previews:
+                        # 'shells/app-shell.html' + location.search, the
+                        # template thumbnails) goes out bare with a
+                        # project-less Referer and 404s. Restoring the query
+                        # on the document makes it self-sufficient for the
+                        # whole subtree. Loop-safe: the redirected request
+                        # carries project=.
+                        loc = parsed.path + ("?" + parsed.query + "&" if parsed.query else "?") \
+                            + "project=" + urllib.parse.quote(project_id)
+                        self.send_response(302)
+                        self.send_header("Location", loc)
+                        self.send_header("Cache-Control", "no-store")
+                        self.end_headers()
+                        return
                 return self._serve_source_html(file_path, project_id)
         # CSS under source/ or design-systems/ - stamp ?project= onto its
         # own @import and url() refs. The HTML branch above gets ?project onto
