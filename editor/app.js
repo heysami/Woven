@@ -4622,6 +4622,35 @@ function PrototypeView() {
   `;
 }
 
+/* Inline "add lane" row - label field + a click-to-cycle kind pill live in the
+   lane list, so a lane is added in one interaction instead of a label prompt
+   chained to a kind prompt. Enter or Add submits; the field clears + refocuses
+   so you can keep adding. */
+function FlowAddLaneRow({ onAdd }) {
+  const KINDS = ["user", "system", "service"];
+  const [label, setLabel] = useState("");
+  const [kind, setKind] = useState("user");
+  const inputRef = useRef(null);
+  const submit = () => {
+    const t = label.trim();
+    if (!t) { if (inputRef.current) inputRef.current.focus(); return; }
+    onAdd(t, kind);
+    setLabel("");
+    if (inputRef.current) inputRef.current.focus();
+  };
+  return html`<div className="flow-add-lane">
+    <button type="button" className="flow-add-lane-kind" data-kind=${kind}
+      title=${`Lane kind: ${kind} (click to change)`}
+      onClick=${() => setKind(KINDS[(KINDS.indexOf(kind) + 1) % KINDS.length])}>
+      <span data-kind=${kind}/>${kind}</button>
+    <input ref=${inputRef} className="flow-add-lane-label" type="text"
+      placeholder="New lane (e.g. Customer, Backend API, Stripe)"
+      value=${label} onInput=${(e) => setLabel(e.target.value)}
+      onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } }}/>
+    <button className="tbtn flow-add-lane-btn" onClick=${submit}><${Icon.Plus}/> Add</button>
+  </div>`;
+}
+
 /* ────────── User-flow view ──────────
    Flowchart: frames as nodes, arrows as labeled edges. A node with 2+ outgoing
    arrows is rendered as a decision diamond (the action labels on the outgoing
@@ -4935,11 +4964,10 @@ function FlowView({ model, setEdits }) {
   }, [arrowFrom]);
 
   // ───── mutations ─────
-  const addLane = async () => {
-    const label = await uiPrompt("New swimlane label (e.g. 'Customer', 'Backend API', 'Stripe'):");
-    if (!label) return;
-    const kind = await uiPrompt("Lane kind - user, system, or service?", "user") || "user";
-    queue({ target: "meta", kind: "lane.add", lane: { id: slugify(label), label, kind } });
+  const addLane = (label, kind) => {
+    const t = String(label || "").trim();
+    if (!t) return;
+    queue({ target: "meta", kind: "lane.add", lane: { id: slugify(t), label: t, kind: kind || "user" } });
   };
   const renameLane = async (laneId) => {
     const l = lanes.find(x => x.id === laneId); if (!l) return;
@@ -4992,9 +5020,10 @@ function FlowView({ model, setEdits }) {
     const label = await uiPrompt(`New ${kindLabels[kind] || "step"} label:`); if (!label) return;
     const id = slugify(label);
     if (frames.find(f => f.id === id)) { uiAlert(`Step "${id}" already exists.`); return; }
-    const action = (kind === "decision")
-      ? "" // decision branches usually carry the condition; leave blank for the user to fill
-      : (await uiPrompt(`Action that goes from "${from.label}" → "${label}":`, "") || "");
+    // Arrow action starts blank and is filled inline on the connector ("edit
+    // action") - no second prompt chained after the label. Matches how decision
+    // branches already behave.
+    const action = "";
     queue({
       target: "frame", kind: "add",
       frame: { id, label, kind, lane: laneIdOf(from), parent: kind === "overlay" ? from.id : undefined, x: 0, y: 0, w: model.defaultFrame.w, h: model.defaultFrame.h },
@@ -5272,7 +5301,7 @@ function FlowView({ model, setEdits }) {
             </div>
           `)}
         </div>
-        ${!embed && html`<button className="tbtn" onClick=${addLane}><${Icon.Plus}/> New lane</button>`}
+        ${!embed && html`<${FlowAddLaneRow} onAdd=${addLane}/>`}
         <h3 style=${{ marginTop: 20 }}>Legend</h3>
         <div className="flow-legend">
           <div className="flow-legend-row"><span className="flow-legend-step"/> Step (page/state/overlay)</div>
