@@ -5346,6 +5346,11 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   padding: 6px 8px;
 }
 .th-git-msg { min-height: 46px; resize: vertical; }
+/* Summarise-changes row sits flush above the commit textarea (the panel's
+   column gap provides the spacing below, so pull the row's own gap back). */
+.th-git-msg-head { display: flex; align-items: center; justify-content: flex-end; margin-bottom: -4px; }
+.th-git-msg-head .th-git-link { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.th-git-msg-head .th-git-link:disabled { color: var(--text-dim, #888); cursor: default; text-decoration: none; }
 .th-git-input:focus,
 .th-git-msg:focus { outline: none; border-color: var(--accent); }
 .th-git-status { display: flex; flex-direction: column; gap: 8px; }

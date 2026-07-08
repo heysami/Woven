@@ -12250,6 +12250,50 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
     const j = await op("publish", {});
     if (j) { flashNote("Pushed to origin/" + (j.branch || "")); reload(); }
   };
+  // Draft a one-sentence commit message from the ACTUAL diff, replacing the
+  // generic "Woven live session - N files changed" seed. Pulls the working
+  // diff via /__git/diff, strips machine-generated noise (run thumbnails,
+  // undo history, viewport) so the model only sees real work, then asks
+  // /__llm_run for one sentence. Project-scoped only (llm_run needs ?project=),
+  // so the button is hidden for global-DS repos (urlSuffix).
+  const doSummarise = async () => {
+    setBusy("summarise"); setErr(null);
+    try {
+      const NOISE = /^(workflow\/(runs|views)\/|workflow\/viewport\.json|\.history\/|\.trash\/|editor\/chat\.jsonl|\.DS_Store)/;
+      const dr = await fetch(gurl("/__git/diff?kind=working"));
+      const dj = dr.ok ? await dr.json().catch(() => ({})) : {};
+      const PER_FILE = 4000, TOTAL = 48000;
+      let total = 0;
+      const kept = [];
+      for (const sec of String(dj.diff || "").split(/\n(?=diff --git )/)) {
+        if (!sec.startsWith("diff --git")) continue;
+        const m = sec.match(/^diff --git a\/(\S+)/);
+        if (m && NOISE.test(m[1])) continue;
+        const part = sec.length > PER_FILE ? sec.slice(0, PER_FILE) + "\n… (file diff truncated)" : sec;
+        if (total + part.length > TOTAL) break;
+        kept.push(part); total += part.length;
+      }
+      const files = ((st && st.changed) || []).filter(f => !NOISE.test(f));
+      if (!kept.length && !files.length) { flashErr("Nothing to summarise - only generated files changed"); return; }
+      const prompt =
+        "Write a git commit message for the changes below: ONE plain sentence, imperative mood, under 90 characters, " +
+        "describing the actual content that changed (what was added, edited, redesigned or removed), never the file count. " +
+        "No quotes, no prefix, no trailing period. Output the sentence only.\n\n" +
+        "Changed files:\n" + files.slice(0, 80).join("\n") +
+        (kept.length ? "\n\nDiff:\n" + kept.join("\n") : "\n\n(New files only - no diff against the last commit.)");
+      const r = await fetch(apiUrl("/__llm_run"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skill: "llm", provider: "anthropic", model: "cli-default", prompt }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "summarise failed");
+      const line = String(j.text || "").split("\n").map(s => s.trim()).filter(Boolean)[0] || "";
+      if (!line) throw new Error("the model returned no text");
+      setMsg(line.replace(/^["'`]+|["'`.]+$/g, ""));
+      msgTouched.current = true;
+    } catch (e) { flashErr(e.message || e); }
+    finally { setBusy(""); }
+  };
   const doPull = async () => {
     const j = await op("pull", {});
     if (j) {
@@ -12630,6 +12674,12 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
               </div>`}
 
             ${!isGuest && html`
+              ${!urlSuffix && html`
+                <div className="th-git-msg-head">
+                  <button className="th-git-link th-git-summarise" disabled=${!st.dirty || !!inflight || busy === "summarise"} onClick=${doSummarise}
+                    title="Draft a one-sentence commit message from the actual content of your uncommitted changes">
+                    <${Icon.Spark}/> ${busy === "summarise" ? "Summarising…" : "Summarise changes"}</button>
+                </div>`}
               <textarea className="th-git-msg" placeholder="Commit message…" value=${msg}
                 onInput=${e => { msgTouched.current = true; setMsg(e.target.value); }}></textarea>
 
