@@ -133,7 +133,7 @@ WOVEN_SYNC_VERSION = 1
 # multiple GB - committing them makes commits crawl and pushes fail GitHub's
 # 100MB-per-file limit.
 _GITIGNORE_LOCAL = [
-    "workflow/viewport.json",   # per-machine canvas viewport (see _workflow_save)
+    "workflow/viewport.json",   # per-machine camera pan/zoom only (see _workflow_save); node position/size sync in workflow.json
     "workflow/runs/",           # generated run artifacts (assets/thumbnails) - GBs
     "workflow/views/",          # generated per-version prototype snapshots - GBs
     "editor/chat.jsonl",        # local chat transcript - large, machine-local, never sync
@@ -238,17 +238,15 @@ def _heal_workflow_json(path):
 
 
 def _sidecar_layout(project_root):
-    """Return the per-machine node layout map {id: {x, y}} from the gitignored
+    """Return the LEGACY node layout map {id: {x, y}} from the gitignored
     viewport sidecar (workflow/viewport.json), or {} if absent.
 
-    Node POSITION lives in the sidecar, NOT in the synced workflow.json (see
-    _workflow_save), so any server-side consumer that reasons about node
-    geometry - io_resolve section containment, canvas placement - must consult
-    this or every migrated node reads as if it were at the origin. Callers
-    resolve a node's position as: the node's OWN x/y when present (a freshly
-    scaffolded agent node the editor hasn't re-saved yet), else this map, else
-    0. They must NOT write these positions back onto the node dicts they persist
-    - that would re-pollute the synced file with the churn we just removed."""
+    Node POSITION now lives on the node in the synced workflow.json (see
+    _workflow_save); this sidecar map only still carries positions for projects
+    written BEFORE positions were synced, and only until their next save (which
+    migrates x/y back onto the nodes). Server-side geometry consumers pass it to
+    _node_xy purely as a fallback: a node's OWN x/y wins, else this map, else 0.
+    New saves stop writing it, so it is empty for any project saved recently."""
     try:
         vp_path = os.path.join(project_root, "workflow", "viewport.json")
         if os.path.isfile(vp_path):
@@ -262,8 +260,9 @@ def _sidecar_layout(project_root):
 
 
 def _node_xy(node, layout, dx=0.0, dy=0.0):
-    """(x, y) for a node, honouring the position-in-sidecar split. Precedence:
-    the node's own x/y, else `layout[id]`, else 0. Non-mutating - reads only.
+    """(x, y) for a node. Precedence: the node's own x/y (synced in
+    workflow.json), else `layout[id]` (legacy sidecar fallback), else 0.
+    Non-mutating - reads only.
     `dx/dy` are unused defaults kept for call-site symmetry."""
     if not isinstance(node, dict):
         return 0.0, 0.0
@@ -6218,9 +6217,9 @@ def _wb_clear_origin(workflow, gap=80.0, default=(160.0, 160.0), layout=None):
     so a freshly dropped block never overlaps what's already there. Falls back to
     `default` on an empty canvas. Reused for the user-testing insights board.
 
-    `layout` is the per-machine node-position map (from _sidecar_layout): node
-    x/y no longer live in workflow.json, so it must be supplied to place clear of
-    existing nodes. wb items keep their own x/y (still tracked)."""
+    `layout` is the LEGACY fallback position map (from _sidecar_layout): node
+    x/y now live on the nodes in workflow.json, and _node_xy prefers them - this
+    map only covers un-migrated projects. wb items keep their own x/y."""
     layout = layout or {}
     rights, tops = [], []
     for n in (workflow.get("nodes") or []):
@@ -11879,17 +11878,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                         vp_layout = vp["layout"]
         except Exception:
             pass  # sidecar unreadable - fall back to workflow.json / defaults
-        # Rehydrate per-node canvas position (x/y) from the gitignored viewport
-        # sidecar. Node POSITION is per-machine: it lives in viewport.json (never
-        # committed) so dragging nodes around can't churn the synced workflow.json
-        # or produce the merge conflicts that used to corrupt it. Precedence: a
-        # node's own x/y in workflow.json WINS when present (a background agent
-        # that just scaffolded the node wrote it there and the editor hasn't
-        # re-saved yet, migrating it to the sidecar); else the sidecar supplies
-        # it; else we lay the node out on a fallback grid so a machine WITHOUT
-        # the sidecar (a fresh clone) doesn't stack every node at the origin.
-        # (w/h stay in workflow.json - low churn, and node SIZE should survive a
-        # clone even when POSITION doesn't.)
+        # Resolve each node's canvas position (x/y). Node POSITION and SIZE are
+        # SYNCED - they live on the node in workflow.json so they survive a clone
+        # and stay consistent across teammates. Precedence: a node's own x/y in
+        # workflow.json WINS; else the LEGACY sidecar layout supplies it (projects
+        # written before positions were synced - these migrate into workflow.json
+        # on the next save); else we lay the node out on a fallback grid so a
+        # node that somehow has no position anywhere doesn't stack at the origin.
         try:
             _need_pos = []
             for _n in (data.get("nodes") or []):
@@ -12469,32 +12464,33 @@ class H(http.server.SimpleHTTPRequestHandler):
             # sidecar so a save that doesn't carry them doesn't lose them. w/h
             # stay in workflow.json - low churn, and node SIZE should survive a
             # clone even when POSITION doesn't.
-            _existing_layout = {}
+            # Node POSITION (x/y) and SIZE (w/h) are SYNCED: they stay on the node
+            # in workflow.json so a teammate who pulls the project sees the same
+            # canvas layout. Only the CAMERA (pan/zoom) is per-machine and lives in
+            # the gitignored viewport.json sidecar. For a node the client posted
+            # WITHOUT x/y, recover it from the legacy sidecar layout (projects
+            # created before positions were synced) so the migration is lossless -
+            # the recovered value persists into workflow.json on this very write.
+            _legacy_layout = {}
             try:
                 _vp_read = os.path.join(wf_dir, "viewport.json")
                 if os.path.isfile(_vp_read):
                     with open(_vp_read, "r", encoding="utf-8") as _vf:
                         _vp_prev = json.load(_vf)
                     if isinstance(_vp_prev, dict) and isinstance(_vp_prev.get("layout"), dict):
-                        _existing_layout = _vp_prev["layout"]
+                        _legacy_layout = _vp_prev["layout"]
             except Exception:
-                _existing_layout = {}
-            layout = {}
+                _legacy_layout = {}
             for n in clean_nodes:
                 if not isinstance(n, dict):
                     continue
-                nid = n.get("id")
-                if not isinstance(nid, str):
-                    continue
-                gx = n.get("x"); gy = n.get("y")
-                if gx is None or gy is None:
-                    prev = _existing_layout.get(nid)
+                if n.get("x") is None or n.get("y") is None:
+                    prev = _legacy_layout.get(n.get("id"))
                     if isinstance(prev, dict):
-                        if gx is None: gx = prev.get("x")
-                        if gy is None: gy = prev.get("y")
-                if gx is not None and gy is not None:
-                    layout[nid] = {"x": gx, "y": gy}
-                n.pop("x", None); n.pop("y", None)
+                        if n.get("x") is None and prev.get("x") is not None:
+                            n["x"] = prev["x"]
+                        if n.get("y") is None and prev.get("y") is not None:
+                            n["y"] = prev["y"]
             out = {"nodes": clean_nodes, "edges": clean_edges, "wb": clean_wb}
             if clean_dismissed:
                 out["dismissedPrototypeSlugs"] = clean_dismissed
@@ -12502,16 +12498,16 @@ class H(http.server.SimpleHTTPRequestHandler):
                 os.makedirs(wf_dir, exist_ok=True)
             except Exception as e:
                 return self._reply(500, {"error": f"could not create workflow dir: {e}"})
-            # Canvas viewport (pan/zoom) is PER-MACHINE state - persist it to a
+            # Canvas CAMERA (pan/zoom) is PER-MACHINE state - persist it to a
             # local, gitignored sidecar (workflow/viewport.json) so it never lands
-            # in the synced workflow.json, where it caused cross-machine merge
-            # conflicts (and, after a bad merge, corrupted the file). The GET
-            # endpoint merges it back so the client contract is unchanged.
+            # in the synced workflow.json. Node position/size are NOT here; they
+            # stay on the nodes in workflow.json (synced). The GET endpoint merges
+            # pan/zoom back so the client contract is unchanged.
             try:
                 vp_path = os.path.join(wf_dir, "viewport.json")
                 vp_tmp = vp_path + ".tmp"
                 with open(vp_tmp, "w", encoding="utf-8") as vf:
-                    json.dump({"pan": pan, "zoom": zoom, "layout": layout}, vf, indent=2)
+                    json.dump({"pan": pan, "zoom": zoom}, vf, indent=2)
                 os.replace(vp_tmp, vp_path)
                 _gitops.ensure_gitignore(project_root, _GITIGNORE_LOCAL)
             except Exception:
