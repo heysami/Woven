@@ -264,7 +264,7 @@ In multi-project mode the workspace dir (`TH_WORKSPACE_DIR`) is **separate from 
 ├── .trash/                                 # recoverable deleted projects (Housekeeping → empty)
 └── projects/
     └── <project-id>/
-        ├── source/main/                    # the generated prototype HTML/CSS/JS (per branch; default "main")
+        ├── source/prototype/               # the generated prototype HTML/CSS/JS (one dir per prototype; default "prototype")
         ├── editor/data.js                  # canvas state (frames, nodes, arrows)  ·  + chat.jsonl
         ├── workflow/workflow.json          # workflow graph  ·  + runs/ + views/ snapshots
         ├── design-systems/<ds-id>/         # design systems you build for this project (empty until then)
