@@ -15953,6 +15953,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         ds_dir = os.path.join(project_root, "design-systems", ds_id)
         meta = self._design_system_read_meta(ds_dir)
         ref = meta.get("globalRef") if isinstance(meta.get("globalRef"), dict) else None
+        # The meta.json "version" field is a cache written only by the
+        # daemon's own save paths - agent edits and direct file writes change
+        # styles.css / gallery.html WITHOUT rebumping it, so the stored-string
+        # drift check said "in sync" over real drift and Push/Pull stayed
+        # disabled. Recompute the trio hash from the files on every
+        # link-state read and self-heal a stale cache before comparing.
+        p_heal = self._gds_refresh_version(ds_dir, meta)
+        meta_dirty = p_heal is not None
         state = {
             "projectRoot": project_root,
             "projectId": (_qs_get(qs, "project") or "").strip() or os.path.basename(project_root),
@@ -15976,12 +15984,72 @@ class H(http.server.SimpleHTTPRequestHandler):
             state["gdir"] = gdir
             if gdir and _gds_trio_built(gdir):
                 state["globalExists"] = True
-                state["gmeta"] = _gds_read_meta(gdir)
-            # Stored-string comparison only (see _ds_trio_version note).
-            state["projectChanged"] = (meta.get("version") or "") != (ref.get("projectBaseVersion") or "")
-            state["globalChanged"] = state["globalExists"] and \
-                (state["gmeta"].get("version") or "") != (ref.get("globalBaseVersion") or "")
+                gmeta = _gds_read_meta(gdir)
+                state["gmeta"] = gmeta
+                g_heal = self._gds_refresh_version(gdir, gmeta)
+                if g_heal is not None:
+                    self._gds_write_meta_atomic(gdir, gmeta)
+                    # The global's cache only moves via daemon sync writes, so
+                    # cache==baseline means no sync since the stamp: the heal
+                    # is a format refresh of the SAME content (12-char seed
+                    # stamp -> 16-char trio hash) - carry the baseline across
+                    # the rename instead of fabricating "Global updated".
+                    # Never do this for the PROJECT side: its files are
+                    # exactly what agents edit, a stale cache there IS drift.
+                    if (ref.get("globalBaseVersion") or "") == g_heal[0]:
+                        ref["globalBaseVersion"] = g_heal[1]
+                        meta_dirty = True
+            live_p = meta.get("version") or ""
+            live_g = state["gmeta"].get("version") or ""
+            if state["globalExists"] and live_p and live_p == live_g:
+                # Content-identical trees are in sync BY DEFINITION, whatever
+                # format the stored baselines carry - migrate the stamps
+                # quietly (covers links promoted before live recompute).
+                if (ref.get("projectBaseVersion") or "") != live_p or \
+                   (ref.get("globalBaseVersion") or "") != live_g:
+                    ref["projectBaseVersion"] = live_p
+                    ref["globalBaseVersion"] = live_g
+                    meta_dirty = True
+            else:
+                state["projectChanged"] = live_p != (ref.get("projectBaseVersion") or "")
+                state["globalChanged"] = state["globalExists"] and \
+                    live_g != (ref.get("globalBaseVersion") or "")
+        if meta_dirty:
+            self._gds_write_meta_atomic(ds_dir, meta)
         return state, None
+
+    @staticmethod
+    def _gds_refresh_version(ds_dir, meta):
+        """Recompute the trio version from styles.css + gallery.html and heal
+        a stale meta['version'] cache IN PLACE. Returns (oldValue, newValue)
+        when the cache was stale, None when current/unreadable. The caller
+        persists the meta and decides baseline carry semantics."""
+        if not isinstance(meta, dict) or not meta:
+            return None
+        try:
+            with open(os.path.join(ds_dir, "styles.css"), "r", encoding="utf-8", errors="replace") as f:
+                styles = f.read()
+            with open(os.path.join(ds_dir, "gallery.html"), "r", encoding="utf-8", errors="replace") as f:
+                gallery = f.read()
+        except OSError:
+            return None
+        live = _ds_trio_version(styles, gallery)
+        old = meta.get("version") or ""
+        if not live or live == old:
+            return None
+        meta["version"] = live
+        return (old, live)
+
+    @staticmethod
+    def _gds_write_meta_atomic(ds_dir, meta):
+        mp = os.path.join(ds_dir, "meta.json")
+        try:
+            tmp = mp + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2)
+            os.replace(tmp, mp)
+        except OSError:
+            pass
 
     # GET /__global_ds/status?project=<pid>&dsId=<id> - drives the DS-view
     # sync chip + the DS node affordances. Absolute paths ride along for the
