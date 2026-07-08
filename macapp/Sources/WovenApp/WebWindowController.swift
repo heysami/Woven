@@ -137,6 +137,26 @@ final class WebWindowController: NSWindowController, WKUIDelegate, WKNavigationD
         window?.close()
     }
 
+    // File chooser: like alert/confirm, WKWebView renders NOTHING for
+    // <input type="file"> unless the host supplies the panel - attachments
+    // (chat, DS node references, uploads) silently no-op without this.
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.resolvesAliases = true
+        if let window = self.window {
+            panel.beginSheetModal(for: window) { resp in
+                completionHandler(resp == .OK ? panel.urls : nil)
+            }
+        } else {
+            completionHandler(panel.runModal() == .OK ? panel.urls : nil)
+        }
+    }
+
     // JS dialogs: WKWebView renders NOTHING for alert/confirm/prompt by
     // default and the editor uses them (uiAlert wrappers still funnel here
     // in fallback paths).
