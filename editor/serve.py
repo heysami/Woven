@@ -15282,6 +15282,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             closest_existing = grab("Closest existing in DS")
             # The "Closest existing" line often has trailing parens with delta info - keep it as-is.
             rationale = grab("Rationale")
+            # Free-text reviewer note the editor writes back via the review
+            # modal - lets the user attach steering ("accept but rename to
+            # `.btn-sm`", "reject - use the ghost variant instead") that
+            # Workflow 6 reads alongside the verdict.
+            user_note = grab("User note")
             used_in_raw = grab("Used in")
             used_in = []
             for ref in used_in_raw.split(","):
@@ -15313,6 +15318,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "rationale":       rationale,
                 "usedIn":          used_in,
                 "verdict":         verdict,
+                "userNote":        user_note,
             })
         return entries
 
@@ -15341,7 +15347,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         verdicts_in = body.get("verdicts") or []
         if not isinstance(verdicts_in, list):
             return self._reply(400, {"error": "verdicts must be an array"})
-        # index → verdict map
+        # index → { verdict, note } map. `note` is optional free-text the
+        # reviewer typed in the modal; None means "leave the existing note
+        # untouched", "" means "clear it".
         wanted = {}
         for v in verdicts_in:
             if not isinstance(v, dict): continue
@@ -15349,7 +15357,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             verd = v.get("verdict")
             if not isinstance(idx, int): continue
             if verd not in (None, "accept", "reject", "defer"): continue
-            wanted[idx] = verd
+            note = v.get("note")
+            if not isinstance(note, str): note = None
+            wanted[idx] = {"verdict": verd, "note": note}
         try:
             with open(path, "r", encoding="utf-8") as f:
                 text = f.read()
@@ -15372,7 +15382,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             chunks.append(text[cursor:body_start])
             entry_body = text[body_start:body_end]
             if idx in wanted:
-                desired = wanted[idx]
+                desired = wanted[idx]["verdict"]
                 # Clear all three first, then set the desired one (if any).
                 def _flip(b, label, on):
                     pat = re.compile(r"(-\s+\[)([ x])(\]\s+" + re.escape(label) + r")", re.IGNORECASE)
@@ -15380,6 +15390,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                 entry_body = _flip(entry_body, "Accept", desired == "accept")
                 entry_body = _flip(entry_body, "Reject", desired == "reject")
                 entry_body = _flip(entry_body, "Defer",  desired == "defer")
+                note = wanted[idx]["note"]
+                if note is not None:
+                    entry_body = self._ds_upsert_note(entry_body, note)
                 applied += 1
             chunks.append(entry_body)
             cursor = body_end
@@ -15394,6 +15407,30 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._reply(500, {"error": f"could not write DS_PROPOSAL.md: {e}"})
         return self._reply(200, {"ok": True, "applied": applied, "path": "DS_PROPOSAL.md"})
+
+    # Insert / replace / clear the `**User note:**` line inside one entry body.
+    # The note is stored as a single physical line (internal whitespace
+    # collapsed) so the grab() parser round-trips it cleanly. Placed right
+    # after the Defer checkbox when present, else appended to the entry.
+    @staticmethod
+    def _ds_upsert_note(entry_body, note):
+        note = re.sub(r"\s+", " ", (note or "").strip())
+        line_re = re.compile(r"(?m)^\*\*User note:\*\*[^\n]*\n?")
+        if not note:
+            # Clear: drop any existing note line.
+            return line_re.sub("", entry_body, count=1)
+        repl = "**User note:** " + note + "\n"
+        if line_re.search(entry_body):
+            return line_re.sub(lambda _m: repl, entry_body, count=1)
+        defer_re = re.compile(r"(?mi)^-\s+\[[ x]\]\s+\*\*Defer\*\*[^\n]*\n")
+        mm = defer_re.search(entry_body)
+        if mm:
+            return entry_body[:mm.end()] + repl + entry_body[mm.end():]
+        # No Defer checkbox - append after the entry's content, before any
+        # trailing blank lines that separate it from the next proposal.
+        stripped = entry_body.rstrip("\n")
+        trailing = entry_body[len(stripped):]
+        return stripped + "\n" + repl + trailing
 
     def _design_system_read_file(self, ds_dir, name):
         path = os.path.join(ds_dir, name)
