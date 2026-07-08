@@ -267,6 +267,62 @@ final class DaemonManager {
         }
     }
 
+    // MARK: - Local services (first-boot self-heal)
+
+    /// Ensure the tree-local services are installed, via the daemon's own
+    /// installer endpoints (the exact calls the onboarding "Install" buttons
+    /// make). The product installs these into editor/tools/ from the
+    /// onboarding wizard - but the wizard only mounts on an empty landing, so
+    /// an app-managed install could sit with "+ New project" disabled on
+    /// "Install shader-verify first" and no visible way to fix it. The app
+    /// owns its daemon's tree, so it owns keeping the tree serviceable:
+    /// probe each package, install what is missing, log the outcome.
+    /// Skipped for attached daemons (their tree is user-managed).
+    func ensureLocalServices() {
+        guard ownsDaemon else { return }
+        let packages = ["rembg", "cloudflared", "glslang", "shader-verify"]
+        let base = "http://127.0.0.1:\(port)"
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            for pkg in packages {
+                guard let self = self else { return }
+                guard let status = self.syncJSON(url: base + "/__local_status?package=\(pkg)", timeout: 20),
+                      (status["installed"] as? Bool) == false else { continue }
+                self.logLine("[app] local service \(pkg) missing - installing via /__local_install")
+                var req = URLRequest(url: URL(string: base + "/__local_install")!, timeoutInterval: 900)
+                req.httpMethod = "POST"
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                req.httpBody = try? JSONSerialization.data(withJSONObject: ["package": pkg])
+                let sem = DispatchSemaphore(value: 0)
+                var ok = false
+                URLSession.shared.dataTask(with: req) { data, _, _ in
+                    if let data = data,
+                       let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                        ok = (obj["ok"] as? Bool) ?? false
+                    }
+                    sem.signal()
+                }.resume()
+                _ = sem.wait(timeout: .now() + 900)
+                self.logLine("[app] local service \(pkg) install \(ok ? "succeeded" : "failed - see onboarding card")")
+            }
+        }
+    }
+
+    private func syncJSON(url: String, timeout: TimeInterval) -> [String: Any]? {
+        guard let u = URL(string: url) else { return nil }
+        var out: [String: Any]?
+        let sem = DispatchSemaphore(value: 0)
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = timeout
+        URLSession(configuration: cfg).dataTask(with: u) { data, _, _ in
+            if let data = data {
+                out = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            }
+            sem.signal()
+        }.resume()
+        _ = sem.wait(timeout: .now() + timeout + 5)
+        return out
+    }
+
     // MARK: - Shares (for the status menu)
 
     struct ShareLink {

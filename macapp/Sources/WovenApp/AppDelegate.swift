@@ -105,6 +105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         daemonManager = dm
         dm.onReady = { [weak self] in
             self?.openEditorWindow()
+            // Self-heal the tree-local services (shader-verify, cloudflared,
+            // glslang, rembg) - a fresh or updated tree may lack them and the
+            // onboarding auto-installer only runs when its wizard is visible.
+            self?.daemonManager?.ensureLocalServices()
         }
         dm.onStateChange = { [weak self] in
             if case .failed(let msg) = self?.daemonManager?.state {
