@@ -2832,7 +2832,12 @@ const OVERLAY_CONTAINMENT_CSS = `
    meta.dsRef is set, else Prototype. */
 function DSView({ model, setEdits }) {
   const dsRef = (D.meta && D.meta.dsRef) || null;
-  const dsRefId = dsRef && dsRef.id;
+  // meta.dsRef is only stamped by project seeding / Workflow 0. A DS built
+  // from the canvas DS node (POST /__design_system) ships the trio + the
+  // runtime mirror but no dsRef stamp - fall back to the runtime registry
+  // so the Library pane (the gallery, with its promote/push/pull bar)
+  // stays reachable for those projects instead of a dead disabled tab.
+  const dsRefId = (dsRef && dsRef.id) || (allDsIds()[0] || null);
   const hasTokens = !!(D.tokens && (
     (D.tokens.surfaces || []).length ||
     (D.tokens.text || []).length ||
