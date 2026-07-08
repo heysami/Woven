@@ -62554,8 +62554,18 @@ function setCanvasDraggingSync(active) {
 // eaten somewhere we couldn't see (most commonly an iframe). Treat it as
 // the missing release so the drag terminates cleanly instead of resuming
 // when the cursor next moves over the canvas chrome.
+// WebKit derives MouseEvent.buttons from the GLOBAL hardware state, so
+// synthetic or indirect input streams can deliver every move with buttons=0
+// while the button is genuinely held - which read as "released here" and
+// killed the drag on its very first move. Only trust buttons===0 as a release
+// signal once this session has proven the field reliable (a move with
+// buttons>0 has been seen). Chromium proves it on the first move, so behavior
+// there is unchanged.
+let _mouseButtonsReliable = false;
 function isReleasedDuringMove(ev) {
-  return ev && typeof ev.buttons === "number" && ev.buttons === 0;
+  if (!(ev && typeof ev.buttons === "number")) return false;
+  if (ev.buttons > 0) { _mouseButtonsReliable = true; return false; }
+  return _mouseButtonsReliable;
 }
 // Drag shield - a transparent, full-viewport overlay installed for the LIFETIME
 // of a node drag/resize. setCanvasDraggingSync + the data-node-dragging CSS try

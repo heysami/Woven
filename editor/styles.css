@@ -9635,6 +9635,25 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   overflow-clip-margin: 64px;
   transition: box-shadow 0.12s ease;
 }
+/* ── WebKit fallback: no overflow-clip-margin ────────────────────────────
+   WebKit (Safari + the Mac app's WKWebView) does not implement
+   overflow-clip-margin, so the chrome-OUTSIDE-the-box node model - title and
+   asset bars at bottom:100% / top:100%, version strips at top:100%, port
+   labels past the node edge - gets clipped at the node's border box. And
+   overflow: clip crops HIT-TESTING as well as paint, so the bars are both
+   invisible and ungrabbable, which also kills node dragging for the kinds
+   whose drag handle IS the floating bar (prototype / frames / asset / html).
+   Fallback: drop the root clip on WebKit and let each body wrapper (which
+   already carries the rounded corners) clip its own content. Chromium keeps
+   the tighter clip + margin path. Kinds that set their own overflow: clip
+   later (composer / fmttext / mermaid / vector) intentionally keep it. */
+@supports not (overflow-clip-margin: 1px) {
+  .workflow-node { overflow: visible; }
+  /* Bodies that relied on the root clip to crop content to the rounded node
+     rect now clip themselves (asset-body already has overflow: hidden). */
+  .workflow-node-iframe-scale,
+  .workflow-node-frames-body { overflow: hidden; }
+}
 .workflow-node:hover {
   box-shadow:
     0 0 0 1px color-mix(in oklab, oklch(0% 0 0) 8%, transparent),
