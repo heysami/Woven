@@ -52507,15 +52507,38 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   }, [strokes]);
 
   // ─── Sketch tool - pointer handlers on a sibling canvas above iframe ──
+  // The canvas lives INSIDE .zoom-iframe-frame (transform: scale(canvasScale)),
+  // and its drawing buffer is its UNSCALED layout size, so raw viewport
+  // clientX/clientY would land offset (by the canvas position) and mis-scaled
+  // (by canvasScale). Map each pointer to canvas-local buffer coords via the
+  // canvas rect + buffer/rect ratio. Rect is captured once per stroke (the
+  // canvas doesn't move mid-drag) to avoid per-move layout reads.
+  const sketchXformRef = useRef(null);
+  const toSketchPoint = (e) => {
+    const m = sketchXformRef.current;
+    if (!m) return { x: e.clientX, y: e.clientY };
+    return { x: (e.clientX - m.left) * m.sx, y: (e.clientY - m.top) * m.sy };
+  };
   const onSketchDown = (e) => {
     if (tool !== "sketch") return;
     e.preventDefault();
-    sketchDrawingRef.current = { points: [{ x: e.clientX, y: e.clientY }], color: strokeColor, width: 3 };
+    const c = sketchCanvasRef.current;
+    if (c) {
+      const r = c.getBoundingClientRect();
+      const bw = c.width || c.clientWidth || r.width || 1;
+      const bh = c.height || c.clientHeight || r.height || 1;
+      sketchXformRef.current = {
+        left: r.left, top: r.top,
+        sx: r.width  ? bw / r.width  : 1,
+        sy: r.height ? bh / r.height : 1,
+      };
+    }
+    sketchDrawingRef.current = { points: [toSketchPoint(e)], color: strokeColor, width: 3 };
     setStrokes(s => [...s]);
   };
   const onSketchMove = (e) => {
     if (tool !== "sketch" || !sketchDrawingRef.current) return;
-    sketchDrawingRef.current.points.push({ x: e.clientX, y: e.clientY });
+    sketchDrawingRef.current.points.push(toSketchPoint(e));
     setStrokes(s => [...s]);   // trigger redraw
   };
   const onSketchUp = () => {
@@ -52931,8 +52954,6 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     { id: "text",    glyph: html`<${Icon.Text}/>`,      title: "Text - click an element to edit its text inline (T)" },
     { id: "comment", glyph: html`<${Icon.Comment}/>`,   title: "Comment - pin annotations to elements (C)" },
     { id: "sketch",  glyph: html`<${Icon.Pen}/>`,       title: "Sketch - free-draw on top of the prototype (S)" },
-    { id: "export",  glyph: html`<${Icon.ExportBox}/>`, title: "Export - extract the selected subtree as a standalone component (E)" },
-    { id: "import",  glyph: html`<${Icon.ImportBox}/>`, title: "Import - replace the selected element with one of your existing HTML assets (I)" },
   ];
   // Tool hotkeys (single letters when no editable is focused).
   useEffect(() => {
@@ -52942,7 +52963,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const k = (e.key || "").toLowerCase();
-      const map = { v: "select", t: "text", c: "comment", s: "sketch", e: "export", i: "import" };
+      const map = { v: "select", t: "text", c: "comment", s: "sketch" };
       if (map[k]) { e.preventDefault(); setTool(map[k]); }
     };
     window.addEventListener("keydown", onKey);
@@ -58373,16 +58394,16 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           onOpenCanvasFrames && {
             key: "canvas-frames",
             icon: html`<${Icon.Canvas}/>`,
-            tip: "Open canvas frames - spawn a node showing the editor's Canvas tab (frames + arrows) for this prototype. Offers to generate the frames data first if none exists.",
-            ariaLabel: "Open canvas frames",
+            tip: "Open screen flows - spawn a node showing the editor's Screen Flows tab (frames + arrows) for this prototype. Offers to generate the frames data first if none exists.",
+            ariaLabel: "Open screen flows",
             onClick: () => onOpenCanvasFrames(node),
             className: "workflow-node-top-action-canvas-frames",
           },
           onOpenPrototypeView && {
             key: "views",
             icon: html`<${Icon.Eye}/>`,
-            tip: "Open a view - spawn a read-only User flow / Information architecture / Timeline node for this prototype.",
-            ariaLabel: "Open prototype view",
+            tip: "Open architecture view - spawn a read-only User flow / Information architecture / Timeline node for this prototype.",
+            ariaLabel: "Open architecture view",
             className: "workflow-node-top-action-views",
             menu: [
               { key: "userflow", icon: html`<${Icon.Flow}/>`,  label: "User flow",                onClick: () => onOpenPrototypeView(node, "userflow") },
@@ -84098,11 +84119,20 @@ function DSProposalModal({ entries, path, onClose, onSaved, onDispatch, dispatch
     for (const e of entries) m[e.index] = e.verdict || null;
     return m;
   });
+  // Free-text reviewer note per entry, seeded from the file's **User note:**
+  // line. Saved back alongside the verdict so Workflow 6 can read steering
+  // ("accept but rename to `.btn-sm`") next to the accept/reject/defer pick.
+  const [notes, setNotes] = useState(() => {
+    const m = {};
+    for (const e of entries) m[e.index] = e.userNote || "";
+    return m;
+  });
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
   const [dispatchErr, setDispatchErr] = useState(null);
 
   const setVerdict = (idx, v) => setDraft(d => ({ ...d, [idx]: d[idx] === v ? null : v }));
+  const setNote = (idx, val) => setNotes(n => ({ ...n, [idx]: val }));
 
   // Esc to close.
   useEffect(() => {
@@ -84111,7 +84141,9 @@ function DSProposalModal({ entries, path, onClose, onSaved, onDispatch, dispatch
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const dirty = entries.some(e => (e.verdict || null) !== (draft[e.index] || null));
+  const dirty = entries.some(e =>
+    (e.verdict || null) !== (draft[e.index] || null) ||
+    (e.userNote || "") !== (notes[e.index] || ""));
   const counts = entries.reduce((acc, e) => {
     const v = draft[e.index];
     if (v) acc[v] = (acc[v] || 0) + 1;
@@ -84127,6 +84159,8 @@ function DSProposalModal({ entries, path, onClose, onSaved, onDispatch, dispatch
     "For each Reject → spawn the substitution pass (rewrites feature pages to the closest existing variant).",
     "For each Defer → archive to DS_DEFERRED.md.",
     "",
+    "Honor any **User note:** line under an entry as reviewer steering (e.g. a rename, a preferred variant) - thread it into that entry's handoff.",
+    "",
     "After dispatch, delete DS_PROPOSAL.md.",
   ].join("\n");
 
@@ -84140,7 +84174,7 @@ function DSProposalModal({ entries, path, onClose, onSaved, onDispatch, dispatch
     setSaving(true);
     setDispatchErr(null);
     try {
-      const verdicts = entries.map(e => ({ index: e.index, verdict: draft[e.index] || null }));
+      const verdicts = entries.map(e => ({ index: e.index, verdict: draft[e.index] || null, note: notes[e.index] || "" }));
       const r = await fetch(apiUrl("/__ds_proposals"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -84245,6 +84279,14 @@ function DSProposalModal({ entries, path, onClose, onSaved, onDispatch, dispatch
                     >${opt[0].toUpperCase()}${opt.slice(1)}</button>
                   `)}
                 </div>
+                <textarea
+                  className="ds-modal-entry-note"
+                  value=${notes[e.index] || ""}
+                  onInput=${(ev) => setNote(e.index, ev.target.value)}
+                  placeholder="Note to Workflow 6 (optional) - e.g. accept but rename to .btn-sm"
+                  rows=${1}
+                  spellCheck=${false}
+                />
               </div>
             `;
           })}
@@ -84469,7 +84511,7 @@ function SurfaceNav() {
    shortcuts wired in <App>). Moved here when the view tabs + tools migrated
    out of the top Toolbar into the vertical .editor-left-rail. */
 const EDITOR_VIEW_TABS = [
-  { key: "canvas",       icon: () => Icon.Canvas, label: "Canvas",                   kbd: "1" },
+  { key: "canvas",       icon: () => Icon.Canvas, label: "Screen Flows",             kbd: "1" },
   { key: "prototype",    icon: () => Icon.Play,   label: "Prototype",                kbd: "2" },
   { key: "flow",         icon: () => Icon.Flow,   label: "User flow",                kbd: "3" },
   { key: "ia",           icon: () => Icon.Tree,   label: "Information architecture", kbd: "4" },

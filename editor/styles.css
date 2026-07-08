@@ -14095,6 +14095,27 @@ a.ds-badge:hover, button.ds-badge:hover {
 .ds-modal-verdict-accept.is-active { background: oklch(58% 0.15 174); border-color: oklch(58% 0.15 174); color: white; }
 .ds-modal-verdict-reject.is-active { background: oklch(58% 0.18 25);  border-color: oklch(58% 0.18 25);  color: white; }
 .ds-modal-verdict-defer.is-active  { background: oklch(58% 0.14 60);  border-color: oklch(58% 0.14 60);  color: white; }
+.ds-modal-entry-note {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  min-height: 26px;
+  resize: vertical;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.ds-modal-entry-note::placeholder { color: var(--text-faint); }
+.ds-modal-entry-note:focus {
+  outline: none;
+  border-color: var(--text-faint);
+}
 .ds-modal-foot {
   display: flex;
   flex-wrap: wrap;
@@ -18610,6 +18631,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: grid; place-items: center;
   font-size: calc(16px * var(--picker-inv, 1));
   font-weight: 500;
+  /* Collapse the line box so the + glyph centers (see .slot-corner). */
+  line-height: 0;
   box-shadow: var(--shadow-md);
   transition: transform 0.12s;
   pointer-events: auto;
@@ -18662,7 +18685,10 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: grid; place-items: center;
   font-size: calc(15px * var(--picker-inv, 1));
   font-weight: 500;
-  line-height: 1;
+  /* Plus Jakarta Sans metrics leave the glyph high in the line box; 0 collapses
+     it so place-items:center lands the glyph on the true center (matches the
+     zoom-mode picker fix). */
+  line-height: 0;
   box-shadow: var(--shadow-md);
   pointer-events: auto;
   transition: transform 0.12s;
@@ -24348,6 +24374,10 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* Plus Jakarta Sans has asymmetric line metrics that leave the glyph (+, ×,
+     etc.) sitting high in a flex-centered line box; line-height:0 collapses
+     the line box so align-items:center lands the glyph on the true center. */
+  line-height: 0;
 }
 .zoom-slot-corner {
   width: 22px; height: 22px;
