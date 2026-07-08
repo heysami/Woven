@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/woven-social-preview.jpg?v=1" alt="Woven — built-in design orchestration and canvas" width="720" />
+  <img src="docs/woven-social-preview.jpg?v=2" alt="Woven — built-in design orchestration and canvas" width="720" />
   <hr width="720" />
   <p>
     <img alt="required: macOS" src="https://img.shields.io/badge/required-macOS-000000?logo=apple&logoColor=white" />
