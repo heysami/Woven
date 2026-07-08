@@ -6,7 +6,7 @@
     <img alt="required: Python 3.9+" src="https://img.shields.io/badge/required-Python%203.9%2B-3776AB?logo=python&logoColor=white" />
     <img alt="required: Node.js 18+" src="https://img.shields.io/badge/required-Node.js%2018%2B-339933?logo=nodedotjs&logoColor=white" />
     <img alt="required: Homebrew" src="https://img.shields.io/badge/required-Homebrew-FBB040?logo=homebrew&logoColor=white" />
-    <img alt="supported: Claude · Codex · opencode" src="https://img.shields.io/badge/supported-Claude%20%C2%B7%20Codex%20%C2%B7%20opencode-8A63D2" />
+    <img alt="supported CLI: Claude · Codex · opencode" src="https://img.shields.io/badge/supported%20CLI-Claude%20%C2%B7%20Codex%20%C2%B7%20opencode-8A63D2" />
   </p>
 </div>
 
