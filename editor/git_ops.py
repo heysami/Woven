@@ -475,15 +475,84 @@ def ensure_gitignore(root, lines):
     # committed - ignore rules only suppress UNtracked files. Untrack any
     # now-ignored-but-still-tracked path (e.g. a legacy repo that committed
     # editor/chat.jsonl before it was ignored) so the next commit drops it.
-    # `-c` = cached/tracked, `-i --exclude-standard` = filtered to .gitignore
-    # matches; `rm --cached` removes only the index entry, keeping the file on
-    # disk. Runs even when `add` is empty so already-listed-but-tracked files
+    # Runs even when `add` is empty so already-listed-but-tracked files
     # still self-heal.
+    untrack_ignored(root)
+
+
+def untrack_ignored(root):
+    """Drop tracked files that match .gitignore from the INDEX, keeping them on
+    disk. Ignore rules never apply to already-tracked paths, so a file committed
+    before it was ignored dirties the tree on every regeneration - forever.
+    `-c` = cached/tracked, `-i --exclude-standard` = filtered to .gitignore
+    matches; `rm --cached` removes only the index entry. The removals are left
+    STAGED - a commit (the user's next one, or heal_tracked_ignored's
+    housekeeping commit) still has to land for the tree to go clean. Chunked:
+    a legacy repo can carry thousands of these (undo history, run thumbnails)
+    and one argv would blow the exec limit. Returns the untracked paths."""
+    if not is_repo(root):
+        return []
     code, out, _e = _git(root, "ls-files", "-z", "-ci", "--exclude-standard")
-    if code == 0 and out:
-        tracked_ignored = [p for p in out.split("\0") if p]
-        if tracked_ignored:
-            _git(root, "rm", "--cached", "-r", "--quiet", "--", *tracked_ignored)
+    if code != 0 or not out:
+        return []
+    paths = [p for p in out.split("\0") if p]
+    for i in range(0, len(paths), 500):
+        _git(root, "rm", "--cached", "-r", "--quiet", "--", *paths[i:i + 500], timeout=60)
+    return paths
+
+
+def heal_tracked_ignored(root):
+    """One-shot self-heal for the 'panel always says commit' trap: untrack
+    ignored-but-tracked paths AND commit just those deletions as a housekeeping
+    commit, so the tree goes clean without user action. Strictly scoped - it
+    refuses to commit when the staged set contains ANYTHING besides deletions
+    of ignore-matched paths (never sweeps user work into the housekeeping
+    commit) and skips entirely mid-merge. Returns {healed, count, ...}."""
+    if not is_repo(root):
+        return {"healed": False, "reason": "not a repo"}
+    if conflicted_files(root):
+        return {"healed": False, "reason": "merge in progress"}
+    untrack_ignored(root)
+    # Everything staged now must be a deletion of an ignore-matched path. A
+    # deletion may also predate this call (an earlier ensure_gitignore untrack
+    # that never got committed) - that's fine, it passes the same check.
+    code, out, _e = _git(root, "diff", "--cached", "--name-status", "-z")
+    if code != 0:
+        return {"healed": False, "reason": "no HEAD"}
+    toks = out.split("\0")
+    staged = []
+    i = 0
+    while i < len(toks) - 1:
+        s = toks[i]
+        if not s:
+            i += 1
+            continue
+        if s[0] in ("R", "C"):        # rename/copy - not a deletion, bail
+            return {"healed": False, "reason": "user work already staged"}
+        staged.append((s[0], toks[i + 1]))
+        i += 2
+    if not staged:
+        return {"healed": False, "count": 0}
+    if any(s != "D" for s, _p in staged):
+        return {"healed": False, "reason": "user work already staged"}
+    paths = [p for _s, p in staged]
+    code, out, _e = _git(root, "check-ignore", "-z", "--stdin",
+                         input_text="\0".join(paths) + "\0")
+    matched = {p for p in out.split("\0") if p} if code in (0, 1) else set()
+    if set(paths) - matched:
+        return {"healed": False, "reason": "staged deletion not ignore-matched"}
+    n = len(paths)
+    msg = "Stop tracking {} generated file{} covered by .gitignore".format(
+        n, "s" if n != 1 else "")
+    args = ["commit", "-m", msg]
+    _c, uname, _e = _git(root, "config", "user.name")
+    if not uname.strip():                 # identity fallback - never fail on config
+        args = ["-c", "user.name=Woven", "-c", "user.email=woven@local"] + args
+    code, out, err = _git(root, *args, timeout=120)
+    if code != 0:
+        return {"healed": False, "reason": (err or out).strip()[:200]}
+    _c, sha, _e = _git(root, "rev-parse", "HEAD")
+    return {"healed": True, "count": n, "sha": sha.strip()}
 
 
 def log(root, limit=30):

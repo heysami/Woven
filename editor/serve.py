@@ -141,6 +141,7 @@ _GITIGNORE_LOCAL = [
     ".trash/",                  # transient scratch
     ".DS_Store",                # macOS junk
     "__pycache__/",
+    ".prototype-autofeatured.json",  # one-shot auto-feature sentinel - machine-local
 ]
 
 
@@ -264,6 +265,10 @@ def _node_xy(node, layout, dx=0.0, dy=0.0):
 _GIT_INFLIGHT = {}
 _GIT_INFLIGHT_LOCK = threading.Lock()
 _GIT_INFLIGHT_TTL = 600   # seconds; a flag older than this is considered stale
+# Roots already given the one-shot tracked-ignored self-heal this daemon run
+# (see _git_status). In-memory on purpose: the heal is idempotent and settles
+# to a no-op, so re-running once per daemon lifetime is the right cadence.
+_GIT_HEALED_ROOTS = set()
 # Bundled "starter" design system shipped inside the editor binary. New
 # projects can opt to seed design-systems/default/ from this folder (with the
 # user's colour / radius / type / spacing tweaks baked in). It is version- and
@@ -19874,6 +19879,35 @@ class H(http.server.SimpleHTTPRequestHandler):
             root = _resolve_git_root(qs)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
+        # ONE-SHOT SELF-HEAL for the "panel always says commit" trap: files
+        # committed BEFORE they were gitignored (run thumbnails, undo history)
+        # keep dirtying the tree on every regeneration - ignore rules never
+        # apply to tracked paths - so the panel nags with zero user changes.
+        # Untrack them and fold the drop into a housekeeping commit scoped to
+        # just those deletions (heal_tracked_ignored refuses anything else).
+        # At most once per root per daemon run, never while another git op is
+        # in flight. Status is the trigger because it fires whenever the panel
+        # is open - connect/commit-time healing alone never runs for exactly
+        # the users who see the nag and therefore never press Commit.
+        if root not in _GIT_HEALED_ROOTS:
+            claimed = False
+            with _GIT_INFLIGHT_LOCK:
+                if root not in _GIT_INFLIGHT:
+                    _GIT_INFLIGHT[root] = {"op": "housekeep", "startedAt": time.time()}
+                    claimed = True
+            if claimed:
+                try:
+                    if not _qs_get(qs, "gds"):   # project ignore set is project-shaped
+                        _gitops.ensure_gitignore(root, _GITIGNORE_LOCAL)
+                    _gitops.heal_tracked_ignored(root)
+                except Exception:
+                    pass                          # best-effort; status must never 500 on heal
+                finally:
+                    _GIT_HEALED_ROOTS.add(root)   # even on failure - don't retry every poll
+                    with _GIT_INFLIGHT_LOCK:
+                        cur = _GIT_INFLIGHT.get(root)
+                        if cur and cur.get("op") == "housekeep":
+                            _GIT_INFLIGHT.pop(root, None)
         try:
             st = _gitops.status(root)
             st["draftMessage"] = _gitops.draft_message(root) if st.get("repo") else ""
