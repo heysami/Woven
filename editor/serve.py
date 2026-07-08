@@ -144,6 +144,15 @@ _GITIGNORE_LOCAL = [
 ]
 
 
+# Last-good workflow graph per file path, updated on every successful load/save.
+# When workflow.json is later found unparseable (an unresolved merge conflict or
+# a corrupt write), the GET serves this instead of emptying the file - so a
+# mid-merge canvas load shows the real graph, not a stub, while an agent resolves
+# the conflict. In-memory only: a fresh daemon has no entry until the first good
+# load, and simply serves an empty graph + conflictPending flag until then.
+_LAST_GOOD_WF = {}
+
+
 def _strip_git_conflict_markers(text):
     """Return `text` with every git conflict-marker hunk resolved to OUR side
     (the local `<<<<<<< HEAD` half): drop the marker lines and the incoming
@@ -165,76 +174,45 @@ def _strip_git_conflict_markers(text):
     return "".join(out)
 
 
-def _heal_workflow_json(path):
-    """Make a corrupt workflow.json readable IN PLACE before the canvas loads it.
+def _workflow_json_status(path):
+    """Classify workflow.json WITHOUT mutating it: "ok" | "conflict" | "corrupt".
 
-    A synced project can acquire git conflict markers in workflow.json when a
-    merge git can't auto-resolve (historically the cosmetic canvas `pan`) is
-    committed with the markers still in the file; left alone json.load raises
-    and the whole workflow/preview surface 500s. Recover without losing the
-    graph when possible:
+    Deliberately non-destructive. The daemon must NEVER turn a broken
+    workflow.json into a valid-but-wrong one - emptying it, or auto-resolving a
+    merge conflict to one side both drop graph nodes silently, and an emptied
+    file then lets the reconciler mint a lone `prototype_main` stub (22 nodes ->
+    1, the bug this replaces). When the file won't parse we FREEZE it (leave the
+    bytes on disk untouched so the in-flight resolution can finish) and defer the
+    real merge to an agent. This function only tells the caller which case holds:
 
-      1. Already parses -> do nothing (idempotent; the common path).
-      2. Strip conflict markers (keep our side). If THAT parses, rewrite the
-         clean file atomically - the graph is fully preserved.
-      3. Unrecoverable -> set the bad file aside as workflow.json.broken[-N].bak
-         and write an empty graph so the canvas opens instead of bricking.
+      - "ok":       parses - possibly after a short retry, since a non-atomic
+                    agent Write can hand us a truncated read mid-scaffold; we
+                    wait for the writer to finish before judging.
+      - "conflict": carries git conflict markers (an unresolved merge). Needs a
+                    deliberate both-sides resolution - an agent's job, not ours.
+      - "corrupt":  unparseable and NOT conflict markers (genuinely mangled).
 
-    Best-effort; returns True when it changed the file. The caller only needs to
-    log. See git_ops.conflict_marker_files (the commit-time guard) for the other
-    half of this defense."""
+    See git_ops.conflict_marker_files (the commit-time guard) for the other half
+    of this defense."""
     if not os.path.isfile(path):
-        return False
-    # Read + parse with a short retry ladder. A non-atomic writer (an agent's
-    # Write tool mid-scaffold - unlike our own tmp+os.replace saves) can hand
-    # us a truncated read; quarantining THAT throws away a perfectly good
-    # graph (the writer finishes into the renamed .bak inode and the canvas
-    # opens empty - happened to suss-cal, 23 nodes). Only treat the file as
-    # corrupt if it still fails after the writer has had time to finish.
+        return "ok"
     raw = None
     for _attempt in range(3):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 raw = f.read()
         except OSError:
-            return False
+            return "corrupt"
         try:
             json.loads(raw)
-            return False   # already valid - nothing to do
+            return "ok"   # valid (writer finished if this was a transient read)
         except Exception:
             pass
         if _attempt < 2:
             time.sleep(0.4)
-    # Step 2: strip conflict markers, keep our side.
-    if ("<<<<<<<" in raw) or (">>>>>>>" in raw):
-        try:
-            data = json.loads(_strip_git_conflict_markers(raw))
-        except Exception:
-            data = None
-        if isinstance(data, (dict, list)):
-            tmp = path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-            os.replace(tmp, path)
-            print(f"[workflow-heal] recovered {path} by resolving conflict markers", flush=True)
-            return True
-    # Step 3: unrecoverable - preserve the bytes, open with an empty graph.
-    bak = path + ".broken.bak"
-    _i = 0
-    while os.path.exists(bak):
-        _i += 1
-        bak = path + f".broken-{_i}.bak"
-    try:
-        os.replace(path, bak)
-    except OSError:
-        bak = None
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"pan": {"x": 0, "y": 0}, "zoom": 1,
-                   "nodes": [], "edges": [], "wb": []}, f, indent=2)
-    os.replace(tmp, path)
-    print(f"[workflow-heal] {path} unrecoverable; backed up to {bak} and reset to empty graph", flush=True)
-    return True
+    if raw and (("<<<<<<<" in raw) or (">>>>>>>" in raw)):
+        return "conflict"
+    return "corrupt"
 
 
 def _sidecar_layout(project_root):
@@ -11840,17 +11818,30 @@ class H(http.server.SimpleHTTPRequestHandler):
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception as e:
-            # Corrupt on disk - typically git conflict markers baked in by a
-            # cosmetic merge. Heal in place (recover the graph when possible,
-            # else back up + empty) and re-read. NEVER 500 the canvas over it.
-            try:
-                _heal_workflow_json(path)
+            # workflow.json won't parse. Do NOT heal it into a valid-but-wrong
+            # state (emptying it, or auto-picking one side of a merge) - that is
+            # exactly what let the reconciler rebuild a lone stub and silently
+            # drop the graph. FREEZE instead: leave the bytes on disk untouched
+            # so the in-flight resolution can finish and be accepted, serve the
+            # last-good graph we cached plus a conflictPending flag, and hand the
+            # actual merge to an agent. A transient truncated mid-write (a
+            # non-atomic agent Write) reports "ok" once the writer lands and is
+            # served normally. NEVER 500 the canvas over it.
+            status = _workflow_json_status(path)
+            if status == "ok":
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-            except Exception as e2:
-                print(f"[workflow] unreadable after heal ({e}); serving empty: {e2}", flush=True)
-                return self._reply(200, {"pan": {"x": 0, "y": 0}, "zoom": 1,
-                                         "nodes": [], "edges": [], "wb": []})
+            else:
+                cached = _LAST_GOOD_WF.get(path)
+                served = (json.loads(json.dumps(cached)) if isinstance(cached, dict)
+                          else {"pan": {"x": 0, "y": 0}, "zoom": 1,
+                                "nodes": [], "edges": [], "wb": []})
+                served["conflictPending"] = True
+                served["conflictKind"] = status   # "conflict" | "corrupt"
+                print(f"[workflow] {path} has an unresolved {status} ({e}); freezing the "
+                      f"file untouched, serving last-good "
+                      f"({len(served.get('nodes') or [])} nodes) - resolve via agent", flush=True)
+                return self._reply(200, served)
         # Tolerate missing top-level keys - frontend treats them as empty defaults.
         if not isinstance(data, dict):
             data = {}
@@ -12115,6 +12106,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                     target["decisionProjectedFrom"] = decision_file
                 except Exception:
                     pass
+        except Exception:
+            pass
+        # Remember this good graph so a later unparseable read (unresolved merge
+        # conflict / corrupt write) can serve it instead of an empty stub. Deep
+        # copy so later mutation of `data` can't poison the cache.
+        try:
+            _LAST_GOOD_WF[path] = json.loads(json.dumps(data))
         except Exception:
             pass
         return self._reply(200, data)
@@ -12524,6 +12522,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                         json.dump(out, f, indent=2)
             except Exception as e:
                 return self._reply(500, {"error": f"could not write workflow.json: {e}"})
+            # Refresh the last-good cache from the graph we just committed, so a
+            # subsequent conflict/corrupt read serves this (not an empty stub).
+            try:
+                _LAST_GOOD_WF[path] = json.loads(json.dumps({**out, "pan": pan, "zoom": zoom}))
+            except Exception:
+                pass
             # notify SSE subscribers
             _broadcast_workflow_change(os.path.basename(project_root.rstrip("/")))
             return self._reply(200, {"ok": True, "path": rel_path,
