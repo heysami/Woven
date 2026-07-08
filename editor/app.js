@@ -3027,6 +3027,19 @@ function GlobalDsSyncActions({ dsId, compact }) {
     if (!res.ok) await uiAlert(res.data.error || "unlink failed");
     done(res.ok);
   };
+  // Dangling link (global deleted or never made it to this workspace):
+  // recreate the global from this project's copy under the same id. The
+  // promote endpoint restamps the link, so push/pull work again after.
+  const doRepromote = async () => {
+    const ok = await uiConfirm(
+      "The global design system \"" + status.globalId + "\" no longer exists in this workspace.\n\n" +
+      "Recreate it from this project's copy? Projects that imported it before pick the new version up on their next pull.");
+    if (!ok) return;
+    setBusy("promote");
+    const res = await globalDsOp("promote", { dsId, globalId: status.globalId });
+    if (!res.ok) await uiAlert(res.data.error || "re-promote failed");
+    done(res.ok);
+  };
 
   const chip = !status.linked ? null
     : !status.globalExists ? { cls: "is-missing", text: "Global missing" }
@@ -3061,6 +3074,11 @@ function GlobalDsSyncActions({ dsId, compact }) {
         </button>
       `}
       ${status.linked && !status.globalExists && html`
+        <button className="gds-sync-btn" disabled=${!!busy}
+          title=${"Recreate the global \"" + status.globalId + "\" from this project's copy"}
+          onClick=${(e) => { e.stopPropagation(); doRepromote(); }}>
+          <${Icon.Globe}/> ${busy === "promote" ? "Promoting…" : "Re-promote"}
+        </button>
         <button className="gds-sync-btn" disabled=${!!busy} title="Remove the dangling link"
           onClick=${(e) => { e.stopPropagation(); doUnlink(); }}>Unlink</button>
       `}
@@ -19472,7 +19490,7 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
   const useDefaultDs = dsMode === "template";
   const [globalDsList, setGlobalDsList] = useState(null); // null = not loaded
   const [globalDsId, setGlobalDsId] = useState("");
-  const [step, setStep] = useState(1);   // 1 = name, 2 = DS customizer
+  const [step, setStep] = useState(1);   // 1 = name, 2 = DS customizer, "gds" = global-DS picker
   const [dsSettings, setDsSettings] = useState(dsDefaultSettings);
   const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
 
@@ -19512,16 +19530,18 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
   }, [name]);
 
   const collision = !!slugId && existingIds.has(slugId);
-  const canSubmit = !busy && slugId.length > 0 && !collision &&
-    (dsMode !== "global" || !!globalDsId);
+  // Note: dsMode "global" does NOT gate on a picked id here - step 1 only
+  // advances to the picker step, where the pick happens against a full-size
+  // gallery preview.
+  const canSubmit = !busy && slugId.length > 0 && !collision;
 
   const dsCustom = useMemo(() => buildDsCustomization(dsSettings), [dsSettings]);
 
-  // Allow Esc to close (but in step 2, Esc steps back instead).
+  // Allow Esc to close (but in steps 2 / "gds", Esc steps back instead).
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== "Escape") return;
-      if (step === 2) { setStep(1); return; }
+      if (step !== 1) { setStep(1); return; }
       onClose && onClose();
     };
     window.addEventListener("keydown", onKey);
@@ -19574,12 +19594,13 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
     }
   };
 
-  // Step-1 form submit. With the DS opt-in on, advance to the customizer
-  // instead of creating immediately; otherwise create straight away.
+  // Step-1 form submit. With a DS opt-in on, advance to the matching step
+  // (template → customizer, global → picker) instead of creating immediately.
   const submitStep1 = (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (!canSubmit) return;
     if (useDefaultDs) { setStep(2); return; }
+    if (dsMode === "global") { setStep("gds"); return; }
     doCreate();
   };
 
@@ -19601,6 +19622,20 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
       settings=${dsSettings}
       setSettings=${setDsSettings}
       custom=${dsCustom}
+      busy=${busy}
+      err=${err}
+      onBack=${() => setStep(1)}
+      onClose=${onClose}
+      onCreate=${doCreate}/>`;
+  }
+
+  // ── Step "gds" - the wide global-DS picker overlay ──
+  if (step === "gds") {
+    return html`<${GlobalDsPickStep}
+      list=${globalDsList || []}
+      globalDsId=${globalDsId}
+      setGlobalDsId=${setGlobalDsId}
+      projectLabel=${name.trim()}
       busy=${busy}
       err=${err}
       onBack=${() => setStep(1)}
@@ -19683,39 +19718,9 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
               </span>
               <span className="newproj-ds-toggle-text">
                 <span className="newproj-ds-toggle-title">Start from a global design system</span>
-                <span className="newproj-ds-toggle-sub">Import a promoted workspace design system verbatim, linked so you can push and pull changes later.</span>
+                <span className="newproj-ds-toggle-sub">Pick a promoted workspace design system in the next step - imported verbatim, linked so you can push and pull changes later.</span>
               </span>
             </button>
-          `}
-
-          ${dsMode === "global" && !!(globalDsList && globalDsList.length) && html`
-            <div className="newproj-gds-picker">
-              <div className="newproj-gds-list" role="listbox">
-                ${globalDsList.map(g => html`
-                  <button
-                    type="button"
-                    key=${g.id}
-                    role="option"
-                    aria-selected=${globalDsId === g.id}
-                    className=${"newproj-gds-item" + (globalDsId === g.id ? " is-selected" : "")}
-                    onClick=${() => setGlobalDsId(g.id)}
-                    disabled=${busy}>
-                    <span className="newproj-gds-item-label">${g.label || g.id}</span>
-                    ${g.genre && html`<span className="newproj-gds-item-genre" title=${g.genre}>${g.genre}</span>`}
-                    <span className="newproj-gds-item-meta">
-                      ${g.version ? g.version.slice(0, 7) : ""}${g.updatedAt ? " · " + g.updatedAt.slice(0, 10) : ""}
-                    </span>
-                  </button>
-                `)}
-              </div>
-              ${globalDsId && html`
-                <iframe
-                  className="newproj-gds-preview"
-                  title="Design system gallery preview"
-                  src=${"/__global_ds/" + encodeURIComponent(globalDsId) + "/gallery.html"}
-                  sandbox="allow-scripts allow-same-origin"></iframe>
-              `}
-            </div>
           `}
 
           ${err && html`<div className="newproj-error">${err}</div>`}
@@ -19723,10 +19728,79 @@ function NewProjectWizard({ workspaceProjects, onClose, onCreated }) {
         <footer className="newproj-card-foot">
           <button type="button" className="newproj-cancel" onClick=${onClose} disabled=${busy}>Cancel</button>
           <button type="submit" className="newproj-create" disabled=${!canSubmit}>
-            ${busy ? "Creating…" : (useDefaultDs ? "Customize →" : "+ Create")}
+            ${busy ? "Creating…" : (useDefaultDs ? "Customize →" : dsMode === "global" ? "Choose design system →" : "+ Create")}
           </button>
         </footer>
       </form>
+    </div>
+  `, document.body);
+}
+
+/* ────────── New-project step "gds" - global design system picker ──────────
+   Full-size sibling of the DS customizer step: promoted workspace design
+   systems listed on the left, the selected one's LIVE gallery filling the
+   rest. The old inline listbox + 220px iframe crammed into the small
+   new-project card is gone - picking a design system deserves seeing it. */
+function GlobalDsPickStep({ list, globalDsId, setGlobalDsId, projectLabel, busy, err, onBack, onClose, onCreate }) {
+  const sel = (list || []).find((g) => g.id === globalDsId) || null;
+  // One promoted system → preselect it; the user just confirms.
+  useEffect(() => {
+    if (!globalDsId && list && list.length === 1) setGlobalDsId(list[0].id);
+  }, [list]);
+  return createPortal(html`
+    <div className="dscz-overlay" onClick=${(e) => { if (e.target === e.currentTarget) onClose && onClose(); }}>
+      <div className="dscz-card gdspick-card">
+        <header className="dscz-head">
+          <div className="dscz-head-titles">
+            <h2>Start from a global design system</h2>
+            <p>${(projectLabel ? "“" + projectLabel + "” gets" : "The new project gets") +
+              " a verbatim copy of the design system you pick, linked to the workspace library so you can push and pull changes later."}</p>
+          </div>
+          <button type="button" className="newproj-close" onClick=${onClose} aria-label="Close">×</button>
+        </header>
+        <div className="gdspick-body">
+          <div className="gdspick-list" role="listbox" aria-label="Global design systems">
+            ${(list || []).map((g) => html`
+              <button
+                type="button"
+                key=${g.id}
+                role="option"
+                aria-selected=${globalDsId === g.id}
+                className=${"gdspick-item" + (globalDsId === g.id ? " is-selected" : "")}
+                onClick=${() => setGlobalDsId(g.id)}
+                disabled=${busy}>
+                <span className="gdspick-item-label">${g.label || g.id}</span>
+                ${g.genre && html`<span className="gdspick-item-genre" title=${g.genre}>${g.genre}</span>`}
+                <span className="gdspick-item-meta">
+                  ${[
+                    g.origin && g.origin.project ? "from " + g.origin.project : "",
+                    g.updatedAt ? g.updatedAt.slice(0, 10) : "",
+                    g.version ? g.version.slice(0, 7) : "",
+                  ].filter(Boolean).join(" · ")}
+                </span>
+              </button>
+            `)}
+          </div>
+          <div className="gdspick-preview">
+            ${sel
+              ? html`<iframe
+                  className="gdspick-preview-frame"
+                  title=${"Design system gallery · " + (sel.label || sel.id)}
+                  src=${"/__global_ds/" + encodeURIComponent(sel.id) + "/gallery.html"}
+                  sandbox="allow-scripts allow-same-origin"></iframe>`
+              : html`<div className="gdspick-preview-empty">Select a design system to preview its gallery.</div>`}
+          </div>
+        </div>
+        ${err && html`<div className="newproj-error dscz-err">${err}</div>`}
+        <footer className="dscz-foot">
+          <div className="dscz-foot-nav">
+            <button type="button" className="newproj-cancel" onClick=${onBack} disabled=${busy}>← Back</button>
+            <button type="button" className="newproj-create" onClick=${onCreate} disabled=${busy || !globalDsId}>
+              ${busy ? "Creating…" : "Create with " + (sel ? (sel.label || sel.id) : "…")}
+            </button>
+          </div>
+        </footer>
+      </div>
     </div>
   `, document.body);
 }
