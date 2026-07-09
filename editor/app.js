@@ -22054,7 +22054,7 @@ function SystemLanding({ onSpawnSystemThread }) {
     { id: "default-library", label: "Template Design System", count: null,
       hint: "The bundled template design system - curated retunes previewed on two surfaces + try customisation live" },
     { id: "prototype",  label: "Design library", count: protoCatalog ? protoCatalog.total : 548,
-      hint: "Shells · styles · aesthetics · recipes · photography · illustration · materials - the design-library/ visual catalog" },
+      hint: "Shells · styles · aesthetics · recipes · photography · illustration · materials · motion scenes · shaders - the design-library/ visual catalog" },
     { id: "orchestrators",   label: "Orchestrators",   count: orchestratorsData ? orchestratorsData.count : 3,
       hint: "Orchestrators that dispatch families of subagents" },
     { id: "connections", label: "Connections", count: null,
@@ -22532,6 +22532,8 @@ function PrototypeCatalogLanding({ data, onSpawnSystemThread }) {
           <li><strong>Photography</strong> - read by <code>photography-orchestrator</code> to art-direct raster-photo slots.</li>
           <li><strong>Illustration</strong> - read by <code>illustration-orchestrator</code> to art-direct raster-foreground slots.</li>
           <li><strong>Materials</strong> - read by <code>material-orchestrator</code> for the post-pass fidelity layer (glass, clay, chrome, holographic, paper grain, film grain, etc.).</li>
+          <li><strong>Motion scenes</strong> - read by <code>motion-studio-orchestrator</code> for full-bleed video / motion-raster scene techniques (scroll-driven, pointer-driven, ambient, scene choreography).</li>
+          <li><strong>Illustrative shaders</strong> - read by <code>shader-orchestrator</code> to pick stackable animated shader stacks (source → filter) for procedural / generative slots.</li>
         </ul>`}
       />
 
