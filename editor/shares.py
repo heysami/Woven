@@ -1584,6 +1584,10 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             return self._send_file(os.path.join(INSTALL_ROOT, "editor", "share", "viewer.html"))
         if sub in ("/viewer.js", "/viewer.css"):
             return self._send_file(os.path.join(INSTALL_ROOT, "editor", "share", sub.lstrip("/")))
+        # Woven logo as the share page's tab icon (viewer.html links it
+        # relative, so it arrives as /s/<token>/favicon.svg).
+        if sub == "/favicon.svg":
+            return self._send_file(os.path.join(INSTALL_ROOT, "editor", "favicon.svg"), cache=True)
         # Share metadata for the viewer boot.
         if sub == "/api/meta":
             return self._send_json(200, {

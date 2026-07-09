@@ -7696,12 +7696,16 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-library-item-del {
   width: 18px;
   height: 18px;
+  padding: 0;
   border: 0;
   background: transparent;
   border-radius: 4px;
   color: var(--text-faint);
   font-size: 13px;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.1s ease, background 0.1s ease, color 0.1s ease;
@@ -8037,6 +8041,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   right: 3px;
   width: 18px;
   height: 18px;
+  padding: 0;
   border: 0;
   background: color-mix(in oklab, var(--surface) 85%, transparent);
   backdrop-filter: blur(2px);
@@ -8044,6 +8049,9 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   color: var(--text-faint);
   font-size: 13px;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.1s ease, background 0.1s ease, color 0.1s ease;
@@ -17969,10 +17977,12 @@ a.ds-badge:hover, button.ds-badge:hover {
    canvas tools below a divider). Sits in its own grid track so views that carry
    their own left panel (User flow's .flow-nav, IA's .ia-sitemap-wrap) render to
    the right of it without overlap. z-index keeps it above the agent-busy stripe
-   (z-5) so view navigation stays visibly live while an agent edits. */
+   (z-5) AND above the chat drawer (z-60) + agent-runs popover (z-63): neither
+   geometrically overlaps the rail (both dock to its right), but the rail's
+   right-flying .tab-tip chips land over them and must not paint underneath. */
 .editor-left-rail {
   position: relative;
-  z-index: 6;
+  z-index: 64;
   display: flex;
   flex-direction: column;
   align-items: center;

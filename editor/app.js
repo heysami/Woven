@@ -49408,7 +49408,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
               title=${"Delete " + a.path + " from disk"}
               onClick=${(ev) => { ev.stopPropagation(); deleteAsset(a.path); }}
               onMouseDown=${(ev) => ev.stopPropagation()}
-            >×</button>
+            ><${Icon.Trash}/></button>
           </div>
         `
       : html`
@@ -49436,7 +49436,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
               title=${"Delete " + a.path + " from disk"}
               onClick=${(ev) => { ev.stopPropagation(); deleteAsset(a.path); }}
               onMouseDown=${(ev) => ev.stopPropagation()}
-            >×</button>
+            ><${Icon.Trash}/></button>
           </div>
         `;
   };
