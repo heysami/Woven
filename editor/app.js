@@ -34734,7 +34734,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       body: "Your main build surface - describe what you want and the agent plans, asks and builds onto this canvas. Every run becomes a thread you can reopen here." },
     { targets: ['.workflow-nav-rail [aria-label="Whiteboard"]', '.workflow-nav-rail [aria-label="Nodes"]', '.workflow-nav-rail [aria-label="App nodes"]'],
       title: "Whiteboard & nodes",
-      body: "Sketch and annotate on the whiteboard, or drag buildable nodes and app nodes (browser, vector editor, composer) straight onto the canvas." },
+      body: "Sketch and annotate on the whiteboard, or drag buildable nodes (browser, prompt, agent) and app nodes (vector editor, composer) straight onto the canvas." },
     { targets: ['.workflow-nav-rail [aria-label="Local library"]', '.workflow-nav-rail [aria-label="Prototypes & HTML"]', '.workflow-nav-rail [aria-label="Visual assets"]'],
       title: "Outputs",
       body: "Everything the builds produce lands here: saved prompts + node groups, prototypes + HTML pages, and every visual asset (images, SVG, video, scenes)." },
@@ -46143,7 +46143,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             placement="right"
             className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "app-nodes" ? " is-active" : "")}
             ariaLabel="App nodes"
-            tip="App nodes - browser, vector editor, 3D editor, composer"
+            tip="App nodes - vector editor, 3D editor, composer"
             onClick=${() => onRailPanel("app-nodes")}
           ><${Icon.Cube}/><//>
           <div className="workflow-nav-rail-sep"/>
@@ -49551,6 +49551,20 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-label">Agent</span>
             <span className="workflow-library-item-id">3in · 2out</span>
           </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "browser", url: "" }));
+            }}
+            title="Drag onto canvas - embedded public-website browser. Enter a URL; the page renders live inside the node (sites that refuse embedding are re-served through the daemon proxy automatically). Select the node to interact: scroll, click, select text and ⌘C it. The out port carries the page's readable text - wire it into an Agent or Skill as context, or use the clip (scissors) button to send the current selection to a prompt node."
+          >
+            <span className="workflow-library-item-glyph"><${Icon.Globe}/></span>
+            <span className="workflow-library-item-label">Web browser</span>
+            <span className="workflow-library-item-id">url → live page</span>
+          </div>
         </div>
       </div>
       <div className="workflow-library-section">
@@ -49824,20 +49838,6 @@ function WorkflowLibrary({ tab = "nodes" }) {
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">App nodes</div>
         <div className="workflow-library-list">
-          <div
-            className="workflow-library-item"
-            draggable=${true}
-            onDragStart=${(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-th-workflow",
-                JSON.stringify({ kind: "browser", url: "" }));
-            }}
-            title="Drag onto canvas - embedded public-website browser. Enter a URL; the page renders live inside the node (sites that refuse embedding are re-served through the daemon proxy automatically). Select the node to interact: scroll, click, select text and ⌘C it. The out port carries the page's readable text - wire it into an Agent or Skill as context, or use the clip (scissors) button to send the current selection to a prompt node."
-          >
-            <span className="workflow-library-item-glyph"><${Icon.Globe}/></span>
-            <span className="workflow-library-item-label">Web browser</span>
-            <span className="workflow-library-item-id">url → live page</span>
-          </div>
           <div
             className="workflow-library-item"
             draggable=${true}
