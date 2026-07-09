@@ -250,6 +250,9 @@ The fourth tab, **Feed**, is the playable loop: drag a food from your pantry ont
 | **Daemon down** chip is red                          | The Python server crashed or was stopped. Re-run `python3 editor/serve.py` from the unpacked folder.   |
 | Port 5731 already in use                             | Set a different port: `EDITOR_PORT=5740 python3 editor/serve.py`.                                      |
 | Image / video / SVG nodes fail with "no API key"     | Open **Settings (gear)** and add the relevant provider key (see [Add asset-provider keys](#5-add-asset-provider-keys-image--video--svg)). |
+| A share link stops opening after a restart           | Randomised links (`*.trycloudflare.com`) change every time the daemon or tunnel restarts - that's how Cloudflare quick tunnels work. Open the **Shares** tab: the share carries a **⚠ Need refresh** badge next to its new URL - copy and resend that one. If you need a link that survives restarts, turn on the share's stable `*.getwoven.design` link instead. |
+| Share link is dead but the Shares tab shows it live  | More than one daemon is probably running (for example the Woven app's own daemon **plus** a `python3 editor/serve.py` you started by hand). Each daemon runs its own tunnels and rewrites the same share registry, so the URL on screen can belong to a daemon that has since stopped. Run `pgrep -fl serve.py` - if more than one line comes back, quit the extras so exactly one daemon remains, then toggle the share off and back on to mint a working link. |
+| Share won't turn on ("cloudflared not found")        | The tunnel binary from onboarding's **Local services** step is missing. Install it via **Settings ⚙ → Local services** (or `brew install cloudflared`), then start the share again. |
 
 ---
 
