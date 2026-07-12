@@ -1360,10 +1360,41 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
    run_final_gate(handoff.containerNode)             # contract 3
    ```
 
+   **The node chain above IS the dispatch mechanism - do NOT dispatch scaffolded builders with
+   the Agent/Task tool instead.** The scaffolded nodes are not a visualisation of the build;
+   they ARE the build. Agent-dispatching the same work bypasses them: the canvas card badges
+   never flip (the user watches a dead graph while work happens invisibly), the per-node ▶
+   re-run affordance is orphaned, the builder loses its node-anchored envelope (your PARAPHRASE
+   of it drifts - see the freshness rule below), and resume-after-crash loses the done/pending
+   ledger. Agent dispatch is the fallback ONLY when a node /run POST itself errors - and then
+   say so out loud in chat, not silently.
+
+   **Freshness rule - the research file on disk outranks your memory of it.** `research.md` (and
+   any per-family plan file) can be CORRECTED on disk mid-build - by the user, or by another
+   session acting for the user - after you first read it. Immediately before composing any
+   derived artefact (an INTEGRATION.md, a dispatch brief, a fix plan), RE-READ it from disk and
+   compose from the file, never from context memory. Derived artefacts must REFERENCE doctrine
+   ("chrome per research.md §10"), never restate it - a restated copy freezes a stale version
+   and the builders obey your stale copy over the corrected file (observed: pocketmonster's
+   chrome shipped against its own corrected research because INTEGRATION.md restated the old
+   §10). Builders: the same rule applies to you - research.md read from DISK at spawn wins over
+   any paraphrase in your dispatch prompt.
+
 3. **Final QA+lens gate - judged ONCE on the assembled runtime, not per drawer.** Quality is decided on the thing the user actually sees. After the builders assemble `runtime.html`:
 
    ```
    FOR outer_iter IN 1..3:
+     # PROMISED? contract-fulfillment diff - BEFORE judging quality, verify the build shipped
+     # what research committed. Re-read research.md FROM DISK; for each committed mechanism
+     # (chromeStrategy, spriteStrategy + its inventory/cycles, paradigm, inputs[], audio, any
+     # "commit"-register field) verify the shipped artefacts EMBODY it - grep the runtime/
+     # overlay for the committed mechanism, ls the committed assets, count committed frames.
+     # A commitment that shipped as something else (slice9 committed, CSS shipped) or silently
+     # vanished (walk cycles committed, stills shipped) is a gate FAILURE routed to the
+     # responsible drawer exactly like a lens fail - even when the result "looks fine": the
+     # lenses judge quality, THIS step judges obedience, and every silent downgrade tonight
+     # (farming's cycles, pocketmonster's chrome) passed the lenses. A deviation is acceptable
+     # ONLY if research.md itself was amended to commit it.
      qa  = GET $TH_DAEMON_URL/__qa/run?node=<containerNode>&mode=interactive   # WORKS? loads/renders/no-blank/no console errors
      # GOOD? the lens trio, ONE set, on the assembled runtime (componentKind=runtime, componentId=<slotId>)
      addNodes [craft_lens_<slotId>_<iter>, aesthetic_lens_<slotId>_<iter>, concept_lens_<slotId>_<iter>]

@@ -12469,6 +12469,24 @@ class H(http.server.SimpleHTTPRequestHandler):
                         # null) flows through the editor, so editor clears
                         # MUST win; a broader preservation wedges cards in
                         # stale pending state.
+                        # Stale-text guard: a daemon-side text write (per-node
+                        # /status endpoint) bumps `_thTextRev`. If the editor's
+                        # posted copy carries an OLDER rev (or none), its text
+                        # predates that write - an echo of stale React state,
+                        # not a user edit - so the disk text wins. A user who
+                        # edits AFTER refetching posts the current rev and
+                        # still wins. Closes the last wipe-family hole: agent
+                        # envelope updates no longer revert within one
+                        # debounced canvas save.
+                        try:
+                            _disk_trev = int(disk_n.get("_thTextRev") or 0)
+                            _post_trev = int(n.get("_thTextRev") or 0)
+                        except Exception:
+                            _disk_trev = _post_trev = 0
+                        if _disk_trev > _post_trev:
+                            if disk_n.get("text") is not None:
+                                n["text"] = disk_n.get("text")
+                            n["_thTextRev"] = _disk_trev
                         disk_status = disk_n.get("runStatus")
                         # ...EXCEPT design-system nodes: they have no
                         # subprocess owner to ever flip "running" back, so
@@ -13737,6 +13755,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                     node.pop("runError", None)
             if "text" in body and isinstance(body["text"], str):
                 node["text"] = body["text"]
+                # revision stamp: lets _workflow_save detect that a canvas
+                # save's copy of this node predates this write, so the
+                # daemon-side text survives the editor's stale echo (the
+                # sub-second revert observed live on pocketmonster's
+                # game_overlay envelope). Editor round-trips unknown fields,
+                # so a fresh fetch carries the stamp back and user edits
+                # made AFTER this write still win.
+                node["_thTextRev"] = int(node.get("_thTextRev") or 0) + 1
                 changed["text"] = body["text"][:200] + ("…" if len(body["text"]) > 200 else "")
             if "output" in body:
                 node["output"] = body["output"]

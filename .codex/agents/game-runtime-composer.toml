@@ -14,6 +14,9 @@ cat "$TH_PROTOCOL_ROOT/.claude/agents/game-runtime-composer.md" \\
 
 ## 1. Input envelope
 
+**research.md is read from DISK at spawn, and the DISK COPY WINS.** Your dispatch prompt / INTEGRATION.md may paraphrase research commitments - paraphrases go stale (research.md can be corrected on disk mid-build, by the user or a session acting for them). Where your prompt and the file disagree on a committed mechanism (chromeStrategy, spriteStrategy, paradigm, inputs), obey the FILE and note the discrepancy in your final message. The final gate diffs shipped artefacts against research.md, not against your prompt - following a stale paraphrase fails the gate.
+
+
 ```
 === ENVELOPE ===
 gameId:         "paper-plane-throw"
