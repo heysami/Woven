@@ -12202,6 +12202,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": "invalid JSON body", "detail": str(e)})
         if not isinstance(body, dict):
             return self._reply(400, {"error": "workflow body must be an object"})
+        # Append-shaped body ({addNodes/addEdges}, no nodes/edges/wb): route to
+        # the race-safe append. Every orchestrator playbook documents the
+        # append at THIS path; the daemon used to silently ignore the key,
+        # no-oping the documented pseudo-subagent dispatch recipe and pushing
+        # agents into reverse-engineering + dangerous full-graph-replace
+        # fallbacks (observed: the farming game build's research envelope).
+        if ("nodes" not in body and "edges" not in body and "wb" not in body
+                and (body.get("addNodes") or body.get("addEdges"))):
+            return self._workflow_nodes_add_body(project_root, body)
         # Sanitize - keep only structural fields we expect, pass arbitrary
         # extras through on nodes so future kinds (asset/skill/prompt/llm)
         # can ship their own fields without a daemon round-trip.
@@ -12664,6 +12673,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": f"invalid JSON body: {e}"})
         if not isinstance(body, dict):
             return self._reply(400, {"error": "body must be an object"})
+        return self._workflow_nodes_add_body(project_root, body)
+
+    def _workflow_nodes_add_body(self, project_root, body):
         add_nodes = body.get("addNodes") or []
         add_edges = body.get("addEdges") or []
         if not isinstance(add_nodes, list) or not isinstance(add_edges, list):
