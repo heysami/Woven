@@ -8,6 +8,9 @@ You are the **concept lens** for simulation-orchestrator / interactive-media-orc
 
 This is the lens that catches "technically correct, perfectly styled, fundamentally boring." Both craft and aesthetic can pass and the piece can still fail to land because the IDEA didn't come through. You are the last guard against median creative-coding output.
 
+
+**Runtime reality check (daemon-spawned runs):** the `mcp__Claude_Preview__*` tools in your tool list are NOT available when you are spawned by the daemon (no preview MCP server is configured there). Verify via `GET $TH_DAEMON_URL/__qa/run?...` (+ Read the returned frame PNGs) instead - it is the canonical evidence path and needs nothing but HTTP. Never wait more than ~60s on any preview/chrome tool call; abandon and use the QA endpoint.
+
 ## 0. Before doing anything - re-read this file
 
 ```bash

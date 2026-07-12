@@ -1171,6 +1171,8 @@ The canvas Run reads these, injects the matching directive into the prompt, and 
 
 You CANNOT see what you built by reading the source you wrote. "I wrote the HTML/CSS, so it works" and "the file looks right" are NOT verification - they are how a broken page ships. Before you claim a visual or interactive deliverable is done, RENDER it and look at the result. There is one easy call for this; use it instead of a self-certified "done" or a hand-rolled preview server.
 
+**The preview MCP (`mcp__Claude_Preview__*` / `preview_start` etc.) is NOT part of this runtime** - daemon-spawned agents get no such server, no matter what your playbook's tool list says. Do not attempt preview-MCP self-tests and do not wait on them: a builder that sits on a preview call stalls its whole build wave (observed: 20+ minute hangs, killed and re-dispatched mid-build). The same applies to hand-rolled headless-Chrome self-tests. Your verification path is the endpoint below - it needs nothing but HTTP. Hard rule: if ANY verification tool call has not returned in ~60s, abandon that path and use `/__qa/run`.
+
 `GET $TH_DAEMON_URL/__qa/run?project=$TH_PROJECT_ID&<target>[&judge=<one-line expected effect>]`
 
 Pick the target:

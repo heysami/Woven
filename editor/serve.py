@@ -20008,6 +20008,27 @@ class H(http.server.SimpleHTTPRequestHandler):
                "--mode", mode]
         if judge:
             cmd += ["--judge", judge]
+            # Route the frame-judge through THIS daemon's /__llm_run so it can
+            # use ANY configured vision provider. Without --judge-daemon the
+            # tool falls back to a direct Anthropic API call, which needs an
+            # `anthropic.api_key` in media-config - a key CLI-auth users don't
+            # have - and the judge reports "no LLM endpoint" while an OpenAI
+            # key sits configured (observed: pocket-monster's gate ran
+            # judge-less and self-certified).
+            _judge_provider = None
+            try:
+                for _prov in ("anthropic", "openai"):
+                    if _resolve_provider_key(_prov):
+                        _judge_provider = _prov
+                        break
+            except Exception:
+                pass
+            if _judge_provider:
+                _proj_qs = _qs_get(qs, "project") or ""
+                if _proj_qs:
+                    cmd += ["--judge-daemon", "http://127.0.0.1:%d" % PORT,
+                            "--judge-project", _proj_qs,
+                            "--judge-provider", _judge_provider]
         if nointeract and nointeract not in ("0", "false", "no"):
             cmd += ["--no-interact"]
         # Synthetic camera fixture for vision pieces (default both = hand+face).
