@@ -21770,7 +21770,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                     # the user sees the same scene twice, once as an
                     # HTML page (renders fine) and once as an "image"
                     # asset (broken when dragged).
-                    if len(segs) >= 2 and segs[1] in self._LIB_ASSET_SUBDIRS:
+                    # ...at ANY depth: /__assets now scans by directory name
+                    # recursively (games/<id>/assets/, scrapbooks/<id>/images/),
+                    # so an html-kind file under a classic asset dirname
+                    # anywhere in the tree is already a library asset.
+                    if len(segs) >= 2 and any(s in self._LIB_KIND_FOR_DIR for s in segs[1:]):
                         continue
                     try: st = os.stat(fpath)
                     except Exception: continue
@@ -22838,6 +22842,22 @@ class H(http.server.SimpleHTTPRequestHandler):
         "shaders": "shader", "viz": "viz", "audio": "audio", "fonts": "font",
         "_artdir": "image",
     }
+    # Library scan is by directory NAME at any depth, not by fixed top-level
+    # path. Orchestrator families nest their media wherever their structure
+    # needs (games/<id>/assets/, scrapbooks/<id>/assets/, scene3d/<id>/models/,
+    # sprites/), and a fixed path list went stale every time a family was
+    # added - generated sprites existed on disk but never surfaced in the
+    # visual library. Same allowlist-drift failure as the node-namespace
+    # preserve list; fixed the same way (match the NAME, not the path).
+    # Names in _LIB_KIND_FOR_DIR keep full classic behavior (any extension -
+    # skill outputs like threejs .html / lottie .json belong there). Names
+    # below accept MEDIA files only: family asset dirs also hold runtime
+    # machinery (atlas .json beside a sprite sheet, embed .html) that must
+    # not become broken draggable library entries.
+    _LIB_ASSET_EXTRA_DIRNAMES = ("assets", "sprites", "img", "plates", "cutouts",
+                                 "_artdir_refs", "_attachments")
+    _LIB_MEDIA_KINDS = ("image", "svg", "video", "audio", "3d", "font")
+    _LIB_SCAN_PRUNE = (".git", "node_modules", "dist", "build", "__pycache__")
     # Extension → asset kind. Wins over the folder-derived default
     # in `_LIB_KIND_FOR_DIR`. Background: skill outputs (shader / threejs /
     # viz / lottie / svg-gen / video-gen / motion-gen) all land in
@@ -22876,25 +22896,34 @@ class H(http.server.SimpleHTTPRequestHandler):
             for branch in sorted(os.listdir(src_root)):
                 branch_dir = os.path.join(src_root, branch)
                 if not os.path.isdir(branch_dir): continue
-                for sub in self._LIB_ASSET_SUBDIRS:
-                    sub_dir = os.path.join(branch_dir, sub)
-                    if not os.path.isdir(sub_dir): continue
-                    for fname in sorted(os.listdir(sub_dir)):
+                for root, dirnames, files in os.walk(branch_dir):
+                    dirnames[:] = [d for d in dirnames
+                                   if not d.startswith(".") and d not in self._LIB_SCAN_PRUNE]
+                    sub = os.path.basename(root)
+                    classic = sub in self._LIB_KIND_FOR_DIR
+                    if not classic and sub not in self._LIB_ASSET_EXTRA_DIRNAMES:
+                        continue
+                    for fname in sorted(files):
                         if fname.startswith("."): continue
                         # slice9 sidecar metadata ({slice,width,...}) - not a
                         # draggable asset; a .json here would otherwise classify
                         # as Lottie and fail to render when dropped on the canvas.
                         if fname.endswith(".slice9.json"): continue
-                        fpath = os.path.join(sub_dir, fname)
+                        fpath = os.path.join(root, fname)
                         if not os.path.isfile(fpath): continue
-                        try: st = os.stat(fpath)
-                        except Exception: continue
-                        rel = os.path.relpath(fpath, project_root).replace("\\", "/")
                         # Prefer the file extension when it maps to a known
                         # kind - that's the truth. Fall back to the folder
                         # default only when the extension is unrecognised.
                         ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
                         kind = self._LIB_EXT_KIND.get(ext) or self._LIB_KIND_FOR_DIR.get(sub, "image")
+                        # Family asset dirs (assets/, sprites/, ...): media
+                        # only - their .json/.html siblings are runtime
+                        # machinery, not draggable assets.
+                        if not classic and kind not in self._LIB_MEDIA_KINDS:
+                            continue
+                        try: st = os.stat(fpath)
+                        except Exception: continue
+                        rel = os.path.relpath(fpath, project_root).replace("\\", "/")
                         items.append({
                             "path":   rel,
                             "name":   fname,
