@@ -1421,6 +1421,16 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
    IF not committed after 3: emit <decision-request id="cp_<family>_gate_<slotId>">  Accept / Push deeper / Replace  ; honour the pick.
    ```
 
+   **The HOST SHELL is inside the gate when the surface owns the whole app.** When the
+   reconciliation was "whole" (the prototype page is just the shell that boots the runtime), the
+   shell page is the FIRST FRAME of the product and gates WITH it: run
+   `GET /__qa/run?page=<prototype>&mode=render&judge=<one line: what the title/boot screen should
+   look like per the art contract>` and READ the frame - a shell of flat CSS bands, placeholder
+   rectangles, or off-contract type FAILS the gate exactly like a runtime failure (route it as a
+   code fix to the shell). The aesthetic lens's scope includes the shell page for these builds.
+   The observed failure mode: every judge aims at runtime.html, the boot screen ships as the only
+   unjudged surface, and it is the first thing the user sees.
+
    **Top-level owns-surface deliverable - surface it on SUCCESS, not only on failure.** When the committed runtime IS what the user asked for (a standalone `owns-surface` dispatch, not a subsystem a parent orchestrator co-dispatched), do NOT silently mark it `done` after the gate passes: emit `<decision-request id="cp_<family>_final_<slotId>">` Approve / Tweak / Regenerate, then commit on approval - so a from-scratch build gets one human checkpoint instead of shipping unseen. A nested co-dispatch (the parent runs its own final gate on the composed surface the user actually sees) skips this. Honour the delegation carve-out: "just build, no questions" → commit without the checkpoint.
 
    This single gate **replaces both** the old per-drawer lens loop (`3 lenses × ~5 drawers × ≤5 iters` = up to ~75 lens runs/slot, judging fragments out of context) **and** the old bolted-on Step-8 QA. They are now ONE pass on the assembled result (~3-9 lens runs/slot, judged in context) - deep AND in-place. The old failure mode it kills: *per-drawer lens scores passing while the assembled iframe is broken or ugly.* Write `workflow/<family>-plan.json` with `qa: {{ checked: [...], blocked: [...], ranAt: '...' }}`; relay any `qa.blocked[]` to the user verbatim.
