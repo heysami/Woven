@@ -8,6 +8,12 @@
    on top). Tones run from --analog-start (light) to --analog-end (ink), so the
    surfaces stay light and text stays readable.
 
+   The dots themselves are NOT inked in raw --analog-end (full-contrast ink made
+   the texture read dirty): they use a high-lightness ink mixed from the base
+   toward the ink by --analog-dot-mix (default 0.3), staying close to the
+   surface tone on both schemes. Override with an explicit --analog-dot color
+   when a skin wants a specific dot ink. Text keeps using --analog-end.
+
    Per-element canvas (not one fullscreen canvas) on purpose: a fixed fullscreen
    canvas vanishes inside the editor's preview iframe; a canvas CHILD of each
    chrome element survives it. Mirrors the glassmorphism.js architecture, minus
@@ -64,9 +70,13 @@
   function colors() {
     var cs = getComputedStyle(document.documentElement);
     function tok(n, f) { var x = cs.getPropertyValue(n).trim(); return x || f; }
+    var mix = parseFloat(tok("--analog-dot-mix", "0.3"));
+    if (isNaN(mix)) mix = 0.3;
     return {
       start: tok("--analog-start", tok("--primary-50", "#eef2fd")),
       end: tok("--analog-end", tok("--primary-900", "#1a2e78")),
+      dot: tok("--analog-dot", ""),
+      mix: Math.min(1, Math.max(0, mix)),
     };
   }
 
@@ -99,7 +109,18 @@
     var end = toRGB(col.end, [26, 46, 120]);
     ctx.fillStyle = "rgb(" + start[0] + "," + start[1] + "," + start[2] + ")";
     ctx.fillRect(0, 0, w, h);
-    var ink = end[0] + "," + end[1] + "," + end[2];
+    // Dot ink stays near the base tone (high lightness on the light scheme) so
+    // the screen reads as subtle texture, not dirt. Explicit --analog-dot wins;
+    // otherwise mix base -> ink by --analog-dot-mix.
+    var dot = col.dot ? toRGB(col.dot, null) : null;
+    if (!dot) {
+      dot = [
+        Math.round(start[0] + (end[0] - start[0]) * col.mix),
+        Math.round(start[1] + (end[1] - start[1]) * col.mix),
+        Math.round(start[2] + (end[2] - start[2]) * col.mix),
+      ];
+    }
+    var ink = dot[0] + "," + dot[1] + "," + dot[2];
 
     var ang = cfg.scrAng * Math.PI / 180, cs = Math.cos(ang), sn = Math.sin(ang);
     var gr = cfg.gAng * Math.PI / 180, dx = Math.cos(gr), dy = Math.sin(gr);

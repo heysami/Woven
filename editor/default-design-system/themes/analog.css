@@ -77,9 +77,15 @@
      The signature is a LIVE per-element halftone gradient drawn by analog.js
      (a <canvas> child of each brand surface) - not a baked image, not a
      page-wide overlay. CSS exposes only the two tones; the runtime screens the
-     ramp between them. They follow the scheme: light tint -> dark brand ink. */
+     ramp between them. They follow the scheme: light tint -> dark brand ink.
+     The DOTS are not inked in raw --analog-end (full ink read dirty): the
+     runtime mixes base -> ink by --analog-dot-mix so the screen stays a
+     high-lightness tint near the surface. Set --analog-dot to pin an exact
+     dot ink instead. --analog-end itself stays the TEXT ink on these
+     surfaces, so raising dot lightness never costs text contrast. */
   --analog-start:var(--primary-50);
   --analog-end:var(--primary-900);
+  --analog-dot-mix:0.3;
 }
 
 /* ==========================================================================
@@ -118,9 +124,11 @@
 
   --series-1:var(--primary-400);
 
-  /* analog tones for dark paper: a dark surface base -> light brand ink */
+  /* analog tones for dark paper: a dark surface base -> light brand ink.
+     Same dot-mix rule: dots stay near the dark base, subtle not noisy. */
   --analog-start:var(--surface-medium);
   --analog-end:var(--primary-200);
+  --analog-dot-mix:0.3;
 }
 
 /* ==========================================================================
