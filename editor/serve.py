@@ -153,6 +153,15 @@ _GITIGNORE_LOCAL = [
 # load, and simply serves an empty graph + conflictPending flag until then.
 _LAST_GOOD_WF = {}
 
+# Editor-spawned workflow node ids come from app.js workflowNewNodeId():
+# "n" + Date.now().toString(36) + random base36 - always ^n[0-9a-z]+$, never
+# an underscore. Every OTHER id shape belongs to a background writer (an
+# orchestrator family, the art-director, the reconciler). The /__workflow
+# save merge uses this to decide which disk nodes the editor may delete by
+# omission (its own) vs which need an explicit deletedIds tombstone (all
+# background-writer nodes).
+_WF_EDITOR_NODE_ID = re.compile(r"^n[0-9a-z]+$")
+
 
 def _strip_git_conflict_markers(text):
     """Return `text` with every git conflict-marker hunk resolved to OUR side
@@ -12326,19 +12335,25 @@ class H(http.server.SimpleHTTPRequestHandler):
                         if not isinstance(nid, str): continue
                         if nid in posted_ids: continue
                         if nid in deleted_ids: continue  # user tombstone - don't restore
-                        # Visual-orchestrator / drawer namespace AND onboarding-orchestrator
-                        # namespace (bp_/bs_/br_/cp_ - see onboarding plan §Phase 2).
-                        # simulation / interactive-media / narrative-experience
-                        # families (sim_/im_/nx_) are also background-writer namespaces:
-                        # the *-orchestrator subagents + their component drawers scaffold node
-                        # trios the editor hasn't refetched yet. Without this guard a
-                        # debounced editor canvas-save races the orchestrator's research-fleet
-                        # write and silently clobbers the whole sim_<id> trio (observed:
-                        # a mid-research "Update workflow canvas" save wiped all four
-                        # sim_research_* nodes for an in-flight simulation).
-                        if (nid[:2] in ("p_", "s_", "r_", "a_")
-                                or nid[:3] in ("bp_", "bs_", "br_", "cp_", "im_", "nx_")
-                                or nid[:4] == "sim_"):
+                        # Background-writer nodes: preserve ANY disk node the
+                        # POST omits unless the user tombstoned it. The editor
+                        # is authoritative only for its OWN nodes (the
+                        # workflowNewNodeId() "n<base36>" namespace); every
+                        # other id belongs to a background writer - orchestrator
+                        # families (p_/s_/r_/a_, bp_/bs_/br_/cp_, sim_/im_/nx_/
+                        # game_/ms_/cv_/mat_/pe_*/s3d_/sb_...), the art-director
+                        # (ad_*), the reconciler (prototype_*) - whose additions
+                        # a debounced canvas save hasn't refetched yet. This
+                        # used to be an explicit prefix allowlist that had to be
+                        # re-remembered for every new family; the ones it missed
+                        # were silently wiped mid-build (observed: a canvas save
+                        # clobbered the game_research_* node AND the
+                        # art-director's ad_plate_*/ad_contract_* nodes for an
+                        # in-flight game build, stalling the whole phase).
+                        # Inverted rule = zero drift: only editor-spawned nodes
+                        # can be deleted by omission; everything else needs an
+                        # explicit deletedIds tombstone.
+                        if not _WF_EDITOR_NODE_ID.match(nid):
                             preserved_nodes.append(n)
                     # Preserve edges whose endpoints both still exist (in
                     # either posted or preserved nodes).
@@ -12354,8 +12369,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                             tid = (t_str or "").split(".", 1)[0]
                             if fid not in all_ids or tid not in all_ids: continue
                             if fid in deleted_ids or tid in deleted_ids: continue
-                            if (fid[:2] in ("p_", "s_", "r_", "a_") or tid[:2] in ("p_", "s_", "r_", "a_")
-                                or fid[:3] in ("bp_", "bs_", "br_", "cp_") or tid[:3] in ("bp_", "bs_", "br_", "cp_")):
+                            # Same inverted rule as nodes: an edge touching a
+                            # background-writer node is preserved; an edge
+                            # BETWEEN two editor-spawned nodes that the POST
+                            # omits was deleted on the canvas (edges have no
+                            # tombstones - omission is the editor's delete).
+                            if not (_WF_EDITOR_NODE_ID.match(fid) and _WF_EDITOR_NODE_ID.match(tid)):
                                 preserved_edges.append({"from": f_str, "to": t_str})
             except Exception:
                 # Disk read failed - fall through to plain write. Worst case
