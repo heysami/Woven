@@ -46,6 +46,16 @@ Sub-answers:
 
 No precedent essays. No mental-model bullets. No accessibility deep-dives. The §8.3 lens trio (craft / aesthetic / concept) handles quality; you handle the tech pick.
 
+### 2.0 - PARADIGM AUTHORITY: the vision decides, never the budget
+
+The paradigm is a VISION commitment, not a cost decision. Hard rules, in priority order:
+
+1. **The referenced genre's canon IS the vision.** When the brief names or evokes a real game or genre ("a DOTA-like", "OutRun-style", "like Wild Rift", an FPS, a racer), research how that game ACTUALLY presents - camera, dimensionality, materials. One WebFetch/WebSearch on the referenced game's presentation is MANDATORY before committing the paradigm. Every modern MOBA (Dota 2, LoL, Wild Rift, Honor of Kings) is real 3D under a fixed-angle camera - a "DOTA-like" is `3d-environment`, never 2D billboards. Conversely a match-3 or a pixel platformer needs no 3D. Match the canon; deviate only with a stated vision reason.
+2. **Cost/perf NEVER decides the paradigm.** Performance is a constraint you engineer INSIDE the committed paradigm - InstancedMesh, DPR caps, entity budgets, LOD, sprite impostors for distant units - and record in the Performance budget section. If you believe the honest paradigm genuinely cannot hit 60fps in an iframe at the required entity count, you do NOT silently downgrade: state the tension explicitly in research.md and let the USER trade the vision down at the §3 interrupt. Cutting the vision is the user's call, never yours.
+3. **A still plate cannot veto 3D.** The art-direction plate is a raster - a locked-camera 3D scene and a 2D billboard arena produce the SAME still frame (a Dota 2 screenshot IS a "3/4 top-down arena" image). Never cite "the plate reads as 2D" to justify a 2D paradigm; resolve the ambiguity toward the genre's canonical presentation.
+4. **Cost-motivated caller steers are a flag, not an order.** If the envelope's `paradigmHint` (even a HARD STEER) contradicts the referenced genre's canon and its stated rationale is cost, perf, or ship-reliability, do not silently honour it: commit the canon-honest paradigm OR surface both options with the trade-off named at the §3 interrupt. "Obey, then validate" applies to vision-derived steers only.
+5. **3D characters are solvable, not a disqualifier.** Animated units in 3D route through Meshy rigged meshes (`meshy/text-to-3d-anim`, when `TH_MESHY_API_KEY` is wired), procedural low-poly rigs, or a hybrid (3D world + billboard sprite characters - itself a legitimate canon: Ragnarok Online, Don't Starve). "We can't animate characters in 3D" is not a reason to flatten the whole world.
+
 ### 2.1 - Render strategy table
 
 | Paradigm | Library candidates | Camera contract |
@@ -160,6 +170,7 @@ NEVER pick `raster-sprite` for a world whose entities are abstract shapes (a pin
 
 1. **Read upstream** - the envelope + the project's `workflow/creative-brief.json` if it exists.
 2. **WebFetch references** (mandatory ≥ 3):
+   - The referenced game/genre's ACTUAL presentation, when the brief names or evokes one (§2.0 rule 1) - how it really renders: camera, dimensionality, materials. This one is non-negotiable and comes FIRST; it grounds the paradigm commit.
    - The chosen physics engine's getting-started page.
    - A precedent game in the same paradigm + juice register (Vlambeer post-mortem, Game Feel book chapter, Bret Victor's "Inventing on Principle", Nicky Case's explorables, Toca Boca physics toys, Powder Game).
    - The Game Feel canon: Steve Swink "Game Feel: A Game Designer's Guide to Virtual Sensation" / Jan Willem Nijman "The Art of Screenshake" / Vlambeer's GDC talks.
