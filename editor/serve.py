@@ -13425,6 +13425,21 @@ class H(http.server.SimpleHTTPRequestHandler):
             "label":      labels[0],
             "answeredAt": _dt.datetime.now().isoformat(timespec="seconds"),
         }
+        # Optional structured `detail` block - the SUBSTANCE of the pick, not
+        # just its label. The setup thread persists the full direction lock
+        # here (aesthetic slug / style + shell axes / palette / fonts) so a
+        # post-handoff working thread inherits what was actually locked
+        # instead of a title-length label (the label-only ledger is why a
+        # working thread once claimed "no direction committed" and the art
+        # director produced an off-style candidate set). Passed through
+        # verbatim, size-capped.
+        _detail = body.get("detail")
+        if isinstance(_detail, dict) and _detail:
+            try:
+                if len(json.dumps(_detail)) <= 20000:
+                    payload["detail"] = _detail
+            except Exception:
+                pass
         rel = f"DECISION_{decision_id}.json"
         try:
             abs_path = _safe_join(project_root, rel)

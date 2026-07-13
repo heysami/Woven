@@ -26121,7 +26121,7 @@ function WorkflowCanvas() {
   useEffect(() => {
     const on = () => {
       pendingHandoffRef.current = true;
-      spawnWorkflowChat("Build this prototype now: drive the locked plan (pipeline.json) to completion, running each orchestrator and gate in the order the plan lists. pipeline.json may carry `brief` (the user's original request, verbatim) - it is the intent authority: if the locked plan's shape contradicts the brief's explicit experiential intent (e.g. the brief asks for an immersive piece but the plan boxed it into a section), pause and ask the user which to follow before driving on.");
+      spawnWorkflowChat("Build this prototype now: drive the locked plan (pipeline.json) to completion, running each orchestrator and gate in the order the plan lists. FIRST read the decision ledger at the project root - pipeline.json AND every DECISION_*.json. DECISION_prototype-direction.json is the locked look; when it carries a `detail` block (aesthetic slug, style/shell axes, palette, fonts, steers) that detail is binding on every dispatch you compose - never claim no direction is committed without reading it. pipeline.json may carry `brief` (the user's original request, verbatim) - it is the intent authority: if the locked plan's shape contradicts the brief's explicit experiential intent (e.g. the brief asks for an immersive piece but the plan boxed it into a section), pause and ask the user which to follow before driving on.");
     };
     window.addEventListener("woven:continue-scoped", on);
     return () => window.removeEventListener("woven:continue-scoped", on);
