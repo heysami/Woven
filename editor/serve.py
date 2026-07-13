@@ -739,6 +739,12 @@ def _download_bytes(url, timeout=60):
 _OPENAI_GPT_IMAGE_SIZES = {
     "1:1":  "1024x1024", "3:2": "1536x1024", "16:9": "1536x1024",
     "2:3":  "1024x1536", "9:16": "1024x1536", "auto": "auto",
+    # Every landscape/portrait-ish aspect callers actually send maps to the
+    # nearest gpt-image bucket - an UNKNOWN aspect used to fall back to a
+    # 1024x1024 SQUARE silently (the art director asked for a 16:10 plate
+    # and would have gotten a square one).
+    "16:10": "1536x1024", "4:3": "1536x1024", "21:9": "1536x1024",
+    "10:16": "1024x1536", "3:4": "1024x1536",
 }
 _OPENAI_DALLE3_SIZES = {
     "1:1":  "1024x1024", "3:2": "1792x1024", "16:9": "1792x1024",
