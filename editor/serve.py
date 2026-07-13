@@ -76,6 +76,16 @@ _EDITOR_DIR = os.path.dirname(os.path.abspath(__file__))
 if _EDITOR_DIR not in sys.path:
     sys.path.insert(0, _EDITOR_DIR)
 
+# Some machines resolve python3 to an install with an EMPTY SSL trust store
+# (python.org build without its certificates step). Every https call then
+# fails with CERTIFICATE_VERIFY_FAILED - GitHub sign-in, providers, image gen.
+# Repair the process-wide default context from a system CA bundle before any
+# module can open a connection.
+import ssl_compat as _ssl_compat
+_SSL_CA_FALLBACK = _ssl_compat.ensure_default_ca()
+if _SSL_CA_FALLBACK:
+    print("[ssl] interpreter trust store is empty; using system CA bundle " + _SSL_CA_FALLBACK)
+
 from prompts import node_agent_preambles as _node_preambles  # per-node agent preambles
 import exports as _exports  # per-asset export bundles (README + serve.* + files)
 import shares as _shares    # share mode - cloudflare quick tunnels + review comments
@@ -20387,8 +20397,17 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._reply(400, {"error": "paste a GitHub token first"})
                 try:
                     u = _gitops.gh_user(tok)
-                except Exception as e:
+                except RuntimeError as e:
+                    # gh_user raises RuntimeError with GitHub's own message
+                    # (e.g. "Bad credentials") - that IS a token rejection.
                     return self._reply(400, {"error": "token rejected by GitHub: " + str(e)})
+                except Exception as e:
+                    # Anything else is a transport failure - GitHub never saw
+                    # the token, so don't blame it.
+                    msg = str(e)
+                    if "CERTIFICATE_VERIFY_FAILED" in msg:
+                        msg += " (this machine's Python cannot verify TLS certificates and no system CA bundle was found to fall back on; the token itself was never checked)"
+                    return self._reply(502, {"error": "could not reach GitHub: " + msg})
                 _gitops.save_token(tok, u.get("login") or "", u.get("avatar") or "")
                 return self._reply(200, {"ok": True, "login": u.get("login") or "",
                                          "avatar": u.get("avatar") or ""})
