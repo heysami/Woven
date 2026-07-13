@@ -817,7 +817,7 @@ def _openai_edit_image(api_key, prompt, model, image_bytes, image_mime, aspect, 
         },
         data=body,
     )
-    with urllib.request.urlopen(req, timeout=300) as resp:
+    with urllib.request.urlopen(req, timeout=600) as resp:
         data = json.loads(resp.read())
     try:
         b64 = data["data"][0]["b64_json"]
@@ -856,7 +856,12 @@ def _openai_generate_image(api_key, prompt, model, aspect, options):
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         data=json.dumps(body).encode("utf-8"),
     )
-    with urllib.request.urlopen(req, timeout=180) as resp:
+    # 600s, not 180: a large gpt-image render (16:10 plate, detailed prompt)
+    # routinely exceeds 3 minutes at OpenAI's end. At 180s every art-director
+    # north-star plate died with "read operation timed out" while a small
+    # probe image finished in ~30s (catchemall: two plate attempts, 6 minutes
+    # burned, empty _artdir).
+    with urllib.request.urlopen(req, timeout=600) as resp:
         data = json.loads(resp.read())
     try:
         b64 = data["data"][0]["b64_json"]
