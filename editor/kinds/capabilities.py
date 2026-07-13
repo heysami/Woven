@@ -1375,7 +1375,12 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
    any per-family plan file) can be CORRECTED on disk mid-build - by the user, or by another
    session acting for the user - after you first read it. Immediately before composing any
    derived artefact (an INTEGRATION.md, a dispatch brief, a fix plan), RE-READ it from disk and
-   compose from the file, never from context memory. Derived artefacts must REFERENCE doctrine
+   compose from the file, never from context memory. The same goes for the project DECISION LEDGER: `DECISION_*.json` + `pipeline.json` at the
+   project root record what the user already locked (direction, roster, reconciliation) - a
+   thread picking up after a hand-off MUST read them before composing any premise like "no
+   direction is committed" into a dispatch (observed: a working thread claimed no direction,
+   the art director obeyed, and the candidate plates ignored the user's locked style).
+   Derived artefacts must REFERENCE doctrine
    ("chrome per research.md §10"), never restate it - a restated copy freezes a stale version
    and the builders obey your stale copy over the corrected file (observed: pocketmonster's
    chrome shipped against its own corrected research because INTEGRATION.md restated the old
