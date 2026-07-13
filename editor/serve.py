@@ -49,6 +49,7 @@ import difflib
 import hashlib
 import http.server
 import json
+import math
 import os
 import re
 import shutil
@@ -13126,6 +13127,171 @@ class H(http.server.SimpleHTTPRequestHandler):
     # The endpoint returns the runId immediately; the canvas node's runStatus
     # is updated automatically when the subprocess exits (hook in
     # `_drain_stdout`).
+    def _self_api_post(self, path, payload, project_id, timeout=660):
+        """POST to this daemon's own HTTP API (threaded server, so a handler
+        thread calling back into another handler is safe). Reuses the full
+        /__asset_generate semantics without refactoring its monolith."""
+        url = "http://127.0.0.1:%d%s?project=%s" % (
+            PORT, path, urllib.parse.quote(project_id, safe=""))
+        req = urllib.request.Request(
+            url, method="POST",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps(payload).encode("utf-8"))
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            body = json.loads(r.read().decode("utf-8", "replace"))
+        if not (isinstance(body, dict) and body.get("ok")):
+            raise RuntimeError("%s failed: %s" % (path, (body or {}).get("error") or body))
+        return body
+
+    def _animated_sprite_run(self, project_root, wf, node, node_id):
+        """Generate an animated-sprite node's sheet + atlas HEADLESSLY -
+        mirror of the editor's client-side Generate (app.js
+        WorkflowAnimatedSpriteNode.runGenerate): ONE subject-preserving i2i
+        call renders the whole cycle as a uniform grid on a plain background,
+        rembg knocks the background out, then the grid is sliced into a
+        horizontal 256px-cell strip PNG + a Phaser/PixiJS atlas JSON. Writes
+        the canonical animated-sprite-<id>.json and mutates the node fields
+        exactly like the client, so the editor UI picks the result up as if
+        Generate had been clicked."""
+        try:
+            from PIL import Image
+        except Exception:
+            raise RuntimeError("Pillow (PIL) is required for headless sprite packing - pip install pillow")
+        project_id = os.path.basename(project_root.rstrip("/"))
+
+        # source image: node.source, else the asset wired into the in port
+        src = (node.get("source") or "").strip()
+        if not src:
+            for e in (wf.get("edges") or []):
+                to = (e.get("to") or "")
+                if to.split(".", 1)[0] != node_id: continue
+                up_id = (e.get("from") or "").split(".", 1)[0]
+                up = next((n for n in (wf.get("nodes") or []) if n.get("id") == up_id), None)
+                if not isinstance(up, dict): continue
+                for f in ("path", "sheet", "output"):
+                    cand = up.get(f)
+                    if isinstance(cand, str) and cand.startswith("source/"):
+                        try:
+                            if os.path.isfile(_safe_join(project_root, cand)):
+                                src = cand; break
+                        except Exception:
+                            continue
+                if src: break
+        if not src:
+            raise ValueError("no source image - set node.source or wire a raster into the in port")
+
+        # branch follows the SOURCE image's subtree; fall back to node.branch
+        m = re.match(r"^source/([^/]+)/", src)
+        branch = m.group(1) if m else (node.get("branch") or node.get("prototype") or "main")
+
+        n    = max(1, min(64, int(node.get("frameCount") or 6)))
+        anim = (node.get("animation") or "idle").strip() or "idle"
+        fps  = max(1, int(node.get("fps") or 12))
+        cols = int(math.ceil(math.sqrt(n)))
+        rows = int(math.ceil(n / float(cols)))
+        aspect = "3:2" if cols > rows else ("2:3" if cols < rows else "1:1")
+
+        cycles = {
+            "idle":   "a gentle IDLE animation - the character breathing and bobbing, subtle squash-and-stretch, with one blink partway through the loop",
+            "walk":   "a side-view WALK cycle - legs and arms swinging through a full stride, body bobbing with each step",
+            "run":    "a fast RUN cycle - exaggerated stride, forward lean, arms pumping, airborne at the passing pose",
+            "attack": "an ATTACK - wind-up, then the strike fully extended, then follow-through and recovery",
+            "jump":   "a JUMP - crouch / anticipation, launch with the body stretched, apex, then landing squash",
+            "turn":   "the character TURNING to face a new direction, rotating around its vertical axis",
+        }
+        cycle = cycles.get(anim, "a smooth looping %s animation" % anim)
+        subject_directive = ("SUBJECT REFERENCE: preserve the subject identity from the attached reference image - "
+                             "face, proportions, key features, outfit and colour palette - keeping it recognisably "
+                             "the same subject. Recompose / restyle only as the prompt above directs.")
+        sheet_prompt = (
+            "Redraw the character from the reference image as a SPRITE SHEET of %s. "
+            "Lay out EXACTLY %d frames on a uniform %dx%d grid (%d columns, %d rows), read left-to-right then "
+            "top-to-bottom, evenly spaced, every cell the SAME size with the character centred at the SAME scale "
+            "in each cell. The %d frames must form ONE smooth, seamless loop (the last flows back into the first) "
+            "with the pose VISIBLY changing between consecutive frames - real articulated movement, NOT the same "
+            "drawing rescaled. Keep the character's identity, colours, proportions and art style identical to the "
+            "reference. Place the whole grid on a PLAIN, FLAT, SOLID light-grey background with NO scenery, NO "
+            "shadows and NO gradients, clearly separated from the character so the background can be cleanly "
+            "removed afterwards. No gridlines, no borders, no frame numbers, no text."
+        ) % (cycle, n, cols, rows, cols, rows, n)
+
+        raw_rel = "source/%s/sprites/animated-sprite-%s/__sheet_raw.png" % (branch, node_id)
+        cut_rel = "source/%s/sprites/animated-sprite-%s/__sheet_cut.png" % (branch, node_id)
+
+        # 1) whole-cycle grid sheet via subject-preserving i2i
+        self._self_api_post("/__asset_generate", {
+            "skill": "generate-image", "provider": "openai", "model": "gpt-image-2",
+            "output": raw_rel, "aspect": aspect, "input_path": src,
+            "prompt": subject_directive + "\n\n" + sheet_prompt,
+        }, project_id, timeout=660)
+
+        # 2) background removal; degrade to the raw sheet if rembg is absent
+        pack_rel = cut_rel
+        try:
+            self._self_api_post("/__asset_generate", {
+                "skill": "rembg", "provider": "local", "model": "u2net",
+                "input_path": raw_rel, "output": cut_rel,
+            }, project_id, timeout=300)
+        except Exception as _rb_err:
+            print("[animated-sprite] rembg unavailable (%s) - packing the raw sheet" % _rb_err, flush=True)
+            pack_rel = raw_rel
+
+        # 3) slice the even grid into a horizontal 256px-cell strip
+        CELL = 256
+        raw_img = Image.open(_safe_join(project_root, pack_rel)).convert("RGBA")
+        gw, gh = raw_img.size
+        cw, ch = gw / float(cols), gh / float(rows)
+        strip = Image.new("RGBA", (CELL * n, CELL), (0, 0, 0, 0))
+        for i in range(n):
+            gc, gr = i % cols, i // cols
+            box = (int(gc * cw), int(gr * ch), int((gc + 1) * cw), int((gr + 1) * ch))
+            cell_img = raw_img.crop(box)
+            fr = min(CELL / float(cell_img.width), CELL / float(cell_img.height))
+            dw, dh = max(1, int(cell_img.width * fr)), max(1, int(cell_img.height * fr))
+            cell_img = cell_img.resize((dw, dh), Image.LANCZOS)
+            strip.paste(cell_img, (i * CELL + (CELL - dw) // 2, (CELL - dh) // 2), cell_img)
+        sheet_rel = "source/%s/sprites/animated-sprite-%s.png" % (branch, node_id)
+        sheet_abs = _safe_join(project_root, sheet_rel)
+        os.makedirs(os.path.dirname(sheet_abs), exist_ok=True)
+        strip.save(sheet_abs, "PNG")
+
+        dur = int(round(1000.0 / fps))
+        atlas = {
+            "frames": [{
+                "filename": "%s_%d" % (anim, i),
+                "frame": {"x": i * CELL, "y": 0, "w": CELL, "h": CELL},
+                "rotated": False, "trimmed": False,
+                "spriteSourceSize": {"x": 0, "y": 0, "w": CELL, "h": CELL},
+                "sourceSize": {"w": CELL, "h": CELL}, "duration": dur,
+            } for i in range(n)],
+            "meta": {
+                "app": "woven-animated-sprite",
+                "image": "animated-sprite-%s.png" % node_id,
+                "format": "RGBA8888", "size": {"w": CELL * n, "h": CELL},
+                "scale": "1", "fps": fps,
+                "frameTags": [{"name": anim, "from": 0, "to": n - 1, "direction": "forward"}],
+            },
+        }
+        canonical_rel = "source/%s/animated-sprite-%s.json" % (branch, node_id)
+        canonical = {
+            "name": node.get("name") or ("%s cycle" % anim.capitalize()),
+            "source": src, "animation": anim, "frameCount": n, "fps": fps,
+            "loop": node.get("loop") is not False,
+            "frameWidth": CELL, "frameHeight": CELL, "layout": "strip",
+            "sheet": sheet_rel, "atlas": atlas,
+        }
+        _write_json_atomic(_safe_join(project_root, canonical_rel), canonical)
+
+        node.update({
+            "sheet": sheet_rel, "atlas": atlas, "frameWidth": CELL, "frameHeight": CELL,
+            "path": sheet_rel, "assetKind": "image", "frameCount": n,
+            "rawSheet": pack_rel,
+            "grid": {"cols": cols, "rows": rows, "offX": 0, "offY": 0, "gutX": 0, "gutY": 0},
+            "sheetVer": int(time.time() * 1000),
+        })
+        return {"sheet": sheet_rel, "atlas": canonical_rel, "frames": n,
+                "frameWidth": CELL, "frameHeight": CELL, "animation": anim}
+
     def _workflow_node_run(self, qs, node_id):
         try:
             project_root = resolve_project_root(qs, require_explicit=True)
@@ -13341,6 +13507,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "kind":    kind,
                     "hint":    "Subprocess dispatched. Poll /__run/<runId> for live status; the node's runStatus will flip on the canvas when the subprocess exits.",
                 }
+
+            elif kind == "animated-sprite":
+                # Headless daemon-side sprite generation - the same 3-step
+                # pipeline the editor's Generate button drives client-side
+                # (grid-sheet i2i -> rembg -> slice to a 256px strip + atlas).
+                # Before this, dispatch was "none": the node only produced a
+                # sheet when a human clicked Generate, so every headless game
+                # build silently shipped stills (five builds in a row).
+                out = self._animated_sprite_run(project_root, wf, node, node_id)
 
             elif kind in ("ds-brainstorm", "iterator-remix"):
                 # Manual kinds - the orchestrator handles these by writing

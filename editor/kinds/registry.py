@@ -1478,14 +1478,14 @@ KINDS = {
         "outputs":      {},
         "outputsRoot":  None,
         "consumeFrom":  None,
-        "dispatch":     "none",
+        "dispatch":     "inline-server-call",
         "fanOut":       None,
         "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
         "extendsGraph": False,
-        "runStatusFlow": ["queued", "done"],
+        "runStatusFlow": ["queued", "running", "done", "error"],
         "completion":   {"requires": []},
         "pauseAfter":   False,
-        "notes": "Raster image -> AI-redrawn frame cycle baked to a sprite-sheet PNG + atlas JSON. Wire a source image into `in` and click Generate (i2i, subject-preserving, one call per frame, packed client-side); an Agent can also author it via the `edit` port.",
+        "notes": "Raster image -> AI-redrawn frame cycle baked to a sprite-sheet PNG + atlas JSON. Wire a source image into `in`, then EITHER click Generate in the editor OR `POST /__workflow/node/<id>/run` - the daemon runs the identical pipeline headlessly (grid-sheet i2i -> rembg -> 256px strip + atlas), so build chains can execute sprite cycles mechanically. An Agent can also author via the `edit` port.",
     },
 
     # ── pose-viewer ───────────────────────────────────────────────────────
