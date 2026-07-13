@@ -97,7 +97,7 @@ If `objective` is empty → push back; a game-experience without an objective is
 
 If `paradigmHint` is `any`, the research fleet decides. If specific, the fleet validates and may push back; the user steers via the §3 interrupt.
 
-**paradigmHint must be VISION-derived, never cost-derived.** A hint is legitimate when it comes from the brief's genre canon or the art-direction contract; it is illegitimate when its rationale is cost, perf, or ship-reliability ("2D ships more reliably in an iframe" is not a paradigm argument - perf is the researcher's engineering constraint, solved inside the committed paradigm). Never thread a cost-motivated HARD STEER into the research envelope. When the brief references a real game or genre, the hint should match that genre's actual presentation (every modern MOBA is 3D under a fixed-angle camera; a "DOTA-like" hints `3d-environment`). The researcher is instructed (its §2.0) to treat cost-motivated steers as a flag and surface the trade-off to the user - so a cost steer buys you nothing but a slower gate.
+`paradigmHint` is vision-derived only (genre canon / art-direction contract) - never write a cost- or perf-motivated steer into the envelope; the researcher surfaces those to the user instead of obeying them.
 
 ## Art-direction contract - reconcile, don't fork (read when present)
 

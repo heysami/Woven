@@ -64,13 +64,13 @@ Commit ONE paradigm. The mental model: how does the user MOST NATURALLY read thi
 |---|---|---|
 | Plan-view of physical layout (warehouse, traffic grid, garden) | `2d-spatial-map` | The system IS a 2D plan; flatness is honest. |
 | Real-world geography (Singapore mosquito density, flight corridor) | `2d-spatial-map` (with map library per §2.0) | Map-anchored data. |
-| Buildings with height / stacked floors / tile-based city / oblique strategy game | `2d-isometric` | Iso shows plan + elevation at once; cheaper than 3d, more legible than top-down for stacked systems. SimCity / Habbo / Theme Hospital / Diablo / Monument Valley canon. |
+| Buildings with height / stacked floors / tile-based city / oblique strategy game | `2d-isometric` | Iso shows plan + elevation at once; more legible than top-down for stacked systems. SimCity / Habbo / Theme Hospital / Diablo / Monument Valley canon. |
 | Spatial presence needed - user reads the system by inhabiting it | `3d-environment` | Real depth + camera control. Three.js / Babylon.js / WebGL. |
 | Queue / pipeline / sequence with no native spatial primitive (render farm, ER triage, ticket strip, mailing list) | `iconographic-anim` | Small animated icons; the temporal sequence IS the visualisation. |
 | Terminal-native / retro-computing / hacker-aesthetic / htop-style monitor / k9s-style / pipeline status board / ASCII topology / code-adjacent | `text-art` | Monospace character grid (canvas2D drawing fixed-width glyphs, `<pre>` innerHTML rewrite, or xterm.js). The aesthetic IS the medium. |
 | Multi-modal - one paradigm can't carry the brief alone | `hybrid` | Pick only when forced; defaults to one paradigm. |
 
-**`2d-isometric` vs `2d-spatial-map` vs `3d-environment` - when iso wins:** the brief mentions building HEIGHTS, floors, stacked levels, "the building grows as the user X", strategic-game vibes, axonometric architecture diagrams. Iso shows plan + elevation without true 3D camera cost. Defaults to iso when entity scale ≤500 stacked objects.
+**`2d-isometric` vs `2d-spatial-map` vs `3d-environment` - when iso wins:** the brief mentions building HEIGHTS, floors, stacked levels, "the building grows as the user X", strategic-game vibes, axonometric architecture diagrams - and the brief's canon reads as iso (SimCity, Habbo), not as an inhabited 3D space. Paradigm follows the vision, not the render cost.
 
 **`text-art` triggers** (commit when the brief reads with ANY of):
 - Terminal / TUI / CLI / shell / monospace explicitly named

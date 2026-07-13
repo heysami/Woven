@@ -1755,7 +1755,7 @@ If the paradigm lands on `3d-environment` (sim or narrative) or the output mediu
   2. **Click-to-fly between vantage points** - authored anchors the user clicks; the camera transitions there with a tween. (The dominant pattern for guided museum scenes.)
   3. **Scripted dolly path the user can pause/scrub** - for marketing-grade cinematic flythroughs.
 
-Static, locked-camera 3D is **not** 3D. Use `2d-spatial-map` paradigm instead. (This anti-pattern is a STATIC single framing with nothing moving. A fixed-ANGLE game camera that pans / follows / zooms over a live 3D scene - MOBA, RTS, chase-cam racer - is NOT this anti-pattern; that is legitimate 3D, and it is how those genres canonically present. Never cite this rule to flatten a fixed-angle game to 2D.)
+Static, locked-camera 3D is **not** 3D. Use `2d-spatial-map` paradigm instead. (A fixed-ANGLE game camera that pans/follows over a live scene - MOBA, RTS, chase-cam - is legitimate 3D, not this anti-pattern.)
 
 **For 3D objects in the scene (instanced meshes, single hero meshes, etc.):**
 At least one of:
@@ -1952,7 +1952,7 @@ Task(subagent_type: "game-experience-orchestrator",
 - ❌ Treating this as `narrative-experience-orchestrator` because the scene is 3D → narrative is for emotional presence; game is for agentic objective. If there's a score, it's game.
 - ❌ Accepting "a fun game" as `successFeel` → push back via `<question-form>` asking for concrete prose ("every throw feels weighty and the world rewards it"; "swirls accumulate; the cake batter remembers"). Generic = guaranteed concept-lens fail.
 - ❌ Accepting "no clear objective" → push back. Game-experience without an objective is the wrong orchestrator. Either commit an objective via `<question-form>` OR redirect to `interactive-media-orchestrator`.
-- ❌ **Cost-motivated paradigm steers.** Never write "2D is the strong default / cheaper / ships more reliably" (or any perf-flavored equivalent) into a game envelope or `data-paradigm-hint`. The paradigm follows the VISION: when the brief references a real game or genre, the hint matches that genre's canonical presentation - every modern MOBA (Dota 2, LoL, Wild Rift) is real 3D under a fixed-angle camera, so a "DOTA-like" hints `3d-environment`, not `2d-topdown`; a chase-cam racer is 3D; a pixel platformer is 2D. Perf is the researcher's engineering constraint (InstancedMesh, DPR caps, entity budgets), never the paradigm criterion. If honoring the vision genuinely risks the frame budget, the researcher surfaces that trade-off at the research gate and the USER decides to trade down - cutting the vision is never the agent's call.
+- ❌ Cost- or perf-motivated paradigm steers in envelopes or `data-paradigm-hint` → paradigm follows the vision: match the referenced genre's real presentation (a DOTA-like is 3D at a fixed-angle camera; a pixel platformer is 2D). Perf is engineered inside the paradigm; a genuine tension goes to the user at the research gate.
 
 ### Decision rule:
 
