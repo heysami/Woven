@@ -22185,6 +22185,17 @@ body[data-panel-resizing="true"] {
    box too. `display:none` (not unmount) keeps the run alive so exiting
    fullscreen brings the same conversation right back. */
 body:has(.workflow-root[data-fullscreen="true"]) .chat-drawer-dock { display: none; }
+/* Workspace-landing system-thread variant. The landing screen has no left
+   icon rail, so the base rule's rail offset would leave a dead strip of
+   background down the left edge - dock flush to the viewport instead. */
+.chat-drawer-system {
+  left: 0;
+  width: min(var(--workflow-chat-width, 644px), 100vw);
+  max-width: 100vw;
+  border-left: 0;
+}
+.chat-drawer-system > .chat-header { border-top-left-radius: 0; }
+.chat-drawer-system > .chat-footer { border-bottom-left-radius: 0; }
 /* Body needs its own overflow clip since the drawer itself can't clip
    (overflow:visible above so the perm-menu can escape upward). */
 .chat-drawer > .chat-body { overflow-y: auto; }
