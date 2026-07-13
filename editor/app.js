@@ -3106,7 +3106,9 @@ function DsReconcileDialog({ dsId, status, onClose, onResolved }) {
   const [tab, setTab] = useState("styles.css");
   const [busy, setBusy] = useState("");
   const [merging, setMerging] = useState(false);
+  const [mergeErr, setMergeErr] = useState("");
   const pollRef = useRef(0);
+  const mergeRunRef = useRef("");
   useEffect(() => {
     fetch(apiUrl("/__global_ds/diff?dsId=" + encodeURIComponent(dsId)))
       .then((r) => (r.ok ? r.json() : null))
@@ -3127,6 +3129,7 @@ function DsReconcileDialog({ dsId, status, onClose, onResolved }) {
 
   const mergeWithAgent = async () => {
     setBusy("merge");
+    setMergeErr("");
     const origin = (typeof location !== "undefined" && location.origin) || "http://127.0.0.1:5731";
     const pid = activeProjectId() || "";
     const prompt = [
@@ -3156,14 +3159,17 @@ function DsReconcileDialog({ dsId, status, onClose, onResolved }) {
         prompt, agentId: "claude", kind: "freeform", permissionMode: "bypassPermissions",
       }),
     });
+    const dispatched = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
       setBusy("");
-      await uiAlert(j.error || "could not dispatch the merge agent");
+      await uiAlert(dispatched.error || "could not dispatch the merge agent");
       return;
     }
+    mergeRunRef.current = dispatched.runId || "";
     setMerging(true);
     // Poll until the sides converge (the agent force-pushes at the end).
+    // The run is a workspace SYSTEM thread - it survives this dialog and
+    // even a page refresh, so closing here is always safe.
     pollRef.current = setInterval(async () => {
       try {
         const r = await fetch(apiUrl("/__global_ds/status?dsId=" + encodeURIComponent(dsId)));
@@ -3171,6 +3177,21 @@ function DsReconcileDialog({ dsId, status, onClose, onResolved }) {
         if (j && j.inSync) {
           clearInterval(pollRef.current); pollRef.current = 0;
           onResolved && onResolved();
+          return;
+        }
+        // Still diverged - if the agent's turn already ended, it failed.
+        // Surface that and put the resolution buttons back instead of
+        // polling forever behind a static message.
+        if (!mergeRunRef.current) return;
+        const rr = await fetch("/__system_runs?section=design-systems");
+        const jj = rr.ok ? await rr.json() : null;
+        const run = jj && (jj.runs || []).find((x) => x.runId === mergeRunRef.current);
+        if (run && (run.done || run.turnDone)) {
+          clearInterval(pollRef.current); pollRef.current = 0;
+          setMerging(false); setBusy("");
+          setMergeErr("The merge agent finished without bringing the sides back in sync"
+            + (run.exitCode ? " (exit " + run.exitCode + ")" : "")
+            + ". Open its thread via the bot icon on the home screen, or resolve manually.");
         }
       } catch {}
     }, 5000);
@@ -3184,11 +3205,11 @@ function DsReconcileDialog({ dsId, status, onClose, onResolved }) {
       <span>${(s && s.label) || ""} · ${((s && s.version) || "").slice(0, 7)}${s && s.updatedAt ? " · " + s.updatedAt.replace("T", " ") : ""}</span>
     </span>`;
   return createPortal(html`
-    <div className="gds-rec-overlay" onClick=${(e) => { if (e.target === e.currentTarget && !merging) onClose(); }}>
+    <div className="gds-rec-overlay" onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="gds-rec-card" role="dialog" aria-label="Reconcile design system">
         <header className="gds-rec-head">
           <h3>Both sides changed since the last sync</h3>
-          <button className="newproj-close" onClick=${onClose} aria-label="Close" disabled=${merging}>×</button>
+          <button className="newproj-close" onClick=${onClose} aria-label="Close">×</button>
         </header>
         <div className="gds-rec-sides">
           ${side("Project · " + dsId, diff && diff.project)}
@@ -3210,9 +3231,11 @@ function DsReconcileDialog({ dsId, status, onClose, onResolved }) {
         </div>
         <footer className="gds-rec-foot">
           ${merging
-            ? html`<span className="gds-rec-merging">Merge agent running - watch it in the Runs menu. This closes when both sides are back in sync.</span>`
+            ? html`<span className="gds-rec-merging">Merge agent running in the background - this closes itself when both sides are back in sync (usually a few minutes). Safe to close and keep working; follow the run via the bot icon on the home screen.</span>`
             : html`
-              <span className="gds-rec-foot-hint">The diff reads project as before, global as after.</span>
+              ${mergeErr
+                ? html`<span className="gds-rec-merge-err">${mergeErr}</span>`
+                : html`<span className="gds-rec-foot-hint">The diff reads project as before, global as after.</span>`}
               <button className="gds-sync-btn" disabled=${!!busy} onClick=${() => resolve("keep-project")}>
                 ${busy === "keep-project" ? "Pushing…" : "Keep project version"}
               </button>
