@@ -8822,7 +8822,7 @@ function formatWbContext({ wb, selectedWbIds } = {}) {
   const tail = items.length > MAX ? [`  …and ${items.length - MAX} more items`] : [];
   return [
     `<whiteboard count="${items.length}" selected="${Array.from(sel).length}">`,
-    `The user is in WHITEBOARD MODE on the workflow canvas. The items below are the whiteboard annotation layer - the top-level \`wb\` array in workflow/workflow.json (siblings of nodes/edges; NOT nodes). Read the full state from that file. To create / modify / delete whiteboard items, POST /__workflow/wb?project=<id> with JSON {"add":[items],"update":[{"id":…, …patch}],"remove":[ids]} - NEVER edit workflow.json directly (it bypasses the write lock). Item types: text, textbox, sticky, ink, shape, arrow, image, table. Geometry is world-space canvas coords (x/y/w/h; arrows use x1/y1/x2/y2; ink stores a flat points array relative to x/y). A table is a grid: cols=[colWidths], rows=[rowHeights] (w/h must equal their sums), merges=[{r,c,rs,cs}] for merged regions; OTHER wb items and nodes attach to a cell via their own cell:{tableId,r,c,ox,oy} field (ox/oy = the item's top-left offset from the cell). Colors are tokens: ink|gray|blue|green|yellow|pink|purple|orange. Omit "id" and "z" on added items - the daemon assigns them.`,
+    `The user is in WHITEBOARD MODE on the workflow canvas. The items below are the whiteboard annotation layer - the top-level \`wb\` array in workflow/workflow.json (siblings of nodes/edges; NOT nodes). Read the full state from that file. To create / modify / delete whiteboard items, POST /__workflow/wb?project=<id> with JSON {"add":[items],"update":[{"id":…, …patch}],"remove":[ids]} - NEVER edit workflow.json directly (it bypasses the write lock). Item types: text, textbox, sticky, ink, shape, arrow, image, table. Geometry is world-space canvas coords (x/y/w/h; arrows use x1/y1/x2/y2; ink stores a flat points array relative to x/y). A shape carries shape:"rect"|"diamond" (both honor radius for rounded corners). Arrows also take route:"straight"|"curve"|"elbow" (elbow = FigJam-style 90° turns), mids:[x,y,…] (flat world-coord waypoints the route bends through) and labels:[{t:0..1,text}] (text chips at arc-length t along the line). A table is a grid: cols=[colWidths], rows=[rowHeights] (w/h must equal their sums), merges=[{r,c,rs,cs}] for merged regions; OTHER wb items and nodes attach to a cell via their own cell:{tableId,r,c,ox,oy} field (ox/oy = the item's top-left offset from the cell). Colors are tokens: ink|gray|blue|green|yellow|pink|purple|orange. Omit "id" and "z" on added items - the daemon assigns them.`,
     "",
     ...lines,
     ...tail,
@@ -27944,7 +27944,8 @@ const WORKFLOW_WB_FACTORY = {
     emoji: p.emoji || "⭐", rotation: p.rotation ?? 0,
   }),
   "shape": (p = {}) => ({
-    type: "shape", shape: "rect", x: p.x ?? 0, y: p.y ?? 0,
+    type: "shape", shape: p.shape === "diamond" ? "diamond" : "rect",
+    x: p.x ?? 0, y: p.y ?? 0,
     w: p.w ?? 200, h: p.h ?? 120,
     color: p.color || "gray", fill: p.fill || "none",
     radius: p.radius ?? 6, size: p.size ?? 2, rotation: p.rotation ?? 0,
@@ -27954,6 +27955,12 @@ const WORKFLOW_WB_FACTORY = {
     color: p.color || "ink", size: p.size ?? 3,
     arrowStart: !!p.arrowStart, arrowEnd: p.arrowEnd !== false,
     dash: !!p.dash,
+    // Routing: how the line travels between the endpoints. `mids` are
+    // user-placed waypoints (flat world coords) the route passes through;
+    // `labels` are text chips parameterized by arc-length t along the line.
+    route: p.route === "curve" || p.route === "elbow" ? p.route : "straight",
+    mids: Array.isArray(p.mids) ? p.mids : [],
+    labels: Array.isArray(p.labels) ? p.labels : [],
     // Endpoint bindings: when an end is drawn/dropped on top of a node or a
     // box-like wb item, we remember { t:'n'|'w', id, ox, oy } (ox/oy is the
     // endpoint's offset from that target's top-left). A reconcile effect keeps
@@ -28020,10 +28027,59 @@ function workflowIsTextCarrierNode(n) { return !!(n && n.kind === "prompt"); }
 function wbItemBBox(it) {
   if (!it) return { x: 0, y: 0, w: 0, h: 0 };
   if (it.type === "arrow") {
-    const x = Math.min(it.x1, it.x2), y = Math.min(it.y1, it.y2);
-    return { x, y, w: Math.abs(it.x2 - it.x1), h: Math.abs(it.y2 - it.y1) };
+    let minX = Math.min(it.x1, it.x2), maxX = Math.max(it.x1, it.x2);
+    let minY = Math.min(it.y1, it.y2), maxY = Math.max(it.y1, it.y2);
+    // Waypoints stretch the box; elbow runs stay inside the anchor hull and
+    // curve bulge is covered by the svg pad + hit tolerance.
+    const mids = Array.isArray(it.mids) ? it.mids : [];
+    for (let i = 0; i + 1 < mids.length; i += 2) {
+      if (mids[i] < minX) minX = mids[i];
+      if (mids[i] > maxX) maxX = mids[i];
+      if (mids[i + 1] < minY) minY = mids[i + 1];
+      if (mids[i + 1] > maxY) maxY = mids[i + 1];
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
   }
   return { x: it.x || 0, y: it.y || 0, w: it.w || 0, h: it.h || 0 };
+}
+
+// Edge/center snapping for wb drags (Excalidraw-style). Compares the moving
+// bbox's left/center/right (top/center/bottom) lines against every static
+// rect's, picks the closest match within thr per axis independently, and
+// returns the snap delta + the alignment guide lines to draw.
+function wbComputeSnap(box, statics, thr) {
+  const mx = [box.x, box.x + box.w / 2, box.x + box.w];
+  const my = [box.y, box.y + box.h / 2, box.y + box.h];
+  let bx = null, by = null;
+  for (const s of statics) {
+    const sx = [s.x, s.x + s.w / 2, s.x + s.w];
+    const sy = [s.y, s.y + s.h / 2, s.y + s.h];
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        const dx = sx[j] - mx[i];
+        if (Math.abs(dx) <= thr && (!bx || Math.abs(dx) < Math.abs(bx.d))) bx = { d: dx, line: sx[j], s };
+        const dy = sy[j] - my[i];
+        if (Math.abs(dy) <= thr && (!by || Math.abs(dy) < Math.abs(by.d))) by = { d: dy, line: sy[j], s };
+      }
+    }
+  }
+  const dx = bx ? bx.d : 0, dy = by ? by.d : 0;
+  const guides = [];
+  if (bx) {
+    guides.push({
+      axis: "v", x: bx.line,
+      y0: Math.min(bx.s.y, box.y + dy),
+      y1: Math.max(bx.s.y + bx.s.h, box.y + box.h + dy),
+    });
+  }
+  if (by) {
+    guides.push({
+      axis: "h", y: by.line,
+      x0: Math.min(by.s.x, box.x + dx),
+      x1: Math.max(by.s.x + by.s.w, box.x + box.w + dx),
+    });
+  }
+  return { dx, dy, guides };
 }
 
 function wbMaxZ(items) {
@@ -28128,7 +28184,13 @@ function wbHitTest(items, wx, wy, zoom) {
     if (wx < bb.x - tol || wx > bb.x + bb.w + tol ||
         wy < bb.y - tol || wy > bb.y + bb.h + tol) continue;
     if (it.type === "arrow") {
-      if (wbDistToSeg(wx, wy, it.x1, it.y1, it.x2, it.y2) <= tol) return it.id;
+      // Follow the drawn route (bends, curves, elbow turns), not the chord.
+      const poly = wbArrowPoly(it);
+      let hit = false;
+      for (let i = 0; i + 3 < poly.length && !hit; i += 2) {
+        if (wbDistToSeg(wx, wy, poly[i], poly[i + 1], poly[i + 2], poly[i + 3]) <= tol) hit = true;
+      }
+      if (hit) return it.id;
       continue;
     }
     if (it.type === "ink") {
@@ -28145,9 +28207,25 @@ function wbHitTest(items, wx, wy, zoom) {
       continue;
     }
     if (it.type === "shape" && (!it.fill || it.fill === "none")) {
+      if (it.shape === "diamond") {
+        // Hollow diamond hits near its four edges (vertex midpoints of the box).
+        const T = [bb.x + bb.w / 2, bb.y], R = [bb.x + bb.w, bb.y + bb.h / 2];
+        const B = [bb.x + bb.w / 2, bb.y + bb.h], L = [bb.x, bb.y + bb.h / 2];
+        const edges = [[T, R], [R, B], [B, L], [L, T]];
+        if (edges.some(([a, b2]) => wbDistToSeg(wx, wy, a[0], a[1], b2[0], b2[1]) <= tol)) return it.id;
+        continue;
+      }
       const nearL = Math.abs(wx - bb.x) <= tol, nearR = Math.abs(wx - (bb.x + bb.w)) <= tol;
       const nearT = Math.abs(wy - bb.y) <= tol, nearB = Math.abs(wy - (bb.y + bb.h)) <= tol;
       if (nearL || nearR || nearT || nearB) return it.id;
+      continue;
+    }
+    if (it.type === "shape" && it.shape === "diamond") {
+      // Filled diamond: containment test so the empty bbox corners don't
+      // swallow clicks meant for items behind them.
+      const nx = Math.abs(wx - (bb.x + bb.w / 2)) / Math.max(1, bb.w / 2);
+      const ny = Math.abs(wy - (bb.y + bb.h / 2)) / Math.max(1, bb.h / 2);
+      if (nx + ny <= 1 + tol / Math.max(1, Math.min(bb.w, bb.h) / 2)) return it.id;
       continue;
     }
     return it.id;
@@ -28182,6 +28260,229 @@ function wbArrowHeadD(x, y, fromX, fromY, size) {
   const bx = x - L * Math.cos(a), by = y - L * Math.sin(a);
   const px = -Math.sin(a) * W * 0.5, py = Math.cos(a) * W * 0.5;
   return `M ${x} ${y} L ${bx + px} ${by + py} L ${bx - px} ${by - py} Z`;
+}
+
+// Rounded-corner diamond path in a w×h box, inset by half the stroke width.
+// r rounds each vertex by cutting in along both adjacent edges and joining
+// with a quadratic through the vertex (clamped to half an edge).
+function wbDiamondPathD(w, h, inset, r) {
+  const pts = [
+    [w / 2, inset], [w - inset, h / 2], [w / 2, h - inset], [inset, h / 2],
+  ];
+  const rr = Math.max(0, r || 0);
+  if (rr < 0.5) return `M ${pts.map(p => p.join(" ")).join(" L ")} Z`;
+  let d = "";
+  for (let i = 0; i < 4; i++) {
+    const p = pts[i], prev = pts[(i + 3) % 4], next = pts[(i + 1) % 4];
+    const inL = Math.hypot(p[0] - prev[0], p[1] - prev[1]) || 1;
+    const outL = Math.hypot(next[0] - p[0], next[1] - p[1]) || 1;
+    const cut = Math.min(rr, inL / 2, outL / 2);
+    const a = [p[0] + (prev[0] - p[0]) * (cut / inL), p[1] + (prev[1] - p[1]) * (cut / inL)];
+    const b = [p[0] + (next[0] - p[0]) * (cut / outL), p[1] + (next[1] - p[1]) * (cut / outL)];
+    d += (i === 0 ? `M ${a[0]} ${a[1]}` : ` L ${a[0]} ${a[1]}`) + ` Q ${p[0]} ${p[1]} ${b[0]} ${b[1]}`;
+  }
+  return d + " Z";
+}
+
+/* ── Arrow routing ──
+   An arrow's spine is its ANCHORS: [x1,y1, ...mids, x2,y2] (flat world
+   coords; `mids` are user-placed waypoints). `route` decides how the spine
+   is drawn between anchors:
+     straight → polyline through the anchors
+     curve    → Catmull-Rom spline through the anchors
+     elbow    → axis-aligned runs between anchors (FigJam-style turns)
+   Everything downstream (render, hit-test, labels, handles) works off ONE
+   sampled polyline so the three routes share all machinery. */
+function wbArrowAnchors(it) {
+  const a = [it.x1, it.y1];
+  const mids = Array.isArray(it.mids) ? it.mids : [];
+  for (let i = 0; i + 1 < mids.length; i += 2) a.push(mids[i], mids[i + 1]);
+  a.push(it.x2, it.y2);
+  return a;
+}
+
+// Orthogonal runs between two anchor points: a centered two-turn jog on the
+// dominant axis. Returns the interior corner points only.
+function wbElbowJog(ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return [];
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    const mx = (ax + bx) / 2;
+    return Math.abs(dy) < 1 ? [] : [mx, ay, mx, by];
+  }
+  const my = (ay + by) / 2;
+  return Math.abs(dx) < 1 ? [] : [ax, my, bx, my];
+}
+
+// The drawn polyline (flat world coords) for an arrow, following its route.
+// Curves are sampled (Catmull-Rom, 12 steps/span) so hit-testing and label
+// placement stay poly-based for every route.
+function wbArrowPoly(it) {
+  const an = wbArrowAnchors(it);
+  const route = it.route === "curve" || it.route === "elbow" ? it.route : "straight";
+  const n = an.length >> 1;
+  if (route === "straight" || n < 2) return an.slice();
+  if (route === "elbow") {
+    const out = [an[0], an[1]];
+    for (let i = 0; i < n - 1; i++) {
+      const jog = wbElbowJog(an[i * 2], an[i * 2 + 1], an[(i + 1) * 2], an[(i + 1) * 2 + 1]);
+      out.push(...jog, an[(i + 1) * 2], an[(i + 1) * 2 + 1]);
+    }
+    // Drop consecutive duplicates (zero-length runs).
+    const dedup = [out[0], out[1]];
+    for (let i = 2; i < out.length; i += 2) {
+      if (Math.abs(out[i] - dedup[dedup.length - 2]) < 0.01 &&
+          Math.abs(out[i + 1] - dedup[dedup.length - 1]) < 0.01) continue;
+      dedup.push(out[i], out[i + 1]);
+    }
+    return dedup;
+  }
+  if (n === 2) return an.slice();
+  // Catmull-Rom through the anchors (endpoints duplicated as phantom points).
+  const P = (i) => [an[Math.max(0, Math.min(n - 1, i)) * 2], an[Math.max(0, Math.min(n - 1, i)) * 2 + 1]];
+  const out = [an[0], an[1]];
+  const STEPS = 12;
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+    for (let s = 1; s <= STEPS; s++) {
+      const t = s / STEPS, t2 = t * t, t3 = t2 * t;
+      out.push(
+        0.5 * ((2 * p1[0]) + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3),
+        0.5 * ((2 * p1[1]) + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3),
+      );
+    }
+  }
+  return out;
+}
+
+function wbPolyBBox(poly) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = 0; i + 1 < poly.length; i += 2) {
+    if (poly[i] < minX) minX = poly[i];
+    if (poly[i] > maxX) maxX = poly[i];
+    if (poly[i + 1] < minY) minY = poly[i + 1];
+    if (poly[i + 1] > maxY) maxY = poly[i + 1];
+  }
+  if (!Number.isFinite(minX)) return { x: 0, y: 0, w: 0, h: 0 };
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+function wbPolyLength(poly) {
+  let len = 0;
+  for (let i = 0; i + 3 < poly.length; i += 2) {
+    len += Math.hypot(poly[i + 2] - poly[i], poly[i + 3] - poly[i + 1]);
+  }
+  return len;
+}
+
+// Point + tangent angle at normalized arc-length t (0..1) along a polyline.
+function wbPolyPointAt(poly, t) {
+  const total = wbPolyLength(poly);
+  if (total <= 0 || poly.length < 4) return { x: poly[0] || 0, y: poly[1] || 0, angle: 0 };
+  let target = Math.max(0, Math.min(1, t)) * total;
+  for (let i = 0; i + 3 < poly.length; i += 2) {
+    const seg = Math.hypot(poly[i + 2] - poly[i], poly[i + 3] - poly[i + 1]);
+    if (target <= seg || i + 5 >= poly.length) {
+      const f = seg > 0 ? Math.min(1, target / seg) : 0;
+      return {
+        x: poly[i] + (poly[i + 2] - poly[i]) * f,
+        y: poly[i + 1] + (poly[i + 3] - poly[i + 1]) * f,
+        angle: Math.atan2(poly[i + 3] - poly[i + 1], poly[i + 2] - poly[i]),
+      };
+    }
+    target -= seg;
+  }
+  return { x: poly[poly.length - 2], y: poly[poly.length - 1], angle: 0 };
+}
+
+// Normalized arc-length t of the closest point on a polyline to (px,py),
+// plus that distance - used to place labels where the user double-clicked
+// and to slide them along the arrow.
+function wbPolyClosestT(poly, px, py) {
+  const total = wbPolyLength(poly);
+  if (total <= 0 || poly.length < 4) return { t: 0.5, dist: Math.hypot(px - (poly[0] || 0), py - (poly[1] || 0)) };
+  let walked = 0, bestT = 0.5, bestD = Infinity;
+  for (let i = 0; i + 3 < poly.length; i += 2) {
+    const ax = poly[i], ay = poly[i + 1], bx = poly[i + 2], by = poly[i + 3];
+    const dx = bx - ax, dy = by - ay;
+    const seg = Math.hypot(dx, dy);
+    let f = 0;
+    if (seg > 0) f = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (seg * seg)));
+    const d = Math.hypot(px - (ax + dx * f), py - (ay + dy * f));
+    if (d < bestD) { bestD = d; bestT = (walked + seg * f) / total; }
+    walked += seg;
+  }
+  return { t: bestT, dist: bestD };
+}
+
+// SVG path for an arrow poly, with the shaft trimmed back from each end (so
+// round caps don't poke past the arrowheads) and elbow corners rounded.
+function wbArrowPathD(poly, route, trimStart, trimEnd) {
+  let p = poly.slice();
+  const trim = (fromStart, amount) => {
+    let left = amount;
+    while (left > 0 && p.length >= 4) {
+      const i = fromStart ? 0 : p.length - 4;
+      const ax = p[i], ay = p[i + 1], bx = p[i + 2], by = p[i + 3];
+      const seg = Math.hypot(bx - ax, by - ay);
+      if (seg > left) {
+        const f = left / seg;
+        if (fromStart) { p[0] = ax + (bx - ax) * f; p[1] = ay + (by - ay) * f; }
+        else { p[p.length - 2] = bx - (bx - ax) * f; p[p.length - 1] = by - (by - ay) * f; }
+        return;
+      }
+      left -= seg;
+      if (fromStart) p.splice(0, 2); else p.splice(p.length - 2, 2);
+    }
+  };
+  const total = wbPolyLength(p);
+  if (trimStart > 0) trim(true, Math.min(trimStart, total * 0.4));
+  if (trimEnd > 0) trim(false, Math.min(trimEnd, total * 0.4));
+  if (p.length < 4) return "";
+  if (route !== "elbow") {
+    let d = `M ${p[0]} ${p[1]}`;
+    for (let i = 2; i + 1 < p.length; i += 2) d += ` L ${p[i]} ${p[i + 1]}`;
+    return d;
+  }
+  // Elbow: round each interior corner with a quadratic through the vertex.
+  const R = 8;
+  let d = `M ${p[0]} ${p[1]}`;
+  for (let i = 2; i + 3 < p.length; i += 2) {
+    const px0 = p[i - 2], py0 = p[i - 1], cx = p[i], cy = p[i + 1], nx = p[i + 2], ny = p[i + 3];
+    const inL = Math.hypot(cx - px0, cy - py0), outL = Math.hypot(nx - cx, ny - cy);
+    const r = Math.min(R, inL / 2, outL / 2);
+    if (r < 0.5 || !inL || !outL) { d += ` L ${cx} ${cy}`; continue; }
+    const a = [cx + (px0 - cx) * (r / inL), cy + (py0 - cy) * (r / inL)];
+    const b = [cx + (nx - cx) * (r / outL), cy + (ny - cy) * (r / outL)];
+    d += ` L ${a[0]} ${a[1]} Q ${cx} ${cy} ${b[0]} ${b[1]}`;
+  }
+  d += ` L ${p[p.length - 2]} ${p[p.length - 1]}`;
+  return d;
+}
+
+// Midpoint of each anchor-to-anchor span (measured along the drawn route),
+// used for the "grab to add a bend" handles. seg i sits between anchors i
+// and i+1 → inserting there means splicing into mids at index i.
+function wbArrowSegMids(it) {
+  const an = wbArrowAnchors(it);
+  const n = an.length >> 1;
+  const out = [];
+  for (let i = 0; i < n - 1; i++) {
+    const pair = { ...it, x1: an[i * 2], y1: an[i * 2 + 1], x2: an[(i + 1) * 2], y2: an[(i + 1) * 2 + 1], mids: [] };
+    const p = wbPolyPointAt(wbArrowPoly(pair), 0.5);
+    out.push({ seg: i, x: p.x, y: p.y });
+  }
+  return out;
+}
+
+// Shift a whole arrow by (dx,dy): endpoints + every waypoint. Labels ride
+// free (they're parameterized along the path).
+function wbShiftArrow(it, dx, dy) {
+  const next = { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
+  if (Array.isArray(it.mids) && it.mids.length) {
+    next.mids = it.mids.map((v, i) => i % 2 === 0 ? v + dx : v + dy);
+  }
+  return next;
 }
 
 // kind → (payload) => node body (no id / x / y - the caller positions it).
@@ -34367,6 +34668,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const selectedWbIdsRef = useRef(selectedWbIds); selectedWbIdsRef.current = selectedWbIds;
   const [editingWbId, setEditingWbId] = useState(null);
   const editingWbIdRef = useRef(null); editingWbIdRef.current = editingWbId;
+  // Which label of the editing ARROW is in text-edit mode (arrows can carry
+  // several labels along the line; null = not editing a label).
+  const [editingWbLabelIdx, setEditingWbLabelIdx] = useState(null);
+  const editingWbLabelIdxRef = useRef(null); editingWbLabelIdxRef.current = editingWbLabelIdx;
+  // Alignment guide lines shown while a wb drag is snapping to a neighbour's
+  // edge / center: [{axis:'v',x,y0,y1} | {axis:'h',y,x0,x1}].
+  const [wbSnapGuides, setWbSnapGuides] = useState([]);
   // Whiteboard table: the live cell-range selection (for merge / row+col ops)
   // and the per-cell right-click menu. tableSel = {tableId,r0,c0,r1,c1}; the
   // menu carries the cell it opened on plus a viewport anchor.
@@ -34470,9 +34778,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       ...d,
       wb: (Array.isArray(d.wb) ? d.wb : []).map(it => {
         if (!set.has(it.id)) return it;
-        if (it.type === "arrow") {
-          return { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
-        }
+        if (it.type === "arrow") return wbShiftArrow(it, dx, dy);
         return { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
       }),
     }));
@@ -34574,19 +34880,46 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // Commit the in-progress text edit by reading the DOM directly (blur is
   // unreliable around mounting clicks). Returns the committed item id.
   // Shared by: click-out on the canvas, the Esc ladder, and mode exit.
+  // Commit / drop an arrow-label edit: empty text removes the label, so a
+  // double-click that adds a chip and types nothing leaves no residue.
+  const commitWbArrowLabel = useCallback((id, idx, text) => {
+    setData(d => ({
+      ...d,
+      wb: (Array.isArray(d.wb) ? d.wb : []).map(it => {
+        if (it.id !== id || it.type !== "arrow") return it;
+        const labels = Array.isArray(it.labels) ? it.labels.slice() : [];
+        if (idx < 0 || idx >= labels.length) return it;
+        if (!String(text || "").trim()) labels.splice(idx, 1);
+        else labels[idx] = { ...labels[idx], text };
+        return { ...it, labels };
+      }),
+    }));
+  }, [setData]);
   const commitWbEditingNow = useCallback(() => {
     const id = editingWbIdRef.current;
     if (!id) return null;
     const el = document.querySelector(".workflow-wb-layer [contenteditable]");
     if (el) {
-      const patch = { text: el.innerText.replace(/\n$/, "") };
-      const host = el.closest("[data-wb-id]");
-      if (host && host.offsetHeight) patch.h = host.offsetHeight;
-      updateWbItem(id, patch);
+      const labelIdx = el.getAttribute("data-wb-label-editable");
+      if (labelIdx != null) {
+        // Mark the editable committed so its trailing blur (focus moves after
+        // this mousedown) can't double-commit - an empty commit SPLICES the
+        // label out, so running twice would delete a neighbouring label.
+        if (!el.getAttribute("data-wb-committed")) {
+          el.setAttribute("data-wb-committed", "1");
+          commitWbArrowLabel(id, parseInt(labelIdx, 10), el.innerText.replace(/\n$/, ""));
+        }
+      } else {
+        const patch = { text: el.innerText.replace(/\n$/, "") };
+        const host = el.closest("[data-wb-id]");
+        if (host && host.offsetHeight) patch.h = host.offsetHeight;
+        updateWbItem(id, patch);
+      }
     }
     setEditingWbId(null);
+    setEditingWbLabelIdx(null);
     return id;
-  }, [updateWbItem]);
+  }, [updateWbItem, commitWbArrowLabel]);
   const commitWbEditingNowRef = useRef(null); commitWbEditingNowRef.current = commitWbEditingNow;
   const wbHandleDown = useCallback((e, id, handle) => {
     if (wbHandleDownRef.current) wbHandleDownRef.current(e, id, handle);
@@ -35662,6 +35995,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     size: 3, fontSize: "md", bold: false, italic: false, align: null,
     radius: null, fill: null, stroke: null, textColor: null, fillOpacity: null,
     arrowStart: false, arrowEnd: true, dash: false,
+    shape: "rect", route: "straight",
   });
   const wbFmtRef = useRef(wbFmt); wbFmtRef.current = wbFmt;
   const wbCancelGestureRef = useRef(null);  // Esc cancels the in-flight gesture
@@ -35712,21 +36046,74 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (selectedNodeIdsRef.current.size) setSelectedNodeIds(new Set());
     }
     e.preventDefault();
+    // Snap context, captured once at drag start: every OTHER box-like wb
+    // item + node is a snap target; the union bbox of the dragged set is the
+    // thing that snaps (edges + centers). Alt while dragging disables.
+    const snapStatics = [];
+    for (const it of (wbItemsRef.current || [])) {
+      if (!it || moveIds.has(it.id) || it.type === "arrow" || it.type === "ink") continue;
+      snapStatics.push(wbItemBBox(it));
+    }
+    for (const n of (dataNodesRef.current || [])) {
+      if (!n || nodeMoveIds.has(n.id) || typeof n.x !== "number" || typeof n.y !== "number") continue;
+      snapStatics.push({ x: n.x, y: n.y, w: n.w || 200, h: n.h || 120 });
+    }
+    let origBB = null;
+    {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const it of (wbItemsRef.current || [])) {
+        if (!moveIds.has(it.id)) continue;
+        const b = wbItemBBox(it);
+        if (b.x < minX) minX = b.x;
+        if (b.y < minY) minY = b.y;
+        if (b.x + b.w > maxX) maxX = b.x + b.w;
+        if (b.y + b.h > maxY) maxY = b.y + b.h;
+      }
+      for (const n of (dataNodesRef.current || [])) {
+        if (!nodeMoveIds.has(n.id)) continue;
+        const x = n.x || 0, y = n.y || 0, w = n.w || 200, h = n.h || 120;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x + w > maxX) maxX = x + w;
+        if (y + h > maxY) maxY = y + h;
+      }
+      if (Number.isFinite(minX)) origBB = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+    }
     // Drag-to-move for the whole set. A rAF loop (not the raw mousemove)
-    // drives the position shift so tracking stays smooth under load.
+    // drives the position shift so tracking stays smooth under load. The
+    // RAW (unsnapped) delta accumulates separately from the APPLIED one so
+    // snapping can attach/release without drift.
     let curX = e.clientX, curY = e.clientY;   // latest pointer (set by mousemove)
     let prevX = e.clientX, prevY = e.clientY;  // pointer at last rAF frame
-    let moved = false, rafId = 0;
-    const onMove = (ev) => { curX = ev.clientX; curY = ev.clientY; };
+    let rawDx = 0, rawDy = 0, appliedDx = 0, appliedDy = 0;
+    let moved = false, rafId = 0, altHeld = false, hadGuides = false;
+    const onMove = (ev) => { curX = ev.clientX; curY = ev.clientY; altHeld = ev.altKey; };
     const frame = () => {
       const z = zoomNow();
       const wdx = (curX - prevX) / z, wdy = (curY - prevY) / z;
       prevX = curX; prevY = curY;
-      if (wdx !== 0 || wdy !== 0) {
+      rawDx += wdx; rawDy += wdy;
+      if (moved || wdx !== 0 || wdy !== 0) {
         // First real movement - a bare click (grab + release) must not start a drag.
         if (!moved) { moved = true; setWbDragging(true); setNodeDragging(nodeMoveIds.size > 0); }
-        shiftWbItems(moveIds, wdx, wdy);
-        shiftNodes(nodeMoveIds, wdx, wdy);
+        let totDx = rawDx, totDy = rawDy, guides = [];
+        if (origBB && snapStatics.length && !altHeld) {
+          const snap = wbComputeSnap(
+            { x: origBB.x + rawDx, y: origBB.y + rawDy, w: origBB.w, h: origBB.h },
+            snapStatics, 6 / z);
+          totDx += snap.dx; totDy += snap.dy;
+          guides = snap.guides;
+        }
+        const ddx = totDx - appliedDx, ddy = totDy - appliedDy;
+        if (ddx !== 0 || ddy !== 0) {
+          shiftWbItems(moveIds, ddx, ddy);
+          shiftNodes(nodeMoveIds, ddx, ddy);
+          appliedDx = totDx; appliedDy = totDy;
+        }
+        if (guides.length || hadGuides) {
+          setWbSnapGuides(guides);
+          hadGuides = guides.length > 0;
+        }
       }
       rafId = requestAnimationFrame(frame);
     };
@@ -35737,6 +36124,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       wbCancelGestureRef.current = null;
       setWbDragging(false);
       setNodeDragging(false);
+      setWbSnapGuides([]);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -35828,6 +36216,64 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     window.addEventListener("mouseup", onUp);
     wbCancelGestureRef.current = onUp;
   }, [shiftNodes, shiftWbItems]);
+
+  // Double-click on an arrow: edit the label under the click, or mint a new
+  // one at that point on the routed line (Excalidraw-style, any number of
+  // labels per arrow). Ignores double-clicks far from the line - the arrow's
+  // DOM box is its padded bbox, much bigger than the stroke.
+  const wbArrowDoubleClick = useCallback((id, e) => {
+    const it = (wbItemsRef.current || []).find(i => i.id === id && i.type === "arrow");
+    if (!it) return;
+    const wp = screenToWorld(e.clientX, e.clientY);
+    const zoomNow = Math.max(zoomRef.current, 0.1);
+    const poly = wbArrowPoly(it);
+    const labels = Array.isArray(it.labels) ? it.labels : [];
+    let idx = -1;
+    const labelEl = e.target && e.target.closest && e.target.closest("[data-wb-label-idx]");
+    if (labelEl) idx = parseInt(labelEl.getAttribute("data-wb-label-idx"), 10);
+    if (!(idx >= 0)) {
+      for (let i = 0; i < labels.length; i++) {
+        const p = wbPolyPointAt(poly, typeof labels[i].t === "number" ? labels[i].t : 0.5);
+        if (Math.hypot(p.x - wp.x, p.y - wp.y) <= 20 / zoomNow) { idx = i; break; }
+      }
+    }
+    if (idx < 0) {
+      const { t, dist } = wbPolyClosestT(poly, wp.x, wp.y);
+      if (dist > 24 / zoomNow) return;
+      idx = labels.length;
+      updateWbItem(id, { labels: [...labels, { t, text: "" }] });
+    }
+    setSelectedWbIds(new Set([id]));
+    setEditingWbId(id);
+    setEditingWbLabelIdx(idx);
+  }, [screenToWorld, updateWbItem]);
+
+  // Drag an arrow label along its line - the label's t re-projects to the
+  // closest point on the routed path under the pointer.
+  const wbLabelPointerDown = useCallback((e, id, idx) => {
+    if (!wbModeRef.current || wbToolRef.current !== "select" || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedWbIds(new Set([id]));
+    const startX = e.clientX, startY = e.clientY;
+    let moved = false;
+    const onMove = (ev) => {
+      if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 3) return;
+      moved = true;
+      const it = (wbItemsRef.current || []).find(i => i.id === id && i.type === "arrow");
+      if (!it) return;
+      const wp = screenToWorld(ev.clientX, ev.clientY);
+      const { t } = wbPolyClosestT(wbArrowPoly(it), wp.x, wp.y);
+      const labels = (Array.isArray(it.labels) ? it.labels : []).map((lb, i2) => i2 === idx ? { ...lb, t } : lb);
+      updateWbItem(id, { labels });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [screenToWorld, updateWbItem]);
 
   const wbPointerDown = useCallback((e) => {
     const tool = wbToolRef.current;
@@ -36054,6 +36500,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           const arrowProps = {
             color, size: F.size || 3,
             arrowStart: F.arrowStart, arrowEnd: F.arrowEnd, dash: F.dash,
+            route: F.route || "straight",
             startBind: wbDetectBindAt(x0, y0, null),
             endBind: wbDetectBindAt(ex, ey, null),
           };
@@ -36068,7 +36515,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             ...(F.fillOpacity != null ? { fillOpacity: F.fillOpacity } : {}),
           };
           const extra = tool === "shape"
-            ? { radius: F.radius ?? 6, size: F.size || 2, fill: F.fill ?? "none", ...boxColors }
+            ? { radius: F.radius ?? 6, size: F.size || 2, fill: F.fill ?? "none",
+                shape: F.shape === "diamond" ? "diamond" : "rect", ...boxColors }
             : { radius: F.radius ?? 10, fontSize: F.fontSize, align: F.align || "center",
                 bold: F.bold, italic: F.italic,
                 ...(F.fill ? { fill: F.fill } : {}),
@@ -36114,6 +36562,44 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!item) return;
       const orig = _stableClone(item);
       const startX = e.clientX, startY = e.clientY;
+      // Waypoint handles on an arrow: `mid:<i>` drags an existing bend
+      // (double-click removes it); `seg:<i>` mints a bend at that span's
+      // drawn midpoint and immediately drags it (FigJam-style add-a-turn).
+      if (item.type === "arrow" && (String(handle).startsWith("mid:") || String(handle).startsWith("seg:"))) {
+        const isSeg = String(handle).startsWith("seg:");
+        const idx = parseInt(String(handle).slice(4), 10) || 0;
+        const mids = Array.isArray(orig.mids) ? orig.mids.slice() : [];
+        if (isSeg) {
+          const sm = wbArrowSegMids(orig).find(s => s.seg === idx);
+          if (!sm) return;
+          mids.splice(idx * 2, 0, sm.x, sm.y);
+          updateWbItem(id, { mids: mids.slice() });
+        } else {
+          if (idx * 2 + 1 >= mids.length) return;
+          if (e.detail >= 2) {
+            mids.splice(idx * 2, 2);
+            updateWbItem(id, { mids });
+            return;
+          }
+        }
+        const bx = mids[idx * 2], by = mids[idx * 2 + 1];
+        setWbDragging(true);
+        const onMidMove = (ev) => {
+          const dx = (ev.clientX - startX) / Math.max(zoomRef.current, 0.1);
+          const dy = (ev.clientY - startY) / Math.max(zoomRef.current, 0.1);
+          const next = mids.slice();
+          next[idx * 2] = bx + dx; next[idx * 2 + 1] = by + dy;
+          updateWbItem(id, { mids: next });
+        };
+        const onMidUp = () => {
+          window.removeEventListener("mousemove", onMidMove);
+          window.removeEventListener("mouseup", onMidUp);
+          setWbDragging(false);
+        };
+        window.addEventListener("mousemove", onMidMove);
+        window.addEventListener("mouseup", onMidUp);
+        return;
+      }
       // Live endpoint of an arrow handle drag - tracked so onUp can re-detect
       // the binding at the dropped position.
       let lastEndX = handle === "start" ? orig.x1 : orig.x2;
@@ -36687,10 +37173,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const clones = list.filter(it => sel.has(it.id)).map(it => {
       const clone = { ..._stableClone(it), id: wbNewId(), z: ++z };
       if (clone.type === "arrow") {
-        clone.x1 += 24; clone.y1 += 24; clone.x2 += 24; clone.y2 += 24;
-      } else {
-        clone.x = (clone.x || 0) + 24; clone.y = (clone.y || 0) + 24;
+        return Object.assign(clone, wbShiftArrow(clone, 24, 24));
       }
+      clone.x = (clone.x || 0) + 24; clone.y = (clone.y || 0) + 24;
       return clone;
     });
     if (!clones.length) return 0;
@@ -36769,9 +37254,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           const dx = p.x !== undefined ? p.x - bb.x : 0;
           const dy = p.y !== undefined ? p.y - bb.y : 0;
           if (!dx && !dy) return it;
-          if (it.type === "arrow") {
-            return { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
-          }
+          if (it.type === "arrow") return wbShiftArrow(it, dx, dy);
           return { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
         }),
       };
@@ -37132,9 +37615,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         nodes: nextNodes,
         wb: wb.map(it => {
           if (!wbContained.has(it.id)) return it;
-          if (it.type === "arrow") {
-            return { ...it, x1: it.x1 + dx, y1: it.y1 + dy, x2: it.x2 + dx, y2: it.y2 + dy };
-          }
+          if (it.type === "arrow") return wbShiftArrow(it, dx, dy);
           return { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
         }),
       };
@@ -37441,12 +37922,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const clones = items.map(it => {
       const clone = { ..._stableClone(it), id: wbNewId(), z: ++z };
       if (clone.type === "arrow") {
-        const dx = wx - minX, dy = wy - minY;
-        clone.x1 += dx; clone.y1 += dy; clone.x2 += dx; clone.y2 += dy;
-      } else {
-        clone.x = (clone.x || 0) + (wx - minX);
-        clone.y = (clone.y || 0) + (wy - minY);
+        return Object.assign(clone, wbShiftArrow(clone, wx - minX, wy - minY));
       }
+      clone.x = (clone.x || 0) + (wx - minX);
+      clone.y = (clone.y || 0) + (wy - minY);
       return clone;
     });
     setData(d => ({ ...d, wb: [...(Array.isArray(d.wb) ? d.wb : []), ...clones] }));
@@ -47809,6 +48288,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               items=${wbItems}
               selectedWbIds=${selectedWbIds}
               editingWbId=${editingWbId}
+              editingWbLabelIdx=${editingWbLabelIdx}
               zoom=${zoom}
               ghost=${wbGhost}
               liveStrokeRef=${wbLiveStrokeRef}
@@ -47819,12 +48299,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 if (typeof h === "number" && h > 0) patch.h = h;
                 updateWbItem(id, patch);
               }}
+              onCommitLabel=${(id, idx, t) => commitWbArrowLabel(id, idx, t)}
+              onLabelDown=${(e, id, idx) => wbLabelPointerDown(e, id, idx)}
               onEditDone=${(id) => {
                 setEditingWbId(null);
+                setEditingWbLabelIdx(null);
                 if (id) setSelectedWbIds(new Set([id]));
               }}
               onHandleDown=${(e, id, handle) => wbHandleDown(e, id, handle)}
-              onItemDoubleClick=${(id) => { if (wbMode) setEditingWbId(id); }}
+              onItemDoubleClick=${(id, e) => {
+                if (!wbMode) return;
+                if (e) { wbArrowDoubleClick(id, e); return; }
+                setEditingWbId(id);
+              }}
               tableSel=${tableSel}
               onTableOp=${tableOp}
               onTableCellSelect=${(tableId, range) => setTableSel({ tableId, ...range })}
@@ -47849,6 +48336,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onHandleDown=${(e, id, handle) => wbHandleDown(e, id, handle)}
               />
             `}
+            ${wbSnapGuides.map((g, i) => html`
+              <div key=${"sg" + i} className="workflow-wb-snapguide"
+                style=${g.axis === "v"
+                  ? { left: g.x + "px", top: g.y0 + "px", width: (1.25 / Math.max(zoom, 0.1)) + "px", height: Math.max(1, g.y1 - g.y0) + "px" }
+                  : { left: g.x0 + "px", top: g.y + "px", width: Math.max(1, g.x1 - g.x0) + "px", height: (1.25 / Math.max(zoom, 0.1)) + "px" }}/>
+            `)}
             ${(selectedNodeIds.size + selectedWbIds.size) > 1 && (() => {
               // Group boundary around a multi-selection - nodes and wb
               // items COMBINED (mixed selections get one boundary). The
@@ -80031,7 +80524,7 @@ function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge
 // clipped by the item's bbox-sized svg.
 const WB_SVG_PAD = 24;
 
-function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDone }) {
+function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onCommitText, onCommitLabel, onLabelDown, onEditDone }) {
   const c = wbColorCSS(item.color);
   const z = Math.round(item.z || 0);
   const sel = selected ? "true" : "false";
@@ -80176,6 +80669,7 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
     const strokeC = item.stroke === "none" ? "none" : wbColorCSS(item.stroke || item.color);
     const fillC = item.fill === "auto" ? wbColorCSS(item.color)
                 : item.fill && item.fill !== "none" ? wbColorCSS(item.fill) : "none";
+    const fillOp = fillC === "none" ? 0 : Math.max(0, Math.min(1, item.fillOpacity ?? 0.16));
     return html`
       <svg className="workflow-wb-item workflow-wb-shape" data-wb-id=${item.id} data-selected=${sel}
         style=${{
@@ -80183,45 +80677,87 @@ function WorkflowWbItem({ item, selected, editing, zoom, onCommitText, onEditDon
           width: item.w + "px", height: item.h + "px",
           zIndex: z, overflow: "visible", ...rotStyle,
         }}>
-        <rect x=${sw / 2} y=${sw / 2}
-              width=${Math.max(1, item.w - sw)} height=${Math.max(1, item.h - sw)}
-              rx=${Math.max(0, item.radius ?? 6)}
-              stroke=${strokeC} strokeWidth=${sw}
-              fill=${fillC}
-              fillOpacity=${fillC === "none" ? 0
-                : Math.max(0, Math.min(1, item.fillOpacity ?? 0.16))}/>
+        ${item.shape === "diamond"
+          ? html`<path d=${wbDiamondPathD(item.w, item.h, sw / 2, Math.max(0, item.radius ?? 6))}
+                  stroke=${strokeC} strokeWidth=${sw} strokeLinejoin="round"
+                  fill=${fillC} fillOpacity=${fillOp}/>`
+          : html`<rect x=${sw / 2} y=${sw / 2}
+                  width=${Math.max(1, item.w - sw)} height=${Math.max(1, item.h - sw)}
+                  rx=${Math.max(0, item.radius ?? 6)}
+                  stroke=${strokeC} strokeWidth=${sw}
+                  fill=${fillC}
+                  fillOpacity=${fillOp}/>`}
       </svg>`;
   }
   if (item.type === "arrow") {
     const bb = wbItemBBox(item);
-    const lx1 = item.x1 - bb.x + WB_SVG_PAD, ly1 = item.y1 - bb.y + WB_SVG_PAD;
-    const lx2 = item.x2 - bb.x + WB_SVG_PAD, ly2 = item.y2 - bb.y + WB_SVG_PAD;
+    const route = item.route === "curve" || item.route === "elbow" ? item.route : "straight";
+    // Local coords: world → bbox-relative + pad. The whole routed polyline
+    // drives the shaft, heads, and labels so all three routes share one path.
+    const ox = -bb.x + WB_SVG_PAD, oy = -bb.y + WB_SVG_PAD;
+    const lp = wbArrowPoly(item).map((v, i) => i % 2 === 0 ? v + ox : v + oy);
     const sw = item.size || 3;
     // Trim the shaft back to each arrowhead's base. Drawing the full line to
     // the tip made the round line-cap poke past the apex (a blob on the point)
     // and the thin shaft flare into the wider triangle base (a notched join).
-    // headL matches wbArrowHeadD's L; clamp each trim to half the line length
-    // so a very short arrow can't invert the shaft.
-    const ang = Math.atan2(ly2 - ly1, lx2 - lx1);
     const headL = Math.max(8, sw * 4);
-    const len = Math.hypot(lx2 - lx1, ly2 - ly1) || 1;
-    const trimEnd = (item.arrowEnd !== false) ? Math.min(headL, len * 0.5) : 0;
-    const trimStart = (item.arrowStart) ? Math.min(headL, len * 0.5) : 0;
-    const sx1 = lx1 + Math.cos(ang) * trimStart, sy1 = ly1 + Math.sin(ang) * trimStart;
-    const sx2 = lx2 - Math.cos(ang) * trimEnd, sy2 = ly2 - Math.sin(ang) * trimEnd;
+    const trimEnd = (item.arrowEnd !== false) ? headL : 0;
+    const trimStart = (item.arrowStart) ? headL : 0;
+    const d = wbArrowPathD(lp, route, trimStart, trimEnd);
+    const n = lp.length;
+    const labels = Array.isArray(item.labels) ? item.labels : [];
     return html`
-      <svg className="workflow-wb-item workflow-wb-arrow" data-wb-id=${item.id} data-selected=${sel}
+      <div className="workflow-wb-item workflow-wb-arrowwrap" data-wb-id=${item.id} data-selected=${sel}
+        data-editing=${editing ? "true" : "false"}
         style=${{
           left: (bb.x - WB_SVG_PAD) + "px", top: (bb.y - WB_SVG_PAD) + "px",
           width: (bb.w + WB_SVG_PAD * 2) + "px", height: (bb.h + WB_SVG_PAD * 2) + "px",
-          zIndex: z, overflow: "visible",
+          zIndex: z,
         }}>
-        <path d=${`M ${sx1} ${sy1} L ${sx2} ${sy2}`} stroke=${c} strokeWidth=${sw}
-              fill="none" strokeLinecap="round"
-              strokeDasharray=${item.dash ? `${sw * 2.4} ${sw * 2.4}` : "none"}/>
-        ${item.arrowEnd !== false && html`<path d=${wbArrowHeadD(lx2, ly2, lx1, ly1, sw)} fill=${c}/>`}
-        ${item.arrowStart && html`<path d=${wbArrowHeadD(lx1, ly1, lx2, ly2, sw)} fill=${c}/>`}
-      </svg>`;
+        <svg className="workflow-wb-arrow" style=${{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible" }}>
+          <path d=${d} stroke=${c} strokeWidth=${sw}
+                fill="none" strokeLinecap="round"
+                strokeDasharray=${item.dash ? `${sw * 2.4} ${sw * 2.4}` : "none"}/>
+          ${item.arrowEnd !== false && n >= 4 && html`<path d=${wbArrowHeadD(lp[n - 2], lp[n - 1], lp[n - 4], lp[n - 3], sw)} fill=${c}/>`}
+          ${item.arrowStart && n >= 4 && html`<path d=${wbArrowHeadD(lp[0], lp[1], lp[2], lp[3], sw)} fill=${c}/>`}
+        </svg>
+        ${labels.map((lb, i) => {
+          const pt = wbPolyPointAt(lp, typeof lb.t === "number" ? lb.t : 0.5);
+          const isEditing = editing && editingLabelIdx === i;
+          return html`
+            <div key=${"lb" + i}
+              className="workflow-wb-arrow-label"
+              data-wb-label-idx=${i}
+              data-editing=${isEditing ? "true" : "false"}
+              style=${{ left: pt.x + "px", top: pt.y + "px", color: c }}
+              onMouseDown=${(e) => { if (!isEditing && onLabelDown) onLabelDown(e, i); }}>
+              ${isEditing
+                ? html`<div
+                    ref=${editableRef}
+                    className="workflow-wb-textbody"
+                    contentEditable="plaintext-only"
+                    suppressContentEditableWarning=${true}
+                    data-wb-label-editable=${i}
+                    onBlur=${(e) => {
+                      // Skip if the canvas click-out already committed this
+                      // editable (empty commits splice - see commitWbEditingNow).
+                      if (!e.currentTarget.getAttribute("data-wb-committed")) {
+                        e.currentTarget.setAttribute("data-wb-committed", "1");
+                        const t = e.currentTarget.innerText.replace(/\n$/, "");
+                        onCommitLabel && onCommitLabel(i, t);
+                      }
+                      onEditDone && onEditDone();
+                    }}
+                    onKeyDown=${(e) => {
+                      if (e.key === "Escape" || (e.key === "Enter" && !e.shiftKey)) {
+                        e.preventDefault(); e.stopPropagation(); e.currentTarget.blur();
+                      }
+                    }}
+                  >${lb.text || ""}</div>`
+                : html`<div className="workflow-wb-textbody">${lb.text || ""}</div>`}
+            </div>`;
+        })}
+      </div>`;
   }
   if (item.type === "image") {
     return html`
@@ -80271,6 +80807,32 @@ function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown }
             onMouseDown=${(e) => onHandleDown && onHandleDown(e, single.id, end)}/>
         `;
       })}
+      ${single && single.type === "arrow" && (() => {
+        // Bend handles: solid dots on existing waypoints (drag to move,
+        // double-click to remove) + hollow dots at each span's midpoint
+        // (grab to add a new turn there).
+        const mids = Array.isArray(single.mids) ? single.mids : [];
+        const out = [];
+        for (let i = 0; i * 2 + 1 < mids.length; i++) {
+          out.push(html`
+            <div key=${"m" + i} className="workflow-wb-handle workflow-wb-handle-point workflow-wb-handle-mid"
+              data-wb-handle=${"mid:" + i}
+              style=${{ left: (mids[i * 2] - hs / 2) + "px", top: (mids[i * 2 + 1] - hs / 2) + "px", width: hs + "px", height: hs + "px" }}
+              onMouseDown=${(e) => onHandleDown && onHandleDown(e, single.id, "mid:" + i)}/>
+          `);
+        }
+        const ah = hs * 0.78;
+        for (const s of wbArrowSegMids(single)) {
+          out.push(html`
+            <div key=${"s" + s.seg} className="workflow-wb-handle workflow-wb-handle-point workflow-wb-handle-add"
+              data-wb-handle=${"seg:" + s.seg}
+              title="Drag to bend"
+              style=${{ left: (s.x - ah / 2) + "px", top: (s.y - ah / 2) + "px", width: ah + "px", height: ah + "px" }}
+              onMouseDown=${(e) => onHandleDown && onHandleDown(e, single.id, "seg:" + s.seg)}/>
+          `);
+        }
+        return out;
+      })()}
       ${single && single.type !== "arrow" && (() => {
         const bb = wbItemBBox(single);
         // Corner handles for every box-like; text gets corners too (width
@@ -80359,7 +80921,7 @@ function WorkflowTableMenu({ menu, table, onOp, onClose }) {
   `, document.body);
 }
 
-function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, zoom, ghost, liveStrokeRef, onCommitText, onEditDone, onHandleDown, onItemDoubleClick, tableSel, onTableOp, onTableCellSelect, onTableCellMenu }) {
+function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, editingWbLabelIdx, zoom, ghost, liveStrokeRef, onCommitText, onCommitLabel, onLabelDown, onEditDone, onHandleDown, onItemDoubleClick, tableSel, onTableOp, onTableCellSelect, onTableCellMenu }) {
   const sorted = useMemo(() => {
     const list = (items || []).slice();
     list.sort((a, b) => (a.z || 0) - (b.z || 0));
@@ -80379,6 +80941,12 @@ function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, zoom, ghos
         if (it && (it.type === "text" || it.type === "textbox" || it.type === "sticky")) {
           onItemDoubleClick(id);
         }
+        // Arrows: double-click adds / edits a text label at that point on
+        // the line. The event rides along so the parent can hit-test the
+        // routed path (and bail when the click is far from it).
+        if (it && it.type === "arrow") {
+          onItemDoubleClick(id, e);
+        }
       }}>
       ${sorted.map(it => html`<${WorkflowWbItem}
             key=${it.id}
@@ -80386,7 +80954,10 @@ function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, zoom, ghos
             zoom=${zoom}
             selected=${selectedWbIds ? selectedWbIds.has(it.id) : false}
             editing=${editingWbId === it.id}
+            editingLabelIdx=${editingWbId === it.id ? editingWbLabelIdx : null}
             onCommitText=${(t, h) => onCommitText && onCommitText(it.id, t, h)}
+            onCommitLabel=${(idx, t) => onCommitLabel && onCommitLabel(it.id, idx, t)}
+            onLabelDown=${(e, idx) => onLabelDown && onLabelDown(e, it.id, idx)}
             onEditDone=${() => onEditDone && onEditDone(it.id)}
           />`
       )}
@@ -80645,6 +81216,17 @@ function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, s
           </div>
         </div>
       `}
+      ${has("shape") && html`
+        <div className="workflow-wb-tools-section">
+          <div className="workflow-wb-tools-sublabel">Shape</div>
+          ${seg([
+            { v: "rect", tip: "Rectangle",
+              label: html`<svg viewBox="0 0 16 16" width="13" height="13"><rect x="2.2" y="3.6" width="11.6" height="8.8" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg>` },
+            { v: "diamond", tip: "Diamond",
+              label: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M8 1.9 L14.1 8 L8 14.1 L1.9 8 Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/></svg>` },
+          ], val("shape", "rect"), (v) => apply({ shape: v }))}
+        </div>
+      `}
       ${showStroke && html`
         <div className="workflow-wb-tools-section">
           <div className="workflow-wb-tools-sublabel">Stroke</div>
@@ -80718,6 +81300,18 @@ function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, s
               className=${"workflow-wb-seg-btn" + (val("dash", false) ? " is-active" : "")}
               onClick=${() => apply({ dash: !val("dash", false) })}
             ><svg viewBox="0 0 16 16" width="13" height="13"><path d="M2 8h2.6M6.7 8h2.6M11.4 8H14" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></button>
+          </div>
+          <div className="workflow-wb-tools-sublabel" style=${{ marginTop: "8px" }}>Line style</div>
+          ${seg([
+            { v: "straight", tip: "Straight",
+              label: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 13.5 L13.5 2.5" stroke="currentColor" strokeWidth="1.7" fill="none" strokeLinecap="round"/></svg>` },
+            { v: "curve", tip: "Curved",
+              label: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 13.5 C 2.5 6, 10 13.5, 13.5 2.5" stroke="currentColor" strokeWidth="1.7" fill="none" strokeLinecap="round"/></svg>` },
+            { v: "elbow", tip: "Elbow (90° turns)",
+              label: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 13.5 H8 V2.5 H13.5" stroke="currentColor" strokeWidth="1.7" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>` },
+          ], val("route", "straight"), (v) => apply({ route: v }))}
+          <div className="workflow-wb-tools-hint" style=${{ marginTop: "6px" }}>
+            Drag the small dots on a selected arrow to add turns · double-click a bend to remove it · double-click the line to add a text label
           </div>
         </div>
       `}

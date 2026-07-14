@@ -8977,6 +8977,48 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   pointer-events: auto;
 }
 .workflow-wb-handle-point { cursor: move; }
+/* Arrow bend handles: solid accent dot = an existing waypoint (drag to move,
+   double-click to remove); faint hollow dot at a span's midpoint = grab to
+   add a new turn there (FigJam/Excalidraw convention). */
+.workflow-wb-handle-mid { background: var(--accent); }
+.workflow-wb-handle-add {
+  background: var(--surface);
+  border-style: dashed;
+  opacity: 0.55;
+}
+.workflow-wb-handle-add:hover { opacity: 1; border-style: solid; }
+/* Text label riding an arrow: a small chip whose background masks the line
+   under it so the text reads cleanly. Centered on its point on the path. */
+.workflow-wb-arrow-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  background: var(--canvas-bg, var(--bg));
+  border-radius: 4px;
+  padding: 1px 6px;
+  max-width: 280px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  cursor: move;
+}
+.workflow-wb-arrow-label .workflow-wb-textbody {
+  color: inherit;
+  font-size: inherit;
+  white-space: pre;
+  min-width: 8px;
+}
+.workflow-wb-arrow-label[data-editing="true"] {
+  outline: 1.5px solid color-mix(in oklab, var(--accent) 60%, transparent);
+  cursor: text;
+  min-width: 24px;
+}
+/* Alignment guides shown while a wb drag snaps to a neighbour's edge/center. */
+.workflow-wb-snapguide {
+  position: absolute;
+  background: oklch(62% 0.23 12);
+  pointer-events: none;
+  z-index: 100001;
+}
 /* Tool cursors - guarded so space-pan / active-pan keep their grab cursors
    (those rules sit earlier in the file; equal specificity would lose to
    source order here). */
