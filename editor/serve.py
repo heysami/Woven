@@ -153,6 +153,17 @@ _GITIGNORE_LOCAL = [
     ".DS_Store",                # macOS junk
     "__pycache__/",
     ".prototype-autofeatured.json",  # one-shot auto-feature sentinel - machine-local
+    "share/thumb-*.png",        # generated share preview - regenerates on every source change (would keep the tree dirty forever); comments.json + comment-shots/ + comment-attach/ DO sync
+]
+
+# Merge strategies the daemon pins in each project's .gitattributes (committed,
+# so they ride the sync). Review comments must never be LINE-merged: two
+# machines appending to the one JSON array either conflicts or - worse - line-
+# merges into invalid JSON with no markers, which reads back as "every comment
+# vanished". merge=binary forces a conflict on any concurrent edit; the daemon
+# then resolves it semantically (see _autoresolve_comments_conflict).
+_GITATTRIBUTES_LOCAL = [
+    "share/comments.json merge=binary",
 ]
 
 
@@ -285,6 +296,43 @@ def _node_xy(node, layout, dx=0.0, dy=0.0):
 _GIT_INFLIGHT = {}
 _GIT_INFLIGHT_LOCK = threading.Lock()
 _GIT_INFLIGHT_TTL = 600   # seconds; a flag older than this is considered stale
+
+
+# Review comments sync through each project's git like any other project file
+# (share/comments.json is deliberately NOT gitignored). But two machines both
+# appending to that one JSON array is a guaranteed line-merge conflict, and
+# comments are the one file whose merge is fully mechanical - so pull/merge
+# auto-resolve it semantically instead of sending it to the agent-assisted
+# resolve flow.
+_SHARE_COMMENTS_REL = "share/comments.json"
+
+
+def _autoresolve_comments_conflict(root, res):
+    """After a pull / branch-merge that reported conflicts, semantically merge
+    share/comments.json (union by comment id - shares.comments_merge_texts)
+    and stage it. When the comments file was the ONLY conflict the merge is
+    concluded and the op reports clean; other conflicted paths still flow to
+    the agent-assisted resolve flow. Best-effort: on any failure the original
+    result (comments listed as conflicted) passes through unchanged."""
+    try:
+        if _SHARE_COMMENTS_REL not in (res.get("conflicts") or []):
+            return res
+        merged = _shares.comments_merge_texts(
+            _gitops.conflict_stage_text(root, _SHARE_COMMENTS_REL, 1),
+            _gitops.conflict_stage_text(root, _SHARE_COMMENTS_REL, 2),
+            _gitops.conflict_stage_text(root, _SHARE_COMMENTS_REL, 3))
+        _gitops.resolve_conflict_file(root, _SHARE_COMMENTS_REL,
+                                      json.dumps(merged, indent=2))
+        remaining = _gitops.conflicted_files(root)
+        if not remaining:
+            _gitops.conclude_merge_if_resolved(root)
+        out = dict(res)
+        out["conflicts"] = remaining
+        out["ok"] = not remaining
+        out["commentsMerged"] = True
+        return out
+    except Exception:
+        return res
 # Roots already given the one-shot tracked-ignored self-heal this daemon run
 # (see _git_status). In-memory on purpose: the heal is idempotent and settles
 # to a no-op, so re-running once per daemon lifetime is the right cadence.
@@ -20326,8 +20374,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                     claimed = True
             if claimed:
                 try:
-                    if not _qs_get(qs, "gds"):   # project ignore set is project-shaped
+                    if not _qs_get(qs, "gds"):   # project ignore/attr sets are project-shaped
                         _gitops.ensure_gitignore(root, _GITIGNORE_LOCAL)
+                        _gitops.ensure_gitattributes(root, _GITATTRIBUTES_LOCAL)
                     _gitops.heal_tracked_ignored(root)
                 except Exception:
                     pass                          # best-effort; status must never 500 on heal
@@ -20751,6 +20800,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 try:
                     _gitops.write_sync_version(root, WOVEN_SYNC_VERSION)
                     _gitops.ensure_gitignore(root, _GITIGNORE_LOCAL)
+                    _gitops.ensure_gitattributes(root, _GITATTRIBUTES_LOCAL)
                 except Exception:
                     pass
                 return self._reply(200, {"ok": True, "status": st})
@@ -20765,6 +20815,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 try:
                     _gitops.write_sync_version(root, WOVEN_SYNC_VERSION)
                     _gitops.ensure_gitignore(root, _GITIGNORE_LOCAL)
+                    _gitops.ensure_gitattributes(root, _GITATTRIBUTES_LOCAL)
                 except Exception:
                     pass
                 res = _gitops.commit(root, body.get("message"), coauthors=coauthors,
@@ -20810,6 +20861,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                         "versionMismatch": True, "syncVersion": WOVEN_SYNC_VERSION,
                         "remoteSyncVersion": remote_v})
                 res = _gitops.pull(root, token=tok)
+                # Review comments merge mechanically - resolve their conflict
+                # here instead of surfacing it (see _autoresolve_comments_conflict).
+                if res.get("conflicts"):
+                    res = _autoresolve_comments_conflict(root, res)
                 # Surface the merged state to the editor (and any guests) exactly
                 # like any other edit, so the canvas reloads to the new HEAD.
                 if pid:
@@ -20861,6 +20916,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                     res = _gitops.switch_branch(root, body.get("name") or "")
                 else:
                     res = _gitops.merge_branch(root, body.get("name") or "")
+                    # Review comments merge mechanically - same auto-resolution
+                    # as pull's (see _autoresolve_comments_conflict).
+                    if res.get("conflicts"):
+                        res = _autoresolve_comments_conflict(root, res)
                 # Reload the canvas (and any guests) to the new HEAD.
                 if pid:
                     try: _broadcast_workflow_change(pid)

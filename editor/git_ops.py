@@ -480,6 +480,38 @@ def ensure_gitignore(root, lines):
     untrack_ignored(root)
 
 
+def ensure_gitattributes(root, lines):
+    """Idempotently ensure each entry in `lines` is present in
+    <root>/.gitattributes. Used to pin merge strategies for files the daemon
+    merges SEMANTICALLY: share/comments.json is marked merge=binary so git
+    never line-merges it - a lucky line merge works, an unlucky one bakes
+    invalid JSON with no conflict markers (which then reads as "every comment
+    vanished"). merge=binary makes concurrent edits always conflict, and the
+    daemon's union merge resolves them (serve._autoresolve_comments_conflict).
+    The file is committed, so the strategy rides the sync to every machine."""
+    path = os.path.join(root, ".gitattributes")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            existing = f.read()
+    except (FileNotFoundError, OSError):
+        existing = ""
+    have = {ln.strip() for ln in existing.splitlines()}
+    add = [ln for ln in lines if ln.strip() and ln.strip() not in have]
+    if not add:
+        return
+    block = ""
+    if existing and not existing.endswith("\n"):
+        block += "\n"
+    if "# Woven - daemon-managed merge strategies" not in existing:
+        block += "# Woven - daemon-managed merge strategies\n"
+    block += "\n".join(add) + "\n"
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(block)
+    except OSError:
+        pass
+
+
 def untrack_ignored(root):
     """Drop tracked files that match .gitignore from the INDEX, keeping them on
     disk. Ignore rules never apply to already-tracked paths, so a file committed
@@ -583,6 +615,51 @@ def conflicted_files(root):
         return []
     code, out, _e = _git(root, "diff", "--name-only", "--diff-filter=U")
     return [ln for ln in out.splitlines() if ln.strip()] if code == 0 else []
+
+
+def conflict_stage_text(root, rel, stage):
+    """Content of one side of a conflicted file - stage 1=base, 2=ours,
+    3=theirs. Empty string when that stage doesn't exist (an add/add conflict
+    has no base). Feeds the semantic mergers (share comments) that resolve a
+    conflict without hand-editing markers."""
+    code, out, _e = _git(root, "show", ":{}:{}".format(int(stage), rel), timeout=30)
+    return out if code == 0 else ""
+
+
+def resolve_conflict_file(root, rel, text):
+    """Overwrite a conflicted file with merged content and stage it - the git
+    half of a semantic auto-resolution. The merge itself stays with the caller
+    (e.g. shares.comments_merge_texts); this just writes + `git add`s."""
+    path = os.path.join(root, rel)
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    code, _o, err = _git(root, "add", "--", rel)
+    if code != 0:
+        raise RuntimeError("git add failed: {}".format(err.strip()))
+
+
+def conclude_merge_if_resolved(root):
+    """Finish an in-progress merge once nothing is conflicted anymore (the
+    commit `git pull` would have made had the merge been clean). No-op unless
+    MERGE_HEAD exists and conflicted_files() is empty - a half-resolved merge
+    stays mid-merge for the agent-assisted resolve flow. Returns True when a
+    merge commit landed."""
+    if not is_repo(root):
+        return False
+    code, _o, _e = _git(root, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+    if code != 0:
+        return False
+    if conflicted_files(root):
+        return False
+    args = ["commit", "--no-edit"]
+    _c, uname, _e = _git(root, "config", "user.name")
+    if not uname.strip():                 # identity fallback - never fail on config
+        args = ["-c", "user.name=Woven", "-c", "user.email=woven@local"] + args
+    code, out, err = _git(root, *args, timeout=120)
+    return code == 0
 
 
 # ═════════════════════════════════════════════════════════════════════════

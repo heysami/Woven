@@ -922,9 +922,20 @@ def comments_load(project_root):
         return {"comments": []}
     try:
         with open(p, "r", encoding="utf-8") as f:
-            data = json.load(f) or {}
+            raw = f.read()
     except Exception:
         return {"comments": []}
+    try:
+        data = json.loads(raw) or {}
+    except Exception:
+        # A git merge that baked conflict markers into the file would otherwise
+        # read as "every comment vanished". Recover by splitting the marker
+        # hunks into the two sides and semantically merging them (in-memory
+        # only - the next comment write persists the healed structure, and the
+        # git resolve path stages its own merge).
+        data = _comments_from_conflict_text(raw)
+        if data is None:
+            return {"comments": []}
     if not isinstance(data, dict):
         return {"comments": []}
     data.setdefault("comments", [])
@@ -940,6 +951,111 @@ def _comments_save(project_root, data):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     os.replace(tmp, p)
+
+
+# ── Comment sync (git) ───────────────────────────────────────────────────────
+# share/comments.json rides each project's git sync - it is deliberately NOT in
+# the daemon's per-project .gitignore set, so commit/push/pull carry the review
+# comments (and their share/comment-shots/ + share/comment-attach/ files)
+# across machines. But two machines can both append comments between syncs,
+# and a single JSON array line-merges into a conflict git can't resolve.
+# These helpers do the SEMANTIC merge instead: union comments by id, union
+# replies/attachments by id inside a comment, resolve scalar fields 3-way
+# (the side that changed a field vs base wins; ours wins when both changed;
+# a deletion on either side wins over the stale copy). serve.py feeds the
+# conflict stages of share/comments.json through comments_merge_texts() after
+# pull / branch-merge and stages the result, so comment traffic never needs
+# hand-merging.
+
+def _comments_of_text(text):
+    """The comments list encoded in one side's file content ([] when blank or
+    unparseable - the merge then just keeps the other side)."""
+    try:
+        data = json.loads(text or "") or {}
+    except Exception:
+        return []
+    if not isinstance(data, dict):
+        return []
+    cs = data.get("comments")
+    return [c for c in cs if isinstance(c, dict)] if isinstance(cs, list) else []
+
+
+def _union_subitems(ours, theirs):
+    """Union two id-keyed sublists (replies / attachments), chronological."""
+    out = [x for x in ours if isinstance(x, dict)]
+    seen = set(x.get("id") for x in out)
+    for x in theirs:
+        if isinstance(x, dict) and x.get("id") not in seen:
+            out.append(x)
+            seen.add(x.get("id"))
+    out.sort(key=lambda x: x.get("createdAt") or x.get("addedAt") or "")
+    return out
+
+
+def _merge_comment_entry(base, ours, theirs):
+    """Field-level 3-way merge of ONE comment present on both sides."""
+    base = base if isinstance(base, dict) else {}
+    merged = dict(ours)
+    for k in set(list(ours.keys()) + list(theirs.keys())):
+        if k in ("replies", "attachments"):
+            merged[k] = _union_subitems(ours.get(k) or [], theirs.get(k) or [])
+            continue
+        ov = ours.get(k)
+        # ours untouched vs base → take theirs (their change, or same value);
+        # ours changed → ours wins (host-authoritative on double edits).
+        merged[k] = theirs.get(k) if ov == base.get(k) else ov
+    return merged
+
+
+def comments_merge_texts(base_text, ours_text, theirs_text):
+    """Semantic 3-way merge of comments.json sides. Returns the merged dict
+    ready for json.dump (add/add conflicts pass base_text='')."""
+    base = dict((c.get("id"), c) for c in _comments_of_text(base_text))
+    ours_list = _comments_of_text(ours_text)
+    theirs = dict((c.get("id"), c) for c in _comments_of_text(theirs_text))
+    ours_ids = set(c.get("id") for c in ours_list)
+    merged = []
+    for c in ours_list:
+        cid = c.get("id")
+        if cid in theirs:
+            merged.append(_merge_comment_entry(base.get(cid), c, theirs[cid]))
+        elif cid not in base:
+            merged.append(c)              # new on our side
+        # else: in base but gone from theirs → they deleted it; deletion wins
+    for c in _comments_of_text(theirs_text):
+        cid = c.get("id")
+        if cid not in ours_ids and cid not in base:
+            merged.append(c)              # new on their side
+    merged.sort(key=lambda c: c.get("createdAt") or "")
+    return {"comments": merged}
+
+
+def _comments_from_conflict_text(raw):
+    """Recover a comments.json whose content still carries git conflict markers:
+    split the hunks into the two sides (diff3 base sections are dropped) and
+    union-merge them. None when the text has no markers or neither side parses."""
+    if "<<<<<<<" not in raw:
+        return None
+    ours_lines, theirs_lines = [], []
+    mode = "keep"    # keep | ours | base | theirs
+    for ln in raw.splitlines(True):
+        if ln.startswith("<<<<<<<"):
+            mode = "ours"; continue
+        if mode == "ours" and ln.startswith("|||||||"):
+            mode = "base"; continue
+        if mode in ("ours", "base") and ln.startswith("======="):
+            mode = "theirs"; continue
+        if ln.startswith(">>>>>>>"):
+            mode = "keep"; continue
+        if mode in ("keep", "ours"):
+            ours_lines.append(ln)
+        if mode in ("keep", "theirs"):
+            theirs_lines.append(ln)
+    try:
+        merged = comments_merge_texts("", "".join(ours_lines), "".join(theirs_lines))
+    except Exception:
+        return None
+    return merged if merged.get("comments") else None
 
 
 def _clip(s, n):
