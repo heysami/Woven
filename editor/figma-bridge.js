@@ -555,6 +555,34 @@
     return { mode: "HORIZONTAL", gap: colGap, crossGap: rowGap, padding: pad, primaryAlign: "MIN", counterAlign: "MIN", wrap: true };
   }
 
+  // An absolutely-positioned DECORATION that overlaps its in-flow siblings
+  // cannot be expressed in auto-layout without ignore-auto-layout (banned):
+  // flowing it eats main-axis space and shoves the real content aside - the
+  // classic case is a stepper's absolute connector line, ~700px wide, that
+  // pushed all five milestones into an overlapping pile. Drop it: losing a
+  // 2px line beats destroying the composition. "Decoration" = a childless,
+  // textless frame, or an image the HTML itself marks decorative (alt="" /
+  // aria-hidden). Content-bearing overlays (badges with text) still flow;
+  // non-overlapping absolute children are untouched.
+  function dropOverlayDecorations(node) {
+    var kids = node.children || [];
+    if (kids.length < 2) return;
+    var flow = [];
+    for (var i = 0; i < kids.length; i++) if (!kids[i]._absPos) flow.push(kids[i]);
+    if (!flow.length) return;
+    node.children = kids.filter(function (c) {
+      if (!c._absPos) return true;
+      var decorative = c._absDecor ||
+        (c.type === "FRAME" && (!c.children || !c.children.length));
+      if (!decorative) return true;
+      var overlaps = flow.some(function (s) {
+        return c.x < s.x + s.width - 2 && s.x < c.x + c.width - 2 &&
+               c.y < s.y + s.height - 2 && s.y < c.y + c.height - 2;
+      });
+      return !overlaps;
+    });
+  }
+
   // EVERY frame gets an auto-layout (mandate: no plain absolute frames). Flex ->
   // exact; clean stack -> inferred; otherwise a base auto-layout. For a grid or a
   // messy multi-child frame whose children would reflow, the children are pinned
@@ -835,15 +863,24 @@
     if (!tag || SKIP_TAGS[tag]) return null;
     var rect = el.getBoundingClientRect();
     var cs = win.getComputedStyle(el);
-    if (!isRendered(el, cs, rect)) return null;
+    var grows = parseFloat(cs.flexGrow) > 0;
+    if (!isRendered(el, cs, rect)) {
+      // EXCEPTION: a zero-AREA flex-grow spacer (an empty <span class="spacer"
+      // style="flex:1">) is layout-bearing - it right-aligns everything after
+      // it. It fails isRendered only because an empty inline element has
+      // height 0 in a row (width 0 in a column). Keep it as a 1px FILL spacer;
+      // genuinely hidden elements (display:none => 0x0 rect) still drop.
+      if (!(grows && cs.display !== "none" && cs.visibility !== "hidden" &&
+            (rect.width > 0 || rect.height > 0))) return null;
+    }
 
     var node = {
       type: "FRAME",
       name: (tag.toLowerCase() + (el.id ? "#" + el.id : el.className && typeof el.className === "string" ? "." + el.className.split(" ")[0] : "")).slice(0, 40),
       x: round(rect.left - parentRect.left),
       y: round(rect.top - parentRect.top),
-      width: round(rect.width),
-      height: round(rect.height),
+      width: Math.max(round(rect.width), grows ? 1 : 0),
+      height: Math.max(round(rect.height), grows ? 1 : 0),
       fills: [],
       strokes: [],
       effects: [],
@@ -858,7 +895,7 @@
     if (ord) node._order = ord;
     // flex-grow > 0 -> the child should FILL the main axis (e.g. a search input
     // with flex:1). Captured here; assignChildSizing applies it.
-    if (parseFloat(cs.flexGrow) > 0) node._grow = true;
+    if (grows) node._grow = true;
     // margin-left:auto pushes a child (and its successors) to the row's end.
     // getComputedStyle resolves auto to px, so read the AUTHORED inline value.
     if (el.style && (el.style.marginLeft === "auto" || el.style.marginInlineStart === "auto")) {
@@ -867,6 +904,18 @@
     // NB: CSS position:absolute/fixed children are NOT pinned out of flow - we
     // never use Figma's ignore-auto-layout. They participate in the parent's
     // auto-layout like every other child (mandate: no absolute positioning).
+    // The ONE exception is a pure DECORATION overlapping its siblings (a step
+    // connector line, an ornament wave) - flowing it eats main-axis space and
+    // shoves the real content into a pile, so the parent drops it instead
+    // (dropOverlayDecorations). Content-bearing overlays still flow.
+    if (cs.position === "absolute" || cs.position === "fixed") {
+      node._absPos = true;
+      // HTML marks decorative imagery explicitly: alt="" or aria-hidden.
+      if ((tag === "IMG" || tag === "svg" || tag === "SVG") &&
+          (el.getAttribute("aria-hidden") === "true" || el.getAttribute("alt") === "")) {
+        node._absDecor = true;
+      }
+    }
 
     // Background: gradient takes precedence over color; an image overlays as a
     // deferred IMAGE paint (resolved after the synchronous walk).
@@ -931,7 +980,17 @@
         } else if (cn.nodeType === 3) {
           var run = (cn.nodeValue || "").replace(/\s+/g, " ");
           if (run.trim()) {
-            var tn = makeTextNode(run, el, cs, rect, rect);
+            // Measure the RUN's own box with a Range - the element rect spans
+            // ALL inline content, so in mixed content ("text <a>link</a>") the
+            // run would claim the full row width and skew layout inference.
+            var runRect = rect;
+            try {
+              var rg = el.ownerDocument.createRange();
+              rg.selectNodeContents(cn);
+              var rb = rg.getBoundingClientRect();
+              if (rb && rb.width > 0 && rb.height > 0) runRect = rb;
+            } catch (e) {}
+            var tn = makeTextNode(run, el, cs, runRect, rect);
             if (tn) node.children.push(tn);
           }
         }
@@ -943,6 +1002,7 @@
       if (ft) node.children.push(ft);
     }
 
+    dropOverlayDecorations(node);
     decideLayout(cs, node);
 
     // Identity priority: explicit data-component / user rule -> Woven DS class
@@ -1039,6 +1099,7 @@
         var n = walk(kids[j], rootRect, win, pending);
         if (n) root.children.push(n);
       }
+      dropOverlayDecorations(root);
       decideLayout(win.getComputedStyle(rootEl), root);
       root.hug = false;                 // the page frame is fixed-size, never hug
       assignChildSizing(root);
@@ -1083,6 +1144,8 @@
     if (node._gridWrap) delete node._gridWrap;
     if (node._grow) delete node._grow;
     if (node._marginAuto) delete node._marginAuto;
+    if (node._absPos) delete node._absPos;
+    if (node._absDecor) delete node._absDecor;
     if (node.fills) {
       node.fills = node.fills.filter(function (f) { return !f._drop; });
       if (!node.fills.length) delete node.fills;
