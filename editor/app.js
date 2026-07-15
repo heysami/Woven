@@ -16476,6 +16476,58 @@ const INLINE_SVG_RE_G       = /<svg\b[\s\S]*?<\/svg>/gi;
 const INLINE_HTML_RE_G      = /(?:<!doctype html\b|<html\b)[\s\S]*?<\/html>/gi;
 const FENCE_RE_G            = /```[\s\S]*?```/g;
 
+// Last-resort gate-body parser: agents occasionally emit a JSON payload
+// (usually Claude Code's native AskUserQuestion schema - {questions:[{question,
+// multiSelect, options:[{label, description}]}]}) inside a <decision-request>
+// or <direction-options> tag instead of the XML option children (arena-battle's
+// art-director plate gate, 2026-07-15: the direct plate-gen path has no
+// returned gateBlock to paste, so the model improvised its native ask shape).
+// Degrading to raw text leaves the gate unanswerable - a bad-faith parse.
+// Accepts the AskUserQuestion shape (first question) and a flat
+// {prompt|question, multiSelect, options:[...]} shape; options may be strings
+// or {label, description, value, checked, recommended}. Returns
+// { prompt, multiSelect, options:[{value,label,checked,needsInput}] } or null.
+function parseGateJsonBody(body) {
+  if (!body || body.indexOf("{") === -1) return null;
+  let j;
+  try {
+    j = JSON.parse(body.slice(body.indexOf("{"), body.lastIndexOf("}") + 1));
+  } catch (e) { return null; }
+  if (!j || typeof j !== "object") return null;
+  const q = Array.isArray(j.questions) && j.questions.length ? j.questions[0] : j;
+  const rawOpts = Array.isArray(q.options) ? q.options : null;
+  if (!rawOpts || rawOpts.length === 0) return null;
+  const slug = (s) => String(s).toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "option";
+  const seen = new Set();
+  const options = [];
+  for (const entry of rawOpts) {
+    const o = (typeof entry === "string") ? { label: entry } : (entry || {});
+    const lbl0 = (o.label || o.title || "").toString().replace(/\s+/g, " ").trim();
+    if (!lbl0) continue;
+    const desc = (o.description || o.why || "").toString().replace(/\s+/g, " ").trim();
+    let value = (o.value || slug(lbl0)).toString();
+    while (seen.has(value)) value += "-2";
+    seen.add(value);
+    options.push({
+      value,
+      label:   desc ? `${lbl0} - ${desc}` : lbl0,
+      preview: null,
+      group:   null,
+      checked: o.checked === true || o.recommended === true,
+      // "Steer: ..." options open the freeform textarea so the user types
+      // WHAT to steer, mirroring the XML steer semantics.
+      needsInput: /^steer\b/i.test(lbl0),
+    });
+  }
+  if (options.length === 0) return null;
+  return {
+    prompt: (q.question || q.prompt || j.prompt || "").toString().trim() || null,
+    multiSelect: q.multiSelect === true,
+    options,
+  };
+}
+
 function parseQuestionForms(text) {
   // Returns { segments: [{kind:"text",text} | {kind:"form",form,raw}
   //                      | {kind:"preview",lang,content}] } covering the
@@ -16686,10 +16738,23 @@ function parseQuestionForms(text) {
           });
         }
       }
+      // Final fallback: a JSON payload (AskUserQuestion-shaped) instead of
+      // XML children. See parseGateJsonBody.
+      let jsonMulti = null;
+      let promptOut = prompt;
+      if (opts.length === 0) {
+        const jg = parseGateJsonBody(body);
+        if (jg) {
+          opts.push(...jg.options);
+          jsonMulti = jg.multiSelect;
+          if (!promptOut && jg.prompt) promptOut = jg.prompt;
+        }
+      }
       if (id && opts.length > 0) {
         segments.push({ kind: "decision", decision: {
-          id, prompt, options: opts,
-          multiSelect, groupBy, picksPerGroup, minPicks, maxPicks,
+          id, prompt: promptOut, options: opts,
+          multiSelect: multiSelect || jsonMulti === true,
+          groupBy, picksPerGroup, minPicks, maxPicks,
         }, raw: c.m[0] });
       } else {
         segments.push({ kind: "text", text: c.m[0] });
@@ -16792,6 +16857,21 @@ function parseQuestionForms(text) {
       }
       if (id && opts.length > 0) {
         segments.push({ kind: "direction", direction: { id, prompt, options: opts }, raw: c.m[0] });
+      } else if (id) {
+        // Fallback: no <opt> children parsed - the body may be a JSON payload
+        // (AskUserQuestion-shaped; arena-battle's art-director plate gate).
+        // Render it as a plain decision card: same [decision:<id>] submit
+        // protocol, no palette/type/image chrome (JSON asks carry none).
+        const jg = parseGateJsonBody(body);
+        if (jg) {
+          segments.push({ kind: "decision", decision: {
+            id, prompt: prompt || jg.prompt, options: jg.options,
+            multiSelect: jg.multiSelect, groupBy: null, picksPerGroup: null,
+            minPicks: 1, maxPicks: jg.multiSelect ? null : 1,
+          }, raw: c.m[0] });
+        } else {
+          segments.push({ kind: "text", text: c.m[0] });
+        }
       } else {
         segments.push({ kind: "text", text: c.m[0] });
       }
