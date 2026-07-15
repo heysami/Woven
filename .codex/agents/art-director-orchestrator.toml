@@ -103,7 +103,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/nodes/add?project=$TH_PROJECT_ID" -
 
 **Game chrome is FRAMED RASTER chrome when the direction is game / pixel / retro / sci-fi-HUD.** For those directions the chrome idiom is the raster 9-slice frame (`slice9` - see the capabilities preamble): ornate/bevelled dialog frames, framed command menus, gold-trimmed buttons - the register of real game UI, NOT generic flat web panels. Paint the plate's chrome that way: the plate is the single source every downstream chrome decision inherits, so a plate with flat rectangles condemns the build to flat CSS imitation chrome, while a plate with real framed game chrome gets CUT INTO the shipped 9-slice atlases (§4.5) - the shipped frames ARE the approved art. Know also that downstream builds animate: creatures / characters / avatars in a game plate become `animated-sprite` sheets (walk / idle cycles redrawn pose-by-pose from YOUR reference crops), so depict them clean, whole and pose-neutral - a half-occluded or mid-action subject makes a poor cycle base.
 
-Plates live under `workflow/artdirection/` - they are **planning artefacts, never shipped.** The runtime references none of them. (Contrast `ms-concept-frames`, whose plates double as i2v references; yours do not.)
+Plates live under `workflow/artdirection/` - they are **planning artefacts, never shipped.** The runtime references none of them - and that covers the generation copy under `source/<branch>/_artdir/` and the crops under `_artdir_refs/` too: living inside the served source tree does NOT make them runtime assets (the observed bug: the grandauto / battle-team title screens shipped `<img src="_artdir/north-star-1.png">` as keyart - a flattened fake UI with a literal hero, fake stat numbers and painted HUD panels behind the real UI). A shell that wants keyart commissions a dedicated asset i2i-conditioned on the plate. This rule ships in the contract as `bindingRules.plateIsNotAnAsset` (§3) so every downstream builder reads it - do not leave it implicit here. (Contrast `ms-concept-frames`, whose plates double as i2v references; yours do not.)
 
 ## 3. Phase B - inspect the plate(s) → per-candidate gate preview (NOT the committed contract yet)
 
@@ -271,6 +271,7 @@ The contract has two halves and the split is load-bearing:
     "inheritFromPlate": ["colour ratios", "value structure", "composition logic", "material logic", "type rhythm", "motion character"],
     "doNotReplicate": ["the plate's literal subject", "its exact layout / coordinates", "its specific copy", "any single-screen framing - the app has many screens"],
     "principleNotPixels": "The build inherits the plate's design DNA. If a build step is reproducing the plate's content rather than its principles, it is wrong.",
+    "plateIsNotAnAsset": "The plate + its crops (_artdir/, _artdir_refs/, workflow/artdirection/) are planning artefacts and i2i references - shipped HTML/CSS/JS must never load them (img src, background-image, poster). A shell/title screen that needs keyart commissions a dedicated asset i2i-conditioned on the plate, inheriting the DNA without the baked chrome.",
     "buildRegister": "buildRegister obeys aesthetic-authority - translate the committed vibe into a register, never default to a generic 'creative' voice."
   }
 }

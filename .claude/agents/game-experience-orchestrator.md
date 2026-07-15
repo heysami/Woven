@@ -478,6 +478,7 @@ For each enumerated slot:
 5. **Check the iframe's console.** `preview_console_logs level: 'error'` - any uncaught exceptions = the game is broken.
 6. **Check the iframe's network.** `preview_network` for 404s.
 6a. **§1.2 layered-interaction contract - verify all seven rules.** Drive a synthetic drag inside the iframe (`preview_eval('window.__game?.injectFakeInput?.("pointer", {x:0.3, y:0.6, drag:true, dx: 50, dy: 0})')`), THEN attempt to scroll past the iframe (`preview_eval('window.scrollTo({top: window.innerHeight + 100})')`); the page MUST scroll past. Verify the host page has a visible scroll-past affordance (Rule B). Inspect HUD overlay computed `pointer-events` - container `none`, real controls `auto`. Verify the iframe carries `allow="gyroscope; accelerometer; autoplay"` if the game uses those modalities. Verify pointer-capture release on aborted gestures (`pointerdown` + `pointercancel` then click a host-level link - it must navigate).
+6b. **No planning artefacts shipped.** `grep -RInE '_artdir|artdirection' source/<branch>/ --include='*.html' --include='*.css' --include='*.js'` must return ZERO hits. The north-star plate + its `_artdir_refs/` crops are i2i references, not runtime assets - a shell keyart/backdrop pointing at `_artdir/north-star-1.png` (the grandauto / battle-team bug) ships a flattened fake UI (literal hero, fake stat numbers, painted HUD panels) behind the real UI. FAIL routes to the host-page fix lever: commission dedicated keyart via `/__asset_generate`, i2i-conditioned on the plate so it inherits the DNA without the baked chrome, and swap the `src` - never just delete the image.
 7. **Per-slot QA verdict.** Score each on:
    - **loads** - runtime fetched without 404, parsed without errors. PASS / FAIL.
    - **renders** - world is visibly populated, full-bleed, no flat background. PASS / FAIL.
@@ -489,6 +490,7 @@ For each enumerated slot:
    - **scroll-past works** - after a drag inside the game, host scroll still advances past the iframe. PASS / FAIL.
    - **scroll-past affordance present** - visible "skip ↓" / "exit" / "↓ continue" cue over the iframe with pointer-events:auto (mandatory for hero-slot games). PASS / FAIL.
    - **HUD budget honest** - overlay text passes through; only real controls capture. PASS / FAIL.
+   - **no planning artefacts** - zero `_artdir` / `artdirection` references in shipped HTML/CSS/JS (step 6b). PASS / FAIL.
 8. **Fix where you can.** Two levers:
    - **Edit the agent's HTML** for layout fixes (slot too small → bump iframe height; missing `allow="gyroscope; accelerometer"` for tilt games → add). Layout-fix only.
    - **Re-dispatch the responsible builder + re-assemble** when the issue is content (world flat = re-dispatch game_world; no juice on hit = re-dispatch game_feedback; objective unclear = re-dispatch game_overlay), then re-run the runtime/composer to re-assemble. Patch the builder's `text` field with the failure quote.

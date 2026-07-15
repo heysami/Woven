@@ -1453,6 +1453,23 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
    The observed failure mode: every judge aims at runtime.html, the boot screen ships as the only
    unjudged surface, and it is the first thing the user sees.
 
+   **The north-star plate is a PLANNING artefact - it never ships as a runtime asset.**
+   `source/<branch>/_artdir/`, `_artdir_refs/` and `workflow/artdirection/` exist for gate display
+   and i2i conditioning only; shipped HTML/CSS/JS must never load them (`<img src>`,
+   `background-image`, `<video poster>` - anything the runtime fetches). The plate is a composed
+   frame with UI chrome BAKED IN (a literal hero, fake stat numbers, painted HUD panels), so
+   shipping it as a title backdrop is the contract's `principleNotPixels` violation in pixel form -
+   the grandauto + battle-team title screens shipped `<img src="_artdir/north-star-1.png">` exactly
+   this way. The temptation is structural: under the "whole" resolution the page-build enrichers
+   (visual / photography / illustration) are dropped, so the hand-written shell has no asset lane of
+   its own and the plate is the only on-brand raster on disk. The rule when the shell needs keyart /
+   a full-bleed backdrop: COMMISSION it - one direct `/__asset_generate` call, i2i-conditioned on
+   the plate + `itemReferences` when the model supports it - so the shell inherits the plate's DNA
+   without its baked chrome. MECHANICAL CHECK inside this same host-shell gate:
+   `grep -RInE '_artdir|artdirection' source/<prototype>/ --include='*.html' --include='*.css' --include='*.js'`
+   must return ZERO hits; any hit FAILS the gate as a code fix routed to the shell (swap the src for
+   a commissioned asset, never just delete the image).
+
    **Top-level owns-surface deliverable - surface it on SUCCESS, not only on failure.** When the committed runtime IS what the user asked for (a standalone `owns-surface` dispatch, not a subsystem a parent orchestrator co-dispatched), do NOT silently mark it `done` after the gate passes: emit `<decision-request id="cp_<family>_final_<slotId>">` Approve / Tweak / Regenerate, then commit on approval - so a from-scratch build gets one human checkpoint instead of shipping unseen. A nested co-dispatch (the parent runs its own final gate on the composed surface the user actually sees) skips this. Honour the delegation carve-out: "just build, no questions" → commit without the checkpoint.
 
    This single gate **replaces both** the old per-drawer lens loop (`3 lenses × ~5 drawers × ≤5 iters` = up to ~75 lens runs/slot, judging fragments out of context) **and** the old bolted-on Step-8 QA. They are now ONE pass on the assembled result (~3-9 lens runs/slot, judged in context) - deep AND in-place. The old failure mode it kills: *per-drawer lens scores passing while the assembled iframe is broken or ugly.* Write `workflow/<family>-plan.json` with `qa: {{ checked: [...], blocked: [...], ranAt: '...' }}`; relay any `qa.blocked[]` to the user verbatim.
@@ -1955,6 +1972,7 @@ Task(subagent_type: "game-experience-orchestrator",
 ### Do NOT do any of these:
 
 - ❌ **Skipping the app shell.** Same trap as the fly / mememe / coolcam bugs. Without `source/<prototype>/index.html`, the user has no way to open the piece. ALWAYS scaffold the shell first.
+- ❌ **Shipping the art-direction plate as the shell's keyart/backdrop** (`<img src="_artdir/north-star-1.png">` on the title screen - the grandauto / battle-team bug). The plate is a planning artefact with fake UI baked in (literal hero, fake stat numbers, painted HUD). When the title/boot screen needs a full-bleed backdrop, commission a dedicated asset via `/__asset_generate`, i2i-conditioned on the plate, per §"The north-star plate is a PLANNING artefact" in the gate contract.
 - ❌ "What physics engine - matter.js or planck?" → Dispatch; research picks.
 - ❌ "What objective shape - score or progress?" → Dispatch; the user's brief tells you the objective; research formalises the shape.
 - ❌ Calling matter.js / cannon-es from chat-rendered HTML → Game-experience runs as a composed piece inside the orchestrator's territory.
