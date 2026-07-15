@@ -161,3 +161,18 @@ trade the vision down, and never justify a route with "cheaper".
 Write `research.md`, then commit your node via `POST $TH_DAEMON_URL/__workflow/node/s3d_research_<sceneId>/commit` with outputs: `{ immersionMode, locationArchetype, fidelityRegister, integration, driveMode, leadSubsystem, subsystems: [{sysId, role, renderRoute, lensGates}], postChain[], multiDraftRecommendation }`. For `object-hero`, `locationArchetype`/`fidelityRegister` are `null`. No lens gate on research.
 
 `research.md` MUST record `immersionMode` at the top; when `immersive-place`, also `locationArchetype` + `fidelityRegister` + the §0.5.b six-pillar block. Downstream drawers and the aesthetic-lens read these to know which doctrine applies.
+
+## 4. Test cases (`test-cases.json`) - the second committed artifact
+
+In the SAME pass as `research.md`, write `test-cases.json` NEXT TO it (`source/{branch}/scene3d/{sceneId}/test-cases.json`). The QA gate (`GET /__qa/run`) auto-detects the file and walks EVERY case end to end instead of the generic battery: the plan defines its own proof. Schema + runner: `docs/features/qa-test-cases.md` and `editor/tools/qa/README.md` (self-test fixture: `editor/tools/qa/fixtures/cases-demo.test-cases.json`).
+
+Scene-3d pieces have NO intent funnel - the drivable API is `window.__scene3d`. OMIT `intents` (the runner skips its harness preflight when no intents / `intent` steps are present), do NOT require `injectFakeInput`, and `phaseSetups` may be minimal. Required contents:
+
+- `harness`: `window.__scene3d`.
+- `phases`: every state the scene passes through (veil / live / frozen / fallback rung). `phaseExpr`: the JS expression that reads the current one.
+- `cases` (journeys): load-to-first-composed-frame, the full pointer arc to BOTH extremes via raw `move`/`drag` steps, freeze/resume, and (host-driven) a `step(state, alpha)` drive via `eval`. Assert through `eval`/`waitFor` on `window.__scene3d` (perfStats, handle values) plus `notBlank`/`frameChanged`. Plus any state x input combination you already see being fragile.
+- `matrix`: usually omitted (no intents to expand); hand-write the specific combinations that need a specific assertion.
+- `abuse`: `resize-cycle` and `pointer-storm` are the applicable templates.
+- `soak`: `{"seconds": 30, "seed": <any int>, "phase": "<main phase>"}`. Random-but-replayable pointer input, reproducible by seed.
+
+End your final hand-back message with the case summary (e.g. "test-cases: 3 journeys + 2 abuse + soak 30s") so the plan gate can surface it to the user.

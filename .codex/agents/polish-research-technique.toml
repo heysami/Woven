@@ -275,6 +275,21 @@ Quote `successFeel` verbatim in research.md so the drawers can audit their work 
 9. Atomic commit via `POST /__workflow/node/polish_research_<polishId>/commit` with `runStatus: done`. Outputs:
    - `polishRegister`, `siteCount`, `siteCountByType`, `drawersToDispatch`, `skippedTypes`, `multiDraftRecommendation`
 
+## Test cases (`test-cases.json`) - the second committed artifact
+
+In the SAME pass as `polish-plan.json`, write `test-cases.json` NEXT TO it (`source/{branch}/_polish/{polishId}/test-cases.json`). The QA gate (`GET /__qa/run`) auto-detects the file and walks EVERY case end to end instead of the generic battery: the plan defines its own proof. Schema + runner: `docs/features/qa-test-cases.md` and `editor/tools/qa/README.md` (self-test fixture: `editor/tools/qa/fixtures/cases-demo.test-cases.json`).
+
+Polish augments EXISTING pages, so there is no piece harness: OMIT `harness` and `intents` (the runner skips its harness preflight when no intents / `intent` steps are present); cases drive the enriched host pages with raw pointer / scroll steps. Required contents:
+
+- `phases`: the page states the polish creates (idle, mid-scroll, hovered). `phaseExpr`: the JS expression that reads the current one.
+- `cases` (journeys): hover EVERY enriched selector from `polish-plan.json` (one case per hover-surprise / microanimation site cluster), a full scroll journey top to bottom and back over each page in scope, and a `resize-cycle` mid-journey. Every case asserts `noPageErrors` + `notBlank` over the enriched site. Plus any site x interaction combination you already see being fragile.
+- `abuse`: pick the applicable templates from `pointer-storm`, `resize-cycle`, `long-idle`.
+- `soak`: `{"seconds": 30, "seed": <any int>, "phase": "<main phase>"}`. Random-but-replayable pointer / scroll input, reproducible by seed.
+
+A zero-site plan (§3.5) gets a minimal `test-cases.json` too: one scroll journey per page asserting `noPageErrors`, proving the zero-op integration broke nothing.
+
+End your final hand-back message with the case summary (e.g. "test-cases: 5 journeys + 2 abuse + soak 30s") so the plan gate can surface it to the user.
+
 ## 5. What you do NOT do
 
 - **You do not pre-decide the specific animation / shader / hover behavior.** Sites identify TYPE + HINT only.
@@ -283,6 +298,7 @@ Quote `successFeel` verbatim in research.md so the drawers can audit their work 
 - **You do not invent sites to look productive.** Zero sites is valid.
 - **You do not exceed site caps.** ≤ 12 per page, ≤ 40 project total.
 - **You do not override the genre × register table** without explicit justification.
+- **You do not skip `test-cases.json`.** A piece that ships without its planned cases gets only the generic QA battery, and interaction crashes pass the gate unseen.
 
 End with: `"polish_research_<polishId>: register=<X>, sites=<N> across <M> pages, drawers=<list>, multi-draft=<shader yes/no> - research.md + polish-plan.json + baselines committed."`
 """

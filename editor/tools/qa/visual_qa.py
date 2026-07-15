@@ -22,6 +22,8 @@ import argparse
 import base64
 import json
 import os
+import random
+import re
 import sys
 import time
 import urllib.error
@@ -708,6 +710,692 @@ def _finish_judge(judge: Dict[str, Any], res: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Test-case runner (--cases). Executes a piece's plan-time test-cases.json
+# end to end: hand-written cases (journeys / abuse / regression), the
+# auto-expanded intent x phase matrix, abuse templates, and a seeded soak.
+# Design: docs/features/qa-test-cases.md. The file lives next to the piece's
+# research.md and is written by the family researcher at planning time.
+# ---------------------------------------------------------------------------
+
+CASE_DEFAULT_BUDGET_MS = 8000
+WAITFOR_DEFAULT_TIMEOUT_MS = 5000
+CASE_SETTLE_DEFAULT_MS = 400
+# Pause after the last step before judging expects, so async errors (next
+# rAF tick, promise rejections) surface into the page-error listener.
+CASE_ERROR_DRAIN_MS = 150
+SOAK_DEFAULT_SECONDS = 30
+SOAK_MAX_SECONDS = 120
+
+
+def _js_expr(expr: str) -> str:
+    """Wrap a JS expression so evaluation never throws into Playwright:
+    returns {ok, val} or {ok:false, err}."""
+    return ("(function(){try{return {ok:true,val:(" + expr + ")};}"
+            "catch(e){return {ok:false,err:String(e)};}})()")
+
+
+def _js_harness_call(harness: str, method: str, args_js: str) -> str:
+    """Call <harness>.<method>(<args>) defensively. Returns {ok, val} or
+    {ok:false, err}. A missing harness/method is an err, not a throw."""
+    return ("(function(){var h=null;try{h=" + harness + ";}catch(e){}"
+            "if(!h||typeof h." + method + "!=='function')"
+            "{return {ok:false,err:'harness " + method + " missing'};}"
+            "try{var r=h." + method + "(" + args_js + ");"
+            "return {ok:true,val:(r===undefined?null:r)};}"
+            "catch(e){return {ok:false,err:String(e)};}})()")
+
+
+def run_case_step(page: Any, step: Dict[str, Any],
+                  ctx: Dict[str, Any]) -> Optional[str]:
+    """Execute ONE case step. Returns None on success or an error string.
+    The raw pointer/keyboard five delegate to run_step()."""
+    kind = step.get("type")
+    if kind in ("move", "click", "drag", "scroll", "key"):
+        run_step(page, step)
+        return None
+    if kind == "settle":
+        page.wait_for_timeout(int(step.get("ms", CASE_SETTLE_DEFAULT_MS)))
+        return None
+    if kind == "resize":
+        w = int(step.get("width", 900))
+        h = int(step.get("height", 600))
+        page.set_viewport_size({"width": w, "height": h})
+        ctx["viewport"] = (w, h)
+        return None
+    if kind == "eval":
+        res = page.evaluate(_js_expr(step.get("expr", "true")))
+        if not res.get("ok"):
+            return "eval threw: %s (expr: %s)" % (res.get("err"),
+                                                  step.get("expr"))
+        return None
+    if kind == "waitFor":
+        timeout_ms = int(step.get("timeoutMs", WAITFOR_DEFAULT_TIMEOUT_MS))
+        expr = step.get("expr", "true")
+        deadline = time.time() + timeout_ms / 1000.0
+        while time.time() < deadline:
+            res = page.evaluate(_js_expr(expr))
+            if res.get("ok") and res.get("val"):
+                return None
+            page.wait_for_timeout(100)
+        return "waitFor timed out after %dms: %s" % (timeout_ms, expr)
+    if kind == "intent":
+        intent = step.get("intent")
+        opts = step.get("opts") or {}
+        args_js = json.dumps(intent) + "," + json.dumps(opts)
+        res = page.evaluate(
+            _js_harness_call(ctx["harness"], "injectFakeInput", args_js))
+        if not res.get("ok"):
+            return "intent %r failed: %s" % (intent, res.get("err"))
+        # A false return means "ignored in this phase" - legal, not a failure.
+        # Crashes surface as page errors and are judged by expects.
+        return None
+    if kind == "tick":
+        secs = float(step.get("seconds", 1.0))
+        res = page.evaluate(
+            _js_harness_call(ctx["harness"], "tick", json.dumps(secs)))
+        if not res.get("ok"):
+            return "tick failed: %s" % res.get("err")
+        return None
+    return "unknown step type: %r" % kind
+
+
+def _expand_matrix_cases(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Auto-generate the intent x phase grid: for every phase that has a
+    phaseSetups entry, inject every intent and require no crash. This is the
+    direct check for 'fine in one state, breaks when you interact in
+    another'."""
+    m = doc.get("matrix") or {}
+    if not m.get("auto"):
+        return []
+    phases = doc.get("phases") or []
+    intents = doc.get("intents") or []
+    setups = doc.get("phaseSetups") or {}
+    excluded = set()
+    for pair in (m.get("exclude") or []):
+        if isinstance(pair, (list, tuple)) and len(pair) == 2:
+            excluded.add((pair[0], pair[1]))
+    phase_expr = doc.get("phaseExpr")
+    cases: List[Dict[str, Any]] = []
+    for ph in phases:
+        if ph not in setups:
+            log("matrix: no phaseSetups entry for phase %r; skipping its row"
+                % ph)
+            continue
+        for it in intents:
+            if (it, ph) in excluded:
+                continue
+            case: Dict[str, Any] = {
+                "id": "mx-%s-%s" % (it, ph),
+                "kind": "matrix",
+                "title": "intent %r during phase %r must not crash" % (it, ph),
+                "given": setups[ph],
+                "steps": [{"type": "intent", "intent": it},
+                          {"type": "settle", "ms": CASE_SETTLE_DEFAULT_MS}],
+                "expect": [],
+            }
+            if phase_expr:
+                case["expect"].append(
+                    {"type": "eval", "expr": phase_expr, "in": phases})
+            cases.append(case)
+    return cases
+
+
+# Named abuse templates the researcher can apply without writing the steps.
+ABUSE_TEMPLATES = ("spam-intents", "pointer-storm", "resize-cycle",
+                   "long-idle")
+
+
+def _expand_abuse_cases(doc: Dict[str, Any],
+                        viewport: Tuple[int, int]) -> List[Dict[str, Any]]:
+    ab = doc.get("abuse") or {}
+    apply_list = ab.get("apply") or []
+    if not apply_list:
+        return []
+    setups = doc.get("phaseSetups") or {}
+    setup = ab.get("setup")
+    if setup is None and ab.get("phase"):
+        setup = setups.get(ab.get("phase"))
+    setup = setup or []
+    intents = doc.get("intents") or []
+    vw, vh = viewport
+    cases: List[Dict[str, Any]] = []
+    for name in apply_list:
+        if name == "spam-intents":
+            steps: List[Dict[str, Any]] = []
+            for it in intents:
+                for _ in range(15):
+                    steps.append({"type": "intent", "intent": it})
+            steps.append({"type": "settle", "ms": 800})
+            cases.append({
+                "id": "ab-spam-intents", "kind": "abuse",
+                "title": "every intent spammed 15x fast must not crash",
+                "given": setup, "steps": steps, "expect": [],
+                "budgetMs": 20000,
+            })
+        elif name == "pointer-storm":
+            # Deterministic storm: sweeps, corners, and out-of-stage points.
+            pts = [(0.05, 0.05), (0.95, 0.05), (0.95, 0.95), (0.05, 0.95),
+                   (0.5, 0.5), (0.01, 0.5), (0.99, 0.5), (0.5, 0.01),
+                   (0.5, 0.99), (0.33, 0.66), (0.66, 0.33), (0.5, 0.5)]
+            steps = []
+            for (fx, fy) in pts:
+                x = max(1.0, min(vw - 1.0, vw * fx))
+                y = max(1.0, min(vh - 1.0, vh * fy))
+                steps.append({"type": "move", "x": x, "y": y})
+                steps.append({"type": "click", "x": x, "y": y})
+            steps.append({"type": "settle", "ms": 600})
+            cases.append({
+                "id": "ab-pointer-storm", "kind": "abuse",
+                "title": "rapid clicks across and outside the stage must "
+                         "not crash",
+                "given": setup, "steps": steps, "expect": [],
+                "budgetMs": 20000,
+            })
+        elif name == "resize-cycle":
+            steps = []
+            for (w, h) in ((480, 800), (1440, 900), (700, 700), (vw, vh)):
+                steps.append({"type": "resize", "width": w, "height": h})
+                steps.append({"type": "settle", "ms": 350})
+            cases.append({
+                "id": "ab-resize-cycle", "kind": "abuse",
+                "title": "viewport resizes mid-session must not crash",
+                "given": setup, "steps": steps,
+                "expect": [{"type": "notBlank"}],
+                "budgetMs": 15000,
+            })
+        elif name == "long-idle":
+            cases.append({
+                "id": "ab-long-idle", "kind": "abuse",
+                "title": "a long idle stretch must not crash or blank",
+                "given": setup,
+                "steps": [{"type": "settle", "ms": 10000}],
+                "expect": [{"type": "notBlank"}],
+                "budgetMs": 15000,
+            })
+        else:
+            log("abuse: unknown template %r (known: %s); skipped"
+                % (name, ", ".join(ABUSE_TEMPLATES)))
+    return cases
+
+
+def _eval_expects(page: Any, case: Dict[str, Any], ctx: Dict[str, Any],
+                  page_errors: List[str], console_errors: List[str],
+                  shots: Dict[str, str]) -> List[Dict[str, Any]]:
+    """Evaluate a case's expects. noPageErrors is implicit on every case.
+    Returns the list of FAILED expects (empty = case passed)."""
+    fails: List[Dict[str, Any]] = []
+    expects = list(case.get("expect") or [])
+    if not any(e.get("type") == "noPageErrors" for e in expects):
+        expects.append({"type": "noPageErrors"})
+    for exp in expects:
+        etype = exp.get("type")
+        if etype == "noPageErrors":
+            if page_errors:
+                fails.append({"expect": "noPageErrors",
+                              "detail": page_errors[:5]})
+        elif etype == "noConsoleErrors":
+            allow = exp.get("allow") or []
+            errs = []
+            for e in console_errors:
+                allowed = False
+                for pat in allow:
+                    try:
+                        if re.search(pat, e):
+                            allowed = True
+                            break
+                    except re.error:
+                        pass
+                if not allowed:
+                    errs.append(e)
+            if errs:
+                fails.append({"expect": "noConsoleErrors",
+                              "detail": errs[:5]})
+        elif etype == "eval":
+            res = page.evaluate(_js_expr(exp.get("expr", "true")))
+            if not res.get("ok"):
+                fails.append({"expect": "eval", "expr": exp.get("expr"),
+                              "detail": "expression threw: %s"
+                                        % res.get("err")})
+                continue
+            val = res.get("val")
+            if "equals" in exp:
+                if val != exp["equals"]:
+                    fails.append({"expect": "eval", "expr": exp.get("expr"),
+                                  "detail": "expected == %r, got %r"
+                                            % (exp["equals"], val)})
+            elif "in" in exp:
+                if val not in (exp["in"] or []):
+                    fails.append({"expect": "eval", "expr": exp.get("expr"),
+                                  "detail": "expected one of %r, got %r"
+                                            % (exp["in"], val)})
+            else:
+                if not val:
+                    fails.append({"expect": "eval", "expr": exp.get("expr"),
+                                  "detail": "expected truthy, got %r" % val})
+        elif etype == "notBlank":
+            path = shots.get("after")
+            if path:
+                blank = frame_is_blank(path)
+                if blank is True:
+                    fails.append({"expect": "notBlank",
+                                  "detail": "frame is a flat blank wash"})
+        elif etype == "frameChanged":
+            before = shots.get("before")
+            after = shots.get("after")
+            if before and after:
+                d = diff_frames(before, after)
+                if d <= DIFF_EPSILON:
+                    fails.append({"expect": "frameChanged",
+                                  "detail": "diff %.4f <= eps %.4f"
+                                            % (d, DIFF_EPSILON)})
+        else:
+            fails.append({"expect": str(etype),
+                          "detail": "unknown expect type"})
+    return fails
+
+
+def _case_needs_frames(case: Dict[str, Any]) -> bool:
+    for e in case.get("expect") or []:
+        if e.get("type") in ("notBlank", "frameChanged"):
+            return True
+    return False
+
+
+def _safe_id(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", s or "case")[:80]
+
+
+def _run_one_case(context: Any, url: str, case: Dict[str, Any],
+                  base_ctx: Dict[str, Any], settle_ms: int,
+                  out_dir: str) -> Dict[str, Any]:
+    """Run one case on a FRESH page (isolation between cases). Returns the
+    per-case report entry."""
+    console_errors: List[str] = []
+    page_errors: List[str] = []
+    result: Dict[str, Any] = {
+        "id": case.get("id"),
+        "kind": case.get("kind"),
+        "title": case.get("title"),
+        "verdict": "pass",
+        "failedExpect": [],
+        "error": None,
+        "pageErrors": page_errors,
+        "consoleErrors": console_errors,
+    }
+    ctx = dict(base_ctx)
+    budget_ms = int(case.get("budgetMs", CASE_DEFAULT_BUDGET_MS))
+    page = context.new_page()
+    page.on("console", lambda m: console_errors.append(m.text)
+            if getattr(m, "type", "") == "error" else None)
+    page.on("pageerror", lambda e: page_errors.append(str(e)))
+    started = time.time()
+    shots: Dict[str, str] = {}
+    sid = _safe_id(str(case.get("id")))
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        page.wait_for_timeout(settle_ms)
+        needs_frames = _case_needs_frames(case)
+        step_err: Optional[str] = None
+        for group_name in ("given", "steps"):
+            if step_err:
+                break
+            if group_name == "steps" and needs_frames:
+                shots["before"] = os.path.join(out_dir,
+                                               "case_%s_before.png" % sid)
+                page.screenshot(path=shots["before"])
+            for step in (case.get(group_name) or []):
+                if (time.time() - started) * 1000.0 > budget_ms:
+                    step_err = ("budgetMs %d exceeded (possible freeze/hang)"
+                                % budget_ms)
+                    break
+                err = run_case_step(page, step, ctx)
+                if err:
+                    step_err = "%s step failed: %s" % (group_name, err)
+                    break
+        if step_err:
+            result["verdict"] = "fail"
+            result["error"] = step_err
+        # Let async errors (next tick / rejected promises) surface.
+        page.wait_for_timeout(CASE_ERROR_DRAIN_MS)
+        if needs_frames and not step_err:
+            shots["after"] = os.path.join(out_dir, "case_%s_after.png" % sid)
+            page.screenshot(path=shots["after"])
+        fails = _eval_expects(page, case, ctx, page_errors, console_errors,
+                              shots)
+        if fails:
+            result["verdict"] = "fail"
+            result["failedExpect"] = fails
+        if result["verdict"] == "fail" and "after" not in shots:
+            try:
+                fail_shot = os.path.join(out_dir, "case_%s_fail.png" % sid)
+                page.screenshot(path=fail_shot)
+                shots["fail"] = fail_shot
+            except Exception:
+                pass
+    except Exception as exc:
+        result["verdict"] = "fail"
+        result["error"] = "case run threw: %s" % exc
+    finally:
+        result["frames"] = shots
+        try:
+            page.close()
+        except Exception:
+            pass
+    return result
+
+
+def _run_soak(context: Any, url: str, doc: Dict[str, Any],
+              base_ctx: Dict[str, Any], settle_ms: int,
+              out_dir: str) -> Optional[Dict[str, Any]]:
+    """Seeded monkey run: random-but-replayable intents + pointer noise for
+    N seconds. Reproducible by seed. Catches the combinations nobody wrote
+    down."""
+    soak = doc.get("soak")
+    if not isinstance(soak, dict):
+        return None
+    seconds = min(float(soak.get("seconds", SOAK_DEFAULT_SECONDS)),
+                  float(SOAK_MAX_SECONDS))
+    seed = int(soak.get("seed", 1337))
+    rng = random.Random(seed)
+    intents = list(soak.get("intents") or doc.get("intents") or [])
+    opts_pool = soak.get("optsPool") or {}
+    fast = bool(soak.get("fastForward"))
+    setups = doc.get("phaseSetups") or {}
+    setup = setups.get(soak.get("phase")) if soak.get("phase") else None
+    setup = setup or []
+    console_errors: List[str] = []
+    page_errors: List[str] = []
+    res: Dict[str, Any] = {
+        "seconds": seconds, "seed": seed, "injected": 0,
+        "verdict": "pass", "error": None,
+        "pageErrors": page_errors,
+    }
+    page = context.new_page()
+    page.on("console", lambda m: console_errors.append(m.text)
+            if getattr(m, "type", "") == "error" else None)
+    page.on("pageerror", lambda e: page_errors.append(str(e)))
+    ctx = dict(base_ctx)
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        page.wait_for_timeout(settle_ms)
+        for step in setup:
+            err = run_case_step(page, step, ctx)
+            if err:
+                res["verdict"] = "fail"
+                res["error"] = "soak setup failed: %s" % err
+                return res
+        box = find_stage_box(page)
+        vw, vh = ctx["viewport"]
+        end = time.time() + seconds
+        injected = 0
+        tick_missing = False
+        while time.time() < end:
+            if page_errors:
+                break
+            roll = rng.random()
+            if intents and roll < 0.7:
+                it = rng.choice(intents)
+                pool = opts_pool.get(it) or [{}]
+                opts = rng.choice(pool)
+                args_js = json.dumps(it) + "," + json.dumps(opts)
+                page.evaluate(_js_harness_call(ctx["harness"],
+                                               "injectFakeInput", args_js))
+            elif roll < 0.9:
+                x, y = clamp_point(box, rng.random(), rng.random(), (vw, vh))
+                if rng.random() < 0.5:
+                    page.mouse.move(x, y)
+                else:
+                    page.mouse.click(x, y)
+            else:
+                if rng.random() < 0.5:
+                    page.keyboard.press(rng.choice(
+                        ["ArrowRight", "ArrowLeft", "Space", "Escape"]))
+                else:
+                    page.mouse.wheel(0, rng.choice([-300, 300]))
+            injected += 1
+            if fast and not tick_missing and injected % 10 == 0:
+                r = page.evaluate(_js_harness_call(ctx["harness"], "tick",
+                                                   "0.5"))
+                if not r.get("ok"):
+                    tick_missing = True
+            page.wait_for_timeout(40)
+        res["injected"] = injected
+        page.wait_for_timeout(CASE_ERROR_DRAIN_MS)
+        shot = os.path.join(out_dir, "soak_final.png")
+        try:
+            page.screenshot(path=shot)
+            res["finalFrame"] = shot
+            if frame_is_blank(shot) is True:
+                res["verdict"] = "fail"
+                res["error"] = "final soak frame is blank"
+        except Exception:
+            pass
+        if page_errors:
+            res["verdict"] = "fail"
+            res["error"] = res["error"] or ("page error after %d injections"
+                                            % injected)
+    except Exception as exc:
+        res["verdict"] = "fail"
+        res["error"] = "soak run threw: %s" % exc
+    finally:
+        try:
+            page.close()
+        except Exception:
+            pass
+    return res
+
+
+def _preflight_harness(context: Any, url: str, doc: Dict[str, Any],
+                       settle_ms: int) -> Dict[str, Any]:
+    """Contract check BEFORE the cases run: the harness global exists,
+    injectFakeInput is callable, and (when the harness publishes an
+    `intents` list) every intent in the file is covered. A missing intent is
+    a FAIL against the runtime composer, not a skip."""
+    harness = doc.get("harness") or "window.__game"
+    out: Dict[str, Any] = {"harness": harness, "ok": True, "problems": []}
+    needs_harness = bool(doc.get("intents")) or _doc_uses_harness_steps(doc)
+    if not needs_harness:
+        out["skipped"] = "no intents / harness-driven steps in the file"
+        return out
+    page = context.new_page()
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        page.wait_for_timeout(settle_ms)
+        probe = page.evaluate(_js_expr(
+            "(function(){var h=null;try{h=" + harness + ";}catch(e){}"
+            "if(!h){return {present:false};}"
+            "return {present:true,"
+            "hasInject:typeof h.injectFakeInput==='function',"
+            "hasTick:typeof h.tick==='function',"
+            "intents:(Array.isArray(h.intents)?h.intents:null)};})()"))
+        if not probe.get("ok"):
+            out["ok"] = False
+            out["problems"].append("harness probe threw: %s"
+                                   % probe.get("err"))
+            return out
+        info = probe.get("val") or {}
+        if not info.get("present"):
+            out["ok"] = False
+            out["problems"].append("harness global %s is missing" % harness)
+            return out
+        if not info.get("hasInject"):
+            out["ok"] = False
+            out["problems"].append(
+                "%s.injectFakeInput is not a function" % harness)
+        out["hasTick"] = bool(info.get("hasTick"))
+        published = info.get("intents")
+        if isinstance(published, list):
+            missing = [i for i in (doc.get("intents") or [])
+                       if i not in published]
+            if missing:
+                out["ok"] = False
+                out["problems"].append(
+                    "harness intents list does not cover: %s"
+                    % ", ".join(map(str, missing)))
+        else:
+            out["intentsListPublished"] = False
+    except Exception as exc:
+        out["ok"] = False
+        out["problems"].append("preflight failed: %s" % exc)
+    finally:
+        try:
+            page.close()
+        except Exception:
+            pass
+    return out
+
+
+def _doc_uses_harness_steps(doc: Dict[str, Any]) -> bool:
+    for case in doc.get("cases") or []:
+        for group in ("given", "steps"):
+            for step in case.get(group) or []:
+                if step.get("type") in ("intent", "tick"):
+                    return True
+    for steps in (doc.get("phaseSetups") or {}).values():
+        for step in steps or []:
+            if step.get("type") in ("intent", "tick"):
+                return True
+    return False
+
+
+def run_cases(args: argparse.Namespace) -> int:
+    """--cases entry point. Runs every case on a fresh page, then the soak.
+    Exit codes: 0 pass, 6 any case/preflight/soak failure, 3 setup failure."""
+    try:
+        from playwright.sync_api import sync_playwright  # type: ignore
+    except Exception as exc:
+        log("ERROR: Playwright is not importable (%s)." % exc)
+        return 3
+    try:
+        with open(args.cases, "r") as f:
+            doc = json.load(f)
+    except Exception as exc:
+        log("ERROR: could not read cases file %s (%s)" % (args.cases, exc))
+        return 3
+    if not isinstance(doc, dict):
+        log("ERROR: cases file must be a JSON object")
+        return 3
+
+    out_dir = args.out
+    os.makedirs(out_dir, exist_ok=True)
+    vw, vh = args.viewport
+    url = normalise_url(args.url)
+    settle_ms = int(args.settle_ms)
+    harness = doc.get("harness") or "window.__game"
+    base_ctx: Dict[str, Any] = {"harness": harness, "viewport": (vw, vh)}
+
+    cases: List[Dict[str, Any]] = list(doc.get("cases") or [])
+    cases += _expand_matrix_cases(doc)
+    cases += _expand_abuse_cases(doc, (vw, vh))
+
+    report: Dict[str, Any] = {
+        "url": url,
+        "browser": None,
+        "viewport": "%dx%d" % (vw, vh),
+        "mode": "cases",
+        "family": doc.get("family"),
+        "pieceId": doc.get("pieceId"),
+        "harness": harness,
+        "casesFile": os.path.abspath(args.cases),
+        "preflight": None,
+        "cases": [],
+        "soak": None,
+        "casesSummary": {},
+        "verdict": None,
+        "reasons": [],
+    }
+
+    with sync_playwright() as pw:
+        try:
+            browser, browser_label = launch_browser(pw)
+        except Exception as exc:
+            log("ERROR: could not launch any browser (%s)." % exc)
+            return 3
+        report["browser"] = browser_label
+        log("browser: %s" % browser_label)
+        context = browser.new_context(viewport={"width": vw, "height": vh})
+        try:
+            context.grant_permissions(["camera", "microphone"])
+        except Exception:
+            pass
+        _cam = camera_mock_script(getattr(args, "camera", "both") or "both")
+        if _cam:
+            try:
+                context.add_init_script(_cam)
+            except Exception:
+                pass
+
+        report["preflight"] = _preflight_harness(context, url, doc, settle_ms)
+        if not report["preflight"].get("ok", True):
+            log("preflight FAILED: %s"
+                % "; ".join(report["preflight"].get("problems") or []))
+
+        for i, case in enumerate(cases):
+            entry = _run_one_case(context, url, case, base_ctx, settle_ms,
+                                  out_dir)
+            report["cases"].append(entry)
+            log("case %d/%d %s: %s" % (i + 1, len(cases),
+                                       entry.get("id"), entry["verdict"]))
+
+        report["soak"] = _run_soak(context, url, doc, base_ctx, settle_ms,
+                                   out_dir)
+        if report["soak"]:
+            log("soak: %s (%d injections)"
+                % (report["soak"]["verdict"], report["soak"]["injected"]))
+
+        context.close()
+        browser.close()
+
+    n_pass = sum(1 for c in report["cases"] if c["verdict"] == "pass")
+    n_fail = len(report["cases"]) - n_pass
+    by_kind: Dict[str, int] = {}
+    for c in report["cases"]:
+        k = str(c.get("kind") or "case")
+        by_kind[k] = by_kind.get(k, 0) + 1
+    report["casesSummary"] = {
+        "total": len(report["cases"]),
+        "pass": n_pass,
+        "fail": n_fail,
+        "byKind": by_kind,
+        "preflightOk": bool(report["preflight"].get("ok", True)),
+        "soakVerdict": (report["soak"] or {}).get("verdict"),
+    }
+
+    reasons: List[str] = []
+    verdict = "pass"
+    if not report["preflight"].get("ok", True):
+        verdict = "cases-fail"
+        reasons.append("harness contract preflight failed: %s"
+                       % "; ".join(report["preflight"].get("problems") or []))
+    if n_fail:
+        verdict = "cases-fail"
+        failed_ids = [str(c.get("id")) for c in report["cases"]
+                      if c["verdict"] != "pass"]
+        reasons.append("%d/%d case(s) failed: %s"
+                       % (n_fail, len(report["cases"]),
+                          ", ".join(failed_ids[:12])))
+    if report["soak"] and report["soak"]["verdict"] != "pass":
+        verdict = "cases-fail"
+        reasons.append("soak failed (seed %s): %s"
+                       % (report["soak"]["seed"],
+                          report["soak"].get("error") or "page errors"))
+    if verdict == "pass":
+        reasons.append("all %d case(s) passed%s"
+                       % (len(report["cases"]),
+                          "; soak clean" if report["soak"] else ""))
+    report["verdict"] = verdict
+    report["reasons"] = reasons
+
+    report_path = os.path.join(out_dir, "report.json")
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+    log("report written to %s" % report_path)
+    sys.stdout.write(json.dumps(report, indent=2) + "\n")
+    sys.stdout.flush()
+    return 0 if verdict == "pass" else 6
+
+
+# ---------------------------------------------------------------------------
 # Main run
 # ---------------------------------------------------------------------------
 
@@ -1067,6 +1755,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="URL or local file path to test.")
     p.add_argument("--spec", default=None,
                    help="Optional JSON spec with custom interactions / timing.")
+    p.add_argument("--cases", default=None, metavar="TEST_CASES_JSON",
+                   help="Run the piece's plan-time test-cases.json instead of "
+                        "the idle timeline + battery: every case end to end "
+                        "on a fresh page (journeys, auto intent x phase "
+                        "matrix, abuse templates, seeded soak). Exit 6 on any "
+                        "case failure. See docs/features/qa-test-cases.md.")
     p.add_argument("--out", default=None,
                    help="Output directory for frames + report.json "
                         "(default: ./qa-out next to this script's cwd).")
@@ -1121,6 +1815,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
     if args.out is None:
         args.out = os.path.join(os.getcwd(), "qa-out")
+    if args.cases:
+        return run_cases(args)
     return run(args)
 
 

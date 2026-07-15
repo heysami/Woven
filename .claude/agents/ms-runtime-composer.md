@@ -144,6 +144,16 @@ window.__ms = {
 
 Injectors must route through the REAL event path (synthetic events / postMessage), never poke engine internals - the harness exists to prove the chain works.
 
+### 3.1 Harness contract: the test-cases runner drives this
+
+The QA gate runs the piece's plan-time `test-cases.json` (written by research, next to `research.md`) through `window.__ms`, BEFORE the lens trio. Here the intents are the navigation events (next / prev / goto scene) plus pointer scrub and host-scroll progress. The harness MUST expose, or the runner's preflight FAILS the gate and routes the failure to YOU (not the interactions drawer):
+
+- `intents`: array covering EVERY intent listed in `test-cases.json`.
+- `injectFakeInput(kind, opts)`: accepts every listed intent in EVERY phase, mapping onto the existing injectors (`gotoScene` / `injectPointer` / `injectScroll` - still through the REAL event path). Return `false` for "ignored in this phase" (e.g. navigation during a locked transition); NEVER throw on an unexpected phase or malformed opts.
+- `tick(seconds)`: deterministic fast-forward through transitions and hold beats (the soak and long journeys use it).
+- `snapshot()`: small serializable state summary (the existing `state` getter qualifies; wrap it).
+- `errors`: crash-forensics ring buffer (keep the last 10), filled by a global `error` + `unhandledrejection` handler pushing { message, stack, phase, lastIntents }. Errors stay LOUD: no try/catch blankets that swallow failures into weird-state bugs.
+
 ## 4. Internal refinement loop (§12.1) - self-test in preview
 
 ≤3 internal iterations. Each:

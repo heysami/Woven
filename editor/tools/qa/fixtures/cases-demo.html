@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>cases-demo: synthetic harness piece for the --cases runner self-test</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #101418; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<script>
+/* Synthetic interactive piece implementing the hardened harness contract
+   (docs/features/qa-test-cases.md section 4) so the --cases runner can be
+   tested without any real project. Phases: select -> playing -> done.
+   Intents: begin, poke, end, boom (boom throws async, for fail-path tests). */
+(function () {
+  var cv = document.getElementById('stage');
+  var cx = cv.getContext('2d');
+  var state = { phase: 'select', pokes: 0, t: 0 };
+  var lastIntents = [];
+
+  function resize() {
+    cv.width = window.innerWidth;
+    cv.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function step(dt) {
+    state.t += dt;
+  }
+
+  function draw() {
+    cx.fillStyle = '#101418';
+    cx.fillRect(0, 0, cv.width, cv.height);
+    cx.fillStyle = state.phase === 'playing' ? '#3fbf7f' : '#7f8fbf';
+    var x = (cv.width / 2) + Math.sin(state.t * 2) * cv.width * 0.2;
+    cx.beginPath();
+    cx.arc(x, cv.height / 2, 40 + (state.pokes % 5) * 6, 0, Math.PI * 2);
+    cx.fill();
+    cx.fillStyle = '#e8ecf2';
+    cx.font = '20px monospace';
+    cx.fillText('phase: ' + state.phase + '  pokes: ' + state.pokes, 24, 40);
+  }
+
+  var last = performance.now();
+  function frame(now) {
+    step((now - last) / 1000);
+    last = now;
+    draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  cv.addEventListener('click', function () {
+    if (state.phase === 'playing') state.pokes += 1;
+  });
+
+  window.__demo = {
+    state: state,
+    intents: ['begin', 'poke', 'end', 'boom'],
+    errors: [],
+    injectFakeInput: function (kind, opts) {
+      lastIntents.push(kind);
+      if (lastIntents.length > 20) lastIntents.shift();
+      if (kind === 'begin') {
+        if (state.phase !== 'select') return false;
+        state.phase = 'playing';
+        return true;
+      }
+      if (kind === 'poke') {
+        if (state.phase !== 'playing') return false;
+        state.pokes += 1;
+        return true;
+      }
+      if (kind === 'end') {
+        if (state.phase !== 'playing') return false;
+        state.phase = 'done';
+        return true;
+      }
+      if (kind === 'boom') {
+        setTimeout(function () {
+          throw new Error('boom intent detonated (intentional test crash)');
+        }, 10);
+        return true;
+      }
+      return false;
+    },
+    tick: function (seconds) {
+      step(Number(seconds) || 0);
+      return true;
+    },
+    snapshot: function () {
+      return { phase: state.phase, pokes: state.pokes, t: state.t };
+    }
+  };
+  window.addEventListener('error', function (e) {
+    window.__demo.errors.push({ message: String(e.message),
+                                lastIntents: lastIntents.slice() });
+  });
+})();
+</script>
+</body>
+</html>

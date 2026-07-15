@@ -150,6 +150,9 @@ Self-test: pick one host page from pagesInScope. Read it, mentally apply the edi
 ### 5.6 Zero-site → zero-op (block on craft)
 If polish-plan.json had 0 sites (research said source is already polished), `composite.css` + `composite.js` are empty files (header comment only). `integration-instructions.md` says "polish recommended zero changes - no edits needed."
 
+### 5.7 Harness contract: the test-cases runner drives the host pages (block on craft)
+No piece harness exists for polish. Research's plan-time `test-cases.json` (next to `polish-plan.json`) drives the enriched host pages with raw pointer / scroll steps at the QA gate, asserting `noPageErrors` over every enriched site. A global `error` listener is NOT required of composite.js - but composite.js must NEVER introduce uncaught errors on hover / scroll / resize, or the cases fail the gate and route the failure to you.
+
 ## 6. Recipe
 
 1. Read polish-plan.json + each committed drawer's output file.

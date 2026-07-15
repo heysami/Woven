@@ -191,6 +191,13 @@ This is opposite from sim/im/nx/game which use separate file iframes. The reason
 - A single "enter" button reveals the full composition on click.
 - After reveal, all other interactions work normally.
 
+### 2.3 - Harness contract: the test-cases runner drives this
+
+The QA gate runs the piece's plan-time `test-cases.json` (written by research, next to `research.md`) against the composed page, BEFORE the lens trio. The `window.__sb` harness is metadata-only and commits to no intent funnel, so `injectFakeInput` is NOT required: the cases drive the page with raw pointer steps (drag-rearrange, click-flip per cutout class, scroll journey). What IS required, or the runner's preflight FAILS the gate and routes the failure to YOU (this holds for the whole-page build mode too, on the real page):
+
+- `snapshot()` on `window.__sb`: small serializable state summary (pacing state, revealed flag, image / sequence counts).
+- `errors` on `window.__sb`: crash-forensics ring buffer (keep the last 10), filled by a global `error` + `unhandledrejection` handler pushing { message, stack, phase }. Errors stay LOUD: no try/catch blankets that swallow failures into weird-state bugs.
+
 ## 3. Hard requirements
 
 ### 3.1 First contentful paint ≤ 1.5s (block on craft)

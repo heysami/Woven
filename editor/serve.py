@@ -20162,6 +20162,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "page":        None,
             "kind":        kind,
             "bakedPath":   baked_path,
+            "absPath":     os.path.normpath(os.path.join(project_root, rel)),
             "url":         url,
             "baked":       True,
             "defaultMode": "interactive",
@@ -20212,6 +20213,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "page":        rel,
             "kind":        "page",
             "bakedPath":   rel,
+            "absPath":     abs_path,
             "url":         url,
             "baked":       True,
             "defaultMode": "render",
@@ -20227,7 +20229,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, info)
 
     # GET /__qa/run?project=<id>&node=<nodeId> | &page=<slug|path>
-    #   [&judge=<text>] [&mode=interactive|render] [&nointeract=1]
+    #   [&judge=<text>] [&mode=interactive|render] [&nointeract=1] [&cases=0]
+    # When a test-cases.json sits next to the target, cases mode runs by
+    # default (&cases=0 opts out and forces the generic battery).
     def _qa_run(self, qs):
         try:
             info = self._qa_resolve_url(qs)
@@ -20261,10 +20265,28 @@ class H(http.server.SimpleHTTPRequestHandler):
         mode = (_qs_get(qs, "mode") or "").strip().lower()
         if mode not in ("interactive", "render"):
             mode = info.get("defaultMode") or "interactive"
+        # Plan-time test cases: when a test-cases.json sits next to the
+        # resolved target (same dir, or one level up - the piece dir when the
+        # target is a baked/nested runtime), run the CASES mode instead of the
+        # generic battery. &cases=0 opts out; pieces without the file keep
+        # today's behavior. See docs/features/qa-test-cases.md.
+        cases_path = None
+        abs_target = info.get("absPath")
+        if abs_target:
+            d = os.path.dirname(abs_target)
+            for cand_dir in (d, os.path.dirname(d)):
+                cand = os.path.join(cand_dir, "test-cases.json")
+                if os.path.isfile(cand):
+                    cases_path = cand
+                    break
+        cases_qs = (_qs_get(qs, "cases") or "").strip().lower()
+        use_cases = bool(cases_path) and cases_qs not in ("0", "false", "no")
         out_dir = tempfile.mkdtemp(prefix="woven-qa-")
         # Run on the same interpreter that runs the daemon (system python).
         cmd = [sys.executable, qa_tool, "--url", url, "--out", out_dir,
                "--mode", mode]
+        if use_cases:
+            cmd += ["--cases", cases_path]
         if judge:
             cmd += ["--judge", judge]
             # Route the frame-judge through THIS daemon's /__llm_run so it can
@@ -20294,14 +20316,18 @@ class H(http.server.SimpleHTTPRequestHandler):
         camera = (_qs_get(qs, "camera") or "").strip().lower()
         if camera in ("both", "hand", "face", "off"):
             cmd += ["--camera", camera]
+        # Cases mode walks every planned case end to end (journeys + matrix +
+        # abuse + soak) on fresh pages; give it a real budget. The generic
+        # battery keeps the old 120s.
+        qa_timeout = 600 if use_cases else 120
         try:
             proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=120,
+                cmd, capture_output=True, text=True, timeout=qa_timeout,
             )
         except subprocess.TimeoutExpired:
             return self._reply(200, {
                 "verdict": "error",
-                "message": "visual_qa.py timed out after 120s",
+                "message": "visual_qa.py timed out after %ds" % qa_timeout,
                 "node":    info.get("node"),
                 "url":     url,
                 "outDir":  out_dir,

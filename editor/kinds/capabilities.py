@@ -209,7 +209,7 @@ def _daemon_endpoints() -> list:
         {"method": "GET",  "path": "/__kinds/registry",     "purpose": "Per-kind contracts: inputs, outputs, dispatch, fanOut"},
         {"method": "GET",  "path": "/__kinds/reconcile",    "purpose": "Drift detection across workflow.json vs disk"},
         {"method": "GET",  "path": "/__qa/resolve",         "purpose": "Resolve a baked node OR a composed page to the daemon-served runtime URL (node=<id> | page=<slug|path>)"},
-        {"method": "GET",  "path": "/__qa/run",             "purpose": "VERIFY VISUAL WORK - THE PRIMARY verification path (drives real Chrome via Playwright inside the daemon; needs NO preview/chrome MCP, so it works even when those tools are absent or their handshake failed). headless-render a node (mode=interactive) or page (mode=render) in real Chrome, capture frames + simulate input, return a pass/static/no-reaction/blank/error/effect-wrong verdict. MANDATORY discipline: HTTP 200 + clean console is plumbing, NOT verification - you MUST then READ the returned idleFrames[].path PNGs (open them with Read) and confirm with your eyes that the intended content actually rendered and the load-bearing text is readable; add judge=<expected> for a vision-LLM 'right thing rendered?' check. If preview_*/chrome MCP tools are unavailable (common in this runtime), DO NOT report 'can't verify' - use THIS endpoint and read the frames. Never claim 'verified' off status codes alone"},
+        {"method": "GET",  "path": "/__qa/run",             "purpose": "VERIFY VISUAL WORK - THE PRIMARY verification path (drives real Chrome via Playwright inside the daemon; needs NO preview/chrome MCP, so it works even when those tools are absent or their handshake failed). headless-render a node (mode=interactive) or page (mode=render) in real Chrome, capture frames + simulate input, return a pass/static/no-reaction/blank/error/effect-wrong verdict. MANDATORY discipline: HTTP 200 + clean console is plumbing, NOT verification - you MUST then READ the returned idleFrames[].path PNGs (open them with Read) and confirm with your eyes that the intended content actually rendered and the load-bearing text is readable; add judge=<expected> for a vision-LLM 'right thing rendered?' check. If preview_*/chrome MCP tools are unavailable (common in this runtime), DO NOT report 'can't verify' - use THIS endpoint and read the frames. Never claim 'verified' off status codes alone. When a test-cases.json sits next to the target (written at research time), this endpoint auto-runs CASES mode instead: every planned case end to end (journeys / intent x phase matrix / abuse / seeded soak), verdict pass|cases-fail with per-case repro; &cases=0 forces the generic battery"},
         {"method": "GET",  "path": "/__capabilities",       "purpose": "This catalog - what the app can do"},
         {"method": "GET",  "path": "/__design_system",      "purpose": "Read DS metadata + token files (incl. per-DS local fonts)"},
         {"method": "POST", "path": "/__design_system",      "purpose": "Write a DS trio (vars/primitives/index)"},
@@ -1411,6 +1411,15 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
      # (farming's cycles, pocketmonster's chrome) passed the lenses. A deviation is acceptable
      # ONLY if research.md itself was amended to commit it.
      qa  = GET $TH_DAEMON_URL/__qa/run?node=<containerNode>&mode=interactive   # WORKS? loads/renders/no-blank/no console errors
+     # PLANNED TEST CASES run FIRST, inside that same call: when research wrote test-cases.json
+     # next to research.md (mandatory for new interactive builds), /__qa/run auto-detects it and
+     # walks EVERY planned case end to end (journeys, the intent x phase matrix, abuse templates,
+     # seeded soak) instead of the generic battery. verdict == cases-fail lists the failing case
+     # ids; each failing case entry (steps + pageErrors) IS the reproduction recipe - thread it
+     # into the failures[] you hand solution-proposer exactly like a lens fail. Do NOT spend the
+     # lens trio on a runtime that cannot survive its own planned cases. A preflight failure
+     # ("harness intents list does not cover ...") is a runtime-composer CONTRACT violation -
+     # route the fix to the composer, not the input drawer.
      # GOOD? the lens trio, ONE set, on the assembled runtime (componentKind=runtime, componentId=<slotId>)
      addNodes [craft_lens_<slotId>_<iter>, aesthetic_lens_<slotId>_<iter>, concept_lens_<slotId>_<iter>]
      POST /run each in parallel ; poll all ; read verdicts from QUALITY_REPORT.json

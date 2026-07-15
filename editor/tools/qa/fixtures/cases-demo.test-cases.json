@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "family": "demo",
+  "pieceId": "cases-demo",
+  "harness": "window.__demo",
+  "phases": ["select", "playing", "done"],
+  "intents": ["begin", "poke", "end"],
+  "phaseExpr": "window.__demo.state.phase",
+  "phaseSetups": {
+    "select": [],
+    "playing": [
+      { "type": "intent", "intent": "begin" },
+      { "type": "waitFor", "expr": "window.__demo.state.phase === 'playing'" }
+    ],
+    "done": [
+      { "type": "intent", "intent": "begin" },
+      { "type": "intent", "intent": "end" },
+      { "type": "waitFor", "expr": "window.__demo.state.phase === 'done'" }
+    ]
+  },
+  "cases": [
+    {
+      "id": "journey-happy-path",
+      "kind": "journey",
+      "title": "begin, poke three times, end: piece reaches done cleanly",
+      "steps": [
+        { "type": "intent", "intent": "begin" },
+        { "type": "waitFor", "expr": "window.__demo.state.phase === 'playing'" },
+        { "type": "intent", "intent": "poke" },
+        { "type": "intent", "intent": "poke" },
+        { "type": "intent", "intent": "poke" },
+        { "type": "tick", "seconds": 2 },
+        { "type": "intent", "intent": "end" }
+      ],
+      "expect": [
+        { "type": "eval", "expr": "window.__demo.state.phase", "equals": "done" },
+        { "type": "eval", "expr": "window.__demo.state.pokes", "equals": 3 },
+        { "type": "notBlank" }
+      ]
+    },
+    {
+      "id": "journey-click-pokes",
+      "kind": "journey",
+      "title": "a real canvas click while playing registers a poke",
+      "given": [
+        { "type": "intent", "intent": "begin" },
+        { "type": "waitFor", "expr": "window.__demo.state.phase === 'playing'" }
+      ],
+      "steps": [
+        { "type": "click", "x": 640, "y": 360 },
+        { "type": "settle", "ms": 200 }
+      ],
+      "expect": [
+        { "type": "eval", "expr": "window.__demo.state.pokes >= 1", "truthy": true },
+        { "type": "frameChanged" }
+      ]
+    }
+  ],
+  "matrix": { "auto": true, "exclude": [] },
+  "abuse": {
+    "apply": ["spam-intents", "pointer-storm", "resize-cycle"],
+    "phase": "playing"
+  },
+  "soak": { "seconds": 5, "seed": 7, "fastForward": true, "phase": "playing" }
+}

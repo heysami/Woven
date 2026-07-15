@@ -283,11 +283,28 @@ State which.
 
 4. **Commit** via `POST /__workflow/node/game_research_<gameId>/commit` with `runStatus: done`.
 
+## Test cases (`test-cases.json`) - the second committed artifact
+
+In the SAME pass as `research.md`, write `test-cases.json` NEXT TO it (`source/{branch}/games/{gameId}/test-cases.json`). The QA gate (`GET /__qa/run`) auto-detects the file and walks EVERY case end to end instead of the generic battery: the plan defines its own proof. Schema + runner: `docs/features/qa-test-cases.md` and `editor/tools/qa/README.md` (self-test fixture: `editor/tools/qa/fixtures/cases-demo.test-cases.json`).
+
+Required contents:
+
+- `harness`: the piece's devtools global (`window.__game`).
+- `phases`: every state the game can be in. `intents`: every user action, using the EXACT intent kinds the input layer emits.
+- `phaseSetups`: steps that drive the game INTO each phase (the matrix / abuse / soak reuse them). `phaseExpr`: the JS expression that reads the current phase.
+- `cases` (journeys): the full happy path start to finish, EVERY terminal outcome (not just the happy one), and restart-after-end. Journeys MUST include play-to-WIN and play-to-LOSE (end-card code paths are classic unreached crash sites) and restart after each. Plus any state x input combination you already see being fragile.
+- `matrix: {"auto": true}`: the runner expands intents x phases. "Fine in one state, breaks when you interact in another" is exactly the crash class this catches.
+- `abuse`: pick the applicable templates from `spam-intents`, `pointer-storm`, `resize-cycle`, `long-idle`.
+- `soak`: `{"seconds": 30, "seed": <any int>, "fastForward": true, "phase": "<main phase>"}`. Random-but-replayable input, reproducible by seed.
+
+End your final hand-back message with the case summary (e.g. "test-cases: 3 journeys + matrix (6 intents x 4 phases) + 3 abuse + soak 30s") so the plan gate can surface it to the user.
+
 ## 4. What you do NOT do
 
 - **You do not pick aesthetic details.** `creativeBrief.styleCue` is the constraint. The world drawer expands it.
 - **You do not write any code.** You write `research.md` only.
 - **You do not skip the multi-draft recommendation block.** The orchestrator depends on it.
+- **You do not skip `test-cases.json`.** A piece that ships without its planned cases gets only the generic QA battery, and interaction crashes pass the gate unseen.
 - **You do not pick a paradigm without justifying it against the objective.** A score-climbing infinite runner is poorly served by `iconographic-physics`; a soft-body toy is poorly served by `3d-environment`.
 - **You do not silently accept a vague juice register.** If `juiceRegister: any` AND `successFeel` doesn't imply a register, push back via `runError`.
 

@@ -57,3 +57,11 @@ Lens-gated on **all three**: craft (console-clean, 60fps, fallback rungs fire, h
 ## 4. Host embed note (returned in outputs, applied by the caller)
 
 Self-driven: host embeds `<iframe src="scene3d/<sceneId>/runtime.html">` (full-bleed) or inline `<div data-scene3d-mount>` + module import (inline-object) per research §1. Host-driven: the parent experience orchestrator mounts it and drives `__scene3d.step(state, alpha)` from its loop each frame. UI text/CTA stay in the HOST page, in the quiet zone - never inside runtime.html.
+
+## 5. Harness contract: the test-cases runner drives this
+
+The QA gate runs the piece's plan-time `test-cases.json` (written by research, next to `research.md`) through the §1.8 scene API, BEFORE the lens trio. Scene-3d has no intent funnel - the runner drives scenes with raw pointer + `eval` steps, so `intents` / `injectFakeInput` are NOT required here. What IS required, or the preflight FAILS the gate and routes the failure to YOU:
+
+- `window.__scene3d` stays live for the whole run so `eval` / `waitFor` steps can read it (perfStats, handle values).
+- `snapshot()`: small serializable state summary (may summarise perfStats + key handle values).
+- `errors`: crash-forensics ring buffer (keep the last 10), filled by a global `error` + `unhandledrejection` handler pushing { message, stack, phase }. Errors stay LOUD: no try/catch blankets that swallow failures into weird-state bugs.

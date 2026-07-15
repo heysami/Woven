@@ -222,12 +222,29 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/im_research_<imId>/commit?proj
   }'
 ```
 
+## Test cases (`test-cases.json`) - the second committed artifact
+
+In the SAME pass as `research.md`, write `test-cases.json` NEXT TO it (`source/{branch}/interactives/{imId}/test-cases.json`). The QA gate (`GET /__qa/run`) auto-detects the file and walks EVERY case end to end instead of the generic battery: the plan defines its own proof. Schema + runner: `docs/features/qa-test-cases.md` and `editor/tools/qa/README.md` (self-test fixture: `editor/tools/qa/fixtures/cases-demo.test-cases.json`).
+
+Required contents:
+
+- `harness`: the piece's devtools global (`window.__im` - the §12.3 harness im-runtime-composer exposes).
+- `phases`: every state the piece can be in. `intents`: every user action, using the EXACT intent kinds the input layer emits.
+- `phaseSetups`: steps that drive the piece INTO each phase (the matrix / abuse / soak reuse them). `phaseExpr`: the JS expression that reads the current phase.
+- `cases` (journeys): the full happy path start to finish, EVERY terminal outcome (not just the happy one), and restart-after-end. Cases MUST cover each declared input granted AND denied (the permission-fallback path is the classic crash site), driven via `intent` steps that inject synthetic feature vectors. Plus any state x input combination you already see being fragile.
+- `matrix: {"auto": true}`: the runner expands intents x phases. "Fine in one state, breaks when you interact in another" is exactly the crash class this catches.
+- `abuse`: pick the applicable templates from `spam-intents`, `pointer-storm`, `resize-cycle`, `long-idle`.
+- `soak`: `{"seconds": 30, "seed": <any int>, "fastForward": true, "phase": "<main phase>"}`. Random-but-replayable input, reproducible by seed.
+
+End your final hand-back message with the case summary (e.g. "test-cases: 3 journeys + matrix (6 intents x 4 phases) + 3 abuse + soak 30s") so the plan gate can surface it to the user.
+
 ## 6. What you do NOT do
 
 - **You do not write `_research/precedent.md` / `_research/mapping-philosophy.md` / `_research/permission-ux.md` / `_research/constraint.md`.** Those drawers are gone. Just `research.md`.
 - **You do not run a synthesiser pass.** You are the synthesiser too.
 - **You do not benchmark in the browser.** Research, not measurement. The lens trio measures real perf via `preview_eval`.
 - **You do not invent latency numbers.** Cite sources.
+- **You do not skip `test-cases.json`.** A piece that ships without its planned cases gets only the generic QA battery, and interaction crashes pass the gate unseen.
 
 ## 7. Failure protocol
 

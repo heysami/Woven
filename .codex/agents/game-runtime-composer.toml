@@ -266,6 +266,16 @@ Concept-lens scores against the assembled piece. Quote `successFeel` verbatim as
 - Feedback drawer dampens shake + particles (its responsibility).
 - Runtime: lengthen #start-gate transition; dampen overlay flash transitions; pacing delays lengthen 1.5×.
 
+### 3.8 Harness contract: the test-cases runner drives this (block on craft)
+
+The QA gate runs the piece's plan-time `test-cases.json` (written by research, next to `research.md`) through your devtools harness, BEFORE the lens trio. `window.__game` MUST expose, or the runner's preflight FAILS the gate and routes the failure to YOU (not the input drawer):
+
+- `intents`: array covering EVERY intent listed in `test-cases.json`.
+- `injectFakeInput(kind, opts)`: accepts every listed intent in EVERY phase. Return `false` for "ignored in this phase"; NEVER throw on an unexpected phase or malformed opts.
+- `tick(seconds)`: deterministic fast-forward through the fixed-step loop (the soak and long journeys use it).
+- `snapshot()`: small serializable state summary.
+- `errors`: crash-forensics ring buffer (keep the last 10), filled by a global `error` + `unhandledrejection` handler pushing { message, stack, phase, lastIntents }. Errors stay LOUD: no try/catch blankets that swallow failures into weird-state bugs.
+
 ## 4. Recipe
 
 1. Read every committed component file.

@@ -143,6 +143,16 @@ The `prefers-reduced-motion` branch ALREADY calls `window.__scene?.onFrame(state
 **Self-test in §4:**
 - Take a `preview_screenshot` at t=0ms (immediately after module init, BEFORE loop has had a chance to tick). The screenshot MUST show the scene, not a blank canvas. If it's blank, baseline render is missing - block-severity finding, GOTO step 1.
 
+### 3.9 Harness contract: the test-cases runner drives this
+
+The QA gate runs the piece's plan-time `test-cases.json` (written by research, next to `research.md`) through the §3.3 harness, BEFORE the lens trio. `window.__sim` MUST expose, or the runner's preflight FAILS the gate and routes the failure to YOU (not the controls drawer):
+
+- `intents`: array covering EVERY intent listed in `test-cases.json`.
+- `injectFakeInput(kind, opts)`: accepts every listed intent in EVERY phase. Return `false` for "ignored in this phase"; NEVER throw on an unexpected phase or malformed opts.
+- `tick(seconds)`: deterministic fast-forward through the fixed-step loop (the soak and long journeys use it).
+- `snapshot()`: small serializable state summary.
+- `errors`: crash-forensics ring buffer (keep the last 10), filled by a global `error` + `unhandledrejection` handler pushing { message, stack, phase, lastIntents }. Errors stay LOUD: no try/catch blankets that swallow failures into weird-state bugs.
+
 ## 4. Internal refinement loop (§12.1) - heavy
 
 Cap 3 internal iterations. EACH iteration:

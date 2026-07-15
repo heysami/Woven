@@ -126,6 +126,8 @@ exit-code table is under "Verdict semantics" below.
 - `3`  setup failure (Playwright / Chrome missing, bad spec)
 - `4`  `effect-wrong` (pixels moved but the frame-judge rejected the effect)
 - `5`  `blank` (render mode: loaded but painted nothing / an unstyled wash)
+- `6`  `cases-fail` (--cases mode: a planned test case, the harness-contract
+       preflight, or the soak failed)
 
 ### Thresholds (documented + tunable in the source)
 
@@ -302,3 +304,49 @@ When unavailable, `available` is `false`, `ok`/`reasoning`/`observed` are
 
 The `judge` block is present only when `--judge` was supplied. See the
 frame-judge section above for its shape.
+
+## Test-cases mode (`--cases <test-cases.json>`)
+
+Runs a piece's PLAN-TIME test cases instead of the idle timeline + generic
+battery. The file is written by the family researcher when the piece is
+planned (design: `docs/features/qa-test-cases.md`) and lives next to the
+piece's `research.md`. Every case runs end to end on a FRESH page; then the
+auto-expanded intent x phase matrix, the applied abuse templates, and a
+seeded soak (random-but-replayable inputs).
+
+```
+python3 visual_qa.py --url <url> --cases <path>/test-cases.json --out <dir>
+```
+
+Self-test fixture: `fixtures/cases-demo.html` +
+`fixtures/cases-demo.test-cases.json`.
+
+- Step types: the raw five (`move` `click` `drag` `scroll` `key`) plus
+  `intent` (harness `injectFakeInput`), `eval`, `waitFor`, `tick`
+  (deterministic fast-forward), `settle`, `resize`.
+- Expect types: `noPageErrors` (implicit on EVERY case), `noConsoleErrors`
+  (optional `allow` regex list), `eval` (+ `equals` / `in` / `truthy`),
+  `notBlank`, `frameChanged`.
+- Matrix: `"matrix": {"auto": true}` expands `phases` x `intents`, driving
+  each phase via its `phaseSetups` entry; `phaseExpr` (optional) asserts the
+  piece is still in a known phase afterwards. `exclude: [[intent, phase]]`
+  skips pairs.
+- Abuse templates: `"abuse": {"apply": [...], "phase": "..."}` with
+  `spam-intents`, `pointer-storm`, `resize-cycle`, `long-idle`.
+- Soak: `"soak": {"seconds": 45, "seed": 1337, "fastForward": true,
+  "phase": "...", "optsPool": {"<intent>": [{...}, ...]}}`. Reproducible by
+  seed.
+- Preflight: the harness global must exist, `injectFakeInput` must be a
+  function, and (when the harness publishes `intents`) every intent in the
+  file must be covered. A gap FAILS the run - it is a runtime-composer
+  contract violation, not a skip.
+- Report: `report.json` gains `cases[]` (per-case verdict + failedExpect +
+  pageErrors + frames), `preflight`, `soak`, and `casesSummary`. Verdict is
+  `pass` or `cases-fail` (exit 6). A failed case entry IS the reproduction
+  recipe.
+- Budget: each case is capped by its `budgetMs` (default 8000) so a freeze
+  fails fast instead of hanging the run.
+
+Daemon route: `/__qa/run` auto-detects a `test-cases.json` next to the
+resolved target (same dir or one level up) and runs cases mode by default;
+pass `&cases=0` to force the generic battery.

@@ -137,6 +137,16 @@ Two non-negotiables when any declared input is `camera` (or the piece consumes M
 
 Never let a vision piece pass a gate whose test input has no up/down and no left/right.
 
+### 3.8 Harness contract: the test-cases runner drives this (block: craft)
+
+The QA gate runs the piece's plan-time `test-cases.json` (written by research, next to `research.md`) through the §3.3 harness, BEFORE the lens trio. `window.__im` MUST expose, or the runner's preflight FAILS the gate and routes the failure to YOU (not the input drawers):
+
+- `intents`: array covering EVERY intent listed in `test-cases.json`.
+- `injectFakeInput(kind, opts)`: accepts every listed intent in EVERY phase - including before Start and after permission denial. Return `false` for "ignored in this phase"; NEVER throw on an unexpected phase or malformed opts.
+- `tick(seconds)`: deterministic fast-forward through the mapping/render loop (the soak and long journeys use it).
+- `snapshot()`: small serializable state summary.
+- `errors`: crash-forensics ring buffer (keep the last 10), filled by a global `error` + `unhandledrejection` handler pushing { message, stack, phase, lastIntents }. Errors stay LOUD: no try/catch blankets that swallow failures into weird-state bugs.
+
 ## 4. Internal refinement loop (§12.1)
 
 3 internal iterations. Each:

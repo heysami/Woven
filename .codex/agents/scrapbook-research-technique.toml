@@ -412,6 +412,20 @@ assert seqCount >= $MIN_PNG_SEQUENCES or '$MIN_PNG_SEQUENCES'=='0', 'pngSequence
 "
 ```
 
+## Test cases (`test-cases.json`) - the second committed artifact
+
+In the SAME pass as `research.md` + `inventory.json`, write `test-cases.json` NEXT TO them (`source/{branch}/scrapbooks/{sbId}/test-cases.json`). The QA gate (`GET /__qa/run`) auto-detects the file and walks EVERY case end to end instead of the generic battery: the plan defines its own proof. Schema + runner: `docs/features/qa-test-cases.md` and `editor/tools/qa/README.md` (self-test fixture: `editor/tools/qa/fixtures/cases-demo.test-cases.json`).
+
+Scrapbook is a whole-page build with no intent funnel, so OMIT `harness` and `intents` (the runner skips its harness preflight when no intents / `intent` steps are present); cases drive the real page with raw pointer steps. Required contents:
+
+- `phases`: every state the page can be in (initial, revealed, mid-scroll, post-rearrange). `phaseExpr`: the JS expression that reads the current one.
+- `phaseSetups`: steps that drive the page INTO each phase (the abuse / soak reuse them).
+- `cases` (journeys): the full scroll journey top to bottom and back, drag-rearrange per draggable cutout class, click-flip / tap-to-reveal per flip-bearing cutout class (per the committed `interactionPrimitive`), and restart-after-end where the pacing has a terminal state (e.g. `interactive-discovery` reveal). Assert via `eval` checks on element state plus `notBlank`/`frameChanged`. Plus any state x input combination you already see being fragile.
+- `abuse`: pick the applicable templates from `pointer-storm`, `resize-cycle`, `long-idle`.
+- `soak`: `{"seconds": 30, "seed": <any int>, "phase": "<main phase>"}`. Random-but-replayable pointer input, reproducible by seed.
+
+End your final hand-back message with the case summary (e.g. "test-cases: 4 journeys + 3 abuse + soak 30s") so the plan gate can surface it to the user.
+
 ## 5. What you do NOT do
 
 - **You do not dispatch visual-orchestrator.** That's the composition drawer's job (informed by your inventory).
@@ -419,6 +433,7 @@ assert seqCount >= $MIN_PNG_SEQUENCES or '$MIN_PNG_SEQUENCES'=='0', 'pngSequence
 - **You do not pick web fonts.** That's the typography drawer (informed by your strategy section).
 - **You do not approximate inventory counts.** Commit exact entries.
 - **You do not silently expand the inventory** beyond `imageBudget`. Push back if the brief demands more.
+- **You do not skip `test-cases.json`.** A piece that ships without its planned cases gets only the generic QA battery, and interaction crashes pass the gate unseen.
 
 End with: `"sb_research_<sbId>: core=<X>, idiom=<X>, density=<X>, inventory=<N> assets + <M> sequence frames = <total> visual-orchestrator sub-dispatches expected - research.md + inventory.json committed."`
 """
