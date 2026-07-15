@@ -177,7 +177,12 @@ def flush_pending_scope_snapshots(project_root: str,
 
 # Paths under source/ that we skip when walking prototype scope. These are
 # either editor / daemon state or owned by other versioned nodes.
-_PROTOTYPE_SKIP_PARTS = {".history", ".archive", "node_modules", ".git", ".DS_Store"}
+# _attachments/ holds user chat uploads (serve.py HISTORY_AGENT_SKIP_DIR_NAMES
+# already treats it as non-prototype content) - conversation inputs, not
+# prototype assets, so snapshots must not copy them. _tmp/ is in-flight
+# scratch for the same reason.
+_PROTOTYPE_SKIP_PARTS = {".history", ".archive", "node_modules", ".git", ".DS_Store",
+                         "_attachments", "_tmp"}
 
 
 def is_versionable(node: Dict[str, Any]) -> bool:

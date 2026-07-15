@@ -6702,6 +6702,13 @@ def _file_watcher_scan_one(project_root: str) -> dict:
             continue
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if not _file_watcher_should_skip_dir(d)]
+            # workflow/runs (version snapshots - immutable by design) and
+            # workflow/views (derived hardlink views) can hold tens of
+            # thousands of files per project; statting them every poll
+            # pins a core for nothing. Snapshot/version changes always
+            # surface via workflow.json, which stays in the walk.
+            if sub == "workflow" and dirpath == root:
+                dirnames[:] = [d for d in dirnames if d not in ("runs", "views")]
             for fn in filenames:
                 if _file_watcher_should_skip_file(fn):
                     continue
@@ -18355,6 +18362,31 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": f"base64 decode failed: {e}"})
         if len(raw) > 16 * 1024 * 1024:
             return self._reply(413, {"error": f"attachment too large ({len(raw)} bytes, max 16MB)"})
+        # Content dedup - the composer re-sends the same bytes on retries and
+        # re-pastes, and every send used to mint a fresh <ts>-<name> copy that
+        # then multiplied through branch forks and version snapshots. Reuse a
+        # byte-identical existing attachment instead of writing another.
+        try:
+            att_dir = _safe_join(project_root, f"source/{branch}/_attachments")
+        except Exception:
+            att_dir = None
+        if att_dir and os.path.isdir(att_dir):
+            digest = hashlib.sha256(raw).hexdigest()
+            for entry in os.scandir(att_dir):
+                try:
+                    if not entry.is_file() or entry.stat().st_size != len(raw):
+                        continue
+                    h = hashlib.sha256()
+                    with open(entry.path, "rb") as ef:
+                        for chunk in iter(lambda: ef.read(1 << 20), b""):
+                            h.update(chunk)
+                    if h.hexdigest() == digest:
+                        return self._reply(200, {"ok": True,
+                                                 "path": f"_attachments/{entry.name}",
+                                                 "size": len(raw), "mime": mime,
+                                                 "deduped": True})
+                except Exception:
+                    continue
         base = _slugify(os.path.splitext(name_in)[0]) or "attachment"
         fname = f"{int(time.time() * 1000)}-{base}.{ext}"
         rel = f"_attachments/{fname}"
