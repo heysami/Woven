@@ -62,6 +62,10 @@ If host-driven, list the `drivenHandles` the caller will move and what each is.
 - asset pipeline (if hero meshes/textures): Draco glTF + KTX2; reflective floor (`Reflector`, ONE max) for polished-ground
 - DPR cap (default 2; 1.5 if post chain is heavy) · shadows: none | one-light PCFSoft | baked-AO-sprite
 - background: scene color | transparent-over-DOM (alpha: true)
+- **world ruler (REQUIRED whenever subsystems[] has >1 entry)**: the shared scale contract that makes
+  parallel-built subsystems FIT each other - 1 unit = 1m, plus 3-5 key dimensions in the scene's own nouns
+  (street width, storey height, car length, human height, canopy height...). Every subsystem envelope carries it;
+  the runtime composer rejects a subsystem that lands off-ruler.
 
 ## 3. Post chain (pmndrs postprocessing; EffectComposer merges into one pass)
 Always tone mapping (renderer-level). Per budget: Bloom (threshold/intensity), SMAA/MSAA, Noise (grain 3-5%).
@@ -95,6 +99,13 @@ ONE light story; ONE lead subsystem carries the spectacle; supports stay quiet.
 ## 10. subsystems[]  ← THE DECOMPOSITION (load-bearing)
 One entry per heavy effect. Cut by effect/content, NEVER by file-layer. A one-object hero ⇒ ONE `lead` entry.
 Keep it ≤5-6; if more, merge or push back. Routing rule: plan as the existing drawer, detail the real draw.
+**Decomposition FLOOR (hard rule): `immersive-place` and any world a caller's loop inhabits (game world, sim
+environment, narrative place) MUST decompose into ≥3 subsystems cut by entity class** - e.g. terrain/streets ·
+buildings/props · hero subject (vehicle/creature) · characters/population · vegetation · sky/atmosphere. A place
+collapsed into 1-2 entries is a refused research pass, not a judgment call: one drawer hand-assembling a whole
+world from primitives is the canonical quality failure the fan-out exists to prevent, and "the style is low-poly"
+never waives it - stylized low-poly is a craft register each dedicated drawer executes WELL (faceted silhouettes,
+deliberate topology, painted texture planes), not fewer drawers.
 **For `immersive-place`: SEED this list from `archetype.subsystemSet`** (e.g. `underwater` → depth-fog-medium · caustics-projector · god-ray-shafts · particulate-drift · reef-scatter · buoyant-hero?), then tune to the brief - drop the optional `?` entries the brief doesn't need, rename to the concept's nouns, and mark the pillar-P role each carries (the lead subsystem carries the place's identity; sky/atmosphere/particulate are usually support/ambient). The archetype's `subsystemSet` is why a place decomposes cleanly instead of collapsing to one mega-mesh.
 
 ```jsonc
@@ -118,6 +129,18 @@ Keep it ≤5-6; if more, merge or push back. Routing rule: plan as the existing 
 Decomposition cookbook (route + recipe live in `3D_CAPABILITIES.md`): hero/product object → `3d` + physical material ·
 grass/vegetation → instanced `3d` · cloth/fabric → verlet on `particle-gl` or vertex-shader sim · water → `shader`
 (gerstner/FBM) or `particle-gl` · smoke/fluid/dense field → `particle-gl` (GPGPU) · volumetric light → billboard shafts (`3d`/`shader`).
+
+**Depictive subsystems - VISION picks the model route, keys gate the generators, cost never decides.** For a
+subsystem whose subject is a real depictable thing (a vehicle, a character, a creature, a landmark prop), the
+`routeNote` commits ONE of: **hand-built geometry** - when the committed fidelityRegister/plate is reachable by
+real craft at that register (a stylized-low-poly car is legitimate hand-built work: faceted silhouette, deliberate
+topology, painted planes - NOT a stack of default boxes); **generated mesh via `3d-gen`** (Meshy 5 / fal Rodin /
+Hunyuan3D → `.glb`, baked PBR kept per §2.3) - when the register demands depictive fidelity hand-building can't
+reach, HARD-GATED on the provider key (`TH_MESHY_API_KEY` / `TH_FAL_API_KEY` via `GET /__capabilities`); for
+**characters/creatures that must animate**, additionally commit the rig source - `meshy/*-anim` (rigged + animated
+`.glb`, AnimationMixer) when the key is wired, else a procedural rig or billboard/sprite population. If the register
+genuinely needs a generator that isn't wired, SAY SO in the steerage interrupt (the user decides) - never silently
+trade the vision down, and never justify a route with "cheaper".
 
 **`gaussian-splat` route (immersive-place capture register - `3D_CAPABILITIES.md` §1.5 + `immersive-world-study.md` §7).** When the place is best CAPTURED rather than built - a whole explorable world at a fidelity procedural geometry can't reach - a subsystem takes `renderRoute: gaussian-splat` with a `splatSource`: `worldlabs-generate` (Marble `.spz` WORLD + collider `.glb`, the default for a place), `fal-object` (an object splat), or `uploaded-asset`. It renders via **Spark**. A splat **bakes** pillars P1-P4; the runtime supplies P6 (camera nav) + coherence. Decompose per the **combination rule**: a scene may be **fully-splat** (one lead `gaussian-splat` subsystem you navigate), or **hybrid** - a `gaussian-splat` subsystem (environment or object) PLUS procedural `3d`/`particle-gl` subsystems that carry the dynamic/animated/relightable content and interact with the splat through its collider mesh (raycast/physics/occlusion). Commit which subsystems are splat vs procedural and note the interaction (collider). Prefer `marble-1.0-draft` for the research/preview pass (~20x cheaper), a full model for the final. HARD-GATED: `worldlabs-generate` requires `TH_WORLDLABS_API_KEY` - if absent, say so and fall back to the procedural build (no splat without the key).
 ```

@@ -43,7 +43,7 @@ The four sibling paradigms map onto game-experience naturally - pick the one tha
 
 - **`2d-side`** - side-scrolling / platformer / pinball / arkanoid camera. Camera sideways or 3/4. Best for: traversal, momentum, gravity-driven mechanics.
 - **`2d-topdown`** - bird's-eye / orthographic / Zelda-camera. Best for: spatial puzzle, exploration, agentic creatures the user prods.
-- **`3d-environment`** - first-person, third-person, or fixed-angle 3D. Same inhabitation choices as nx (scripted-flythrough / hybrid / fully-walkable). Best for: spatial presence + agency. **→ Render via the SHARED layer:** for this paradigm the `game_world_<gameId>` node does NOT hand-build the 3D world via `game-world-builder`; instead co-dispatch `scene-3d-orchestrator` with `mode: host-driven` and `drivenHandles` = the bodies `physics` moves, then the `loop` drives the scene via `window.__scene3d.step(state, alpha)` after the physics step. The 2D / iconographic-physics paradigms keep `game-world-builder`. See `scene-3d-orchestrator.md`. (A heavy 3D world may itself fan out into several subsystems - terrain, props, characters, water, particles - each rendered + verified standalone inside scene-3d.)
+- **`3d-environment`** - first-person, third-person, or fixed-angle 3D. Same inhabitation choices as nx (scripted-flythrough / hybrid / fully-walkable). Best for: spatial presence + agency. **→ Render via the SHARED layer:** for this paradigm the `game_world_<gameId>` node does NOT hand-build the 3D world via `game-world-builder`; instead co-dispatch `scene-3d-orchestrator` with `mode: host-driven` and `drivenHandles` = the bodies `physics` moves, then the `loop` drives the scene via `window.__scene3d.step(state, alpha)` after the physics step. The 2D / iconographic-physics paradigms keep `game-world-builder`. See `scene-3d-orchestrator.md` + the scaffold mechanics in §4.1 below - this fork is MANDATORY, enforced at scaffold time (§4.1) and by game-world-builder itself refusing 3d-environment dispatches. (A heavy 3D world MUST fan out into several subsystems - terrain, props, characters, water, particles - each rendered + verified standalone inside scene-3d.)
 - **`iconographic-physics`** - abstract / particle-systems / soft-bodies / fluid that the user pokes. Camera is locked or fluidly framing. Best for: toy-grade interaction where the medium IS the system (Soda Constructor, Powder, Cloth Toy, Lloopp).
 - **`hybrid`** - multi-paradigm composition (e.g. a 2D-side platformer with a 3D-environment puzzle inside it).
 
@@ -223,7 +223,7 @@ The builder dependency order (the caller dispatches them in this order; you scaf
 
 1. **`game_research_<gameId>`** - already done in §2. Wait for `runStatus: done`.
 2. **`game_objective_<gameId>`** *(standard, full)* - the goal / score / win-condition / progress shape. (This goes EARLY because every other builder reads it: world dresses around it, physics knows what counts as "scoring," feedback knows what to amplify, loop knows when to end.)
-3. **`game_world_<gameId>`** *(standard, full)* - the full-bleed living scene. Single draft - no multi-draft, no per-builder lens.
+3. **`game_world_<gameId>`** *(standard, full)* - the full-bleed living scene. Single draft - no multi-draft, no per-builder lens. **PARADIGM FORK (structural, not advisory): `2d-side` / `2d-topdown` / `iconographic-physics` / `hybrid` → scaffold `game-world-builder` as below. `3d-environment` → there is NO game-world-builder node. Follow §4.1: co-dispatch `scene-3d-orchestrator` (mode: host-driven) and its subsystem graph IS the world step. A single agent hand-assembling a whole 3D world from primitives in one file is the exact failure the subsystem fan-out exists to prevent (gta postmortem: 866-line world.html, car = 15 boxes, pedestrians = box + sphere). game-world-builder itself refuses 3d-environment dispatches.**
 4. **`game_physics_<gameId>`** *(standard, full)* - physics engine (matter.js / planck.js / cannon.js / rapier3d-compat / custom verlet). Reads world for body definitions.
 5. **`game_input_<gameId>_<modality>`** *(full)* - one per declared input (pointer / touch / multi-touch / gyro / gamepad). May be MULTIPLE.
 6. **`game_feedback_<gameId>`** *(full)* - particles + post-action FX + screen-shake + camera punch + audio cues. Single draft.
@@ -235,6 +235,25 @@ The builder dependency order (the caller dispatches them in this order; you scaf
 Why this order: objective first so every other builder can read it; world second because feedback + physics + overlay are dressed around it; feedback after physics because it consumes physics events (collision, velocity threshold); loop near the end because it composes; runtime LAST because it is the composer that assembles the user-facing artefact. Quality is NOT judged per builder - it is judged ONCE at the final QA+lens gate on the assembled runtime (§5.1.0).
 
 If you stall at step 5 (one input builder errors), only that one node shows `error`; the rest of the canvas stays clean. The user can re-dispatch the failed one individually.
+
+### 4.1 - 3d-environment: the world IS the scene-3d layer (MANDATORY fan-out)
+
+When research committed `paradigm: 3d-environment`, the world step is not one drawer - it is the shared scene-3d pipeline, which decomposes the world into parallel subsystems (terrain/streets, buildings/props, hero vehicle, characters, vegetation, sky/atmosphere), each with a DEDICATED drawer that renders + verifies its chunk STANDALONE, then a composer that reconciles them under ONE shared renderer/env/scale contract. This is not an escalation you weigh - it is the only world route for this paradigm, at every buildTier that includes a world step.
+
+Mechanics, in place of scaffolding `game_world_<gameId>`:
+
+1. Co-dispatch **`scene-3d-orchestrator`** (Task) with the envelope from `scene-3d-orchestrator.md §1`:
+   - `mode: "host-driven"`, `caller: "game:<gameId>"`
+   - `immersionHint: "immersive-place"` (a game world is a place, not an object on a stage)
+   - `subsystemHints`: the world inventory from research (streets, buildings, hero car, pedestrians, palms, sky...)
+   - `drivenHandles`: the bodies `game_physics` will move (player vehicle, NPCs, dynamic props)
+   - `styleCue` / `fidelityHint` / `contractPath`: verbatim from the creative brief + art-direction contract - the committed register (e.g. stylized low-poly) flows INTO the scene, it never excuses skipping the fan-out
+2. It researches, decomposes, scaffolds `s3d_research_` / `s3d_subsystem_ × N` / `s3d_interaction_` / `s3d_runtime_` / `s3d_<sceneId>` nodes, and hands back. The caller drives that build per its hand-off (subsystems in PARALLEL, composer last, single QA+lens gate).
+3. Rewire the world edges: `game_research_.out → s3d_research_.in`-equivalents are internal to the s3d graph; `s3d_<sceneId>.out` takes every edge `game_world_.out` would have carried (`→ game_physics_.in`, `→ game_runtime_.world`).
+4. `game_loop` drives the scene: after `physics.step`, call `window.__scene3d.step(state, alpha)` and read `handles`. `game_runtime` embeds the scene runtime instead of `world.html`.
+5. Reconciliation is owned by the s3d layer: the shared renderer config + world ruler (scale/palette/light story) in `s3d_research`'s research.md is what makes N parallel subsystems compose as one world - thread the game's objective contract + juice register into the scene brief so the world dresses around the game, not beside it.
+
+Vision routes the subsystems, keys gate the generators: inside scene-3d each depictive subsystem picks hand-built low-poly craft vs generated mesh (`3d-gen` / Meshy, incl. rigged characters) per the committed register and what is wired - see `s3d-research-technique.md §10`. A low-poly world hand-built per subsystem is correct; a whole world hand-built by one agent is not.
 
 **Each scaffolded agent node MUST set these fields** (otherwise the canvas renders the card as "Untitled agent"):
 
@@ -263,6 +282,8 @@ If you stall at step 5 (one input builder errors), only that one node shows `err
   "gameId": "<gameId>", "branch": "<branch>",
   "x": <auto>, "y": <auto>, "w": 320, "h": 240 },
 
+// 2d-side / 2d-topdown / iconographic-physics / hybrid ONLY. For 3d-environment
+// DO NOT emit this node - the world step is the scene-3d graph (§4.1).
 { "id": "game_world_<gameId>", "kind": "agent",
   "name": "game-world-builder",
   "title": "World · <gameId>",
@@ -318,6 +339,7 @@ If you stall at step 5 (one input builder errors), only that one node shows `err
   "x": <auto>, "y": <auto> }
 
 // edges[] (dependency order):
+// (3d-environment: every `game_world_<gameId>` endpoint below is `s3d_<sceneId>` instead - §4.1)
 { "from": "game_research_<gameId>.out",  "to": "game_objective_<gameId>.in" },
 { "from": "game_research_<gameId>.out",  "to": "game_world_<gameId>.in" },
 { "from": "game_objective_<gameId>.out", "to": "game_world_<gameId>.objective" },

@@ -41,7 +41,7 @@ window.__scene3d = {
 
 ## 2. §12.1 internal refinement (before commit)
 
-Draft → self-test with preview tools: load, console clean, screenshot at rest + parallax extremes (drive via `__scene3d.setPointer`), **confirm EVERY subsystem is visible in the composed frame** (a subsystem that rendered alone but vanished in composition = env/z/scale mismatch - fix here), `perfStats()` ≥ 60fps at DPR cap (note the machine), network tab shows no 404s / CDN pins resolve. For host-driven: drive `__scene3d.step()` with sample state and confirm handles move + no double rAF. Critique against research's quiet-zone + the orchestrator hand-off qaChecklist → refine. Up to 3 iterations.
+Draft → self-test with preview tools: load, console clean, screenshot at rest + parallax extremes (drive via `__scene3d.setPointer`), **confirm EVERY subsystem is visible in the composed frame** (a subsystem that rendered alone but vanished in composition = env/z/scale mismatch - fix here), **check each subsystem against research §2's world ruler when one is committed** (a car longer than a street block, a pedestrian taller than a doorway = off-ruler; re-dispatch that subsystem with the ruler quoted rather than silently rescaling its root - a rescale hides a real contract violation and warps its sim/handles), `perfStats()` ≥ 60fps at DPR cap (note the machine), network tab shows no 404s / CDN pins resolve. For host-driven: drive `__scene3d.step()` with sample state and confirm handles move + no double rAF. Critique against research's quiet-zone + the orchestrator hand-off qaChecklist → refine. Up to 3 iterations.
 
 ## 3. Commit + lens gates
 

@@ -217,4 +217,6 @@ The caller drives the build per `simulation-orchestrator.md §5.1.0` (same shape
 - Brief is actually a SIMULATION / GAME / interactive-media / narrative piece in its OWN right (not just the render layer of one) → return error pointing at that orchestrator - which will then LINK you for only its 3D render.
 - A `.splinecode` URL is supplied → the Spline runtime embed path in `3D_CAPABILITIES.md` may serve better/cheaper; surface it in the steerage interrupt rather than silently rebuilding in three.js.
 - `subsystems[]` came back with 6+ entries → push back in the steerage interrupt: can any merge? Each subsystem is a real GPU cost; the lead carries the message.
+- `subsystems[]` came back with 1-2 entries for an `immersive-place` / inhabited-world brief (game world, sim environment, narrative place) → re-dispatch research: the decomposition floor is ≥3 subsystems cut by entity class (`s3d-research-technique.md §10`). N=1 is legitimate ONLY for `object-hero`. A whole world in one subsystem node reproduces the one-agent-hand-builds-everything failure the fan-out replaced.
+- research.md has >1 subsystem but no **world ruler** (shared scale contract, §2) → re-dispatch research; parallel drawers cannot fit each other without it.
 """
