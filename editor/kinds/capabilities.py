@@ -537,6 +537,24 @@ def _strip_sections_by_header(text: str, headers: list) -> str:
 
 
 # The router stub that REPLACES the stripped routing in the slim preamble. The
+# Exact chat gate-card grammar. Appended to EVERY tier stub (normal / scoped /
+# leaf) because gate cards are emitted from all of them and the chat UI parses
+# them strictly - an improvised option shape (a blended <opt> body inside
+# <decision-request>, or an AskUserQuestion-style JSON payload) degrades the
+# card to raw XML the user cannot answer. This block used to exist only inside
+# the setup-tier routing catalog ("## Orchestrator plan gate"), which normal
+# threads are told not to fetch - vicelife + arena-battle (2026-07-15) both
+# improvised and shipped unanswerable gates. The contract now rides on every
+# spawn.
+GATE_CARD_SYNTAX = """
+
+### Chat gate cards - EXACT syntax (every stop-and-ask you emit: roster gate, plate pick, surface-reconciliation, checkpoints)
+The chat UI parses these tags with a STRICT grammar - a wrong option shape renders as raw XML with no buttons and the user cannot answer. There are exactly TWO card vocabularies; never blend them and never substitute a JSON body (AskUserQuestion-style payloads do not render):
+  - `<decision-request id="<gate-id>" prompt="<question>" [multiSelect="true" minPicks="1"]>` containing FLAT options only: `<option value="<pick-id>" [checked]>One plain-text line: name - what it does / why</option>` ... `</decision-request>`. No nested tags inside `<option>`.
+  - `<direction-options id="<gate-id>" prompt="...">` containing RICH options: `<opt value="1" [recommended]><label>..</label><why>..</why><palette>#hex,#hex</palette><display font="..">Sample</display><image src="<path>" axis="aesthetic"/></opt>` ... `</direction-options>` - ONLY for picks that carry palette / type / image previews (the Step -1 direction pick, plate picks).
+When a dispatch hands back a `gateBlock`, paste it into the chat VERBATIM - never restate it as prose, a path, or your own card."""
+
+
 # design goal is skim-proofing: a leaf's correct default is to PROCEED (not to
 # go read), so the stub says so - and gates escalation on a closed checklist
 # (binary triggers an agent can't rationalise past) plus a live fetch path so
@@ -2237,7 +2255,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "leaf":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + LEAF_ROUTER_STUB
+        return _preamble + LEAF_ROUTER_STUB + GATE_CARD_SYNTAX
     # SCOPED path: editing an existing prototype. Same routing strip as leaf
     # (the prototype is committed, routing is decided), but keeps the full
     # app-capabilities surface and swaps in the iterate-in-place stub (named to
@@ -2245,7 +2263,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root)
+        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + GATE_CARD_SYNTAX
     # NORMAL path: the project's everyday chat, the untargeted default. Same
     # routing strip as scoped (routing is fetched on demand only when the user
     # asks for a genuine new build), but NOT bound to one prototype - a general
@@ -2253,7 +2271,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "normal":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _normal_general_stub()
+        return _preamble + _normal_general_stub() + GATE_CARD_SYNTAX
     # SETUP path (default): a new prototype build. Keeps the full routing
     # catalog. Append manifest-carried hard rules for orchestrators added
     # after ship time (not covered by the static prose above). Appended AFTER
