@@ -18255,11 +18255,22 @@ class H(http.server.SimpleHTTPRequestHandler):
             "agent": {"mode": agent_mode, "tool_log": tool_log, "wrote": wrote, "write_error": write_error} if agent_mode else None,
         })
 
-    # ── Phase 4d - branch attachments (reference materials for agents) ──
-    # POST /__attachment?project=<id>&branch=<slug>
+    # ── Phase 4d - chat/reference attachments (project-level) ──
+    # POST /__attachment?project=<id>
     # Body: JSON { name: "foo.png", data_uri: "data:image/png;base64,…" }
-    # Writes under source/<branch>/_attachments/<ts>-<slug>.<ext>.
-    # Returns { ok, path: "_attachments/<ts>-<slug>.ext", abs_path, size }.
+    # Writes under <project>/attachments/<ts>-<slug>.<ext> - PROJECT level,
+    # not inside any prototype branch. Attachments are conversation inputs
+    # (screenshots pasted into chat, reference files), not prototype assets:
+    # storing them under source/<branch>/ made branch forks copy them and
+    # version snapshots hoover them up (suss-cal postmortem: one pasted
+    # screenshot × 2 branches × 42 snapshots ≈ 172 copies on disk).
+    # Returns { ok, path: "attachments/<ts>-<slug>.ext", size, mime } -
+    # `path` is PROJECT-ROOT-relative, which is also cwd-relative for chat
+    # agents (spawned with cwd=project_root), so Read works on it verbatim.
+    # A `branch`/`prototype` in the body is accepted (older clients send it)
+    # but no longer affects the storage location. Dedup: byte-identical
+    # re-uploads return the existing file's path (checked against the new
+    # project-level dir AND every legacy source/*/_attachments/ dir).
     #
     # Originally images-only (chat composer drag-and-drop), now also accepts
     # the kinds of files agents read as supporting brief: HTML/PDF/Markdown
@@ -18326,12 +18337,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             body = self._read_json_body(max_bytes=20 * 1024 * 1024)  # 20MB cap
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
+        # Accepted for back-compat but no longer picks the storage location -
+        # attachments are project-level now (see route comment above).
         branch = (
             body.get("prototype") or body.get("branch")
             or _qs_prototype(qs)
         ).strip().lower()
-        if not SLUG_OK.match(branch):
-            return self._reply(400, {"error": "invalid prototype slug", "slug": branch})
         name_in = (body.get("name") or "attachment").strip()
         data_uri = body.get("data_uri") or ""
         if not isinstance(data_uri, str) or not data_uri.startswith("data:"):
@@ -18366,13 +18377,23 @@ class H(http.server.SimpleHTTPRequestHandler):
         # re-pastes, and every send used to mint a fresh <ts>-<name> copy that
         # then multiplied through branch forks and version snapshots. Reuse a
         # byte-identical existing attachment instead of writing another.
+        # Scan the project-level dir first, then legacy per-branch dirs so a
+        # re-paste of a pre-migration screenshot reuses the old file too.
+        dedup_dirs = [("attachments", os.path.join(project_root, "attachments"))]
         try:
-            att_dir = _safe_join(project_root, f"source/{branch}/_attachments")
+            src_root = os.path.join(project_root, "source")
+            if os.path.isdir(src_root):
+                for d in sorted(os.scandir(src_root), key=lambda e: e.name):
+                    legacy = os.path.join(d.path, "_attachments")
+                    if d.is_dir(follow_symlinks=False) and os.path.isdir(legacy):
+                        dedup_dirs.append((f"source/{d.name}/_attachments", legacy))
         except Exception:
-            att_dir = None
-        if att_dir and os.path.isdir(att_dir):
-            digest = hashlib.sha256(raw).hexdigest()
-            for entry in os.scandir(att_dir):
+            pass
+        digest = hashlib.sha256(raw).hexdigest()
+        for rel_dir, abs_dir in dedup_dirs:
+            if not os.path.isdir(abs_dir):
+                continue
+            for entry in os.scandir(abs_dir):
                 try:
                     if not entry.is_file() or entry.stat().st_size != len(raw):
                         continue
@@ -18382,22 +18403,21 @@ class H(http.server.SimpleHTTPRequestHandler):
                             h.update(chunk)
                     if h.hexdigest() == digest:
                         return self._reply(200, {"ok": True,
-                                                 "path": f"_attachments/{entry.name}",
+                                                 "path": f"{rel_dir}/{entry.name}",
                                                  "size": len(raw), "mime": mime,
                                                  "deduped": True})
                 except Exception:
                     continue
         base = _slugify(os.path.splitext(name_in)[0]) or "attachment"
         fname = f"{int(time.time() * 1000)}-{base}.{ext}"
-        rel = f"_attachments/{fname}"
+        rel = f"attachments/{fname}"
         try:
-            abs_path = _safe_join(project_root, f"source/{branch}/{rel}")
+            abs_path = _safe_join(project_root, rel)
         except Exception as e:
             return self._reply(400, {"error": f"path resolution failed: {e}"})
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-        rel_full = f"source/{branch}/{rel}"
-        with _history_bracket(project_root, [rel_full],
-                               kind="asset-gen", label=f"Upload: {os.path.basename(rel)}",
+        with _history_bracket(project_root, [rel],
+                               kind="asset-gen", label=f"Upload: {fname}",
                                source="asset", extra={"branch": branch, "mime": mime}):
             with open(abs_path, "wb") as f: f.write(raw)
         return self._reply(200, {"ok": True, "path": rel, "size": len(raw), "mime": mime})
@@ -26487,7 +26507,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     # ── Phase 5c - multipart upload of project assets ─────────────────────
     # Distinct from `/__attachment` (Phase 4d): that route is single-image,
-    # base64, vision-bound (lives in `source/<branch>/_attachments/`). This
+    # base64, vision-bound (lives in project-level `attachments/`). This
     # route is multi-file, multipart/form-data, lives in
     # `source/<branch>/uploads/`, accepts any file type. Agents reference the
     # files by path (e.g., `--image uploads/sketch.png` for img2img).

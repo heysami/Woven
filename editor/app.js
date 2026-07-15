@@ -14157,7 +14157,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // Two distinct kinds of file the user can stage on a chat turn (Phase 5c):
   //
   //   • attachments - IMAGES bound to this single turn. Posted to
-  //     /__attachment (4d), land in source/_attachments/. The
+  //     /__attachment (4d), land in project-level attachments/. The
   //     pre-amble tells the agent "use Read to inspect this image".
   //
   //   • uploads - ANY files the user wants the agent to use as long-lived
@@ -34160,7 +34160,7 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
   const [busy, setBusy] = useState(false);
   // same two-kind attachment model as ChatComposer (see app.js:8392).
   // attachments = images bound to this single turn (→ /__attachment, land in
-  // source/_attachments/). uploads = any files the user wants the agent to
+  // project-level attachments/). uploads = any files the user wants the agent to
   // use as long-lived project assets (→ /__upload, land in source/uploads/).
   // We reuse the same endpoints and the same prompt-prepend convention so
   // the spawned chat sees attachments exactly as it would from the drawer.
@@ -37844,14 +37844,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
      Copy/cut/paste ride the NATIVE clipboard events (not keydown + ref):
      wb items serialize as application/x-th-wb; system-clipboard images
      upload through POST /__attachment (same endpoint + dir as chat
-     attachments: source/<branch>/_attachments/) and land as a wb image
+     attachments: project-level attachments/) and land as a wb image
      item in whiteboard mode or an asset node in build mode. The internal
      mirror (wbClipboardRef) backs the context menu's "Paste here", which
      can't read the system clipboard synchronously. */
   const wbClipboardRef = useRef(null);
 
   // FileReader → data-URI → POST /__attachment. Returns { relPath, fullPath,
-  // mime } where fullPath is project-relative ("source/main/_attachments/…")
+  // mime } where fullPath is project-relative ("attachments/…")
   // - the shape wb image items + asset nodes both render through apiUrl().
   const wbUploadAttachment = useCallback(async (file, nameOverride) => {
     const dataUri = await new Promise((res, rej) => {
@@ -37868,7 +37868,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     });
     const j = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(j.error || `HTTP ${resp.status}`);
-    return { relPath: j.path, fullPath: `source/${branch}/${j.path}`, mime: j.mime };
+    // Daemon returns a project-root-relative path ("attachments/…" since the
+    // project-level store; "source/<branch>/_attachments/…" for a dedup hit
+    // on a legacy file). Only bare legacy "_attachments/…" replies from an
+    // older daemon still need the branch prefix.
+    const fullPath = j.path.startsWith("_attachments/")
+      ? `source/${branch}/${j.path}` : j.path;
+    return { relPath: j.path, fullPath, mime: j.mime };
   }, []);
 
   // Upload + measure + place ONE image file as a wb image item.
@@ -41647,7 +41653,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           const refFilesBlock = cs.attachments.filter(a => a.kind === "file");
           const refLinksBlock = cs.attachments.filter(a => a.kind === "link");
           const refScopeNote = refFilesBlock.length
-            ? `You may also Read (NOT write) inside source/${branch}/_attachments/ for reference materials.`
+            ? `You may also Read (NOT write) inside attachments/ (and legacy source/${branch}/_attachments/) for reference materials.`
             : "";
           const cellImagerySubjectList = cs.images.map((s, k) => `  ${k + 1}. ${s}`).join("\n");
           const cellImageCurls = cs.images.map((label, k) => {
@@ -46003,13 +46009,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           "Theme: AGENT PICKS - choose dark or light based on the genre + audience + emotion, and state your choice in the final summary line.",
         ];
 
-    // Build the reference-materials block. Files live under the
-    // _attachments/ subfolder of the same branch; we expand the scope to
-    // include that path AND any link host so Read / WebFetch are allowed.
+    // Build the reference-materials block. Files live in the project-level
+    // attachments/ dir (legacy uploads sit under source/<branch>/_attachments/);
+    // we expand the scope to include both AND any link host so Read / WebFetch
+    // are allowed.
     const refFiles = attachments.filter(a => a.kind === "file");
     const refLinks = attachments.filter(a => a.kind === "link");
     const refScopeLines = [];
-    if (refFiles.length) refScopeLines.push(`source/${branch}/_attachments/  (read-only - reference files)`);
+    if (refFiles.length) refScopeLines.push(`attachments/ and source/${branch}/_attachments/  (read-only - reference files)`);
     const refBlock = (refFiles.length || refLinks.length) ? [
       "=== Reference materials ===",
       "The user attached the items below for context. Decide per-item whether to use them: Read files, WebFetch links, or pass them to an available MCP tool. Treat them as supporting brief (informing palette/typography/composition decisions), NOT as strict requirements.",
@@ -46046,7 +46053,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       ((refFiles.length || referenceFolder)
         ? "You may also Read (NOT write) inside the following read-scope locations: "
           + [
-              ...(refFiles.length ? [`source/${branch}/_attachments/`] : []),
+              ...(refFiles.length ? ["attachments/", `source/${branch}/_attachments/`] : []),
               ...(referenceFolder ? [referenceFolder] : []),
             ].join(", ")
           + "."
@@ -53274,7 +53281,10 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
           });
           if (r.ok) {
             const j = await r.json();
-            attachmentPath = "source/" + branch + "/" + (j.path || "");
+            // Daemon paths are project-root-relative now ("attachments/…");
+            // only bare legacy "_attachments/…" needs the branch prefix.
+            attachmentPath = (j.path || "").startsWith("_attachments/")
+              ? "source/" + branch + "/" + j.path : (j.path || null);
           }
         }
       }
@@ -76254,7 +76264,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
   const patchSpec = (patch) => onChange({ spec: { ...spec, ...patch } });
 
   // Reference materials - mirrors the DS-brainstorm pattern. Files POST to
-  // /__attachment (lands under source/<branch>/_attachments/<name>); links
+  // /__attachment (lands under project-level attachments/<name>); links
   // are stored as { kind:"link", url }. The Build prompt below inlines the
   // attachment metadata so the LLM/agent can decide per-item how to use it.
   const onPickFiles = async (filesList) => {
@@ -76601,7 +76611,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
               type="text"
               value=${upstreamFolder || spec.referenceFolder || ""}
               disabled=${!!upstreamFolder}
-              placeholder="e.g. /Users/you/Desktop/brand-kit/  or  source/main/_attachments/"
+              placeholder="e.g. /Users/you/Desktop/brand-kit/  or  attachments/"
               title=${upstreamFolder
                 ? "A Folder node is wired to this DS generator's input port - its path overrides this field. Disconnect the edge to type a path manually."
                 : "Folder of reference materials - moodboards, screenshots, brand sheets, an existing DS folder, etc. The agent gets a 'read scope' for this path in the Build prompt and walks the folder for context. Leave empty if you'd rather attach individual files below."}
@@ -76651,7 +76661,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
               disabled=${attaching}
               data-disabled=${attaching}
               onClick=${(e) => { e.stopPropagation(); fileInputRef.current && fileInputRef.current.click(); }}
-              title="Pick one or more files. Each gets uploaded under source/<prototype>/_attachments/. Paths are surfaced in the Build prompt so the LLM/agent can decide whether to inline content."
+              title="Pick one or more files. Each gets uploaded to the project attachments/ folder. Paths are surfaced in the Build prompt so the LLM/agent can decide whether to inline content."
             >${attaching ? "Uploading…" : html`<${Icon.Clip}/> Attach files`}</button>
             <input
               className="workflow-node-ds-input workflow-node-ds-attach-url"
@@ -79309,7 +79319,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
   };
 
   // Reference materials - POST each picked file to /__attachment so it
-  // lands under source/<branch>/_attachments/<name>, then push a chip
+  // lands under project-level attachments/<name>, then push a chip
   // onto spec.attachments. The agent gets the list in its dispatch prompt
   // and decides per-attachment whether to Read it, WebFetch it, or pass
   // it to an MCP tool. Multiple files supported by iterating the picker.
@@ -79508,7 +79518,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
               type="text"
               value=${upstreamFolder || spec.referenceFolder || ""}
               disabled=${!!upstreamFolder}
-              placeholder="e.g. /Users/you/Desktop/moodboard/  or  source/main/_attachments/"
+              placeholder="e.g. /Users/you/Desktop/moodboard/  or  attachments/"
               title=${upstreamFolder
                 ? "A Folder node is wired to this brainstorm's input port - its path overrides this field. Disconnect the edge to type a path manually."
                 : "Folder of reference materials. Agent walks it for context during the brainstorm."}
@@ -79558,7 +79568,7 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
               disabled=${attaching}
               data-disabled=${attaching}
               onClick=${(e) => { e.stopPropagation(); fileInputRef.current && fileInputRef.current.click(); }}
-              title="Pick one or more files. Each gets uploaded under source/<prototype>/_attachments/. The agent gets the paths in its prompt and decides whether to Read each one."
+              title="Pick one or more files. Each gets uploaded to the project attachments/ folder. The agent gets the paths in its prompt and decides whether to Read each one."
             >${attaching ? "Uploading…" : html`<${Icon.Clip}/> Attach files`}</button>
             <input
               className="workflow-node-ds-input workflow-node-ds-attach-url"

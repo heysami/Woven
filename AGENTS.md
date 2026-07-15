@@ -322,7 +322,7 @@ The workflow canvas has a whiteboard MODE (Build / Whiteboard toggle in the bar)
 | `ink` | `x,y,w,h` + `points` (flat array, relative to x/y) | `color`, `size` |
 | `shape` | `x,y,w,h` | `shape:"rect"`, `color` (legacy stroke fallback), `stroke: token\|none`, `fill: none\|auto\|token`, `fillOpacity: 0-1`, `radius` (px, unbounded), `size` |
 | `arrow` | `x1,y1,x2,y2` | `color`, `size`, `arrowStart`, `arrowEnd`, `dash` |
-| `image` | `x,y,w,h` | `path` (project-relative, e.g. `source/main/_attachments/…`), `naturalW/H` |
+| `image` | `x,y,w,h` | `path` (project-relative, e.g. `attachments/…`; legacy `source/main/_attachments/…`), `naturalW/H` |
 
 Shared fields: `id` (`w…` namespace), `z` (stacking int). Colors are tokens `ink|gray|blue|green|yellow|pink|purple|orange` (raw CSS colors tolerated).
 
