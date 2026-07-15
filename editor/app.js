@@ -16638,6 +16638,54 @@ function parseQuestionForms(text) {
           needsInput,                  // optional: opens a steer textarea on click
         });
       }
+      // Fallback: agents sometimes blend in the <direction-options> option
+      // shape - <opt value="..."><label>…</label><why>…</why></opt> - instead
+      // of the flat <option value>Label</option> form (vicelife's
+      // orchestrator-plan + surface-reconciliation gates: the setup agent
+      // sliced the Phase A.5 doc with sed, never saw the exemplar, and
+      // improvised the shape from the direction card it had just emitted).
+      // Degrading to a raw-text segment leaves the user staring at XML with
+      // no way to answer the gate - a bad-faith parse. Accept the rich shape:
+      // label becomes "<label> - <why>" (matching the canonical flat-form
+      // copy) and `recommended` counts as checked.
+      if (opts.length === 0) {
+        const shortOptRe = /<opt\b([^>]*)>([\s\S]*?)<\/opt>/gi;
+        while ((om = shortOptRe.exec(body)) !== null) {
+          const oattrs = om[1] || "";
+          const ovM = new RegExp(`value\\s*=\\s*["']([^"']+)["']`, "i").exec(oattrs);
+          if (!ovM) continue;
+          const pM = new RegExp(`preview\\s*=\\s*["']([^"']+)["']`, "i").exec(oattrs);
+          const gM = new RegExp(`group\\s*=\\s*["']([^"']+)["']`, "i").exec(oattrs);
+          let checked = /\brecommended\b/i.test(oattrs);
+          const attrTokRe = /([a-zA-Z][\w-]*)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?/g;
+          let at;
+          while (!checked && (at = attrTokRe.exec(oattrs)) !== null) {
+            if (at[1].toLowerCase() !== "checked") continue;
+            const v = at[2] ? at[2].replace(/^["']|["']$/g, "").toLowerCase() : "";
+            checked = v === "" || v === "true" || v === "checked" || v === "1";
+            break;
+          }
+          const obody = om[2] || "";
+          const pickTag = (tag) => {
+            const r = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`, "i").exec(obody);
+            return r ? r[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "";
+          };
+          const lblTag = pickTag("label");
+          const why    = pickTag("why");
+          const flat   = obody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+          const lbl    = lblTag ? (why ? `${lblTag} - ${why}` : lblTag) : flat;
+          if (!lbl) continue;
+          const needsInput = ovM[1].toLowerCase() === "steer" || /\binput\b/i.test(oattrs);
+          opts.push({
+            value:   ovM[1],
+            label:   lbl,
+            preview: pM ? pM[1] : null,
+            group:   gM ? gM[1] : null,
+            checked,
+            needsInput,
+          });
+        }
+      }
       if (id && opts.length > 0) {
         segments.push({ kind: "decision", decision: {
           id, prompt, options: opts,
