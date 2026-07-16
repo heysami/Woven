@@ -11777,12 +11777,11 @@ function ShareMenuButton() {
       ${err && html`<div className="shares-error-banner">${err}</div>`}
       ${!reachable && html`<div className="th-live-hint">Daemon unreachable - sharing is offline.</div>`}
       <div className="shares-served-banner">
-        <span className="shares-served-dot"></span>
-        <div style=${{ display: "grid", gap: "2px" }}>
-          <div><b>Hosted</b> - a snapshot on getwoven.design; works with this computer off.</div>
-          <div><b>Stable link</b> - live from this computer; off = link dark.</div>
-          <div><b>Randomised URL</b> - same, and the address changes on every restart.</div>
-        </div>
+        <ul style=${{ margin: 0, paddingLeft: "16px", listStyle: "disc", display: "grid", gap: "3px" }}>
+          <li><b>Hosted</b> - snapshot on getwoven.design, stays online with this computer off.</li>
+          <li><b>Stable link</b> - served live from this computer, dark when it's off.</li>
+          <li><b>Randomised URL</b> - also served live, and gets a new address on every restart.</li>
+        </ul>
       </div>
       <div className="share-menu-body">
         ${tab === "project" && html`
@@ -23990,8 +23989,11 @@ function SharesLanding({ onCountChange }) {
     <div className="shares-landing">
       ${err && html`<div className="shares-error-banner">${err}</div>`}
       <div className="shares-served-banner">
-        <span className="shares-served-dot"></span>
-        <span>Links are served from <b>this computer</b> - people can only open them while it's on and the share is running.</span>
+        <ul style=${{ margin: 0, paddingLeft: "16px", listStyle: "disc", display: "grid", gap: "3px" }}>
+          <li><b>Hosted</b> - snapshot on getwoven.design, stays online with this computer off.</li>
+          <li><b>Stable link</b> - served live from this computer, dark when it's off.</li>
+          <li><b>Randomised URL</b> - also served live, and gets a new address on every restart.</li>
+        </ul>
       </div>
       ${shares.length > 0 && html`
         <div className="shares-toolbar">
