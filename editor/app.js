@@ -12201,6 +12201,10 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
   const [note, setNote] = useState(null);    // transient success line
   const [busy, setBusy] = useState("");       // current in-flight op key
   const [msg, setMsg] = useState("");         // commit message (seeded from draft)
+  // "Summarise on push": Push drafts the summary + commits dirty work first.
+  const [autoSummarise, setAutoSummarise] = useState(() => {
+    try { return localStorage.getItem("th.git.autoSummarise") === "1"; } catch { return false; }
+  });
   const [remote, setRemote] = useState("");   // manual remote URL (OAuth-less path)
   const [device, setDevice] = useState(null); // active device-flow {user_code,verification_uri,…}
   const [picking, setPicking] = useState(false);
@@ -12292,60 +12296,84 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
       msgTouched.current = false; reload();
     }
   };
-  const doPush = async () => {
-    const j = await op("publish", {});
-    if (j) { flashNote("Pushed to origin/" + (j.branch || "")); reload(); }
-  };
   // Draft a commit message from the ACTUAL diff, replacing the generic
   // "Woven live session - N files changed" seed. Pulls the working diff via
   // /__git/diff, strips machine-generated noise (run thumbnails, undo history,
   // viewport) so the model only sees real work, then asks /__llm_run for a
   // subject line + one bullet sentence per distinct change, so nothing the
   // user did gets dropped. Project-scoped only (llm_run needs ?project=),
-  // so the button is hidden for global-DS repos (urlSuffix).
+  // so the button is hidden for global-DS repos (urlSuffix). Returns the
+  // drafted message, or null when only generated files changed. Throws on
+  // failure - callers (doSummarise, doPush) own the busy/error handling.
+  const summariseDiff = async () => {
+    const NOISE = /^(workflow\/(runs|views)\/|workflow\/viewport\.json|\.history\/|\.trash\/|editor\/chat\.jsonl|\.DS_Store)/;
+    const dr = await fetch(gurl("/__git/diff?kind=working"));
+    const dj = dr.ok ? await dr.json().catch(() => ({})) : {};
+    const PER_FILE = 4000, TOTAL = 48000;
+    let total = 0;
+    const kept = [];
+    for (const sec of String(dj.diff || "").split(/\n(?=diff --git )/)) {
+      if (!sec.startsWith("diff --git")) continue;
+      const m = sec.match(/^diff --git a\/(\S+)/);
+      if (m && NOISE.test(m[1])) continue;
+      const part = sec.length > PER_FILE ? sec.slice(0, PER_FILE) + "\n… (file diff truncated)" : sec;
+      if (total + part.length > TOTAL) break;
+      kept.push(part); total += part.length;
+    }
+    const files = ((st && st.changed) || []).filter(f => !NOISE.test(f));
+    if (!kept.length && !files.length) return null;
+    const prompt =
+      "Write a git commit message for the changes below.\n" +
+      "Line 1: a short imperative subject under 72 characters.\n" +
+      "Then a blank line, then a bullet list that covers EVERY distinct change: one simple sentence per change, " +
+      "each starting with \"- \". Group edits that belong to the same change into one bullet, but do not omit " +
+      "any change - a reader should learn everything that happened from the list. Describe the actual content " +
+      "that changed (what was added, edited, redesigned or removed), never file counts or line counts. " +
+      "No quotes, no code fences, no prefix like \"Commit message:\". Output the message only.\n\n" +
+      "Changed files:\n" + files.slice(0, 80).join("\n") +
+      (kept.length ? "\n\nDiff:\n" + kept.join("\n") : "\n\n(New files only - no diff against the last commit.)");
+    const r = await fetch(apiUrl("/__llm_run"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ skill: "llm", provider: "anthropic", model: "cli-default", prompt }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || "summarise failed");
+    const text = String(j.text || "").trim()
+      .replace(/^```[a-z]*\s*\n?/i, "").replace(/\n?```\s*$/, "")
+      .replace(/^["']+|["']+$/g, "").trim();
+    if (!text) throw new Error("the model returned no text");
+    return text;
+  };
   const doSummarise = async () => {
     setBusy("summarise"); setErr(null);
     try {
-      const NOISE = /^(workflow\/(runs|views)\/|workflow\/viewport\.json|\.history\/|\.trash\/|editor\/chat\.jsonl|\.DS_Store)/;
-      const dr = await fetch(gurl("/__git/diff?kind=working"));
-      const dj = dr.ok ? await dr.json().catch(() => ({})) : {};
-      const PER_FILE = 4000, TOTAL = 48000;
-      let total = 0;
-      const kept = [];
-      for (const sec of String(dj.diff || "").split(/\n(?=diff --git )/)) {
-        if (!sec.startsWith("diff --git")) continue;
-        const m = sec.match(/^diff --git a\/(\S+)/);
-        if (m && NOISE.test(m[1])) continue;
-        const part = sec.length > PER_FILE ? sec.slice(0, PER_FILE) + "\n… (file diff truncated)" : sec;
-        if (total + part.length > TOTAL) break;
-        kept.push(part); total += part.length;
-      }
-      const files = ((st && st.changed) || []).filter(f => !NOISE.test(f));
-      if (!kept.length && !files.length) { flashErr("Nothing to summarise - only generated files changed"); return; }
-      const prompt =
-        "Write a git commit message for the changes below.\n" +
-        "Line 1: a short imperative subject under 72 characters.\n" +
-        "Then a blank line, then a bullet list that covers EVERY distinct change: one simple sentence per change, " +
-        "each starting with \"- \". Group edits that belong to the same change into one bullet, but do not omit " +
-        "any change - a reader should learn everything that happened from the list. Describe the actual content " +
-        "that changed (what was added, edited, redesigned or removed), never file counts or line counts. " +
-        "No quotes, no code fences, no prefix like \"Commit message:\". Output the message only.\n\n" +
-        "Changed files:\n" + files.slice(0, 80).join("\n") +
-        (kept.length ? "\n\nDiff:\n" + kept.join("\n") : "\n\n(New files only - no diff against the last commit.)");
-      const r = await fetch(apiUrl("/__llm_run"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ skill: "llm", provider: "anthropic", model: "cli-default", prompt }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || "summarise failed");
-      const text = String(j.text || "").trim()
-        .replace(/^```[a-z]*\s*\n?/i, "").replace(/\n?```\s*$/, "")
-        .replace(/^["']+|["']+$/g, "").trim();
-      if (!text) throw new Error("the model returned no text");
+      const text = await summariseDiff();
+      if (!text) { flashErr("Nothing to summarise - only generated files changed"); return; }
       setMsg(text);
       msgTouched.current = true;
     } catch (e) { flashErr(e.message || e); }
     finally { setBusy(""); }
+  };
+  const doPush = async () => {
+    // "Summarise on push": ship uncommitted work in one click - draft the
+    // message from the diff (a hand-typed message wins), commit, then push.
+    // With the checkbox off, Push only publishes existing commits, as before.
+    if (autoSummarise && !urlSuffix && st && st.dirty) {
+      let m = msgTouched.current ? msg.trim() : "";
+      if (!m) {
+        setBusy("summarise"); setErr(null);
+        try { m = (await summariseDiff()) || ""; }
+        catch (e) { flashErr(e.message || e); return; }
+        finally { setBusy(""); }
+        if (m) { setMsg(m); msgTouched.current = true; }
+      }
+      const shareId = await activeShareId();
+      const cj = await op("commit", { message: m || msg, shareId });
+      if (!cj) return;
+      msgTouched.current = false;
+    }
+    const j = await op("publish", {});
+    if (j) { flashNote("Pushed to origin/" + (j.branch || "")); reload(); }
   };
   const doPull = async () => {
     const j = await op("pull", {});
@@ -12729,6 +12757,11 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
             ${!isGuest && html`
               ${!urlSuffix && html`
                 <div className="th-git-msg-head">
+                  <label className="th-git-priv" title="When enabled, Push drafts the summary, commits your uncommitted changes with it, then pushes">
+                    <input type="checkbox" checked=${autoSummarise}
+                      onChange=${e => { const on = e.target.checked; setAutoSummarise(on); try { localStorage.setItem("th.git.autoSummarise", on ? "1" : "0"); } catch {} }} />
+                    Summarise on push
+                  </label>
                   <button className="th-git-link th-git-summarise" disabled=${!st.dirty || !!inflight || busy === "summarise"} onClick=${doSummarise}
                     title="Draft a commit message from your uncommitted changes - a subject line plus one sentence per change">
                     <${Icon.Spark}/> ${busy === "summarise" ? "Summarising…" : "Summarise changes"}</button>
@@ -12744,8 +12777,8 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
               <div className="th-git-actions">
                 <button className="th-git-btn is-primary" disabled=${!st.dirty || !!inflight || busy === "commit"} onClick=${doCommit}>
                   <${Icon.Check}/> ${opBusy("commit") ? "Committing…" : "Commit"}</button>
-                <button className="th-git-btn" disabled=${!hasRemote || !!inflight || busy === "publish"} onClick=${doPush}
-                  title=${hasRemote ? "Push commits to origin" : "Connect a repo first"}>
+                <button className="th-git-btn" disabled=${!hasRemote || !!inflight || !!busy} onClick=${doPush}
+                  title=${hasRemote ? (autoSummarise ? "Summarise + commit uncommitted changes, then push to origin" : "Push commits to origin") : "Connect a repo first"}>
                   <${Icon.ArrowUp}/> ${opBusy("publish") ? "Pushing…" : "Push" + (st.ahead > 0 ? " (" + st.ahead + ")" : "")}</button>
                 <button className="th-git-btn" disabled=${!hasRemote || !!inflight || busy === "pull"} onClick=${doPull}
                   title=${hasRemote ? "Pull from origin - blocked while the tree is dirty or a live session is running" : "Connect a repo first"}>
