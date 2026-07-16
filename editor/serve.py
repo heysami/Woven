@@ -11164,7 +11164,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._export_asset(qs)
             if parsed.path == "/__share/create":
                 return self._share_create(qs)
-            m_share = re.match(r"^/__share/(shr-[a-f0-9]+)/(start|stop|delete|update|ack_url|refresh_url|thumbnail)$", parsed.path)
+            m_share = re.match(r"^/__share/(shr-[a-f0-9]+)/(start|stop|delete|update|ack_url|refresh_url|thumbnail|host_update)$", parsed.path)
             if m_share:
                 return self._share_op(m_share.group(1), m_share.group(2), qs)
             m_live = re.match(r"^/__live/(shr-[a-f0-9]+)/(start|stop|kick|role)$", parsed.path)
@@ -21206,12 +21206,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             out["tunnelError"] = tunnel_error
         return self._reply(200, out)
 
-    # POST /__share/<id>/(start|stop|delete|update|ack_url)
-    #   start   - (re)spawn the cloudflared tunnel; sets active intent
-    #   stop    - kill the tunnel; clears active intent
-    #   delete  - stop + remove the registry record (revokes the token)
-    #   update  - body {emailGate?, label?}
-    #   ack_url - clear the "URL changed" flag after the user copied the new one
+    # POST /__share/<id>/(start|stop|delete|update|ack_url|refresh_url|host_update)
+    #   start       - (re)spawn the cloudflared tunnel; sets active intent
+    #   stop        - kill the tunnel; clears active intent
+    #   delete      - stop + remove the registry record (revokes the token)
+    #   update      - body {emailGate?, label?, quickOn?, wovenOn?, hostedOn?}
+    #   ack_url     - clear the "URL changed" flag after the user copied the new one
+    #   host_update - re-upload the hosted snapshot (push current source live)
     def _share_op(self, share_id, op, qs):
         rec = _shares.share_get(share_id)
         if rec is None:
@@ -21275,6 +21276,21 @@ class H(http.server.SimpleHTTPRequestHandler):
                     _shares.share_set_mode(share_id, body["mode"])
                 except Exception as e:
                     return self._reply(500, {"error": str(e)})
+            # Hosted snapshot toggle - independent of the tunnel links. ON
+            # uploads a snapshot to Woven storage (works with the daemon off);
+            # OFF deletes it broker-side.
+            if isinstance(body, dict) and "hostedOn" in body:
+                try:
+                    _shares.set_hosted(share_id, bool(body["hostedOn"]))
+                except Exception as e:
+                    return self._reply(500, {"error": str(e)})
+        elif op == "host_update":
+            # Push the current source as a fresh hosted snapshot (async; the
+            # panel's poll sees hostedStatus flip uploading → hosted).
+            try:
+                _shares.hosted_update(share_id)
+            except Exception as e:
+                return self._reply(500, {"error": str(e)})
         elif op == "ack_url":
             _shares.share_update(share_id, {"prevUrl": ""})
         elif op == "refresh_url":

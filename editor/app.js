@@ -11331,18 +11331,21 @@ function SubagentPanel({ agent, runId, runTitle }) {
   `;
 }
 
-/* ShareModeToggle - the per-share link controls. Two genuinely INDEPENDENT
-   switches: Stable link (woven) and Randomised URL (quick). Each is its own
-   on/off - flip either freely, including the last one off (that just stops that
-   link; both off = the share is stopped). These switches ARE the per-link
-   start/stop; there is no separate combined Stop button. The Stable switch only
-   appears when the Woven broker is configured. onToggle(which, on) where which
-   is "quick" | "woven". */
-function ShareModeToggle({ quickOn, wovenOn, wovenAvail, busy, onToggle }) {
-  const sw = (on, label, tip, which) => html`
+/* ShareModeToggle - the per-share link controls. Three genuinely INDEPENDENT
+   switches: Hosted (snapshot uploaded to Woven storage, stays online with this
+   computer OFF), Stable link (woven tunnel) and Randomised URL (quick tunnel).
+   Each is its own on/off - flip any freely, including the last one off (that
+   just stops that link; all off = the share is stopped). These switches ARE the
+   per-link start/stop; there is no separate combined Stop button. Hosted +
+   Stable only appear when the Woven broker is configured. `tunnelsBlocked`
+   disables just the two tunnel switches (cloudflared missing) - Hosted needs no
+   cloudflared, so it stays usable. onToggle(which, on) where which is
+   "quick" | "woven" | "hosted". */
+function ShareModeToggle({ quickOn, wovenOn, hostedOn, wovenAvail, busy, tunnelsBlocked, onToggle }) {
+  const sw = (on, label, tip, which, dis) => html`
     <button type="button" className=${"share-switch" + (on ? " is-on" : "")}
       role="switch" aria-checked=${on ? "true" : "false"}
-      disabled=${busy}
+      disabled=${busy || dis}
       title=${tip}
       onClick=${() => onToggle(which, !on)}>
       <span className="share-switch-track"><span className="share-switch-knob"/></span>
@@ -11350,12 +11353,15 @@ function ShareModeToggle({ quickOn, wovenOn, wovenAvail, busy, onToggle }) {
     </button>`;
   return html`
     <div className="share-mode-switches">
+      ${wovenAvail && sw(hostedOn, "Hosted",
+        "Hosted - uploads a snapshot of the prototype to your getwoven.design URL. It stays online even when this computer is off. Toggle off to take it down and free the storage.",
+        "hosted", false)}
       ${wovenAvail && sw(wovenOn, "Stable link",
-        "Stable link - a permanent getwoven.design URL that survives daemon restarts. Toggle off to stop just this link.",
-        "woven")}
+        "Stable link - a permanent getwoven.design URL served live from this computer (it must stay on). Survives daemon restarts. Toggle off to stop just this link.",
+        "woven", !!tunnelsBlocked)}
       ${sw(quickOn, "Randomised URL",
-        "Randomised link - a random trycloudflare.com URL that changes on every restart. Toggle off to stop just this link.",
-        "quick")}
+        "Randomised link - a random trycloudflare.com URL that changes on every restart. Served live from this computer. Toggle off to stop just this link.",
+        "quick", !!tunnelsBlocked)}
     </div>`;
 }
 
@@ -11389,6 +11395,7 @@ const SHARE_STATUS_META = {
   running: { dot: "ok", label: "Running" }, starting: { dot: "warn", label: "Starting…" },
   stopped: { dot: "idle", label: "Stopped" }, exited: { dot: "err", label: "Tunnel dropped" },
   error: { dot: "err", label: "Error" }, "no-cloudflared": { dot: "err", label: "cloudflared missing" },
+  hosted: { dot: "ok", label: "Hosted" }, uploading: { dot: "warn", label: "Uploading…" },
 };
 
 /* ShareMenuButton - the single top-bar SHARE surface (replaces the old Go Live
@@ -11603,7 +11610,8 @@ function ShareMenuButton() {
 
   // One link's row: its URL when the tunnel is up, else a labelled state line so
   // an enabled-but-not-yet-ready link is visible instead of silently missing.
-  // opts (randomised link only): { changed, onRegen, onAck }.
+  // opts: { changed, onRegen, onAck } (randomised link) or { onUpdate, note,
+  // errorText } (hosted snapshot).
   const modeLinkRow = (label, key, url, status, opts) => {
     const meta = SHARE_STATUS_META[status] || SHARE_STATUS_META.stopped;
     const o = opts || {};
@@ -11626,6 +11634,10 @@ function ShareMenuButton() {
             ${o.onRegen && html`<button className="th-icon-btn" title="Generate a new randomised URL (the old one stops working)" onClick=${o.onRegen}>
               <${Icon.Refresh}/>
             </button>`}
+            ${o.onUpdate && html`<button className="th-icon-btn" disabled=${status === "uploading"}
+              title="Upload the current prototype as a fresh snapshot - visitors see the new version" onClick=${o.onUpdate}>
+              <${Icon.Refresh}/>
+            </button>`}
           </div>` : html`
           <div className="share-link-pending">
             <span className=${"shares-dot is-" + meta.dot}></span>
@@ -11633,14 +11645,23 @@ function ShareMenuButton() {
             ${o.onRegen && status !== "starting" && html`<button className="th-icon-btn" title="Start / regenerate the randomised URL" onClick=${o.onRegen}>
               <${Icon.Refresh}/>
             </button>`}
+            ${o.onUpdate && status !== "uploading" && html`<button className="th-icon-btn" title="Retry the snapshot upload" onClick=${o.onUpdate}>
+              <${Icon.Refresh}/>
+            </button>`}
           </div>`}
+        ${o.errorText && html`<div className="shares-row-error">${o.errorText}</div>`}
+        ${o.note && html`<div className="th-live-hint">${o.note}</div>`}
       </div>`;
   };
 
   // Per-share controls (status + start/stop + dual mode toggle + link), shared
   // by every prototype row that has a share.
   const shareControls = (s) => {
-    const st = SHARE_STATUS_META[s.status] || SHARE_STATUS_META.stopped;
+    // A hosted-only share is online even with every tunnel stopped.
+    const stKey = (s.status === "running" || s.status === "starting") ? s.status
+      : (s.hostedStatus === "hosted" || s.hostedStatus === "uploading") ? s.hostedStatus
+      : s.status;
+    const st = SHARE_STATUS_META[stKey] || SHARE_STATUS_META.stopped;
     const isBusy = !!busy[s.id];
     const running = s.status === "running" || s.status === "starting";
     return html`
@@ -11649,15 +11670,22 @@ function ShareMenuButton() {
           <span className=${"shares-dot is-" + st.dot} title=${s.error || st.label}></span>
           <span className="share-controls-status">${st.label}</span>
         </div>
-        <${ShareModeToggle} quickOn=${s.quickOn} wovenOn=${s.wovenOn} wovenAvail=${wovenAvail} busy=${isBusy || cfMissing}
-          onToggle=${(which, on) => tunnelOp(s.id, "update", which === "woven" ? { wovenOn: on } : { quickOn: on })}/>
+        <${ShareModeToggle} quickOn=${s.quickOn} wovenOn=${s.wovenOn} hostedOn=${s.hostedOn} wovenAvail=${wovenAvail} busy=${isBusy} tunnelsBlocked=${cfMissing}
+          onToggle=${(which, on) => tunnelOp(s.id, "update",
+            which === "woven" ? { wovenOn: on } : which === "hosted" ? { hostedOn: on } : { quickOn: on })}/>
+        ${s.hostedOn && modeLinkRow("Hosted", s.id + ":h", s.hostedStatus === "uploading" && !s.hostedAt ? "" : s.hostedUrl, s.hostedStatus, {
+          onUpdate: async () => { await tunnelOp(s.id, "host_update"); },
+          errorText: s.hostedStatus === "error" ? (s.hostedError || "Upload failed") : "",
+          note: s.hostedStatus === "uploading" ? "Uploading the snapshot…"
+            : s.hostedAt ? `Snapshot from ${s.hostedAt.replace("T", " ")} - stays online with this computer off. Press ↻ after edits.` : "",
+        })}
         ${s.wovenOn && modeLinkRow("Stable link", s.id + ":w", s.wovenUrl, s.wovenStatus)}
         ${s.quickOn && modeLinkRow("Randomised URL", s.id + ":q", s.quickUrl, s.quickStatus, {
           changed: s.urlChanged,
           onRegen: async () => { await tunnelOp(s.id, "refresh_url"); },
           onAck: () => { if (s.urlChanged) tunnelOp(s.id, "ack_url"); },
         })}
-        ${!s.quickOn && !s.wovenOn && html`<div className="th-live-hint">Turn on a link above to publish a URL.</div>`}
+        ${!s.quickOn && !s.wovenOn && !s.hostedOn && html`<div className="th-live-hint">Turn on a link above to publish a URL.</div>`}
       </div>`;
   };
 
@@ -11688,7 +11716,7 @@ function ShareMenuButton() {
       ${!reachable && html`<div className="th-live-hint">Daemon unreachable - sharing is offline.</div>`}
       <div className="shares-served-banner">
         <span className="shares-served-dot"></span>
-        <span>Links are served from <b>this computer</b> - people can only open them while it's on and Woven is running; close it and every link goes dark. A <b>randomised URL</b> also changes each time the daemon dies or restarts, so you'll need to regenerate it and resend the new link.</span>
+        <span>Tunnel links are served from <b>this computer</b> - people can only open them while it's on and Woven is running; close it and those links go dark. A <b>randomised URL</b> also changes each time the daemon dies or restarts. A <b>Hosted</b> share instead uploads a snapshot to getwoven.design and stays online with this computer off - toggle it off to take it down.</span>
       </div>
       <div className="share-menu-body">
         ${tab === "project" && html`
@@ -23892,6 +23920,8 @@ function SharesLanding({ onCountChange }) {
     "exited":         { dot: "err",   label: "Tunnel dropped" },
     "error":          { dot: "err",   label: "Error" },
     "no-cloudflared": { dot: "err",   label: "cloudflared missing" },
+    "hosted":         { dot: "ok",    label: "Hosted" },
+    "uploading":      { dot: "warn",  label: "Uploading…" },
   };
 
   return html`
@@ -23951,7 +23981,11 @@ function SharesLanding({ onCountChange }) {
         </div>
       `}
       ${filteredShares.map((s) => {
-        const st = STATUS_META[s.status] || STATUS_META.stopped;
+        // A hosted-only share is online even with every tunnel stopped.
+        const stKey = (s.status === "running" || s.status === "starting") ? s.status
+          : (s.hostedStatus === "hosted" || s.hostedStatus === "uploading") ? s.hostedStatus
+          : s.status;
+        const st = STATUS_META[stKey] || STATUS_META.stopped;
         const isBusy = !!busy[s.id];
         const cc = s.commentCounts || {};
         // Per-share preview. URL carries the share's OWN project (the landing
@@ -23975,6 +24009,11 @@ function SharesLanding({ onCountChange }) {
                 <div className="shares-row-sub">
                   <code>${s.project}</code> · <code>source/${s.prototype}/</code>
                   <span className="shares-row-status">${st.label}</span>
+                  ${s.hostedOn && html`<span className="shares-chip"
+                    title=${s.hostedStatus === "hosted" ? `Snapshot hosted on getwoven.design (uploaded ${(s.hostedAt || "").replace("T", " ")}) - stays online with this computer off`
+                      : s.hostedStatus === "uploading" ? "Uploading the snapshot…"
+                      : "Snapshot upload failed - " + (s.hostedError || "press Update to retry")}
+                  >${s.hostedStatus === "uploading" ? "hosting…" : s.hostedStatus === "hosted" ? "hosted" : "hosting failed"}</span>`}
                   ${s.emailGate && html`<span className="shares-chip" title="Visitors must leave a name + email to comment">email gate</span>`}
                 </div>
               </div>
@@ -23982,8 +24021,9 @@ function SharesLanding({ onCountChange }) {
                 <${Icon.Comment}/> ${cc.open || 0}<span className="shares-row-comments-total">/${cc.total || 0}</span>
               </div>
               <div className="shares-row-actions">
-                <${ShareModeToggle} quickOn=${s.quickOn} wovenOn=${s.wovenOn} wovenAvail=${wovenAvail} busy=${isBusy}
-                  onToggle=${(which, on) => op(s.id, "update", which === "woven" ? { wovenOn: on } : { quickOn: on })}/>
+                <${ShareModeToggle} quickOn=${s.quickOn} wovenOn=${s.wovenOn} hostedOn=${s.hostedOn} wovenAvail=${wovenAvail} busy=${isBusy} tunnelsBlocked=${cfMissing}
+                  onToggle=${(which, on) => op(s.id, "update",
+                    which === "woven" ? { wovenOn: on } : which === "hosted" ? { hostedOn: on } : { quickOn: on })}/>
                 ${s.status === "running" || s.status === "starting"
                   ? html`<button className="shares-btn" disabled=${isBusy}
                       onClick=${() => op(s.id, "stop")} title="Stop the tunnel - the public URL goes dark">Stop</button>`
@@ -24009,11 +24049,16 @@ function SharesLanding({ onCountChange }) {
                     ${s.quickOn && html`<button key="refresh" className="shares-btn" disabled=${isBusy}
                       onClick=${() => op(s.id, "refresh_url")}
                       title="Generate a new randomised URL (the old link stops working) and clear the refresh warning">↻ Refresh</button>`}
+                    ${s.hostedOn && html`<button key="hostupd" className="shares-btn" disabled=${isBusy || s.hostedStatus === "uploading"}
+                      onClick=${() => op(s.id, "host_update")}
+                      title="Upload the current prototype as a fresh hosted snapshot - visitors see the new version">
+                      ${s.hostedStatus === "uploading" ? "Uploading…" : "↑ Update snapshot"}</button>`}
                   `
                 : html`<span className="shares-url-none">
                     ${s.status === "starting" ? "Waiting for tunnel URL…"
+                      : s.hostedOn && s.hostedStatus === "uploading" ? "Uploading the hosted snapshot…"
                       : s.status === "no-cloudflared" ? "Install cloudflared to publish"
-                      : "Not published - start the tunnel to get a link"}
+                      : "Not published - turn on a link to publish"}
                   </span>`}
               ${s.urlChanged && html`
                 <span className="shares-url-changed" title=${"Previous URL: " + (s.prevUrl || "-") + " - quick-tunnel URLs change on every restart. Copy + resend the new link."}>
@@ -56553,7 +56598,13 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
     return [...list].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   }, [comments, filter]);
 
-  const stMeta = !share ? null : ({
+  const stMeta = !share ? null : (
+    // A hosted-only share is online even with every tunnel stopped.
+    (share.status !== "running" && share.status !== "starting" && share.hostedStatus === "hosted")
+      ? ["ok", "Hosted"]
+      : (share.status !== "running" && share.status !== "starting" && share.hostedStatus === "uploading")
+      ? ["warn", "Uploading…"]
+      : {
     running:          ["ok", "Live"],
     starting:         ["warn", "Starting…"],
     stopped:          ["idle", "Stopped"],
@@ -56600,8 +56651,9 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
             <span className=${"shares-dot is-" + stMeta[0]}></span>
             <span className="workflow-comments-share-status">${stMeta[1]}</span>
           </div>
-          <${ShareModeToggle} key="mode" quickOn=${share.quickOn} wovenOn=${share.wovenOn} wovenAvail=${wovenAvail} busy=${shareBusy || !cloudflared}
-            onToggle=${(which, on) => shareOp("update", which === "woven" ? { wovenOn: on } : { quickOn: on })}/>
+          <${ShareModeToggle} key="mode" quickOn=${share.quickOn} wovenOn=${share.wovenOn} hostedOn=${share.hostedOn} wovenAvail=${wovenAvail} busy=${shareBusy} tunnelsBlocked=${!cloudflared}
+            onToggle=${(which, on) => shareOp("update",
+              which === "woven" ? { wovenOn: on } : which === "hosted" ? { hostedOn: on } : { quickOn: on })}/>
           ${(() => {
             // Mint a fresh randomised URL in one click (restart the quick tunnel)
             // and clear the "Need refresh" badge in the same step.
@@ -56609,6 +56661,7 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
             const linkBlock = (label, key, url, status) => {
               const meta = SHARE_STATUS_META[status] || SHARE_STATUS_META.stopped;
               const isQuick = key === "q";
+              const isHosted = key === "h";
               return html`
                 <div key=${"link-" + key} className="share-link-block" style=${{ marginTop: "5px" }}>
                   <div className="share-link-label" style=${{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -56621,15 +56674,19 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
                       <button className="shares-btn" onClick=${() => copyLink(key, url)}>${copied === key ? "✓" : "Copy"}</button>
                       <button className="shares-btn" onClick=${() => window.open(url, "_blank")} title="Open the share link">↗</button>
                       ${isQuick && html`<button className="shares-btn" disabled=${shareBusy} onClick=${regenQuick} title="Generate a new randomised URL (the old one stops working)">↻</button>`}
+                      ${isHosted && html`<button className="shares-btn" disabled=${shareBusy || status === "uploading"} onClick=${() => shareOp("host_update")} title="Upload the current prototype as a fresh snapshot - visitors see the new version">↻</button>`}
                     </div>` : html`
                     <div className="share-link-pending">
                       <span className=${"shares-dot is-" + meta.dot}></span>
                       <span>${status === "starting" ? "Starting…" : meta.label}</span>
                       ${isQuick && status !== "starting" && html`<button className="shares-btn" disabled=${shareBusy} onClick=${regenQuick} title="Start / regenerate the randomised URL">↻</button>`}
+                      ${isHosted && status !== "uploading" && html`<button className="shares-btn" disabled=${shareBusy} onClick=${() => shareOp("host_update")} title="Retry the snapshot upload">↻</button>`}
                     </div>`}
+                  ${isHosted && status === "error" && share.hostedError && html`<div className="workflow-comments-err">${share.hostedError}</div>`}
                 </div>`;
             };
             return html`
+              ${share.hostedOn && linkBlock("Hosted", "h", share.hostedStatus === "uploading" && !share.hostedAt ? "" : share.hostedUrl, share.hostedStatus)}
               ${share.wovenOn && linkBlock("Stable link", "w", share.wovenUrl, share.wovenStatus)}
               ${share.quickOn && linkBlock("Randomised URL", "q", share.quickUrl, share.quickStatus)}
             `;

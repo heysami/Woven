@@ -18,8 +18,11 @@ in a shipped client.
 """
 from __future__ import annotations
 
+import io
 import os
 import re
+import tarfile
+import tempfile
 import time
 from collections import defaultdict, deque
 from typing import Optional
@@ -30,6 +33,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import cloudflare as cf
+import r2
 import store
 
 INSTALL_RE = re.compile(r"^[a-f0-9]{32}$")     # client mints uuid4().hex
@@ -46,10 +50,18 @@ RESERVED_NAMES = {
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 REAP_TTL_DAYS = int(os.environ.get("REAP_TTL_DAYS", "45"))
 
+# Hosted share snapshots (R2). Same share token the gate uses (secrets.token_hex).
+SHARE_TOKEN_RE = re.compile(r"^[a-f0-9]{24,64}$")
+HOSTED_TTL_DAYS = int(os.environ.get("HOSTED_TTL_DAYS", "30"))
+HOSTED_SNAPSHOT_MAX_MB = int(os.environ.get("HOSTED_SNAPSHOT_MAX_MB", "100"))   # gz body
+HOSTED_UNPACKED_MAX_MB = int(os.environ.get("HOSTED_UNPACKED_MAX_MB", "300"))   # extracted
+HOSTED_QUOTA_MB = int(os.environ.get("HOSTED_QUOTA_MB", "500"))                 # per install
+
 # Per-IP sliding window. Single Render instance -> in-memory is fine; if you
 # scale to >1 replica, move this to Postgres/Redis.
 RATE_MAX = int(os.environ.get("PROVISION_RATE_MAX", "5"))      # provisions...
 RATE_WINDOW = int(os.environ.get("PROVISION_RATE_WINDOW", "3600"))  # ...per hour per IP
+UPLOAD_RATE_MAX = int(os.environ.get("UPLOAD_RATE_MAX", "60"))      # snapshot uploads/hour/IP
 _hits: dict[str, deque] = defaultdict(deque)
 
 app = FastAPI(title="woven-broker")
@@ -82,13 +94,13 @@ def _client_ip(req: Request) -> str:
             or (req.client.host if req.client else "?"))
 
 
-def _rate_limit(ip: str) -> None:
+def _rate_limit(ip: str, kind: str = "provision", limit: int = None) -> None:
     now = time.time()
-    dq = _hits[ip]
+    dq = _hits[kind + ":" + ip]
     while dq and dq[0] < now - RATE_WINDOW:
         dq.popleft()
-    if len(dq) >= RATE_MAX:
-        raise HTTPException(429, "rate limit - too many provisions from this IP")
+    if len(dq) >= (limit if limit is not None else RATE_MAX):
+        raise HTTPException(429, f"rate limit - too many {kind}s from this IP")
     dq.append(now)
 
 
@@ -138,6 +150,9 @@ async def provision(body: InstallReq, request: Request) -> dict:
 async def heartbeat(body: InstallReq) -> dict:
     install_id = _validate(body.installId)
     known = await store.touch(install_id)
+    # The same heartbeat keeps this install's hosted snapshots off the reaper -
+    # a snapshot only expires once the OWNER has been gone HOSTED_TTL_DAYS.
+    await store.hosted_touch(install_id)
     # known=False -> reaped or never provisioned; client should call /provision.
     return {"ok": True, "known": known}
 
@@ -153,6 +168,18 @@ async def deprovision(body: InstallReq) -> dict:
             pass
         await cf.delete_dns(_client, subdomain=install_id)
         await store.delete(install_id)
+    # Hosted snapshots die with the install.
+    if r2.configured():
+        for h in await store.hosted_list(install_id):
+            try:
+                await r2.run_blocking(r2.delete_prefix, "s/" + h["token"] + "/")
+            except Exception:
+                pass
+            await store.hosted_delete(h["token"])
+        try:
+            await r2.run_blocking(r2.delete_prefix, "fonts/" + install_id + "/")
+        except Exception:
+            pass
     return {"ok": True}
 
 
@@ -170,7 +197,18 @@ async def reap(x_admin_token: str = Header(default="")) -> dict:
         await cf.delete_dns(_client, subdomain=row["install_id"])
         await store.delete(row["install_id"])
         reaped += 1
-    return {"reaped": reaped, "ttlDays": REAP_TTL_DAYS}
+    # Hosted snapshots whose owning install has not heartbeat in HOSTED_TTL_DAYS.
+    hosted_reaped = 0
+    if r2.configured():
+        for row in await store.hosted_stale(HOSTED_TTL_DAYS):
+            try:
+                await r2.run_blocking(r2.delete_prefix, "s/" + row["token"] + "/")
+            except Exception:
+                pass
+            await store.hosted_delete(row["token"])
+            hosted_reaped += 1
+    return {"reaped": reaped, "ttlDays": REAP_TTL_DAYS,
+            "hostedReaped": hosted_reaped, "hostedTtlDays": HOSTED_TTL_DAYS}
 
 
 # ── Vanity published-site names (username.getwoven.design) ────────────────
@@ -249,6 +287,159 @@ async def names_claim(body: NameClaimReq, request: Request) -> dict:
     fqdn = await cf.upsert_cname(_client, subdomain=n, target=target)
     await store.name_upsert(n, login, (body.repo or ""), target, fqdn)
     return {"ok": True, "name": n, "fqdn": fqdn, "target": target}
+
+
+# ── Hosted share snapshots (R2-backed static hosting) ─────────────────────
+# A share's static snapshot lives in R2 under s/<token>/ and is served by the
+# share worker on the SAME https://<install>.getwoven.design/s/<token>/ URL the
+# tunnel uses - the worker prefers the snapshot and falls through to the tunnel.
+# The daemon uploads ONE tar.gz whose members are:
+#   share/<sub>     -> object s/<token>/<sub>     (the gate's URL space verbatim)
+#   fonts/<name>    -> object fonts/<install>/<name>  (/__global_fonts passthrough)
+# Ownership: the token is the credential (random 32-hex known only to the
+# owner's shares.json). First upload binds token -> installId; later calls must
+# present the same installId.
+
+
+def _hosted_ready() -> None:
+    if not r2.configured():
+        raise HTTPException(503, "hosted shares not configured (R2 env missing)")
+
+
+def _validate_share_token(token: str) -> str:
+    if not SHARE_TOKEN_RE.match(token or ""):
+        raise HTTPException(400, "bad share token")
+    return token
+
+
+def _extract_and_upload(tmp_path: str, token: str, install_id: str) -> tuple[int, int]:
+    """Blocking: walk the tar.gz, upload each safe member to R2. Returns
+    (total_uncompressed_bytes, file_count). Raises ValueError on a hostile or
+    oversized archive."""
+    total = 0
+    files = 0
+    cap = HOSTED_UNPACKED_MAX_MB * 1024 * 1024
+    with tarfile.open(tmp_path, "r:gz") as tf:
+        for m in tf:
+            if not m.isfile():
+                continue                      # no dirs needed, no symlinks EVER
+            name = m.name.lstrip("./")
+            parts = name.split("/")
+            if (not name or name.startswith("/") or ".." in parts
+                    or any(p.startswith(".") for p in parts)):
+                raise ValueError(f"unsafe member path: {name!r}")
+            if parts[0] == "share" and len(parts) >= 2:
+                key = "s/" + token + "/" + "/".join(parts[1:])
+            elif parts[0] == "fonts" and len(parts) == 2:
+                key = "fonts/" + install_id + "/" + parts[1]
+            else:
+                raise ValueError(f"unexpected member outside share//fonts/: {name!r}")
+            total += m.size
+            if total > cap:
+                raise ValueError(f"snapshot exceeds {HOSTED_UNPACKED_MAX_MB}MB unpacked")
+            f = tf.extractfile(m)
+            if f is None:
+                continue
+            r2.put_bytes(key, f.read(), r2.content_type_for(key))
+            files += 1
+    if files == 0:
+        raise ValueError("empty snapshot")
+    return total, files
+
+
+@app.post("/shares/upload")
+async def shares_upload(request: Request, installId: str = "", token: str = "",
+                        prototype: str = "", label: str = "") -> dict:
+    _hosted_ready()
+    install_id = _validate(installId)
+    token = _validate_share_token(token)
+    _rate_limit(_client_ip(request), kind="upload", limit=UPLOAD_RATE_MAX)
+
+    existing = await store.hosted_get(token)
+    if existing and existing["install_id"] != install_id:
+        raise HTTPException(409, "token is hosted by a different install")
+
+    # Quota: everything this install already hosts (minus the snapshot being
+    # replaced) + the incoming snapshot must fit HOSTED_QUOTA_MB.
+    used = await store.hosted_quota_used(install_id, exclude_token=token)
+
+    # Stream the gz body to a temp file, enforcing the compressed cap.
+    gz_cap = HOSTED_SNAPSHOT_MAX_MB * 1024 * 1024
+    received = 0
+    tmp = tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False)
+    try:
+        async for chunk in request.stream():
+            received += len(chunk)
+            if received > gz_cap:
+                raise HTTPException(413, f"snapshot exceeds {HOSTED_SNAPSHOT_MAX_MB}MB")
+            tmp.write(chunk)
+        tmp.close()
+        if received == 0:
+            raise HTTPException(400, "empty body - POST the snapshot tar.gz")
+
+        # Replace atomically enough: clear the old prefix, then upload. A
+        # visitor mid-refresh may see a brief 404; the daemon re-uploads are
+        # seconds apart at worst.
+        await r2.run_blocking(r2.delete_prefix, "s/" + token + "/")
+        try:
+            total, files = await r2.run_blocking(
+                _extract_and_upload, tmp.name, token, install_id)
+        except ValueError as e:
+            await r2.run_blocking(r2.delete_prefix, "s/" + token + "/")
+            raise HTTPException(400, str(e))
+        except tarfile.TarError as e:
+            await r2.run_blocking(r2.delete_prefix, "s/" + token + "/")
+            raise HTTPException(400, f"bad archive: {e}")
+
+        if used + total > HOSTED_QUOTA_MB * 1024 * 1024:
+            await r2.run_blocking(r2.delete_prefix, "s/" + token + "/")
+            raise HTTPException(413,
+                f"hosting quota exceeded ({HOSTED_QUOTA_MB}MB per install)")
+
+        await store.hosted_upsert(token, install_id, (prototype or "")[:200],
+                                  (label or "")[:200], total, files)
+        return {"ok": True, "bytes": total, "files": files,
+                "quotaUsed": used + total, "quotaMax": HOSTED_QUOTA_MB * 1024 * 1024}
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+
+class HostedShareReq(BaseModel):
+    installId: str
+    token: str
+
+
+@app.post("/shares/delete")
+async def shares_delete(body: HostedShareReq) -> dict:
+    _hosted_ready()
+    install_id = _validate(body.installId)
+    token = _validate_share_token(body.token)
+    row = await store.hosted_get(token)
+    if row is None:
+        return {"ok": True}                      # already gone - idempotent
+    if row["install_id"] != install_id:
+        raise HTTPException(403, "token is hosted by a different install")
+    await r2.run_blocking(r2.delete_prefix, "s/" + token + "/")
+    await store.hosted_delete(token)
+    return {"ok": True}
+
+
+@app.get("/shares/status")
+async def shares_status(installId: str = "") -> dict:
+    """Everything this install hosts - lets the daemon reconcile after a lost
+    shares.json or confirm an upload landed."""
+    _hosted_ready()
+    install_id = _validate(installId)
+    rows = await store.hosted_list(install_id)
+    return {"hosted": [
+        {"token": r["token"], "prototype": r["prototype"], "label": r["label"],
+         "bytes": int(r["bytes"]), "files": int(r["files"]),
+         "uploadedAt": (r["uploaded_at"].isoformat() if r["uploaded_at"] else "")}
+        for r in rows
+    ], "quotaMax": HOSTED_QUOTA_MB * 1024 * 1024}
 
 
 @app.post("/names/release")

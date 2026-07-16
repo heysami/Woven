@@ -252,6 +252,12 @@ def share_delete(share_id):
                         os.remove(tp)
                 except Exception:
                     pass
+                # A hosted snapshot dies with its share (best-effort; the
+                # broker's TTL reaper is the backstop).
+                if rec.get("hostedOn") or rec.get("hostedAt"):
+                    threading.Thread(target=_hosted_delete_worker,
+                                     args=(rec.get("token") or "",),
+                                     daemon=True, name="hosted-delete").start()
             return True
     return False
 
@@ -519,6 +525,10 @@ def restore_active_tunnels():
     """Boot-time: restart every link a share still wants (quickOn / wovenOn).
     Quick-tunnel URLs WILL differ - the reader thread records prevUrl/
     lastUrlChangedAt so the UI can flag it."""
+    # Hosted snapshots live broker-side and need nothing restarted - just the
+    # heartbeat that keeps the reaper away. Independent of cloudflared.
+    if any(share_hosted_on(s) for s in shares_load().get("shares", [])):
+        ensure_hosted_heartbeat()
     if not find_cloudflared():
         actives = [s for s in shares_load().get("shares", [])
                    if share_modes(s)["quick"] or share_modes(s)["woven"]]
@@ -906,6 +916,297 @@ def share_set_mode(share_id, mode):
     if mode == "woven":
         return set_modes(share_id, quick=False, woven=True)
     return set_modes(share_id, quick=True, woven=False)
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# 2c. Hosted mode - snapshot uploaded to Woven storage, served with the
+#     daemon OFF. Same stable URL as the woven link: the share worker on
+#     *.getwoven.design/s/* prefers the R2 snapshot and falls through to the
+#     tunnel when none exists. Toggle off = the snapshot is deleted broker-
+#     side, so hosting never accumulates storage. See worker/ + broker/.
+# ═════════════════════════════════════════════════════════════════════════
+
+_HOSTED_JOBS = {}                 # share_id -> {"state","error","startedAt"}
+_HOSTED_JOBS_LOCK = threading.Lock()
+_HOSTED_HB_STARTED = False
+
+# Per-file ceiling inside a snapshot - anything bigger is skipped with a log
+# line rather than sinking the whole upload (broker also caps the totals).
+_HOSTED_FILE_MAX = 100 * 1024 * 1024
+
+
+def share_hosted_on(rec):
+    return bool((rec or {}).get("hostedOn"))
+
+
+def _hosted_job_set(share_id, state, error=""):
+    with _HOSTED_JOBS_LOCK:
+        _HOSTED_JOBS[share_id] = {"state": state, "error": error,
+                                  "startedAt": time.time()}
+
+
+def _hosted_job_get(share_id):
+    with _HOSTED_JOBS_LOCK:
+        return dict(_HOSTED_JOBS.get(share_id) or {})
+
+
+def _hosted_add_tree(tf, src_dir, arc_prefix):
+    """Add every gate-servable file under src_dir to the tar (same extension
+    whitelist + dotfile rules the tunnel gate enforces, so hosting can never
+    expose more than tunnelling does)."""
+    count = 0
+    for root, dirs, files in os.walk(src_dir):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for name in sorted(files):
+            if name.startswith("."):
+                continue
+            ext = os.path.splitext(name)[1].lower()
+            if ext not in _GATE_SERVE_EXTS:
+                continue
+            p = os.path.join(root, name)
+            try:
+                if os.path.getsize(p) > _HOSTED_FILE_MAX:
+                    print(f"[share] hosted snapshot skipping oversized file: {p}", flush=True)
+                    continue
+                rel = os.path.relpath(p, src_dir).replace(os.sep, "/")
+                tf.add(p, arcname=arc_prefix + "/" + rel, recursive=False)
+                count += 1
+            except OSError:
+                continue
+    return count
+
+
+def _hosted_build_snapshot(rec, out_path):
+    """Build the snapshot tar.gz at out_path. Members mirror the gate's URL
+    space under share/ (viewer shell, static api/meta, whitelisted project
+    files) plus the workspace fonts under fonts/. Returns the file count."""
+    import io as _io
+    import tarfile
+
+    project_root = _RESOLVE_PROJECT_ROOT(rec.get("project") or "")
+    slug = rec.get("prototype") or ""
+    count = 0
+
+    def add_bytes(tf, arcname, data):
+        info = tarfile.TarInfo(arcname)
+        info.size = len(data)
+        info.mtime = int(time.time())
+        tf.addfile(info, _io.BytesIO(data))
+
+    with tarfile.open(out_path, "w:gz") as tf:
+        # Viewer shell - the same review page the tunnel gate serves at /s/<t>/.
+        share_dir = os.path.join(INSTALL_ROOT, "editor", "share")
+        for src, arc in (
+            (os.path.join(share_dir, "viewer.html"), "share/index.html"),
+            (os.path.join(share_dir, "viewer.js"),   "share/viewer.js"),
+            (os.path.join(share_dir, "viewer.css"),  "share/viewer.css"),
+            (os.path.join(INSTALL_ROOT, "editor", "favicon.svg"), "share/favicon.svg"),
+        ):
+            if os.path.isfile(src):
+                tf.add(src, arcname=arc, recursive=False)
+                count += 1
+        # Static /api/meta so the viewer boots with the daemon offline.
+        meta = {
+            "label":     rec.get("label") or "",
+            "prototype": slug,
+            "emailGate": bool(rec.get("emailGate")),
+            "entry":     "p/source/{}/index.html".format(slug),
+        }
+        add_bytes(tf, "share/api/meta", json.dumps(meta).encode("utf-8"))
+        # Hosted marker - the worker treats its presence as "this share is
+        # hosted" (static misses become real 404s instead of tunnel fallthrough).
+        add_bytes(tf, "share/__hosted.json", json.dumps({
+            "uploadedAt": _now_iso(),
+            "prototype":  slug,
+            "label":      rec.get("label") or "",
+        }).encode("utf-8"))
+        count += 2
+        # The prototype tree + the design-system library it links - exactly the
+        # two prefixes _gate_project_paths_ok() allows.
+        src_tree = os.path.join(project_root, "source", slug)
+        if not os.path.isdir(src_tree):
+            raise RuntimeError("prototype has no source/{}/ directory".format(slug))
+        count += _hosted_add_tree(tf, src_tree, "share/p/source/" + slug)
+        ds_tree = os.path.join(project_root, "design-systems")
+        if os.path.isdir(ds_tree):
+            count += _hosted_add_tree(tf, ds_tree, "share/p/design-systems")
+        # Workspace fonts - DS stylesheets reference /__global_fonts/<name>
+        # root-absolute; the worker serves them from fonts/<install>/.
+        fonts_dir = os.path.join(WORKSPACE_DIR or INSTALL_ROOT, "fonts")
+        if os.path.isdir(fonts_dir):
+            for name in sorted(os.listdir(fonts_dir)):
+                p = os.path.join(fonts_dir, name)
+                if (os.path.isfile(p) and NAME_SAFE.match(name)
+                        and not name.startswith(".")
+                        and os.path.getsize(p) <= _HOSTED_FILE_MAX):
+                    tf.add(p, arcname="fonts/" + name, recursive=False)
+                    count += 1
+    return count
+
+
+def _hosted_broker_post(path, data=None, timeout=30, content_type="application/json"):
+    req = urllib.request.Request(
+        WOVEN_BROKER_URL + path, data=data,
+        headers={"Content-Type": content_type}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = (json.load(e) or {}).get("detail") or ""
+        except Exception:
+            pass
+        raise RuntimeError("broker {} failed ({}): {}".format(
+            path, e.code, detail or e.reason))
+    except Exception as e:
+        raise RuntimeError("broker unreachable at {}: {}".format(WOVEN_BROKER_URL, e))
+
+
+def _hosted_upload_worker(share_id):
+    """Background: build the snapshot and push it to the broker. Status lands
+    in _HOSTED_JOBS; the share record gets hostedAt/hostedBytes on success."""
+    import tempfile
+    rec = share_get(share_id)
+    if rec is None:
+        return
+    tmp = None
+    try:
+        fd, tmp = tempfile.mkstemp(suffix=".tar.gz", prefix="woven-share-")
+        os.close(fd)
+        _hosted_build_snapshot(rec, tmp)
+        with open(tmp, "rb") as f:
+            body = f.read()
+        qs = urllib.parse.urlencode({
+            "installId": woven_install_id(),
+            "token":     rec.get("token") or "",
+            "prototype": rec.get("prototype") or "",
+            "label":     rec.get("label") or "",
+        })
+        res = _hosted_broker_post("/shares/upload?" + qs, data=body,
+                                  timeout=600, content_type="application/gzip")
+        share_update(share_id, {
+            "hostedAt":    _now_iso(),
+            "hostedBytes": int(res.get("bytes") or 0),
+            "hostedFiles": int(res.get("files") or 0),
+        })
+        _hosted_job_set(share_id, "done")
+        print("[share] hosted snapshot uploaded for {} ({} files, {} bytes)".format(
+            share_id, res.get("files"), res.get("bytes")), flush=True)
+    except Exception as e:
+        _hosted_job_set(share_id, "error", str(e))
+        print("[share] hosted upload failed for {}: {}".format(share_id, e), flush=True)
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
+def _hosted_delete_worker(token):
+    try:
+        body = json.dumps({"installId": woven_install_id(),
+                           "token": token}).encode("utf-8")
+        _hosted_broker_post("/shares/delete", data=body, timeout=60)
+        print("[share] hosted snapshot deleted", flush=True)
+    except Exception as e:
+        # Best-effort: the broker's TTL reaper is the backstop.
+        print("[share] hosted delete failed (reaper will collect it): {}".format(e), flush=True)
+
+
+def set_hosted(share_id, on):
+    """Flip the hosted-snapshot intent. ON provisions the stable hostname if
+    needed (broker HTTP only - no tunnel, no cloudflared required), then uploads
+    in the background. OFF deletes the snapshot broker-side."""
+    rec = share_get(share_id)
+    if rec is None:
+        raise ValueError("unknown share: {}".format(share_id))
+    if rec.get("liveOnly"):
+        raise ValueError("a multiplayer session cannot be hosted - it is inherently live")
+    if not WOVEN_BROKER_URL:
+        raise RuntimeError("hosted shares need the Woven broker configured")
+    if on:
+        # The hosted URL is the same stable hostname the woven tunnel uses -
+        # make sure this install has one (first call asks the broker once).
+        _woven_ensure_credentials()
+        share_update(share_id, {"hostedOn": True})
+        hosted_update(share_id)
+        ensure_hosted_heartbeat()
+    else:
+        token = rec.get("token") or ""
+        share_update(share_id, {"hostedOn": False, "hostedAt": "",
+                                "hostedBytes": 0, "hostedFiles": 0})
+        with _HOSTED_JOBS_LOCK:
+            _HOSTED_JOBS.pop(share_id, None)
+        threading.Thread(target=_hosted_delete_worker, args=(token,),
+                         daemon=True, name="hosted-delete").start()
+    return share_get(share_id)
+
+
+def hosted_update(share_id):
+    """(Re)upload the snapshot - the Update button, and the ON half of the
+    toggle. No-op unless the share wants hosting."""
+    rec = share_get(share_id)
+    if rec is None:
+        raise ValueError("unknown share: {}".format(share_id))
+    if not share_hosted_on(rec):
+        raise ValueError("share is not hosted - turn hosting on first")
+    job = _hosted_job_get(share_id)
+    if job.get("state") == "uploading":
+        return rec                                   # already in flight
+    _hosted_job_set(share_id, "uploading")
+    threading.Thread(target=_hosted_upload_worker, args=(share_id,),
+                     daemon=True, name="hosted-upload-" + share_id).start()
+    return rec
+
+
+def hosted_status(rec):
+    """{"status": off|uploading|hosted|error, "url", "error", "at", "bytes"}."""
+    if not share_hosted_on(rec):
+        return {"status": "off", "url": "", "error": "", "at": "", "bytes": 0}
+    base = woven_base_url()
+    url = (base.rstrip("/") + "/s/" + (rec.get("token") or "") + "/") if base else ""
+    job = _hosted_job_get(rec.get("id") or "")
+    if job.get("state") == "uploading":
+        return {"status": "uploading", "url": url, "error": "",
+                "at": rec.get("hostedAt") or "", "bytes": int(rec.get("hostedBytes") or 0)}
+    if job.get("state") == "error":
+        return {"status": "error", "url": url, "error": job.get("error") or "",
+                "at": rec.get("hostedAt") or "", "bytes": int(rec.get("hostedBytes") or 0)}
+    if rec.get("hostedAt"):
+        return {"status": "hosted", "url": url, "error": "",
+                "at": rec.get("hostedAt") or "", "bytes": int(rec.get("hostedBytes") or 0)}
+    # Intent on but never uploaded (e.g. daemon died mid-upload) - resumable.
+    return {"status": "error", "url": url,
+            "error": "snapshot not uploaded yet - press Update",
+            "at": "", "bytes": 0}
+
+
+def _hosted_heartbeat_loop():
+    """Keep the broker's HOSTED_TTL reaper away while any share is hosted -
+    independent of the woven tunnel (hosting works with the tunnel off)."""
+    while True:
+        try:
+            if any(share_hosted_on(s) for s in shares_load().get("shares", [])):
+                body = json.dumps({"installId": woven_install_id()}).encode("utf-8")
+                req = urllib.request.Request(
+                    WOVEN_BROKER_URL + "/heartbeat", data=body,
+                    headers={"Content-Type": "application/json"}, method="POST")
+                urllib.request.urlopen(req, timeout=15).close()
+        except Exception:
+            pass
+        time.sleep(_WOVEN_HEARTBEAT_INTERVAL)
+
+
+def ensure_hosted_heartbeat():
+    """Start the hosted heartbeat thread once (boot + first toggle-on)."""
+    global _HOSTED_HB_STARTED
+    if _HOSTED_HB_STARTED or not WOVEN_BROKER_URL:
+        return
+    _HOSTED_HB_STARTED = True
+    threading.Thread(target=_hosted_heartbeat_loop, daemon=True,
+                     name="hosted-heartbeat").start()
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -1927,9 +2228,18 @@ def share_summary(rec):
     def _link(base):
         return (base.rstrip("/") + "/s/" + token + "/") if base else ""
 
+    hst = hosted_status(rec)
+
     out["quickOn"]  = modes["quick"]
     out["wovenOn"]  = modes["woven"]
     out["mode"]     = share_mode(rec)   # legacy hint (woven if the stable link is on)
+    # Hosted snapshot (served from Woven storage, daemon-off capable).
+    out["hostedOn"]     = share_hosted_on(rec)
+    out["hostedStatus"] = hst["status"]
+    out["hostedUrl"]    = hst["url"]
+    out["hostedError"]  = hst["error"]
+    out["hostedAt"]     = hst["at"]
+    out["hostedBytes"]  = hst["bytes"]
     # Per-link liveness so the UI can show each link's own state (running /
     # starting / exited / error) instead of silently hiding a link with no URL.
     out["quickStatus"] = qst["status"] if modes["quick"] else "off"
@@ -1941,8 +2251,9 @@ def share_summary(rec):
     out["quickUrl"] = _link(qurl)
     out["wovenUrl"] = _link(wst["url"])
     # shareUrl stays the single canonical link for back-compat readers; prefer
-    # the stable link when both are live.
-    out["shareUrl"] = out["wovenUrl"] or out["quickUrl"]
+    # the stable link when both are live. The hosted link IS the stable URL
+    # (same hostname, snapshot-served), so it slots in at the same priority.
+    out["shareUrl"] = out["wovenUrl"] or (hst["url"] if hst["status"] == "hosted" else "") or out["quickUrl"]
     # Overall status folds both links (running wins, then starting).
     sts = [s["status"] for s in ([qst] if modes["quick"] else []) + ([wst] if modes["woven"] else [])]
     out["status"] = ("running" if "running" in sts else

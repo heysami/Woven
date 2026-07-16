@@ -1,0 +1,28 @@
+# Woven share worker - serves HOSTED share snapshots from R2 on the same
+# https://<install>.getwoven.design/s/<token>/ URLs the per-install tunnels
+# use. Requests fall through to the tunnel whenever no snapshot exists, so
+# deploying this worker changes nothing for tunnel-only shares.
+#
+# Deploy (one-time, from worker/):
+#   npx wrangler login
+#   npx wrangler r2 bucket create woven-shares      # if not created yet
+#   npx wrangler deploy
+#
+# See docs/features/hosted-share.md for the full runbook.
+
+name = "woven-share-worker"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+
+# account_id matches CF_ACCOUNT_ID in render.yaml (same Cloudflare account
+# that owns the getwoven.design zone).
+account_id = "0d7b52ff0f6513b1c175d33761c497a7"
+
+routes = [
+  { pattern = "*.getwoven.design/s/*", zone_name = "getwoven.design" },
+  { pattern = "*.getwoven.design/__global_fonts/*", zone_name = "getwoven.design" },
+]
+
+[[r2_buckets]]
+binding = "SHARES"
+bucket_name = "woven-shares"

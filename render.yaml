@@ -28,6 +28,25 @@ services:
         value: getwoven.design
       - key: REAP_TTL_DAYS
         value: "45"
+      # Hosted share snapshots (R2). Leave the secrets unset to disable the
+      # feature - the broker replies 503 on /shares/* and everything else keeps
+      # working. R2_ENDPOINT looks like https://<account-id>.r2.cloudflarestorage.com
+      - key: R2_ENDPOINT           # set in dashboard
+        sync: false
+      - key: R2_ACCESS_KEY_ID      # secret - set in dashboard
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY  # secret - set in dashboard
+        sync: false
+      - key: R2_BUCKET
+        value: woven-shares
+      - key: HOSTED_TTL_DAYS       # snapshot lives this long past the owner's last heartbeat
+        value: "30"
+      - key: HOSTED_SNAPSHOT_MAX_MB
+        value: "100"
+      - key: HOSTED_UNPACKED_MAX_MB
+        value: "300"
+      - key: HOSTED_QUOTA_MB       # per-install total across all hosted shares
+        value: "500"
 
   # Daily reaper - prunes installs idle longer than REAP_TTL_DAYS.
   - type: cron

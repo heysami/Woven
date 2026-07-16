@@ -43,6 +43,25 @@ async def init() -> None:
             )
             """
         )
+        # Hosted share snapshots (R2-backed). One row per share token; the
+        # actual bytes live in the bucket under s/<token>/. refreshed_at is
+        # bumped by the owning install's /heartbeat so the reaper only prunes
+        # snapshots whose owner has been gone for HOSTED_TTL_DAYS.
+        await c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hosted_shares (
+              token        text PRIMARY KEY,
+              install_id   text NOT NULL,
+              prototype    text,
+              label        text,
+              bytes        bigint NOT NULL DEFAULT 0,
+              files        integer NOT NULL DEFAULT 0,
+              created_at   timestamptz DEFAULT now(),
+              uploaded_at  timestamptz DEFAULT now(),
+              refreshed_at timestamptz DEFAULT now()
+            )
+            """
+        )
 
 
 async def close() -> None:
@@ -122,3 +141,72 @@ async def name_upsert(name: str, gh_login: str, repo: str, target: str, fqdn: st
 async def name_delete(name: str) -> None:
     async with _pool.acquire() as c:
         await c.execute("DELETE FROM names WHERE name=$1", name)
+
+
+# ── Hosted share snapshots ─────────────────────────────────────────────────
+
+async def hosted_get(token: str) -> Optional[asyncpg.Record]:
+    async with _pool.acquire() as c:
+        return await c.fetchrow("SELECT * FROM hosted_shares WHERE token=$1", token)
+
+
+async def hosted_upsert(token: str, install_id: str, prototype: str, label: str,
+                        nbytes: int, files: int) -> None:
+    async with _pool.acquire() as c:
+        await c.execute(
+            """
+            INSERT INTO hosted_shares (token, install_id, prototype, label, bytes, files,
+                                       created_at, uploaded_at, refreshed_at)
+            VALUES ($1, $2, $3, $4, $5, $6, now(), now(), now())
+            ON CONFLICT (token) DO UPDATE
+              SET install_id   = EXCLUDED.install_id,
+                  prototype    = EXCLUDED.prototype,
+                  label        = EXCLUDED.label,
+                  bytes        = EXCLUDED.bytes,
+                  files        = EXCLUDED.files,
+                  uploaded_at  = now(),
+                  refreshed_at = now()
+            """,
+            token, install_id, prototype, label, nbytes, files,
+        )
+
+
+async def hosted_delete(token: str) -> None:
+    async with _pool.acquire() as c:
+        await c.execute("DELETE FROM hosted_shares WHERE token=$1", token)
+
+
+async def hosted_list(install_id: str) -> list:
+    async with _pool.acquire() as c:
+        return await c.fetch(
+            "SELECT * FROM hosted_shares WHERE install_id=$1 ORDER BY created_at", install_id
+        )
+
+
+async def hosted_quota_used(install_id: str, exclude_token: str = "") -> int:
+    """Total hosted bytes for an install, optionally excluding one token (the
+    one being re-uploaded, whose old size is about to be replaced)."""
+    async with _pool.acquire() as c:
+        v = await c.fetchval(
+            "SELECT COALESCE(SUM(bytes),0) FROM hosted_shares "
+            "WHERE install_id=$1 AND token<>$2",
+            install_id, exclude_token or "",
+        )
+    return int(v or 0)
+
+
+async def hosted_touch(install_id: str) -> None:
+    """Heartbeat: the install is alive, keep its snapshots off the reaper."""
+    async with _pool.acquire() as c:
+        await c.execute(
+            "UPDATE hosted_shares SET refreshed_at=now() WHERE install_id=$1", install_id
+        )
+
+
+async def hosted_stale(ttl_days: int) -> list:
+    async with _pool.acquire() as c:
+        return await c.fetch(
+            "SELECT token, install_id FROM hosted_shares "
+            "WHERE refreshed_at < now() - ($1 || ' days')::interval",
+            str(ttl_days),
+        )
