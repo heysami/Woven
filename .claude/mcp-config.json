@@ -1,5 +1,9 @@
 {
   "mcpServers": {
+    "claude_preview": {
+      "command": "/bin/sh",
+      "args": ["-c", "exec python3 \"${TH_PROTOCOL_ROOT:-$PWD}/editor/tools/qa/preview_mcp.py\""]
+    },
     "chrome": {
       "command": "npx",
       "args": ["-y", "chrome-devtools-mcp@latest", "--headless", "--isolated"]

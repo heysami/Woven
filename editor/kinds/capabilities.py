@@ -563,15 +563,21 @@ When a dispatch hands back a `gateBlock`, paste it into the chat VERBATIM - neve
 # which invalidates the prompt cache from that point and forces a full
 # re-upload + cache re-write of everything after it. Measured on suss-cal
 # (2026-07-16): 44 such evictions in a ~300k-token session = ~$89 of a
-# $122.72 run, ~$2 per screenshot past the cap. Visual QA itself stays
-# mandatory - the rule below only moves WHERE the pixels live.
-IMAGE_COST_DISCIPLINE = """
+# $122.72 run, ~$2 per screenshot past the cap.
+#
+# The rule is UNCONDITIONAL by design (not "when the session is long"): the
+# delegation decision happens at ingest time, when the future length of the
+# thread is unknowable. A conditional rule asks the agent to predict the
+# future; it defaults to inline, and the small task that grows into a
+# marathon is poisoned retroactively. Visual QA itself stays mandatory -
+# the rule only moves WHERE the pixels live.
+VISUAL_DELEGATION_DISCIPLINE = """
 
-### Images in this chat are expensive at scale - delegate the look-loop
-Every image that enters this conversation (a chrome screenshot, a Read of a PNG, a pasted screenshot, a QA frame) stays in the transcript, and once more than ~10 have accumulated, EACH additional image forces a full re-upload of the conversation (a prompt-cache rewrite of everything after the oldest image). In a long session that is real money - roughly $1-3 PER extra screenshot at 150k+ tokens of context. Visual verification is still mandatory; the discipline is about WHOSE context holds the pixels:
-  - Repeated visual verification (checking your work in the browser step by step, reading `/__qa/run` idleFrames, comparing before/after states) -> dispatch ONE `Task` subagent to do the whole look-loop. It screenshots as freely as QA needs in its own throwaway context and returns a text verdict; your context keeps only the verdict. The subagent does NOT get this preamble, so write a SELF-CONTAINED brief: the exact URL(s) or file paths, what must be true visually, which interactions to try, and that it must report pass/fail with specifics.
-  - Viewing 1-3 images directly is fine (a pasted screenshot, a plate to judge): view each ONCE, write down what you concluded, and never Read the same image again - your recorded observation is durable, the pixels are dead weight.
-  - If this session is already long AND an image-heavy phase is coming (a QA sweep, a multi-state browser check), that is exactly the moment to delegate to a subagent rather than look inline - the rewrite price is proportional to everything sitting after the first image."""
+### Visual verification + bulk retrieval - ALWAYS delegate to a subagent (mandatory procedure)
+Images and bulk tool payloads ingested into THIS conversation poison its prompt cache later (each image past the harness's ~10-image cap forces a full re-upload of the conversation; bulk dumps rush the context ceiling). You cannot know at ingest time whether this thread stays short, so these rules are unconditional - no session-length judgment call, ever:
+  - VISUAL VERIFICATION: you MUST NOT take a browser screenshot or Read an image file to check or judge work yourself - not once, not "just a quick look". Whenever you need to LOOK at anything (browser state after an edit, `/__qa/run` idleFrames, a rendered page, before/after comparisons, generated plates or candidates), dispatch a `Task` subagent to do the whole look-loop. It screenshots as freely as QA needs in its own throwaway context and returns a text verdict; your context keeps only the verdict. The subagent does NOT get this preamble, so write a SELF-CONTAINED brief: the exact URL(s) or file paths, what must be true visually, which interactions to try, and that it must report pass/fail with specifics. Visual QA rigor is unchanged - same checks, same screenshots, different context.
+  - FIGMA / BULK RETRIEVAL: you MUST NOT call Figma MCP document/node-dump tools (or any tool returning a bulk single-use payload - large API responses, log dumps) directly in this chat. Dispatch a `Task` subagent that fetches the payload, extracts exactly what the task needs (tokens, measurements, component structure, layout spec), and returns it as structured text. If you later need a detail the brief missed, re-dispatch - never hold the raw dump here.
+  - USER-PASTED images are the one exception physics forces: they are already in your context before you act. View each ONCE, write down what you concluded, and never Read that image again - your recorded observation is durable, the pixels are dead weight."""
 
 
 # design goal is skim-proofing: a leaf's correct default is to PROCEED (not to
@@ -679,12 +685,38 @@ def _scoped_iteration_stub(prototype: Optional[str] = None,
     # DS token + component sheet it @imports. Name both, and require reading
     # them BEFORE authoring any style.
     ds = _resolve_ds_binding(project_root, prototype)
+    # When the bound DS carries a DESIGN.md catalog, EMBED it in the preamble
+    # instead of only naming it. Rationale (suss-cal drift, 2026-07-16): the
+    # catalog gets Read once at turn 2 and is buried 200k tokens back by the
+    # time styling happens, so the agent invents classes. The preamble rides
+    # at the top of EVERY call - always in view, fully prompt-cached (~4k
+    # tokens). Size-capped so a pathological DESIGN.md can't balloon spawns;
+    # over-cap or unreadable falls back to today's name-the-file behavior.
+    ds_index = ""
+    if ds and ds.get("designMd") and project_root:
+        try:
+            with open(os.path.join(project_root, ds["designMd"]), "r",
+                      encoding="utf-8", errors="replace") as f:
+                _idx_txt = f.read().strip()
+            if _idx_txt and len(_idx_txt) <= 30000:
+                ds_index = (
+                    "\n\n## Committed design-system vocabulary (embedded from `" + ds["designMd"] + "`)\n\n"
+                    "This is the COMPLETE token + component-class catalog of the bound design system. "
+                    "Compose ONLY from this vocabulary - every pattern the prototype needs already has a class here; NEVER invent a component class or token name.\n\n"
+                    "<design-system-index>\n" + _idx_txt + "\n</design-system-index>\n\n"
+                    "When you need a component's ACTUAL CSS rules or markup (not just its name), Grep "
+                    "`design-systems/" + ds["id"] + "/styles.css` (and `gallery.html` for a markup example) for the class name from the catalog above, "
+                    "then Read ONLY that line range. NEVER Read those files whole - they are huge, and the catalog above already tells you what exists."
+                )
+        except Exception:
+            ds_index = ""
     if ds:
-        ds_reads = ", ".join(f"`{p}`" for p in (ds.get("designMd"), ds.get("stylesCss"), ds.get("allCss")) if p)
+        _ds_srcs = ((None if ds_index else ds.get("designMd")), ds.get("stylesCss"), ds.get("allCss"))
+        ds_reads = ", ".join(f"`{p}`" for p in _ds_srcs if p)
         ds_line = (
             f"- This prototype is BOUND to design system `{ds['id']}` (`design-systems/{ds['id']}/`). "
             f"Its pages @import that DS's stylesheet, so the real token + class vocabulary lives there, NOT only in the prototype's own CSS. "
-            f"BEFORE you write or change ANY CSS / class name / markup, Read the DS sources - {ds_reads} - together with `source/{slug}/styles.css` (and the specific page you are editing). "
+            f"BEFORE you write or change ANY CSS / class name / markup, consult the DS sources - {ds_reads} - together with `source/{slug}/styles.css` (and the specific page you are editing). "
             f"Use ONLY the CSS custom properties (`--token`) and utility / component class names those files actually define. Do NOT invent tokens or class names, and do NOT hardcode a colour / size / font when a matching DS token exists - reuse it. If the DS genuinely lacks something the change needs, add it to the DS sheet (or the prototype's own styles.css) as a real rule rather than inlining a magic value."
         )
     else:
@@ -708,7 +740,7 @@ You need the full routing rules ONLY IF the user now asks to do one of these - a
   - start a NEW prototype from scratch (a different `source/<slug>/`).
 If NONE apply -> iterate in place, do not go fetch routing. If ANY apply -> STOP and fetch them first:
   `GET $TH_DAEMON_URL/__capabilities?section=orchestrators&project=$TH_PROJECT_ID`
-returns the authoritative setup-path routing blocks. Treat what it returns as binding. (For a genuinely new prototype, tell the user it is a fresh build, and name its `source/<slug>/` after the user's word for it - if unnamed, use the next free `prototype<N>` slug (`prototype2`, `prototype3`, ...), never `main`.)"""
+returns the authoritative setup-path routing blocks. Treat what it returns as binding. (For a genuinely new prototype, tell the user it is a fresh build, and name its `source/<slug>/` after the user's word for it - if unnamed, use the next free `prototype<N>` slug (`prototype2`, `prototype3`, ...), never `main`.)""" + ds_index
 
 
 def _normal_general_stub() -> str:
@@ -1087,6 +1119,7 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
 
 **MCP servers** ({len(_mcp_rows)} known; "WIRED" = present in the runtime --mcp-config so its tools are live this run):
 {_mcp_lines}
+If MCP tool schemas are deferred in your runtime, load every tool you need in ONE ToolSearch call before using them (e.g. query `select:mcp__claude_preview__preview_start,mcp__claude_preview__preview_eval`) - never one at a time.
 """
     else:
         mcp_inventory_block = ""
@@ -1216,7 +1249,7 @@ The canvas Run reads these, injects the matching directive into the prompt, and 
 
 You CANNOT see what you built by reading the source you wrote. "I wrote the HTML/CSS, so it works" and "the file looks right" are NOT verification - they are how a broken page ships. Before you claim a visual or interactive deliverable is done, RENDER it and look at the result. There is one easy call for this; use it instead of a self-certified "done" or a hand-rolled preview server.
 
-**The preview MCP (`mcp__Claude_Preview__*` / `preview_start` etc.) is NOT part of this runtime** - daemon-spawned agents get no such server, no matter what your playbook's tool list says. Do not attempt preview-MCP self-tests and do not wait on them: a builder that sits on a preview call stalls its whole build wave (observed: 20+ minute hangs, killed and re-dispatched mid-build). The same applies to hand-rolled headless-Chrome self-tests. Your verification path is the endpoint below - it needs nothing but HTTP. Hard rule: if ANY verification tool call has not returned in ~60s, abandon that path and use `/__qa/run`.
+**The preview MCP (`mcp__claude_preview__*` / `preview_start` etc.) IS wired into this runtime** - a local Playwright-Chrome stdio server (WebGL-capable via SwiftShader), registered as `claude_preview` in mcp-config. Use it for interactive self-tests during a build: `preview_start` a URL (a daemon path starting with `/` resolves against `$TH_DAEMON_URL`, so serve your artefact through the daemon and keep `?project` stamping working), then `preview_eval` / `preview_console_logs` / `preview_inspect` / `preview_screenshot` / `preview_click` / `preview_fill`. Do NOT hand-roll headless-Chrome self-tests. Hard rule: if ANY preview/verification tool call errors or has not returned in ~60s, abandon that path and use the `/__qa/run` endpoint below (it needs nothing but HTTP). Either way `/__qa/run` remains the canonical FINAL gate - a preview self-test informs your iteration, it does not replace the gate.
 
 `GET $TH_DAEMON_URL/__qa/run?project=$TH_PROJECT_ID&<target>[&judge=<one-line expected effect>]`
 
@@ -2282,7 +2315,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + GATE_CARD_SYNTAX + IMAGE_COST_DISCIPLINE
+        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE
     # NORMAL path: the project's everyday chat, the untargeted default. Same
     # routing strip as scoped (routing is fetched on demand only when the user
     # asks for a genuine new build), but NOT bound to one prototype - a general
@@ -2290,13 +2323,13 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "normal":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _normal_general_stub() + GATE_CARD_SYNTAX + IMAGE_COST_DISCIPLINE
+        return _preamble + _normal_general_stub() + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE
     # SETUP path (default): a new prototype build. Keeps the full routing
     # catalog. Append manifest-carried hard rules for orchestrators added
     # after ship time (not covered by the static prose above). Appended AFTER
     # the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
-    return _preamble + IMAGE_COST_DISCIPLINE
+    return _preamble + VISUAL_DELEGATION_DISCIPLINE
 
 
 def orchestrator_routing_text(project_root: Optional[str] = None) -> str:

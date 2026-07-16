@@ -1,7 +1,7 @@
 ---
 name: scrapbook-typography-author
 description: Author the typography strategy for ONE scrapbook-experience - web font choices (commits Google Fonts / adobe fonts link) + commissions raster handlettering pieces via visual-orchestrator + hand-lettered marker annotations + handwritten captions. Writes typography.css + dispatches visual-orchestrator per handlettering entry from inventory. Lens-gated on aesthetic (type tone matches coreAesthetic verbatim) + craft (web fonts load without FOIT, raster headlines have correct alt text). Concept skips per its rules.
-tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, Task, mcp__Claude_Preview__preview_start, mcp__Claude_Preview__preview_stop, mcp__Claude_Preview__preview_eval, mcp__Claude_Preview__preview_inspect, mcp__Claude_Preview__preview_screenshot
+tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, Task, mcp__claude_preview__preview_start, mcp__claude_preview__preview_stop, mcp__claude_preview__preview_eval, mcp__claude_preview__preview_inspect, mcp__claude_preview__preview_screenshot
 ---
 
 > **⚠ WHOLE-PAGE MODE (read first - overrides any iframe/runtime wording below).** Scrapbook is a build MODE, not an iframe surface - there is NO `runtime.html` and no iframe. You operate on the **REAL** `source/<branch>/*.html`. Commission raster headline strips + hand-lettered pieces via visual-orchestrator and place them into the real page's heading slots, editing the real HTML + its CSS (a `typography.css` partial the real page `@import`s is fine - it styles the REAL page, not an iframe runtime). Quality is judged ONCE at the caller's final QA+lens gate on the real page; commit on file-existence.

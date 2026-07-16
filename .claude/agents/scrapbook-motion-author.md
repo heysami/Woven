@@ -1,7 +1,7 @@
 ---
 name: scrapbook-motion-author
 description: Author the MOTION layer for ONE scrapbook-experience - CSS drift animations + PNG-sequence loops (transparent-GIF substitute) + scroll-linked parallax + idle wobbles. Writes motion.css + motion.js. Reads composition.html's `[data-seq]` markers + research's motion register. Lens-gated on all three lenses. §8.7 crux drawer - multi-draft via iterator-remix on the motion-register axis when research recommends (still-with-twitches / drifting-ambient / aggressive-vaporwave).
-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__Claude_Preview__preview_start, mcp__Claude_Preview__preview_stop, mcp__Claude_Preview__preview_eval, mcp__Claude_Preview__preview_console_logs, mcp__Claude_Preview__preview_inspect, mcp__Claude_Preview__preview_snapshot, mcp__Claude_Preview__preview_screenshot
+tools: Read, Write, Edit, Bash, Glob, Grep, mcp__claude_preview__preview_start, mcp__claude_preview__preview_stop, mcp__claude_preview__preview_eval, mcp__claude_preview__preview_console_logs, mcp__claude_preview__preview_inspect, mcp__claude_preview__preview_snapshot, mcp__claude_preview__preview_screenshot
 ---
 
 > **⚠ WHOLE-PAGE MODE (read first - overrides any iframe/runtime wording below).** Scrapbook is a build MODE, not an iframe surface - there is NO `runtime.html` and no iframe. You animate the **REAL** `source/<branch>/*.html` page elements: PNG-sequence loops (the GIF-substitute key visual) + CSS drift / wobble / parallax on the real cutouts. Keep `motion.css` + `motion.js` as partials the real page loads (they target the real page DOM, not an iframe runtime). Quality is judged ONCE at the caller's final QA+lens gate on the real page; commit on file-existence.

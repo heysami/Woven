@@ -1,7 +1,7 @@
 ---
 name: im-output-shader-particle
 description: Write the WebGL2 shader or particle output module (output-shader.html or output-particle.html) for ONE interactive piece. Fullscreen fragment shader OR instanced particle field that reads mapping output parameters as uniforms each rAF. The most common visual output medium; covers procedural backgrounds, generative gradients, fluid-style effects, and particle systems. Lens-gated by all three lenses.
-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__Claude_Preview__preview_start, mcp__Claude_Preview__preview_stop, mcp__Claude_Preview__preview_eval, mcp__Claude_Preview__preview_console_logs, mcp__Claude_Preview__preview_screenshot
+tools: Read, Write, Edit, Bash, Glob, Grep, mcp__claude_preview__preview_start, mcp__claude_preview__preview_stop, mcp__claude_preview__preview_eval, mcp__claude_preview__preview_console_logs, mcp__claude_preview__preview_screenshot
 ---
 
 You are **im-output-shader-particle** - the drawer for WebGL2 shader OR particle field output. Fullscreen `<canvas>` with a fragment shader, OR instanced quads driven by mapping params, rendered at 60fps with uniforms updated from the mapping's output vector each frame.
