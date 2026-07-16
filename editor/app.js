@@ -11778,7 +11778,11 @@ function ShareMenuButton() {
       ${!reachable && html`<div className="th-live-hint">Daemon unreachable - sharing is offline.</div>`}
       <div className="shares-served-banner">
         <span className="shares-served-dot"></span>
-        <span>Tunnel links are served from <b>this computer</b> - people can only open them while it's on and Woven is running; close it and those links go dark. A <b>randomised URL</b> also changes each time the daemon dies or restarts. A <b>Hosted</b> share instead uploads a snapshot to getwoven.design and stays online with this computer off - toggle it off to take it down.</span>
+        <div style=${{ display: "grid", gap: "2px" }}>
+          <div><b>Hosted</b> - a snapshot on getwoven.design; works with this computer off.</div>
+          <div><b>Stable link</b> - live from this computer; off = link dark.</div>
+          <div><b>Randomised URL</b> - same, and the address changes on every restart.</div>
+        </div>
       </div>
       <div className="share-menu-body">
         ${tab === "project" && html`
