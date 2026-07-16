@@ -11779,8 +11779,8 @@ function ShareMenuButton() {
       <div className="shares-served-banner">
         <ul style=${{ margin: 0, paddingLeft: "16px", listStyle: "disc", display: "grid", gap: "3px" }}>
           <li><b>Hosted</b> - snapshot on getwoven.design, stays online with this computer off.</li>
-          <li><b>Stable link</b> - served live from this computer, dark when it's off.</li>
-          <li><b>Randomised URL</b> - also served live, and gets a new address on every restart.</li>
+          <li><b>Stable link</b> - served live from this computer.</li>
+          <li><b>Randomised URL</b> - served live; regenerate it after every daemon restart.</li>
         </ul>
       </div>
       <div className="share-menu-body">
@@ -23991,8 +23991,8 @@ function SharesLanding({ onCountChange }) {
       <div className="shares-served-banner">
         <ul style=${{ margin: 0, paddingLeft: "16px", listStyle: "disc", display: "grid", gap: "3px" }}>
           <li><b>Hosted</b> - snapshot on getwoven.design, stays online with this computer off.</li>
-          <li><b>Stable link</b> - served live from this computer, dark when it's off.</li>
-          <li><b>Randomised URL</b> - also served live, and gets a new address on every restart.</li>
+          <li><b>Stable link</b> - served live from this computer.</li>
+          <li><b>Randomised URL</b> - served live; regenerate it after every daemon restart.</li>
         </ul>
       </div>
       ${shares.length > 0 && html`
