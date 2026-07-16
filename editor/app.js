@@ -11509,15 +11509,20 @@ function ShareMenuButton() {
     return () => clearInterval(t);
   }, [open, reloadNodes]);
 
-  // Close on outside click / Esc.
+  // Close on outside click / Esc. A ui dialog (e.g. the hosting-passcode
+  // prompt) portals to document.body, so it reads as "outside" - interacting
+  // with it must NOT dismiss the menu, and its own Escape shouldn't either.
   useEffect(() => {
     if (!open) return;
     const onDown = (e) => {
+      if (e.target instanceof Element && e.target.closest(".modal-scrim")) return;
       if (menuRef.current && menuRef.current.contains(e.target)) return;
       if (btnRef.current && btnRef.current.contains(e.target)) return;
       setOpen(false);
     };
-    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    const onKey = (e) => {
+      if (e.key === "Escape" && !document.querySelector(".modal-scrim")) setOpen(false);
+    };
     document.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
