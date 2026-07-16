@@ -12712,7 +12712,8 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
                   ? html`<img className="th-git-avatar" src=${gh.avatar} alt="" />`
                   : html`<span className="th-git-avatar th-git-avatar-ph">${(gh.login || "?").slice(0, 1).toUpperCase()}</span>`}
                 <span className="th-git-login">${gh.login || "GitHub"}</span>
-                <button className="th-git-link" title="Sign out of GitHub" onClick=${signOut}>Sign out</button>
+                ${gh.expired && html`<span className="th-git-expired" title="GitHub rejected the saved token, it has expired or was revoked. Push and pull will fail until you sign in again.">Token expired</span>`}
+                <button className="th-git-link" title=${gh.expired ? "Sign out, then connect with a fresh token" : "Sign out of GitHub"} onClick=${signOut}>${gh.expired ? "Sign in again" : "Sign out"}</button>
               </div>`}
           </div>
 
@@ -24387,9 +24388,11 @@ function GitHubAccountButton() {
             <div className="landing-gh-who">
               ${gh.avatar ? html`<img className="landing-gh-avatar" src=${gh.avatar} alt="" />` : html`<${Icon.User}/>`}
               <span>${gh.login || "signed in"}</span>
+              ${gh.expired && html`<span className="th-git-expired" title="GitHub rejected the saved token, it has expired or was revoked.">Token expired</span>`}
             </div>
+            ${gh.expired && html`<div className="landing-gh-expired-hint">Push and pull will fail until you sign in again with a fresh token.</div>`}
             <button className="popover-item" onClick=${signOut} disabled=${busy}>
-              <span className="popover-item-icon"><${Icon.X}/></span><span>Sign out</span></button>
+              <span className="popover-item-icon"><${Icon.X}/></span><span>${gh.expired ? "Sign in again" : "Sign out"}</span></button>
           ` : (device ? html`
             <div className="popover-title">Authorize on GitHub</div>
             <div className="landing-gh-code">${device.user_code}</div>

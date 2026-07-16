@@ -20491,14 +20491,18 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": str(e)})
 
     # ── GitHub account (host side) - sign in ONCE, reused across projects ──
-    # GET /__github/status  → {configured, signedIn, login, avatar}. Never the token.
+    # GET /__github/status  → {configured, signedIn, login, avatar, expired}.
+    # Never the token. `expired` is true only when GitHub rejects the stored
+    # token with 401 (probe cached ~10 min in git_ops.token_expired).
     def _github_status(self, qs):
         tok = _gitops.load_token()
+        signed_in = bool(tok.get("access_token"))
         return self._reply(200, {
             "configured": _gitops.oauth_configured(),
-            "signedIn": bool(tok.get("access_token")),
+            "signedIn": signed_in,
             "login": tok.get("login") or "",
             "avatar": tok.get("avatar") or "",
+            "expired": _gitops.token_expired() if signed_in else False,
         })
 
     # GET /__github/repos[&q=<query>]  → {repos:[…]} for the per-project picker.

@@ -34,6 +34,7 @@ import json
 import os
 import re
 import subprocess
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -1036,6 +1037,34 @@ def clear_token():
 def host_token():
     """The stored access token, or None - what push/pull/list reach for."""
     return (load_token() or {}).get("access_token") or None
+
+
+# The status endpoint polls every ~10s from two UI surfaces, so the validity
+# probe caches per token. Only an explicit 401 from GitHub marks the token
+# expired - network trouble or rate limiting must never raise a false alarm.
+_TOKEN_CHECK = {"token": None, "expired": False, "ts": 0.0}
+_TOKEN_CHECK_TTL = 600  # seconds
+
+
+def token_expired(force=False):
+    """True only when GitHub explicitly rejects the stored token (HTTP 401)."""
+    tok = host_token()
+    if not tok:
+        return False
+    now = time.time()
+    if (not force and _TOKEN_CHECK["token"] == tok
+            and now - _TOKEN_CHECK["ts"] < _TOKEN_CHECK_TTL):
+        return _TOKEN_CHECK["expired"]
+    expired = False
+    try:
+        code, _ = _gh_api("GET", "/user", token=tok, timeout=6)
+        expired = code == 401
+    except Exception:
+        expired = False
+    _TOKEN_CHECK["token"] = tok
+    _TOKEN_CHECK["expired"] = expired
+    _TOKEN_CHECK["ts"] = now
+    return expired
 
 
 def list_repos(token, limit=100):
