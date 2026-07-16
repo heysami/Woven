@@ -30588,6 +30588,22 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   background: var(--surface-2);
 }
 
+/* Warning strip above the composer when the open thread is a node-agent
+   (pseudo-subagent) run: replies there re-open a one-shot builder context
+   that often holds heavy QA frames, and the thread carries no routing - the
+   discussion belongs in the project chat. Warning only; input stays usable. */
+.chat-leaf-note {
+  margin: 0 10px 6px;
+  padding: 5px 9px;
+  border-radius: 7px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  border: 1px solid color-mix(in oklab, var(--warning) 45%, transparent);
+  background: var(--warning-soft);
+}
+.chat-leaf-note strong { color: var(--text); font-weight: 600; }
+
 /* ────────── First-run guided tour (GuideTour in app.js) ──────────
    Four shutter strips dim everything except the spotlit hole (the hole is
    real empty space, so interactive steps stay clickable); an accent ring

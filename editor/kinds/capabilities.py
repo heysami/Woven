@@ -706,7 +706,9 @@ def _scoped_iteration_stub(prototype: Optional[str] = None,
                     "<design-system-index>\n" + _idx_txt + "\n</design-system-index>\n\n"
                     "When you need a component's ACTUAL CSS rules or markup (not just its name), Grep "
                     "`design-systems/" + ds["id"] + "/styles.css` (and `gallery.html` for a markup example) for the class name from the catalog above, "
-                    "then Read ONLY that line range. NEVER Read those files whole - they are huge, and the catalog above already tells you what exists."
+                    "then Read ONLY that line range. NEVER Read those files whole - they are huge, and the catalog above already tells you what exists. "
+                    "These fetch rules apply when CONSUMING the DS to build prototype pages; when your task is to EDIT the design system itself (its `styles.css` / `gallery.html` / `DESIGN.md`), read whatever you need - and keep all three IN SYNC: a component you add or change MUST land in `styles.css`, the gallery, AND the `DESIGN.md` catalog, or every future thread inherits a stale index. "
+                    "This embedded catalog is a SNAPSHOT from thread start - if the DS changes during this thread, re-Read `DESIGN.md` from disk before styling again."
                 )
         except Exception:
             ds_index = ""

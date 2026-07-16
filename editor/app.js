@@ -14072,6 +14072,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           </div>
         </div>`;
       })()}
+      ${run?.kind === "node-agent" && html`
+        <div className="chat-leaf-note" role="note" title="Node builder runs are one-shot contexts and can hold heavy QA frames; replies here re-open that whole context.">
+          <strong>Build-agent thread</strong> - don't continue the discussion here. Reply in the project chat instead.
+        </div>
+      `}
       <${ChatComposer}
         runId=${run?.runId}
         isNew=${isNew}
