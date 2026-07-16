@@ -10523,16 +10523,19 @@ function RightRailDock({ mode }) {
   const [leftChatOpen, setLeftChatOpen] = useState(false);
   useEffect(() => { if (chatRun) setLeftChatOpen(true); }, [chatRun]);
   // Runs-list OVERLAY over the chat box - the old rail-popover contract:
-  // chat icon click shows the runs list on top of the chat; picking a run or
-  // + New chat dismisses it. Toggling it closed with no thread beneath
-  // collapses the whole panel.
+  // the runs list floats on top of the chat; picking a run or + New chat
+  // dismisses it. Toggling it closed with no thread beneath collapses the
+  // whole panel.
   const [runsOverlay, setRunsOverlay] = useState(false);
-  // The chat icon toggles the runs POPOVER only (old rail-panel pattern:
-  // a fixed 320px list floating over whatever is beneath). Picking a run or
-  // + New chat is what opens the thread panel.
+  // Two-step chat icon: when the chat panel is closed the first click just
+  // reopens it on the previous thread (chatRun stays seeded by the mount
+  // attach). Only once the chat is already open does the icon (now a list
+  // glyph) open the runs popover. A visible popover always toggles closed.
   const onChatIconClick = useCallback(() => {
-    setRunsOverlay(o => !o);
-  }, []);
+    if (runsOverlay) { setRunsOverlay(false); return; }
+    if (!leftChatOpen) { setLeftChatOpen(true); return; }
+    setRunsOverlay(true);
+  }, [runsOverlay, leftChatOpen]);
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--dock-col-split", dockColSplit + "%");
@@ -10755,12 +10758,14 @@ function RightRailDock({ mode }) {
       <${HoverTip}
         placement="right"
         className=${"th-right-rail-btn left-runs-toggle" + (runsOverlay || leftChatOpen ? " is-active" : "")}
-        ariaLabel="Agent runs"
-        tip="Agent runs - pick a thread or start a new chat"
+        ariaLabel=${leftChatOpen ? "Agent runs" : "Chat"}
+        tip=${leftChatOpen
+          ? "Agent runs - pick a thread or start a new chat"
+          : "Chat - back to your conversation"}
         onClick=${onChatIconClick}
       >
         <span className="th-right-rail-icon-wrap">
-          <${Icon.Comment}/>
+          ${leftChatOpen ? html`<${Icon.List}/>` : html`<${Icon.Comment}/>`}
         </span>
       <//>
     </nav>
@@ -36024,17 +36029,20 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setRunsOverlay(false);   // a spawned/reopened thread shows directly
   }, [chatOpenTick]);
   // Runs-list OVERLAY over the chat box - the old rail-popover contract:
-  // chat icon click shows the runs list on top of the chat; picking a run or
-  // + New chat dismisses it. Toggling it closed with no thread beneath
-  // collapses the whole panel.
+  // the runs list floats on top of the chat; picking a run or + New chat
+  // dismisses it. Toggling it closed with no thread beneath collapses the
+  // whole panel.
   const [runsOverlay, setRunsOverlay] = useState(false);
-  // The chat icon toggles the runs POPOVER only (the old rail-panel pattern:
-  // a fixed 320px list floating over whatever is beneath - canvas or the open
-  // chat box). It never opens/sizes the chat panel; picking a run or + New
-  // chat is what opens the thread (via chatRun -> chatOpenTick).
+  // Two-step chat icon: when the chat panel is hidden (a tool panel or the
+  // whiteboard took its place), the first click just brings the conversation
+  // back - the previous thread is still mounted beneath. Only once the chat
+  // is already showing does the icon (now a list glyph) open the runs
+  // popover. A visible popover always toggles closed.
   const onChatIconClick = useCallback(() => {
-    setRunsOverlay(o => !o);
-  }, []);
+    if (runsOverlay) { setRunsOverlay(false); return; }
+    if (wbMode || leftPanel !== "chat") { toggleWbMode(false); setLeftPanel("chat"); return; }
+    setRunsOverlay(true);
+  }, [runsOverlay, wbMode, leftPanel, toggleWbMode]);
   // The thread's own close (ChatDrawer ×) collapses the whole panel - the
   // WorkflowCanvas onClose dispatches this after clearing chatRun.
   useEffect(() => {
@@ -46992,10 +47000,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           <${HoverTip}
             placement="right"
             className=${"workflow-nav-rail-btn workflow-nav-rail-btn-chat left-runs-toggle" + (runsOverlay || (!wbMode && leftPanel === "chat") ? " is-active" : "") + (chatBusy ? " is-busy" : "")}
-            ariaLabel="Agent runs"
-            tip="Agent runs - pick a thread or start a new chat"
+            ariaLabel=${!wbMode && leftPanel === "chat" ? "Agent runs" : "Chat"}
+            tip=${!wbMode && leftPanel === "chat"
+              ? "Agent runs - pick a thread or start a new chat"
+              : "Chat - back to your conversation"}
             onClick=${onChatIconClick}
-          ><${Icon.Comment}/><//>
+          >${!wbMode && leftPanel === "chat" ? html`<${Icon.List}/>` : html`<${Icon.Comment}/>`}<//>
           <div className="workflow-nav-rail-sep"/>
           <${HoverTip}
             placement="right"
@@ -85938,9 +85948,11 @@ function EditorLeftRail({ view, setView, chatOpen, onToggleChat }) {
             className="tab tab-icon left-runs-toggle"
             data-active=${!!chatOpen}
             onClick=${onToggleChat}
-            aria-label="Agent runs"
-            title="Agent runs"
-          ><${Icon.Comment}/><span className="tab-tip tab-tip-right">Agent runs</span></button>
+            aria-label=${chatOpen ? "Agent runs" : "Chat"}
+            title=${chatOpen ? "Agent runs" : "Chat"}
+          >${chatOpen ? html`<${Icon.List}/>` : html`<${Icon.Comment}/>`}<span className="tab-tip tab-tip-right">${chatOpen
+            ? "Agent runs - pick a thread or start a new chat"
+            : "Chat - back to your conversation"}</span></button>
         </div>
       `}
       <div className="elr-group">
@@ -86948,16 +86960,19 @@ function App() {
   const [leftChatOpen, setLeftChatOpen] = useState(false);
   useEffect(() => { if (chatRun) setLeftChatOpen(true); }, [chatRun]);
   // Runs-list OVERLAY over the chat box - the old rail-popover contract:
-  // chat icon click shows the runs list on top of the chat; picking a run or
-  // + New chat dismisses it. Toggling it closed with no thread beneath
-  // collapses the whole panel.
+  // the runs list floats on top of the chat; picking a run or + New chat
+  // dismisses it. Toggling it closed with no thread beneath collapses the
+  // whole panel.
   const [runsOverlay, setRunsOverlay] = useState(false);
-  // The chat icon toggles the runs POPOVER only (old rail-panel pattern:
-  // a fixed 320px list floating over whatever is beneath). Picking a run or
-  // + New chat is what opens the thread panel.
+  // Two-step chat icon: when the chat panel is closed the first click just
+  // reopens it on the previous thread (chatRun stays seeded via lastRunId).
+  // Only once the chat is already open does the icon (now a list glyph) open
+  // the runs popover. A visible popover always toggles closed.
   const onChatIconClick = useCallback(() => {
-    setRunsOverlay(o => !o);
-  }, []);
+    if (runsOverlay) { setRunsOverlay(false); return; }
+    if (!leftChatOpen) { setLeftChatOpen(true); return; }
+    setRunsOverlay(true);
+  }, [runsOverlay, leftChatOpen]);
 
   // Publish dock geometry as CSS custom properties for the .app grid + dock.
   // Embed mode pins the dock track to 0: RightDock never renders there, so a
