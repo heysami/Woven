@@ -180,6 +180,8 @@ poll_until_done game_research_<gameId>
 
 `poll_until_done` is the same helper sim/im/nx use - `GET /__workflow`, check `runStatus` is `done` or `error`, sleep 5s otherwise.
 
+**No wake-ups exist (do not return early).** `poll_until_done` is a BLOCKING loop inside your current turn - there is NO background poller, notification, or re-invoke mechanism in the daemon or harness. Research can take 10+ minutes; keep polling. Never return before the researcher is `done`/`error` on the promise that something will "resume" or "re-invoke" you when it lands - a returned subagent is dead, nothing wakes it, and the whole build strands with research finished and nobody listening (teamfantasy, 2026-07).
+
 The researcher writes `source/{branch}/games/{gameId}/research.md` with `paradigm`, `renderStrategy`, `physicsEngine`, `tickHz`, `inputs[]`, `objectiveShape`, `juiceRegister`, and **`buildTier`** (`simple` | `standard` | `full` - committed from the slot's complexity per the "Build tier" contract in `capabilities.py`). Downstream builders read those (or `research.md` directly).
 
 `buildTier` decides how many builders you scaffold (§4):

@@ -123,6 +123,8 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/ms_research_<msId>/run?project
 # poll_until_done ms_research_<msId>   (same helper as simulation-orchestrator.md §2)
 ```
 
+**No wake-ups exist (do not return early).** `poll_until_done` is a BLOCKING loop inside your current turn - there is NO background poller, notification, or re-invoke mechanism in the daemon or harness. Research can take 10+ minutes; keep polling. Never return before the researcher is `done`/`error` on the promise that something will "resume" or "re-invoke" you when it lands - a returned subagent is dead, nothing wakes it, and the whole build strands with research finished and nobody listening (teamfantasy, 2026-07).
+
 The researcher writes `source/<prototype>/motionscenes/<msId>/research.md` carrying: a committed **`buildTier`** (`simple` | `standard` | `full` - see §2.1), committed binding + assetPolicy (validated against provider availability) + hyperframesEligible (the Hyperframes HTML-animation rung is LAST in the degradation ladder and only enters on vector-native registers - flat / typographic / editorial-loud / neubrutalist / diagrammatic; immersive or photorealistic registers stop at raster + CSS motion), the per-scene technique candidates from the library index, scene-count recommendation, and transition register.
 
 ### 2.1 buildTier - sizing the builder set

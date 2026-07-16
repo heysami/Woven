@@ -175,6 +175,8 @@ poll_until_done() {
 }
 ```
 
+**No wake-ups exist (do not return early).** `poll_until_done` is a BLOCKING loop inside your current turn - there is NO background poller, notification, or re-invoke mechanism in the daemon or harness. Research can take 10+ minutes; keep polling. Never return before the researcher is `done`/`error` on the promise that something will "resume" or "re-invoke" you when it lands - a returned subagent is dead, nothing wakes it, and the whole build strands with research finished and nobody listening (teamfantasy, 2026-07).
+
 The researcher (running as its own fresh `claude` subprocess) writes `source/{branch}/simulations/{simId}/research.md` and commits via `/__workflow/node/<id>/commit` per its playbook §5. Outputs carry `paradigm`, `renderStrategy`, `tickHz`, `interaction`, and `buildTier` - the downstream drawers read those (or `research.md` directly).
 
 **`buildTier` (simple | standard | full) is a required research output** - research commits it from the slot's complexity, and the orchestrator scaffolds the matching tier-sized builder set (see the shared "Build tier" contract in capabilities.py):
