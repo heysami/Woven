@@ -449,6 +449,11 @@ def snapshot_asset(project_root: str, node: Dict[str, Any], *,
     os.makedirs(runs_dir(project_root, node_id, vid, cid), exist_ok=True)
     with open(os.path.join(snap_dir, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(version_entry, f, indent=2)
+    # Stamp "this vid has appeared in versions[]" so reconcile_orphan_versions
+    # never mistakes an intentionally-removed version (git discard / branch
+    # switch drops it from the committed workflow.json, but this gitignored
+    # snapshot dir survives) for a race-lost orphan and resurrects it.
+    _mark_surfaced(snap_dir)
     with open(os.path.join(runs_dir(project_root, node_id, vid, cid), "meta.json"),
               "w", encoding="utf-8") as f:
         json.dump(composition_entry, f, indent=2)
@@ -662,6 +667,23 @@ def _purge_composition_dirs(project_root: str, node_id: str,
 
 # ── Migration ──────────────────────────────────────────────────────────────
 
+# Marker file inside a runs/<nodeId>/<vid>/ snapshot dir meaning "this vid has
+# already appeared in versions[] on this machine". reconcile_orphan_versions
+# skips marked dirs: a marked dir absent from versions[] was removed ON
+# PURPOSE (git discard / branch switch rewrote the committed workflow.json;
+# the gitignored snapshot dir survives), not lost to the since-fixed
+# /__workflow write race - recovering it would resurrect discarded state on
+# every /__workflow GET, making "discard changes" impossible to land.
+SURFACED_MARKER = ".surfaced"
+
+def _mark_surfaced(snap_dir: str) -> None:
+    try:
+        with open(os.path.join(snap_dir, SURFACED_MARKER), "w", encoding="utf-8") as f:
+            f.write("")
+    except Exception:
+        pass
+
+
 def reconcile_orphan_versions(project_root: str, node: Dict[str, Any]) -> int:
     """Walk workflow/runs/<nodeId>/ on disk and append any version dirs that
     aren't already in node.versions[]. Returns the number of recovered
@@ -671,6 +693,12 @@ def reconcile_orphan_versions(project_root: str, node: Dict[str, Any]) -> int:
     a concurrent /__workflow POST stomped the appended versions[] entry
     back to a stale state. The dirs remain on disk; this helper recovers
     them so the picker UI shows them.
+
+    Recovery is a LEGACY heal (the write race is since-fixed) and must never
+    fight git: a dir carrying the SURFACED_MARKER already showed in
+    versions[] once, so its absence now is intentional (discard / branch
+    switch) - skip it. Dirs still referenced by versions[] get the marker
+    backfilled here so pre-marker snapshots become discardable too.
 
     Recovered versions are inserted in createdAt order (from meta.json
     inside each dir, falling back to dir mtime). The active version is
@@ -686,7 +714,16 @@ def reconcile_orphan_versions(project_root: str, node: Dict[str, Any]) -> int:
     for entry in os.scandir(runs_root):
         if not entry.is_dir(): continue
         vid = entry.name
-        if vid in known_vids: continue
+        if vid in known_vids:
+            # Backfill: this vid is live in versions[] right now - stamp the
+            # dir so a future git discard/branch switch can drop it for good.
+            if not os.path.isfile(os.path.join(entry.path, SURFACED_MARKER)):
+                _mark_surfaced(entry.path)
+            continue
+        if os.path.isfile(os.path.join(entry.path, SURFACED_MARKER)):
+            # Was surfaced before and is now gone from versions[] - the user
+            # (or git) removed it deliberately. Not an orphan; leave it out.
+            continue
         # Try to load meta.json for a faithful version entry; else synthesize
         # a minimal one from filesystem inspection.
         meta_path = os.path.join(entry.path, "meta.json")
@@ -707,7 +744,7 @@ def reconcile_orphan_versions(project_root: str, node: Dict[str, Any]) -> int:
             for root, _, names in os.walk(entry.path):
                 rel_root = os.path.relpath(root, entry.path)
                 for name in names:
-                    if name in ("meta.json", "thumb.png"): continue
+                    if name in ("meta.json", "thumb.png", SURFACED_MARKER): continue
                     if rel_root == ".":
                         rel = name
                     else:
@@ -736,6 +773,9 @@ def reconcile_orphan_versions(project_root: str, node: Dict[str, Any]) -> int:
                 "activeCompositionId": None,
             }
         recovered.append(version_entry)
+        # One-shot: a recovered legacy orphan is now surfaced - if the user
+        # discards it later, that removal is final.
+        _mark_surfaced(entry.path)
     if not recovered: return 0
     # Sort recovered + existing together by createdAt to keep the array
     # chronologically ordered.
@@ -1126,7 +1166,7 @@ def snapshot_downstream_assets(project_root: str, workflow: Dict[str, Any],
         if not os.path.isdir(snap): return out
         for root, _, files in os.walk(snap):
             for name in files:
-                if name in ("meta.json",): continue
+                if name in ("meta.json", SURFACED_MARKER): continue
                 p = os.path.join(root, name)
                 rel = os.path.relpath(p, snap)
                 # Skip composition meta files.
