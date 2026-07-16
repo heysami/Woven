@@ -10304,6 +10304,16 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
               className="runs-row"
               onClick=${() => { onAfterPick && onAfterPick(); onOpenRun && onOpenRun(r); }}
               title=${`${r.kind} on ${r.branch}\nturns: ${r.turnsCompleted ?? 0}\n${r.runId}`}
+              onMouseEnter=${(e) => {
+                // Prepend the full title to the tooltip ONLY when the title
+                // span is ellipsis-truncated - measured live so it tracks
+                // panel resizes.
+                const btn = e.currentTarget;
+                const span = btn.querySelector(".runs-row-title");
+                const meta = `${r.kind} on ${r.branch}\nturns: ${r.turnsCompleted ?? 0}\n${r.runId}`;
+                const clipped = span && span.scrollWidth > span.clientWidth;
+                btn.title = clipped ? `${r.title || r.kind}\n\n${meta}` : meta;
+              }}
             >
               <span className="runs-row-dot" data-status=${status}/>
               <span className="runs-row-title">${r.title || r.kind}</span>
