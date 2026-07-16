@@ -154,6 +154,8 @@ _GITIGNORE_LOCAL = [
     "__pycache__/",
     ".prototype-autofeatured.json",  # one-shot auto-feature sentinel - machine-local
     "share/thumb-*.png",        # generated share preview - regenerates on every source change (would keep the tree dirty forever); comments.json + comment-shots/ + comment-attach/ DO sync
+    "/attachments/",            # chat/reference uploads (project-level dir) - machine-local, keep out of the repo
+    "_attachments/",            # legacy per-branch chat uploads (source/*/_attachments/) - same policy
 ]
 
 # Merge strategies the daemon pins in each project's .gitattributes (committed,
