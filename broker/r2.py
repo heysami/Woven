@@ -60,8 +60,11 @@ def _client():
 
 
 def content_type_for(name: str) -> str:
-    if name.endswith("/api/meta"):          # extensionless JSON the viewer boots on
+    # Extensionless objects mirroring the gate's API URL space.
+    if name.endswith("/api/meta") or name.endswith("/api/comments"):
         return "application/json; charset=utf-8"
+    if name.endswith("/shot"):              # comment screenshots are jpg
+        return "image/jpeg"
     ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
     if ctype.startswith("text/") or ctype in (
         "application/javascript", "application/json", "image/svg+xml"

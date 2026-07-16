@@ -73,6 +73,27 @@ Visitors can leave comments even while the owner's machine is off:
 - Snapshots ship the viewer, so shares uploaded BEFORE this feature queue
   comments correctly (the worker handles that side) but show the old error
   copy until their owner presses Update to refresh the snapshot.
+
+### Offline comment visibility
+
+Existing comments stay VISIBLE while the owner is off (they used to vanish -
+reads passed through to the dead tunnel and fell back to an empty list):
+
+- The snapshot bakes in `share/api/comments` (the discussion as JSON) plus
+  every comment screenshot (`api/comments/<cid>/shot`, jpg) and attachment
+  (`api/comments/<cid>/attach/<aid>`).
+- The daemon RE-PUSHES the comment list on every change via
+  `POST /shares/update_comments` {installId, token, comments} (installId-
+  bound like delete, 2MB cap, coalesced 3s daemon-side in
+  `_hosted_comments_push_soon`, hooked into `_notify_comments_changed`) - so
+  the stored copy is current as of the last moment the owner was online, not
+  the upload date. Inbox merges trigger the same hook, so collected offline
+  comments appear in the stored copy too.
+- Worker, offline: GET `api/comments` serves the stored copy (empty-list
+  fallback only when none exists); GET shot/attach paths serve the stored
+  images (404 with a readable message otherwise). Online reads always pass
+  through live. Shots/attachments added after the upload only ship on the
+  next snapshot Update; their comments still show, imageless, via the push.
 - **Snapshot semantics, on purpose.** Visitors see the uploaded version until
   the owner presses Update (share panel ↻ / "Update snapshot"). This is a
   prototype share, not a production deploy - publish-to-online remains the

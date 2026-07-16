@@ -1027,6 +1027,31 @@ def _hosted_build_snapshot(rec, out_path):
             "label":      rec.get("label") or "",
         }).encode("utf-8"))
         count += 2
+        # The review discussion so far - comment list + screenshots +
+        # attachments - so visitors still SEE existing comments while the
+        # owner is offline (the worker falls back to these; the daemon also
+        # re-pushes the list on every change, see _hosted_comments_push_soon).
+        try:
+            comments = comments_list(project_root, slug)
+        except Exception:
+            comments = []
+        add_bytes(tf, "share/api/comments",
+                  json.dumps({"comments": comments}).encode("utf-8"))
+        count += 1
+        for c in comments:
+            cid = c.get("id") or ""
+            sp = comment_shot_abspath(project_root, cid)
+            if sp and os.path.isfile(sp) and os.path.getsize(sp) <= _HOSTED_FILE_MAX:
+                tf.add(sp, arcname="share/api/comments/{}/shot".format(cid),
+                       recursive=False)
+                count += 1
+            for a in (c.get("attachments") or []):
+                aid = (a or {}).get("id") or ""
+                path, _ext = comment_attach_lookup(project_root, cid, aid)
+                if path and os.path.getsize(path) <= _HOSTED_FILE_MAX:
+                    tf.add(path, arcname="share/api/comments/{}/attach/{}".format(cid, aid),
+                           recursive=False)
+                    count += 1
         # The prototype tree + the design-system library it links - exactly the
         # two prefixes _gate_project_paths_ok() allows.
         src_tree = os.path.join(project_root, "source", slug)
@@ -1918,6 +1943,59 @@ def _notify_comments_changed(project_id, prototype):
             _ON_COMMENTS_CHANGED(project_id, prototype)
         except Exception:
             pass
+    # Keep the hosted copy of the discussion fresh: whenever comments change
+    # for a prototype whose share is hosted, push the list to storage so
+    # offline visitors see the latest state (not the upload-time one).
+    try:
+        for s in shares_load().get("shares", []):
+            if (s.get("project") == project_id and s.get("prototype") == prototype
+                    and share_hosted_on(s)):
+                _hosted_comments_push_soon(s)
+                break
+    except Exception:
+        pass
+
+
+# ── Hosted comments push - the R2 copy of the discussion ──────────────────
+# The snapshot bakes the comments in at upload time; this keeps them current
+# afterwards. Coalesced: bursts of changes (a reply + status flip + shot)
+# produce one push a few seconds later, not one per mutation.
+
+_HOSTED_CPUSH_PENDING = set()
+_HOSTED_CPUSH_LOCK = threading.Lock()
+_HOSTED_COMMENTS_MAX = 2 * 1024 * 1024   # serialized cap; broker enforces too
+
+
+def _hosted_comments_push_soon(rec):
+    token = rec.get("token") or ""
+    if not token or not WOVEN_BROKER_URL:
+        return
+    with _HOSTED_CPUSH_LOCK:
+        if token in _HOSTED_CPUSH_PENDING:
+            return                          # a push is already scheduled
+        _HOSTED_CPUSH_PENDING.add(token)
+
+    project, prototype = rec.get("project"), rec.get("prototype")
+
+    def run():
+        time.sleep(3)                       # coalesce mutation bursts
+        with _HOSTED_CPUSH_LOCK:
+            _HOSTED_CPUSH_PENDING.discard(token)
+        try:
+            root = _RESOLVE_PROJECT_ROOT(project or "")
+            body = json.dumps({
+                "installId": woven_install_id(),
+                "token":     token,
+                "comments":  comments_list(root, prototype),
+            }).encode("utf-8")
+            if len(body) > _HOSTED_COMMENTS_MAX:
+                print("[share] hosted comments push skipped (too large)", flush=True)
+                return
+            _hosted_broker_post("/shares/update_comments", data=body, timeout=30)
+        except Exception as e:
+            print("[share] hosted comments push failed: {}".format(e), flush=True)
+
+    threading.Thread(target=run, daemon=True, name="hosted-comments-push").start()
 
 
 # ═════════════════════════════════════════════════════════════════════════

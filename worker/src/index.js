@@ -139,7 +139,21 @@ async function serveApi(request, env, token, sub) {
   // dead tunnel should look dead, exactly as it does today.
   if (!(await isHosted(env, token))) return json(530, { error: "share offline" });
   if (request.method === "GET" && sub === "/api/comments") {
+    // The stored copy of the discussion: baked into the snapshot at upload
+    // and re-pushed by the daemon on every change, so it is CURRENT as of the
+    // last moment the owner was online - not the upload date.
+    const obj = await env.SHARES.get("s/" + token + "/api/comments");
+    if (obj !== null) return objectResponse(request, obj, "api/comments.json");
     return json(200, { comments: [], hostedOffline: true });
+  }
+  // Comment screenshots + attachments captured in the snapshot.
+  if ((request.method === "GET" || request.method === "HEAD")
+      && /^\/api\/comments\/[cr]-[a-f0-9]{8,16}\/(shot|attach\/a-[a-f0-9]{8,16})$/.test(sub)) {
+    const obj = await env.SHARES.get("s/" + token + sub);
+    if (obj !== null) {
+      return objectResponse(request, obj, sub.endsWith("/shot") ? "shot.jpg" : "attach.bin");
+    }
+    return json(404, { error: "not available while the share owner is offline" });
   }
   // New comments queue at the broker's inbox; the owner's daemon collects
   // them when it comes back online. Everything else under /api/ (replies,
