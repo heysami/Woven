@@ -11462,7 +11462,7 @@ async function hostedShareOp(shareId, action, on) {
    over the existing /__live, /__share, /__share/create, export + figma events. */
 function ShareMenuButton() {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState("project");
+  const [tab, setTab] = useState("protos");
   const [data, setData] = useState(null);    // /__shares: { shares, cloudflared, woven }
   const [nodes, setNodes] = useState([]);    // /__workflow nodes
   const [reachable, setReachable] = useState(true);
@@ -11769,7 +11769,7 @@ function ShareMenuButton() {
   const menu = open && pos && createPortal(html`
     <div ref=${menuRef} className="share-menu" style=${{ top: pos.top + "px", right: pos.right + "px" }}>
       <div className="share-menu-tabs">
-        ${[["project", "Project"], ["protos", "Prototype / HTML"], ["assets", "Visual Assets"]].map(([t, lab]) => html`
+        ${[["protos", "Prototype / HTML"], ["assets", "Visual Assets"], ["project", "Project"]].map(([t, lab]) => html`
           <button key=${t} className="share-menu-tab" data-active=${tab === t ? "true" : "false"} onClick=${() => setTab(t)}>${lab}</button>`)}
         <span style=${{ flex: 1 }}></span>
         <button className="th-icon-btn" title="Refresh" onClick=${() => { reloadShares(); reloadNodes(); }}><${Icon.Refresh}/></button>
