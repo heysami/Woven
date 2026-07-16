@@ -32,6 +32,9 @@ inputPaths:    ["input-pointer.js", "input-gyro.js"]              // one per dec
 peakEntities:    "<N>"
 peakParticles:   "<N>"
 
+# From research.md §Control scheme (§2.10) - present whenever the player steers an avatar
+controlScheme:  "<the per-embodiment control tables + axes anchor, VERBATIM from research.md>"
+
 successFeel:   "<verbatim>"
 
 iterationOuter: 1..5
@@ -220,6 +223,20 @@ User can pause, resume, reset. Reset must NOT leak bodies, audio nodes, or parti
 
 Boot at peak entities + peak particles, run for 10 seconds. `preview_eval('window.__game.fps.avg')` must be ≥ 45. Below 30 = block.
 
+### 3.9 Control table implemented VERBATIM + full-table sign sweep (block)
+
+When research commits a §2.10 control scheme, the input→state mapping in your tick (steps 1-2) implements the table rows EXACTLY: the committed frame of reference (camera-relative strafe vs entity-relative steer are DIFFERENT code paths), the committed sign, the committed gating (car steering gated on speed ≠ 0). You tune magnitudes; you never re-derive semantics - a mapping that "feels more natural" to you than the table is a bug, not an improvement (the table already encodes the embodiment's convention, including deliberately inverted axes like plane pitch and reverse-steer).
+
+Before commit, self-test EVERY row numerically - the full sweep, per embodiment:
+
+```
+window.__game.injectFakeInput('keyDown', {code:'KeyD'}); window.__game.tick(0.5);
+// then assert the row's sign predicate against window.__game.snapshot()
+// (heading yaw increased, trajectory curved entity-right, per the axes anchor)
+```
+
+All rows, all embodiments, INCLUDING the vehicle reverse-steer row, and for multi-embodiment games the full re-sweep of the incoming table after a switch. A partial sweep is a block: verifying only the axis that was reported broken is exactly how "W/S fixed, A/D still inverted" ships. `snapshot()` must expose the avatar's position + heading + speed so these predicates (and the plan's `control-semantics` test cases) are checkable.
+
 ## 4. Recipe
 
 1. Read `research.md`, `physics.js`, `objective.js`, `feedback.js`, `input-*.js`.
@@ -235,8 +252,8 @@ Boot at peak entities + peak particles, run for 10 seconds. `preview_eval('windo
 ## 5. What you do NOT do
 
 - **You do not write physics, objective, feedback, input, world, or overlay.** Each has its own drawer.
-- **You do not decide what gestures map to what impulses creatively** - the mapping should follow `research.md`'s gesture map. Tune values, not semantics.
+- **You do not decide what gestures map to what impulses creatively** - the mapping follows `research.md`'s gesture map AND its §2.10 control tables. Tune values, not semantics - frame of reference, sign, and gating are research's commits, per embodiment.
 - **You do not own the audio context creation.** The runtime composer creates it on Start; you forward it to `feedbackInit`.
 
-End with: `"game_loop_<gameId>: tickHz=<N>, peak entities=<N>, fps=<N>, pause/resume/reset OK - commit pending lens."`
+End with: `"game_loop_<gameId>: tickHz=<N>, peak entities=<N>, fps=<N>, pause/resume/reset OK, control sweep=<N rows × M embodiments pass|n/a> - commit pending lens."`
 """

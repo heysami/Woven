@@ -273,14 +273,27 @@ The QA gate runs the piece's plan-time `test-cases.json` (written by research, n
 - `intents`: array covering EVERY intent listed in `test-cases.json`.
 - `injectFakeInput(kind, opts)`: accepts every listed intent in EVERY phase. Return `false` for "ignored in this phase"; NEVER throw on an unexpected phase or malformed opts.
 - `tick(seconds)`: deterministic fast-forward through the fixed-step loop (the soak and long journeys use it).
-- `snapshot()`: small serializable state summary.
+- `snapshot()`: small serializable state summary. When research commits a §2.10 control scheme it MUST include the avatar's position + heading + speed (+ current embodiment/mode) - the plan's `control-semantics` cases assert sign predicates against these.
 - `errors`: crash-forensics ring buffer (keep the last 10), filled by a global `error` + `unhandledrejection` handler pushing { message, stack, phase, lastIntents }. Errors stay LOUD: no try/catch blankets that swallow failures into weird-state bugs.
+- `qa`: the CONTROL-VISIBILITY instrumentation (mandatory when research commits a control scheme; devtools-gated, NEVER visible in the shipped view). Agents QA frame by frame, not by watching video - things that are obvious in motion (which way did it turn?) are invisible in a single screenshot of a moving world unless the world is instrumented to make direction legible per frame:
+  - `qa.debug(on)` - toggles a transparent QA overlay canvas layered ABOVE the world, BELOW the HUD, drawing three instruments from `state`: a **world compass** (N/E/S/W letters + colored axis lines, laid out per research's axes anchor - every screenshot becomes self-describing), an **avatar forward-gizmo** (arrow rigidly showing heading - a sphere or symmetric car reads the same facing either way without it), and a **breadcrumb trail** (dot every ~100ms, cap ~300, color-switches on embodiment change). The trail is the key instrument: it renders TIME into SPACE, so one screenshot after a scripted input sequence shows the whole path as a static curve - "hold W 1s then hold D 1s" must paint a straight line then an arc bending the committed way. For 2D paradigms draw in world coords; for `3d-environment` project positions through the camera the world layer exposes.
+  - `qa.spawnTarget(x, y[, z], label)` - mint a labeled debug target body (aim/shoot/collide verification); hits surface in `snapshot()`.
+
+### 3.9 Semantic control sweep on the ASSEMBLED runtime (block on craft)
+
+The loop drawer already swept the control table numerically in isolation - you re-verify it ASSEMBLED, because composition is where a correct mapping gets re-broken (camera wired to a different frame than the loop assumed, world iframe axis flip, input attach forwarding the wrong coordinate space). When research commits a §2.10 control scheme, after the §3.6 sequence:
+
+1. `qa.debug(true)`, then per embodiment, per control-table row: reset, drive the scripted input via `injectFakeInput` + `tick()`, assert the row's sign predicate against `snapshot()`.
+2. For each directional PAIR (forward/back, left/right, pitch up/down), take ONE screenshot with the trail + compass visible - the trail's curve direction against the compass is the visual proof the numeric check can't fake (a heading variable can carry the right sign while the camera renders the world mirrored).
+3. Multi-embodiment games: perform the switch in-runtime, re-sweep the incoming table in full, and confirm the trail color-switch marks the change.
+
+EVERY row, never a sample. Screenshots from this sweep are gate evidence alongside the §3.6 set.
 
 ## 4. Recipe
 
 1. Read every committed component file.
 2. Draft `runtime.html` per §2.
-3. Self-test full sequence per §3.6.
+3. Self-test full sequence per §3.6 + the §3.9 control sweep when a control scheme is committed.
 4. Atomic commit (canonical path or `_runtime_remix/<variant>/runtime.html`).
 
 ## 5. What you do NOT do
@@ -290,5 +303,5 @@ The QA gate runs the piece's plan-time `test-cases.json` (written by research, n
 - **You do not bypass `touch-action: none` on the gesture surface.** Mobile scroll-jacking is the most common bug.
 - **You do not commit without driving the runtime via Start.** Static screenshots aren't sufficient evidence.
 
-End with: `"game_runtime_<gameId>: pacing=<X>, juice=<X>, two-gate verified, successFeel self-critique=<delivered|gap-noted>, fps=<N> - commit pending full lens trio."`
+End with: `"game_runtime_<gameId>: pacing=<X>, juice=<X>, two-gate verified, control sweep=<N rows × M embodiments pass|n/a>, successFeel self-critique=<delivered|gap-noted>, fps=<N> - commit pending full lens trio."`
 """

@@ -17,7 +17,7 @@ The orchestrator hands you:
 - `subject` - one-line description of the game (e.g. "throw a paper plane through a pastel office")
 - `paradigmHint` - `2d-side` / `2d-topdown` / `3d-environment` / `iconographic-physics` / `hybrid` / `any`
 - `objective` - one-line goal (e.g. "fly as far as possible; collect mugs for +score")
-- `inputs` - declared input modalities (csv: pointer / touch / multi-touch / gyro / gamepad)
+- `inputs` - declared input modalities (csv: pointer / touch / multi-touch / gyro / gamepad / keyboard)
 - `juiceRegister` - `restrained` / `paced` / `juicy` / `juice-overload` / `any`
 - `successFeel` - what the game feels like when it works
 - `creativeBrief` - styleCue, sensoryTargets, antiPatterns
@@ -37,9 +37,10 @@ Sub-answers:
 3. **Physics engine** - the engine the physics drawer initialises
 4. **Tick rate** - fixed-step physics Hz + render rAF
 5. **Input modalities** - confirmed list + each modality's feature shape
-6. **Objective shape** - score / progress / streak / win-condition + scoring contract
-7. **Juice register** - restrained / paced / juicy / juice-overload (informs the feedback drawer)
-8. **Multi-draft recommendation** - which (if any) of `world` / `feedback` / `runtime` cruxes benefit from divergence
+6. **Control scheme** - per-EMBODIMENT control tables with machine-checkable sign conventions (§2.10) - MANDATORY whenever the player steers an avatar
+7. **Objective shape** - score / progress / streak / win-condition + scoring contract
+8. **Juice register** - restrained / paced / juicy / juice-overload (informs the feedback drawer)
+9. **Multi-draft recommendation** - which (if any) of `world` / `feedback` / `runtime` cruxes benefit from divergence
 
 No precedent essays. No mental-model bullets. No accessibility deep-dives. The §8.3 lens trio (craft / aesthetic / concept) handles quality; you handle the tech pick.
 
@@ -98,8 +99,11 @@ No precedent essays. No mental-model bullets. No accessibility deep-dives. The �
 | `multi-touch` | TouchEvent + per-finger tracking | `{ touches: [{id, x, y, vx, vy}], pinchScale, twistAngle }` |
 | `gyro` | DeviceOrientationEvent (iOS 13+ requires `.requestPermission()`) | `{ alpha, beta, gamma, smoothedTilt }` |
 | `gamepad` | navigator.getGamepads() polled per rAF | `{ axes[], buttons[] }` |
+| `keyboard` | KeyboardEvent (`keydown`/`keyup` on `e.code`, NEVER `e.key` - layout-independent so WASD works on AZERTY) | `{ keysDown: Set<code>, moveAxis: {x: -1..1, y: -1..1} }` (held-state polled per tick, not event-only - holds are continuous forces) |
 
 For mobile-primary games: ALWAYS declare `pointer` as fallback even if gyro is the headline input (some users dismiss the orientation permission).
+
+**Keyboard is NOT optional on desktop avatar games.** Any game where the player steers an avatar (character, vehicle, plane, ball) and desktop is a target MUST declare `keyboard` explicitly - WASD/arrows are the genre expectation. An undeclared keyboard modality means the loop drawer improvises the WASD mapping with no contract, which is exactly how inverted/wrong-embodiment controls ship. Declaring it also OBLIGATES the §2.10 control table.
 
 ### 2.5 - Objective shape
 
@@ -167,6 +171,47 @@ The world drawer needs to know WHAT it draws its entities from. For `2d-side` / 
 
 NEVER pick `raster-sprite` for a world whose entities are abstract shapes (a pinball, a paper plane silhouette, particle-field motes) - a sprite sheet there reads worse than a clean procedural draw.
 
+### 2.10 - Control scheme (embodiment contract) - HARD REQUIREMENT
+
+Control mapping is a CONVENTION, not a correctness property. Nothing crashes when a human strafes like a car steers or a car pitches like a plane, so no downstream drawer and no generic QA battery can catch a wrong scheme - the code is "correct" either way. YOU commit the convention here, per embodiment, as a machine-checkable table. A wrong or inverted control scheme is the single most user-visible way a technically perfect build fails; treat this section with the same weight as the paradigm pick.
+
+**Control schemes attach to EMBODIMENTS, not to games.** An embodiment is what the player currently IS: on-foot character, ground vehicle, plane, boat, ball, cursor-hand. Each embodiment carries its own convention canon. A game with multiple embodiments (drive + on-foot, GTA-like) commits ONE TABLE PER EMBODIMENT plus explicit switch semantics. Reusing one embodiment's table for another is the canonical failure mode (the on-foot human that drives like a car; the car that strafes).
+
+**Axes anchor - write it FIRST.** Every sign in a control table is meaningless without a shared anchor. Before any table, state: the world axes in the world's own nouns (e.g. `+x = east = screen-right at spawn camera; +y = up; +z = south`), what "clockwise" means (viewed from above), and whether "screen-left" is judged from the camera's view. Every sign assertion below references THIS anchor - drawers and QA never re-derive it.
+
+**The convention canon.** Commit from this canon. Deviating (tank controls, flight-sim yoke on a car, inverted look) is legitimate ONLY as an explicit register/genre commitment surfaced at the §3 interrupt - never a silent default:
+
+| Embodiment | Canon | Classic trap (what ships when uncommitted) |
+|---|---|---|
+| on-foot 3rd-person | W/A/S/D translate CAMERA-relative (A/D = STRAFE, they never rotate heading); the character rotates to face its motion vector; camera orbits via pointer-drag | A/D wired to heading rotation = tank controls - feels like driving a person |
+| on-foot 1st-person | mouse/drag-look owns yaw+pitch (pitch NOT inverted by default); WASD camera-relative | accidental inverted pitch; movement entity-relative while look is camera-relative (drift) |
+| ground vehicle (car) | W = throttle along heading; S = brake, then reverse; A/D = STEER (yaw), authority gated on speed ≠ 0 | steering that rotates the car at standstill; A/D as strafe. NOTE: while REVERSING, the visual turn direction inverts - that is CORRECT car behaviour, do not "fix" it |
+| plane (arcade) | pitch inverted BY CONVENTION (S / pull-back = nose UP); A/D = roll-bank or flat yaw - COMMIT WHICH; throttle on separate keys | "fixing" the pitch inversion (planes are the one embodiment where inverted IS natural); roll-vs-yaw left ambiguous |
+| boat | like car, but rudder authority scales with speed and response lags | car-crisp instant steering |
+| top-down 2D avatar | screen-relative identity: up-input = up-screen | none - the mapping is identity; this is why 2D controls never scramble |
+| side-scroller | left/right screen-relative + jump | gravity-relative confusion on flip mechanics only |
+| drag-physics / cursor-hand | per the §2.4 gesture map (drag = aim, release = throw, ...) | gesture map missing release semantics |
+
+**Reference check UNCONDITIONAL (same rule as §2.0 paradigm).** When the brief names a game or genre, WebFetch how THAT game's controls actually work per embodiment - from the real thing, never recall - and cite it. A GTA-like commits BOTH tables (on-foot camera-relative strafe AND vehicle throttle/steer) because the reference has both.
+
+**The control table format.** Per embodiment, one row per input, every row a TESTABLE contract - frame of reference, effect, sign assertion, gating:
+
+```markdown
+### Embodiment: car  (active when: state.player.mode === 'drive')
+Axes anchor: +x east / screen-right at spawn, +z south, yaw positive = clockwise from above.
+| input | frame | effect | sign assertion (machine-checkable via harness snapshot) | gating |
+|---|---|---|---|---|
+| KeyW hold | entity | throttle forward | after 0.5s from rest: speed > 0 AND displacement·heading > 0 | playing |
+| KeyS hold | entity | brake → reverse | from forward speed: speed decreases; from rest after 0.5s: speed < 0 | playing |
+| KeyA hold | entity | steer left (yaw −) | with speed > 0 held 0.5s: heading yaw DECREASES; trajectory curves to entity-left | speed ≠ 0 |
+| KeyD hold | entity | steer right (yaw +) | with speed > 0 held 0.5s: heading yaw INCREASES; trajectory curves to entity-right | speed ≠ 0 |
+| reverse-steer | entity | visual inversion while reversing | with speed < 0, KeyA: nose swings screen-RIGHT (correct car behaviour, asserted so nobody "fixes" it) | speed < 0 |
+```
+
+Every axis with a natural-vs-inverted ambiguity (pitch, orbit direction, zoom direction) gets an explicitly committed sign + a one-line reason. "Whatever feels right" is not a commit.
+
+**Embodiment switching.** If the game switches embodiment (enter/exit vehicle), commit: the switch trigger, and the rule that the ENTIRE table swaps at the switch - no row survives across embodiments. The test plan (below) re-runs the incoming embodiment's FULL table after every switch; scheme leakage across a switch is a known recurring bug class.
+
 ## 3. Recipe
 
 1. **Read upstream** - the envelope + the project's `workflow/creative-brief.json` if it exists.
@@ -212,6 +257,16 @@ NEVER pick `raster-sprite` for a world whose entities are abstract shapes (a pin
 ## Input modalities
 - <modality>: <feature vector shape> + gesture map (e.g. "drag = aim; release = throw; pinch = zoom")
 - <modality>: ...
+
+## Control scheme
+<!-- §2.10 - MANDATORY whenever the player steers an avatar; delete only for pure
+     drag-physics/cursor pieces fully covered by the gesture map above. -->
+Axes anchor: <world axes in the world's nouns + clockwise definition>
+Embodiments: <csv - e.g. "on-foot, car">
+<one §2.10 control table per embodiment, every row with a machine-checkable sign assertion>
+Switch semantics: <trigger + "entire table swaps" | "single embodiment - n/a">
+Canon deviations: <"none - canon verbatim" | deviation + register justification + user-surfaced-at-§3-interrupt note>
+Reference: <URL of the control-convention check when the brief names a game/genre>
 
 ## Objective shape
 - Shape: **<score-climbing / progress-bar / streak / time-attack / collect-N / survive / win-condition>**
@@ -296,6 +351,7 @@ Required contents:
 - `matrix: {"auto": true}`: the runner expands intents x phases. "Fine in one state, breaks when you interact in another" is exactly the crash class this catches.
 - `abuse`: pick the applicable templates from `spam-intents`, `pointer-storm`, `resize-cycle`, `long-idle`.
 - `soak`: `{"seconds": 30, "seed": <any int>, "fastForward": true, "phase": "<main phase>"}`. Random-but-replayable input, reproducible by seed.
+- **`control-semantics` cases (MANDATORY when research commits a §2.10 control scheme)**: ONE case per control-table row per embodiment - drive the game into the embodiment's phase, inject the row's input via the harness, fast-forward ~0.5s, assert the row's sign predicate against `snapshot()` (which must expose the avatar's position + heading + speed for this reason). Cover EVERY row, never a sample - partial sweeps are exactly how "W/S got fixed but A/D shipped inverted" happens. Include the vehicle reverse-steer row, and for multi-embodiment games the FULL re-sweep of the incoming table after each switch (scheme leakage across a switch is a recurring bug class).
 
 End your final hand-back message with the case summary (e.g. "test-cases: 3 journeys + matrix (6 intents x 4 phases) + 3 abuse + soak 30s") so the plan gate can surface it to the user.
 
@@ -307,6 +363,7 @@ End your final hand-back message with the case summary (e.g. "test-cases: 3 jour
 - **You do not skip `test-cases.json`.** A piece that ships without its planned cases gets only the generic QA battery, and interaction crashes pass the gate unseen.
 - **You do not pick a paradigm without justifying it against the objective.** A score-climbing infinite runner is poorly served by `iconographic-physics`; a soft-body toy is poorly served by `3d-environment`.
 - **You do not silently accept a vague juice register.** If `juiceRegister: any` AND `successFeel` doesn't imply a register, push back via `runError`.
+- **You do not skip the §2.10 control scheme for any piece where the player steers an avatar.** No control table = the loop drawer improvises the mapping = tank-control humans and inverted planes ship. And you do not commit a scheme from recall when the brief names a reference - WebFetch the real thing's controls, per embodiment.
 
-End with: `"game_research_<gameId>: paradigm=<X>, physics=<engine>, objective=<shape>, juice=<register>, chrome=<minimal-peek|slice9>, sprite=<procedural|raster-sprite>, multi-draft=<cruxes> - research.md committed."`
+End with: `"game_research_<gameId>: paradigm=<X>, physics=<engine>, objective=<shape>, juice=<register>, chrome=<minimal-peek|slice9>, sprite=<procedural|raster-sprite>, controls=<embodiment csv|gesture-map-only>, multi-draft=<cruxes> - research.md committed."`
 """

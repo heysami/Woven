@@ -234,7 +234,7 @@ Always convert client coords → world coords via `toWorld(clientX, clientY)` us
 ## 5. What you do NOT do
 
 - **You do not interpret gestures into game actions.** That's the loop. You emit gesture events; loop calls `physics.applyImpulse` / `objective.update` per its rules.
-- **You do not own keyboard.** Sibling drawer.
+- **You do not own keyboard.** Sibling drawer (`game-input-keyboard`).
 - **You do not own gyro.** Sibling drawer (`game-input-gyro`) when declared.
 - **You do not store gesture state across frames.** Each event is fire-and-forget; in-flight state is the `pointers` Map only (cleared on detach).
 

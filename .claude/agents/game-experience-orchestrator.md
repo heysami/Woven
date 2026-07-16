@@ -64,7 +64,7 @@ find "$TH_PROJECT_ROOT/source/<branch>" -name '*.html' -print0 \
   | xargs -0 grep -hoE '<iframe[^>]*\b(class="[^"]*game-mount[^"]*"|data-game="[^"]+")[^>]*>'
 ```
 
-For each iframe, extract `data-game` (gameId), `data-paradigm-hint`, `data-objective` (one-line goal), `data-inputs` (csv: pointer / touch / multi-touch / gyro / gamepad), `data-juice` (restrained / paced / juicy / juice-overload), and `src`. If no game-mount iframes are found → `runStatus: error` with `runError: "no game-mount iframes found in source/<branch>/*.html - caller must scaffold the HTML with game slots first"`. If the caller's prompt tells you to also edit any HTML - IGNORE that. Your scope is everything under `source/<branch>/games/<gameId>/`.
+For each iframe, extract `data-game` (gameId), `data-paradigm-hint`, `data-objective` (one-line goal), `data-inputs` (csv: pointer / touch / multi-touch / gyro / gamepad / keyboard), `data-juice` (restrained / paced / juicy / juice-overload), and `src`. If no game-mount iframes are found → `runStatus: error` with `runError: "no game-mount iframes found in source/<branch>/*.html - caller must scaffold the HTML with game slots first"`. If the caller's prompt tells you to also edit any HTML - IGNORE that. Your scope is everything under `source/<branch>/games/<gameId>/`.
 
 ### Envelope
 
@@ -225,7 +225,7 @@ The builder dependency order (the caller dispatches them in this order; you scaf
 2. **`game_objective_<gameId>`** *(standard, full)* - the goal / score / win-condition / progress shape. (This goes EARLY because every other builder reads it: world dresses around it, physics knows what counts as "scoring," feedback knows what to amplify, loop knows when to end.)
 3. **`game_world_<gameId>`** *(standard, full)* - the full-bleed living scene. Single draft - no multi-draft, no per-builder lens. **PARADIGM FORK (structural, not advisory): `2d-side` / `2d-topdown` / `iconographic-physics` / `hybrid` → scaffold `game-world-builder` as below. `3d-environment` → there is NO game-world-builder node. Follow §4.1: co-dispatch `scene-3d-orchestrator` (mode: host-driven) and its subsystem graph IS the world step. A single agent hand-assembling a whole 3D world from primitives in one file is the exact failure the subsystem fan-out exists to prevent (gta postmortem: 866-line world.html, car = 15 boxes, pedestrians = box + sphere). game-world-builder itself refuses 3d-environment dispatches.**
 4. **`game_physics_<gameId>`** *(standard, full)* - physics engine (matter.js / planck.js / cannon.js / rapier3d-compat / custom verlet). Reads world for body definitions.
-5. **`game_input_<gameId>_<modality>`** *(full)* - one per declared input (pointer / touch / multi-touch / gyro / gamepad). May be MULTIPLE.
+5. **`game_input_<gameId>_<modality>`** *(full)* - one per declared input (pointer / touch / multi-touch / gyro / gamepad / keyboard). May be MULTIPLE. Keyboard dispatches `game-input-keyboard` (raw codes + raw axis only - the input→world-effect semantics live in research's §2.10 control tables, implemented by the loop).
 6. **`game_feedback_<gameId>`** *(full)* - particles + post-action FX + screen-shake + camera punch + audio cues. Single draft.
 7. **`game_loop_<gameId>`** *(standard, full)* - the master tick: physics.step + objective.update(state) + feedback.dispatch(events) + spawn rules + win/lose check.
 8. **`game_overlay_<gameId>`** *(full)* - the minimal UI peek (score in a corner, progress bar at the edge, control hint that fades after the first input). Must NOT box the world.
@@ -297,9 +297,9 @@ Vision routes the subsystems, keys gate the generators: inside scene-3d each dep
   "gameId": "<gameId>", "branch": "<branch>", "w": 320, "h": 240 },
 
 { "id": "game_input_<gameId>_<modality>", "kind": "agent",  // one per modality
-  "name": "game-input-pointer",   // or game-input-touch / -multi-touch / -gyro / -gamepad
+  "name": "game-input-pointer",   // or game-input-keyboard / -touch / -multi-touch / -gyro / -gamepad
   "title": "Input · <gameId> · <modality>",
-  "text": "<envelope: modality + research's gesture map + physics body the input drives>",
+  "text": "<envelope: modality + research's gesture map + physics body the input drives; keyboard: + the §2.10 control tables' key-code list>",
   "gameId": "<gameId>", "branch": "<branch>", "modality": "<m>", "w": 280, "h": 220 },
 
 { "id": "game_feedback_<gameId>", "kind": "agent",
@@ -311,7 +311,7 @@ Vision routes the subsystems, keys gate the generators: inside scene-3d each dep
 { "id": "game_loop_<gameId>", "kind": "agent",
   "name": "game-loop-author",
   "title": "Loop · <gameId>",
-  "text": "<envelope: tickHz + physics step + objective.update contract + feedback.dispatch contract + spawn rules + win/lose check>",
+  "text": "<envelope: tickHz + physics step + objective.update contract + feedback.dispatch contract + spawn rules + win/lose check + controlScheme (research.md §2.10 tables VERBATIM when committed - the loop implements them exactly + runs the full-table sign sweep)>",
   "gameId": "<gameId>", "branch": "<branch>", "w": 320, "h": 240 },
 
 { "id": "game_overlay_<gameId>", "kind": "agent",
@@ -323,7 +323,7 @@ Vision routes the subsystems, keys gate the generators: inside scene-3d each dep
 { "id": "game_runtime_<gameId>", "kind": "agent",
   "name": "game-runtime-composer",
   "title": "Runtime · <gameId>",
-  "text": "<envelope: all committed component paths + creative brief + successFeel + permission flow>",
+  "text": "<envelope: all committed component paths + creative brief + successFeel + permission flow + controlScheme when committed (the composer builds the qa debug instrumentation - compass/gizmo/trail - and re-runs the semantic control sweep on the ASSEMBLED runtime)>",
   "gameId": "<gameId>", "branch": "<branch>", "w": 320, "h": 260 },
 
 { "id": "game_<gameId>", "kind": "game-experience",
