@@ -5880,18 +5880,22 @@ WorkflowWaiter = _live._Waiter
 WORKFLOW_WAITERS: dict = {}        # {project_id: set[WorkflowWaiter]}
 WORKFLOW_WAITERS_LOCK = threading.Lock()
 
-def _broadcast_workflow_change(project_id: str) -> None:
+def _broadcast_workflow_change(project_id: str, event: str = "workflow-changed") -> None:
     """Notify all SSE subscribers for this project that workflow.json mutated.
-    Triggers a client-side fetch + merge."""
+    `workflow-changed` triggers a client-side fetch + MERGE (dirty-safe: keeps
+    in-flight local edits). `workflow-reset` (git discard / rollback) triggers
+    a fetch + wholesale REPLACE - merging there would resurrect the very state
+    the user just discarded, and the debounced save would write it straight
+    back to disk (the "discard never sticks" loop)."""
     if not project_id: return
     with WORKFLOW_WAITERS_LOCK:
         waiters = list(WORKFLOW_WAITERS.get(project_id) or [])
     for w in waiters:
-        try: w.push("workflow-changed", {})
+        try: w.push(event, {})
         except Exception: pass
     # Live session bridge - guests on this project see the host's (and each
     # other's) committed canvas edits.
-    try: _live.notify_project_changed(project_id, "workflow-changed", {})
+    try: _live.notify_project_changed(project_id, event, {})
     except Exception: pass
 
 # ── Woven -> Figma bridge relay ──────────────────────────────────────────
@@ -20965,8 +20969,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                     tok = body.get("token") or _gitops.host_token()
                     res = _gitops.discard_to_remote(root, token=tok)
                 # Reload the canvas (and any guests) to the rolled-back HEAD.
+                # `workflow-reset` (not `workflow-changed`): the client must
+                # REPLACE its in-memory doc, not merge - the dirty-safe merge
+                # would resurrect the discarded state and its debounced save
+                # would re-dirty the tree within a second.
                 if pid:
-                    try: _broadcast_workflow_change(pid)
+                    try: _broadcast_workflow_change(pid, event="workflow-reset")
                     except Exception: pass
                 return self._reply(200, {"ok": True, **res})
             if op == "branch-create":

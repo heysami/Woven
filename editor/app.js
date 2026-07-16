@@ -26428,6 +26428,22 @@ function WorkflowCanvas() {
         refreshLiveness();
         try { window.dispatchEvent(new CustomEvent("th:workflow-reload")); } catch {}
       });
+      es.addEventListener("workflow-reset", () => {
+        refreshLiveness();
+        // A git discard rolled workflow.json back wholesale. Abort any
+        // in-flight save first - it carries the pre-discard doc and would
+        // rewrite the discarded state to disk if it landed after the reset.
+        try {
+          if (saveAbortRef.current) { try { saveAbortRef.current.abort(); } catch {} }
+          if (typeof AbortController !== "undefined") {
+            saveAbortRef.current = new AbortController();
+          }
+        } catch {}
+        // replace:true → skip the dirty-safe merge entirely. Merging here
+        // would resurrect the discarded state from memory and the debounced
+        // save would re-dirty the tree - the "discard never sticks" loop.
+        try { window.dispatchEvent(new CustomEvent("th:workflow-reload", { detail: { replace: true } })); } catch {}
+      });
       es.addEventListener("asset-changed", (e) => {
         refreshLiveness();
         let paths = [];
@@ -26906,6 +26922,31 @@ function WorkflowCanvas() {
           // and prune the redo tail beyond it, breaking subsequent redos.
           if (forceReplace) {
             skipNextSaveRef.current = true;
+            // Disk is truth wholesale - rebaseline the per-field dirty-tracking
+            // snapshots to the fresh doc and drop delete tombstones. Leaving
+            // the old baselines would judge every replaced field DIRTY against
+            // its pre-replace value, blocking merge pulls (collaborator edits,
+            // daemon status flips) until a manual refresh.
+            try {
+              savedSnapshotRef.current.clear();
+              for (const dn of (fresh.nodes || [])) {
+                if (!dn || typeof dn.id !== "string") continue;
+                for (const f of Object.keys(dn)) {
+                  savedSnapshotRef.current.set(dn.id + "|" + f, _stableClone(dn[f]));
+                }
+                savedSnapshotRef.current.set(dn.id + "|runStatus", _stableClone(dn.runStatus));
+                savedSnapshotRef.current.set(dn.id + "|runError",  _stableClone(dn.runError));
+                savedSnapshotRef.current.set(dn.id + "|x", _stableClone(dn.x));
+                savedSnapshotRef.current.set(dn.id + "|y", _stableClone(dn.y));
+              }
+              for (const it of (Array.isArray(fresh.wb) ? fresh.wb : [])) {
+                if (it && typeof it.id === "string") {
+                  savedSnapshotRef.current.set("wb:" + it.id, _stableClone(it));
+                }
+              }
+              if (deletedIdsRef && deletedIdsRef.current) deletedIdsRef.current.clear();
+              if (deletedWbIdsRef && deletedWbIdsRef.current) deletedWbIdsRef.current.clear();
+            } catch {}
             return fresh;
           }
           const memNodeIds = new Set((prev.nodes || []).map(n => n.id));
