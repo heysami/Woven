@@ -12286,7 +12286,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
   const [note, setNote] = useState(null);    // transient success line
   const [busy, setBusy] = useState("");       // current in-flight op key
   const [msg, setMsg] = useState("");         // commit message (seeded from draft)
-  // "Summarise on push": Push drafts the summary + commits dirty work first.
+  // "Summarise on commit": Commit drafts the summary from the diff first.
   const [autoSummarise, setAutoSummarise] = useState(() => {
     try { return localStorage.getItem("th.git.autoSummarise") === "1"; } catch { return false; }
   });
@@ -12372,10 +12372,20 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
   // Reveal the manual remote-URL editor, pre-filled with the current remote.
   const startManualEdit = () => { setRemote(st && st.remote ? st.remote : ""); setPicking(false); setEditingRemote(true); };
   const doCommit = async () => {
+    // "Summarise on commit": draft the message from the diff before committing
+    // (a hand-typed message wins; the generic draft seed does not).
+    let m = msg;
+    if (autoSummarise && !urlSuffix && !msgTouched.current) {
+      setBusy("summarise"); setErr(null);
+      try { m = (await summariseDiff()) || msg; }
+      catch (e) { flashErr(e.message || e); return; }
+      finally { setBusy(""); }
+      if (m !== msg) { setMsg(m); msgTouched.current = true; }
+    }
     // Live-session guest credits are a PROJECT concept - a global-DS commit
     // (urlSuffix) never picks up another project's share coauthors.
     const shareId = urlSuffix ? null : await activeShareId();
-    const j = await op("commit", { message: msg, shareId });
+    const j = await op("commit", { message: m, shareId });
     if (j) {
       flashNote(j.empty ? "Nothing to commit" : "Committed " + (j.sha || "").slice(0, 7));
       msgTouched.current = false; reload();
@@ -12389,7 +12399,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
   // user did gets dropped. Project-scoped only (llm_run needs ?project=),
   // so the button is hidden for global-DS repos (urlSuffix). Returns the
   // drafted message, or null when only generated files changed. Throws on
-  // failure - callers (doSummarise, doPush) own the busy/error handling.
+  // failure - callers (doSummarise, doCommit) own the busy/error handling.
   const summariseDiff = async () => {
     const NOISE = /^(workflow\/(runs|views)\/|workflow\/viewport\.json|\.history\/|\.trash\/|editor\/chat\.jsonl|\.DS_Store)/;
     const dr = await fetch(gurl("/__git/diff?kind=working"));
@@ -12440,23 +12450,6 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
     finally { setBusy(""); }
   };
   const doPush = async () => {
-    // "Summarise on push": ship uncommitted work in one click - draft the
-    // message from the diff (a hand-typed message wins), commit, then push.
-    // With the checkbox off, Push only publishes existing commits, as before.
-    if (autoSummarise && !urlSuffix && st && st.dirty) {
-      let m = msgTouched.current ? msg.trim() : "";
-      if (!m) {
-        setBusy("summarise"); setErr(null);
-        try { m = (await summariseDiff()) || ""; }
-        catch (e) { flashErr(e.message || e); return; }
-        finally { setBusy(""); }
-        if (m) { setMsg(m); msgTouched.current = true; }
-      }
-      const shareId = await activeShareId();
-      const cj = await op("commit", { message: m || msg, shareId });
-      if (!cj) return;
-      msgTouched.current = false;
-    }
     const j = await op("publish", {});
     if (j) { flashNote("Pushed to origin/" + (j.branch || "")); reload(); }
   };
@@ -12837,9 +12830,9 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
                 <div className="th-git-msg-head">
                   <button className="orchestrator-toggle th-git-autosum" data-enabled=${autoSummarise ? "true" : "false"}
                     onClick=${() => { const on = !autoSummarise; setAutoSummarise(on); try { localStorage.setItem("th.git.autoSummarise", on ? "1" : "0"); } catch {} }}
-                    title="When enabled, Push drafts the summary, commits your uncommitted changes with it, then pushes">
+                    title="When enabled, Commit drafts the summary from your changes first, then commits with it (a message you typed yourself wins)">
                     <span className="orchestrator-toggle-track"><span className="orchestrator-toggle-knob"/></span>
-                    <span className="th-git-autosum-label">Summarise on push</span>
+                    <span className="th-git-autosum-label">Summarise on commit</span>
                   </button>
                   <button className="th-git-link th-git-summarise" disabled=${!st.dirty || !!inflight || busy === "summarise"} onClick=${doSummarise}
                     title="Draft a commit message from your uncommitted changes - a subject line plus one sentence per change">
@@ -12854,10 +12847,11 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
                 ${({ commit: "Committing", publish: "Pushing", pull: "Pulling", "discard-local": "Discarding", "discard-remote": "Resetting to GitHub" }[inflight] || "Working")}… <span className="th-git-inflight-sub">in progress on this machine</span>
               </div>`}
               <div className="th-git-actions">
-                <button className="th-git-btn is-primary" disabled=${!st.dirty || !!inflight || busy === "commit"} onClick=${doCommit}>
-                  <${Icon.Check}/> ${opBusy("commit") ? "Committing…" : "Commit"}</button>
-                <button className="th-git-btn" disabled=${!hasRemote || !!inflight || !!busy} onClick=${doPush}
-                  title=${hasRemote ? (autoSummarise ? "Summarise + commit uncommitted changes, then push to origin" : "Push commits to origin") : "Connect a repo first"}>
+                <button className="th-git-btn is-primary" disabled=${!st.dirty || !!inflight || !!busy} onClick=${doCommit}
+                  title=${autoSummarise ? "Summarise the changes, then commit with the drafted message" : "Commit uncommitted changes"}>
+                  <${Icon.Check}/> ${opBusy("commit") ? "Committing…" : (autoSummarise && busy === "summarise") ? "Summarising…" : "Commit"}</button>
+                <button className="th-git-btn" disabled=${!hasRemote || !!inflight || busy === "publish"} onClick=${doPush}
+                  title=${hasRemote ? "Push commits to origin" : "Connect a repo first"}>
                   <${Icon.ArrowUp}/> ${opBusy("publish") ? "Pushing…" : "Push" + (st.ahead > 0 ? " (" + st.ahead + ")" : "")}</button>
                 <button className="th-git-btn" disabled=${!hasRemote || !!inflight || busy === "pull"} onClick=${doPull}
                   title=${hasRemote ? "Pull from origin - blocked while the tree is dirty or a live session is running" : "Connect a repo first"}>
