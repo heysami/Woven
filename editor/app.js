@@ -11398,6 +11398,54 @@ const SHARE_STATUS_META = {
   hosted: { dot: "ok", label: "Hosted" }, uploading: { dot: "warn", label: "Uploading…" },
 };
 
+/* Hosting passcode - publishing a snapshot on getwoven.design requires a
+   passcode the BROKER verifies (codes live server-side, hashed; nothing in
+   this repo can mint one). The browser remembers the code the user entered in
+   localStorage and re-prompts when it is rejected; the daemon only relays it
+   per request and never writes it to disk. */
+const HOSTED_PASSCODE_KEY = "wovenHostedPasscode";
+async function ensureHostedPasscode(forcePrompt = false) {
+  let code = "";
+  try { code = localStorage.getItem(HOSTED_PASSCODE_KEY) || ""; } catch {}
+  if (code && !forcePrompt) return code;
+  code = await uiPrompt(
+    forcePrompt
+      ? "That hosting passcode was rejected. Enter a valid passcode to publish on getwoven.design:"
+      : "Enter the hosting passcode to publish on getwoven.design (it will be remembered in this browser):",
+    "");
+  if (code == null) return null;                        // cancelled
+  code = String(code).trim();
+  if (!code) return null;
+  try { localStorage.setItem(HOSTED_PASSCODE_KEY, code); } catch {}
+  return code;
+}
+
+/* One hosted-share operation with passcode prompt + a single re-prompt when
+   the saved code is rejected. action: "update" (body {hostedOn: on}) or
+   "host_update" (snapshot re-upload). Resolves {cancelled: true} when the
+   user dismisses the prompt; throws on real failures. */
+async function hostedShareOp(shareId, action, on) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const body = action === "host_update" ? {} : { hostedOn: !!on };
+    if (action === "host_update" || on) {               // toggling OFF needs no code
+      const pc = await ensureHostedPasscode(attempt > 0);
+      if (pc == null) return { cancelled: true };
+      body.passcode = pc;
+    }
+    const r = await fetch(`/__share/${shareId}/${action}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) return { ok: true };
+    if (j.passcodeRequired) {
+      try { localStorage.removeItem(HOSTED_PASSCODE_KEY); } catch {}
+      continue;                                         // stale code - re-prompt once
+    }
+    throw new Error(j.error || `${action} failed`);
+  }
+  throw new Error("Hosting passcode rejected.");
+}
+
 /* ShareMenuButton - the single top-bar SHARE surface (replaces the old Go Live
    button + Live & shares rail panel). A green-dotted button that opens a tabbed
    dropdown:
@@ -11494,6 +11542,14 @@ function ShareMenuButton() {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `${action} failed`);
       reloadShares();
+    } catch (e) { flashErr(String(e.message || e)); } finally { setB(id, false); }
+  };
+  // Hosted ops go through hostedShareOp (passcode prompt + re-prompt on reject).
+  const hostedOp = async (id, action, on) => {
+    setB(id, true);
+    try {
+      const res = await hostedShareOp(id, action, on);
+      if (!res.cancelled) reloadShares();
     } catch (e) { flashErr(String(e.message || e)); } finally { setB(id, false); }
   };
   const shareCreate = async (slug) => {
@@ -11671,10 +11727,11 @@ function ShareMenuButton() {
           <span className="share-controls-status">${st.label}</span>
         </div>
         <${ShareModeToggle} quickOn=${s.quickOn} wovenOn=${s.wovenOn} hostedOn=${s.hostedOn} wovenAvail=${wovenAvail} busy=${isBusy} tunnelsBlocked=${cfMissing}
-          onToggle=${(which, on) => tunnelOp(s.id, "update",
-            which === "woven" ? { wovenOn: on } : which === "hosted" ? { hostedOn: on } : { quickOn: on })}/>
+          onToggle=${(which, on) => which === "hosted"
+            ? hostedOp(s.id, "update", on)
+            : tunnelOp(s.id, "update", which === "woven" ? { wovenOn: on } : { quickOn: on })}/>
         ${s.hostedOn && modeLinkRow("Hosted", s.id + ":h", s.hostedStatus === "uploading" && !s.hostedAt ? "" : s.hostedUrl, s.hostedStatus, {
-          onUpdate: async () => { await tunnelOp(s.id, "host_update"); },
+          onUpdate: async () => { await hostedOp(s.id, "host_update"); },
           errorText: s.hostedStatus === "error" ? (s.hostedError || "Upload failed") : "",
           note: s.hostedStatus === "uploading" ? "Uploading the snapshot…"
             : s.hostedAt ? `Snapshot from ${s.hostedAt.replace("T", " ")} - stays online with this computer off. Press ↻ after edits.` : "",
@@ -23888,6 +23945,18 @@ function SharesLanding({ onCountChange }) {
       setBusy((b) => { const n = { ...b }; delete n[id]; return n; });
     }
   };
+  // Hosted ops go through hostedShareOp (passcode prompt + re-prompt on reject).
+  const hostedOp = async (id, action, on) => {
+    setBusy((b) => ({ ...b, [id]: true }));
+    try {
+      const res = await hostedShareOp(id, action, on);
+      if (!res.cancelled) reload();
+    } catch (e) {
+      flashErr(String(e.message || e));
+    } finally {
+      setBusy((b) => { const n = { ...b }; delete n[id]; return n; });
+    }
+  };
   const copyUrl = async (s) => {
     if (!s.shareUrl) return;
     try { await navigator.clipboard.writeText(s.shareUrl); } catch {}
@@ -24022,8 +24091,9 @@ function SharesLanding({ onCountChange }) {
               </div>
               <div className="shares-row-actions">
                 <${ShareModeToggle} quickOn=${s.quickOn} wovenOn=${s.wovenOn} hostedOn=${s.hostedOn} wovenAvail=${wovenAvail} busy=${isBusy} tunnelsBlocked=${cfMissing}
-                  onToggle=${(which, on) => op(s.id, "update",
-                    which === "woven" ? { wovenOn: on } : which === "hosted" ? { hostedOn: on } : { quickOn: on })}/>
+                  onToggle=${(which, on) => which === "hosted"
+                    ? hostedOp(s.id, "update", on)
+                    : op(s.id, "update", which === "woven" ? { wovenOn: on } : { quickOn: on })}/>
                 ${s.status === "running" || s.status === "starting"
                   ? html`<button className="shares-btn" disabled=${isBusy}
                       onClick=${() => op(s.id, "stop")} title="Stop the tunnel - the public URL goes dark">Stop</button>`
@@ -24050,7 +24120,7 @@ function SharesLanding({ onCountChange }) {
                       onClick=${() => op(s.id, "refresh_url")}
                       title="Generate a new randomised URL (the old link stops working) and clear the refresh warning">↻ Refresh</button>`}
                     ${s.hostedOn && html`<button key="hostupd" className="shares-btn" disabled=${isBusy || s.hostedStatus === "uploading"}
-                      onClick=${() => op(s.id, "host_update")}
+                      onClick=${() => hostedOp(s.id, "host_update")}
                       title="Upload the current prototype as a fresh hosted snapshot - visitors see the new version">
                       ${s.hostedStatus === "uploading" ? "Uploading…" : "↑ Update snapshot"}</button>`}
                   `
@@ -56467,6 +56537,16 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
     } catch (e) { flashErr(String(e.message || e)); }
     finally { setShareBusy(false); }
   };
+  // Hosted ops go through hostedShareOp (passcode prompt + re-prompt on reject).
+  const hostedOp = async (action, on) => {
+    if (!share) return;
+    setShareBusy(true);
+    try {
+      const res = await hostedShareOp(share.id, action, on);
+      if (!res.cancelled) refetch();
+    } catch (e) { flashErr(String(e.message || e)); }
+    finally { setShareBusy(false); }
+  };
   const copyLink = async (key, url) => {
     if (!url) return;
     try { await navigator.clipboard.writeText(url); } catch {}
@@ -56652,8 +56732,9 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
             <span className="workflow-comments-share-status">${stMeta[1]}</span>
           </div>
           <${ShareModeToggle} key="mode" quickOn=${share.quickOn} wovenOn=${share.wovenOn} hostedOn=${share.hostedOn} wovenAvail=${wovenAvail} busy=${shareBusy} tunnelsBlocked=${!cloudflared}
-            onToggle=${(which, on) => shareOp("update",
-              which === "woven" ? { wovenOn: on } : which === "hosted" ? { hostedOn: on } : { quickOn: on })}/>
+            onToggle=${(which, on) => which === "hosted"
+              ? hostedOp("update", on)
+              : shareOp("update", which === "woven" ? { wovenOn: on } : { quickOn: on })}/>
           ${(() => {
             // Mint a fresh randomised URL in one click (restart the quick tunnel)
             // and clear the "Need refresh" badge in the same step.
@@ -56674,13 +56755,13 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
                       <button className="shares-btn" onClick=${() => copyLink(key, url)}>${copied === key ? "✓" : "Copy"}</button>
                       <button className="shares-btn" onClick=${() => window.open(url, "_blank")} title="Open the share link">↗</button>
                       ${isQuick && html`<button className="shares-btn" disabled=${shareBusy} onClick=${regenQuick} title="Generate a new randomised URL (the old one stops working)">↻</button>`}
-                      ${isHosted && html`<button className="shares-btn" disabled=${shareBusy || status === "uploading"} onClick=${() => shareOp("host_update")} title="Upload the current prototype as a fresh snapshot - visitors see the new version">↻</button>`}
+                      ${isHosted && html`<button className="shares-btn" disabled=${shareBusy || status === "uploading"} onClick=${() => hostedOp("host_update")} title="Upload the current prototype as a fresh snapshot - visitors see the new version">↻</button>`}
                     </div>` : html`
                     <div className="share-link-pending">
                       <span className=${"shares-dot is-" + meta.dot}></span>
                       <span>${status === "starting" ? "Starting…" : meta.label}</span>
                       ${isQuick && status !== "starting" && html`<button className="shares-btn" disabled=${shareBusy} onClick=${regenQuick} title="Start / regenerate the randomised URL">↻</button>`}
-                      ${isHosted && status !== "uploading" && html`<button className="shares-btn" disabled=${shareBusy} onClick=${() => shareOp("host_update")} title="Retry the snapshot upload">↻</button>`}
+                      ${isHosted && status !== "uploading" && html`<button className="shares-btn" disabled=${shareBusy} onClick=${() => hostedOp("host_update")} title="Retry the snapshot upload">↻</button>`}
                     </div>`}
                   ${isHosted && status === "error" && share.hostedError && html`<div className="workflow-comments-err">${share.hostedError}</div>`}
                 </div>`;

@@ -76,6 +76,35 @@ credential. First upload binds token → installId in the broker's
 The R2 credentials live only in the broker env (like the Cloudflare API
 token); the worker reads the bucket through a zero-credential binding.
 
+### Hosting passcode
+
+Uploading additionally requires a HOSTING PASSCODE, so having the (public)
+Woven code is not enough to park bytes on getwoven.design. Properties:
+
+- Codes live server-side only: hashed (sha256) rows in the broker's
+  `hosted_passcodes` table, managed via ADMIN_TOKEN-gated endpoints
+  (`POST /admin/passcodes` {code,label}, `POST /admin/passcodes/revoke`,
+  `GET /admin/passcodes` - list shows labels + hash prefixes, never codes).
+  `HOSTED_PASSCODES` env (comma-separated) is a bootstrap/break-glass
+  fallback. NOTHING in the repo contains or can derive a valid code.
+- The broker enforces it on `/shares/upload` (header `X-Woven-Passcode`) and
+  offers `POST /shares/passcode_check` so clients pre-flight a code in
+  milliseconds instead of after shipping a snapshot. Failed attempts are
+  rate-limited (30/hour/IP); valid ones never trip the limiter.
+- The BROWSER owns the entered code: localStorage key `wovenHostedPasscode`,
+  prompted once via `ensureHostedPasscode()`, sent with every hosted toggle-on
+  / update, cleared + re-prompted once when the broker rejects it
+  (`passcodeRequired: true` from the daemon).
+- The daemon relays it per request and keeps it ONLY in process memory
+  (`_HOSTED_PASSCODE`) so background re-uploads work; it is never written to
+  shares.json or any file, and a daemon restart requires the browser to send
+  it again (it does, automatically, from localStorage).
+- `hosted_update` pre-flights the code on EVERY (re)upload, so a code revoked
+  broker-side surfaces as a 403 the UI can react to, not a silent background
+  failure. Toggling OFF and deleting need no passcode.
+- One code today, many tomorrow: rows are independent, so per-person codes
+  with labels + individual revocation already work.
+
 ## One-time infra runbook
 
 Everything is idempotent; re-running any step is safe.
@@ -91,7 +120,14 @@ Everything is idempotent; re-running any step is safe.
    `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`. `R2_BUCKET` and
    the caps come from render.yaml. Deploy (the hosted_shares table
    self-creates on boot).
-3. **Worker** (from `worker/`, needs Node):
+3. **Hosting passcode**: either set `HOSTED_PASSCODES` in the Render env
+   (comma-separated, quickest), or add a DB-backed code (revocable, labelled):
+   ```
+   curl -X POST https://woven-broker.onrender.com/admin/passcodes \
+     -H "X-Admin-Token: $ADMIN_TOKEN" -H "Content-Type: application/json" \
+     -d '{"code": "<the passcode>", "label": "sami"}'
+   ```
+4. **Worker** (from `worker/`, needs Node):
    ```
    npx wrangler login
    npx wrangler deploy

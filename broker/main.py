@@ -18,6 +18,8 @@ in a shipped client.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import io
 import os
 import re
@@ -53,6 +55,11 @@ REAP_TTL_DAYS = int(os.environ.get("REAP_TTL_DAYS", "45"))
 # Hosted share snapshots (R2). Same share token the gate uses (secrets.token_hex).
 SHARE_TOKEN_RE = re.compile(r"^[a-f0-9]{24,64}$")
 HOSTED_TTL_DAYS = int(os.environ.get("HOSTED_TTL_DAYS", "30"))
+# Uploading requires a hosting passcode - the gate that keeps "anyone running
+# Woven" from parking bytes on getwoven.design. Codes live OUTSIDE the repo:
+# hashed rows in the hosted_passcodes table (managed via /admin/passcodes)
+# plus this optional comma-separated env fallback for bootstrap.
+HOSTED_PASSCODES = [c.strip() for c in os.environ.get("HOSTED_PASSCODES", "").split(",") if c.strip()]
 HOSTED_SNAPSHOT_MAX_MB = int(os.environ.get("HOSTED_SNAPSHOT_MAX_MB", "100"))   # gz body
 HOSTED_UNPACKED_MAX_MB = int(os.environ.get("HOSTED_UNPACKED_MAX_MB", "300"))   # extracted
 HOSTED_QUOTA_MB = int(os.environ.get("HOSTED_QUOTA_MB", "500"))                 # per install
@@ -306,6 +313,31 @@ def _hosted_ready() -> None:
         raise HTTPException(503, "hosted shares not configured (R2 env missing)")
 
 
+def _code_hash(code: str) -> str:
+    return hashlib.sha256((code or "").strip().encode("utf-8")).hexdigest()
+
+
+async def _passcode_ok(code: str) -> bool:
+    code = (code or "").strip()
+    if not code:
+        return False
+    # Env fallback (bootstrap / break-glass), constant-time compare.
+    for known in HOSTED_PASSCODES:
+        if hmac.compare_digest(code, known):
+            return True
+    # DB registry - only hashes are stored.
+    return await store.passcode_hash_valid(_code_hash(code))
+
+
+async def _require_passcode(request: Request) -> None:
+    code = request.headers.get("x-woven-passcode", "")
+    if not await _passcode_ok(code):
+        # Rate-limit FAILED attempts only, so a wrong code can't be brute-forced
+        # but a valid one never trips the limiter.
+        _rate_limit(_client_ip(request), kind="passcode", limit=30)
+        raise HTTPException(403, "invalid or missing hosting passcode")
+
+
 def _validate_share_token(token: str) -> str:
     if not SHARE_TOKEN_RE.match(token or ""):
         raise HTTPException(400, "bad share token")
@@ -351,6 +383,7 @@ def _extract_and_upload(tmp_path: str, token: str, install_id: str) -> tuple[int
 async def shares_upload(request: Request, installId: str = "", token: str = "",
                         prototype: str = "", label: str = "") -> dict:
     _hosted_ready()
+    await _require_passcode(request)
     install_id = _validate(installId)
     token = _validate_share_token(token)
     _rate_limit(_client_ip(request), kind="upload", limit=UPLOAD_RATE_MAX)
@@ -425,6 +458,64 @@ async def shares_delete(body: HostedShareReq) -> dict:
     await r2.run_blocking(r2.delete_prefix, "s/" + token + "/")
     await store.hosted_delete(token)
     return {"ok": True}
+
+
+class PasscodeCheckReq(BaseModel):
+    passcode: str
+
+
+@app.post("/shares/passcode_check")
+async def shares_passcode_check(body: PasscodeCheckReq, request: Request) -> dict:
+    """Lets the client validate a passcode BEFORE building + shipping a whole
+    snapshot, so a typo fails in milliseconds, not after an upload."""
+    _hosted_ready()
+    ok = await _passcode_ok(body.passcode)
+    if not ok:
+        _rate_limit(_client_ip(request), kind="passcode", limit=30)
+    return {"ok": ok}
+
+
+# Passcode management - ADMIN_TOKEN-gated, same as /admin/reap. Codes are
+# write-only: the list endpoint returns labels + hash prefixes, never codes.
+class PasscodeAdminReq(BaseModel):
+    code: str
+    label: Optional[str] = None
+
+
+def _require_admin(x_admin_token: str) -> None:
+    if not ADMIN_TOKEN or x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(403, "bad admin token")
+
+
+@app.post("/admin/passcodes")
+async def admin_passcode_add(body: PasscodeAdminReq,
+                             x_admin_token: str = Header(default="")) -> dict:
+    _require_admin(x_admin_token)
+    code = (body.code or "").strip()
+    if len(code) < 8:
+        raise HTTPException(400, "passcode must be at least 8 characters")
+    await store.passcode_upsert(_code_hash(code), (body.label or "").strip()[:120])
+    return {"ok": True}
+
+
+@app.post("/admin/passcodes/revoke")
+async def admin_passcode_revoke(body: PasscodeAdminReq,
+                                x_admin_token: str = Header(default="")) -> dict:
+    _require_admin(x_admin_token)
+    await store.passcode_disable(_code_hash(body.code))
+    return {"ok": True}
+
+
+@app.get("/admin/passcodes")
+async def admin_passcode_list(x_admin_token: str = Header(default="")) -> dict:
+    _require_admin(x_admin_token)
+    rows = await store.passcode_list()
+    return {"passcodes": [
+        {"label": r["label"] or "", "hashPrefix": r["code_hash"][:12],
+         "createdAt": r["created_at"].isoformat() if r["created_at"] else "",
+         "disabled": bool(r["disabled"])}
+        for r in rows
+    ], "envCodes": len(HOSTED_PASSCODES)}
 
 
 @app.get("/shares/status")

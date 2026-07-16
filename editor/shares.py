@@ -930,6 +930,12 @@ _HOSTED_JOBS = {}                 # share_id -> {"state","error","startedAt"}
 _HOSTED_JOBS_LOCK = threading.Lock()
 _HOSTED_HB_STARTED = False
 
+# Hosting passcode - REQUIRED by the broker for snapshot uploads. The browser
+# owns it (localStorage) and sends it with every hosted toggle / update; the
+# daemon keeps it ONLY in memory for this process (so a background re-upload
+# can reuse it) and never writes it to shares.json or any file.
+_HOSTED_PASSCODE = ""
+
 # Per-file ceiling inside a snapshot - anything bigger is skipped with a log
 # line rather than sinking the whole upload (broker also caps the totals).
 _HOSTED_FILE_MAX = 100 * 1024 * 1024
@@ -1044,10 +1050,13 @@ def _hosted_build_snapshot(rec, out_path):
     return count
 
 
-def _hosted_broker_post(path, data=None, timeout=30, content_type="application/json"):
+def _hosted_broker_post(path, data=None, timeout=30, content_type="application/json",
+                        passcode=None):
+    headers = {"Content-Type": content_type}
+    if passcode:
+        headers["X-Woven-Passcode"] = passcode
     req = urllib.request.Request(
-        WOVEN_BROKER_URL + path, data=data,
-        headers={"Content-Type": content_type}, method="POST")
+        WOVEN_BROKER_URL + path, data=data, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.load(r)
@@ -1084,7 +1093,8 @@ def _hosted_upload_worker(share_id):
             "label":     rec.get("label") or "",
         })
         res = _hosted_broker_post("/shares/upload?" + qs, data=body,
-                                  timeout=600, content_type="application/gzip")
+                                  timeout=600, content_type="application/gzip",
+                                  passcode=_HOSTED_PASSCODE)
         share_update(share_id, {
             "hostedAt":    _now_iso(),
             "hostedBytes": int(res.get("bytes") or 0),
@@ -1115,10 +1125,28 @@ def _hosted_delete_worker(token):
         print("[share] hosted delete failed (reaper will collect it): {}".format(e), flush=True)
 
 
-def set_hosted(share_id, on):
-    """Flip the hosted-snapshot intent. ON provisions the stable hostname if
-    needed (broker HTTP only - no tunnel, no cloudflared required), then uploads
-    in the background. OFF deletes the snapshot broker-side."""
+def hosted_passcode_verify(passcode):
+    """True iff the broker accepts this hosting passcode. Cheap pre-flight so a
+    wrong code fails in milliseconds instead of after a snapshot upload."""
+    body = json.dumps({"passcode": passcode or ""}).encode("utf-8")
+    try:
+        res = _hosted_broker_post("/shares/passcode_check", data=body, timeout=15)
+        return bool(res.get("ok"))
+    except RuntimeError as e:
+        # 403 = limiter tripped; anything else is a reachability problem the
+        # caller should see as-is.
+        if "403" in str(e):
+            return False
+        raise
+
+
+def set_hosted(share_id, on, passcode=None):
+    """Flip the hosted-snapshot intent. ON requires a valid hosting passcode
+    (broker-verified - the codes live server-side, never in this repo), then
+    provisions the stable hostname if needed (broker HTTP only - no tunnel, no
+    cloudflared required) and uploads in the background. OFF deletes the
+    snapshot broker-side and needs no passcode."""
+    global _HOSTED_PASSCODE
     rec = share_get(share_id)
     if rec is None:
         raise ValueError("unknown share: {}".format(share_id))
@@ -1127,6 +1155,11 @@ def set_hosted(share_id, on):
     if not WOVEN_BROKER_URL:
         raise RuntimeError("hosted shares need the Woven broker configured")
     if on:
+        code = (passcode or "").strip() or _HOSTED_PASSCODE
+        if not hosted_passcode_verify(code):
+            raise PermissionError(
+                "A valid hosting passcode is required to publish on getwoven.design.")
+        _HOSTED_PASSCODE = code            # memory only - never persisted
         # The hosted URL is the same stable hostname the woven tunnel uses -
         # make sure this install has one (first call asks the broker once).
         _woven_ensure_credentials()
@@ -1144,14 +1177,25 @@ def set_hosted(share_id, on):
     return share_get(share_id)
 
 
-def hosted_update(share_id):
+def hosted_update(share_id, passcode=None):
     """(Re)upload the snapshot - the Update button, and the ON half of the
-    toggle. No-op unless the share wants hosting."""
+    toggle. No-op unless the share wants hosting. A passcode argument refreshes
+    the in-memory code (e.g. after a daemon restart); without one the cached
+    code is used and the broker rejects the upload if it has gone stale."""
+    global _HOSTED_PASSCODE
     rec = share_get(share_id)
     if rec is None:
         raise ValueError("unknown share: {}".format(share_id))
     if not share_hosted_on(rec):
         raise ValueError("share is not hosted - turn hosting on first")
+    # Pre-flight the passcode on EVERY (re)upload, not just toggle-on: a code
+    # revoked broker-side would otherwise fail silently in the background
+    # thread with no way for the UI to re-prompt.
+    code = (passcode or "").strip() or _HOSTED_PASSCODE
+    if not code or not hosted_passcode_verify(code):
+        raise PermissionError(
+            "A valid hosting passcode is required to publish on getwoven.design.")
+    _HOSTED_PASSCODE = code                          # memory only - never persisted
     job = _hosted_job_get(share_id)
     if job.get("state") == "uploading":
         return rec                                   # already in flight

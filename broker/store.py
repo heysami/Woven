@@ -62,6 +62,20 @@ async def init() -> None:
             )
             """
         )
+        # Hosting passcodes - uploading a snapshot requires presenting one.
+        # Only the sha256 HASH is stored, so neither the repo nor a DB dump
+        # reveals a usable code. Managed via the /admin/passcodes endpoints
+        # (plus the HOSTED_PASSCODES env fallback in main.py).
+        await c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hosted_passcodes (
+              code_hash  text PRIMARY KEY,
+              label      text,
+              created_at timestamptz DEFAULT now(),
+              disabled   boolean NOT NULL DEFAULT false
+            )
+            """
+        )
 
 
 async def close() -> None:
@@ -209,4 +223,43 @@ async def hosted_stale(ttl_days: int) -> list:
             "SELECT token, install_id FROM hosted_shares "
             "WHERE refreshed_at < now() - ($1 || ' days')::interval",
             str(ttl_days),
+        )
+
+
+# ── Hosting passcodes ──────────────────────────────────────────────────────
+
+async def passcode_hash_valid(code_hash: str) -> bool:
+    async with _pool.acquire() as c:
+        row = await c.fetchrow(
+            "SELECT 1 FROM hosted_passcodes WHERE code_hash=$1 AND NOT disabled",
+            code_hash,
+        )
+    return row is not None
+
+
+async def passcode_upsert(code_hash: str, label: str) -> None:
+    async with _pool.acquire() as c:
+        await c.execute(
+            """
+            INSERT INTO hosted_passcodes (code_hash, label, created_at, disabled)
+            VALUES ($1, $2, now(), false)
+            ON CONFLICT (code_hash) DO UPDATE
+              SET label = EXCLUDED.label, disabled = false
+            """,
+            code_hash, label,
+        )
+
+
+async def passcode_disable(code_hash: str) -> None:
+    async with _pool.acquire() as c:
+        await c.execute(
+            "UPDATE hosted_passcodes SET disabled=true WHERE code_hash=$1", code_hash
+        )
+
+
+async def passcode_list() -> list:
+    async with _pool.acquire() as c:
+        return await c.fetch(
+            "SELECT code_hash, label, created_at, disabled "
+            "FROM hosted_passcodes ORDER BY created_at"
         )

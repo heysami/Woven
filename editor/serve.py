@@ -21277,18 +21277,33 @@ class H(http.server.SimpleHTTPRequestHandler):
                 except Exception as e:
                     return self._reply(500, {"error": str(e)})
             # Hosted snapshot toggle - independent of the tunnel links. ON
-            # uploads a snapshot to Woven storage (works with the daemon off);
-            # OFF deletes it broker-side.
+            # uploads a snapshot to Woven storage (works with the daemon off)
+            # and requires the hosting passcode (browser-held, broker-verified,
+            # relayed here per request - the daemon never persists it); OFF
+            # deletes the snapshot broker-side, no passcode needed.
             if isinstance(body, dict) and "hostedOn" in body:
                 try:
-                    _shares.set_hosted(share_id, bool(body["hostedOn"]))
+                    _shares.set_hosted(share_id, bool(body["hostedOn"]),
+                                       passcode=body.get("passcode"))
+                except PermissionError as e:
+                    return self._reply(403, {"error": str(e), "passcodeRequired": True})
                 except Exception as e:
                     return self._reply(500, {"error": str(e)})
         elif op == "host_update":
             # Push the current source as a fresh hosted snapshot (async; the
-            # panel's poll sees hostedStatus flip uploading → hosted).
+            # panel's poll sees hostedStatus flip uploading → hosted). The body
+            # may carry the hosting passcode to refresh the daemon's in-memory
+            # copy (needed after a daemon restart).
             try:
-                _shares.hosted_update(share_id)
+                up_body = self._read_json_body(max_bytes=16 * 1024)
+            except ValueError:
+                up_body = {}
+            try:
+                _shares.hosted_update(
+                    share_id,
+                    passcode=(up_body.get("passcode") if isinstance(up_body, dict) else None))
+            except PermissionError as e:
+                return self._reply(403, {"error": str(e), "passcodeRequired": True})
             except Exception as e:
                 return self._reply(500, {"error": str(e)})
         elif op == "ack_url":

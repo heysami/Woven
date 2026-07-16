@@ -47,6 +47,11 @@ services:
         value: "300"
       - key: HOSTED_QUOTA_MB       # per-install total across all hosted shares
         value: "500"
+      # Uploads additionally require a hosting passcode. Codes are managed in
+      # the DB via /admin/passcodes (hashed at rest); this optional env var is
+      # a comma-separated bootstrap/break-glass fallback. NEVER in the repo.
+      - key: HOSTED_PASSCODES      # secret - set in dashboard
+        sync: false
 
   # Daily reaper - prunes installs idle longer than REAP_TTL_DAYS.
   - type: cron
