@@ -5355,6 +5355,13 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-git-msg-head { display: flex; align-items: center; justify-content: flex-end; margin-bottom: -4px; }
 .th-git-msg-head .th-git-link { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
 .th-git-msg-head .th-git-link:disabled { color: var(--text-dim, #888); cursor: default; text-decoration: none; }
+/* "Summarise on push" - the shared toggle-switch pattern (orchestrator-toggle),
+   compacted to sit in the summarise row: smaller track, panel-muted label. */
+.th-git-autosum { padding: 2px 4px 2px 2px; gap: 6px; }
+.th-git-autosum .orchestrator-toggle-track { width: 28px; height: 16px; border-radius: 8px; }
+.th-git-autosum .orchestrator-toggle-knob { width: 12px; height: 12px; }
+.th-git-autosum[data-enabled="true"] .orchestrator-toggle-knob { transform: translateX(12px); }
+.th-git-autosum-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 .th-git-input:focus,
 .th-git-msg:focus { outline: none; border-color: var(--accent); }
 .th-git-status { display: flex; flex-direction: column; gap: 8px; }

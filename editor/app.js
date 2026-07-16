@@ -12842,11 +12842,12 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
             ${!isGuest && html`
               ${!urlSuffix && html`
                 <div className="th-git-msg-head">
-                  <label className="th-git-priv" title="When enabled, Push drafts the summary, commits your uncommitted changes with it, then pushes">
-                    <input type="checkbox" checked=${autoSummarise}
-                      onChange=${e => { const on = e.target.checked; setAutoSummarise(on); try { localStorage.setItem("th.git.autoSummarise", on ? "1" : "0"); } catch {} }} />
-                    Summarise on push
-                  </label>
+                  <button className="orchestrator-toggle th-git-autosum" data-enabled=${autoSummarise ? "true" : "false"}
+                    onClick=${() => { const on = !autoSummarise; setAutoSummarise(on); try { localStorage.setItem("th.git.autoSummarise", on ? "1" : "0"); } catch {} }}
+                    title="When enabled, Push drafts the summary, commits your uncommitted changes with it, then pushes">
+                    <span className="orchestrator-toggle-track"><span className="orchestrator-toggle-knob"/></span>
+                    <span className="th-git-autosum-label">Summarise on push</span>
+                  </button>
                   <button className="th-git-link th-git-summarise" disabled=${!st.dirty || !!inflight || busy === "summarise"} onClick=${doSummarise}
                     title="Draft a commit message from your uncommitted changes - a subject line plus one sentence per change">
                     <${Icon.Spark}/> ${busy === "summarise" ? "Summarising…" : "Summarise changes"}</button>
