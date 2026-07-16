@@ -51,8 +51,9 @@ button { font: inherit; cursor: pointer; }
   border-bottom: 1px solid var(--sv-line);
   flex: none;
 }
-.sv-brand { display: flex; align-items: center; gap: 7px; font-weight: 650; letter-spacing: .01em; }
-.sv-brand svg { display: block; }
+.sv-brand { display: flex; align-items: center; gap: 7px; font-weight: 650; letter-spacing: .01em; min-width: 0; }
+.sv-brand svg { display: block; flex: none; }
+.sv-brand-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sv-brand-sub { color: var(--sv-muted); font-weight: 450; }
 .sv-topbar-spacer { flex: 1; }
 .sv-page-chip {
@@ -67,6 +68,7 @@ button { font: inherit; cursor: pointer; }
   border: 1px solid var(--sv-line); border-radius: 8px;
   background: var(--sv-panel); color: var(--sv-ink);
   padding: 5px 10px;
+  flex: none; white-space: nowrap;
 }
 .sv-btn:hover { background: var(--sv-bg); }
 .sv-btn.is-active {
@@ -79,7 +81,9 @@ button { font: inherit; cursor: pointer; }
 .sv-btn.is-active .sv-btn-count { background: rgba(255,255,255,.25); }
 
 /* ── Main split ──────────────────────────────────────────────────────── */
-.sv-main { display: flex; flex: 1; min-height: 0; }
+/* position:relative so the mobile-absolute sidebar anchors BELOW the top bar
+   (previously it resolved against the viewport and covered the bar's buttons). */
+.sv-main { display: flex; flex: 1; min-height: 0; position: relative; }
 .sv-stage { position: relative; flex: 1; min-width: 0; background: #fff; }
 .sv-stage iframe {
   position: absolute; inset: 0; width: 100%; height: 100%; border: 0;
@@ -311,6 +315,18 @@ button { font: inherit; cursor: pointer; }
 }
 
 @media (max-width: 760px) {
-  .sv-sidebar { position: absolute; right: 0; top: 0; bottom: 0; z-index: 50; box-shadow: var(--sv-shadow); }
+  /* Sidebar floats over the stage but stays inside .sv-main, so the top bar
+     (and its Comments toggle) remains reachable while it is open. */
+  .sv-sidebar {
+    position: absolute; right: 0; top: 0; bottom: 0; z-index: 50;
+    box-shadow: var(--sv-shadow); width: min(320px, 100%);
+  }
   .sv-page-chip { display: none; }
+  /* Compact top bar: truncating title, icon-only buttons (the count pill on
+     the Comments toggle stays visible). */
+  .sv-topbar { gap: 6px; padding: 0 8px; }
+  .sv-brand { flex: 0 1 auto; }
+  .sv-brand-sub { display: none; }
+  .sv-btn { padding: 6px 8px; }
+  .sv-btn .sv-btn-label { display: none; }
 }

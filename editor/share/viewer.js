@@ -46,6 +46,14 @@
       <path d="M11.5 2.5l2 2L6 12l-2.7.7L4 10z"/><path d="M10 4l2 2"/>
     </svg>`;
 
+  // Panel glyph - the "Comments" sidebar toggle (right-hand panel outline).
+  const PanelIcon = ({ size = 14 }) => html`
+    <svg viewBox="0 0 16 16" width=${size} height=${size} fill="none"
+      stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true" style=${{ display: "block" }}>
+      <rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M10 3v10"/>
+    </svg>`;
+
   // Image glyph - the "attach images" affordance on the composer.
   const ImageIcon = ({ size = 13 }) => html`
     <svg viewBox="0 0 16 16" width=${size} height=${size} fill="none"
@@ -782,7 +790,7 @@
             <svg width="16" height="16" viewBox="0 0 834 865" fill="#1c1c1e" aria-hidden="true">
               <path d="M164.411 285.641C196.359 284.677 230.639 291.674 258.864 305.701C275.286 313.727 290.065 324.404 302.52 337.239C341.158 377.583 361.371 447.312 378.116 498.308C388.132 482.744 399.684 467.642 409.951 452.186C412.242 448.739 414.925 444.943 417.595 441.774C431.351 459.34 443.577 480.938 457.207 498.242C472.875 448.395 490.877 391.963 523.907 349.544C579.307 278.402 700.654 264.845 774.789 317.785C806.94 340.863 827.783 375.104 832.598 412.756C843.943 495.181 782.673 564.588 695.92 574.484C644.003 580.405 591.842 563.575 548.833 536.139C539.957 530.476 537.74 518.741 543.151 509.709C548.815 500.254 561.262 497.253 570.658 503.014C601.126 521.693 634.227 536.411 671.754 536.037C705.405 535.7 737.72 524.768 761.424 502.003C781.4 482.798 792.329 456.906 791.766 430.103C791.184 402.032 779.11 377.683 757.679 358.122C705.931 310.886 611.818 317.258 563.019 365.51C553.686 374.887 545.719 385.378 539.322 396.709C524.787 421.893 514.739 451.179 504.773 478.261C499.913 491.473 494.674 506.261 491.301 519.841C489.776 525.958 489.826 533.047 489.985 539.289C493.054 556.978 502.4 565.69 510.272 582.07C534.621 632.717 554.85 688.575 544.486 744.747C537.215 784.135 519.592 821.978 483.663 845.418C457.84 862.041 426.03 868.39 395.209 863.072C363.919 857.517 336.291 840.509 318.457 815.814C307.872 801.34 301.629 787.115 295.942 770.657C275.203 710.66 291.644 652.082 318.36 596.153C322.081 588.342 326.05 580.644 330.262 573.052C340.062 555.493 348.796 545.91 344.696 524.508C342.606 513.599 339.127 503.14 335.6 492.533C322.683 453.678 309.302 413.312 284.963 379.2C243.189 321.492 147.774 309.019 88.4573 349.581C64.3919 366.037 48.2945 389.328 43.7834 417.025C39.4073 443.486 46.4486 470.485 63.3567 492.083C93.1026 529.784 142.471 541.77 190.296 534.226C217.38 529.955 240.84 518.044 262.986 503.814C272.662 497.595 285.65 500.284 291.593 510.132C296.878 518.889 294.7 530.302 286.062 535.779C215.211 580.708 114.661 593.303 48.261 536.056C19.1106 510.632 1.8151 475.501 0.113512 438.245C-1.43994 398.716 12.9754 362.821 41.8772 333.94C73.8144 302.026 118.587 287.315 164.411 285.641ZM416.722 512.527C379.203 567.165 343.362 618.778 329.984 683.963C318.364 740.591 343.994 824.697 418.027 824.976C479.127 823.074 509.74 757.077 506.74 707.2C503.171 647.807 469.774 589.865 436.743 540.45C433.377 535.493 419.886 515.43 416.722 512.527ZM409.73 0.675811C437.369 -2.92606 472.166 8.29862 493.776 24.1416C524.015 46.3095 543.194 80.7427 547.699 116.211C561.045 221.334 486.296 312.27 421.665 390.357L417.78 394.772C405.573 381.446 392.688 364.92 381.071 350.798C336.182 296.042 296.156 233.386 287.029 163.654C279.36 105.059 308.709 39.0645 366.61 11.6826C380.614 5.06005 394.208 2.19545 409.73 0.675811ZM508.772 125.402C503.305 78.2536 464.224 35.4344 409.775 40.9278C348.153 48.2369 319.059 107.407 326.737 160.33C336.002 224.199 376.222 281.983 417.501 331.837L421.652 326.068C465.597 272.347 517.023 196.544 508.772 125.402Z"/>
             </svg>
-            ${meta.label}
+            <span className="sv-brand-label">${meta.label}</span>
             <span className="sv-brand-sub">· shared for review</span>
           </span>
           <span className="sv-topbar-spacer"></span>
@@ -792,7 +800,7 @@
             disabled=${page === "index.html"}
             title=${page === "index.html" ? "Already on the first page" : "Reset - back to the first page of the prototype"}
             onClick=${resetToFirstPage}
-          ><${HomeIcon}/> Reset</button>`}
+          ><${HomeIcon}/><span className="sv-btn-label">Reset</span></button>`}
           <button
             className=${"sv-btn" + (commentMode ? " is-active" : "")}
             title=${commentMode ? "Exit comment mode (Esc)" : "Comment on an element - click anything in the prototype"}
@@ -800,12 +808,12 @@
               if (!commentMode && !requireIdentity("Add a name before commenting.")) return;
               setDraft(null); setCommentMode(!commentMode);
             }}
-          ><${CommentIcon}/> ${commentMode ? "Click an element…" : "Comment"}</button>
+          ><${CommentIcon}/><span className="sv-btn-label">${commentMode ? "Click an element…" : "Comment"}</span></button>
           <button
             className=${"sv-btn" + (sidebarOpen ? " is-active" : "")}
             onClick=${() => setSidebarOpen(!sidebarOpen)}
             title="Toggle the comments sidebar"
-          >Comments <span className="sv-btn-count">${counts.open}</span></button>
+          ><${PanelIcon}/><span className="sv-btn-label">Comments</span><span className="sv-btn-count">${counts.open}</span></button>
         </div>
         <div className="sv-main">
           <div className=${"sv-stage" + (commentMode ? " is-commenting" : "")}>
