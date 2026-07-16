@@ -11281,6 +11281,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._project_delete(qs)
             if parsed.path == "/__projects/trash/purge":
                 return self._project_trash_purge(qs)
+            if parsed.path == "/__projects/trash/restore":
+                return self._project_trash_restore(qs)
             if parsed.path == "/__projects/duplicate":
                 return self._project_duplicate(qs)
             if parsed.path == "/__prototypes/duplicate":
@@ -25720,18 +25722,30 @@ class H(http.server.SimpleHTTPRequestHandler):
             shutil.move(dest, target)
         except OSError as e:
             return self._reply(500, {"error": f"move failed: {type(e).__name__}: {e}"})
-        # Drop from workspace.json if listed.
+        # Drop from workspace.json if listed - but keep the display label so a
+        # later restore can re-register the project exactly as it was.
+        label = proj_id
         ws_json = os.path.join(WORKSPACE_DIR, "workspace.json")
         if os.path.isfile(ws_json):
             try:
                 with open(ws_json, "r", encoding="utf-8") as f:
                     cfg = json.load(f) or {}
                 entries = cfg.get("projects") or []
+                for e in entries:
+                    if (e.get("id") or "").strip() == proj_id and (e.get("label") or "").strip():
+                        label = e["label"].strip()
                 cfg["projects"] = [e for e in entries if (e.get("id") or "").strip() != proj_id]
                 with open(ws_json, "w", encoding="utf-8") as f:
                     json.dump(cfg, f, indent=2)
             except Exception:
                 pass
+        # Sidecar read by /__projects/trash (label column) and trash/restore.
+        try:
+            with open(os.path.join(target, ".trash-meta.json"), "w", encoding="utf-8") as f:
+                json.dump({"projectId": proj_id, "label": label,
+                           "deletedAt": _dt.datetime.now().isoformat()}, f, indent=2)
+        except OSError:
+            pass
         return self._reply(200, {"ok": True, "id": proj_id, "trashedTo": target})
 
     # ── Project trash (soft-deleted projects) ─────────────────────────────
@@ -25770,6 +25784,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                     continue
                 m = stamp_re.match(name)
                 pid = m.group("pid") if m else name
+                label = None
+                try:
+                    with open(os.path.join(full, ".trash-meta.json"), "r", encoding="utf-8") as f:
+                        meta = json.load(f) or {}
+                    pid = (meta.get("projectId") or "").strip() or pid
+                    label = (meta.get("label") or "").strip() or None
+                except Exception:
+                    pass
                 try:
                     mtime = os.path.getmtime(full)
                 except OSError:
@@ -25777,6 +25799,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 items.append({
                     "name": name,
                     "projectId": pid,
+                    "label": label,
                     "deletedAt": _dt.datetime.fromtimestamp(mtime).isoformat() if mtime else None,
                     "sizeBytes": self._dir_size_bytes(full),
                 })
@@ -25817,6 +25840,82 @@ class H(http.server.SimpleHTTPRequestHandler):
             except OSError as e:
                 errors.append({"name": name, "error": "%s: %s" % (type(e).__name__, e)})
         return self._reply(200, {"ok": True, "removed": removed, "errors": errors})
+
+    # POST /__projects/trash/restore  body: { name: <trash-folder-name> }
+    # Moves projects/.trash/<name>/ back to projects/<id>/ and re-registers the
+    # project in workspace.json (label recovered from the .trash-meta.json
+    # sidecar written at delete time; falls back to the folder name minus the
+    # timestamp). If a live project already claims the id, restores under
+    # <id>-restored[-N] instead of clobbering it. Same name validation +
+    # path confinement as trash/purge.
+    def _project_trash_restore(self, qs):
+        if not WORKSPACE_DIR:
+            return self._reply(400, {"error": "workspace mode not enabled"})
+        trash = self._trash_dir()
+        if not trash or not os.path.isdir(trash):
+            return self._reply(404, {"error": "no trash directory"})
+        body = self._read_json_body()
+        name = str(body.get("name") or "").strip()
+        name_ok = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+        if not name or "/" in name or "\\" in name or not name_ok.match(name):
+            return self._reply(400, {"error": "invalid name", "name": name})
+        src = os.path.join(trash, name)
+        trash_real = os.path.realpath(trash)
+        real = os.path.realpath(src)
+        if os.path.dirname(real) != trash_real or not os.path.isdir(real):
+            return self._reply(404, {"error": "not a trash entry", "name": name})
+        m = re.match(r"^(?P<pid>.+)-\d{8}-\d{6}$", name)
+        pid = m.group("pid") if m else name
+        label = pid
+        try:
+            with open(os.path.join(real, ".trash-meta.json"), "r", encoding="utf-8") as f:
+                meta = json.load(f) or {}
+            pid = (meta.get("projectId") or "").strip() or pid
+            label = (meta.get("label") or "").strip() or pid
+        except Exception:
+            label = pid
+        if not PROJECT_ID_OK.match(pid):
+            return self._reply(400, {"error": "unrestorable project id", "id": pid})
+
+        def _taken(p):
+            return any(os.path.isdir(c) for c in _project_dir_candidates(p))
+        restored_as = None
+        if _taken(pid):
+            n, cand = 1, None
+            while True:
+                suffix = "-restored" if n == 1 else f"-restored-{n}"
+                cand = pid[: 64 - len(suffix)] + suffix
+                if not _taken(cand):
+                    break
+                n += 1
+            restored_as = cand
+            pid = cand
+        os.makedirs(PROJECTS_DIR, exist_ok=True)
+        dest = _safe_join(PROJECTS_DIR, pid)
+        try:
+            shutil.move(real, dest)
+        except OSError as e:
+            return self._reply(500, {"error": f"move failed: {type(e).__name__}: {e}"})
+        try:
+            os.remove(os.path.join(dest, ".trash-meta.json"))
+        except OSError:
+            pass
+        # Re-register so the label survives (auto-discovery would fall back to
+        # label == id).
+        ws_json = os.path.join(WORKSPACE_DIR, "workspace.json")
+        try:
+            cfg = {}
+            if os.path.isfile(ws_json):
+                with open(ws_json, "r", encoding="utf-8") as f:
+                    cfg = json.load(f) or {}
+            entries = cfg.setdefault("projects", [])
+            if not any((e.get("id") or "").strip() == pid for e in entries):
+                entries.append({"id": pid, "label": label})
+            with open(ws_json, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
+        except Exception:
+            pass
+        return self._reply(200, {"ok": True, "id": pid, "label": label, "restoredAs": restored_as})
 
     # POST /__projects/duplicate  body: { id, newId?, label? }
     # Copies <WORKSPACE_DIR>/projects/<id>/ to projects/<newId>/ WITHOUT touching

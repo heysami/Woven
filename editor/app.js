@@ -24529,15 +24529,17 @@ function CloneFromGithubDialog({ onClose, onCreated }) {
   `, document.body);
 }
 
-// Housekeeping - permanent bulk-delete of soft-deleted projects. Project delete
+// Housekeeping - the trash panel for soft-deleted projects. Project delete
 // (_project_delete) only MOVES a project to projects/.trash/; nothing else ever
-// empties it. This panel lists those trash entries and hard-deletes the selected
-// ones - the only forever-delete path in the product.
-function ProjectsHousekeeping({ onClose }) {
+// empties it. This panel lists those trash entries and either RESTORES the
+// selected ones (back to projects/<id>/, re-registered in workspace.json) or
+// hard-deletes them - the only forever-delete path in the product.
+function ProjectsHousekeeping({ onClose, onChanged }) {
   const [items, setItems] = useState(null);          // null = loading
   const [sel, setSel] = useState(() => new Set());   // selected trash-folder names
   const [err, setErr] = useState(null);
   const [purging, setPurging] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const load = useCallback(() => {
     setItems(null); setErr(null); setSel(new Set());
@@ -24589,6 +24591,30 @@ function ProjectsHousekeeping({ onClose }) {
     }
   };
 
+  const restore = async () => {
+    const names = selectedItems.map(it => it.name);
+    if (!names.length) return;
+    setRestoring(true); setErr(null);
+    const failed = [];
+    for (const name of names) {
+      try {
+        const r = await fetch("/__projects/trash/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
+      } catch (e) {
+        failed.push({ name, error: e.message || String(e) });
+      }
+    }
+    setRestoring(false);
+    load();
+    if (onChanged) onChanged();
+    if (failed.length) setErr(`${failed.length} project${failed.length > 1 ? "s" : ""} couldn't be restored: ${failed[0].error}`);
+  };
+
   // Portal to <body>: rendered inside .landing-main (a z-index stacking
   // context), a bare overlay is trapped BELOW the sibling .landing-header
   // (z-index 4) which then paints over the modal's top. Its sibling landing
@@ -24601,7 +24627,7 @@ function ProjectsHousekeeping({ onClose }) {
           <button className="newproj-close" onClick=${onClose} aria-label="Close">×</button>
         </header>
         <div className="newproj-card-body hk-body">
-          <p className="hk-intro">Deleted projects are moved to <code>.trash/</code> and kept until you remove them here. Permanent delete cannot be undone.</p>
+          <p className="hk-intro">Deleted projects are moved to <code>.trash/</code> and kept until you remove them here. Restore puts a project back on the landing page; permanent delete cannot be undone.</p>
           ${err && html`<div className="shares-error-banner">${err}</div>`}
           ${items === null
             ? html`<div className="runs-empty">Loading…</div>`
@@ -24617,7 +24643,7 @@ function ProjectsHousekeeping({ onClose }) {
                     ${list.map(it => html`
                       <tr key=${it.name} data-sel=${sel.has(it.name)} onClick=${() => toggle(it.name)}>
                         <td className="hk-col-check"><input type="checkbox" checked=${sel.has(it.name)} onChange=${() => toggle(it.name)} onClick=${e => e.stopPropagation()} aria-label=${"Select " + it.projectId}/></td>
-                        <td><span className="hk-pid">${it.projectId}</span></td>
+                        <td><span className="hk-pid">${it.label || it.projectId}</span></td>
                         <td className="hk-when">${fmtWhen(it.deletedAt)}</td>
                         <td className="hk-col-size">${fmtSize(it.sizeBytes)}</td>
                       </tr>
@@ -24630,7 +24656,10 @@ function ProjectsHousekeeping({ onClose }) {
           <span className="hk-foot-info">${sel.size} selected${sel.size ? " · " + fmtSize(totalSel) : ""}</span>
           <div className="hk-foot-actions">
             <button className="tbtn" onClick=${onClose}>Close</button>
-            <button className="tbtn tbtn-danger" disabled=${!sel.size || purging} onClick=${purge}>
+            <button className="tbtn" disabled=${!sel.size || purging || restoring} onClick=${restore}>
+              ${restoring ? "Restoring…" : "Restore"}
+            </button>
+            <button className="tbtn tbtn-danger" disabled=${!sel.size || purging || restoring} onClick=${purge}>
               ${purging ? "Deleting…" : "Delete permanently"}
             </button>
           </div>
@@ -25100,7 +25129,7 @@ function ProjectsLanding({ info, projects, onReload }) {
   };
 
   const deleteProject = async (pid, label) => {
-    if (!(await uiConfirm(`Delete project "${label || pid}"?\n\nMoved to .trash/${pid}-<timestamp>/ inside the workspace - recoverable, not hard-deleted.`))) return;
+    if (!(await uiConfirm(`Delete project "${label || pid}"?\n\nIt moves to the trash, not gone for good: restore it any time from Housekeeping (bottom of this page).`))) return;
     setErr(null);
     setBusyId(pid);
     try {
@@ -25597,14 +25626,14 @@ function ProjectsLanding({ info, projects, onReload }) {
         `}
         ${activeTab === "projects" && !onboardingCardShowing && html`
           <div className="landing-housekeeping">
-            <button className="landing-hk-trigger" onClick=${() => setHousekeepingOpen(true)} title="Manage and permanently delete projects in the trash">
+            <button className="landing-hk-trigger" onClick=${() => setHousekeepingOpen(true)} title="Restore deleted projects or permanently remove them">
               <${Icon.Trash}/>
               <span className="landing-hk-trigger-label">Housekeeping</span>
-              <span className="landing-hk-trigger-sub">empty trash · delete projects forever</span>
+              <span className="landing-hk-trigger-sub">restore deleted projects · empty trash</span>
             </button>
           </div>
         `}
-        ${housekeepingOpen && html`<${ProjectsHousekeeping} onClose=${() => setHousekeepingOpen(false)}/>`}
+        ${housekeepingOpen && html`<${ProjectsHousekeeping} onClose=${() => setHousekeepingOpen(false)} onChanged=${onReload}/>`}
         </div>
       </main>
     </div>
