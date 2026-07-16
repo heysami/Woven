@@ -26,3 +26,8 @@ routes = [
 [[r2_buckets]]
 binding = "SHARES"
 bucket_name = "woven-shares"
+
+[vars]
+# Offline comment inbox: failed comment POSTs on hosted shares are queued at
+# the broker instead of erroring; the owner's daemon collects them later.
+BROKER_URL = "https://woven-broker.onrender.com"

@@ -62,6 +62,24 @@ async def init() -> None:
             )
             """
         )
+        # Offline comment inbox - comments visitors leave on a HOSTED share
+        # while the owner's daemon is unreachable. The share worker posts them
+        # here; the owning daemon pulls + acks them into the project's own
+        # comments.json when it comes back online. payload is the normalized
+        # comment JSON (text/author/anchor/pin - never screenshots).
+        await c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS hosted_comments (
+              id         bigserial PRIMARY KEY,
+              token      text NOT NULL,
+              payload    jsonb NOT NULL,
+              created_at timestamptz DEFAULT now()
+            )
+            """
+        )
+        await c.execute(
+            "CREATE INDEX IF NOT EXISTS hosted_comments_token ON hosted_comments (token)"
+        )
         # Hosting passcodes - uploading a snapshot requires presenting one.
         # Only the sha256 HASH is stored, so neither the repo nor a DB dump
         # reveals a usable code. Managed via the /admin/passcodes endpoints
@@ -224,6 +242,78 @@ async def hosted_stale(ttl_days: int) -> list:
             "WHERE refreshed_at < now() - ($1 || ' days')::interval",
             str(ttl_days),
         )
+
+
+# ── Offline comment inbox ──────────────────────────────────────────────────
+
+async def inbox_add(token: str, payload: str) -> None:
+    async with _pool.acquire() as c:
+        await c.execute(
+            "INSERT INTO hosted_comments (token, payload) VALUES ($1, $2::jsonb)",
+            token, payload,
+        )
+
+
+async def inbox_count(token: str) -> int:
+    async with _pool.acquire() as c:
+        v = await c.fetchval("SELECT count(*) FROM hosted_comments WHERE token=$1", token)
+    return int(v or 0)
+
+
+async def inbox_pull(install_id: str, limit: int = 200) -> list:
+    """Pending comments across every share this install hosts. Rows stay put
+    until the daemon acks them (crash-safe two-phase drain)."""
+    async with _pool.acquire() as c:
+        return await c.fetch(
+            """
+            SELECT hc.id, hc.token, hc.payload::text AS payload, hc.created_at
+            FROM hosted_comments hc
+            JOIN hosted_shares hs ON hs.token = hc.token
+            WHERE hs.install_id = $1
+            ORDER BY hc.id
+            LIMIT $2
+            """,
+            install_id, limit,
+        )
+
+
+async def inbox_ack(install_id: str, ids: list) -> int:
+    """Delete acked rows - only ones belonging to this install's shares."""
+    if not ids:
+        return 0
+    async with _pool.acquire() as c:
+        res = await c.execute(
+            """
+            DELETE FROM hosted_comments hc
+            USING hosted_shares hs
+            WHERE hs.token = hc.token AND hs.install_id = $1 AND hc.id = ANY($2::bigint[])
+            """,
+            install_id, [int(i) for i in ids],
+        )
+    try:
+        return int(res.split()[-1])
+    except Exception:
+        return 0
+
+
+async def inbox_purge_token(token: str) -> None:
+    async with _pool.acquire() as c:
+        await c.execute("DELETE FROM hosted_comments WHERE token=$1", token)
+
+
+async def inbox_purge_stale(ttl_days: int) -> int:
+    """Reaper: drop inbox rows whose share no longer exists, or that nobody
+    collected within the TTL."""
+    async with _pool.acquire() as c:
+        res = await c.execute(
+            "DELETE FROM hosted_comments WHERE token NOT IN (SELECT token FROM hosted_shares) "
+            "OR created_at < now() - ($1 || ' days')::interval",
+            str(ttl_days),
+        )
+    try:
+        return int(res.split()[-1])
+    except Exception:
+        return 0
 
 
 # ── Hosting passcodes ──────────────────────────────────────────────────────

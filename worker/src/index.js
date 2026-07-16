@@ -141,9 +141,42 @@ async function serveApi(request, env, token, sub) {
   if (request.method === "GET" && sub === "/api/comments") {
     return json(200, { comments: [], hostedOffline: true });
   }
+  // New comments queue at the broker's inbox; the owner's daemon collects
+  // them when it comes back online. Everything else under /api/ (replies,
+  // status flips, shots, attachments) genuinely needs the daemon.
+  if (request.method === "POST" && sub === "/api/comments") {
+    return queueComment(request, env, token);
+  }
   return json(503, {
-    error: "Comments are unavailable right now - the share owner is offline. The prototype itself keeps working.",
+    error: "This action is unavailable right now - the share owner is offline. The prototype itself keeps working.",
   });
+}
+
+async function queueComment(request, env, token) {
+  let comment;
+  try {
+    comment = await request.json();
+  } catch {
+    return json(400, { error: "invalid comment body" });
+  }
+  try {
+    const r = await fetch(env.BROKER_URL.replace(/\/+$/, "") + "/shares/inbox", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, comment }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) {
+      return json(200, { ok: true, queued: true, comment: j.comment });
+    }
+    return json(r.status === 429 ? 429 : 503, {
+      error: j.detail || j.error || "could not save the comment right now - please try again later",
+    });
+  } catch {
+    return json(503, {
+      error: "could not save the comment right now - please try again later",
+    });
+  }
 }
 
 async function serveFont(request, env, url) {

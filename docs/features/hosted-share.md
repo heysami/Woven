@@ -42,11 +42,37 @@ hosting never accumulates storage.
   (DS stylesheets reference them root-absolute).
 - **Live things stay live.** `/s/<token>/live*` (multiplayer + live editor)
   always passes through to the tunnel. `/api/*` (comments CRUD) passes
-  through too, so commenting keeps working whenever the daemon is up; when it
-  is down, the worker degrades gracefully - `api/meta` is served from the
-  snapshot (the viewer boots), comment reads return an empty list, comment
-  writes get a readable "owner is offline" error. `liveOnly` shares
-  (multiplayer transport) cannot be hosted at all.
+  through too, so commenting works normally whenever the daemon is up; when
+  it is down, the worker degrades - `api/meta` is served from the snapshot
+  (the viewer boots), comment reads return an empty list, and NEW comments
+  queue at the broker's OFFLINE INBOX (below). Replies / status flips /
+  screenshots need the daemon and get a readable "owner is offline" error.
+  `liveOnly` shares (multiplayer transport) cannot be hosted at all.
+
+### Offline comment inbox
+
+Visitors can leave comments even while the owner's machine is off:
+
+- Worker: a failed origin `POST /api/comments` on a hosted share forwards
+  `{token, comment}` to `BROKER_URL/shares/inbox` and returns
+  `{ok, queued: true, comment}`. The viewer shows the comment locally with a
+  green "the owner will receive it when they're back" notice (screenshots +
+  attachments are dropped offline - they need the daemon).
+- Broker: `POST /shares/inbox` is public but bounded - only currently-hosted
+  tokens, whitelisted + clipped fields (the exact comments.json record shape,
+  id/createdAt minted broker-side, `viaInbox: true` provenance flag), 200
+  pending per token, 30 posts/hour/IP. Rows live in `hosted_comments`.
+- Daemon: while any share is hosted, an inbox loop (2min interval, first pull
+  at boot) does a crash-safe two-phase drain: `POST /shares/inbox_pull`
+  {installId} → merge each item into the project's comments.json (same locks
+  and shape the gate uses, deduped by comment id, orphaned/bogus items
+  dropped) → `POST /shares/inbox_ack` {installId, ids}. Redelivery after a
+  crash is harmless thanks to the id dedup.
+- Cleanup: inbox rows purge with their share (delete/deprovision/reap) and
+  the reaper drops uncollected rows after `INBOX_TTL_DAYS` (60).
+- Snapshots ship the viewer, so shares uploaded BEFORE this feature queue
+  comments correctly (the worker handles that side) but show the old error
+  copy until their owner presses Update to refresh the snapshot.
 - **Snapshot semantics, on purpose.** Visitors see the uploaded version until
   the owner presses Update (share panel ↻ / "Update snapshot"). This is a
   prototype share, not a production deploy - publish-to-online remains the

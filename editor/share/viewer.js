@@ -450,6 +450,12 @@
     const cleanupArmRef = useRef(null);
 
     const showError = (msg) => { setError(msg); setTimeout(() => setError(null), 5000); };
+    const [notice, setNotice] = useState(null);
+    const showNotice = (msg) => { setNotice(msg); setTimeout(() => setNotice(null), 7000); };
+    // Comments accepted while the owner is OFFLINE (hosted shares queue them
+    // at the broker). Kept locally so they stay visible in this session even
+    // though the server list can't include them yet.
+    const queuedRef = useRef([]);
 
     // Closing a draft (cancel / Esc / submit / reset) drops any annotation
     // strokes + pending attachments so the next comment starts clean.
@@ -482,7 +488,14 @@
 
     const refetchComments = useCallback(() => {
       fetch(api("comments")).then((r) => (r.ok ? r.json() : { comments: [] }))
-        .then((j) => setComments(j.comments || []))
+        .then((j) => {
+          const server = j.comments || [];
+          // Drop queued copies the server now knows (owner came back online
+          // and collected the inbox); keep the rest visible locally.
+          queuedRef.current = queuedRef.current.filter(
+            (q) => !server.some((c) => c.id === q.id));
+          setComments([...server, ...queuedRef.current]);
+        })
         .catch(() => {});
     }, []);
     useEffect(() => {
@@ -701,6 +714,17 @@
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || "failed to post comment");
+        // Owner offline: the comment was queued at the broker, not stored on
+        // the share. Show it locally, skip the shot/attachment uploads (they
+        // need the owner's machine), and say what happened.
+        if (j.queued && j.comment) {
+          queuedRef.current = [...queuedRef.current, j.comment];
+          setComments((cs) => [...cs, j.comment]);
+          setDraft(null); setDraftText("");
+          showNotice("Comment saved - the owner is offline right now and will "
+            + "receive it when they're back. Screenshots aren't included while offline.");
+          return;
+        }
         // Attach the screenshot to the freshly-created comment. Best-effort:
         // the comment already exists, so a failed upload just means no image.
         const cid = j.comment && j.comment.id;
@@ -892,6 +916,7 @@
               </div>
             `}
             ${error && html`<div className="sv-banner">${error}</div>`}
+            ${notice && html`<div className="sv-banner sv-banner-info">${notice}</div>`}
           </div>
           ${sidebarOpen && html`
             <div className="sv-sidebar">

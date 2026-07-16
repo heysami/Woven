@@ -1243,14 +1243,124 @@ def _hosted_heartbeat_loop():
         time.sleep(_WOVEN_HEARTBEAT_INTERVAL)
 
 
+# ── Offline comment inbox sync ─────────────────────────────────────────────
+# Comments visitors leave on a hosted share while this daemon is OFF queue at
+# the broker (worker → /shares/inbox). This loop pulls them, merges them into
+# the project's comments.json (same shape + locks the gate uses), then acks so
+# the broker deletes them. Two-phase pull/ack: a crash mid-merge re-delivers
+# next round, and the id-dedup makes redelivery harmless.
+
+_HOSTED_INBOX_INTERVAL = 120   # seconds between pulls while any share is hosted
+
+
+def _hosted_inbox_apply(item):
+    """Merge ONE pulled inbox item into its project's comment store. Returns
+    "applied" (merged), "drop" (permanently unusable / duplicate - ack without
+    merging), or "retry" (temporary failure - leave in the inbox)."""
+    token = item.get("token") or ""
+    payload = item.get("comment")
+    rec = share_get_by_token(token)
+    if rec is None or rec.get("liveOnly") or not isinstance(payload, dict):
+        return "drop"                    # share gone / bogus - drop from inbox
+    cid = payload.get("id") or ""
+    if not COMMENT_ID_OK.match(cid):
+        return "drop"
+    try:
+        root = _RESOLVE_PROJECT_ROOT(rec.get("project") or "")
+    except Exception:
+        return "retry"                   # project temporarily unavailable
+    text = _clip(payload.get("text"), 5000).strip()
+    if not text:
+        return "drop"
+    anchor = payload.get("anchor") if isinstance(payload.get("anchor"), dict) else {}
+    pin = payload.get("pin") if isinstance(payload.get("pin"), dict) else {}
+
+    def _frac(v):
+        try:
+            return max(0.0, min(1.0, float(v)))
+        except (TypeError, ValueError):
+            return 0.5
+
+    entry = {
+        "id":        cid,
+        "prototype": rec.get("prototype") or "",
+        "page":      _clip(payload.get("page"), 500) or "index.html",
+        "anchor": {
+            "selector": _clip(anchor.get("selector"), 1000),
+            "tag":      _clip(anchor.get("tag"), 40),
+            "text":     _clip(anchor.get("text"), 200),
+        },
+        "pin":       {"x": _frac(pin.get("x", 0.5)), "y": _frac(pin.get("y", 0.5))},
+        "text":      text,
+        "author":    _clean_author(payload.get("author")),
+        "createdAt": _clip(payload.get("createdAt"), 40) or _now_iso(),
+        "status":    "open",
+        "processedAt": "",
+        "replies":   [],
+        "shot":      "",
+        "shotAt":    "",
+        "attachments": [],
+        "viaInbox":  True,               # arrived while this daemon was offline
+    }
+    with _COMMENTS_LOCK:
+        data = comments_load(root)
+        if any(c.get("id") == cid for c in data.get("comments", [])):
+            return "drop"                # redelivery - already merged
+        data["comments"].append(entry)
+        _comments_save(root, data)
+    _notify_comments_changed(rec.get("project"), rec.get("prototype"))
+    return "applied"
+
+
+def hosted_inbox_sync():
+    """One pull/merge/ack round. Returns the number of comments applied."""
+    iid = woven_install_id()
+    body = json.dumps({"installId": iid}).encode("utf-8")
+    res = _hosted_broker_post("/shares/inbox_pull", data=body, timeout=30)
+    items = res.get("items") or []
+    if not items:
+        return 0
+    acked = []
+    applied = 0
+    for item in items:
+        try:
+            outcome = _hosted_inbox_apply(item)
+            if outcome != "retry":
+                acked.append(int(item.get("inboxId")))
+            if outcome == "applied":
+                applied += 1
+        except Exception as e:
+            print("[share] inbox item failed (will retry): {}".format(e), flush=True)
+    if acked:
+        ack = json.dumps({"installId": iid, "ids": acked}).encode("utf-8")
+        _hosted_broker_post("/shares/inbox_ack", data=ack, timeout=30)
+    if applied:
+        print("[share] collected {} offline comment(s) from the inbox".format(applied), flush=True)
+    return applied
+
+
+def _hosted_inbox_loop():
+    while True:
+        try:
+            if any(share_hosted_on(s) for s in shares_load().get("shares", [])):
+                hosted_inbox_sync()
+        except Exception:
+            pass
+        time.sleep(_HOSTED_INBOX_INTERVAL)
+
+
 def ensure_hosted_heartbeat():
-    """Start the hosted heartbeat thread once (boot + first toggle-on)."""
+    """Start the hosted heartbeat + inbox-sync threads once (boot + first
+    toggle-on). The inbox loop runs its first pull within seconds, so comments
+    left while the daemon was off land shortly after boot."""
     global _HOSTED_HB_STARTED
     if _HOSTED_HB_STARTED or not WOVEN_BROKER_URL:
         return
     _HOSTED_HB_STARTED = True
     threading.Thread(target=_hosted_heartbeat_loop, daemon=True,
                      name="hosted-heartbeat").start()
+    threading.Thread(target=_hosted_inbox_loop, daemon=True,
+                     name="hosted-inbox").start()
 
 
 # ═════════════════════════════════════════════════════════════════════════

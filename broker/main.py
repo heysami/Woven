@@ -213,9 +213,12 @@ async def reap(x_admin_token: str = Header(default="")) -> dict:
             except Exception:
                 pass
             await store.hosted_delete(row["token"])
+            await store.inbox_purge_token(row["token"])
             hosted_reaped += 1
+    inbox_purged = await store.inbox_purge_stale(INBOX_TTL_DAYS)
     return {"reaped": reaped, "ttlDays": REAP_TTL_DAYS,
-            "hostedReaped": hosted_reaped, "hostedTtlDays": HOSTED_TTL_DAYS}
+            "hostedReaped": hosted_reaped, "hostedTtlDays": HOSTED_TTL_DAYS,
+            "inboxPurged": inbox_purged}
 
 
 # ── Vanity published-site names (username.getwoven.design) ────────────────
@@ -457,7 +460,115 @@ async def shares_delete(body: HostedShareReq) -> dict:
         raise HTTPException(403, "token is hosted by a different install")
     await r2.run_blocking(r2.delete_prefix, "s/" + token + "/")
     await store.hosted_delete(token)
+    await store.inbox_purge_token(token)
     return {"ok": True}
+
+
+# ── Offline comment inbox ──────────────────────────────────────────────────
+# When a hosted share's owner is offline, the share worker forwards visitor
+# comments here instead of failing them. The owning daemon pulls + acks the
+# rows into the project's comments.json when it is back. Public submit is
+# bounded hard: only currently-hosted tokens, whitelisted fields, size caps,
+# per-token pending cap, per-IP rate limit. Screenshots/attachments never
+# ride the inbox.
+INBOX_PENDING_MAX = int(os.environ.get("INBOX_PENDING_MAX", "200"))     # per token
+INBOX_RATE_MAX = int(os.environ.get("INBOX_RATE_MAX", "30"))            # posts/hour/IP
+INBOX_TTL_DAYS = int(os.environ.get("INBOX_TTL_DAYS", "60"))
+
+
+def _clip(v, n: int) -> str:
+    return v[:n] if isinstance(v, str) else ""
+
+
+def _inbox_normalize(comment: dict) -> dict:
+    """Whitelist + clip the visitor comment into the exact record shape the
+    daemon's comments.json uses (id/createdAt minted here)."""
+    comment = comment if isinstance(comment, dict) else {}
+    text = _clip(comment.get("text"), 5000).strip()
+    if not text:
+        raise HTTPException(400, "comment text required")
+    anchor = comment.get("anchor") if isinstance(comment.get("anchor"), dict) else {}
+    pin = comment.get("pin") if isinstance(comment.get("pin"), dict) else {}
+    author = comment.get("author") if isinstance(comment.get("author"), dict) else {}
+
+    def _frac(v):
+        try:
+            return max(0.0, min(1.0, float(v)))
+        except (TypeError, ValueError):
+            return 0.5
+
+    return {
+        "id":        "c-" + os.urandom(5).hex(),
+        "prototype": _clip(comment.get("prototype"), 200),
+        "page":      _clip(comment.get("page"), 500) or "index.html",
+        "anchor": {
+            "selector": _clip(anchor.get("selector"), 1000),
+            "tag":      _clip(anchor.get("tag"), 40),
+            "text":     _clip(anchor.get("text"), 200),
+        },
+        "pin":       {"x": _frac(pin.get("x", 0.5)), "y": _frac(pin.get("y", 0.5))},
+        "text":      text,
+        "author": {
+            "name":  _clip(author.get("name"), 80).strip() or "Anonymous",
+            "email": _clip(author.get("email"), 120).strip().lower(),
+        },
+        "createdAt": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+        "status":    "open",
+        "processedAt": "",
+        "replies":   [],
+        "shot":      "",
+        "shotAt":    "",
+        "attachments": [],
+        # Provenance marker so the editor can tell these arrived offline.
+        "viaInbox":  True,
+    }
+
+
+@app.post("/shares/inbox")
+async def shares_inbox(request: Request) -> dict:
+    _hosted_ready()
+    _rate_limit(_client_ip(request), kind="inbox", limit=INBOX_RATE_MAX)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "JSON body required")
+    body = body if isinstance(body, dict) else {}
+    token = _validate_share_token(str(body.get("token") or ""))
+    if await store.hosted_get(token) is None:
+        raise HTTPException(404, "not a hosted share")
+    if await store.inbox_count(token) >= INBOX_PENDING_MAX:
+        raise HTTPException(429, "comment inbox is full for this share")
+    entry = _inbox_normalize(body.get("comment"))
+    import json as _json
+    await store.inbox_add(token, _json.dumps(entry))
+    return {"ok": True, "queued": True, "comment": entry}
+
+
+@app.post("/shares/inbox_pull")
+async def shares_inbox_pull(body: InstallReq) -> dict:
+    _hosted_ready()
+    install_id = _validate(body.installId)
+    import json as _json
+    rows = await store.inbox_pull(install_id)
+    return {"items": [
+        {"inboxId": int(r["id"]), "token": r["token"],
+         "comment": _json.loads(r["payload"])}
+        for r in rows
+    ]}
+
+
+class InboxAckReq(BaseModel):
+    installId: str
+    ids: list
+
+
+@app.post("/shares/inbox_ack")
+async def shares_inbox_ack(body: InboxAckReq) -> dict:
+    _hosted_ready()
+    install_id = _validate(body.installId)
+    ids = [i for i in (body.ids or []) if isinstance(i, int)][:1000]
+    removed = await store.inbox_ack(install_id, ids)
+    return {"ok": True, "removed": removed}
 
 
 class PasscodeCheckReq(BaseModel):
