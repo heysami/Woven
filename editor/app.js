@@ -12551,14 +12551,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
     if (j) { flashNote("Deleted " + name); reload(); }
   };
 
-  // ── GitHub fork + pull-request (the collaboration / GitHub-side merge path) ─
-  const doForkRepo = async () => {
-    const j = await ghOp("fork", {});
-    if (j && j.fork) {
-      flashNote("Forked to " + j.fork.full_name);
-      if (j.fork.html_url) window.open(j.fork.html_url, "_blank");
-    }
-  };
+  // ── GitHub pull-request (the collaboration / GitHub-side merge path) ───────
   const doOpenPR = async () => {
     if (curBranch === "main" || curBranch === "master") {
       flashErr("Switch to a feature branch first - you can't PR the base branch.");
@@ -12869,6 +12862,10 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
                 <button className="th-git-btn" disabled=${!hasRemote || !!inflight || busy === "pull"} onClick=${doPull}
                   title=${hasRemote ? "Pull from origin - blocked while the tree is dirty or a live session is running" : "Connect a repo first"}>
                   <${Icon.Download}/> ${opBusy("pull") ? "Pulling…" : "Pull" + (st.behind > 0 ? " (" + st.behind + ")" : "")}</button>
+                ${signedIn && hasRemote && html`
+                <button className="th-git-btn" disabled=${!!busy} onClick=${doOpenPR}
+                  title="Push this branch and open a pull request to main on GitHub">
+                  <${Icon.ArrowUp}/> ${busy === "pr" ? "Opening PR…" : "Open PR"}</button>`}
               </div>
               ${(st.dirty || st.ahead > 0) && html`
               <div className="th-git-actions th-git-actions-danger">
@@ -12881,15 +12878,6 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
               </div>
             `}
 
-            ${signedIn && hasRemote && html`
-              <div className="th-git-actions">
-                <button className="th-git-btn" disabled=${!!busy} onClick=${doOpenPR}
-                  title="Push this branch and open a pull request to main on GitHub">
-                  <${Icon.ArrowUp}/> ${busy === "pr" ? "Opening PR…" : "Open PR"}</button>
-                <button className="th-git-btn" disabled=${!!busy} onClick=${doForkRepo}
-                  title="Fork this repo on GitHub under your account (to contribute to a repo you don't own)">
-                  <${Icon.Fork}/> ${busy === "fork" ? "Forking…" : "Fork on GitHub"}</button>
-              </div>`}
             `}
 
             ${st.conflicts && st.conflicts.length > 0 && html`
