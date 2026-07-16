@@ -10589,35 +10589,46 @@ function RightRailDock({ mode }) {
   const [dockWidth, setDockWidth] = useState(() => Number(loadDock().width) || CHAT_DEFAULT);
   const dockWidthRef = useRef(dockWidth);
   useEffect(() => { dockWidthRef.current = dockWidth; }, [dockWidth]);
+  // dockWidth is the PER-COLUMN width. A 2nd window opens a 2nd grid column,
+  // so the dock's total width doubles (each column keeps the single-window
+  // width) instead of halving the existing tile - and it collapses back to
+  // one column's width when the count drops to one. Persisted per-column.
+  const dockCols = dockWindows.length >= 2 ? 2 : 1;
+  const dockColsRef = useRef(dockCols);
+  dockColsRef.current = dockCols;
+  const dockTotalWidth = dockWidth * dockCols;
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--workflow-chat-width", chatWidth + "px");
-    root.style.setProperty("--workflow-dock-width", dockWidth + "px");
+    root.style.setProperty("--workflow-dock-width", dockTotalWidth + "px");
     return () => {
       root.style.removeProperty("--workflow-chat-width");
       root.style.removeProperty("--workflow-dock-width");
     };
-  }, [chatWidth, dockWidth]);
+  }, [chatWidth, dockTotalWidth]);
   // Reserve-width signal for full-page surfaces (Development / User testing) so
   // their content shrinks beside the dock instead of sitting under it. 0 when no
   // dock window is open, the live dock width when open (tracks resize).
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty("--dev-dock-w", (dockWindows.length > 0 ? dockWidth : 0) + "px");
+    root.style.setProperty("--dev-dock-w", (dockWindows.length > 0 ? dockTotalWidth : 0) + "px");
     root.style.setProperty("--dev-left-chat-w", (leftChatOpen ? chatWidth : 0) + "px");
     return () => {
       root.style.removeProperty("--dev-dock-w");
       root.style.removeProperty("--dev-left-chat-w");
     };
-  }, [chatWidth, dockWidth, dockWindows.length, leftChatOpen]);
+  }, [chatWidth, dockTotalWidth, dockWindows.length, leftChatOpen]);
   const startDockResize = useCallback((e) => {
     e.preventDefault();
     try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
     const startX = e.clientX;
-    const startW = dockWidthRef.current;
+    // Drag moves the dock's TOTAL width 1:1 with the pointer; state stays
+    // per-column, so a 2-column dock resizes both columns together.
+    const cols = dockColsRef.current;
+    const startW = dockWidthRef.current * cols;
     const onMove = (ev) => {
-      const w = Math.max(DOCK_MIN, Math.min(window.innerWidth * 0.7, startW - (ev.clientX - startX)));
-      setDockWidth(w);
+      const w = Math.max(DOCK_MIN * cols, Math.min(window.innerWidth - 44, startW - (ev.clientX - startX)));
+      setDockWidth(w / cols);
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
@@ -26206,6 +26217,13 @@ function WorkflowCanvas() {
   useEffect(() => { libWidthRef.current  = libWidth;  }, [libWidth]);
   useEffect(() => { chatWidthRef.current = chatWidth; }, [chatWidth]);
   useEffect(() => { dockWidthRef.current = dockWidth; }, [dockWidth]);
+  // dockWidth is the PER-COLUMN width (see the standalone-views host): a 2nd
+  // window adds a 2nd column at the same width instead of halving the first,
+  // and closing back to one window drops the total back to one column.
+  const dockCols = dockWindows.length >= 2 ? 2 : 1;
+  const dockColsRef = useRef(dockCols);
+  dockColsRef.current = dockCols;
+  const dockTotalWidth = dockWidth * dockCols;
   const startLibResize = useCallback((e) => {
     e.preventDefault();
     // Latch: iframes go pointer-transparent for the drag duration (CSS
@@ -26255,10 +26273,13 @@ function WorkflowCanvas() {
     // making the dock resize stall/jump in prototype view.
     try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
     const startX = e.clientX;
-    const startW = dockWidthRef.current;
+    // Drag moves the dock's TOTAL width 1:1 with the pointer; state stays
+    // per-column, so a 2-column dock resizes both columns together.
+    const cols = dockColsRef.current;
+    const startW = dockWidthRef.current * cols;
     const onMove = (ev) => {
-      const w = Math.max(DOCK_MIN, Math.min(window.innerWidth * 0.7, startW - (ev.clientX - startX)));
-      setDockWidth(w);
+      const w = Math.max(DOCK_MIN * cols, Math.min(window.innerWidth - 44, startW - (ev.clientX - startX)));
+      setDockWidth(w / cols);
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
@@ -26278,13 +26299,13 @@ function WorkflowCanvas() {
     const root = document.documentElement;
     root.style.setProperty("--workflow-lib-width",  libWidth  + "px");
     root.style.setProperty("--workflow-chat-width", chatWidth + "px");
-    root.style.setProperty("--workflow-dock-width", dockWidth + "px");
+    root.style.setProperty("--workflow-dock-width", dockTotalWidth + "px");
     return () => {
       root.style.removeProperty("--workflow-lib-width");
       root.style.removeProperty("--workflow-chat-width");
       root.style.removeProperty("--workflow-dock-width");
     };
-  }, [libWidth, chatWidth, dockWidth]);
+  }, [libWidth, chatWidth, dockTotalWidth]);
   // Truthfulness Principle 8 (status does not lie) applied to the
   // chat surface. On mount, if the daemon has an active (non-done, non-error)
   // run for this project, auto-attach to it. Without this, reloading the
@@ -87272,6 +87293,12 @@ function App() {
   const dockWidthRef = useRef(dockWidth); dockWidthRef.current = dockWidth;
   const dockColRef   = useRef(dockColSplit); dockColRef.current = dockColSplit;
   const dockRowRef   = useRef(dockRowSplit); dockRowRef.current = dockRowSplit;
+  // dockWidth is the PER-COLUMN width (same contract as the workflow/standalone
+  // docks): a 2nd window adds a 2nd column at the same width instead of halving
+  // the first, and the dock track collapses back when the count drops to one.
+  const dockCols = dockWindows.length >= 2 ? 2 : 1;
+  const dockColsRef = useRef(dockCols); dockColsRef.current = dockCols;
+  const dockTotalWidth = dockWidth * dockCols;
 
   // Serialise windows for persistence (threads keep only their runId).
   const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent" && w.kind !== "task").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
@@ -87379,10 +87406,10 @@ function App() {
   // non-zero width would just carve an empty column out of the view.
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty("--th-dock-w", (!embedMode && dockWindows.length) ? dockWidth + "px" : "0px");
+    root.style.setProperty("--th-dock-w", (!embedMode && dockWindows.length) ? dockTotalWidth + "px" : "0px");
     root.style.setProperty("--dock-col-split", dockColSplit + "%");
     root.style.setProperty("--dock-row-split", dockRowSplit + "%");
-  }, [embedMode, dockWindows.length, dockWidth, dockColSplit, dockRowSplit]);
+  }, [embedMode, dockWindows.length, dockTotalWidth, dockColSplit, dockRowSplit]);
 
   const openKinds = dockWindows.filter(w => w.kind !== "thread").map(w => w.kind);
 
@@ -87394,11 +87421,14 @@ function App() {
     e.preventDefault();
     try { window.dispatchEvent(new CustomEvent("th:set-canvas-selection", { detail: { ids: [] } })); } catch {}
     try { document.body.setAttribute("data-panel-resizing", "true"); } catch {}
-    const startX = e.clientX, startW = dockWidthRef.current;
+    // Drag moves the dock's TOTAL width 1:1 with the pointer; the ref (and
+    // persisted width) stay per-column.
+    const cols = dockColsRef.current;
+    const startX = e.clientX, startW = dockWidthRef.current * cols;
     const onMove = (ev) => {
-      const w = Math.max(360, Math.min(window.innerWidth * 0.7, startW + (startX - ev.clientX)));
+      const w = Math.max(360 * cols, Math.min(window.innerWidth - 44, startW + (startX - ev.clientX)));
       document.documentElement.style.setProperty("--th-dock-w", w + "px");
-      dockWidthRef.current = w;
+      dockWidthRef.current = w / cols;
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
