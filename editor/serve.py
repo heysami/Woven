@@ -9333,14 +9333,23 @@ def _drain_stdout(state: "RunState") -> None:
                         # direction pick, the init-card, or the orchestration
                         # roster gate), flip the persisted tier so the chat badges
                         # "Setup". Promote only FROM normal, once - never touch
-                        # scoped / leaf / already-setup. The build (handed-off)
-                        # thread never emits these markers, so it stays normal.
+                        # scoped / leaf / already-setup. Match the SPECIFIC
+                        # setup-thread card ids, never bare markup: the BUILD
+                        # thread also surfaces <direction-options> cards (the
+                        # art-direction plate gate, motion-studio concept
+                        # plates) and mentions DECISION_orchestrator-plan.json
+                        # in prose; matching bare "<direction-options" /
+                        # "orchestrator-plan" flipped build threads to setup,
+                        # and _run_resume then rebuilt them on the setup
+                        # preamble for good (citylife/teamfantasy, 2026-07).
                         if (ev.get("label") == "done"
                                 and getattr(state, "tier", None) == "normal"):
                             _res = ev.get("result") or ""
-                            if ("<direction-options" in _res
-                                    or "<init-card" in _res
-                                    or "orchestrator-plan" in _res):
+                            if ("<init-card" in _res
+                                    or 'id="prototype-direction"' in _res
+                                    or "id='prototype-direction'" in _res
+                                    or 'id="orchestrator-plan"' in _res
+                                    or "id='orchestrator-plan'" in _res):
                                 state.tier = "setup"
                         # verify shaders at TURN-done, not just process-exit.
                         # Freeform/chat agents stay alive across turns (stream-json),
