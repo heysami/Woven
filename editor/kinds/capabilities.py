@@ -555,6 +555,25 @@ The chat UI parses these tags with a STRICT grammar - a wrong option shape rende
 When a dispatch hands back a `gateBlock`, paste it into the chat VERBATIM - never restate it as prose, a path, or your own card."""
 
 
+# Appended to the INTERACTIVE chat tiers (setup / normal / scoped), NOT leaf:
+# a leaf is a throwaway per-node context where reading QA frames directly is
+# the mandated behavior and costs pennies. A long-lived chat is the opposite:
+# the harness keeps only the newest ~10 images in the prompt and swaps older
+# ones for placeholders, and every swap mutates mid-conversation content,
+# which invalidates the prompt cache from that point and forces a full
+# re-upload + cache re-write of everything after it. Measured on suss-cal
+# (2026-07-16): 44 such evictions in a ~300k-token session = ~$89 of a
+# $122.72 run, ~$2 per screenshot past the cap. Visual QA itself stays
+# mandatory - the rule below only moves WHERE the pixels live.
+IMAGE_COST_DISCIPLINE = """
+
+### Images in this chat are expensive at scale - delegate the look-loop
+Every image that enters this conversation (a chrome screenshot, a Read of a PNG, a pasted screenshot, a QA frame) stays in the transcript, and once more than ~10 have accumulated, EACH additional image forces a full re-upload of the conversation (a prompt-cache rewrite of everything after the oldest image). In a long session that is real money - roughly $1-3 PER extra screenshot at 150k+ tokens of context. Visual verification is still mandatory; the discipline is about WHOSE context holds the pixels:
+  - Repeated visual verification (checking your work in the browser step by step, reading `/__qa/run` idleFrames, comparing before/after states) -> dispatch ONE `Task` subagent to do the whole look-loop. It screenshots as freely as QA needs in its own throwaway context and returns a text verdict; your context keeps only the verdict. The subagent does NOT get this preamble, so write a SELF-CONTAINED brief: the exact URL(s) or file paths, what must be true visually, which interactions to try, and that it must report pass/fail with specifics.
+  - Viewing 1-3 images directly is fine (a pasted screenshot, a plate to judge): view each ONCE, write down what you concluded, and never Read the same image again - your recorded observation is durable, the pixels are dead weight.
+  - If this session is already long AND an image-heavy phase is coming (a QA sweep, a multi-state browser check), that is exactly the moment to delegate to a subagent rather than look inline - the rewrite price is proportional to everything sitting after the first image."""
+
+
 # design goal is skim-proofing: a leaf's correct default is to PROCEED (not to
 # go read), so the stub says so - and gates escalation on a closed checklist
 # (binary triggers an agent can't rationalise past) plus a live fetch path so
@@ -2263,7 +2282,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + GATE_CARD_SYNTAX
+        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + GATE_CARD_SYNTAX + IMAGE_COST_DISCIPLINE
     # NORMAL path: the project's everyday chat, the untargeted default. Same
     # routing strip as scoped (routing is fetched on demand only when the user
     # asks for a genuine new build), but NOT bound to one prototype - a general
@@ -2271,13 +2290,13 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "normal":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _normal_general_stub() + GATE_CARD_SYNTAX
+        return _preamble + _normal_general_stub() + GATE_CARD_SYNTAX + IMAGE_COST_DISCIPLINE
     # SETUP path (default): a new prototype build. Keeps the full routing
     # catalog. Append manifest-carried hard rules for orchestrators added
     # after ship time (not covered by the static prose above). Appended AFTER
     # the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
-    return _preamble
+    return _preamble + IMAGE_COST_DISCIPLINE
 
 
 def orchestrator_routing_text(project_root: Optional[str] = None) -> str:
