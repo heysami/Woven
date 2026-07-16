@@ -45314,6 +45314,27 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // viewer's active tab). Reported up from WorkflowProtoViewer; null when the
   // stage is empty.
   const [protoViewerPath, setProtoViewerPath] = useState(null);
+  // Preview-scoped left panels (rendered beside the proto viewer, like the
+  // chat column - they never bounce the user back to the canvas):
+  //   pv-files  - tree of prototype pages under source/
+  //   pv-assets - visual assets scanned from the OPEN page's live DOM
+  // Two-step Files icon, mirroring the chat icon's contract: with an empty
+  // stage the first click just reopens the last-viewed file (the viewer
+  // remembers it); only once a file is showing does the icon (now a tree
+  // glyph) open the files panel. An open panel always toggles closed.
+  const onRailPreviewFiles = useCallback(() => {
+    if (leftPanel === "pv-files") { setLeftPanel(null); return; }
+    if (!protoViewerPath) {
+      window.dispatchEvent(new CustomEvent("th:proto-open-last"));
+      return;
+    }
+    toggleWbMode(false);   // wb tools may still own the column from canvas mode
+    setLeftPanel("pv-files");
+  }, [leftPanel, protoViewerPath, toggleWbMode]);
+  const onRailPreviewAssets = useCallback(() => {
+    toggleWbMode(false);
+    setLeftPanel(p => (p === "pv-assets" ? null : "pv-assets"));
+  }, [toggleWbMode]);
   // The prototype the user is actively PREVIEWING - derived from the VIEW, not
   // from sticky iframe interaction. Only the dedicated preview surfaces count:
   // the zoom overlay (a full-screen preview of one page) or the Preview view
@@ -46992,7 +47013,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         data-view=${mainView}
         data-left-panel=${mainView === "canvas" && wbMode ? "whiteboard"
                           : leftPanel === "chat" ? "chat"
-                          : mainView === "canvas" && leftPanel ? leftPanel : "none"}
+                          : mainView === "proto" && (leftPanel === "pv-files" || leftPanel === "pv-assets") ? leftPanel
+                          : mainView === "canvas" && leftPanel && !leftPanel.startsWith("pv-") ? leftPanel : "none"}
       >
         ${runsOverlay && html`
           <${LeftRunsPopover}
@@ -47011,6 +47033,27 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               : "Chat - back to your conversation"}
             onClick=${onChatIconClick}
           >${!wbMode && leftPanel === "chat" ? html`<${Icon.List}/>` : html`<${Icon.Comment}/>`}<//>
+          ${mainView === "proto" && html`
+            <${React.Fragment}>
+              <div className="workflow-nav-rail-sep workflow-nav-rail-sep-preview"/>
+              <${HoverTip}
+                placement="right"
+                className=${"workflow-nav-rail-btn workflow-nav-rail-btn-preview" + (leftPanel === "pv-files" ? " is-active" : "")}
+                ariaLabel=${protoViewerPath ? "Files" : "Open last file"}
+                tip=${protoViewerPath
+                  ? "Files - browse the prototype's pages"
+                  : "Files - reopen your last file"}
+                onClick=${onRailPreviewFiles}
+              >${protoViewerPath ? html`<${Icon.Tree}/>` : html`<${Icon.Folder}/>`}<//>
+              <${HoverTip}
+                placement="right"
+                className=${"workflow-nav-rail-btn workflow-nav-rail-btn-preview" + (leftPanel === "pv-assets" ? " is-active" : "")}
+                ariaLabel="Page assets"
+                tip="Assets - visual assets on the open page"
+                onClick=${onRailPreviewAssets}
+              ><${Icon.Image}/><//>
+            <//>
+          `}
           <div className="workflow-nav-rail-sep"/>
           <${HoverTip}
             placement="right"
@@ -47082,7 +47125,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   : html`<${LeftChatRunsList} onOpenRun=${onReopenRun} onStartNewChat=${onOpenNewChat}/>`}
               </div>
             </div>
-            ${leftPanel !== "chat" && html`<${WorkflowLibrary} tab=${leftPanel || "nodes"}/>`}
+            ${mainView === "proto" && leftPanel === "pv-files" && html`
+              <${PreviewFilesPanel} activePath=${protoViewerPath} onClose=${() => setLeftPanel(null)}/>
+            `}
+            ${mainView === "proto" && leftPanel === "pv-assets" && html`
+              <${PreviewAssetsPanel} activePath=${protoViewerPath} onClose=${() => setLeftPanel(null)}/>
+            `}
+            ${leftPanel !== "chat" && !(leftPanel || "").startsWith("pv-") && html`<${WorkflowLibrary} tab=${leftPanel || "nodes"}/>`}
           `}
           ${(wbMode || leftPanel !== "chat") && html`
             <${WorkflowSectionsBar}
@@ -49212,6 +49261,313 @@ function ProtoViewerFrame({ tab, src, isActive, zoom = 1, deviceVp = null, regis
   `;
 }
 
+/* ────────── Preview-mode left panels (Files tree + Page assets) ──────────
+   Rendered in the library column BESIDE the proto viewer (data-left-panel
+   "pv-files" / "pv-assets"), the same slot the chat column uses - they never
+   bounce the user back to the canvas. */
+
+// Kind glyphs shared by the two preview panels - same buckets the Manage
+// exposed assets dialog uses.
+const PV_ASSET_KIND_ORDER = ["image", "svg", "video", "audio", "shader", "3d", "viz"];
+const PV_ASSET_KIND_GLYPH = {
+  image:  () => html`<${Icon.Image}/>`,  svg:    () => html`<${Icon.Spark}/>`,
+  video:  () => html`<${Icon.Film}/>`,   audio:  () => html`<${Icon.Music}/>`,
+  shader: () => html`<${Icon.Shader}/>`, "3d":   () => html`<${Icon.Cube}/>`,
+  viz:    () => html`<${Icon.Chart}/>`,
+};
+
+/* Visual assets of the page OPEN in the Preview viewer - the panel sibling of
+   the Prototype node's "Manage exposed assets" dialog (same scanner, filters
+   off, read-only list). Scans the active tab iframe's LIVE DOM, so it follows
+   the user clicking through the prototype's pages; a light href poll rescans
+   after in-iframe navigation. */
+function PreviewAssetsPanel({ activePath, onClose }) {
+  const [items, setItems]           = useState(null);   // null = scanning
+  const [livePath, setLivePath]     = useState(null);
+  const [filter, setFilter]         = useState("");
+  const [kindFilter, setKindFilter] = useState(null);
+  const lastHrefRef = useRef(null);
+  const activeFrame = () => document.querySelector('.workflow-proto-frame[data-active="true"]');
+  const scan = useCallback(() => {
+    const f = activeFrame();
+    let list = [];
+    let lp = null;
+    try {
+      const doc = f && f.contentDocument;
+      if (doc) list = scanIframeAssets(doc, { minSvgSize: 0, minCanvasSize: 0 });
+      const win = f && f.contentWindow;
+      lastHrefRef.current = (win && win.location.href) || null;
+      lp = liveLocationToSourcePath(win && win.location);
+    } catch {}
+    setItems(list);
+    setLivePath(lp);
+  }, []);
+  // Scan on open / tab switch. Two passes - a quick one, then a late one that
+  // catches a tab iframe still parsing on the first pass.
+  useEffect(() => {
+    setItems(null);
+    const t1 = setTimeout(scan, 150);
+    const t2 = setTimeout(scan, 1200);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [activePath, scan]);
+  // Files landing on disk auto-reload the tab (th:asset-refresh) - rescan
+  // after the reload settles. And a light poll catches navigation INSIDE the
+  // iframe (link clicks / SPA routes), which raises no event we can hear.
+  useEffect(() => {
+    let t = 0;
+    const onAsset = () => { clearTimeout(t); t = setTimeout(scan, 700); };
+    window.addEventListener("th:asset-refresh", onAsset);
+    const poll = setInterval(() => {
+      try {
+        const f = activeFrame();
+        const href = f && f.contentWindow && f.contentWindow.location.href;
+        if (href && href !== lastHrefRef.current) scan();
+      } catch {}
+    }, 1000);
+    return () => { clearTimeout(t); clearInterval(poll); window.removeEventListener("th:asset-refresh", onAsset); };
+  }, [scan]);
+
+  const all = items || [];
+  const kindCounts = useMemo(() => {
+    const m = {};
+    for (const i of all) m[i.kind] = (m[i.kind] || 0) + 1;
+    return m;
+  }, [all]);
+  const visible = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    return all.filter(i => {
+      if (kindFilter && i.kind !== kindFilter) return false;
+      if (!q) return true;
+      return (i.path || "").toLowerCase().includes(q) || (i.kind || "").toLowerCase().includes(q);
+    });
+  }, [all, filter, kindFilter]);
+
+  const glyphFor = (k) => { const g = PV_ASSET_KIND_GLYPH[k]; return g ? g() : "•"; };
+  const renderThumb = (item) => {
+    if (item.kind === "svg" && typeof item.src === "string" && item.src.startsWith("<svg")) {
+      return html`<div className="pv-asset-thumb-svg" dangerouslySetInnerHTML=${{ __html: item.src }}/>`;
+    }
+    if (item.path?.startsWith("inline:canvas/") && item.src) {
+      return html`<img src=${item.src} alt=""/>`;
+    }
+    if (item.kind === "image" || item.kind === "svg") {
+      return html`<img src=${apiUrl("/" + item.path)} alt="" loading="lazy"/>`;
+    }
+    if (item.kind === "video") {
+      return html`<video src=${apiUrl("/" + item.path)} muted playsInline autoPlay loop preload="metadata"/>`;
+    }
+    return html`<span className="pv-asset-thumb-glyph">${glyphFor(item.kind)}</span>`;
+  };
+  const pageLabel = (livePath || activePath || "").split("/").filter(Boolean).slice(-2).join("/");
+  return html`
+    <div className="pv-panel pv-assets-panel">
+      <div className="pv-panel-head">
+        <div className="pv-panel-title-wrap">
+          <div className="pv-panel-title">Page assets</div>
+          ${pageLabel && html`<div className="pv-panel-sub" title=${livePath || activePath}>${pageLabel}</div>`}
+        </div>
+        <${HoverTip}
+          className="pv-panel-tool"
+          tip="Rescan this page"
+          ariaLabel="Rescan"
+          onClick=${scan}
+        ><${Icon.Refresh}/><//>
+        <button type="button" className="pv-panel-close" title="Close" aria-label="Close panel" onClick=${onClose}>×</button>
+      </div>
+      <input
+        className="pv-panel-filter"
+        placeholder="filter by path or kind…"
+        value=${filter}
+        onInput=${(e) => setFilter(e.target.value)}
+      />
+      ${PV_ASSET_KIND_ORDER.some(k => kindCounts[k]) && html`
+        <div className="pv-panel-kindbar">
+          <button className="pv-panel-kindchip" data-active=${kindFilter === null} onClick=${() => setKindFilter(null)}>all (${all.length})</button>
+          ${PV_ASSET_KIND_ORDER.filter(k => kindCounts[k]).map(k => html`
+            <button
+              key=${k}
+              className="pv-panel-kindchip"
+              data-active=${kindFilter === k}
+              onClick=${() => setKindFilter(kindFilter === k ? null : k)}
+              title=${k}
+            >${glyphFor(k)} ${kindCounts[k]}</button>
+          `)}
+        </div>
+      `}
+      <div className="pv-panel-list">
+        ${items === null && html`<div className="pv-panel-empty">Scanning…</div>`}
+        ${items !== null && visible.length === 0 && html`
+          <div className="pv-panel-empty">${all.length === 0 ? "No visual assets on this page." : "No items match."}</div>
+        `}
+        ${visible.map(item => {
+          const basename = item.path?.split("/").pop() || item.path;
+          const isFile = !!item.path && !item.path.startsWith("inline:");
+          return html`
+            <div
+              key=${item.path}
+              className=${"pv-asset-row" + (isFile ? " is-openable" : "")}
+              data-kind=${item.kind}
+              title=${isFile ? item.path + " - click to open the file in a browser tab" : item.path}
+              onClick=${isFile ? (() => { try { window.open(apiUrl("/" + item.path), "_blank"); } catch {} }) : undefined}
+            >
+              <div className="pv-asset-thumb" data-kind=${item.kind}>${renderThumb(item)}</div>
+              <div className="pv-asset-text">
+                <div className="pv-asset-name">
+                  ${basename}
+                  ${item.animated && html`<span className="pv-asset-tag">animated</span>`}
+                  ${item.viaCSS && html`<span className="pv-asset-tag">css-bg</span>`}
+                </div>
+                <div className="pv-asset-path">${item.path}</div>
+              </div>
+              <div className="pv-asset-kind">${glyphFor(item.kind)}</div>
+            </div>
+          `;
+        })}
+      </div>
+    </div>
+  `;
+}
+
+/* Tree of the project's prototype pages (source/ prototypes + generated HTML
+   pages, the same two lists the viewer's "+" picker fetches) - clicking a
+   file opens/activates it as a viewer tab. */
+function PreviewFilesPanel({ activePath, onClose }) {
+  const [entries, setEntries] = useState(null);   // null = loading
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const load = useCallback(async () => {
+    try {
+      const [pr, hp] = await Promise.all([
+        fetch(apiUrl("/__source_prototypes")).then(r => r.ok ? r.json() : { prototypes: [] }).catch(() => ({ prototypes: [] })),
+        fetch(apiUrl("/__source_htmls")).then(r => r.ok ? r.json() : { htmls: [] }).catch(() => ({ htmls: [] })),
+      ]);
+      const protos = (pr && pr.prototypes) || [];
+      const htmls  = (hp && hp.htmls) || [];
+      const seen = new Set();
+      const list = [];
+      for (const p of protos) {
+        if (!p.path || seen.has(p.path)) continue;
+        seen.add(p.path);
+        list.push({ path: p.path, label: p.label || p.id, isProto: true });
+      }
+      for (const h of htmls) {
+        if (!h.path || seen.has(h.path)) continue;
+        seen.add(h.path);
+        list.push({ path: h.path, label: h.label || h.path.split("/").pop(), isProto: false });
+      }
+      setEntries(list);
+    } catch {
+      setEntries([]);
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  // New pages land on disk mid-build - refresh the tree when they do.
+  useEffect(() => {
+    let t = 0;
+    const onAsset = (e) => {
+      const paths = (e && e.detail && e.detail.paths) || [];
+      if (!paths.some(p => typeof p === "string" && p.startsWith("source/") && /\.html?$/i.test(p))) return;
+      clearTimeout(t);
+      t = setTimeout(load, 500);
+    };
+    window.addEventListener("th:asset-refresh", onAsset);
+    return () => { clearTimeout(t); window.removeEventListener("th:asset-refresh", onAsset); };
+  }, [load]);
+
+  // Fold the flat path list into a directory tree under source/.
+  const tree = useMemo(() => {
+    const mkDir = (name, full) => ({ name, full, dirs: new Map(), files: [] });
+    const root = mkDir("source", "source");
+    for (const e of entries || []) {
+      const segs = e.path.split("/").filter(Boolean);
+      if (segs[0] !== "source") continue;
+      let node = root;
+      let acc = "source";
+      for (const d of segs.slice(1, -1)) {
+        acc += "/" + d;
+        if (!node.dirs.has(d)) node.dirs.set(d, mkDir(d, acc));
+        node = node.dirs.get(d);
+      }
+      node.files.push(e);
+    }
+    return root;
+  }, [entries]);
+  const toggleDir = (full) => setCollapsed(s => {
+    const next = new Set(s);
+    if (next.has(full)) next.delete(full); else next.add(full);
+    return next;
+  });
+  const openFile = (e) => {
+    window.dispatchEvent(new CustomEvent("th:proto-open-tab", { detail: { path: e.path, label: e.label } }));
+  };
+  const renderDir = (dir, depth) => {
+    const isCollapsed = collapsed.has(dir.full);
+    const subdirs = Array.from(dir.dirs.values()).sort((a, b) => a.name.localeCompare(b.name));
+    const files = dir.files.slice().sort((a, b) => {
+      const ai = a.path.endsWith("/index.html") ? 0 : 1;
+      const bi = b.path.endsWith("/index.html") ? 0 : 1;
+      return ai - bi || a.label.localeCompare(b.label);
+    });
+    return html`
+      <${React.Fragment} key=${dir.full}>
+        ${depth > 0 && html`
+          <button
+            type="button"
+            className="pv-file-row pv-file-row-dir"
+            style=${{ paddingLeft: (8 + (depth - 1) * 14) + "px" }}
+            aria-expanded=${!isCollapsed}
+            onClick=${() => toggleDir(dir.full)}
+          >
+            <span className=${"pv-file-chevron" + (isCollapsed ? "" : " is-open")}><${Icon.Forward}/></span>
+            <span className="pv-file-glyph"><${Icon.Folder}/></span>
+            <span className="pv-file-name">${dir.name}</span>
+          </button>
+        `}
+        ${!isCollapsed && html`
+          <${React.Fragment}>
+            ${files.map(f => html`
+              <button
+                type="button"
+                key=${f.path}
+                className=${"pv-file-row" + (f.path === activePath ? " is-active" : "")}
+                style=${{ paddingLeft: (8 + depth * 14) + "px" }}
+                title=${f.path}
+                onClick=${() => openFile(f)}
+              >
+                <span className="pv-file-glyph">${f.isProto ? html`<${Icon.Play}/>` : html`<${Icon.Canvas}/>`}</span>
+                <span className="pv-file-name">${f.label}</span>
+              </button>
+            `)}
+            ${subdirs.map(d => renderDir(d, depth + 1))}
+          <//>
+        `}
+      <//>
+    `;
+  };
+  const total = (entries || []).length;
+  return html`
+    <div className="pv-panel pv-files-panel">
+      <div className="pv-panel-head">
+        <div className="pv-panel-title-wrap">
+          <div className="pv-panel-title">Files</div>
+          ${entries !== null && html`<div className="pv-panel-sub">source/ · ${total} page${total === 1 ? "" : "s"}</div>`}
+        </div>
+        <${HoverTip}
+          className="pv-panel-tool"
+          tip="Refresh the file list"
+          ariaLabel="Refresh files"
+          onClick=${load}
+        ><${Icon.Refresh}/><//>
+        <button type="button" className="pv-panel-close" title="Close" aria-label="Close panel" onClick=${onClose}>×</button>
+      </div>
+      <div className="pv-panel-list pv-file-tree">
+        ${entries === null && html`<div className="pv-panel-empty">Loading…</div>`}
+        ${entries !== null && total === 0 && html`<div className="pv-panel-empty">No prototype pages under source/ yet.</div>`}
+        ${entries !== null && total > 0 && renderDir(tree, 0)}
+      </div>
+    </div>
+  `;
+}
+
 /* ────────── Prototype viewer (workflow nav rail, icon 3) ──────────
    A pseudo-browser that takes over the workflow canvas cell: browser-style
    tabs (add via a picker of prototypes + generated pages, close, reload,
@@ -49230,10 +49586,11 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
         const zoom = (typeof j.zoom === "number" && j.zoom > 0) ? j.zoom : 1;
         const device = typeof j.device === "string" ? j.device : "desktop";
         const landscape = !!j.landscape;
-        return { tabs, activeId, zoom, device, landscape };
+        const lastPath = typeof j.lastPath === "string" ? j.lastPath : null;
+        return { tabs, activeId, zoom, device, landscape, lastPath };
       }
     } catch {}
-    return { tabs: [], activeId: null, zoom: 1, device: "desktop", landscape: false };
+    return { tabs: [], activeId: null, zoom: 1, device: "desktop", landscape: false, lastPath: null };
   });
   const { tabs, activeId } = state;
   // report the active tab's path up so the chat target bar can scope
@@ -49243,6 +49600,12 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
   useEffect(() => {
     if (onActivePathChange) onActivePathChange(activeTabPath);
   }, [activeTabPath, onActivePathChange]);
+  // Remember the last-viewed file (survives closing every tab) - the rail's
+  // Files icon first-click reopens it via th:proto-open-last.
+  useEffect(() => {
+    if (!activeTabPath) return;
+    setState(s => (s.lastPath === activeTabPath ? s : { ...s, lastPath: activeTabPath }));
+  }, [activeTabPath]);
   const zoom = (typeof state.zoom === "number" && state.zoom > 0) ? state.zoom : 1;
   const device = state.device || "desktop";
   const landscape = !!state.landscape;
@@ -49422,6 +49785,28 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
       }
     } catch {}
     return () => window.removeEventListener("th:proto-open-tab", onOpenTab);
+  }, [addTab]);
+  // Rail Files icon, empty-stage first click: reopen the last-viewed file
+  // (remembered across closed tabs), falling back to the main prototype.
+  const stateRef = useRef(state); stateRef.current = state;
+  useEffect(() => {
+    const onOpenLast = () => {
+      const s = stateRef.current;
+      if (s.tabs.length > 0) return;   // a file is already open
+      if (s.lastPath) { addTab(s.lastPath, null); return; }
+      (async () => {
+        try {
+          const r = await fetch(apiUrl("/__source_prototypes"));
+          const j = r.ok ? await r.json() : null;
+          const protos = (j && j.prototypes) || [];
+          if (!protos.length) return;
+          const main = protos.find(p => p.id === activePrototypeSlug()) || protos[0];
+          addTab(main.path, main.label || main.id);
+        } catch {}
+      })();
+    };
+    window.addEventListener("th:proto-open-last", onOpenLast);
+    return () => window.removeEventListener("th:proto-open-last", onOpenLast);
   }, [addTab]);
   // "+" picker - fetches the same lists the library's Outputs tab shows.
   const [pickerOpen, setPickerOpen] = useState(false);
