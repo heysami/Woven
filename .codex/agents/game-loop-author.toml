@@ -194,6 +194,8 @@ window.__loop = { start, reset, pause, resume, pushInputEvent };
 
 Per the canonical pattern from `sim-loop-author.md §3.2`. The user can't have variable-step physics in a game - at low framerate the physics breaks.
 
+**Interpolation stamps are load-bearing (block).** Every `lerp(prev, current, alpha)` the render side performs must read a `prev` that the TICK stamps every step, on the SAME storage, for EVERY entity class. Stamp per-body fields (`b._px = b.pos.x` on every body before moving it) and interpolate from those; never a parallel per-slot array - a parallel array is exactly what gets allocated, read, and never written when entity classes are added later. A never-stamped prev buffer doesn't crash and passes every state-assertion QA case: it renders `lerp(0, pos, alpha)` = `pos × alpha`, so as alpha swings 0→1 every entity of that class FLASHES between world origin and its true position at frame rate (teamfantasy landofdawn minions, 2026-07-17). Self-test the render path, not just the state: render twice with `alpha=0` and `alpha=1` on the same tick and assert every visible entity's fed position moves less than one tick of its max speed - an entity whose two alphas differ by its distance-from-origin is reading a dead stamp.
+
 ### 3.3 Single writer per state slice (block)
 
 - `objective.js` writes `state.score / streak / progress / gameState`.

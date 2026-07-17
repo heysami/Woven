@@ -286,11 +286,13 @@ The QA gate runs the piece's plan-time `test-cases.json` (written by research, n
 
 The loop drawer already swept the control table numerically in isolation - you re-verify it ASSEMBLED, because composition is where a correct mapping gets re-broken (camera wired to a different frame than the loop assumed, world iframe axis flip, input attach forwarding the wrong coordinate space). When research commits a §2.10 control scheme, after the §3.6 sequence:
 
+0. **Verify the axes anchor by PROJECTION before trusting it.** Research's `+x = screen-right`-style clauses are hypotheses about the rendered camera, not facts (research marks them UNVERIFIED). Project two probe points through the assembled live camera (`new THREE.Vector3(1,0,0).project(camera)` vs the origin, same for +z; for 2D paradigms compare world→canvas transforms) and check each world axis lands on the screen side the anchor claims. On a mismatch, STOP - do not lay out the compass or write sweep predicates from the false anchor (they would validate the mirror they're meant to catch). Fix = correct the single screen→world input seam AND the anchor text AND every screen-relative sign predicate, then continue. The named trap: a three.js rig south of the focus looking +z renders world +x on the screen-LEFT (shipped mirrored left/right controls past a 79/79 world-sign suite - teamfantasy landofdawn).
 1. `qa.debug(true)`, then per embodiment, per control-table row: reset, drive the scripted input via `injectFakeInput` + `tick()`, assert the row's sign predicate against `snapshot()`.
-2. For each directional PAIR (forward/back, left/right, pitch up/down), take ONE screenshot with the trail + compass visible - the trail's curve direction against the compass is the visual proof the numeric check can't fake (a heading variable can carry the right sign while the camera renders the world mirrored).
-3. Multi-embodiment games: perform the switch in-runtime, re-sweep the incoming table in full, and confirm the trail color-switch marks the change.
+2. **Screen-truth deltas for every screen-relative row**: project the avatar through the live camera before/after the input and assert the SCREEN-side delta (`joystick right → screen-Δx > 0`) - the world-coordinate predicate alone cannot catch a camera-mirrored axis.
+3. For each directional PAIR (forward/back, left/right, pitch up/down), take ONE screenshot with the trail + compass visible - the trail's curve direction against the compass is the visual proof the numeric check can't fake (a heading variable can carry the right sign while the camera renders the world mirrored).
+4. Multi-embodiment games: perform the switch in-runtime, re-sweep the incoming table in full, and confirm the trail color-switch marks the change.
 
-EVERY row, never a sample. Screenshots from this sweep are gate evidence alongside the §3.6 set.
+EVERY row, never a sample. Screenshots from this sweep are gate evidence alongside the §3.6 set. If the harness is ever REBUILT (lost work, resumed build), this sweep re-runs in full - a rebuilt harness that only replays world-sign cases re-ships the mirror.
 
 ## 4. Recipe
 
