@@ -792,9 +792,25 @@ def _resolve_inline_svg_from_boundto(node: dict, project_root: str) -> "str | No
 
 
 def _read_dsref_from_data_js(project_root: str, branch: str) -> "str | None":
-    """Parse editor/data.js for meta.dsRef. Cheap regex - the file is a
-    JS literal but the meta block is shallow and stable. Returns None if
-    the file is missing or the field absent."""
+    """Resolve the prototype's linked DS id. dsRef comes in two shapes:
+    the legacy string (`"dsRef": "main"`) and the canonical object form
+    (`"dsRef": { "id": "main", "version": …, "pinned": … }`) written since
+    global-DS refs landed. Checks source/<branch>/meta.json first (the
+    per-branch carrier the DS audit documents), then editor/data.js.
+    Cheap regex on data.js - the file is a JS literal but the meta block
+    is shallow and stable. Returns None if no carrier has the field."""
+    meta_p = os.path.join(project_root, "source", branch, "meta.json")
+    if os.path.isfile(meta_p):
+        try:
+            with open(meta_p, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            dsr = (meta or {}).get("dsRef")
+            if isinstance(dsr, str) and dsr.strip():
+                return dsr.strip()
+            if isinstance(dsr, dict) and isinstance(dsr.get("id"), str) and dsr["id"].strip():
+                return dsr["id"].strip()
+        except (OSError, ValueError):
+            pass
     p = os.path.join(project_root, "editor", "data.js")
     if not os.path.isfile(p):
         return None
@@ -807,6 +823,13 @@ def _read_dsref_from_data_js(project_root: str, branch: str) -> "str | None":
     if m:
         return m.group(1)
     m = re.search(r"\bdsRef\s*:\s*['\"]([a-z0-9][a-z0-9-]{0,40})['\"]", text)
+    if m:
+        return m.group(1)
+    # Object form: "dsRef": { "id": "main", ... }
+    m = re.search(
+        r'["\']?dsRef["\']?\s*:\s*\{[^{}]*["\']id["\']\s*:\s*["\']([a-z0-9][a-z0-9-]{0,40})["\']',
+        text,
+    )
     return m.group(1) if m else None
 
 
