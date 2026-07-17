@@ -811,6 +811,14 @@ def delete_branch(root, name, force=False):
     return {"ok": True, "branch": n}
 
 
+def head_sha(root):
+    """Full sha of HEAD ('' when no commits / not a repo)."""
+    if not is_repo(root):
+        return ""
+    code, out, _e = _git(root, "rev-parse", "HEAD")
+    return out.strip() if code == 0 else ""
+
+
 def show_at_ref(root, ref, rel):
     """Content of a tracked file at a ref ('' when the ref or path doesn't
     exist). Feeds the cross-branch semantic mergers (share comments carry

@@ -396,6 +396,101 @@ def _carry_comments_across_switch(root, prev_branch, new_branch):
         return changed or bool(want)
     except Exception:
         return False
+
+
+def _snapshot_comments_for_carry(root):
+    """Copy the working comment store + its binary sidecars aside BEFORE a
+    tree-rewriting git op (discard's reset --hard + clean -fd). Review
+    comments are other people's data - a reviewer's feedback posted through a
+    share gate lands in the working tree, and "throw away my unsaved edits"
+    must not silently destroy it (that is exactly how a project lost a
+    reviewer's afternoon of comments). Returns {text, tmpdir}; tmpdir holds
+    comment-shots/ + comment-attach/ copies and may be None. Never raises."""
+    snap = {"text": "", "tmpdir": None}
+    try:
+        path = os.path.join(root, _SHARE_COMMENTS_REL)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                snap["text"] = f.read()
+        except OSError:
+            return snap
+        tmpdir = None
+        for name in ("comment-shots", "comment-attach"):
+            src = os.path.join(root, "share", name)
+            if os.path.isdir(src):
+                if tmpdir is None:
+                    tmpdir = tempfile.mkdtemp(prefix="woven-comments-carry-")
+                shutil.copytree(src, os.path.join(tmpdir, name))
+        snap["tmpdir"] = tmpdir
+    except Exception:
+        pass
+    return snap
+
+
+def _carry_comments_after_reset(root, prev_head, snap):
+    """After a discard rewrote the tree, merge the pre-discard comment store
+    back over the reset one: 3-way against the merge-base of the old and new
+    HEAD (same semantics as _carry_comments_across_switch - union by id,
+    deliberate deletions win), then restore surviving comments' screenshot /
+    attachment files from the pre-discard snapshot. Code/content edits stay
+    discarded; the review discussion survives. Cleans up the snapshot tmpdir.
+    Returns True when anything was carried. Never raises."""
+    carried = False
+    try:
+        ours = (snap or {}).get("text") or ""
+        if not ours.strip():
+            return False
+        path = os.path.join(root, _SHARE_COMMENTS_REL)
+        theirs = ""
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                theirs = f.read()
+        except OSError:
+            pass
+        base_sha = _gitops.merge_base(root, prev_head, "HEAD") if prev_head else ""
+        base = _gitops.show_at_ref(root, base_sha, _SHARE_COMMENTS_REL) if base_sha else ""
+        merged = _shares.comments_merge_texts(base, ours, theirs)
+        try:
+            cur = json.loads(theirs or "null")
+        except Exception:
+            cur = None
+        if json.dumps(cur, sort_keys=True) != json.dumps(merged, sort_keys=True):
+            tmp = path + ".tmp"
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(merged, f, indent=2)
+            os.replace(tmp, path)
+            carried = True
+        # Put back the sidecar files of comments that survived the merge but
+        # whose files the reset/clean removed.
+        tmpdir = (snap or {}).get("tmpdir")
+        if tmpdir and os.path.isdir(tmpdir):
+            kept_ids = set(c.get("id") for c in merged.get("comments") or [])
+            for name in ("comment-shots", "comment-attach"):
+                src_root = os.path.join(tmpdir, name)
+                if not os.path.isdir(src_root):
+                    continue
+                for dirpath, _dirs, files in os.walk(src_root):
+                    for fn in files:
+                        sp = os.path.join(dirpath, fn)
+                        rel = os.path.relpath(sp, src_root)
+                        seg = rel.split(os.sep)[0]
+                        cid = seg.rsplit(".", 1)[0] if name == "comment-shots" else seg
+                        dp = os.path.join(root, "share", name, rel)
+                        if cid in kept_ids and not os.path.exists(dp):
+                            os.makedirs(os.path.dirname(dp), exist_ok=True)
+                            shutil.copy2(sp, dp)
+                            carried = True
+    except Exception:
+        pass
+    finally:
+        try:
+            tmpdir = (snap or {}).get("tmpdir")
+            if tmpdir:
+                shutil.rmtree(tmpdir, ignore_errors=True)
+        except Exception:
+            pass
+    return carried
 # Roots already given the one-shot tracked-ignored self-heal this daemon run
 # (see _git_status). In-memory on purpose: the heal is idempotent and settles
 # to a no-op, so re-running once per daemon lifetime is the right cadence.
@@ -21041,11 +21136,23 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._reply(400, {"error": "project is not a git repo - connect it first"})
                 if pid and _live.project_has_live_session(pid):
                     return self._reply(409, {"error": "a live session is active - end it before discarding changes"})
+                # Review comments are other people's data - carry them through
+                # the rewrite instead of "discarding" a reviewer's feedback
+                # along with the user's own unsaved edits (see
+                # _snapshot_comments_for_carry / _carry_comments_after_reset).
+                comments_snap = _snapshot_comments_for_carry(root)
+                prev_head = _gitops.head_sha(root)
                 if op == "discard-local":
                     res = _gitops.discard_local(root)
                 else:
                     tok = body.get("token") or _gitops.host_token()
                     res = _gitops.discard_to_remote(root, token=tok)
+                if _carry_comments_after_reset(root, prev_head, comments_snap):
+                    res = dict(res)
+                    res["commentsCarried"] = True
+                    if pid:
+                        try: _broadcast_share_comments_changed(pid, "")
+                        except Exception: pass
                 # Reload the canvas (and any guests) to the rolled-back HEAD.
                 # `workflow-reset` (not `workflow-changed`): the client must
                 # REPLACE its in-memory doc, not merge - the dirty-safe merge

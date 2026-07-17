@@ -107,6 +107,27 @@ def main():
     serve._carry_comments_across_switch(root, prev, res["branch"])
     assert read_ids() == ["a", "c", "d", "e"], "divergent adds union, got %r" % read_ids()
 
+    # ── discard must NOT destroy uncommitted review comments ────────────────
+    # (this is how a reviewer's afternoon of comments got wiped: comments land
+    # in the working tree, then "discard my edits" reset --hard'ed them away).
+    run("git", "add", "-A")
+    run("git", "commit", "-m", "settle")
+    write_comments(["a", "c", "d", "e", "f"])          # uncommitted comment f
+    with open(os.path.join(root, "share", "comment-shots", "f.jpg"), "wb") as fh:
+        fh.write(b"JPG-F")                              # untracked shot for f
+    with open(os.path.join(root, "source.txt"), "w") as fh:
+        fh.write("unsaved code edit")                   # the thing discard IS for
+    snap = serve._snapshot_comments_for_carry(root)
+    prev_head = G.head_sha(root)
+    G.discard_local(root)
+    assert not os.path.exists(os.path.join(root, "source.txt")), "code edit discarded"
+    assert read_ids() == ["a", "c", "d", "e"], "sanity: reset wiped the comment"
+    carried = serve._carry_comments_after_reset(root, prev_head, snap)
+    assert carried, "carry should report a change"
+    assert read_ids() == ["a", "c", "d", "e", "f"], "comment survives discard, got %r" % read_ids()
+    assert os.path.isfile(os.path.join(root, "share", "comment-shots", "f.jpg")), "shot survives discard"
+    assert snap["tmpdir"] is None or not os.path.isdir(snap["tmpdir"]), "snapshot tmpdir cleaned up"
+
     shutil.rmtree(root)
     print("test_comments_carry: ALL PASS")
 
