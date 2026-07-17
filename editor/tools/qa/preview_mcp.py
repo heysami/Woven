@@ -14,6 +14,12 @@ Backing: the same Playwright headless Chrome tools/qa/visual_qa.py uses,
 launched with SwiftShader flags so WebGL/three.js scenes render (plain
 headless Chrome reports no WebGL and every 3D self-test false-fails).
 
+Resilience: all Playwright calls run on one worker thread behind a hard
+watchdog (TOOL_TIMEOUT_S); a hung page gets its Chrome killed + relaunched
+instead of wedging the serial stdin loop, and an idle reaper closes Chrome
+after IDLE_SHUTDOWN_S so hung parent agents can't stockpile SwiftShader
+Chromes that saturate the CPU.
+
 Protocol: MCP over stdio - one JSON-RPC 2.0 message per line. No external
 MCP SDK dependency; the daemon's fresh-install floor is Python 3.9 and this
 file must import there (playwright itself is checked lazily so tools/list
@@ -28,17 +34,31 @@ Run standalone for a protocol smoke test:
 import base64
 import json
 import os
+import queue
+import signal
+import subprocess
 import sys
 import tempfile
+import threading
 import time
 import traceback
 
 PROTOCOL_VERSION = "2024-11-05"
-SERVER_INFO = {"name": "claude_preview", "version": "1.0.0"}
+SERVER_INFO = {"name": "claude_preview", "version": "1.1.0"}
 DEFAULT_VIEWPORT = (1280, 800)
 MAX_LOG_ENTRIES = 500          # per-tab console/network ring buffer cap
 ACTION_TIMEOUT_MS = 10000
 SNAPSHOT_MAX_CHARS = 40000
+# Hard cap per tool call. page.evaluate has NO Playwright timeout, so an eval
+# against a CPU-pegged page blocks forever and, because this server answers
+# stdin serially, every later call then dies at the CLI's 120s MCP timeout
+# (the teamfantasy landofdawn wedge). Must stay well under 120s so the error
+# reaches the agent instead of the harness timeout.
+TOOL_TIMEOUT_S = int(os.environ.get("PREVIEW_MCP_TOOL_TIMEOUT_S") or 90)
+# Close Chrome after this long with no tool calls. Node agents sometimes hang
+# without exiting; stdin never hits EOF, and their SwiftShader Chromes pile up
+# burning CPU for hours. Chrome relaunches lazily on the next call.
+IDLE_SHUTDOWN_S = int(os.environ.get("PREVIEW_MCP_IDLE_SHUTDOWN_S") or 900)
 
 SHOT_DIR = os.path.join(tempfile.gettempdir(), "woven-preview-mcp")
 
@@ -63,6 +83,8 @@ class Tab(object):
 class Browser(object):
     """Lazy Playwright wrapper. One Chrome, N tabs."""
 
+    _SEQ = [0]  # process-global so tab ids never repeat across hard resets
+
     def __init__(self):
         self._pw = None
         self._browser = None
@@ -70,7 +92,6 @@ class Browser(object):
         self.label = None
         self.tabs = {}
         self.active = None   # tab id most recently used
-        self._seq = 0
 
     def _ensure(self):
         if self._context is not None:
@@ -102,8 +123,8 @@ class Browser(object):
         page = self._context.new_page()
         if width and height:
             page.set_viewport_size({"width": int(width), "height": int(height)})
-        self._seq += 1
-        tab = Tab("tab%d" % self._seq, page)
+        Browser._SEQ[0] += 1
+        tab = Tab("tab%d" % Browser._SEQ[0], page)
         self.tabs[tab.id] = tab
         self.active = tab.id
 
@@ -147,7 +168,13 @@ class Browser(object):
         page.on("pageerror", _on_page_error)
         page.on("response", _on_response)
         page.on("requestfailed", _on_request_failed)
-        page.goto(url, wait_until="load", timeout=30000)
+        try:
+            page.goto(url, wait_until="load", timeout=30000)
+        except Exception:
+            # failed start must not leave a zombie tab: it becomes `active`,
+            # so later tabId-less evals target the broken page and hang
+            self.close_tab(tab.id)
+            raise
         return tab
 
     def tab(self, tab_id=None):
@@ -181,6 +208,9 @@ class Browser(object):
         self.active = None
         return "closed all preview tabs"
 
+    def is_up(self):
+        return self._context is not None
+
     def shutdown(self):
         try:
             if self._browser is not None:
@@ -192,6 +222,11 @@ class Browser(object):
                 self._pw.stop()
         except Exception:
             pass
+        self._pw = None
+        self._browser = None
+        self._context = None
+        self.tabs.clear()
+        self.active = None
 
 
 BROWSER = Browser()
@@ -248,8 +283,9 @@ def tool_preview_eval(args):
     try:
         result = tab.page.evaluate(js)
     except Exception:
-        # statements ("const x = ...; return x") need a function wrapper
-        result = tab.page.evaluate("() => { %s }" % js)
+        # statements ("const x = ...; return x") need a function wrapper;
+        # async so top-level await works (evaluate awaits returned promises)
+        result = tab.page.evaluate("async () => { %s }" % js)
     return _text({"result": result})
 
 
@@ -447,6 +483,148 @@ TOOL_HANDLERS = dict((name, fn) for name, _d, _s, fn in TOOLS)
 
 
 # ---------------------------------------------------------------------------
+# Playwright worker thread + watchdog
+#
+# Sync Playwright objects are bound to the thread that created them, so ONE
+# worker thread owns every browser touch. The stdin loop submits jobs and
+# waits with a hard timeout; on timeout it answers the agent with an error,
+# SIGKILLs the Chrome/driver process tree (which unblocks the stuck call),
+# and swaps in a FRESH worker thread + Browser. The old thread is abandoned,
+# not reused: graceful close() hangs on the dead driver pipe, and its parked
+# greenlet event loop makes sync_playwright refuse to start again on that
+# thread. One hung page can no longer wedge the whole server.
+# ---------------------------------------------------------------------------
+
+class _Job(object):
+    def __init__(self, fn, args):
+        self.fn = fn
+        self.args = args
+        self.result_q = queue.Queue(maxsize=1)
+
+
+_STATE = {"jobs": None}          # current worker generation's job queue
+_LAST_ACTIVITY = [time.time()]   # boxed so threads share one slot
+
+
+def _worker(jobs_q):
+    while True:
+        job = jobs_q.get()
+        # bump on the worker at start AND end so an in-flight call always
+        # counts as activity - the reaper's re-check runs on this same
+        # thread, so it can never observe a stale clock mid-job
+        _LAST_ACTIVITY[0] = time.time()
+        try:
+            out = ("ok", job.fn(job.args))
+        except Exception as exc:
+            out = ("err", exc)
+        _LAST_ACTIVITY[0] = time.time()
+        try:
+            job.result_q.put_nowait(out)
+        except Exception:
+            pass  # abandoned job - the watchdog already answered for it
+
+
+def _start_worker():
+    jobs_q = queue.Queue()
+    _STATE["jobs"] = jobs_q
+    threading.Thread(target=_worker, args=(jobs_q,), daemon=True).start()
+
+
+def _descendant_pids():
+    """All live descendants of this process (playwright driver + Chrome tree)."""
+    try:
+        out = subprocess.check_output(["ps", "-axo", "pid=,ppid="],
+                                      universal_newlines=True)
+    except Exception:
+        return []
+    children = {}
+    for row in out.splitlines():
+        parts = row.split()
+        if len(parts) != 2:
+            continue
+        try:
+            pid, ppid = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        children.setdefault(ppid, []).append(pid)
+    found, frontier = [], [os.getpid()]
+    while frontier:
+        kids = children.get(frontier.pop(), [])
+        found.extend(kids)
+        frontier.extend(kids)
+    return found
+
+
+def _force_kill_browser_procs():
+    pids = _descendant_pids()
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except Exception:
+            pass
+    if pids:
+        log("force-killed %d browser process(es)" % len(pids))
+    # reap zombies so they don't reappear in later _descendant_pids sweeps
+    try:
+        while os.waitpid(-1, os.WNOHANG)[0] > 0:
+            pass
+    except Exception:
+        pass
+
+
+def _hard_reset():
+    """Post-watchdog recovery: kill the browser tree and abandon the poisoned
+    worker generation (thread + Browser). The next call starts fresh."""
+    global BROWSER
+    _force_kill_browser_procs()
+    BROWSER = Browser()
+    _start_worker()
+    log("hard reset - fresh worker + browser generation")
+
+
+def run_tool(fn, args):
+    """Run a tool on the worker thread with a hard watchdog timeout."""
+    _LAST_ACTIVITY[0] = time.time()
+    job = _Job(fn, args)
+    _STATE["jobs"].put(job)
+    try:
+        status, payload = job.result_q.get(timeout=TOOL_TIMEOUT_S)
+    except queue.Empty:
+        _hard_reset()
+        raise RuntimeError(
+            "preview tool hung for %ds (page unresponsive); headless Chrome "
+            "was killed and relaunches on the next preview_start - all "
+            "previous tabIds are gone" % TOOL_TIMEOUT_S)
+    if status == "err":
+        raise payload
+    return payload
+
+
+def _idle_close(_args):
+    # re-check inside the worker: a call may have landed since the reaper woke
+    if BROWSER.is_up() and time.time() - _LAST_ACTIVITY[0] >= IDLE_SHUTDOWN_S:
+        BROWSER.shutdown()
+        log("idle > %ds - closed headless Chrome (relaunches lazily)"
+            % IDLE_SHUTDOWN_S)
+    return None
+
+
+def _idle_reaper():
+    while True:
+        time.sleep(30)
+        if not BROWSER.is_up():
+            continue
+        if time.time() - _LAST_ACTIVITY[0] < IDLE_SHUTDOWN_S:
+            continue
+        job = _Job(_idle_close, None)
+        _STATE["jobs"].put(job)
+        try:
+            job.result_q.get(timeout=TOOL_TIMEOUT_S)
+        except queue.Empty:
+            _hard_reset()
+
+
+# ---------------------------------------------------------------------------
 # JSON-RPC / MCP plumbing
 # ---------------------------------------------------------------------------
 
@@ -488,7 +666,7 @@ def handle(msg):
         if fn is None:
             return _error(msg_id, -32602, "unknown tool %r" % name)
         try:
-            result = fn(params.get("arguments") or {})
+            result = run_tool(fn, params.get("arguments") or {})
             return _reply(msg_id, result)
         except Exception as exc:
             log("tool %s failed: %s" % (name, traceback.format_exc().strip().splitlines()[-1]))
@@ -504,6 +682,8 @@ def handle(msg):
 
 def main():
     log("starting (pid %d)" % os.getpid())
+    _start_worker()
+    threading.Thread(target=_idle_reaper, daemon=True).start()
     try:
         for line in sys.stdin:
             line = line.strip()
@@ -519,8 +699,15 @@ def main():
                 sys.stdout.write(json.dumps(resp, default=str) + "\n")
                 sys.stdout.flush()
     finally:
-        # stdin EOF = parent CLI exited; never outlive it.
-        BROWSER.shutdown()
+        # stdin EOF = parent CLI exited; never outlive it. Graceful close via
+        # the worker (playwright is thread-bound), then force-kill leftovers.
+        job = _Job(lambda _a: BROWSER.shutdown(), None)
+        _STATE["jobs"].put(job)
+        try:
+            job.result_q.get(timeout=10)
+        except queue.Empty:
+            pass
+        _force_kill_browser_procs()
         log("shut down")
 
 
