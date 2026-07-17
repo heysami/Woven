@@ -242,6 +242,8 @@ window.__game.injectFakeInput('keyDown', {code:'KeyD'}); window.__game.tick(0.5)
 
 All rows, all embodiments, INCLUDING the vehicle reverse-steer row, and for multi-embodiment games the full re-sweep of the incoming table after a switch. A partial sweep is a block: verifying only the axis that was reported broken is exactly how "W/S fixed, A/D still inverted" ships. `snapshot()` must expose the avatar's position + heading + speed so these predicates (and the plan's `control-semantics` test cases) are checkable.
 
+`snapshot()` is ALSO the overlay's data source: provide every field of the overlay's documented state contract under EXACTLY the documented path and shape (absolute `hp` + `maxHp` when the HUD formats numbers, not just a normalized `hp01`; `items.recall` when the HUD reads items there, not only `abilities.recall`). A near-miss spelling doesn't error - the overlay's healthy defaults swallow it and the HUD freezes full while all state QA passes (the runtime composer's §3.10 binding sweep is the catch, but provide it right here first).
+
 ## 4. Recipe
 
 1. Read `research.md`, `physics.js`, `objective.js`, `feedback.js`, `input-*.js`.

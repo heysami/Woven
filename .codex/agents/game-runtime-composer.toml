@@ -291,6 +291,15 @@ The loop drawer already swept the control table numerically in isolation - you r
 
 EVERY row, never a sample. Screenshots from this sweep are gate evidence alongside the §3.6 set. If the harness is ever REBUILT (lost work, resumed build), this sweep re-runs in full - a rebuilt harness that only replays world-sign cases re-ships the mirror.
 
+### 3.10 HUD data-binding sweep on the ASSEMBLED runtime (block on craft)
+
+State QA cannot see a frozen HUD: when the loop's `snapshot()` spells a field differently than the overlay's documented contract (`hp01` vs `hp`, `abilities.recall` vs `items.recall`), the data is live, every state assertion passes, and the overlay silently renders its healthy default forever (teamfantasy landofdawn: HP pinned at 1,500/1,500 through real combat). Two duties at assembly:
+
+1. **Contract diff.** Read the overlay's documented state-contract comment and diff it field-by-field against an actual `window.__game.snapshot()` - every field the overlay binds must exist under EXACTLY that path. A missing field is a block, not a fallback.
+2. **Mutate-and-assert every bound element.** For each HUD element bound to live state (health/mana bars, structure siege bars, score, timer, cooldown sweeps, objective banner, end-card): drive its source stat through a real path (`debug.*` handle or scripted combat), then assert the DOM CHANGED - `textContent` for numbers, inline `style.transform`/attribute for bars, and the semantic flips (tower falls → objective banner text swaps). Add these as `hud-binding` cases in `test-cases.json` so regressions stay machine-caught.
+
+Measurement trap: sample DOM ACROSS tasks, never inside one long `evaluate` - CSS-transitioned properties (bar `scaleX`) read stale mid-task; `await` a rAF plus the transition duration between mutation and read, or assert on non-transitioned surfaces (`textContent`) when timing is tight.
+
 ## 4. Recipe
 
 1. Read every committed component file.

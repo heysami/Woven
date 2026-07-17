@@ -62,6 +62,8 @@ Two files, intentionally split:
 - `overlay.svg` - the static SVG markup (inline by the runtime). Score readout, progress bar, control hint, win/lose card - all positioned absolutely via CSS, all initially hidden or low-opacity.
 - `overlay.js` - exposes `window.__overlay = { onFrame(state), reset(), showControlHint(text) }`. `onFrame` reads `state` and updates SVG text / progress bar width / visibility. No layout thrash - only updates `textContent` + `style.transform` / `style.opacity` / `setAttribute('width')`.
 
+**The state fields `onFrame` reads are a CONTRACT - missing fields must fail LOUD, never render healthy (block on craft).** Document every field you bind (`state.hero.hp/maxHp`, `state.enemyTower.hp01`, ...) in a header comment, and on the FIRST `onFrame` diff the received state against that list and `console.warn` once per missing field (`"[overlay] state.hero.hp missing - HP bar will freeze full"`). The named anti-pattern is the silent healthy fallback: `pick(h.hp, maxHp)` renders a permanently FULL health bar when the loop's snapshot spells the field differently (`hp01` vs `hp`), and nothing catches it - state QA passes (the data is live under another name), the lens sees a plausible full bar, and the user is the first to notice the HUD is frozen (teamfantasy landofdawn: hero HP pinned at 1,500/1,500 and item cooldowns never swept because the overlay read `state.items` while the loop fed `abilities.recall/regen`; 2026-07-17). Defaults exist for genuinely optional decorations, never for the stats the game is ABOUT.
+
 ```svg
 <!-- overlay.svg - minimal peek HUD for game:<gameId> -->
 <!-- styleCue: <verbatim> -->
