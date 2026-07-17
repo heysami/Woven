@@ -335,6 +335,67 @@ def _autoresolve_comments_conflict(root, res):
         return out
     except Exception:
         return res
+
+
+def _carry_comments_across_switch(root, prev_branch, new_branch):
+    """Review comments must survive a branch switch. share/comments.json is
+    git-tracked (so comments sync across machines), which means `git checkout
+    <branch>` swaps it to THAT branch's snapshot - every comment added while
+    on the previous branch silently vanishes from the panel and the user sees
+    "my comments got replaced by the old ones". Comments are the one file
+    whose merge is fully mechanical, so after every switch: 3-way merge the
+    two branches' comment stores (union by id, deletions vs the merge-base
+    win - shares.comments_merge_texts) and keep the union in the working
+    tree, plus restore the screenshot/attachment files of carried-over
+    comments from the previous branch. The tree ends dirty on the new branch;
+    the union rides the next commit like any other edit. Best-effort: on any
+    failure the plain checkout result stands."""
+    try:
+        prev = (prev_branch or "").strip()
+        new = (new_branch or "").strip()
+        if not prev or prev == "HEAD" or prev == new:
+            return False
+        ours = _gitops.show_at_ref(root, prev, _SHARE_COMMENTS_REL)
+        if not ours.strip():
+            return False                      # nothing to carry over
+        path = os.path.join(root, _SHARE_COMMENTS_REL)
+        theirs = ""
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                theirs = f.read()
+        except OSError:
+            pass
+        base_sha = _gitops.merge_base(root, prev, "HEAD")
+        base = _gitops.show_at_ref(root, base_sha, _SHARE_COMMENTS_REL) if base_sha else ""
+        merged = _shares.comments_merge_texts(base, ours, theirs)
+        # Carry the referenced binary sidecars too: the auto screenshot
+        # (share/comment-shots/<cid>.jpg) and reviewer attachments
+        # (share/comment-attach/<cid>/...) of any comment that survives the
+        # merge but whose files only exist on the previous branch.
+        kept_ids = set(c.get("id") for c in merged.get("comments") or [])
+        want = []
+        for prefix in ("share/comment-shots", "share/comment-attach"):
+            for rel in _gitops.ls_files_at_ref(root, prev, prefix):
+                seg = rel[len(prefix) + 1:].split("/", 1)[0]
+                cid = seg.rsplit(".", 1)[0] if prefix.endswith("shots") else seg
+                if cid in kept_ids and not os.path.exists(os.path.join(root, rel)):
+                    want.append(rel)
+        try:
+            cur = json.loads(theirs or "null")
+        except Exception:
+            cur = None
+        changed = json.dumps(cur, sort_keys=True) != json.dumps(merged, sort_keys=True)
+        if changed:
+            tmp = path + ".tmp"
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(merged, f, indent=2)
+            os.replace(tmp, path)
+        if want:
+            _gitops.restore_paths_from_ref(root, prev, want)
+        return changed or bool(want)
+    except Exception:
+        return False
 # Roots already given the one-shot tracked-ignored self-heal this daemon run
 # (see _git_status). In-memory on purpose: the heal is idempotent and settles
 # to a no-op, so re-running once per daemon lifetime is the right cadence.
@@ -21016,7 +21077,19 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if pid and _live.project_has_live_session(pid):
                     return self._reply(409, {"error": "a live session is active - end it before switching or merging branches"})
                 if op == "branch-switch":
+                    prev_branch = _gitops.current_branch(root)
                     res = _gitops.switch_branch(root, body.get("name") or "")
+                    # Comments are project-wide, not branch-scoped: carry the
+                    # union across so switching never "replaces" them with the
+                    # target branch's stale snapshot (see
+                    # _carry_comments_across_switch).
+                    if res.get("ok") and _carry_comments_across_switch(
+                            root, prev_branch, res.get("branch") or ""):
+                        res = dict(res)
+                        res["commentsCarried"] = True
+                        if pid:
+                            try: _broadcast_share_comments_changed(pid, "")
+                            except Exception: pass
                 else:
                     res = _gitops.merge_branch(root, body.get("name") or "")
                     # Review comments merge mechanically - same auto-resolution

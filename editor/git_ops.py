@@ -811,6 +811,44 @@ def delete_branch(root, name, force=False):
     return {"ok": True, "branch": n}
 
 
+def show_at_ref(root, ref, rel):
+    """Content of a tracked file at a ref ('' when the ref or path doesn't
+    exist). Feeds the cross-branch semantic mergers (share comments carry
+    across a branch switch)."""
+    if not is_repo(root) or not (ref or "").strip() or not (rel or "").strip():
+        return ""
+    code, out, _e = _git(root, "show", "{}:{}".format(ref.strip(), rel.strip()), timeout=30)
+    return out if code == 0 else ""
+
+
+def merge_base(root, a, b):
+    """Common-ancestor sha of two refs ('' when unrelated or unknown)."""
+    if not is_repo(root) or not (a or "").strip() or not (b or "").strip():
+        return ""
+    code, out, _e = _git(root, "merge-base", a.strip(), b.strip(), timeout=30)
+    return out.strip() if code == 0 else ""
+
+
+def ls_files_at_ref(root, ref, prefix):
+    """Tracked file paths under `prefix` at a ref ([] when none / no ref)."""
+    if not is_repo(root) or not (ref or "").strip():
+        return []
+    code, out, _e = _git(root, "ls-tree", "-r", "--name-only",
+                         ref.strip(), "--", prefix, timeout=30)
+    return [ln for ln in out.splitlines() if ln.strip()] if code == 0 else []
+
+
+def restore_paths_from_ref(root, ref, rels):
+    """Materialise specific paths from a ref into the working tree
+    (`git checkout <ref> -- <paths>`; also stages them). Used to carry
+    comment screenshots/attachments across a branch switch. Best-effort."""
+    rels = [r for r in (rels or []) if (r or "").strip()]
+    if not is_repo(root) or not (ref or "").strip() or not rels:
+        return False
+    code, _o, _e = _git(root, "checkout", ref.strip(), "--", *rels, timeout=60)
+    return code == 0
+
+
 # ═════════════════════════════════════════════════════════════════════════
 # LOCAL - diff / compare (read-only; powers the panel's compare view)
 # ═════════════════════════════════════════════════════════════════════════
