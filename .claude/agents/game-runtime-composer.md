@@ -303,6 +303,21 @@ State QA cannot see a frozen HUD: when the loop's `snapshot()` spells a field di
 
 Measurement trap: sample DOM ACROSS tasks, never inside one long `evaluate` - CSS-transitioned properties (bar `scaleX`) read stale mid-task; `await` a rAF plus the transition duration between mutation and read, or assert on non-transitioned surfaces (`textContent`) when timing is tight.
 
+### 3.11 Scene-3d shared-renderer values stay in LOCKSTEP (block on aesthetic)
+
+When the paradigm is `3d-environment` and you compose the scene-3d subsystems host-driven, you necessarily re-author the scene3d composer's shared render environment in YOUR document (renderer/tone-mapping, `toneMappingExposure`, the cel `gradientMap` band values, fog init, env-dome hexes, bloom strength/radius/threshold). These are now DUPLICATED constants with `scene3d/<sceneId>/runtime.html`, and duplicated constants drift:
+
+- At compose time, COPY each value verbatim from the scene3d composer and comment the source (`// match scene3d composer`). Do not re-derive or "tune while porting".
+- Any later fix round that retunes one of these values in EITHER file MUST land it in BOTH - before committing an env fix, grep the sibling composer for the same constant and port it. A cel-ramp/exposure fix applied only to the scene3d standalone does NOT change the judged artifact.
+- The final QA+lens gate judges THIS assembled runtime.html - never accept scene3d-standalone frames as evidence that a material/lighting failure on the game is resolved. (The named trap: palvalley's low-poly-flat fail was "fixed" by retuning the scene3d composer's exposure 1.0→1.12 + gradientMap [70,120,190,255]→[96,122,224,255]; the game composer kept the stale copies, shipped the muted haze, and the pass verdict cited a ramp the game never loaded.)
+
+### 3.12 Pointer-lock is a privilege, not a given (block on craft)
+
+The runtime ships into sandboxed/nested iframe contexts (editor canvas frames, WKWebView, share gates) where `requestPointerLock()` rejects. Compose for it:
+
+- The input drawer's no-lock fallback (drag-look / touch pad) must stay reachable, and the runtime must surface an HONEST affordance when lock is denied - if the gate hint promises "Mouse look", show a "HOLD + DRAG TO LOOK" cue when `lockUnavailable` fires, or the player reads the game as controls-broken.
+- Verify the fallback in the ASSEMBLED runtime: with lock denied, a held-button drag must still turn the camera within one tick.
+
 ## 4. Recipe
 
 1. Read every committed component file.

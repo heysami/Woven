@@ -1578,7 +1578,7 @@ function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onSta
               ref=${iframeRef}
               src=${withProjectQuery(resolveEntry(frame.entry), "t=" + EDITOR_SESSION) + hashOf(frame.hash)}
               title=${frame.label}
-              sandbox="allow-scripts allow-same-origin allow-forms"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock"
               style=${{ pointerEvents: selected && !rearrangeActive ? "auto" : "none" }}
             />`}
         ${HAS_SOURCE && !selected && !captureActive && !rearrangeActive && html`
