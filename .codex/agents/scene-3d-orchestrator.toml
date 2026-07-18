@@ -114,7 +114,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/s3d_research_<sceneId>/run?pro
 poll_until_done s3d_research_<sceneId>
 ```
 
-**No wake-ups exist (do not return early).** `poll_until_done` is a BLOCKING loop inside your current turn - there is NO background poller, notification, or re-invoke mechanism in the daemon or harness. Research can take 10+ minutes; keep polling. Never return before the researcher is `done`/`error` on the promise that something will "resume" or "re-invoke" you when it lands - a returned subagent is dead, nothing wakes it, and the whole build strands with research finished and nobody listening (teamfantasy, 2026-07).
+**No wake-ups exist (do not return early).** `poll_until_done` is a BLOCKING loop inside your current turn - there is NO background poller, notification, or re-invoke mechanism in the daemon or harness. Research can take 10+ minutes; keep polling. Never return before the researcher is `done`/`error` on the promise that something will "resume" or "re-invoke" you when it lands - a returned subagent is dead, nothing wakes it, and the whole build strands with research finished and nobody listening.
 
 `research.md` commits: **integration + drive mode · SHARED renderer config (tone mapping, exposure, env-map source, DPR cap, shadow strategy) - every subsystem obeys it so speculars/shadows agree · post chain (effects list + budgets) · camera + interaction grammar (parallax / orbit / scroll-scrub + easing constants) · ambient idle spec · quiet zone contract (region kept UI-safe across the FULL motion arc) · perf budget (target 60fps + fallback rungs) · multiDraftRecommendation** (opt-in §8.7) - AND the load-bearing new section:
 

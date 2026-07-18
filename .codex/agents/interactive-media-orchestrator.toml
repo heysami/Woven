@@ -116,7 +116,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/im_research_<imId>/run?project
 poll_until_done im_research_<imId>
 ```
 
-**No wake-ups exist (do not return early).** `poll_until_done` is a BLOCKING loop inside your current turn - there is NO background poller, notification, or re-invoke mechanism in the daemon or harness. Research can take 10+ minutes; keep polling. Never return before the researcher is `done`/`error` on the promise that something will "resume" or "re-invoke" you when it lands - a returned subagent is dead, nothing wakes it, and the whole build strands with research finished and nobody listening (teamfantasy, 2026-07).
+**No wake-ups exist (do not return early).** `poll_until_done` is a BLOCKING loop inside your current turn - there is NO background poller, notification, or re-invoke mechanism in the daemon or harness. Research can take 10+ minutes; keep polling. Never return before the researcher is `done`/`error` on the promise that something will "resume" or "re-invoke" you when it lands - a returned subagent is dead, nothing wakes it, and the whole build strands with research finished and nobody listening.
 
 The researcher writes `source/{branch}/interactives/{imId}/research.md` and commits via `/__workflow/node/<id>/commit` per its playbook §5. Outputs carry `inputs[]`, `outputs[]`, `mappingStyle`, `permissionGates[]`, and **`buildTier`** (`simple` | `standard` | `full`) - the downstream drawers read those (or `research.md` directly).
 
@@ -292,7 +292,7 @@ Per enumerated `imId`:
 
 **After Step-8 QA passes, the chat caller runs one more focused pass on the iframe ↔ host pointer/scroll contract committed in §1.2.** This is **not a subagent dispatch** - drawer subagents own per-iframe runtime files but none owns the HOST page where the im-mount slot lives. Contract violations live at that boundary and slip through every per-component lens. Only the chat caller can edit the host files. **This phase is the fix-loop, not just a verdict pass.**
 
-Canonical worked failure case: the museuuum project's "glitchy at entrance and i cant scroll" thread (a narrative-experience case - read `narrative-experience-orchestrator.md §5.6` for the full taxonomy). IM-specific complication: the two-gate permission splash (`im-runtime-composer.md §3.1`) adds **another** layer above the canvas, with its own pointer-events lifecycle. **Do not treat the museum thread as the only thing that can go wrong** - the taxonomy below is the root-cause map.
+Read `narrative-experience-orchestrator.md §5.6` for the full iframe-host failure taxonomy. IM-specific complication: the two-gate permission splash (`im-runtime-composer.md §3.1`) adds **another** layer above the canvas, with its own pointer-events lifecycle. The taxonomy below is the root-cause map, not a symptom catalogue.
 
 ### 5.6.0 Why models fail this (root traps to read against your build)
 

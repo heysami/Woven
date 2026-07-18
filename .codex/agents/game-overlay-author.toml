@@ -27,7 +27,7 @@ iterationOuter: 1..5, priorVerdicts: []
 
 Two files: `overlay.svg` (static markup, absolutely positioned, initially hidden or low-opacity) + `overlay.js` exposing `window.__overlay = { onFrame(state), reset(), showControlHint(text) }`.
 
-**The state fields `onFrame` reads are a CONTRACT - missing fields must fail LOUD, never render healthy (block on craft).** Document every field you bind in a header comment; bind ONLY paths that exist in the loop's `snapshot()`; on the FIRST `onFrame`, diff the received state against that list and `console.warn` once per missing field. Anti-pattern: the silent healthy fallback - `pick(h.hp, maxHp)` renders a permanently FULL bar when the snapshot spells the field `hp01` and nothing catches it (teamfantasy 2026-07-17: HP pinned full, cooldowns never swept). Defaults are for optional decorations, never the stats the game is ABOUT.
+**The state fields `onFrame` reads are a CONTRACT - missing fields must fail LOUD, never render healthy (block on craft).** Document every field you bind in a header comment; bind ONLY paths that exist in the loop's `snapshot()`; on the FIRST `onFrame`, diff the received state against that list and `console.warn` once per missing field. Anti-pattern: the silent healthy fallback - `pick(h.hp, maxHp)` renders a permanently FULL bar when the snapshot spells the field `hp01` and nothing catches it. Defaults are for optional decorations, never the stats the game is ABOUT.
 
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg" class="game-overlay" preserveAspectRatio="none" viewBox="0 0 1000 600">

@@ -99,7 +99,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/game_research_<gameId>/run?pro
 poll_until_done game_research_<gameId>
 ```
 
-- `poll_until_done` = `GET /__workflow` until `done`/`error`, sleep 5s - BLOCKING; NO wake-up / re-invoke mechanism exists. NEVER return before the researcher lands; a returned subagent is dead and the build strands (teamfantasy, 2026-07). Research can take 10+ minutes; keep polling.
+- `poll_until_done` = `GET /__workflow` until `done`/`error`, sleep 5s - BLOCKING; NO wake-up / re-invoke mechanism exists. NEVER return before the researcher lands; a returned subagent is dead and the build strands. Research can take 10+ minutes; keep polling.
 
 The researcher writes `source/{branch}/games/{gameId}/research.md`: `paradigm`, `renderStrategy`, `physicsEngine`, `tickHz`, `inputs[]`, `objectiveShape`, `juiceRegister`, `buildTier` (tier → builder-set mapping: §5.2's `builderNodes` comments; `simple` = composer writes `runtime.html` directly; the gate is identical at every tier).
 
@@ -351,7 +351,7 @@ After the gate passes + container committed, verify each slot inside the agent's
 
 ## 5.6 Phase F - layered-interaction FIX pass (chat caller, NOT a subagent)
 
-After Step-8 passes, the chat caller (only it can edit host files) runs a FIX-LOOP - not a verdict pass - on the §1.2 contract; games own ALL gestures - every failure mode is in play (canonical incident: museuuum "can't scroll"; fuller taxonomy: `narrative-experience-orchestrator.md §5.6`). Audit LIVE computed style via `preview_eval` - gesture `touchAction` computed AND inline (inline beats CSS), fixed chrome z-indexes - then `window.scrollBy({top: innerHeight + 200, behavior: 'instant'})` and check the delta.
+After Step-8 passes, the chat caller (only it can edit host files) runs a FIX-LOOP - not a verdict pass - on the §1.2 contract; games own ALL gestures - every failure mode is in play (full failure taxonomy: `narrative-experience-orchestrator.md §5.6`). Audit LIVE computed style via `preview_eval` - gesture `touchAction` computed AND inline (inline beats CSS), fixed chrome z-indexes - then `window.scrollBy({top: innerHeight + 200, behavior: 'instant'})` and check the delta.
 
 Symptom → fix (letters = §1.2 rules): mobile trapped → Rule B; decorative "Skip ↓" cue → real `<a>` with `pointer-events: auto`; drag dead under HUD → Rule C; end-card / pause unclickable → host fixed-nav z-index above HUD, audit `position: fixed` chrome; desktop wheel dead → forward unconsumed wheels: iframe `postMessage({type:'game-wheel', dy:e.deltaY}, '*')`, host `addEventListener('message', e => { if (e.data?.type === 'game-wheel') window.scrollBy({top: e.data.dy, behavior: 'instant'}); })`; tiny scroll distance → smooth-scroll smear; `behavior: 'instant'`; end-card dead after a fling → Rule F leak (release capture, clear `dragging` / `armed` / `activePointer`); swipe-down attack exits → Rule G.
 

@@ -59,7 +59,7 @@ For any `games/<id>/runtime.html` target the QA gate:
    position holds still.
 5. **No errors**: `__game.errors` stays empty through the drive.
 
-These asserts exist because they shipped broken while every state-level check passed:
-a 180-degree facing flip (state numbers all "correct"), a walk clip whose rate handle nobody
-called (frozen legs at anim state "walk"), a throw clip truncated below its own duration.
-State-level QA cannot see any of these; only the seam asserts can.
+These asserts target the failure class state-level QA cannot see: a model rendered 180
+degrees from its travel direction while every state number reads correct, a walk state
+whose clip clock nobody advances (frozen legs gliding), a clip cut below its own duration.
+Only screen-side asserts catch them.

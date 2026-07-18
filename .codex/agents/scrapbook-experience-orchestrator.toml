@@ -126,7 +126,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/sb_research_<sbId>/run?project
 poll_until_done sb_research_<sbId>
 ```
 
-**No wake-ups exist (do not return early).** `poll_until_done` is a BLOCKING loop inside your current turn - there is NO background poller, notification, or re-invoke mechanism in the daemon or harness. Research can take 10+ minutes; keep polling. Never return before the researcher is `done`/`error` on the promise that something will "resume" or "re-invoke" you when it lands - a returned subagent is dead, nothing wakes it, and the whole build strands with research finished and nobody listening (teamfantasy, 2026-07).
+**No wake-ups exist (do not return early).** `poll_until_done` is a BLOCKING loop inside your current turn - there is NO background poller, notification, or re-invoke mechanism in the daemon or harness. Research can take 10+ minutes; keep polling. Never return before the researcher is `done`/`error` on the promise that something will "resume" or "re-invoke" you when it lands - a returned subagent is dead, nothing wakes it, and the whole build strands with research finished and nobody listening.
 
 The researcher writes `source/{branch}/scrapbooks/{sbId}/research.md` + `inventory.json` with `coreAesthetic`, `compositionIdiom`, `density`, `motionRegister`, `interactionPrimitive`, `imageInventory[]` (each entry mapped to a real-page `slotId` where applicable), `pngSequenceList[]`, `typographyStrategy`, and a committed **`buildTier`** (`simple` | `standard` | `full`).
 
