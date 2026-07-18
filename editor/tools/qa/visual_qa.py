@@ -1258,6 +1258,164 @@ def _doc_uses_harness_steps(doc: Dict[str, Any]) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Game seam test (docs/agents/game-seam-contract.md). Deterministic, no LLM.
+# Runs for every games/<id>/runtime.html target. Catches the seam-break class
+# that state-level QA cannot see: a model rendered 180deg from its travel
+# direction, an anim clip whose clock nobody advances, a harness that was
+# never built. Any assert failing = the gate fails before any lens runs.
+# ---------------------------------------------------------------------------
+
+_GAME_TARGET_RE = re.compile(r"/games/[^/]+/runtime\.html")
+
+_SEAM_KEYS_JS = (
+    "(function(){var h=window.__game;if(!h){return {present:false};}"
+    "var qa=h.qa||{};return {present:true,missing:["
+    "(h.state===undefined?'state':null),"
+    "(Array.isArray(h.intents)?null:'intents'),"
+    "(typeof h.injectFakeInput==='function'?null:'injectFakeInput'),"
+    "(typeof h.tick==='function'?null:'tick'),"
+    "(typeof h.snapshot==='function'?null:'snapshot'),"
+    "(Array.isArray(h.errors)?null:'errors'),"
+    "(typeof qa.modelForward==='function'?null:'qa.modelForward'),"
+    "(typeof qa.animState==='function'?null:'qa.animState'),"
+    "(typeof qa.debug==='function'?null:'qa.debug')"
+    "].filter(Boolean)};})()")
+
+_SEAM_SNAP_JS = (
+    "(function(){var s=window.__game.snapshot()||{};var a=s.avatar||{};"
+    "return {pos:(a.pos||null),forward:(a.forward||null),"
+    "speed:(a.speed===undefined?null:a.speed),phase:(s.phase===undefined?null:s.phase)};})()")
+
+
+def is_game_target(url: str) -> bool:
+    try:
+        path = urllib.parse.urlparse(url).path
+    except Exception:
+        path = url
+    return bool(_GAME_TARGET_RE.search(path or ""))
+
+
+def _seam_eval(page: Any, js: str) -> Any:
+    res = page.evaluate(_js_expr(js))
+    if not res.get("ok"):
+        raise RuntimeError("seam eval threw: %s" % res.get("err"))
+    return res.get("val")
+
+
+def run_seam_test(context: Any, url: str, settle_ms: int,
+                  out_dir: str) -> Dict[str, Any]:
+    """Boot the game, start it, drive one forward move, and assert the seam:
+    position moves, the RENDERED model faces its travel direction, the active
+    anim clip's clock advances, and the error ring stays empty."""
+    out: Dict[str, Any] = {"ok": True, "problems": [], "evidence": {}}
+
+    def fail(msg: str) -> None:
+        out["ok"] = False
+        out["problems"].append(msg)
+
+    page = context.new_page()
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        page.wait_for_timeout(max(settle_ms, 1500))
+
+        keys = _seam_eval(page, _SEAM_KEYS_JS)
+        if not keys.get("present"):
+            fail("window.__game harness is missing entirely "
+                 "(seam contract: docs/agents/game-seam-contract.md)")
+            return out
+        missing = keys.get("missing") or []
+        if missing:
+            fail("harness contract incomplete - missing: %s"
+                 % ", ".join(missing))
+            return out
+
+        # Start: gate click + explicit start() when exposed.
+        try:
+            vp = page.viewport_size or {"width": 1280, "height": 720}
+            page.mouse.click(vp["width"] // 2, vp["height"] // 2)
+        except Exception:
+            pass
+        _seam_eval(page, "(typeof window.__game.start==='function'"
+                         "?(window.__game.start(),1):1)")
+        page.wait_for_timeout(800)
+
+        s0 = _seam_eval(page, _SEAM_SNAP_JS)
+        if not (isinstance(s0.get("pos"), list) and len(s0["pos"]) >= 3):
+            fail("snapshot().avatar.pos missing or not [x,y,z] - got %r"
+                 % (s0.get("pos"),))
+            return out
+        fwd = s0.get("forward")
+        if not (isinstance(fwd, list) and len(fwd) >= 2):
+            fail("snapshot().avatar.forward missing or not [x,z] - got %r; "
+                 "pose crosses the seam as a VECTOR per the seam contract"
+                 % (fwd,))
+            return out
+
+        # Drive forward for one simulated second.
+        fx, fz = float(fwd[0]) or 0.0, float(fwd[1])
+        if abs(fx) < 1e-6 and abs(fz) < 1e-6:
+            fz = 1.0
+        _seam_eval(page, "window.__game.injectFakeInput('move',{x:%r,z:%r})"
+                   % (fx, fz))
+        _seam_eval(page, "window.__game.tick(1.0)")
+        page.wait_for_timeout(150)
+
+        s1 = _seam_eval(page, _SEAM_SNAP_JS)
+        dx = float(s1["pos"][0]) - float(s0["pos"][0])
+        dz = float(s1["pos"][2]) - float(s0["pos"][2])
+        dist = (dx * dx + dz * dz) ** 0.5
+        out["evidence"]["moveDelta"] = [round(dx, 3), round(dz, 3)]
+        if dist < 0.05:
+            fail("avatar did not move on injectFakeInput('move') + tick(1) "
+                 "(moved %.3f units)" % dist)
+            return out
+
+        mf = _seam_eval(page, "window.__game.qa.modelForward()")
+        if not (isinstance(mf, list) and len(mf) >= 3):
+            fail("qa.modelForward() did not return [x,y,z] - got %r" % (mf,))
+            return out
+        mfx, mfz = float(mf[0]), float(mf[2])
+        mlen = (mfx * mfx + mfz * mfz) ** 0.5 or 1.0
+        dot = (mfx * dx + mfz * dz) / (mlen * dist)
+        out["evidence"]["facingDot"] = round(dot, 3)
+        if dot < 0.5:
+            fail("FACING SEAM BROKEN: rendered model forward vs travel "
+                 "direction dot=%.2f (model faces %s its motion; the classic "
+                 "180deg convention flip)" %
+                 (dot, "against" if dot < -0.5 else "off"))
+
+        anim = _seam_eval(page, "window.__game.qa.animState()")
+        out["evidence"]["animState"] = anim
+        # Still moving this tick: the active clip's clock must advance.
+        _seam_eval(page, "window.__game.injectFakeInput('move',{x:%r,z:%r})"
+                   % (fx, fz))
+        _seam_eval(page, "window.__game.tick(0.25)")
+        anim2 = _seam_eval(page, "window.__game.qa.animState()")
+        if not (isinstance(anim2, dict) and anim2.get("clockAdvancing")):
+            fail("ANIM SEAM BROKEN: qa.animState().clockAdvancing is not true "
+                 "while moving (state %r) - a walk state with a frozen clip "
+                 "clock renders as gliding" % (anim2,))
+
+        _seam_eval(page, "window.__game.injectFakeInput('move',{x:0,z:0})")
+        errs = _seam_eval(page, "window.__game.errors.slice(0,10)")
+        if errs:
+            fail("harness error ring is not empty: %r" % (errs[:3],))
+
+        try:
+            page.screenshot(path=os.path.join(out_dir, "seam_after_move.png"))
+        except Exception:
+            pass
+    except Exception as exc:
+        fail("seam test could not complete: %s" % exc)
+    finally:
+        try:
+            page.close()
+        except Exception:
+            pass
+    return out
+
+
 def run_cases(args: argparse.Namespace) -> int:
     """--cases entry point. Runs every case on a fresh page, then the soak.
     Exit codes: 0 pass, 6 any case/preflight/soak failure, 3 setup failure."""
@@ -1330,6 +1488,12 @@ def run_cases(args: argparse.Namespace) -> int:
             log("preflight FAILED: %s"
                 % "; ".join(report["preflight"].get("problems") or []))
 
+        if is_game_target(url):
+            report["seam"] = run_seam_test(context, url, settle_ms, out_dir)
+            log("seam test: %s"
+                % ("pass" if report["seam"]["ok"]
+                   else "; ".join(report["seam"]["problems"])))
+
         for i, case in enumerate(cases):
             entry = _run_one_case(context, url, case, base_ctx, settle_ms,
                                   out_dir)
@@ -1367,6 +1531,10 @@ def run_cases(args: argparse.Namespace) -> int:
         verdict = "cases-fail"
         reasons.append("harness contract preflight failed: %s"
                        % "; ".join(report["preflight"].get("problems") or []))
+    if report.get("seam") and not report["seam"].get("ok", True):
+        verdict = "cases-fail"
+        reasons.append("seam test failed: %s"
+                       % "; ".join(report["seam"].get("problems") or []))
     if n_fail:
         verdict = "cases-fail"
         failed_ids = [str(c.get("id")) for c in report["cases"]
@@ -1421,6 +1589,27 @@ def run(args: argparse.Namespace) -> int:
 
     vw, vh = args.viewport
     url = normalise_url(args.url)
+
+    # HARD STOP: a game runtime may only be gated through its plan-time
+    # test-cases.json (cases mode). Reaching the generic battery here means
+    # the researcher never wrote the file - that is a build failure, not a
+    # fallback. No opt-out. See docs/agents/game-seam-contract.md.
+    if is_game_target(url):
+        report = {
+            "url": url, "mode": args.mode, "verdict": "fail",
+            "reasons": [
+                "game runtime has no test-cases.json - the generic battery "
+                "is not a valid gate for games. game-research-technique "
+                "writes test-cases.json next to research.md; re-dispatch it. "
+                "(docs/agents/game-seam-contract.md)"],
+        }
+        report_path = os.path.join(out_dir, "report.json")
+        with open(report_path, "w") as f:
+            json.dump(report, f, indent=2)
+        log("HARD STOP: game target without test-cases.json")
+        sys.stdout.write(json.dumps(report, indent=2) + "\n")
+        sys.stdout.flush()
+        return 6
 
     spec: Dict[str, Any] = {}
     if args.spec:

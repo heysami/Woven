@@ -349,4 +349,7 @@ Self-test fixture: `fixtures/cases-demo.html` +
 
 Daemon route: `/__qa/run` auto-detects a `test-cases.json` next to the
 resolved target (same dir or one level up) and runs cases mode by default;
-pass `&cases=0` to force the generic battery.
+pass `&cases=0` to force the generic battery. EXCEPTION - game targets
+(`games/<id>/runtime.html`): no cases file is a HARD FAIL (no opt-out), and
+cases mode additionally runs the deterministic seam test (facing vs travel,
+anim clock, harness contract) per `docs/agents/game-seam-contract.md`.

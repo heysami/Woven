@@ -5,8 +5,11 @@ Scope: PLATFORM-WIDE. This is a Woven capability, not a per-project tool.
 It changes how every future interactive piece is planned, built, and gated,
 across every family: game-experience, simulation, interactive-media,
 scene-3d, motion-studio, narrative-experience, scrapbook, app-node surface,
-interactive-polish. Existing projects are untouched (pieces without a
-test-cases file keep today's behavior).
+interactive-polish. Pieces without a test-cases file keep the generic
+battery, EXCEPT games: a `games/<id>/runtime.html` target without
+test-cases.json is a HARD QA FAIL (no fallback, no `&cases=0` opt-out), and
+games additionally run the deterministic seam test - both per
+`docs/agents/game-seam-contract.md`.
 
 ## Problem
 
@@ -233,7 +236,9 @@ the same edit.
 ## 6. Rollout
 
 Platform work only - no per-project retrofit. Pieces without a
-test-cases.json keep the generic battery by design.
+test-cases.json keep the generic battery by design - EXCEPT game targets,
+which hard-fail without the file and always run the seam test
+(docs/agents/game-seam-contract.md).
 
 1. **Step 1 - engine. SHIPPED.** `--cases` runner in visual_qa.py (new
    step/expect executors, matrix auto-expansion, abuse templates, seeded
