@@ -22408,6 +22408,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             try:
                 if _shares.shares_remap_prototype(candidate, old, new) and "shares.json" not in touched:
                     touched.append("shares.json")
+                    # The git-tracked contributor registry (share/links.json)
+                    # mirrors shares.json - republish it so peers pulling the
+                    # renamed repo see the new slug, not a dead one.
+                    try:
+                        if _shares.publish_project_links(candidate):
+                            touched.append(_SHARE_LINKS_REL)
+                    except Exception:
+                        pass
             except Exception:
                 pass
             try:

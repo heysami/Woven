@@ -1119,7 +1119,14 @@ def _hosted_snapshot_members(rec):
     # two prefixes _gate_project_paths_ok() allows.
     src_tree = os.path.join(project_root, "source", slug)
     if not os.path.isdir(src_tree):
-        raise RuntimeError("prototype has no source/{}/ directory".format(slug))
+        # Most common cause: the prototype was renamed on ANOTHER install
+        # (each install keeps its own shares.json, so a peer's rename can't
+        # repoint THIS record) or by a pre-remap Woven build. Name the likely
+        # fix instead of leaving a bare 404-shaped error.
+        raise RuntimeError(
+            "prototype has no source/{}/ directory - it may have been renamed "
+            "or deleted. Turn hosting off and share the renamed prototype, or "
+            "rename it back.".format(slug))
     members += _hosted_tree_members(src_tree, "share/p/source/" + slug)
     ds_tree = os.path.join(project_root, "design-systems")
     if os.path.isdir(ds_tree):
