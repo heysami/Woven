@@ -4571,6 +4571,56 @@ def _backfill_share_thumbnails() -> None:
         _capture_share_thumbnail(proot, s.get("project"), s.get("prototype"))
 
 
+_PEER_COMMENTS_INTERVAL = 45   # seconds between peer-gate pull rounds
+
+
+def _peer_comments_loop() -> None:
+    """Connect contributors' review comments WITHOUT git: every round, for
+    each project whose share/links.json (the git-tracked contributor link
+    registry) lists another install's stable link, pull that gate's
+    /api/comments over the public share URL and union it into the local
+    store (shares.peer_pull_comments - tombstone-aware, idempotent). A peer
+    being offline is normal (their tunnel is down and they have no hosted
+    snapshot) - skipped silently, retried next round. Comments made here
+    flow the OTHER way when the peer's daemon pulls this install's gate."""
+    time.sleep(8)   # let the gate/tunnels come up before the first round
+    try:
+        iid = _shares.woven_install_id()
+    except Exception:
+        iid = ""
+    while True:
+        try:
+            for p in _list_projects():
+                pid = (p.get("id") or "").strip()
+                if not pid:
+                    continue
+                try:
+                    root = resolve_project_root({"project": pid})
+                except Exception:
+                    continue
+                links = _shares.links_load(root).get("links") or []
+                seen = set()
+                changed = False
+                for e in links:
+                    url = (e.get("url") or "").strip()
+                    if not url or e.get("install") == iid or url in seen:
+                        continue
+                    seen.add(url)
+                    try:
+                        if _shares.peer_pull_comments(root, url):
+                            changed = True
+                    except Exception:
+                        pass                    # peer offline - normal, retry next round
+                if changed:
+                    try:
+                        _broadcast_share_comments_changed(pid, "")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        time.sleep(_PEER_COMMENTS_INTERVAL)
+
+
 def _spawn_thumbnail_screenshot(project_root: str, project_id: str, tp: str) -> None:
     threading.Thread(
         target=_capture_thumbnail_screenshot,
@@ -28681,6 +28731,10 @@ if __name__ == "__main__":
         # (covers shares created before this feature). Sequential, post-bind.
         threading.Thread(target=_backfill_share_thumbnails, daemon=True,
                          name="share-thumb-backfill").start()
+        # Peer comment sync - pull contributors' share-gate discussions into
+        # each project so comments connect across machines WITHOUT git.
+        threading.Thread(target=_peer_comments_loop, daemon=True,
+                         name="peer-comments-sync").start()
     except Exception as e:
         print(f"[share] boot failed (share mode disabled): {e}", flush=True)
     # auto-replace any stale serve.py holding our port. Without this,

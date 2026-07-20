@@ -1048,7 +1048,8 @@ def _hosted_build_snapshot(rec, out_path):
         except Exception:
             comments = []
         add_bytes(tf, "share/api/comments",
-                  json.dumps({"comments": comments}).encode("utf-8"))
+                  json.dumps({"comments": comments,
+                              "deleted": comments_tombstones(project_root)}).encode("utf-8"))
         count += 1
         for c in comments:
             cid = c.get("id") or ""
@@ -1417,12 +1418,12 @@ def _comments_path(project_root):
 def comments_load(project_root):
     p = _comments_path(project_root)
     if not os.path.isfile(p):
-        return {"comments": []}
+        return {"comments": [], "deleted": []}
     try:
         with open(p, "r", encoding="utf-8") as f:
             raw = f.read()
     except Exception:
-        return {"comments": []}
+        return {"comments": [], "deleted": []}
     try:
         data = json.loads(raw) or {}
     except Exception:
@@ -1433,12 +1434,18 @@ def comments_load(project_root):
         # git resolve path stages its own merge).
         data = _comments_from_conflict_text(raw)
         if data is None:
-            return {"comments": []}
+            return {"comments": [], "deleted": []}
     if not isinstance(data, dict):
-        return {"comments": []}
+        return {"comments": [], "deleted": []}
     data.setdefault("comments", [])
     if not isinstance(data["comments"], list):
         data["comments"] = []
+    # Deletion tombstones [{id, at}] - they make "this comment was removed"
+    # a first-class fact that survives merges and peer sync, instead of an
+    # absence that a stale copy could silently resurrect.
+    data.setdefault("deleted", [])
+    if not isinstance(data["deleted"], list):
+        data["deleted"] = []
     return data
 
 
@@ -1524,8 +1531,36 @@ def comments_merge_texts(base_text, ours_text, theirs_text):
         cid = c.get("id")
         if cid not in ours_ids and cid not in base:
             merged.append(c)              # new on their side
+    # Tombstones union across every side and always win: a comment deleted
+    # anywhere stays deleted everywhere, even against a copy that predates
+    # the deletion.
+    tombs = {}
+    for t in _tombs_of_text(base_text) + _tombs_of_text(ours_text) + _tombs_of_text(theirs_text):
+        tombs.setdefault(t["id"], t)
+    merged = [c for c in merged if c.get("id") not in tombs]
     merged.sort(key=lambda c: c.get("createdAt") or "")
-    return {"comments": merged}
+    out = {"comments": merged}
+    # Key omitted when empty so a tombstone-free merge stays byte-identical
+    # to the legacy shape (the carry paths use that to detect "no change").
+    if tombs:
+        out["deleted"] = sorted(tombs.values(), key=lambda t: t.get("at") or "")[-1000:]
+    return out
+
+
+def _tombs_of_text(text):
+    """Deletion tombstones [{id, at}] of a comments.json body - defensive."""
+    try:
+        d = json.loads(text or "null")
+    except Exception:
+        return []
+    if not isinstance(d, dict) or not isinstance(d.get("deleted"), list):
+        return []
+    return [t for t in d["deleted"] if isinstance(t, dict) and t.get("id")]
+
+
+def comments_tombstones(project_root):
+    return [t for t in comments_load(project_root).get("deleted") or []
+            if isinstance(t, dict) and t.get("id")]
 
 
 def _comments_from_conflict_text(raw):
@@ -1690,6 +1725,13 @@ def comment_delete(project_root, comment_id):
         data["comments"] = [c for c in data["comments"] if c.get("id") != comment_id]
         if len(data["comments"]) == before:
             return False
+        # Tombstone the id so merges and peer pulls treat the deletion as a
+        # fact to propagate, never a gap to backfill.
+        tombs = [t for t in data.get("deleted") or []
+                 if isinstance(t, dict) and t.get("id")]
+        if all(t.get("id") != comment_id for t in tombs):
+            tombs.append({"id": comment_id, "at": _now_iso()})
+        data["deleted"] = tombs[-1000:]
         _comments_save(project_root, data)
     # Drop the page screenshot too - the comment it belonged to is gone.
     try:
@@ -2005,6 +2047,7 @@ def _hosted_comments_push_soon(rec):
                 "installId": woven_install_id(),
                 "token":     token,
                 "comments":  comments_list(root, prototype),
+                "deleted":   comments_tombstones(root),
             }).encode("utf-8")
             if len(body) > _HOSTED_COMMENTS_MAX:
                 print("[share] hosted comments push skipped (too large)", flush=True)
@@ -2267,7 +2310,10 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             root = self._project_root(rec)
             if root is None:
                 return self._send_json(500, {"error": "project unavailable"})
-            return self._send_json(200, {"comments": comments_list(root, rec.get("prototype"))})
+            # `deleted` tombstones ride along so peer daemons syncing this
+            # gate (peer_pull_comments) propagate deletions, not just adds.
+            return self._send_json(200, {"comments": comments_list(root, rec.get("prototype")),
+                                         "deleted": comments_tombstones(root)})
         m = re.match(r"^/api/comments/(c-[a-f0-9]+)/shot$", sub)
         if m:
             root = self._project_root(rec)
@@ -2694,3 +2740,138 @@ def links_list(project):
     except Exception:
         return {"links": [], "installId": ""}
     return {"links": links_load(root)["links"], "installId": woven_install_id()}
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# 5. Peer comment sync - contributors' discussions merge WITHOUT git
+#
+# Review comments used to reach a teammate only by riding a commit → push →
+# pull. That chain breaks constantly (nobody commits just for a comment),
+# so the discussion fragmented per machine. This section makes comments
+# flow directly: every share gate already serves its project's comments on
+# a public URL, and share/links.json (section 4) tells each daemon where
+# every contributor's gate lives - so the daemon simply PULLS each peer
+# gate's /api/comments periodically and unions it into the local store.
+#
+# Properties: no accounts, no central server beyond what shares already
+# use, works whenever the peer's tunnel is up (or their hosted snapshot
+# serves the stored copy), idempotent (pulling twice changes nothing), and
+# deletion-safe (tombstones travel with the payload, so a removed comment
+# stays removed everywhere instead of resurrecting from a stale peer).
+# serve.py runs the loop; see _peer_comments_loop there.
+# ═════════════════════════════════════════════════════════════════════════
+
+_PEER_PAYLOAD_MAX = 4 * 1024 * 1024     # /api/comments JSON ceiling
+_PEER_SHOT_MAX    = 8 * 1024 * 1024     # per-screenshot ceiling
+_PEER_ATTACH_MAX  = 20 * 1024 * 1024    # per-attachment ceiling
+
+
+def comments_peer_union(project_root, payload):
+    """Union one peer gate's /api/comments payload into the local store.
+    Unknown comments append; known ones field-merge (local edits win, replies
+    and attachments union by id); tombstones from either side always win.
+    Returns (changed, new_ids) - new_ids are comments imported for the first
+    time, so the caller can fetch their screenshot/attachment bytes."""
+    if not isinstance(payload, dict):
+        return False, []
+    peer_comments = [c for c in (payload.get("comments") or [])
+                     if isinstance(c, dict) and COMMENT_ID_OK.match(c.get("id") or "")]
+    peer_tombs = [t for t in (payload.get("deleted") or [])
+                  if isinstance(t, dict) and COMMENT_ID_OK.match(t.get("id") or "")]
+    if not peer_comments and not peer_tombs:
+        return False, []
+    with _COMMENTS_LOCK:
+        data = comments_load(project_root)
+        before = json.dumps(data, sort_keys=True)
+        tombs = {}
+        for t in data.get("deleted") or []:
+            if isinstance(t, dict) and t.get("id"):
+                tombs.setdefault(t["id"], t)
+        for t in peer_tombs:
+            tombs.setdefault(t["id"], t)
+        out = {}
+        for c in data.get("comments") or []:
+            cid = c.get("id")
+            if cid and cid not in tombs:
+                out[cid] = c
+        new_ids = []
+        for pc in peer_comments:
+            cid = pc.get("id")
+            if cid in tombs:
+                continue
+            if cid in out:
+                out[cid] = _merge_comment_entry({}, out[cid], pc)
+            else:
+                out[cid] = pc
+                new_ids.append(cid)
+        newdata = {
+            "comments": sorted(out.values(), key=lambda c: c.get("createdAt") or ""),
+            "deleted":  sorted(tombs.values(), key=lambda t: t.get("at") or "")[-1000:],
+        }
+        changed = json.dumps(newdata, sort_keys=True) != before
+        if changed:
+            _comments_save(project_root, newdata)
+    return changed, new_ids
+
+
+def _peer_fetch_binary(url, path, cap):
+    """Download one peer file (screenshot / attachment) if it fits the cap.
+    Best-effort: any failure just means the comment shows without its image."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "woven-daemon"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            buf = r.read(cap + 1)
+        if not buf or len(buf) > cap:
+            return False
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(buf)
+        os.replace(tmp, path)
+        return True
+    except Exception:
+        return False
+
+
+def peer_pull_comments(project_root, base_url, timeout=10):
+    """Pull one peer share gate's discussion into the local project store.
+    `base_url` is a registry entry's url (https://<install>.getwoven.design/
+    s/<token>/); the worker routes /api/comments to the peer's live tunnel,
+    falling back to their hosted snapshot copy when they are offline. After
+    a union, missing screenshots/attachments of newly-imported comments are
+    fetched best-effort. Returns True when the local store changed. Raises
+    on network failure (the caller's loop treats that as peer-offline)."""
+    base = (base_url or "").rstrip("/")
+    # Real peers are always https (getwoven.design); plain http is allowed
+    # for loopback only so the test suite can stub a gate.
+    if not (base.startswith("https://") or base.startswith("http://127.0.0.1:")):
+        return False
+    req = urllib.request.Request(base + "/api/comments",
+                                 headers={"Accept": "application/json",
+                                          "User-Agent": "woven-daemon"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        raw = r.read(_PEER_PAYLOAD_MAX + 1)
+    if len(raw) > _PEER_PAYLOAD_MAX:
+        return False
+    try:
+        payload = json.loads(raw.decode("utf-8", "replace") or "{}")
+    except ValueError:
+        return False
+    changed, new_ids = comments_peer_union(project_root, payload)
+    if new_ids:
+        by_id = dict((c.get("id"), c)
+                     for c in comments_load(project_root).get("comments", []))
+        for cid in new_ids:
+            c = by_id.get(cid) or {}
+            if c.get("shot"):
+                p = comment_shot_abspath(project_root, cid)
+                if p and not os.path.isfile(p):
+                    _peer_fetch_binary(base + "/api/comments/{}/shot".format(cid),
+                                       p, _PEER_SHOT_MAX)
+            for a in c.get("attachments") or []:
+                aid = (a or {}).get("id") or ""
+                p = comment_attach_abspath(project_root, cid, aid, (a or {}).get("ext"))
+                if p and not os.path.isfile(p):
+                    _peer_fetch_binary(base + "/api/comments/{}/attach/{}".format(cid, aid),
+                                       p, _PEER_ATTACH_MAX)
+    return changed
