@@ -999,6 +999,28 @@ def branches_with_path(root, rel):
     return out
 
 
+def prototypes_on_branches(root):
+    """Union of prototype slugs (source/<slug>/ dirs) across every local
+    branch's COMMITTED tree. Feeds the git panel's scope picker: a prototype
+    that only exists on ANOTHER branch (created or renamed there) must still
+    be offered, so a scoped merge can pull it in from that branch."""
+    slugs = set()
+    for b in branches(root).get("branches") or []:
+        name = (b.get("name") or "").strip()
+        if not name:
+            continue
+        code, out, _e = _git(root, "ls-tree", "-d", "--name-only", name, "source/")
+        if code != 0:
+            continue
+        for ln in out.splitlines():
+            ln = ln.strip()
+            if ln.startswith("source/"):
+                slug = ln[len("source/"):].strip("/")
+                if slug and not slug.startswith("."):
+                    slugs.add(slug)
+    return sorted(slugs)
+
+
 def merge_base(root, a, b):
     """Common-ancestor sha of two refs ('' when unrelated or unknown)."""
     if not is_repo(root) or not (a or "").strip() or not (b or "").strip():

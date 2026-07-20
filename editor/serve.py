@@ -20872,15 +20872,24 @@ class H(http.server.SimpleHTTPRequestHandler):
                         or rel.startswith(("share/comment-shots/", "share/comment-attach/")))
             st["dirtyShareMetaOnly"] = (bool(st.get("dirty"))
                                         and all(_is_share_meta(r) for r in st.get("changed") or []))
-            # Prototype slugs (source/<slug>/ dirs) for the panel's commit /
-            # merge scope picker.
+            # Prototype slugs for the panel's commit / merge scope picker:
+            # the working tree's source/<slug>/ dirs UNIONED with every local
+            # branch's committed tree - a prototype that only exists on
+            # another branch must still be offered, so a scoped merge can
+            # pull it in from there.
             try:
                 sdir = os.path.join(root, "source")
-                st["prototypes"] = sorted(
+                protos = set(
                     d for d in os.listdir(sdir)
                     if os.path.isdir(os.path.join(sdir, d)) and not d.startswith("."))
             except OSError:
-                st["prototypes"] = []
+                protos = set()
+            if st.get("repo"):
+                try:
+                    protos.update(_gitops.prototypes_on_branches(root))
+                except Exception:
+                    pass
+            st["prototypes"] = sorted(protos)
             st["draftMessage"] = _gitops.draft_message(root) if st.get("repo") else ""
             st["githubConfigured"] = _gitops.oauth_configured()
             st["gitAvailable"] = _gitops.git_available()

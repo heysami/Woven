@@ -12605,7 +12605,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
   const doMergeBranch = async (name) => {
     if (st && st.dirty && !st.dirtyShareMetaOnly) { flashErr("Commit or discard changes before merging"); return; }
     const ok = await uiConfirm(scope
-      ? "Use '" + name + "'s version of prototype '" + scope + "' on '" + curBranch + "'? Your branch's copy of that prototype is replaced; everything else stays untouched."
+      ? "Use '" + name + "'s version of prototype '" + scope + "' on '" + curBranch + "'? Your branch's copy of that prototype (if any) is replaced; everything else stays untouched."
       : "Merge '" + name + "' into '" + curBranch + "'?");
     if (!ok) return;
     const j = await op("branch-merge", { name, prototype: scope || undefined });
