@@ -55,6 +55,11 @@ button { font: inherit; cursor: pointer; }
 .sv-brand svg { display: block; flex: none; }
 .sv-brand-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sv-brand-sub { color: var(--sv-muted); font-weight: 450; }
+/* Branch chip: the label alone is `project / prototype`, which reads
+   ambiguously when a prototype is named like a branch - the icon marks
+   this segment as the git branch. */
+.sv-brand-branch { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.sv-brand-branch svg { flex: none; opacity: .75; }
 .sv-topbar-spacer { flex: 1; }
 .sv-page-chip {
   color: var(--sv-muted); background: var(--sv-bg);

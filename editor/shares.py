@@ -63,6 +63,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import git_ops as _gitops
+
 # ── Module config (set once by init()) ──────────────────────────────────────
 
 WORKSPACE_DIR = None          # where shares.json lives
@@ -994,6 +996,21 @@ def _hosted_add_tree(tf, src_dir, arc_prefix):
     return count
 
 
+def _project_branch(root):
+    """Current git branch of a share's project ('' when unknown: not a repo,
+    detached HEAD, or any git hiccup). Rides along in the viewer meta so
+    reviewers see WHICH branch of the prototype they are looking at - the
+    share label alone is `project / prototype`, which reads ambiguously when
+    a prototype is named like a branch (e.g. `main`)."""
+    try:
+        if root and _gitops.is_repo(root):
+            b = _gitops.current_branch(root)
+            return "" if b == "HEAD" else b
+    except Exception:
+        pass
+    return ""
+
+
 def _hosted_build_snapshot(rec, out_path):
     """Build the snapshot tar.gz at out_path. Members mirror the gate's URL
     space under share/ (viewer shell, static api/meta, whitelisted project
@@ -1024,9 +1041,12 @@ def _hosted_build_snapshot(rec, out_path):
                 tf.add(src, arcname=arc, recursive=False)
                 count += 1
         # Static /api/meta so the viewer boots with the daemon offline.
+        # `branch` is the branch AT SNAPSHOT TIME - that is what the hosted
+        # copy actually contains, even if the owner switches later.
         meta = {
             "label":     rec.get("label") or "",
             "prototype": slug,
+            "branch":    _project_branch(project_root),
             "emailGate": bool(rec.get("emailGate")),
             "entry":     "p/source/{}/index.html".format(slug),
         }
@@ -2298,11 +2318,13 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         # relative, so it arrives as /s/<token>/favicon.svg).
         if sub == "/favicon.svg":
             return self._send_file(os.path.join(INSTALL_ROOT, "editor", "favicon.svg"), cache=True)
-        # Share metadata for the viewer boot.
+        # Share metadata for the viewer boot. `branch` is computed live so it
+        # always names the branch the tunnel is serving RIGHT NOW.
         if sub == "/api/meta":
             return self._send_json(200, {
                 "label":     rec.get("label") or "",
                 "prototype": rec.get("prototype") or "",
+                "branch":    _project_branch(self._project_root(rec)),
                 "emailGate": bool(rec.get("emailGate")),
                 "entry":     f"p/source/{rec.get('prototype')}/index.html",
             })
