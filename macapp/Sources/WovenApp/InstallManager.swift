@@ -135,11 +135,10 @@ final class InstallManager: NSObject, URLSessionDownloadDelegate {
         }.resume()
     }
 
-    /// Background check on launch, throttled to once per 6 hours. When a new
-    /// tag exists it is downloaded + swapped silently; `onUpdateReady` fires
-    /// so the menu can show "Update ready - Restart Daemon to apply".
+    /// Background check on every launch. When a new tag exists it is
+    /// downloaded + swapped silently; `onUpdateReady` fires so the menu can
+    /// show "Update ready - Restart Daemon to apply".
     func backgroundCheck(onUpdateReady: @escaping (String) -> Void) {
-        if let last = state.lastCheckAt, Date().timeIntervalSince(last) < 6 * 3600 { return }
         fetchLatestRelease { [weak self] result in
             guard let self = self, case .success(let rel) = result else { return }
             guard rel.tag != self.state.installedTag else { return }
