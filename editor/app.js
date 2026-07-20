@@ -662,6 +662,9 @@ const Icon = {
   Clock:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>`,
   Grid:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 6h12M2 10h12M6 2v12M10 2v12"/></svg>`,
   Refresh:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 8a6 6 0 0110-4.5M14 3v3h-3M14 8a6 6 0 01-10 4.5M2 13v-3h3"/></svg>`,
+  // Revert: history mark (clock + counter-clockwise arrow) - "go back to this
+  // version". Used by the git panel's per-commit Revert action.
+  Revert:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 3v3h3"/><path d="M2.5 6a6 6 0 11-.4 3.5"/><path d="M8 5.5v2.8L10 9.5"/></svg>`,
   Globe:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c-1.7 1.7-2.6 3.8-2.6 6S6.3 12.3 8 14M8 2c1.7 1.7 2.6 3.8 2.6 6S9.7 12.3 8 14"/></svg>`,
   Scissors: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="4.5" r="1.8"/><circle cx="4" cy="11.5" r="1.8"/><path d="M5.5 5.7L13 13M5.5 10.3L13 3"/></svg>`,
   // Crop: the classic two-bracket crop-marks mark (top-left + bottom-right
@@ -12583,6 +12586,23 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
     const j = await op("discard-local", {});
     if (j) { flashNote("Discarded uncommitted changes"); reload(); }
   };
+  // Revert the project to an EARLIER commit's snapshot. Recorded as a NEW
+  // commit (no history rewrite), so later commits stay in History, Push never
+  // needs force, and the revert can itself be reverted from the same list.
+  const doRevert = async (c) => {
+    if (st && st.dirty && !st.dirtyShareMetaOnly) {
+      flashErr("Commit or discard changes before reverting"); return;
+    }
+    if (!(await uiConfirm(
+      "Revert the project to " + c.short + " · " + c.subject + "?\n\n" +
+      "Every file goes back to how it was at that commit. The revert is saved " +
+      "as a new commit, so later commits stay in History and you can revert back."))) return;
+    const j = await op("restore", { sha: c.sha });
+    if (j) {
+      flashNote(j.empty ? "Already matches " + c.short : "Reverted to " + c.short);
+      msgTouched.current = false; reload();
+    }
+  };
   // Hand the conflicted files to the agent: /__git/resolve returns a tailored
   // prompt; we start a chat run with it so the agent reconciles BOTH sides and
   // strips the markers. The user reviews the edits, then commits (the commit
@@ -12954,7 +12974,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
             ${inflight && html`
               <div className="th-git-inflight">
                 <span className="th-git-inflight-dot"/>
-                ${({ commit: "Committing", publish: "Pushing", pull: "Pulling", "discard-local": "Discarding", "discard-remote": "Resetting to GitHub" }[inflight] || "Working")}… <span className="th-git-inflight-sub">in progress on this machine</span>
+                ${({ commit: "Committing", publish: "Pushing", pull: "Pulling", restore: "Reverting", "discard-local": "Discarding", "discard-remote": "Resetting to GitHub" }[inflight] || "Working")}… <span className="th-git-inflight-sub">in progress on this machine</span>
               </div>`}
               <div className="th-git-actions">
                 <button className="th-git-btn is-primary" disabled=${!st.dirty || !!inflight || !!busy} onClick=${doCommit}
@@ -13001,8 +13021,10 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
             <div className="th-git-history-head">History</div>
             ${commits === null && html`<div className="runs-empty">Loading…</div>`}
             ${commits !== null && commits.length === 0 && html`<div className="runs-empty">No commits yet - make your first commit above.</div>`}
-            ${(commits || []).map(c => html`
-              <button className="th-git-commit" key=${c.sha} onClick=${() => openDiff({ kind: "commit", sha: c.sha }, c.short + " · " + c.subject)}
+            ${(commits || []).map((c, i) => html`
+              <div className="th-git-commit" key=${c.sha} role="button" tabIndex="0"
+                onClick=${() => openDiff({ kind: "commit", sha: c.sha }, c.short + " · " + c.subject)}
+                onKeyDown=${e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDiff({ kind: "commit", sha: c.sha }, c.short + " · " + c.subject); } }}
                 title="See what this commit changed">
                 <div className="th-git-commit-subj">${c.subject}</div>
                 <div className="th-git-commit-meta">
@@ -13010,7 +13032,12 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
                   <span className="th-git-commit-author">${c.author}</span>
                   <span className="th-git-commit-age">${c.relative}</span>
                 </div>
-              </button>
+                ${!isGuest && i > 0 && html`
+                  <button className="th-git-commit-revert" disabled=${!!inflight || !!busy}
+                    onClick=${e => { e.stopPropagation(); doRevert(c); }}
+                    title="Revert the project to this commit. Saved as a new commit - later commits stay in History, nothing is lost.">
+                    <${Icon.Revert}/> ${busy === "restore" ? "Reverting…" : "Revert to this"}</button>`}
+              </div>
             `)}
           </div>`}
       </div>

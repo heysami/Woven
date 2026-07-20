@@ -5450,6 +5450,15 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-git-sha { font-family: var(--font-mono); color: var(--text-muted); }
 .th-git-commit-author { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .th-git-commit-age { margin-left: auto; font-family: var(--font-mono); flex: 0 0 auto; }
+/* Per-commit "Revert to this" - hidden until the row is hovered / focused so
+   History stays a quiet list; reveals right-aligned under the meta line. */
+.th-git-commit-revert { display: none; align-items: center; gap: 5px; margin: 5px 0 1px auto;
+  width: max-content; padding: 2px 8px; font: inherit; font-size: 10.5px; color: var(--text-muted);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 5px; cursor: pointer; }
+.th-git-commit:hover .th-git-commit-revert,
+.th-git-commit:focus-within .th-git-commit-revert { display: flex; }
+.th-git-commit-revert:hover { color: var(--text); border-color: var(--text-faint); }
+.th-git-commit-revert:disabled { opacity: .5; cursor: default; }
 
 /* A status pill that's clickable (e.g. "N changed ↗" → opens the working diff). */
 .th-git-pill-btn { border: none; cursor: pointer; font: inherit; }

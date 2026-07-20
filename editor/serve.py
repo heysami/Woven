@@ -11572,7 +11572,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_mp = re.match(r"^/__multiplayer/(start|stop)$", parsed.path)
             if m_mp:
                 return self._multiplayer_op(m_mp.group(1), qs)
-            m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull|discard-local|discard-remote|branch-create|branch-switch|branch-merge|branch-delete)$", parsed.path)
+            m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull|restore|discard-local|discard-remote|branch-create|branch-switch|branch-merge|branch-delete)$", parsed.path)
             if m_git:
                 return self._git_op(m_git.group(1), qs)
             m_gh = re.match(r"^/__github/(device/start|device/poll|signout|connect_repo|create_repo|token|fork|pr)$", parsed.path)
@@ -21304,7 +21304,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             body = {}
         # Serialise the mutating ops + record them as in-flight so the panel can
         # show progress after a tab reload and a second click is refused cleanly.
-        mutating = op in ("commit", "publish", "pull", "discard-local", "discard-remote",
+        mutating = op in ("commit", "publish", "pull", "restore", "discard-local", "discard-remote",
                           "branch-create", "branch-switch", "branch-merge", "branch-delete")
         if mutating:
             now = time.time()
@@ -21431,6 +21431,42 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # like any other edit, so the canvas reloads to the new HEAD.
                 if pid:
                     try: _broadcast_workflow_change(pid)
+                    except Exception: pass
+                return self._reply(200, {"ok": True, **res})
+            if op == "restore":
+                # Revert the project to an earlier commit's snapshot, recorded
+                # as a NEW commit (no history rewrite, so push never needs
+                # force and the revert can itself be reverted). Guarded like
+                # branch-switch: real uncommitted work must be committed or
+                # discarded first so nothing is lost silently; share metadata
+                # (review comments / contributor links) is carried across.
+                pid = (_qs_get(qs, "project") or "").strip()
+                st = _gitops.status(root)
+                if not st.get("repo"):
+                    return self._reply(400, {"error": "project is not a git repo - connect it first"})
+                meta_dirty, other_dirty = _split_share_meta_dirt(root)
+                if other_dirty:
+                    return self._reply(409, {"error": "working tree has uncommitted changes - commit or discard them before reverting"})
+                if pid and _live.project_has_live_session(pid):
+                    return self._reply(409, {"error": "a live session is active - end it before reverting"})
+                comments_snap = _snapshot_comments_for_carry(root)
+                links_snap = _share_links_text(root)
+                prev_head = _gitops.head_sha(root)
+                if meta_dirty:
+                    _gitops.revert_paths(root, meta_dirty)
+                res = _gitops.restore_commit(root, body.get("sha") or "")
+                _carry_links_after_reset(root, prev_head, links_snap)
+                if _carry_comments_after_reset(root, prev_head, comments_snap):
+                    res = dict(res)
+                    res["commentsCarried"] = True
+                    if pid:
+                        try: _broadcast_share_comments_changed(pid, "")
+                        except Exception: pass
+                # Reload the canvas (and any guests) to the reverted HEAD.
+                # `workflow-reset` (not `workflow-changed`) - the client must
+                # REPLACE its in-memory doc, not merge (see discard below).
+                if pid and not res.get("empty"):
+                    try: _broadcast_workflow_change(pid, event="workflow-reset")
                     except Exception: pass
                 return self._reply(200, {"ok": True, **res})
             if op in ("discard-local", "discard-remote"):

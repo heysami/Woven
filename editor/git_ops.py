@@ -355,6 +355,42 @@ def discard_local(root):
     return {"ok": True, "head": head.strip(), "removed": removed[:200]}
 
 
+def restore_commit(root, sha):
+    """Revert the project to the SNAPSHOT of an earlier commit, recorded as a
+    NEW commit on the current branch - a version restore, not a history rewrite.
+    Later commits stay in the log (so the revert itself can be reverted) and
+    push never needs force. The caller guarantees a clean tree; untracked /
+    .gitignore'd runtime files survive (`read-tree` only removes files that
+    drop out of the index). Returns {ok, empty, head, target, subject}."""
+    if not is_repo(root):
+        raise RuntimeError("project is not a git repo")
+    ref = (sha or "").strip()
+    if not re.match(r"^[0-9a-fA-F]{4,40}$", ref):
+        raise RuntimeError(f"invalid commit: {ref!r}")
+    code, full, _e = _git(root, "rev-parse", "--verify", ref + "^{commit}")
+    if code != 0:
+        raise RuntimeError(f"unknown commit: {ref}")
+    full = full.strip()
+    _c, subject, _e = _git(root, "log", "-1", "--format=%s", full)
+    subject = subject.strip()
+    # Set index + working tree to the target snapshot. Files added since the
+    # target drop out of the index and are removed from the tree.
+    code, out, err = _git(root, "read-tree", "-u", "--reset", full, timeout=120)
+    if code != 0:
+        raise RuntimeError(f"git read-tree failed: {(err or out).strip()[:400]}")
+    # Tree already matches the target - nothing to record.
+    code, _o, _e = _git(root, "diff", "--cached", "--quiet", "HEAD")
+    if code == 0:
+        return {"ok": True, "empty": True, "target": full[:7], "subject": subject}
+    msg = f"Revert to {full[:7]}" + (f" - {subject}" if subject else "")
+    code, out, err = _git(root, "commit", "-m", msg)
+    if code != 0:
+        raise RuntimeError(f"git commit failed: {(err or out).strip()[:400]}")
+    _c, head, _e = _git(root, "rev-parse", "--short", "HEAD")
+    return {"ok": True, "empty": False, "head": head.strip(),
+            "target": full[:7], "subject": subject}
+
+
 def discard_to_remote(root, token=None):
     """Roll the branch ALL the way back to match origin - `git fetch` then
     `git reset --hard origin/<branch>` + `git clean -fd`. Unlike pull() (which
