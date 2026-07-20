@@ -1047,9 +1047,12 @@ def _hosted_build_snapshot(rec, out_path):
                 count += 1
         # Static /api/meta so the viewer boots with the daemon offline.
         # `branch` is the branch AT SNAPSHOT TIME - that is what the hosted
-        # copy actually contains, even if the owner switches later.
+        # copy actually contains, even if the owner switches later. No
+        # `branches` list: a snapshot holds ONE tree, so there is nothing
+        # for a picker to switch to.
         meta = {
             "label":     rec.get("label") or "",
+            "project":   rec.get("project") or "",
             "prototype": slug,
             "branch":    _project_branch(project_root),
             "emailGate": bool(rec.get("emailGate")),
@@ -2143,6 +2146,40 @@ def gate_serve_project_file(handler, project_root, prototype, sub):
     is_media = ext not in (".html", ".htm", ".css", ".js", ".mjs", ".json")
     handler._send_file(abs_path, cache=is_media); return True
 
+def gate_serve_project_file_at_ref(handler, project_root, prototype, sub, ref):
+    """Branch-scoped twin of gate_serve_project_file: same whitelist and
+    routing shape, but content comes from `ref`'s COMMITTED tree via
+    `git show` - the working tree (and the owner's checked-out branch) is
+    never touched, so a reviewer can flip branches while the owner keeps
+    editing. `ref` MUST already be validated against the local branch list
+    by the caller (never pass raw URL input - a ref that starts with `-`
+    would read as a git option)."""
+    if not (sub.startswith("/p/") or sub.startswith("/source/") or sub.startswith("/design-systems/")):
+        return False
+    raw = sub[len("/p/"):] if sub.startswith("/p/") else sub.lstrip("/")
+    rel = urllib.parse.unquote(raw).split("?")[0].split("#")[0].strip("/")
+    if not rel or ".." in rel.split("/") or rel.startswith("."):
+        handler._send_json(404, {"error": "not found"}); return True
+    slug = prototype or ""
+    allowed_prefixes = ("source/{}/".format(slug), "design-systems/")
+    if not any(rel == p.rstrip("/") or rel.startswith(p) for p in allowed_prefixes):
+        handler._send_json(404, {"error": "not found"}); return True
+    # Directory-style request (no extension) → its index.html, mirroring the
+    # isdir() fallback of the working-tree path.
+    base = os.path.basename(rel)
+    if "." not in base:
+        rel = rel + "/index.html"
+        base = "index.html"
+    ext = os.path.splitext(base)[1].lower()
+    if base.startswith(".") or ext not in _GATE_SERVE_EXTS:
+        handler._send_json(404, {"error": "not found"}); return True
+    data = _gitops.show_bytes_at_ref(project_root, ref, rel)
+    if data is None:
+        handler._send_json(404, {"error": "not found"}); return True
+    is_media = ext not in (".html", ".htm", ".css", ".js", ".mjs", ".json")
+    handler._send_blob(data, rel, cache=is_media); return True
+
+
 # File extensions the gate will serve out of a project. Everything a
 # build-less htm+React prototype legitimately uses; notably NO .py and no
 # dotfiles (filtered separately).
@@ -2180,6 +2217,23 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except Exception:
+            pass
+
+    def _send_blob(self, body, name, *, cache=False):
+        """Send in-memory bytes with the content-type `name` implies - the
+        delivery half of _send_file, for content that never touched disk
+        (branch-scoped files read out of git objects)."""
+        ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        if ctype.startswith("text/") or ctype in ("application/javascript", "application/json", "image/svg+xml"):
+            ctype += "; charset=utf-8"
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "max-age=300" if cache else "no-store")
         self.end_headers()
         try:
             self.wfile.write(body)
@@ -2324,12 +2378,30 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         if sub == "/favicon.svg":
             return self._send_file(os.path.join(INSTALL_ROOT, "editor", "favicon.svg"), cache=True)
         # Share metadata for the viewer boot. `branch` is computed live so it
-        # always names the branch the tunnel is serving RIGHT NOW.
+        # always names the branch the tunnel is serving RIGHT NOW; `branches`
+        # is the picker list - every local branch whose committed tree has
+        # the shared prototype (served via /b/<branch>/…), current first.
         if sub == "/api/meta":
+            root = self._project_root(rec)
+            branch = _project_branch(root)
+            branch_list = []
+            if branch:
+                try:
+                    branch_list = _gitops.branches_with_path(
+                        root, "source/{}".format(rec.get("prototype") or ""))
+                except Exception:
+                    branch_list = []
+                # The checked-out branch is always offered (its prototype may
+                # only exist uncommitted in the working tree), and leads.
+                if branch in branch_list:
+                    branch_list.remove(branch)
+                branch_list.insert(0, branch)
             return self._send_json(200, {
                 "label":     rec.get("label") or "",
+                "project":   rec.get("project") or "",
                 "prototype": rec.get("prototype") or "",
-                "branch":    _project_branch(self._project_root(rec)),
+                "branch":    branch,
+                "branches":  branch_list,
                 "emailGate": bool(rec.get("emailGate")),
                 "entry":     f"p/source/{rec.get('prototype')}/index.html",
             })
@@ -2359,6 +2431,29 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             if not path:
                 return self._send_json(404, {"error": "no attachment"})
             return self._send_file(path, cache=True)
+        # Branch-scoped project files: /b/<branch>/p/<rel> serves another
+        # local branch's COMMITTED tree via `git show` - the working tree
+        # (and the owner's checked-out branch) is never touched. A path
+        # segment rather than a query param so the prototype's RELATIVE
+        # asset URLs resolve on the picked branch for free. The branch is
+        # validated against the real local branch list before it goes
+        # anywhere near git (an unvalidated ref could read as an option).
+        mb = re.match(r"^/b/(.+?)(/(?:p|source|design-systems)/.*)$", sub)
+        if mb:
+            root = self._project_root(rec)
+            if root is None:
+                return self._send_json(500, {"error": "project unavailable"})
+            branch = urllib.parse.unquote(mb.group(1))
+            try:
+                names = [b.get("name") for b in (_gitops.branches(root).get("branches") or [])]
+            except Exception:
+                names = []
+            if branch not in names:
+                return self._send_json(404, {"error": "not found"})
+            if gate_serve_project_file_at_ref(self, root, rec.get("prototype") or "",
+                                              mb.group(2), branch):
+                return
+            return self._send_json(404, {"error": "not found"})
         # Whitelisted project files. /p/ is the share viewer's prefix; the live
         # editor's prototype iframes load /source/… and /design-systems/…
         # directly (resolved relative to /s/<tok>/live/) - serve both through

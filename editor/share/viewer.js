@@ -250,12 +250,15 @@
   };
 
   // Strip the gate prefix off the iframe's pathname → page id relative to
-  // source/<slug>/ ("index.html", "screens/detail.html", …) + hash.
+  // source/<slug>/ ("index.html", "screens/detail.html", …) + hash. Marker
+  // search rather than exact-prefix so branch-scoped paths (/b/<branch>/p/…)
+  // yield the SAME page id - comments anchor to the page, not the branch.
   const pageOfWin = (win, prototype) => {
     try {
-      const prefix = BASE + "p/source/" + prototype + "/";
+      const marker = "/p/source/" + prototype + "/";
       let p = win.location.pathname;
-      p = p.startsWith(prefix) ? p.slice(prefix.length) : p.split("/").pop();
+      const i = p.indexOf(marker);
+      p = i >= 0 ? p.slice(i + marker.length) : p.split("/").pop();
       if (!p) p = "index.html";
       return p + (win.location.hash || "");
     } catch {
@@ -437,11 +440,24 @@
     const [activeId, setActiveId] = useState(null);
     const [pins, setPins] = useState([]);        // [{id, x, y, num, done, draft}]
     const [page, setPage] = useState("index.html");
+    // Branch being reviewed: "" = the share's checked-out branch (served from
+    // the working tree). Anything else routes through /b/<branch>/, which the
+    // gate serves out of that branch's COMMITTED tree - picking a branch here
+    // never touches the owner's checkout.
+    const [viewBranch, setViewBranch] = useState("");
     const [error, setError] = useState(null);
     const [posting, setPosting] = useState(false);
     const [drawing, setDrawing] = useState(false);    // annotation layer armed
     const [strokes, setStrokes] = useState([]);       // committed annotation strokes
     const [attachments, setAttachments] = useState([]); // [{name, dataUrl}] pending upload
+
+    // URL prefix that pins prototype loads to the picked branch ("" when
+    // reviewing the checked-out branch). Slashes in branch names stay literal
+    // path segments - the gate's /b/ route matches across them.
+    const branchPathPfx = (b) =>
+      (meta && b && b !== meta.branch)
+        ? "b/" + encodeURIComponent(b).replace(/%2F/gi, "/") + "/" : "";
+    const branchPfx = branchPathPfx(viewBranch);
 
     const iframeRef = useRef(null);
     const commentModeRef = useRef(false); commentModeRef.current = commentMode;
@@ -677,14 +693,14 @@
       if (pathPart(c.page) !== pathPart(page)) {
         const onceLoad = () => { frame.removeEventListener("load", onceLoad); setTimeout(go, 250); };
         frame.addEventListener("load", onceLoad);
-        frame.src = BASE + "p/source/" + meta.prototype + "/" + (c.page || "index.html");
+        frame.src = BASE + branchPfx + "p/source/" + meta.prototype + "/" + (c.page || "index.html");
       } else if (c.page && c.page.includes("#") && frame.contentWindow) {
         try { frame.contentWindow.location.hash = c.page.split("#")[1] || ""; } catch {}
         setTimeout(go, 250);
       } else {
         go();
       }
-    }, [meta, page]);
+    }, [meta, page, branchPfx]);
 
     // ── Mutations ─────────────────────────────────────────────────────
     const requireIdentity = (reason) => {
@@ -787,8 +803,20 @@
       if (!frame || !meta) return;
       setCommentMode(false);
       setDraft(null);
-      frame.src = BASE + meta.entry;
-    }, [meta]);
+      frame.src = BASE + branchPfx + meta.entry;
+    }, [meta, branchPfx]);
+
+    // Pick a branch to review: reload the prototype from that branch's
+    // committed tree. Comment mode and any draft drop first - the page is
+    // about to change underfoot, same as reset.
+    const onPickBranch = (b) => {
+      if (!meta || b === (viewBranch || meta.branch)) return;
+      setViewBranch(b === meta.branch ? "" : b);
+      setCommentMode(false);
+      setDraft(null);
+      const frame = iframeRef.current;
+      if (frame) frame.src = BASE + branchPathPfx(b) + meta.entry;
+    };
 
     // ── Render ────────────────────────────────────────────────────────
     if (metaErr) {
@@ -800,6 +828,23 @@
 
     // Email-gated shares hard-block the prototype behind the modal.
     const gateBlocked = meta.emailGate && !(identity && identity.name && identity.email);
+
+    // Brand: branch reads BEFORE the prototype name (project · ⎇branch / proto).
+    // A custom label can't be decomposed, so it keeps label-then-branch order.
+    // The branch becomes a dropdown when the share offers more than one.
+    const defaultLabel = meta.project && meta.label === meta.project + " / " + meta.prototype;
+    const branchShown = viewBranch || meta.branch;
+    const branchEl = meta.branch ? html`<span className="sv-brand-sub sv-brand-branch" title=${"git branch: " + branchShown}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>
+      </svg>${(meta.branches || []).length > 1 ? html`<select
+          className="sv-branch-select" value=${branchShown}
+          title="Review another branch's committed version - the owner's checkout is untouched"
+          onChange=${(e) => onPickBranch(e.target.value)}>
+          ${meta.branches.map((b) => html`<option key=${b} value=${b}>${b}</option>`)}
+        </select><svg className="sv-branch-caret" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 9l6 6 6-6"/>
+        </svg>` : branchShown}</span>` : null;
 
     // Clamp composer near its pin inside the stage.
     const composerStyle = draft ? {
@@ -814,11 +859,12 @@
             <svg width="16" height="16" viewBox="0 0 834 865" fill="#1c1c1e" aria-hidden="true">
               <path d="M164.411 285.641C196.359 284.677 230.639 291.674 258.864 305.701C275.286 313.727 290.065 324.404 302.52 337.239C341.158 377.583 361.371 447.312 378.116 498.308C388.132 482.744 399.684 467.642 409.951 452.186C412.242 448.739 414.925 444.943 417.595 441.774C431.351 459.34 443.577 480.938 457.207 498.242C472.875 448.395 490.877 391.963 523.907 349.544C579.307 278.402 700.654 264.845 774.789 317.785C806.94 340.863 827.783 375.104 832.598 412.756C843.943 495.181 782.673 564.588 695.92 574.484C644.003 580.405 591.842 563.575 548.833 536.139C539.957 530.476 537.74 518.741 543.151 509.709C548.815 500.254 561.262 497.253 570.658 503.014C601.126 521.693 634.227 536.411 671.754 536.037C705.405 535.7 737.72 524.768 761.424 502.003C781.4 482.798 792.329 456.906 791.766 430.103C791.184 402.032 779.11 377.683 757.679 358.122C705.931 310.886 611.818 317.258 563.019 365.51C553.686 374.887 545.719 385.378 539.322 396.709C524.787 421.893 514.739 451.179 504.773 478.261C499.913 491.473 494.674 506.261 491.301 519.841C489.776 525.958 489.826 533.047 489.985 539.289C493.054 556.978 502.4 565.69 510.272 582.07C534.621 632.717 554.85 688.575 544.486 744.747C537.215 784.135 519.592 821.978 483.663 845.418C457.84 862.041 426.03 868.39 395.209 863.072C363.919 857.517 336.291 840.509 318.457 815.814C307.872 801.34 301.629 787.115 295.942 770.657C275.203 710.66 291.644 652.082 318.36 596.153C322.081 588.342 326.05 580.644 330.262 573.052C340.062 555.493 348.796 545.91 344.696 524.508C342.606 513.599 339.127 503.14 335.6 492.533C322.683 453.678 309.302 413.312 284.963 379.2C243.189 321.492 147.774 309.019 88.4573 349.581C64.3919 366.037 48.2945 389.328 43.7834 417.025C39.4073 443.486 46.4486 470.485 63.3567 492.083C93.1026 529.784 142.471 541.77 190.296 534.226C217.38 529.955 240.84 518.044 262.986 503.814C272.662 497.595 285.65 500.284 291.593 510.132C296.878 518.889 294.7 530.302 286.062 535.779C215.211 580.708 114.661 593.303 48.261 536.056C19.1106 510.632 1.8151 475.501 0.113512 438.245C-1.43994 398.716 12.9754 362.821 41.8772 333.94C73.8144 302.026 118.587 287.315 164.411 285.641ZM416.722 512.527C379.203 567.165 343.362 618.778 329.984 683.963C318.364 740.591 343.994 824.697 418.027 824.976C479.127 823.074 509.74 757.077 506.74 707.2C503.171 647.807 469.774 589.865 436.743 540.45C433.377 535.493 419.886 515.43 416.722 512.527ZM409.73 0.675811C437.369 -2.92606 472.166 8.29862 493.776 24.1416C524.015 46.3095 543.194 80.7427 547.699 116.211C561.045 221.334 486.296 312.27 421.665 390.357L417.78 394.772C405.573 381.446 392.688 364.92 381.071 350.798C336.182 296.042 296.156 233.386 287.029 163.654C279.36 105.059 308.709 39.0645 366.61 11.6826C380.614 5.06005 394.208 2.19545 409.73 0.675811ZM508.772 125.402C503.305 78.2536 464.224 35.4344 409.775 40.9278C348.153 48.2369 319.059 107.407 326.737 160.33C336.002 224.199 376.222 281.983 417.501 331.837L421.652 326.068C465.597 272.347 517.023 196.544 508.772 125.402Z"/>
             </svg>
-            <span className="sv-brand-label">${meta.label}</span>
-            ${meta.branch && html`<span className="sv-brand-sub sv-brand-branch" title=${"git branch: " + meta.branch}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>
-              </svg>${meta.branch}</span>`}
+            ${defaultLabel ? html`
+              <span className="sv-brand-label">${meta.project}</span>
+              ${branchEl}
+              <span className="sv-brand-label sv-brand-proto">/ ${meta.prototype}</span>` : html`
+              <span className="sv-brand-label">${meta.label}</span>
+              ${branchEl}`}
             <span className="sv-brand-sub">· shared for review</span>
           </span>
           <span className="sv-topbar-spacer"></span>

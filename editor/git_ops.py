@@ -971,6 +971,34 @@ def meta_links_push(root, text, parent_sha="", token=None):
     return code == 0
 
 
+def show_bytes_at_ref(root, ref, rel):
+    """Raw bytes of a tracked file at a ref (None when the ref or path doesn't
+    exist). Binary-safe sibling of show_at_ref - feeds the share gate's
+    branch-scoped file serving, where images/fonts must survive undecoded."""
+    if not is_repo(root) or not (ref or "").strip() or not (rel or "").strip():
+        return None
+    try:
+        p = subprocess.run(
+            ["git", "show", "{}:{}".format(ref.strip(), rel.strip())],
+            cwd=root, capture_output=True, timeout=30)
+    except Exception:
+        return None
+    return p.stdout if p.returncode == 0 else None
+
+
+def branches_with_path(root, rel):
+    """Local branch names whose COMMITTED tree contains `rel` (a directory),
+    newest-committed first. Feeds the share viewer's branch picker - only
+    branches that actually have the shared prototype are offered."""
+    out = []
+    for b in branches(root).get("branches") or []:
+        name = b.get("name") or ""
+        code, o, _e = _git(root, "ls-tree", "-d", name, rel)
+        if code == 0 and o.strip():
+            out.append(name)
+    return out
+
+
 def merge_base(root, a, b):
     """Common-ancestor sha of two refs ('' when unrelated or unknown)."""
     if not is_repo(root) or not (a or "").strip() or not (b or "").strip():
