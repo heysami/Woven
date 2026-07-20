@@ -11489,6 +11489,7 @@ function ShareMenuButton() {
   const [tab, setTab] = useState("protos");
   const [data, setData] = useState(null);    // /__shares: { shares, cloudflared, woven }
   const [nodes, setNodes] = useState([]);    // /__workflow nodes
+  const [teamLinks, setTeamLinks] = useState(null); // /__share_links: git-synced contributor links
   const [reachable, setReachable] = useState(true);
   const [busy, setBusy] = useState({});
   const [err, flashErr] = useFlash();
@@ -11518,6 +11519,16 @@ function ShareMenuButton() {
       .then(j => { if (j) setNodes(Array.isArray(j.nodes) ? j.nodes : []); })
       .catch(() => {});
   }, []);
+  // Contributors' stable links from the project's git-synced registry
+  // (share/links.json - see GET /__share_links). Refreshed with the node
+  // list while the dropdown is open; a teammate's new link shows up after
+  // their commit reaches this machine via pull.
+  const reloadTeamLinks = useCallback(() => {
+    fetch(apiUrl("/__share_links"))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j) setTeamLinks(j); })
+      .catch(() => {});
+  }, []);
 
   // Lightweight always-on poll so the button's live indicator stays current.
   useEffect(() => {
@@ -11525,13 +11536,15 @@ function ShareMenuButton() {
     const t = setInterval(reloadShares, 4000);
     return () => clearInterval(t);
   }, [reloadShares]);
-  // The node list only matters while the dropdown is open.
+  // The node list (and the contributor-link registry) only matter while the
+  // dropdown is open.
   useEffect(() => {
     if (!open) return;
     reloadNodes();
-    const t = setInterval(reloadNodes, 6000);
+    reloadTeamLinks();
+    const t = setInterval(() => { reloadNodes(); reloadTeamLinks(); }, 6000);
     return () => clearInterval(t);
-  }, [open, reloadNodes]);
+  }, [open, reloadNodes, reloadTeamLinks]);
 
   // Close on outside click / Esc. A ui dialog (e.g. the hosting-passcode
   // prompt) portals to document.body, so it reads as "outside" - interacting
@@ -11628,6 +11641,11 @@ function ShareMenuButton() {
   const assetNodes = nodes.filter(n => n.kind === "asset" && !VISUAL_SKIP.has(n.assetKind));
   const labelOf = (n) => n.label || n.title || shareSlugForNode(n) || n.id;
   const shareForSlug = (slug) => shares.find(s => s.prototype === slug) || null;
+  // Teammates' stable links from the git-synced registry. This install's own
+  // entries are already managed by the share rows above - only OTHER
+  // contributors' links render in the read-only section.
+  const teamOthers = ((teamLinks && teamLinks.links) || [])
+    .filter(e => e && e.url && e.install !== (teamLinks && teamLinks.installId));
   // The on-disk file backing an asset node (active version's canonical path,
   // else node.path) - the same resolution WorkflowAssetNode uses for capture.
   const assetPath = (n) => {
@@ -11874,6 +11892,29 @@ function ShareMenuButton() {
                   </div>
                 </div>`;
             })}
+            ${teamOthers.length > 0 && html`
+              <div className="share-team-head">From contributors</div>
+              ${teamOthers.map(e => html`
+                <div className="share-item" key=${e.key}>
+                  <div className="share-item-head">
+                    <span className="share-item-glyph"><${Icon.User}/></span>
+                    <span className="share-item-label" title=${e.url}>${e.label || e.prototype}</span>
+                    <span className="share-team-owner">
+                      ${e.owner || "contributor"}${e.hosted ? " · hosted" : ""}
+                    </span>
+                  </div>
+                  <div className="share-item-actions">
+                    <button className="share-act-btn" title=${e.url}
+                      onClick=${() => copy(e.key, e.url)}>
+                      <${copiedId === e.key ? Icon.Check : Icon.Copy}/> ${copiedId === e.key ? "Copied" : "Copy link"}
+                    </button>
+                    <button className="share-act-btn" title="Open in a new tab"
+                      onClick=${() => window.open(e.url, "_blank", "noopener")}>
+                      <${Icon.External}/> Open
+                    </button>
+                  </div>
+                </div>`)}
+            `}
           </div>
         `}
         ${tab === "assets" && html`

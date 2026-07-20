@@ -5681,6 +5681,22 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   white-space: nowrap;
 }
 .share-item-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Contributors' links (git-synced registry) - read-only rows under the
+   project's own share rows in the Share menu. */
+.share-team-head {
+  margin-top: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.share-team-owner {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 .share-act-btn {
   display: inline-flex;
   align-items: center;

@@ -166,6 +166,7 @@ _GITIGNORE_LOCAL = [
 # then resolves it semantically (see _autoresolve_comments_conflict).
 _GITATTRIBUTES_LOCAL = [
     "share/comments.json merge=binary",
+    "share/links.json merge=binary",
 ]
 
 
@@ -307,24 +308,34 @@ _GIT_INFLIGHT_TTL = 600   # seconds; a flag older than this is considered stale
 # auto-resolve it semantically instead of sending it to the agent-assisted
 # resolve flow.
 _SHARE_COMMENTS_REL = "share/comments.json"
+# Contributor share-link registry - same sync-through-git + mechanical-merge
+# treatment as comments (see shares.publish_project_links / links_merge_texts).
+_SHARE_LINKS_REL = "share/links.json"
 
 
 def _autoresolve_comments_conflict(root, res):
     """After a pull / branch-merge that reported conflicts, semantically merge
     share/comments.json (union by comment id - shares.comments_merge_texts)
-    and stage it. When the comments file was the ONLY conflict the merge is
-    concluded and the op reports clean; other conflicted paths still flow to
-    the agent-assisted resolve flow. Best-effort: on any failure the original
-    result (comments listed as conflicted) passes through unchanged."""
+    and share/links.json (union by entry key - shares.links_merge_texts) and
+    stage them. When those were the ONLY conflicts the merge is concluded and
+    the op reports clean; other conflicted paths still flow to the
+    agent-assisted resolve flow. Best-effort: on any failure the original
+    result (files listed as conflicted) passes through unchanged."""
     try:
-        if _SHARE_COMMENTS_REL not in (res.get("conflicts") or []):
+        conflicts = list(res.get("conflicts") or [])
+        handled = False
+        for rel, merge_fn in ((_SHARE_COMMENTS_REL, _shares.comments_merge_texts),
+                              (_SHARE_LINKS_REL, _shares.links_merge_texts)):
+            if rel not in conflicts:
+                continue
+            merged = merge_fn(
+                _gitops.conflict_stage_text(root, rel, 1),
+                _gitops.conflict_stage_text(root, rel, 2),
+                _gitops.conflict_stage_text(root, rel, 3))
+            _gitops.resolve_conflict_file(root, rel, json.dumps(merged, indent=2))
+            handled = True
+        if not handled:
             return res
-        merged = _shares.comments_merge_texts(
-            _gitops.conflict_stage_text(root, _SHARE_COMMENTS_REL, 1),
-            _gitops.conflict_stage_text(root, _SHARE_COMMENTS_REL, 2),
-            _gitops.conflict_stage_text(root, _SHARE_COMMENTS_REL, 3))
-        _gitops.resolve_conflict_file(root, _SHARE_COMMENTS_REL,
-                                      json.dumps(merged, indent=2))
         remaining = _gitops.conflicted_files(root)
         if not remaining:
             _gitops.conclude_merge_if_resolved(root)
@@ -394,6 +405,67 @@ def _carry_comments_across_switch(root, prev_branch, new_branch):
         if want:
             _gitops.restore_paths_from_ref(root, prev, want)
         return changed or bool(want)
+    except Exception:
+        return False
+
+
+def _merge_links_into_tree(root, ours_text, base_text):
+    """3-way merge a share/links.json snapshot (`ours_text`, taken before a
+    tree-rewriting git op) over whatever the op left in the working tree, and
+    write the union back. Same mechanics as the comments carry, minus binary
+    sidecars. Returns True when the file changed. Never raises."""
+    try:
+        if not (ours_text or "").strip():
+            return False
+        path = os.path.join(root, _SHARE_LINKS_REL)
+        theirs = ""
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                theirs = f.read()
+        except OSError:
+            pass
+        merged = _shares.links_merge_texts(base_text or "", ours_text, theirs)
+        try:
+            cur = json.loads(theirs or "null")
+        except Exception:
+            cur = None
+        if json.dumps(cur, sort_keys=True) == json.dumps(merged, sort_keys=True):
+            return False
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(merged, f, indent=2)
+        os.replace(tmp, path)
+        return True
+    except Exception:
+        return False
+
+
+def _carry_links_across_switch(root, prev_branch, new_branch):
+    """Contributor share links are project-wide, not branch-scoped - carry the
+    union across a branch switch exactly like comments, so a switch never
+    'replaces' teammates' links with the target branch's stale snapshot."""
+    try:
+        prev = (prev_branch or "").strip()
+        new = (new_branch or "").strip()
+        if not prev or prev == "HEAD" or prev == new:
+            return False
+        ours = _gitops.show_at_ref(root, prev, _SHARE_LINKS_REL)
+        base_sha = _gitops.merge_base(root, prev, "HEAD")
+        base = _gitops.show_at_ref(root, base_sha, _SHARE_LINKS_REL) if base_sha else ""
+        return _merge_links_into_tree(root, ours, base)
+    except Exception:
+        return False
+
+
+def _carry_links_after_reset(root, prev_head, snap_text):
+    """After a discard rewrote the tree, merge the pre-discard link registry
+    back over the reset one - teammates' entries are other people's data, the
+    same argument that protects comments through a discard."""
+    try:
+        base_sha = _gitops.merge_base(root, prev_head, "HEAD") if prev_head else ""
+        base = _gitops.show_at_ref(root, base_sha, _SHARE_LINKS_REL) if base_sha else ""
+        return _merge_links_into_tree(root, snap_text, base)
     except Exception:
         return False
 
@@ -11697,6 +11769,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._export_check_name(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__shares":
             return self._shares_list()
+
+        if url_path == "/__share_links":
+            return self._share_links_get(qs)
         if url_path == "/__usertesting":
             return self._usertesting_list(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__user_testing_config":
@@ -19956,6 +20031,20 @@ class H(http.server.SimpleHTTPRequestHandler):
                             "baseUrl":   _shares.woven_base_url()},
         })
 
+    # GET /__share_links?project=<id> - the project's git-tracked contributor
+    # link registry (share/links.json): every collaborator's STABLE links
+    # (woven tunnel / hosted snapshot), synced through the repo like comments.
+    # installId lets the client split "yours" (managed via /__shares) from
+    # "from contributors" (read-only rows).
+    def _share_links_get(self, qs):
+        pid = (_qs_get(qs, "project") or "").strip()
+        if not pid:
+            return self._reply(400, {"error": "project required"})
+        try:
+            return self._reply(200, _shares.links_list(pid))
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
+
     # ════════════════════════════════════════════════════════════════════
     # User Testing mode - session recording + review + insights.
     # Registry/artifacts live in editor/usertesting.py; the visitor-facing
@@ -21141,12 +21230,19 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # along with the user's own unsaved edits (see
                 # _snapshot_comments_for_carry / _carry_comments_after_reset).
                 comments_snap = _snapshot_comments_for_carry(root)
+                links_snap = ""
+                try:
+                    with open(os.path.join(root, _SHARE_LINKS_REL), "r", encoding="utf-8") as f:
+                        links_snap = f.read()
+                except OSError:
+                    pass
                 prev_head = _gitops.head_sha(root)
                 if op == "discard-local":
                     res = _gitops.discard_local(root)
                 else:
                     tok = body.get("token") or _gitops.host_token()
                     res = _gitops.discard_to_remote(root, token=tok)
+                _carry_links_after_reset(root, prev_head, links_snap)
                 if _carry_comments_after_reset(root, prev_head, comments_snap):
                     res = dict(res)
                     res["commentsCarried"] = True
@@ -21190,6 +21286,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                     # union across so switching never "replaces" them with the
                     # target branch's stale snapshot (see
                     # _carry_comments_across_switch).
+                    if res.get("ok"):
+                        _carry_links_across_switch(root, prev_branch,
+                                                   res.get("branch") or "")
                     if res.get("ok") and _carry_comments_across_switch(
                             root, prev_branch, res.get("branch") or ""):
                         res = dict(res)
@@ -21452,6 +21551,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                 patch["label"] = body["label"].strip()[:120]
             if patch:
                 _shares.share_update(share_id, patch)
+                # The contributor link registry carries the label - keep the
+                # git-tracked copy in step (best-effort).
+                if "label" in patch:
+                    try:
+                        _shares.publish_project_links(rec.get("project") or "")
+                    except Exception:
+                        pass
             # Toggling the stable / randomised links independently (a share can
             # carry BOTH). Provisioning/spawning a tunnel can fail - surface it.
             if isinstance(body, dict) and ("quickOn" in body or "wovenOn" in body):

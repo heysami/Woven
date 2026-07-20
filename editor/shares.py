@@ -258,6 +258,12 @@ def share_delete(share_id):
                     threading.Thread(target=_hosted_delete_worker,
                                      args=(rec.get("token") or "",),
                                      daemon=True, name="hosted-delete").start()
+                # Drop the deleted share's entry from the git-tracked
+                # contributor registry too (best-effort).
+                try:
+                    publish_project_links(rec.get("project") or "")
+                except Exception:
+                    pass
             return True
     return False
 
@@ -464,6 +470,12 @@ def set_modes(share_id, *, quick=None, woven=None, user_refresh=False):
         share_update(share_id, {"lastStartedAt": _now_iso()})
     elif _woven_active_count() == 0:
         _woven_tunnel_stop()
+    # Mirror the new stable-link state into the project's git-tracked
+    # contributor registry (best-effort - never fails the toggle).
+    try:
+        publish_project_links(rec.get("project") or "")
+    except Exception:
+        pass
     return share_get(share_id)
 
 
@@ -1199,6 +1211,12 @@ def set_hosted(share_id, on, passcode=None):
             _HOSTED_JOBS.pop(share_id, None)
         threading.Thread(target=_hosted_delete_worker, args=(token,),
                          daemon=True, name="hosted-delete").start()
+    # Mirror the new hosted state into the project's git-tracked contributor
+    # registry (best-effort - never fails the toggle).
+    try:
+        publish_project_links(rec.get("project") or "")
+    except Exception:
+        pass
     return share_get(share_id)
 
 
@@ -2520,3 +2538,159 @@ def share_summary(rec):
 
 def shares_summary_all():
     return [share_summary(s) for s in shares_load().get("shares", [])]
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# 4. Contributor link registry - share/links.json (git-tracked)
+#
+# shares.json is per-install, so a collaborator has no way to see the links
+# a teammate published. This registry fixes that: each install writes its
+# OWN stable links (woven tunnel + hosted snapshot - never the randomised
+# quick URLs, which rotate on every restart) for a project into
+# <project_root>/share/links.json, which rides git like comments.json does.
+# Visibility is therefore contributors-only for free: you can read the file
+# exactly because you can pull the repo.
+#
+# Merge discipline mirrors comments: entries are keyed <install>:<prototype>
+# and only ever written by their owner install, so the 3-way merge is fully
+# mechanical (newest updatedAt wins; a deletion after the merge base wins
+# over the stale copy). serve.py pins merge=binary and auto-resolves through
+# links_merge_texts, same as comments.
+# ═════════════════════════════════════════════════════════════════════════
+
+_SHARE_LINKS_REL = "share/links.json"
+_LINKS_LOCK = threading.Lock()
+
+
+def _links_of_text(text):
+    """Parse a links.json body defensively - list of valid entry dicts."""
+    try:
+        d = json.loads(text or "null")
+    except Exception:
+        return []
+    if not isinstance(d, dict) or not isinstance(d.get("links"), list):
+        return []
+    return [e for e in d["links"]
+            if isinstance(e, dict) and e.get("key") and e.get("url")]
+
+
+def links_load(project_root):
+    try:
+        with open(os.path.join(project_root, _SHARE_LINKS_REL), "r", encoding="utf-8") as f:
+            return {"links": _links_of_text(f.read())}
+    except OSError:
+        return {"links": []}
+
+
+def links_merge_texts(base_text, ours_text, theirs_text):
+    """Semantic 3-way merge of links.json sides, same contract as
+    comments_merge_texts. Only an entry's owner install ever rewrites it, so
+    per key: present on both sides → newest updatedAt wins; present on one
+    side only → it survives only when it changed AFTER the merge base
+    (otherwise the other side deleted it and the deletion wins)."""
+    base   = dict((e["key"], e) for e in _links_of_text(base_text))
+    ours   = dict((e["key"], e) for e in _links_of_text(ours_text))
+    theirs = dict((e["key"], e) for e in _links_of_text(theirs_text))
+    merged = []
+    for key in sorted(set(ours) | set(theirs)):
+        o, t, b = ours.get(key), theirs.get(key), base.get(key)
+        if o is not None and t is not None:
+            merged.append(o if (o.get("updatedAt") or "") >= (t.get("updatedAt") or "") else t)
+            continue
+        side = o if o is not None else t
+        if b is None:
+            merged.append(side)                       # new on one side
+        elif (side.get("updatedAt") or "") > (b.get("updatedAt") or ""):
+            merged.append(side)                       # edited after base - beats the stale delete
+        # else: deleted on the other side after base - deletion wins
+    return {"links": merged}
+
+
+def _git_user_name(project_root):
+    """Friendly owner label for this install's entries - best-effort."""
+    try:
+        out = subprocess.run(["git", "config", "user.name"], cwd=project_root,
+                             capture_output=True, text=True, timeout=5)
+        return (out.stdout or "").strip()[:80]
+    except Exception:
+        return ""
+
+
+def _own_link_entries(project, project_root):
+    """This install's publishable entries for `project`, built fresh from
+    shares.json. Stable links only: the woven tunnel URL and/or the hosted
+    snapshot share the same permanent hostname; quick URLs never qualify."""
+    base = woven_base_url()
+    if not base:
+        return []
+    iid = woven_install_id()
+    owner = _git_user_name(project_root)
+    out = []
+    for s in shares_load().get("shares", []):
+        if s.get("project") != project or s.get("liveOnly"):
+            continue
+        woven = share_modes(s)["woven"]
+        hosted = share_hosted_on(s)
+        if not (woven or hosted):
+            continue
+        out.append({
+            "key":       iid + ":" + (s.get("prototype") or ""),
+            "install":   iid,
+            "owner":     owner,
+            "prototype": s.get("prototype") or "",
+            "label":     s.get("label") or "",
+            "url":       base.rstrip("/") + "/s/" + (s.get("token") or "") + "/",
+            "hosted":    hosted,
+            "live":      woven,
+            "updatedAt": _now_iso(),
+        })
+    return out
+
+
+def publish_project_links(project):
+    """Rebuild THIS install's entries in <project>/share/links.json, leaving
+    every other install's entries untouched. Idempotent and churn-free: an
+    unchanged entry keeps its old updatedAt so the tree only dirties when a
+    link really appeared, changed, or went away. Returns True on file change.
+    Callers treat this as best-effort - registry visibility must never fail
+    a share operation."""
+    try:
+        root = _RESOLVE_PROJECT_ROOT(project or "")
+    except Exception:
+        return False
+    with _LINKS_LOCK:
+        path = os.path.join(root, _SHARE_LINKS_REL)
+        cur = links_load(root)["links"]
+        iid = woven_install_id()
+        others = [e for e in cur if e.get("install") != iid]
+        prev = dict((e.get("key"), e) for e in cur if e.get("install") == iid)
+        mine = []
+        for e in _own_link_entries(project, root):
+            old = prev.get(e["key"])
+            if old is not None and all(old.get(k) == e.get(k) for k in
+                                       ("owner", "prototype", "label", "url", "hosted", "live")):
+                e = old                                # unchanged - keep timestamp
+            mine.append(e)
+        merged = sorted(others + mine,
+                        key=lambda e: (e.get("prototype") or "", e.get("install") or ""))
+        cur_sorted = sorted(cur, key=lambda e: (e.get("prototype") or "", e.get("install") or ""))
+        if json.dumps(merged, sort_keys=True) == json.dumps(cur_sorted, sort_keys=True):
+            return False
+        if not merged and not os.path.isfile(path):
+            return False                               # nothing to say - don't mint the file
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"links": merged}, f, indent=2)
+        os.replace(tmp, path)
+        return True
+
+
+def links_list(project):
+    """Registry read for the editor UI: every contributor's stable links for
+    `project` plus this install's id so the client can split mine/theirs."""
+    try:
+        root = _RESOLVE_PROJECT_ROOT(project or "")
+    except Exception:
+        return {"links": [], "installId": ""}
+    return {"links": links_load(root)["links"], "installId": woven_install_id()}
