@@ -213,6 +213,31 @@ def test_carry():
     assert serve._carry_links_after_reset(root, prev_head, links_snap), "carry reports change"
     assert read_installs() == ["A", "B", "C"], "entry survives discard"
 
+    # ── share-metadata dirt must not block a switch (the reported bug:
+    # "comments seem to be considered as git now, i can't switch without
+    # committing"). The guard splits share-meta dirt from real dirt; the
+    # snapshot + revert_paths + after-reset carry sequence the handler runs
+    # must leave the union on the target branch.
+    meta, other = serve._split_share_meta_dirt(root)
+    assert [r for _xy, r in meta] == ["share/links.json"], "links dirt is share-meta"
+    assert other == [], "no real dirt"
+    snap_text = serve._share_links_text(root)
+    prev_head = G.head_sha(root)
+    G.revert_paths(root, meta)
+    assert read_installs() == ["A", "B"], "revert cleared the uncommitted entry"
+    st = G.status(root)
+    assert not st["dirty"], "tree clean for the switch"
+    res = G.switch_branch(root, "explore")
+    assert res.get("ok")
+    serve._carry_links_after_reset(root, prev_head, snap_text)
+    assert "C" in read_installs(), "uncommitted entry carried onto the target branch"
+
+    # a REAL dirty file still counts as blocking dirt
+    with open(os.path.join(root, "code.txt"), "w") as fh:
+        fh.write("real work")
+    meta, other = serve._split_share_meta_dirt(root)
+    assert other == ["code.txt"], "real work is not share-meta, got %r" % other
+
     shutil.rmtree(root)
 
 

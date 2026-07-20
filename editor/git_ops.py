@@ -857,6 +857,54 @@ def restore_paths_from_ref(root, ref, rels):
     return code == 0
 
 
+def dirty_entries(root):
+    """[(xy, rel)] for every non-clean path. `-uall` so files inside untracked
+    directories are listed individually (a bare dir entry can't be reverted
+    path-by-path). Rename entries keep the NEW side."""
+    if not is_repo(root):
+        return []
+    code, out, _e = _git(root, "status", "--porcelain", "-uall")
+    entries = []
+    if code == 0:
+        for ln in out.splitlines():
+            if not ln.strip():
+                continue
+            xy, rel = ln[:2], ln[3:]
+            if " -> " in rel:
+                rel = rel.split(" -> ", 1)[1]
+            entries.append((xy, rel.strip()))
+    return entries
+
+
+def revert_paths(root, entries):
+    """Clear local changes on exactly these dirty entries: untracked files are
+    deleted, tracked modifications restored from HEAD, staged-new files
+    unstaged then removed. Callers SNAPSHOT the content first - this exists so
+    a tree-touching op (switch / merge / pull) can run on mechanically-merged
+    files (share metadata) whose content is put back by a carry afterwards."""
+    for xy, rel in entries or []:
+        rel = (rel or "").strip()
+        if not rel:
+            continue
+        p = os.path.join(root, rel)
+        if xy == "??":
+            try:
+                if os.path.isfile(p):
+                    os.remove(p)
+            except OSError:
+                pass
+            continue
+        _git(root, "reset", "-q", "HEAD", "--", rel)
+        code, _o, _e = _git(root, "checkout", "--", rel)
+        if code != 0 and os.path.isfile(p):
+            # Not in HEAD (was staged-new) - clearing means removing.
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+    return True
+
+
 # ═════════════════════════════════════════════════════════════════════════
 # LOCAL - diff / compare (read-only; powers the panel's compare view)
 # ═════════════════════════════════════════════════════════════════════════

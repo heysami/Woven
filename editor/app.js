@@ -12593,12 +12593,14 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
   };
   const doSwitchBranch = async (name) => {
     if (name === curBranch) return;
-    if (st && st.dirty) { flashErr("Commit or discard changes before switching branches"); return; }
+    // Share metadata (review comments / contributor links) is carried across
+    // the switch server-side - only the user's own work blocks it.
+    if (st && st.dirty && !st.dirtyShareMetaOnly) { flashErr("Commit or discard changes before switching branches"); return; }
     const j = await op("branch-switch", { name });
     if (j) { flashNote("Switched to " + (j.branch || name)); msgTouched.current = false; reload(); }
   };
   const doMergeBranch = async (name) => {
-    if (st && st.dirty) { flashErr("Commit or discard changes before merging"); return; }
+    if (st && st.dirty && !st.dirtyShareMetaOnly) { flashErr("Commit or discard changes before merging"); return; }
     if (!(await uiConfirm("Merge '" + name + "' into '" + curBranch + "'?"))) return;
     const j = await op("branch-merge", { name });
     if (j) {
@@ -12854,8 +12856,11 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
           <div className="th-git-status">
             <div className="th-git-stat-row">
               ${st.dirty
-                ? html`<button className="th-git-pill th-git-pill-btn" onClick=${() => openDiff({ kind: "working" }, "Uncommitted changes")}
-                    title="See everything changed since your last commit">${st.changedCount} changed ↗</button>`
+                ? (st.dirtyShareMetaOnly
+                  ? html`<button className="th-git-pill th-git-pill-btn" onClick=${() => openDiff({ kind: "working" }, "Review data")}
+                      title="Only review data changed (comments and contributors' share links). It syncs with your next commit and never blocks switching, merging, or pulling.">review data ↗</button>`
+                  : html`<button className="th-git-pill th-git-pill-btn" onClick=${() => openDiff({ kind: "working" }, "Uncommitted changes")}
+                      title="See everything changed since your last commit">${st.changedCount} changed ↗</button>`)
                 : html`<span className="th-git-pill">clean</span>`}
               ${st.ahead > 0 && html`<span className="th-git-pill is-ahead">↑ ${st.ahead}</span>`}
               ${st.behind > 0 && html`<span className="th-git-pill is-behind">↓ ${st.behind}</span>`}

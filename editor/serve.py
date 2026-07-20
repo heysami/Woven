@@ -409,6 +409,31 @@ def _carry_comments_across_switch(root, prev_branch, new_branch):
         return False
 
 
+def _split_share_meta_dirt(root):
+    """Split the working tree's dirt into (share_meta_entries, other_rels).
+    Share metadata - review comments, their screenshots/attachments, and the
+    contributor link registry - merges mechanically and is carried across
+    every tree-rewriting git op, so it must NEVER block switch/merge/pull
+    the way real uncommitted work does. other_rels is what the guards 409 on."""
+    meta, other = [], []
+    for xy, rel in _gitops.dirty_entries(root):
+        if rel in (_SHARE_COMMENTS_REL, _SHARE_LINKS_REL) or \
+           rel.startswith(("share/comment-shots/", "share/comment-attach/")):
+            meta.append((xy, rel))
+        else:
+            other.append(rel)
+    return meta, other
+
+
+def _share_links_text(root):
+    """Raw share/links.json text for snapshot-then-carry flows ('' if none)."""
+    try:
+        with open(os.path.join(root, _SHARE_LINKS_REL), "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
 def _merge_links_into_tree(root, ours_text, base_text):
     """3-way merge a share/links.json snapshot (`ours_text`, taken before a
     tree-rewriting git op) over whatever the op left in the working tree, and
@@ -20778,6 +20803,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                             _GIT_INFLIGHT.pop(root, None)
         try:
             st = _gitops.status(root)
+            # True when the ONLY dirt is share metadata (review comments /
+            # contributor links / their images). The panel presents that as
+            # review data that syncs with the next commit - not as the user's
+            # own uncommitted work - and none of the git ops block on it.
+            def _is_share_meta(rel):
+                return (rel in ("share/", _SHARE_COMMENTS_REL, _SHARE_LINKS_REL)
+                        or rel.startswith(("share/comment-shots/", "share/comment-attach/")))
+            st["dirtyShareMetaOnly"] = (bool(st.get("dirty"))
+                                        and all(_is_share_meta(r) for r in st.get("changed") or []))
             st["draftMessage"] = _gitops.draft_message(root) if st.get("repo") else ""
             st["githubConfigured"] = _gitops.oauth_configured()
             st["gitAvailable"] = _gitops.git_available()
@@ -21238,7 +21272,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 st = _gitops.status(root)
                 if not st.get("repo"):
                     return self._reply(400, {"error": "project is not a git repo - connect it first"})
-                if st.get("dirty"):
+                meta_dirty, other_dirty = _split_share_meta_dirt(root)
+                if other_dirty:
                     return self._reply(409, {"error": "working tree has uncommitted changes - commit them before pulling"})
                 if pid and _live.project_has_live_session(pid):
                     return self._reply(409, {"error": "a live session is active - end it before pulling remote changes"})
@@ -21254,11 +21289,29 @@ class H(http.server.SimpleHTTPRequestHandler):
                                   f"the repo is v{remote_v}. Update the older Woven before pulling."),
                         "versionMismatch": True, "syncVersion": WOVEN_SYNC_VERSION,
                         "remoteSyncVersion": remote_v})
+                # Share-metadata dirt (comments / links) never blocks a pull:
+                # snapshot it, clear it so git can rewrite the tree, pull,
+                # then 3-way union the snapshot back over the merged result.
+                comments_snap = links_snap = None
+                prev_head = ""
+                if meta_dirty:
+                    comments_snap = _snapshot_comments_for_carry(root)
+                    links_snap = _share_links_text(root)
+                    prev_head = _gitops.head_sha(root)
+                    _gitops.revert_paths(root, meta_dirty)
                 res = _gitops.pull(root, token=tok)
                 # Review comments merge mechanically - resolve their conflict
                 # here instead of surfacing it (see _autoresolve_comments_conflict).
                 if res.get("conflicts"):
                     res = _autoresolve_comments_conflict(root, res)
+                if meta_dirty:
+                    _carry_links_after_reset(root, prev_head, links_snap)
+                    if _carry_comments_after_reset(root, prev_head, comments_snap):
+                        res = dict(res)
+                        res["commentsCarried"] = True
+                        if pid:
+                            try: _broadcast_share_comments_changed(pid, "")
+                            except Exception: pass
                 # Surface the merged state to the editor (and any guests) exactly
                 # like any other edit, so the canvas reloads to the new HEAD.
                 if pid:
@@ -21325,22 +21378,39 @@ class H(http.server.SimpleHTTPRequestHandler):
                 st = _gitops.status(root)
                 if not st.get("repo"):
                     return self._reply(400, {"error": "project is not a git repo - connect it first"})
-                if st.get("dirty"):
+                # Share-metadata dirt (review comments, contributor links)
+                # merges mechanically and is carried across the op - only
+                # REAL uncommitted work blocks a switch/merge.
+                meta_dirty, other_dirty = _split_share_meta_dirt(root)
+                if other_dirty:
                     return self._reply(409, {"error": "working tree has uncommitted changes - commit or discard them first"})
                 if pid and _live.project_has_live_session(pid):
                     return self._reply(409, {"error": "a live session is active - end it before switching or merging branches"})
+                comments_snap = links_snap = None
+                prev_head = ""
+                if meta_dirty:
+                    comments_snap = _snapshot_comments_for_carry(root)
+                    links_snap = _share_links_text(root)
+                    prev_head = _gitops.head_sha(root)
+                    _gitops.revert_paths(root, meta_dirty)
                 if op == "branch-switch":
                     prev_branch = _gitops.current_branch(root)
                     res = _gitops.switch_branch(root, body.get("name") or "")
                     # Comments are project-wide, not branch-scoped: carry the
                     # union across so switching never "replaces" them with the
-                    # target branch's stale snapshot (see
-                    # _carry_comments_across_switch).
-                    if res.get("ok"):
+                    # target branch's stale snapshot. With uncommitted share
+                    # metadata the snapshot variant carries it (superset of
+                    # the committed state); otherwise the ref-based carry.
+                    carried = False
+                    if res.get("ok") and meta_dirty:
+                        _carry_links_after_reset(root, prev_head, links_snap)
+                        carried = _carry_comments_after_reset(root, prev_head, comments_snap)
+                    elif res.get("ok"):
                         _carry_links_across_switch(root, prev_branch,
                                                    res.get("branch") or "")
-                    if res.get("ok") and _carry_comments_across_switch(
-                            root, prev_branch, res.get("branch") or ""):
+                        carried = _carry_comments_across_switch(
+                            root, prev_branch, res.get("branch") or "")
+                    if carried:
                         res = dict(res)
                         res["commentsCarried"] = True
                         if pid:
@@ -21352,6 +21422,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                     # as pull's (see _autoresolve_comments_conflict).
                     if res.get("conflicts"):
                         res = _autoresolve_comments_conflict(root, res)
+                    if meta_dirty:
+                        _carry_links_after_reset(root, prev_head, links_snap)
+                        if _carry_comments_after_reset(root, prev_head, comments_snap):
+                            res = dict(res)
+                            res["commentsCarried"] = True
+                            if pid:
+                                try: _broadcast_share_comments_changed(pid, "")
+                                except Exception: pass
                 # Reload the canvas (and any guests) to the new HEAD.
                 if pid:
                     try: _broadcast_workflow_change(pid)
