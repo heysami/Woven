@@ -900,6 +900,77 @@ def show_at_ref(root, ref, rel):
     return out if code == 0 else ""
 
 
+# ── Contributor-link sync branch ─────────────────────────────────────────
+# share/links.json rides user branches, which breaks discovery when every
+# contributor works on their own local branch (the registry never lands on a
+# branch a teammate reads). This dedicated branch fixes it: an ORPHAN ref
+# containing exactly one file (links.json) that daemons read/write with
+# plumbing - never checked out, absent from refs/heads listings' UI use
+# (branches() lists local heads; this ref is only ever fetched to
+# refs/woven/), and never touching any working tree.
+_META_LINKS_REF = "refs/heads/woven-share-links"
+_META_LINKS_LOCAL = "refs/woven/share-links"
+
+
+def _origin_auth_url(root, token):
+    """origin URL for network ops, with the one-shot token baked in for https
+    (same never-persisted pattern as pull). None when there is no remote."""
+    code, remote, _e = _git(root, "remote", "get-url", "origin")
+    if code != 0 or not remote.strip():
+        return None
+    r = remote.strip()
+    if token and r.startswith("https://"):
+        return r.replace("https://", "https://x-access-token:{}@".format(token), 1)
+    return r
+
+
+def meta_links_fetch(root, token=None):
+    """Fetch the repo's woven-share-links sync branch. Returns (sha, text) -
+    ("", "") when the branch doesn't exist or the remote is unreachable."""
+    url = _origin_auth_url(root, token)
+    if not url or not is_repo(root):
+        return "", ""
+    code, _o, _e = _git(root, "fetch", "-q", url,
+                        "+{}:{}".format(_META_LINKS_REF, _META_LINKS_LOCAL),
+                        timeout=45)
+    if code != 0:
+        return "", ""
+    _c, sha, _e = _git(root, "rev-parse", _META_LINKS_LOCAL)
+    sha = sha.strip()
+    if _c != 0 or not sha:
+        return "", ""
+    _c, text, _e = _git(root, "show", "{}:links.json".format(_META_LINKS_LOCAL))
+    return sha, (text if _c == 0 else "")
+
+
+def meta_links_push(root, text, parent_sha="", token=None):
+    """Write `text` as the sync branch's links.json and push. `parent_sha` is
+    the fetched tip, so the push stays fast-forward; a rejected push (someone
+    else pushed meanwhile) just returns False and the next sync round
+    re-fetches and re-merges. Builds the commit with plumbing - no checkout,
+    no index, no working-tree involvement."""
+    url = _origin_auth_url(root, token)
+    if not url or not is_repo(root):
+        return False
+    code, blob, _e = _git(root, "hash-object", "-w", "--stdin", input_text=text)
+    if code != 0:
+        return False
+    code, tree, _e = _git(root, "mktree",
+                          input_text="100644 blob {}\tlinks.json\n".format(blob.strip()))
+    if code != 0:
+        return False
+    args = ["-c", "user.name=woven", "-c", "user.email=woven@local",
+            "commit-tree", tree.strip(), "-m", "woven share links"]
+    if parent_sha:
+        args += ["-p", parent_sha]
+    code, commit, _e = _git(root, *args)
+    if code != 0:
+        return False
+    code, _o, _e = _git(root, "push", "-q", url,
+                        "{}:{}".format(commit.strip(), _META_LINKS_REF), timeout=45)
+    return code == 0
+
+
 def merge_base(root, a, b):
     """Common-ancestor sha of two refs ('' when unrelated or unknown)."""
     if not is_repo(root) or not (a or "").strip() or not (b or "").strip():

@@ -2759,14 +2759,38 @@ def publish_project_links(project):
         return True
 
 
+def links_cache_path(root):
+    """Branch-independent registry cache, written by serve's meta-branch sync.
+    Lives inside .git/ so it can never dirty the working tree and survives
+    every checkout - the tree file (links.json) is only the legacy/bootstrap
+    channel; this cache is the authoritative cross-branch view."""
+    return os.path.join(root, ".git", "woven-share-links.json")
+
+
+def links_cache_load(root):
+    try:
+        with open(links_cache_path(root), "r", encoding="utf-8") as f:
+            return _links_of_text(f.read())
+    except OSError:
+        return []
+
+
 def links_list(project):
-    """Registry read for the editor UI: every contributor's stable links for
-    `project` plus this install's id so the client can split mine/theirs."""
+    """Registry read for the editor UI + peer comment sync: every
+    contributor's stable links for `project` plus this install's id so the
+    caller can split mine/theirs. Unions the branch-scoped tree file with the
+    meta-branch cache; the cache wins per key (it is the fresher,
+    branch-independent authority)."""
     try:
         root = _RESOLVE_PROJECT_ROOT(project or "")
     except Exception:
         return {"links": [], "installId": ""}
-    return {"links": links_load(root)["links"], "installId": woven_install_id()}
+    merged = dict((e.get("key"), e) for e in links_load(root)["links"])
+    for e in links_cache_load(root):
+        merged[e.get("key")] = e
+    links = sorted(merged.values(),
+                   key=lambda e: (e.get("prototype") or "", e.get("install") or ""))
+    return {"links": links, "installId": woven_install_id()}
 
 
 # ═════════════════════════════════════════════════════════════════════════

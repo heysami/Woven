@@ -4597,6 +4597,59 @@ def _backfill_share_thumbnails() -> None:
 
 
 _PEER_COMMENTS_INTERVAL = 45   # seconds between peer-gate pull rounds
+_LINKS_META_EVERY = 4          # meta-branch link sync every Nth round (~3 min)
+
+
+def _sync_links_meta(root) -> bool:
+    """Branch-independent contributor-link discovery. share/links.json rides
+    user branches, so with every contributor on their own local branch the
+    registry never reaches a teammate (found live: a colleague's links.json
+    sat on origin/sami-branch while this machine read main). This sync moves
+    discovery to a dedicated woven-share-links branch handled entirely with
+    git plumbing: fetch it, overlay THIS install's entries (owner-
+    authoritative - my keys are mine, absent means deleted), cache the merged
+    view inside .git/ (never dirties the tree, survives checkouts), and push
+    when my entries changed the branch. Best-effort on every network step;
+    returns True when the local merged view changed."""
+    try:
+        if not _gitops.is_repo(root):
+            return False
+        tok = None
+        try:
+            tok = (_gitops.host_token() or "") or None
+        except Exception:
+            pass
+        sha, remote_text = _gitops.meta_links_fetch(root, token=tok)
+        iid = _shares.woven_install_id()
+        mine = [e for e in _shares.links_load(root).get("links") or []
+                if e.get("install") == iid]
+        remote = _shares._links_of_text(remote_text)
+        merged = [e for e in remote if e.get("install") != iid] + mine
+        merged.sort(key=lambda e: (e.get("prototype") or "", e.get("install") or ""))
+        merged_text = json.dumps({"links": merged}, indent=2)
+        # Cache the merged view for links_list readers.
+        cpath = _shares.links_cache_path(root)
+        old = ""
+        try:
+            with open(cpath, "r", encoding="utf-8") as f:
+                old = f.read()
+        except OSError:
+            pass
+        changed = old != merged_text
+        if changed:
+            tmp = cpath + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(merged_text)
+            os.replace(tmp, cpath)
+        # Push only when my entries changed what the branch says (compare
+        # normalised) - and only if there is anything to say at all.
+        if (merged or sha) and \
+           json.dumps(_shares._links_of_text(remote_text), sort_keys=True) != \
+           json.dumps(merged, sort_keys=True):
+            _gitops.meta_links_push(root, merged_text, parent_sha=sha, token=tok)
+        return changed
+    except Exception:
+        return False
 
 
 def _peer_comments_loop() -> None:
@@ -4613,6 +4666,7 @@ def _peer_comments_loop() -> None:
         iid = _shares.woven_install_id()
     except Exception:
         iid = ""
+    round_i = 0
     while True:
         try:
             for p in _list_projects():
@@ -4623,7 +4677,12 @@ def _peer_comments_loop() -> None:
                     root = resolve_project_root({"project": pid})
                 except Exception:
                     continue
-                links = _shares.links_load(root).get("links") or []
+                # Periodically reconcile with the branch-independent
+                # woven-share-links branch (fetch teammates' links, publish
+                # mine) - the union below then sees them immediately.
+                if round_i % _LINKS_META_EVERY == 0:
+                    _sync_links_meta(root)
+                links = _shares.links_list(pid).get("links") or []
                 seen = set()
                 changed = False
                 for e in links:
@@ -4643,6 +4702,7 @@ def _peer_comments_loop() -> None:
                         pass
         except Exception:
             pass
+        round_i += 1
         time.sleep(_PEER_COMMENTS_INTERVAL)
 
 
@@ -21775,6 +21835,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 return self._reply(500, {"error": str(e)})
         fresh = _shares.share_get(share_id)
+        # Any share op may have changed this install's published links - push
+        # them to the branch-independent sync branch right away (background;
+        # the periodic loop is the backstop).
+        try:
+            proot = resolve_project_root({"project": rec.get("project")})
+            threading.Thread(target=_sync_links_meta, args=(proot,),
+                             daemon=True, name="links-meta-sync").start()
+        except Exception:
+            pass
         return self._reply(200, {"ok": True,
                                  "share": _shares.share_summary(fresh) if fresh else None})
 
