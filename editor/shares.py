@@ -306,6 +306,137 @@ def shares_remap_prototype(project, old, new):
     return len(changed)
 
 
+# ── Rename ledger - share/renames.json (git-tracked) ─────────────────────
+# A rename only repoints the RENAMING install's records: every install keeps
+# its own shares.json (own tokens), so a peer that hosts the same prototype
+# still points at the dead slug after pulling the renamed repo. The ledger
+# makes renames travel WITH the repo: the renaming install appends
+# {old, new, at, install} here, and every install lazily reconciles its own
+# records against it (share list read, hosted upload) - repointing keeps each
+# install's tokens, so every public URL survives the rename everywhere.
+
+_SHARE_RENAMES_REL = os.path.join("share", "renames.json")
+_RENAMES_LOCK = threading.Lock()
+_RENAMES_CAP = 200
+_RENAME_SLUG_OK = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
+
+
+def _rename_entry_ok(e):
+    if not isinstance(e, dict):
+        return False
+    old, new = e.get("old") or "", e.get("new") or ""
+    # The ledger arrives via git from other installs - validate hard so a
+    # hostile/broken entry can never traverse paths or rename to nonsense.
+    return (bool(_RENAME_SLUG_OK.match(old)) and not old.startswith(".")
+            and bool(_RENAME_SLUG_OK.match(new)) and not new.startswith(".")
+            and old != new)
+
+
+def renames_load(project_root):
+    """Chronological rename entries - defensively parsed (a git merge that
+    baked conflict markers in must degrade to 'best effort', never crash)."""
+    path = os.path.join(project_root, _SHARE_RENAMES_REL)
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = f.read()
+    except OSError:
+        return []
+    entries = None
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict) and isinstance(data.get("renames"), list):
+            entries = data["renames"]
+    except Exception:
+        pass
+    if entries is None:
+        # Conflict markers / partial writes: salvage every {...} object that
+        # parses on its own, in file order.
+        entries = []
+        for m in re.finditer(r"\{[^{}]*\}", raw):
+            try:
+                entries.append(json.loads(m.group(0)))
+            except Exception:
+                continue
+    out = [e for e in entries if _rename_entry_ok(e)]
+    try:
+        out.sort(key=lambda e: e.get("at") or "")
+    except Exception:
+        pass
+    return out[-_RENAMES_CAP:]
+
+
+def record_prototype_rename(project_root, old, new):
+    """Append one rename to the ledger (called by the rename endpoint). The
+    file rides git like comments.json, so peers receive it on pull."""
+    entry = {"old": old, "new": new, "at": _now_iso(),
+             "install": woven_install_id()}
+    if not _rename_entry_ok(entry):
+        return False
+    with _RENAMES_LOCK:
+        entries = renames_load(project_root)
+        entries.append(entry)
+        path = os.path.join(project_root, _SHARE_RENAMES_REL)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"renames": entries[-_RENAMES_CAP:]}, f, indent=2)
+        os.replace(tmp, path)
+    return True
+
+
+def applicable_renames(project_root):
+    """The ledger flattened to terminal (old, new) pairs that are SAFE to
+    apply right now: chains collapse (a→b, b→c ⇒ a→c), and a pair qualifies
+    only when source/<old>/ is gone AND source/<new>/ exists - so an undone
+    rename, an unpulled repo, or a resurrected folder never repoints records
+    out from under a prototype that is still there."""
+    final = {}
+    for e in renames_load(project_root):
+        old, new = e["old"], e["new"]
+        for k, v in list(final.items()):
+            if v == old:
+                final[k] = new
+        final[old] = new
+    out = []
+    for old, new in final.items():
+        if old == new:
+            continue
+        if os.path.isdir(os.path.join(project_root, "source", old)):
+            continue
+        if not os.path.isdir(os.path.join(project_root, "source", new)):
+            continue
+        out.append((old, new))
+    return out
+
+
+def reconcile_renamed_shares(project):
+    """Repoint THIS install's stranded records against the ledger - the lazy,
+    every-install half of the rename story. Cheap no-op when clean. Returns
+    the number of share records changed."""
+    try:
+        root = _RESOLVE_PROJECT_ROOT(project or "")
+    except Exception:
+        return 0
+    changed = 0
+    for old, new in applicable_renames(root):
+        hit = False
+        for rec in shares_load().get("shares", []):
+            cur = rec.get("prototype") or ""
+            if rec.get("project") == project and (cur == old or cur.startswith(old + "/")):
+                hit = True
+                break
+        if hit:
+            changed += shares_remap_prototype(project, old, new)
+    if changed:
+        try:
+            publish_project_links(project)
+        except Exception:
+            pass
+    return changed
+
+
 # ── Thumbnails - one PNG per shared prototype ────────────────────────────
 # Captured by the daemon (headless Chrome) at share-create / start / source
 # change, stored beside the comment store at <project_root>/share/thumb-
@@ -1264,6 +1395,15 @@ def _hosted_upload_worker(share_id):
     rec = share_get(share_id)
     if rec is None:
         return
+    # A peer's rename may have stranded this record on a dead slug (their
+    # rename can only repoint their own shares.json) - reconcile against the
+    # git-tracked ledger before enumerating, so the upload targets the folder
+    # that actually exists and the public URL survives the rename.
+    try:
+        if reconcile_renamed_shares(rec.get("project") or ""):
+            rec = share_get(share_id) or rec
+    except Exception:
+        pass
     tmp = None
     try:
         fd, tmp = tempfile.mkstemp(suffix=".tar.gz", prefix="woven-share-")

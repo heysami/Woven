@@ -311,6 +311,9 @@ _SHARE_COMMENTS_REL = "share/comments.json"
 # Contributor share-link registry - same sync-through-git + mechanical-merge
 # treatment as comments (see shares.publish_project_links / links_merge_texts).
 _SHARE_LINKS_REL = "share/links.json"
+# Rename ledger - travels with the repo so PEER installs can repoint their own
+# share/usertesting records after a prototype rename (see shares.py).
+_SHARE_RENAMES_REL = "share/renames.json"
 
 
 def _autoresolve_comments_conflict(root, res):
@@ -20175,6 +20178,15 @@ class H(http.server.SimpleHTTPRequestHandler):
     # GET /__shares - every share across the workspace with live tunnel
     # status + comment counts. The landing "Shares" tab polls this.
     def _shares_list(self):
+        # Lazily heal records a PEER's rename stranded (see the rename ledger
+        # in shares.py) - stat-level no-op per project when clean, and the
+        # repoint keeps each record's token so its public URL survives.
+        try:
+            for _proj in {s.get("project") or "" for s in _shares.shares_load().get("shares", [])}:
+                if _proj:
+                    _shares.reconcile_renamed_shares(_proj)
+        except Exception:
+            pass
         cf = _shares.find_cloudflared()
         shares = _shares.shares_summary_all()
         for s in shares:
@@ -20220,6 +20232,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         project_id = os.path.basename(project_root.rstrip("/"))
+        # Heal sessions a PEER's rename stranded (same git-tracked ledger the
+        # share records reconcile against) - no-op when clean.
+        try:
+            for _old, _new in _shares.applicable_renames(project_root):
+                _ut.sessions_remap_prototype(project_id, _old, _new)
+        except Exception:
+            pass
         sessions = [_ut.session_summary(s) for s in _ut.sessions_list(project_id)]
         cf = _shares.find_cloudflared()
         # Public base for building /t/ and /r/ links. Stable (woven) base is
@@ -21359,6 +21378,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     if not re.match(r"^[A-Za-z0-9._-]+$", proto) or proto.startswith("."):
                         return self._reply(400, {"error": f"invalid prototype: {proto!r}"})
                     paths = [f"source/{proto}", _SHARE_COMMENTS_REL, _SHARE_LINKS_REL,
+                             _SHARE_RENAMES_REL,
                              "share/comment-shots", "share/comment-attach"]
                 res = _gitops.commit(root, body.get("message"), coauthors=coauthors,
                                      name=body.get("name"), email=body.get("email"),
@@ -22426,6 +22446,16 @@ class H(http.server.SimpleHTTPRequestHandler):
         try:
             if _shares.comments_remap_prototype(project_root, old, new):
                 touched.append("share/comments.json")
+        except Exception:
+            pass
+        # Git-tracked rename ledger: peers' installs keep their OWN
+        # shares.json/usertesting.json (own tokens), which this endpoint can't
+        # reach - the ledger travels with the repo and their daemons lazily
+        # reconcile against it (share list read, hosted upload), keeping every
+        # peer's public URL alive across the rename.
+        try:
+            if _shares.record_prototype_rename(project_root, old, new):
+                touched.append(_SHARE_RENAMES_REL)
         except Exception:
             pass
 
