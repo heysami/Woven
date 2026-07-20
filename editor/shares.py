@@ -386,15 +386,52 @@ def record_prototype_rename(project_root, old, new):
     return True
 
 
+def _git_prototype_renames(project_root):
+    """Prototype-level renames recovered from GIT HISTORY - the belt to the
+    ledger's suspenders. Covers renames the ledger never saw: made by a build
+    that predates it, or on another branch before its ledger entry synced.
+    Parses `git log --diff-filter=R --name-status -- source` R-lines into
+    chronological (oldSlug, newSlug) top-level dir pairs."""
+    try:
+        out = subprocess.run(
+            ["git", "log", "-M", "--diff-filter=R", "--name-status",
+             "-n", "200", "--format=", "--", "source"],
+            cwd=project_root, capture_output=True, text=True, timeout=10)
+        if out.returncode != 0:
+            return []
+    except Exception:
+        return []
+    pairs, seen = [], set()          # emitted newest-first
+    for ln in out.stdout.splitlines():
+        if not ln.startswith("R"):
+            continue
+        parts = ln.split("\t")
+        if len(parts) != 3:
+            continue
+        pa, pb = parts[1].split("/"), parts[2].split("/")
+        if len(pa) < 2 or len(pb) < 2 or pa[0] != "source" or pb[0] != "source":
+            continue
+        old, new = pa[1], pb[1]
+        if (old == new or (old, new) in seen
+                or not _RENAME_SLUG_OK.match(old) or old.startswith(".")
+                or not _RENAME_SLUG_OK.match(new) or new.startswith(".")):
+            continue
+        seen.add((old, new))
+        pairs.append((old, new))
+    pairs.reverse()                  # chronological, like the ledger
+    return pairs
+
+
 def applicable_renames(project_root):
-    """The ledger flattened to terminal (old, new) pairs that are SAFE to
-    apply right now: chains collapse (a→b, b→c ⇒ a→c), and a pair qualifies
-    only when source/<old>/ is gone AND source/<new>/ exists - so an undone
-    rename, an unpulled repo, or a resurrected folder never repoints records
-    out from under a prototype that is still there."""
+    """Ledger + git-history renames flattened to terminal (old, new) pairs
+    that are SAFE to apply right now: chains collapse (a→b, b→c ⇒ a→c), and a
+    pair qualifies only when source/<old>/ is gone AND source/<new>/ exists -
+    so an undone rename, an unpulled repo, or a resurrected folder never
+    repoints records out from under a prototype that is still there."""
+    entries = _git_prototype_renames(project_root)
+    entries += [(e["old"], e["new"]) for e in renames_load(project_root)]
     final = {}
-    for e in renames_load(project_root):
-        old, new = e["old"], e["new"]
+    for old, new in entries:
         for k, v in list(final.items()):
             if v == old:
                 final[k] = new
@@ -411,23 +448,38 @@ def applicable_renames(project_root):
     return out
 
 
+def _stranded_slugs(project, project_root):
+    """This install's record slugs whose source/<top>/ folder is MISSING -
+    the cheap stat-level precheck that gates the (git-subprocess) rename
+    lookup, so the polling share list stays free when everything is fine.
+    Sentinel pseudo-prototypes (__multiplayer__) never count."""
+    out = set()
+    for rec in shares_load().get("shares", []):
+        if rec.get("project") != project:
+            continue
+        top = (rec.get("prototype") or "").split("/")[0]
+        if not top or top.startswith("__"):
+            continue
+        if not os.path.isdir(os.path.join(project_root, "source", top)):
+            out.add(top)
+    return out
+
+
 def reconcile_renamed_shares(project):
-    """Repoint THIS install's stranded records against the ledger - the lazy,
-    every-install half of the rename story. Cheap no-op when clean. Returns
-    the number of share records changed."""
+    """Repoint THIS install's stranded records against the rename ledger +
+    git rename history - the lazy, every-install half of the rename story.
+    Cheap no-op when no record points at a missing folder. Returns the
+    number of share records changed."""
     try:
         root = _RESOLVE_PROJECT_ROOT(project or "")
     except Exception:
         return 0
+    stranded = _stranded_slugs(project, root)
+    if not stranded:
+        return 0
     changed = 0
     for old, new in applicable_renames(root):
-        hit = False
-        for rec in shares_load().get("shares", []):
-            cur = rec.get("prototype") or ""
-            if rec.get("project") == project and (cur == old or cur.startswith(old + "/")):
-                hit = True
-                break
-        if hit:
+        if old in stranded:
             changed += shares_remap_prototype(project, old, new)
     if changed:
         try:

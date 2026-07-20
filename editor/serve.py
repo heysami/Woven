@@ -20232,11 +20232,17 @@ class H(http.server.SimpleHTTPRequestHandler):
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         project_id = os.path.basename(project_root.rstrip("/"))
-        # Heal sessions a PEER's rename stranded (same git-tracked ledger the
-        # share records reconcile against) - no-op when clean.
+        # Heal sessions a rename stranded (same ledger + git-history fallback
+        # the share records reconcile against). Stat-level precheck keeps the
+        # common all-clean case free of the git lookup.
         try:
-            for _old, _new in _shares.applicable_renames(project_root):
-                _ut.sessions_remap_prototype(project_id, _old, _new)
+            def _dirless(p):
+                top = (p or "").split("/")[0]
+                return (top and not top.startswith("__")
+                        and not os.path.isdir(os.path.join(project_root, "source", top)))
+            if any(_dirless(s.get("prototype")) for s in _ut.sessions_list(project_id)):
+                for _old, _new in _shares.applicable_renames(project_root):
+                    _ut.sessions_remap_prototype(project_id, _old, _new)
         except Exception:
             pass
         sessions = [_ut.session_summary(s) for s in _ut.sessions_list(project_id)]
