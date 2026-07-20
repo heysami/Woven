@@ -35,6 +35,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import cloudflare as cf
+import delta
 import r2
 import store
 
@@ -347,39 +348,28 @@ def _validate_share_token(token: str) -> str:
     return token
 
 
-def _extract_and_upload(tmp_path: str, token: str, install_id: str) -> tuple[int, int]:
-    """Blocking: walk the tar.gz, upload each safe member to R2. Returns
-    (total_uncompressed_bytes, file_count). Raises ValueError on a hostile or
-    oversized archive."""
-    total = 0
-    files = 0
-    cap = HOSTED_UNPACKED_MAX_MB * 1024 * 1024
-    with tarfile.open(tmp_path, "r:gz") as tf:
-        for m in tf:
-            if not m.isfile():
-                continue                      # no dirs needed, no symlinks EVER
-            name = m.name.lstrip("./")
-            parts = name.split("/")
-            if (not name or name.startswith("/") or ".." in parts
-                    or any(p.startswith(".") for p in parts)):
-                raise ValueError(f"unsafe member path: {name!r}")
-            if parts[0] == "share" and len(parts) >= 2:
-                key = "s/" + token + "/" + "/".join(parts[1:])
-            elif parts[0] == "fonts" and len(parts) == 2:
-                key = "fonts/" + install_id + "/" + parts[1]
-            else:
-                raise ValueError(f"unexpected member outside share//fonts/: {name!r}")
-            total += m.size
-            if total > cap:
-                raise ValueError(f"snapshot exceeds {HOSTED_UNPACKED_MAX_MB}MB unpacked")
-            f = tf.extractfile(m)
-            if f is None:
-                continue
-            r2.put_bytes(key, f.read(), r2.content_type_for(key))
-            files += 1
-    if files == 0:
-        raise ValueError("empty snapshot")
-    return total, files
+async def _stored_manifest(token: str) -> Optional[dict]:
+    raw = await r2.run_blocking(r2.get_bytes, delta.manifest_object_key(token))
+    return delta.parse_stored_manifest(raw)
+
+
+@app.post("/shares/delta_check")
+async def shares_delta_check(request: Request) -> dict:
+    """The daemon asks what the bucket already holds for a token so it can
+    upload only the changed files. Returns {"manifest": {...}} or
+    {"manifest": None} (never hosted / pre-delta snapshot) - None simply means
+    the next upload must be full."""
+    _hosted_ready()
+    await _require_passcode(request)
+    body = _json_loads(await request.body())
+    install_id = _validate(str(body.get("installId") or ""))
+    token = _validate_share_token(str(body.get("token") or ""))
+    existing = await store.hosted_get(token)
+    if existing and existing["install_id"] != install_id:
+        raise HTTPException(409, "token is hosted by a different install")
+    if existing is None:
+        return {"manifest": None}
+    return {"manifest": await _stored_manifest(token)}
 
 
 @app.post("/shares/upload")
@@ -413,28 +403,58 @@ async def shares_upload(request: Request, installId: str = "", token: str = "",
         if received == 0:
             raise HTTPException(400, "empty body - POST the snapshot tar.gz")
 
-        # Replace atomically enough: clear the old prefix, then upload. A
-        # visitor mid-refresh may see a brief 404; the daemon re-uploads are
-        # seconds apart at worst.
-        await r2.run_blocking(r2.delete_prefix, "s/" + token + "/")
+        # Header walk first: totals + caps + quota are known BEFORE anything
+        # in the bucket is touched, so an oversized/hostile archive rejects
+        # without destroying the currently-hosted copy.
         try:
-            total, files = await r2.run_blocking(
-                _extract_and_upload, tmp.name, token, install_id)
+            snap = await r2.run_blocking(delta.load_snapshot, tmp.name)
         except ValueError as e:
-            await r2.run_blocking(r2.delete_prefix, "s/" + token + "/")
             raise HTTPException(400, str(e))
         except tarfile.TarError as e:
-            await r2.run_blocking(r2.delete_prefix, "s/" + token + "/")
             raise HTTPException(400, f"bad archive: {e}")
-
+        total, files = snap["total"], snap["files"]
+        if total > HOSTED_UNPACKED_MAX_MB * 1024 * 1024:
+            raise HTTPException(413,
+                f"snapshot exceeds {HOSTED_UNPACKED_MAX_MB}MB unpacked")
         if used + total > HOSTED_QUOTA_MB * 1024 * 1024:
-            await r2.run_blocking(r2.delete_prefix, "s/" + token + "/")
             raise HTTPException(413,
                 f"hosting quota exceeded ({HOSTED_QUOTA_MB}MB per install)")
 
+        if snap["mode"] == "delta":
+            # Changed files overwrite in place, vanished files are deleted,
+            # everything else stays put - no delete-prefix 404 window.
+            stored = await _stored_manifest(token)
+            if stored is None:
+                raise HTTPException(409, "no delta baseline - send a full snapshot")
+            try:
+                manifest = await r2.run_blocking(
+                    delta.apply_delta, tmp.name, snap, token, install_id,
+                    stored, r2.put_bytes, r2.delete_keys)
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+        else:
+            # Full replace: clear the old prefix, then upload. A visitor
+            # mid-refresh may see a brief 404; full uploads only happen on
+            # first hosting / delta fallback, so the window is rare.
+            await r2.run_blocking(r2.delete_prefix, "s/" + token + "/")
+            try:
+                manifest = await r2.run_blocking(
+                    delta.apply_full, tmp.name, token, install_id, r2.put_bytes)
+            except ValueError as e:
+                await r2.run_blocking(r2.delete_prefix, "s/" + token + "/")
+                raise HTTPException(400, str(e))
+            except tarfile.TarError as e:
+                await r2.run_blocking(r2.delete_prefix, "s/" + token + "/")
+                raise HTTPException(400, f"bad archive: {e}")
+
+        # Persist the manifest as the next delta's baseline.
+        await r2.run_blocking(
+            r2.put_bytes, delta.manifest_object_key(token),
+            delta.manifest_bytes(manifest), "application/json; charset=utf-8")
         await store.hosted_upsert(token, install_id, (prototype or "")[:200],
                                   (label or "")[:200], total, files)
         return {"ok": True, "bytes": total, "files": files,
+                "delta": snap["mode"] == "delta",
                 "quotaUsed": used + total, "quotaMax": HOSTED_QUOTA_MB * 1024 * 1024}
     finally:
         try:

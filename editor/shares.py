@@ -48,6 +48,7 @@ serve.py wiring (see "share mode" section there):
 from __future__ import annotations  # keep annotations 3.9-safe (daemon runs system py)
 
 import base64
+import hashlib
 import http.server
 import json
 import mimetypes
@@ -975,11 +976,11 @@ def _hosted_job_get(share_id):
         return dict(_HOSTED_JOBS.get(share_id) or {})
 
 
-def _hosted_add_tree(tf, src_dir, arc_prefix):
-    """Add every gate-servable file under src_dir to the tar (same extension
-    whitelist + dotfile rules the tunnel gate enforces, so hosting can never
-    expose more than tunnelling does)."""
-    count = 0
+def _hosted_tree_members(src_dir, arc_prefix):
+    """Enumerate every gate-servable file under src_dir as (arcname, abspath)
+    pairs (same extension whitelist + dotfile rules the tunnel gate enforces,
+    so hosting can never expose more than tunnelling does)."""
+    out = []
     for root, dirs, files in os.walk(src_dir):
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         for name in sorted(files):
@@ -993,12 +994,11 @@ def _hosted_add_tree(tf, src_dir, arc_prefix):
                 if os.path.getsize(p) > _HOSTED_FILE_MAX:
                     print(f"[share] hosted snapshot skipping oversized file: {p}", flush=True)
                     continue
-                rel = os.path.relpath(p, src_dir).replace(os.sep, "/")
-                tf.add(p, arcname=arc_prefix + "/" + rel, recursive=False)
-                count += 1
             except OSError:
                 continue
-    return count
+            rel = os.path.relpath(p, src_dir).replace(os.sep, "/")
+            out.append((arc_prefix + "/" + rel, p))
+    return out
 
 
 def _project_branch(root):
@@ -1016,104 +1016,147 @@ def _project_branch(root):
     return ""
 
 
-def _hosted_build_snapshot(rec, out_path):
-    """Build the snapshot tar.gz at out_path. Members mirror the gate's URL
-    space under share/ (viewer shell, static api/meta, whitelisted project
-    files) plus the workspace fonts under fonts/. Returns the file count."""
+def _hosted_snapshot_members(rec):
+    """Enumerate the snapshot as (arcname, src) pairs - src is an absolute
+    path or an in-memory bytes payload. Single source of truth for the full
+    upload, the delta manifest, and the delta tar. Arcnames mirror the gate's
+    URL space under share/ (viewer shell, static api/meta, whitelisted project
+    files) plus the workspace fonts under fonts/."""
+    project_root = _RESOLVE_PROJECT_ROOT(rec.get("project") or "")
+    slug = rec.get("prototype") or ""
+    members = []
+
+    # Viewer shell - the same review page the tunnel gate serves at /s/<t>/.
+    share_dir = os.path.join(INSTALL_ROOT, "editor", "share")
+    for src, arc in (
+        (os.path.join(share_dir, "viewer.html"), "share/index.html"),
+        (os.path.join(share_dir, "viewer.js"),   "share/viewer.js"),
+        (os.path.join(share_dir, "viewer.css"),  "share/viewer.css"),
+        (os.path.join(INSTALL_ROOT, "editor", "favicon.svg"), "share/favicon.svg"),
+    ):
+        if os.path.isfile(src):
+            members.append((arc, src))
+    # Static /api/meta so the viewer boots with the daemon offline.
+    # `branch` is the branch AT SNAPSHOT TIME - that is what the hosted
+    # copy actually contains, even if the owner switches later. No
+    # `branches` list: a snapshot holds ONE tree, so there is nothing
+    # for a picker to switch to.
+    meta = {
+        "label":     rec.get("label") or "",
+        "project":   rec.get("project") or "",
+        "prototype": slug,
+        "branch":    _project_branch(project_root),
+        "emailGate": bool(rec.get("emailGate")),
+        "entry":     "p/source/{}/index.html".format(slug),
+    }
+    members.append(("share/api/meta", json.dumps(meta).encode("utf-8")))
+    # Hosted marker - the worker treats its presence as "this share is
+    # hosted" (static misses become real 404s instead of tunnel fallthrough).
+    # Carries uploadedAt, so it is always part of a delta - which conveniently
+    # keeps the marker's timestamp fresh on every update.
+    members.append(("share/__hosted.json", json.dumps({
+        "uploadedAt": _now_iso(),
+        "prototype":  slug,
+        "label":      rec.get("label") or "",
+    }).encode("utf-8")))
+    # The review discussion so far - comment list + screenshots +
+    # attachments - so visitors still SEE existing comments while the
+    # owner is offline (the worker falls back to these; the daemon also
+    # re-pushes the list on every change, see _hosted_comments_push_soon).
+    try:
+        comments = comments_list(project_root, slug)
+    except Exception:
+        comments = []
+    members.append(("share/api/comments",
+                    json.dumps({"comments": comments,
+                                "deleted": comments_tombstones(project_root)}).encode("utf-8")))
+    for c in comments:
+        cid = c.get("id") or ""
+        sp = comment_shot_abspath(project_root, cid)
+        if sp and os.path.isfile(sp) and os.path.getsize(sp) <= _HOSTED_FILE_MAX:
+            members.append(("share/api/comments/{}/shot".format(cid), sp))
+        for a in (c.get("attachments") or []):
+            aid = (a or {}).get("id") or ""
+            path, _ext = comment_attach_lookup(project_root, cid, aid)
+            if path and os.path.getsize(path) <= _HOSTED_FILE_MAX:
+                members.append(("share/api/comments/{}/attach/{}".format(cid, aid), path))
+    # The prototype tree + the design-system library it links - exactly the
+    # two prefixes _gate_project_paths_ok() allows.
+    src_tree = os.path.join(project_root, "source", slug)
+    if not os.path.isdir(src_tree):
+        raise RuntimeError("prototype has no source/{}/ directory".format(slug))
+    members += _hosted_tree_members(src_tree, "share/p/source/" + slug)
+    ds_tree = os.path.join(project_root, "design-systems")
+    if os.path.isdir(ds_tree):
+        members += _hosted_tree_members(ds_tree, "share/p/design-systems")
+    # Workspace fonts - DS stylesheets reference /__global_fonts/<name>
+    # root-absolute; the worker serves them from fonts/<install>/.
+    fonts_dir = os.path.join(WORKSPACE_DIR or INSTALL_ROOT, "fonts")
+    if os.path.isdir(fonts_dir):
+        for name in sorted(os.listdir(fonts_dir)):
+            p = os.path.join(fonts_dir, name)
+            if (os.path.isfile(p) and NAME_SAFE.match(name)
+                    and not name.startswith(".")
+                    and os.path.getsize(p) <= _HOSTED_FILE_MAX):
+                members.append(("fonts/" + name, p))
+    return members
+
+
+def _hosted_manifest(members):
+    """{arcname: {"h": sha256-hex, "s": size}} - the broker diffs this against
+    its stored baseline so only changed files travel. Files that vanish
+    between enumeration and hashing drop out of both the manifest and the
+    returned member list."""
+    manifest = {}
+    kept = []
+    for arc, src in members:
+        h = hashlib.sha256()
+        if isinstance(src, bytes):
+            h.update(src)
+            size = len(src)
+        else:
+            try:
+                size = 0
+                with open(src, "rb") as f:
+                    while True:
+                        chunk = f.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        h.update(chunk)
+                        size += len(chunk)
+            except OSError:
+                continue
+        manifest[arc] = {"h": h.hexdigest(), "s": size}
+        kept.append((arc, src))
+    return manifest, kept
+
+
+def _hosted_write_tar(out_path, members, delta_manifest=None):
+    """Write the snapshot tar.gz. With delta_manifest, the first member is
+    __delta.json carrying the COMPLETE new manifest and `members` holds only
+    the changed files - the broker keeps unchanged objects and deletes the
+    ones that left the manifest."""
     import io as _io
     import tarfile
 
-    project_root = _RESOLVE_PROJECT_ROOT(rec.get("project") or "")
-    slug = rec.get("prototype") or ""
-    count = 0
-
-    def add_bytes(tf, arcname, data):
-        info = tarfile.TarInfo(arcname)
-        info.size = len(data)
-        info.mtime = int(time.time())
-        tf.addfile(info, _io.BytesIO(data))
-
     with tarfile.open(out_path, "w:gz") as tf:
-        # Viewer shell - the same review page the tunnel gate serves at /s/<t>/.
-        share_dir = os.path.join(INSTALL_ROOT, "editor", "share")
-        for src, arc in (
-            (os.path.join(share_dir, "viewer.html"), "share/index.html"),
-            (os.path.join(share_dir, "viewer.js"),   "share/viewer.js"),
-            (os.path.join(share_dir, "viewer.css"),  "share/viewer.css"),
-            (os.path.join(INSTALL_ROOT, "editor", "favicon.svg"), "share/favicon.svg"),
-        ):
-            if os.path.isfile(src):
-                tf.add(src, arcname=arc, recursive=False)
-                count += 1
-        # Static /api/meta so the viewer boots with the daemon offline.
-        # `branch` is the branch AT SNAPSHOT TIME - that is what the hosted
-        # copy actually contains, even if the owner switches later. No
-        # `branches` list: a snapshot holds ONE tree, so there is nothing
-        # for a picker to switch to.
-        meta = {
-            "label":     rec.get("label") or "",
-            "project":   rec.get("project") or "",
-            "prototype": slug,
-            "branch":    _project_branch(project_root),
-            "emailGate": bool(rec.get("emailGate")),
-            "entry":     "p/source/{}/index.html".format(slug),
-        }
-        add_bytes(tf, "share/api/meta", json.dumps(meta).encode("utf-8"))
-        # Hosted marker - the worker treats its presence as "this share is
-        # hosted" (static misses become real 404s instead of tunnel fallthrough).
-        add_bytes(tf, "share/__hosted.json", json.dumps({
-            "uploadedAt": _now_iso(),
-            "prototype":  slug,
-            "label":      rec.get("label") or "",
-        }).encode("utf-8"))
-        count += 2
-        # The review discussion so far - comment list + screenshots +
-        # attachments - so visitors still SEE existing comments while the
-        # owner is offline (the worker falls back to these; the daemon also
-        # re-pushes the list on every change, see _hosted_comments_push_soon).
-        try:
-            comments = comments_list(project_root, slug)
-        except Exception:
-            comments = []
-        add_bytes(tf, "share/api/comments",
-                  json.dumps({"comments": comments,
-                              "deleted": comments_tombstones(project_root)}).encode("utf-8"))
-        count += 1
-        for c in comments:
-            cid = c.get("id") or ""
-            sp = comment_shot_abspath(project_root, cid)
-            if sp and os.path.isfile(sp) and os.path.getsize(sp) <= _HOSTED_FILE_MAX:
-                tf.add(sp, arcname="share/api/comments/{}/shot".format(cid),
-                       recursive=False)
-                count += 1
-            for a in (c.get("attachments") or []):
-                aid = (a or {}).get("id") or ""
-                path, _ext = comment_attach_lookup(project_root, cid, aid)
-                if path and os.path.getsize(path) <= _HOSTED_FILE_MAX:
-                    tf.add(path, arcname="share/api/comments/{}/attach/{}".format(cid, aid),
-                           recursive=False)
-                    count += 1
-        # The prototype tree + the design-system library it links - exactly the
-        # two prefixes _gate_project_paths_ok() allows.
-        src_tree = os.path.join(project_root, "source", slug)
-        if not os.path.isdir(src_tree):
-            raise RuntimeError("prototype has no source/{}/ directory".format(slug))
-        count += _hosted_add_tree(tf, src_tree, "share/p/source/" + slug)
-        ds_tree = os.path.join(project_root, "design-systems")
-        if os.path.isdir(ds_tree):
-            count += _hosted_add_tree(tf, ds_tree, "share/p/design-systems")
-        # Workspace fonts - DS stylesheets reference /__global_fonts/<name>
-        # root-absolute; the worker serves them from fonts/<install>/.
-        fonts_dir = os.path.join(WORKSPACE_DIR or INSTALL_ROOT, "fonts")
-        if os.path.isdir(fonts_dir):
-            for name in sorted(os.listdir(fonts_dir)):
-                p = os.path.join(fonts_dir, name)
-                if (os.path.isfile(p) and NAME_SAFE.match(name)
-                        and not name.startswith(".")
-                        and os.path.getsize(p) <= _HOSTED_FILE_MAX):
-                    tf.add(p, arcname="fonts/" + name, recursive=False)
-                    count += 1
-    return count
+        def add_bytes(arcname, data):
+            info = tarfile.TarInfo(arcname)
+            info.size = len(data)
+            info.mtime = int(time.time())
+            tf.addfile(info, _io.BytesIO(data))
+
+        if delta_manifest is not None:
+            add_bytes("__delta.json",
+                      json.dumps({"v": 1, "files": delta_manifest}).encode("utf-8"))
+        for arc, src in members:
+            if isinstance(src, bytes):
+                add_bytes(arc, src)
+            else:
+                try:
+                    tf.add(src, arcname=arc, recursive=False)
+                except OSError:
+                    continue
 
 
 def _hosted_broker_post(path, data=None, timeout=30, content_type="application/json",
@@ -1138,8 +1181,42 @@ def _hosted_broker_post(path, data=None, timeout=30, content_type="application/j
         raise RuntimeError("broker unreachable at {}: {}".format(WOVEN_BROKER_URL, e))
 
 
+def _hosted_stored_manifest(rec):
+    """The broker's baseline manifest for this share's snapshot. None means
+    'send a full snapshot' - never hosted yet, a pre-delta broker (404), or
+    the check failed for any reason."""
+    try:
+        body = json.dumps({"installId": woven_install_id(),
+                           "token": rec.get("token") or ""}).encode("utf-8")
+        res = _hosted_broker_post("/shares/delta_check", data=body,
+                                  timeout=30, passcode=_HOSTED_PASSCODE)
+        m = res.get("manifest")
+        return m if isinstance(m, dict) and m else None
+    except Exception as e:
+        print("[share] delta check unavailable ({}); sending full snapshot".format(e),
+              flush=True)
+        return None
+
+
+def _hosted_post_snapshot(rec, tar_path):
+    with open(tar_path, "rb") as f:
+        body = f.read()
+    qs = urllib.parse.urlencode({
+        "installId": woven_install_id(),
+        "token":     rec.get("token") or "",
+        "prototype": rec.get("prototype") or "",
+        "label":     rec.get("label") or "",
+    })
+    return _hosted_broker_post("/shares/upload?" + qs, data=body,
+                               timeout=600, content_type="application/gzip",
+                               passcode=_HOSTED_PASSCODE)
+
+
 def _hosted_upload_worker(share_id):
-    """Background: build the snapshot and push it to the broker. Status lands
+    """Background: enumerate the snapshot, ask the broker what it already
+    holds, and upload only the files whose hash changed. Any wrinkle in the
+    delta path (pre-delta broker, stale baseline, hash race with a mid-hash
+    file edit) falls back to the legacy full-snapshot upload. Status lands
     in _HOSTED_JOBS; the share record gets hostedAt/hostedBytes on success."""
     import tempfile
     rec = share_get(share_id)
@@ -1149,26 +1226,30 @@ def _hosted_upload_worker(share_id):
     try:
         fd, tmp = tempfile.mkstemp(suffix=".tar.gz", prefix="woven-share-")
         os.close(fd)
-        _hosted_build_snapshot(rec, tmp)
-        with open(tmp, "rb") as f:
-            body = f.read()
-        qs = urllib.parse.urlencode({
-            "installId": woven_install_id(),
-            "token":     rec.get("token") or "",
-            "prototype": rec.get("prototype") or "",
-            "label":     rec.get("label") or "",
-        })
-        res = _hosted_broker_post("/shares/upload?" + qs, data=body,
-                                  timeout=600, content_type="application/gzip",
-                                  passcode=_HOSTED_PASSCODE)
+        manifest, members = _hosted_manifest(_hosted_snapshot_members(rec))
+        stored = _hosted_stored_manifest(rec)
+        res = None
+        if stored is not None:
+            changed = [(a, s) for a, s in members if stored.get(a) != manifest.get(a)]
+            _hosted_write_tar(tmp, changed, delta_manifest=manifest)
+            try:
+                res = _hosted_post_snapshot(rec, tmp)
+                print("[share] hosted delta uploaded for {} ({} of {} files changed)".format(
+                    share_id, len(changed), len(members)), flush=True)
+            except Exception as e:
+                print("[share] hosted delta failed for {} ({}); retrying as full upload".format(
+                    share_id, e), flush=True)
+        if res is None:
+            _hosted_write_tar(tmp, members)
+            res = _hosted_post_snapshot(rec, tmp)
+            print("[share] hosted snapshot uploaded for {} ({} files, {} bytes)".format(
+                share_id, res.get("files"), res.get("bytes")), flush=True)
         share_update(share_id, {
             "hostedAt":    _now_iso(),
             "hostedBytes": int(res.get("bytes") or 0),
             "hostedFiles": int(res.get("files") or 0),
         })
         _hosted_job_set(share_id, "done")
-        print("[share] hosted snapshot uploaded for {} ({} files, {} bytes)".format(
-            share_id, res.get("files"), res.get("bytes")), flush=True)
     except Exception as e:
         _hosted_job_set(share_id, "error", str(e))
         print("[share] hosted upload failed for {}: {}".format(share_id, e), flush=True)

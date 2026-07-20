@@ -80,6 +80,26 @@ def put_bytes(key: str, body: bytes, content_type: Optional[str] = None) -> None
     )
 
 
+def get_bytes(key: str) -> Optional[bytes]:
+    """Object body, or None when it does not exist."""
+    try:
+        r = _client().get_object(Bucket=R2_BUCKET, Key=key)
+        return r["Body"].read()
+    except Exception as e:
+        code = getattr(e, "response", {}).get("Error", {}).get("Code", "")
+        if code in ("NoSuchKey", "404"):
+            return None
+        raise
+
+
+def delete_keys(keys: list) -> None:
+    """Delete specific objects (≤1000 per call - S3 API limit; callers chunk)."""
+    if keys:
+        _client().delete_objects(
+            Bucket=R2_BUCKET,
+            Delete={"Objects": [{"Key": k} for k in keys], "Quiet": True})
+
+
 def delete_prefix(prefix: str) -> int:
     """Delete every object under `prefix`. Returns the count removed."""
     s3 = _client()
