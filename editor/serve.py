@@ -6471,6 +6471,31 @@ def _broadcast_usertesting_changed(project_id, session_id):
         except Exception: pass
 
 
+def _broadcast_prototype_renamed(project_id, old, new, label):
+    """Prototype rename - tell every open surface for this project. The rename
+    endpoint rewrote workflow.json + the editor data file ON DISK; an open
+    canvas that kept its pre-rename doc would 404 every frame (the source
+    folder moved) and its next debounced autosave would write the old slug
+    straight back over the rename. Clients scoped to the renamed prototype
+    relocate to the new slug; everything else replace-reloads its workflow doc
+    and refreshes the prototype library."""
+    if not project_id: return
+    try:
+        root = resolve_project_root({"project": project_id})
+        project_id = os.path.basename(root.rstrip("/"))
+    except Exception:
+        pass
+    payload = {"old": old or "", "new": new or "", "label": label or ""}
+    with WORKFLOW_WAITERS_LOCK:
+        waiters = list(WORKFLOW_WAITERS.get(project_id) or [])
+    for w in waiters:
+        try: w.push("prototype-renamed", payload)
+        except Exception: pass
+    # Live session bridge - guests see the rename too.
+    try: _live.notify_project_changed(project_id, "prototype-renamed", payload)
+    except Exception: pass
+
+
 def _ut_transcribe_async(session, participant_id):
     """Finalize hook (registered with the user-testing gate). Runs the
     participant's audio.webm through transcription off the request thread.
@@ -22181,6 +22206,11 @@ class H(http.server.SimpleHTTPRequestHandler):
     #   • .starred-prototypes.json - bookmark id <slug> (and <slug>/<sub>)
     #   • .thumbnail-prototype.json - path / id pointing at <slug>
     #   • source/<newslug>/**      - any absolute source/<slug>/ asset reference
+    #   • shares.json              - share records repointed (token/URL unchanged)
+    #   • share/comments.json      - comments refiled onto the new slug
+    #   • usertesting.json         - study sessions repointed
+    # Finishes with a `prototype-renamed` SSE broadcast so open canvases
+    # relocate/reload instead of 404ing frames + autosave-clobbering the rename.
     # Depth-1 prototypes only.
     def _prototype_rename(self, qs):
         try:
@@ -22329,6 +22359,40 @@ class H(http.server.SimpleHTTPRequestHandler):
                     touched.append(".thumbnail-prototype.json")
             except Exception:
                 pass
+
+        # 8) Slug-keyed stores OUTSIDE the project tree: share records (the
+        #    public URL is token-based, so repointing keeps every existing
+        #    link working), share comments (the panel filters by slug - refile
+        #    or they all look deleted), and user-testing sessions. Records may
+        #    carry either the workspace project id or the folder basename,
+        #    depending on which surface created them - remap both.
+        pid = (_qs_get(qs, "project") or "").strip()
+        base_id = os.path.basename(project_root.rstrip("/\\")) or "default"
+        for candidate in dict.fromkeys(p for p in (pid, base_id, "default" if not pid else "") if p):
+            try:
+                if _shares.shares_remap_prototype(candidate, old, new) and "shares.json" not in touched:
+                    touched.append("shares.json")
+            except Exception:
+                pass
+            try:
+                if _ut.sessions_remap_prototype(candidate, old, new) and "usertesting.json" not in touched:
+                    touched.append("usertesting.json")
+            except Exception:
+                pass
+        try:
+            if _shares.comments_remap_prototype(project_root, old, new):
+                touched.append("share/comments.json")
+        except Exception:
+            pass
+
+        # 9) Push the rename to every open surface (SSE + live bridge). A
+        #    canvas left holding its pre-rename doc 404s every frame and its
+        #    next debounced autosave writes the old slug back over the rename
+        #    - the client handler relocates/reloads instead.
+        try:
+            _broadcast_prototype_renamed(pid or base_id, old, new, new_label)
+        except Exception:
+            pass
 
         return self._reply(200, {
             "ok": True, "id": new, "label": new_label, "from": old,

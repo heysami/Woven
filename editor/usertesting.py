@@ -221,6 +221,28 @@ def session_update(session_id, patch):
     return None
 
 
+def sessions_remap_prototype(project, old, new):
+    """Prototype rename - repoint every study session for (project, old) at
+    the new slug, deep slugs (old/<sub>) included, so the study keeps serving
+    the renamed prototype instead of a dead folder. Session ids, cohorts and
+    recorded artifacts are untouched. Returns the number of sessions changed."""
+    changed = 0
+    with _REGISTRY_LOCK:
+        data = registry_load()
+        for s in data["sessions"]:
+            if not isinstance(s, dict) or s.get("project") != project:
+                continue
+            cur = s.get("prototype") or ""
+            if cur == old or cur.startswith(old + "/"):
+                s["prototype"] = new + cur[len(old):]
+                changed += 1
+        if changed:
+            _registry_save(data)
+    if changed:
+        _notify(project, "")
+    return changed
+
+
 def session_delete(session_id):
     """Remove a session from the registry. Leaves on-disk artifacts in place
     (the caller may purge <project>/usertesting/<sessionId>/ separately)."""

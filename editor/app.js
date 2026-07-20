@@ -8528,6 +8528,21 @@ async function renamePrototype(proto) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
     try { window.dispatchEvent(new Event("th:library-refresh")); } catch {}
+    // If the renamed prototype is the one THIS window has open, relocate to
+    // the new slug now (don't wait for the SSE echo - surfaces without the
+    // workflow SSE channel would never hear it). The source folder just
+    // moved on disk: a kept-alive canvas 404s every frame and its next
+    // debounced autosave would write the old sourceRoot back over the rename.
+    try {
+      const u = new URL(window.location.href);
+      const urlSlug = u.searchParams.get("prototype") || u.searchParams.get("branch") || "";
+      const openSlug = urlSlug || activePrototypeSlug();
+      if (openSlug === proto.id || openSlug.startsWith(proto.id + "/")) {
+        u.searchParams.set("prototype", slug + openSlug.slice(proto.id.length));
+        u.searchParams.delete("branch");
+        window.location.replace(u.toString());
+      }
+    } catch {}
     return j;
   } catch (e) {
     uiAlert("Rename failed: " + (e.message || e));
@@ -26725,6 +26740,41 @@ function WorkflowCanvas() {
         // would resurrect the discarded state from memory and the debounced
         // save would re-dirty the tree - the "discard never sticks" loop.
         try { window.dispatchEvent(new CustomEvent("th:workflow-reload", { detail: { replace: true } })); } catch {}
+      });
+      es.addEventListener("prototype-renamed", (e) => {
+        refreshLiveness();
+        let oldSlug = "", newSlug = "";
+        try {
+          const d = JSON.parse(e.data || "{}");
+          oldSlug = d.old || ""; newSlug = d.new || "";
+        } catch {}
+        if (!oldSlug || !newSlug) return;
+        // The rename endpoint rewrote workflow.json (branch/prototype fields)
+        // on disk. Same contract as workflow-reset: abort any in-flight save
+        // (it carries the pre-rename doc) and REPLACE - merging would write
+        // the old slug straight back to disk.
+        try {
+          if (saveAbortRef.current) { try { saveAbortRef.current.abort(); } catch {} }
+          if (typeof AbortController !== "undefined") {
+            saveAbortRef.current = new AbortController();
+          }
+        } catch {}
+        try { window.dispatchEvent(new CustomEvent("th:workflow-reload", { detail: { replace: true } })); } catch {}
+        try { window.dispatchEvent(new Event("th:library-refresh")); } catch {}
+        // If THIS window is scoped to the renamed prototype, relocate to the
+        // new slug: its source folder just moved, so a kept-alive canvas
+        // 404s every frame ("everything unlinked") and its next debounced
+        // autosave would write the old sourceRoot back over the rename.
+        try {
+          const u = new URL(window.location.href);
+          const urlSlug = u.searchParams.get("prototype") || u.searchParams.get("branch") || "";
+          const openSlug = urlSlug || (typeof activePrototypeSlug === "function" ? activePrototypeSlug() : "");
+          if (openSlug === oldSlug || openSlug.startsWith(oldSlug + "/")) {
+            u.searchParams.set("prototype", newSlug + openSlug.slice(oldSlug.length));
+            u.searchParams.delete("branch");
+            window.location.replace(u.toString());
+          }
+        } catch {}
       });
       es.addEventListener("asset-changed", (e) => {
         refreshLiveness();

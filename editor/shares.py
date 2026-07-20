@@ -271,6 +271,41 @@ def share_delete(share_id):
     return False
 
 
+def shares_remap_prototype(project, old, new):
+    """Prototype rename - repoint every share record for (project, old) at the
+    new slug, deep slugs (old/<sub>) included. The token (and therefore every
+    public share URL) is untouched: only which source/<slug>/ the gate serves
+    changes, so existing links keep working across the rename. Labels follow
+    only when they are the auto-generated "<project> / <slug>" default. The
+    per-prototype share thumbnail rides along too. Returns records changed."""
+    changed = []
+    with _REGISTRY_LOCK:
+        data = shares_load()
+        for s in data["shares"]:
+            if s.get("project") != project:
+                continue
+            cur = s.get("prototype") or ""
+            if cur != old and not cur.startswith(old + "/"):
+                continue
+            nxt = new + cur[len(old):]
+            if (s.get("label") or "") == f"{project} / {cur}":
+                s["label"] = f"{project} / {nxt}"
+            s["prototype"] = nxt
+            changed.append(s.get("id"))
+        if changed:
+            _shares_save(data)
+    if changed:
+        try:
+            root = _RESOLVE_PROJECT_ROOT(project)
+            tp_old = share_thumbnail_abspath(root, old)
+            tp_new = share_thumbnail_abspath(root, new)
+            if os.path.isfile(tp_old) and not os.path.exists(tp_new):
+                os.replace(tp_old, tp_new)
+        except Exception:
+            pass
+    return len(changed)
+
+
 # ── Thumbnails - one PNG per shared prototype ────────────────────────────
 # Captured by the daemon (headless Chrome) at share-create / start / source
 # change, stored beside the comment store at <project_root>/share/thumb-
@@ -1719,6 +1754,24 @@ def comments_list(project_root, prototype=None):
     if prototype:
         items = [c for c in items if c.get("prototype") == prototype]
     return items
+
+
+def comments_remap_prototype(project_root, old, new):
+    """Prototype rename - refile every comment stored under the old slug (deep
+    slugs included) onto the new one so the panel filter keeps finding them.
+    page/anchor/pin are prototype-relative and ride along untouched. Returns
+    the number of comments changed."""
+    n = 0
+    with _COMMENTS_LOCK:
+        data = comments_load(project_root)
+        for c in data.get("comments", []):
+            cur = c.get("prototype") or ""
+            if cur == old or cur.startswith(old + "/"):
+                c["prototype"] = new + cur[len(old):]
+                n += 1
+        if n:
+            _comments_save(project_root, data)
+    return n
 
 
 def comment_counts(project_root, prototype):
