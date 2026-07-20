@@ -11846,7 +11846,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._shares_list()
 
         if url_path == "/__share_links":
-            return self._share_links_get(qs)
+            return self._share_links_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__usertesting":
             return self._usertesting_list(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__user_testing_config":

@@ -463,21 +463,26 @@ def set_modes(share_id, *, quick=None, woven=None, user_refresh=False):
     # Persist intents FIRST so _woven_active_count() reflects the new state when
     # we decide whether to tear the shared tunnel down.
     _persist_modes(share_id, q, w)
-    if q:
-        _quick_start(share_id, user_refresh=user_refresh)
-    else:
-        _quick_stop(share_id)
-    if w:
-        _woven_tunnel_start()
-        share_update(share_id, {"lastStartedAt": _now_iso()})
-    elif _woven_active_count() == 0:
-        _woven_tunnel_stop()
-    # Mirror the new stable-link state into the project's git-tracked
-    # contributor registry (best-effort - never fails the toggle).
+    # Mirror the stable-link state into the project's git-tracked contributor
+    # registry whatever happens below: the registry records INTENT (the URL is
+    # permanent per install), so a tunnel/broker hiccup - e.g. during the boot
+    # restore - must not leave teammates without the link. try/finally keeps
+    # the tunnel error surfacing to the caller.
     try:
-        publish_project_links(rec.get("project") or "")
-    except Exception:
-        pass
+        if q:
+            _quick_start(share_id, user_refresh=user_refresh)
+        else:
+            _quick_stop(share_id)
+        if w:
+            _woven_tunnel_start()
+            share_update(share_id, {"lastStartedAt": _now_iso()})
+        elif _woven_active_count() == 0:
+            _woven_tunnel_stop()
+    finally:
+        try:
+            publish_project_links(rec.get("project") or "")
+        except Exception:
+            pass
     return share_get(share_id)
 
 

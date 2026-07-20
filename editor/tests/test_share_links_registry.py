@@ -146,6 +146,24 @@ def test_publish():
         out = shares.links_list("proj")
         assert out["installId"] == iid_b and len(out["links"]) == 2
 
+        # a tunnel/broker failure inside set_modes must NOT skip the registry
+        # write (the boot restore calls set_modes; a cloudflared hiccup there
+        # silently left teammates without the link). try/finally pins it.
+        setup_install("A", "aaa.getwoven.design", [rec_woven, rec_hosted, rec_quick, rec_live])
+        os.remove(os.path.join(proj_root, "share", "links.json"))
+        saved_start = shares._woven_tunnel_start
+        shares._woven_tunnel_start = lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+        try:
+            try:
+                shares.set_modes("shr-aaaaaaaaaa", woven=True)
+                raise AssertionError("tunnel failure must surface to the caller")
+            except RuntimeError as e:
+                assert "boom" in str(e)
+        finally:
+            shares._woven_tunnel_start = saved_start
+        assert os.path.isfile(os.path.join(proj_root, "share", "links.json")), \
+            "registry published despite the tunnel failure"
+
         # without a provisioned hostname publish must not mint the file
         proj2 = os.path.join(tmp, "proj2")
         os.makedirs(proj2)
