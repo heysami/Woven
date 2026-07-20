@@ -5351,6 +5351,18 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   padding: 6px 8px;
 }
 .th-git-msg { min-height: 46px; resize: vertical; }
+/* Commit/merge scope picker - whole project vs one prototype. */
+.th-git-scope {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+}
 /* Summarise-changes row sits flush above the commit textarea (the panel's
    column gap provides the spacing below, so pull the row's own gap back). */
 .th-git-msg-head { display: flex; align-items: center; justify-content: flex-end; margin-bottom: -4px; }

@@ -20812,6 +20812,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                         or rel.startswith(("share/comment-shots/", "share/comment-attach/")))
             st["dirtyShareMetaOnly"] = (bool(st.get("dirty"))
                                         and all(_is_share_meta(r) for r in st.get("changed") or []))
+            # Prototype slugs (source/<slug>/ dirs) for the panel's commit /
+            # merge scope picker.
+            try:
+                sdir = os.path.join(root, "source")
+                st["prototypes"] = sorted(
+                    d for d in os.listdir(sdir)
+                    if os.path.isdir(os.path.join(sdir, d)) and not d.startswith("."))
+            except OSError:
+                st["prototypes"] = []
             st["draftMessage"] = _gitops.draft_message(root) if st.get("repo") else ""
             st["githubConfigured"] = _gitops.oauth_configured()
             st["gitAvailable"] = _gitops.git_available()
@@ -21246,8 +21255,20 @@ class H(http.server.SimpleHTTPRequestHandler):
                     _gitops.ensure_gitattributes(root, _GITATTRIBUTES_LOCAL)
                 except Exception:
                     pass
+                # Optional prototype scope: commit ONLY source/<slug>/ (plus
+                # the share metadata that must ride every commit to keep
+                # comments/links syncing) - other prototypes' edits stay in
+                # the tree for their own scoped commit later.
+                proto = (body.get("prototype") or "").strip()
+                paths = None
+                if proto:
+                    if not re.match(r"^[A-Za-z0-9._-]+$", proto) or proto.startswith("."):
+                        return self._reply(400, {"error": f"invalid prototype: {proto!r}"})
+                    paths = [f"source/{proto}", _SHARE_COMMENTS_REL, _SHARE_LINKS_REL,
+                             "share/comment-shots", "share/comment-attach"]
                 res = _gitops.commit(root, body.get("message"), coauthors=coauthors,
-                                     name=body.get("name"), email=body.get("email"))
+                                     name=body.get("name"), email=body.get("email"),
+                                     paths=paths)
                 return self._reply(200, {"ok": True, **res})
             if op == "publish":
                 tok = body.get("token") or _gitops.host_token()
@@ -21417,7 +21438,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                             try: _broadcast_share_comments_changed(pid, "")
                             except Exception: pass
                 else:
-                    res = _gitops.merge_branch(root, body.get("name") or "")
+                    # Optional prototype scope: take the branch's version of
+                    # ONE prototype (path-scoped, conflict-free, committed) -
+                    # everything else on this branch stays untouched.
+                    mproto = (body.get("prototype") or "").strip()
+                    if mproto:
+                        res = _gitops.merge_prototype(root, body.get("name") or "", mproto)
+                    else:
+                        res = _gitops.merge_branch(root, body.get("name") or "")
                     # Review comments merge mechanically - same auto-resolution
                     # as pull's (see _autoresolve_comments_conflict).
                     if res.get("conflicts"):

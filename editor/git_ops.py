@@ -33,6 +33,7 @@ from __future__ import annotations  # keep annotations 3.9-safe (daemon runs sys
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 import urllib.error
@@ -213,12 +214,32 @@ def conflict_marker_files(root):
     return hits
 
 
-def commit(root, message, coauthors=None, name=None, email=None):
+def commit(root, message, coauthors=None, name=None, email=None, paths=None):
     """Stage everything and commit. `coauthors` is a list of 'Name <email>'
     strings appended as Co-authored-by trailers. Deliberate - only called when
-    the host presses Commit. Returns {sha, message}."""
+    the host presses Commit. Returns {sha, message}.
+
+    `paths` (optional) scopes the commit to those pathspecs only - the
+    prototype-scoped commit: everything else stays uncommitted in the tree.
+    Pathspecs that match nothing (neither worktree nor index) are dropped so
+    git doesn't refuse the whole command over one absent optional path."""
     if not is_repo(root):
         raise RuntimeError("project is not a git repo - connect it first")
+    if paths:
+        kept = []
+        for rel in paths:
+            rel = (rel or "").strip().rstrip("/")
+            if not rel:
+                continue
+            if os.path.exists(os.path.join(root, rel)):
+                kept.append(rel)
+                continue
+            code, out, _e = _git(root, "ls-files", "--", rel)
+            if code == 0 and out.strip():
+                kept.append(rel)          # gone from disk but tracked = a deletion to record
+        if not kept:
+            return {"sha": "", "message": (message or "").strip(), "empty": True}
+        paths = kept
     # Refuse to bake unresolved conflict markers into a commit - that's what
     # corrupts a project's workflow.json and makes it un-openable downstream.
     marked = conflict_marker_files(root)
@@ -235,14 +256,18 @@ def commit(root, message, coauthors=None, name=None, email=None):
         if ca:
             trailers += f"\nCo-authored-by: {ca}"
     full = msg + ("\n" + trailers.lstrip("\n") if trailers else "")
-    code, _o, err = _git(root, "add", "-A")
+    add_args = ["add", "-A"] + (["--"] + paths if paths else [])
+    code, _o, err = _git(root, *add_args)
     if code != 0:
         raise RuntimeError(f"git add failed: {err.strip()}")
-    # nothing staged?
-    code, _o, _e = _git(root, "diff", "--cached", "--quiet")
+    # nothing staged (within scope)?
+    diff_args = ["diff", "--cached", "--quiet"] + (["--"] + paths if paths else [])
+    code, _o, _e = _git(root, *diff_args)
     if code == 0:
         return {"sha": "", "message": full, "empty": True}
-    args = ["commit", "-m", full]
+    # With a scope, `commit -- <paths>` records ONLY those paths even if
+    # something else happens to be staged.
+    args = ["commit", "-m", full] + (["--"] + paths if paths else [])
     if name:
         args = ["-c", f"user.name={name}"] + args
     if email:
@@ -787,6 +812,52 @@ def merge_branch(root, name):
         raise RuntimeError(f"merge failed: {(err or out).strip()[:400]}")
     return {"ok": not conflicts, "branch": cur, "merged": src,
             "conflicts": conflicts, "detail": (out or err).strip()[:400]}
+
+
+_PROTO_SLUG_OK = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def merge_prototype(root, name, slug):
+    """Bring branch `name`'s version of ONE prototype (source/<slug>/) onto
+    the current branch, committed immediately. This is a path-scoped
+    take-theirs, not a 3-way merge: the branch's tree for that path replaces
+    ours - including files it deleted - and nothing outside the path is
+    touched, so there are never conflicts. GUARDED by the caller (clean tree,
+    no live session), same as merge_branch. Returns {ok, branch, merged,
+    prototype, detail}."""
+    if not is_repo(root):
+        raise RuntimeError("project is not a git repo")
+    src = (name or "").strip()
+    if not src:
+        raise RuntimeError("branch to merge required")
+    slug = (slug or "").strip()
+    if not _PROTO_SLUG_OK.match(slug) or slug.startswith("."):
+        raise RuntimeError(f"invalid prototype slug: {slug!r}")
+    cur = current_branch(root)
+    if src == cur:
+        raise RuntimeError("can't merge a branch into itself")
+    code, _o, err = _git(root, "show-ref", "--verify", "--quiet", f"refs/heads/{src}")
+    if code != 0:
+        raise RuntimeError(f"branch {src!r} does not exist")
+    rel = f"source/{slug}"
+    code, out, _e = _git(root, "ls-tree", "-d", src, rel)
+    if code != 0 or not out.strip():
+        raise RuntimeError(f"branch {src!r} has no {rel}/ - nothing to merge")
+    # Replace our copy with the branch's, deletions included: clear the local
+    # dir first (its committed state stays recoverable via git), then
+    # materialise the branch's tree for that path.
+    abs_dir = os.path.join(root, rel)
+    if os.path.isdir(abs_dir):
+        shutil.rmtree(abs_dir, ignore_errors=True)
+    code, out, err = _git(root, "checkout", src, "--", rel, timeout=120)
+    if code != 0:
+        # Put our committed copy back rather than leaving the dir missing.
+        _git(root, "checkout", "HEAD", "--", rel, timeout=120)
+        raise RuntimeError(f"prototype merge failed: {(err or out).strip()[:400]}")
+    res = commit(root, f"Merge prototype {slug} from {src}", paths=[rel])
+    return {"ok": True, "branch": cur, "merged": src, "prototype": slug,
+            "detail": ("no differences - already up to date" if res.get("empty")
+                       else "committed " + (res.get("sha") or "")[:7])}
 
 
 def delete_branch(root, name, force=False):

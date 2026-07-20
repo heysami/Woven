@@ -12374,6 +12374,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
   const [newRepoPrivate, setNewRepoPrivate] = useState(true);
   const [showBranches, setShowBranches] = useState(false); // branch (fork/merge) section open?
   const [newBranch, setNewBranch] = useState("");          // new-branch name field
+  const [scope, setScope] = useState("");     // "" = whole project, else a prototype slug (commit + merge scope)
   const [diff, setDiff] = useState(null);   // compare modal: {title, loading, data, error}
   const searchTimer = useRef(0);
   const msgTouched = useRef(false);           // stop the poll clobbering typed text
@@ -12458,9 +12459,11 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
     // Live-session guest credits are a PROJECT concept - a global-DS commit
     // (urlSuffix) never picks up another project's share coauthors.
     const shareId = urlSuffix ? null : await activeShareId();
-    const j = await op("commit", { message: m, shareId });
+    const j = await op("commit", { message: m, shareId, prototype: scope || undefined });
     if (j) {
-      flashNote(j.empty ? "Nothing to commit" : "Committed " + (j.sha || "").slice(0, 7));
+      flashNote(j.empty
+        ? (scope ? "Nothing to commit in " + scope : "Nothing to commit")
+        : "Committed " + (j.sha || "").slice(0, 7) + (scope ? " (" + scope + " only)" : ""));
       msgTouched.current = false; reload();
     }
   };
@@ -12601,12 +12604,17 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
   };
   const doMergeBranch = async (name) => {
     if (st && st.dirty && !st.dirtyShareMetaOnly) { flashErr("Commit or discard changes before merging"); return; }
-    if (!(await uiConfirm("Merge '" + name + "' into '" + curBranch + "'?"))) return;
-    const j = await op("branch-merge", { name });
+    const ok = await uiConfirm(scope
+      ? "Use '" + name + "'s version of prototype '" + scope + "' on '" + curBranch + "'? Your branch's copy of that prototype is replaced; everything else stays untouched."
+      : "Merge '" + name + "' into '" + curBranch + "'?");
+    if (!ok) return;
+    const j = await op("branch-merge", { name, prototype: scope || undefined });
     if (j) {
       if (j.conflicts && j.conflicts.length)
         flashErr(j.conflicts.length + " file(s) conflicted - resolve below before committing");
-      else flashNote("Merged " + name + " into " + curBranch);
+      else flashNote(scope
+        ? "Merged prototype " + scope + " from " + name + (j.detail ? " - " + j.detail : "")
+        : "Merged " + name + " into " + curBranch);
       reload();
     }
   };
@@ -12896,7 +12904,9 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
                           </button>
                           ${!b.current && html`
                             <button className="th-icon-btn" disabled=${!!busy} onClick=${() => doMergeBranch(b.name)}
-                              title=${"Merge " + b.name + " into " + curBranch}><${Icon.Merge}/></button>
+                              title=${scope
+                                ? "Take prototype '" + scope + "' from " + b.name + " (scope is set above - everything else stays untouched)"
+                                : "Merge " + b.name + " into " + curBranch}><${Icon.Merge}/></button>
                             <button className="th-icon-btn" disabled=${!!busy} onClick=${() => doDeleteBranch(b.name)}
                               title=${"Delete " + b.name}><${Icon.Trash}/></button>`}
                         </div>`)}
@@ -12917,6 +12927,12 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
                     title="Draft a commit message from your uncommitted changes - a subject line plus one sentence per change">
                     <${Icon.Spark}/> ${busy === "summarise" ? "Summarising…" : "Summarise changes"}</button>
                 </div>`}
+              ${(st.prototypes || []).length > 1 && html`
+                <select className="th-git-scope" value=${scope} onChange=${e => setScope(e.target.value)}
+                  title="What Commit and Merge act on. A prototype scope commits only that prototype's files (plus review data) and merges only that prototype from a branch - other prototypes stay untouched.">
+                  <option value="">Scope: whole project</option>
+                  ${st.prototypes.map(p => html`<option key=${p} value=${p}>Scope: ${p} only</option>`)}
+                </select>`}
               <textarea className="th-git-msg" placeholder="Commit message…" value=${msg}
                 onInput=${e => { msgTouched.current = true; setMsg(e.target.value); }}></textarea>
 
