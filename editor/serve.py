@@ -4684,6 +4684,14 @@ def _peer_comments_loop() -> None:
                 # woven-share-links branch (fetch teammates' links, publish
                 # mine) - the union below then sees them immediately.
                 if round_i % _LINKS_META_EVERY == 0:
+                    # Refresh THIS install's entries first - a branch switch
+                    # changes what a live link serves, and only republishing
+                    # here keeps the registry's `branch` field honest between
+                    # share toggles. Churn-free when nothing moved.
+                    try:
+                        _shares.publish_project_links(pid)
+                    except Exception:
+                        pass
                     _sync_links_meta(root)
                 links = _shares.links_list(pid).get("links") or []
                 seen = set()
@@ -22380,6 +22388,28 @@ class H(http.server.SimpleHTTPRequestHandler):
                 nt = t.replace(f"source/{old}/", f"source/{new}/")
                 nt = re.sub(r'("(?:branch|prototype)"\s*:\s*)"' + re.escape(old) + r'"',
                             lambda m: m.group(1) + json.dumps(new), nt)
+                # Node DISPLAY names too: share/canvas rows render a node's
+                # label/title over its slug (labelOf = label || title || slug),
+                # so a stale title keeps SHOWING the old name while the row is
+                # correctly bound to the new slug. Only titles that literally
+                # equal the old slug follow the rename - a custom title is the
+                # user's text, not ours to rewrite.
+                try:
+                    doc = json.loads(nt)
+                    relabeled = 0
+                    for n in (doc.get("nodes") or []):
+                        if not isinstance(n, dict):
+                            continue
+                        if new not in (n.get("branch"), n.get("prototype")):
+                            continue
+                        for fld in ("label", "title"):
+                            if (n.get(fld) or "").strip().lower() == old.lower():
+                                n[fld] = new_label
+                                relabeled += 1
+                    if relabeled:
+                        nt = json.dumps(doc, indent=2)
+                except Exception:
+                    pass
                 if nt != t:
                     with open(wf, "w", encoding="utf-8") as f:
                         f.write(nt)
