@@ -4718,6 +4718,12 @@ def _peer_comments_loop() -> None:
                         _broadcast_share_comments_changed(pid, "")
                     except Exception:
                         pass
+                    # Peer-arrived comments also stale the hosted R2 copies -
+                    # the per-mutation push only covers LOCAL comment ops.
+                    try:
+                        _shares.hosted_comments_push_project(pid)
+                    except Exception:
+                        pass
         except Exception:
             pass
         round_i += 1
@@ -21489,6 +21495,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                         if pid:
                             try: _broadcast_share_comments_changed(pid, "")
                             except Exception: pass
+                            try: _shares.hosted_comments_push_project(pid)
+                            except Exception: pass
                 # Surface the merged state to the editor (and any guests) exactly
                 # like any other edit, so the canvas reloads to the new HEAD.
                 if pid:
@@ -21523,6 +21531,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                     res["commentsCarried"] = True
                     if pid:
                         try: _broadcast_share_comments_changed(pid, "")
+                        except Exception: pass
+                        try: _shares.hosted_comments_push_project(pid)
                         except Exception: pass
                 # Reload the canvas (and any guests) to the reverted HEAD.
                 # `workflow-reset` (not `workflow-changed`) - the client must
@@ -21564,6 +21574,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                     res["commentsCarried"] = True
                     if pid:
                         try: _broadcast_share_comments_changed(pid, "")
+                        except Exception: pass
+                        try: _shares.hosted_comments_push_project(pid)
                         except Exception: pass
                 # Reload the canvas (and any guests) to the rolled-back HEAD.
                 # `workflow-reset` (not `workflow-changed`): the client must

@@ -2441,6 +2441,20 @@ def _hosted_comments_push_soon(rec):
     threading.Thread(target=run, daemon=True, name="hosted-comments-push").start()
 
 
+def hosted_comments_push_project(project):
+    """Refresh the R2 discussion copy of EVERY hosted share of `project`.
+    The per-mutation path (_notify_comments_changed) only fires on local
+    comment ops; comments that arrive via the peer-gate pull would otherwise
+    never reach the hosted copy, so visitors of an offline owner would see a
+    discussion frozen at upload time. Best-effort."""
+    try:
+        for s in shares_load().get("shares", []):
+            if s.get("project") == project and share_hosted_on(s):
+                _hosted_comments_push_soon(s)
+    except Exception:
+        pass
+
+
 # ── Hosted links push - the R2 copy of the sibling-share registry ─────────
 # The snapshot bakes the project's link registry in at upload time; this
 # keeps every hosted share's copy current afterwards, so the viewer's
