@@ -4672,14 +4672,33 @@ def _peer_comments_loop() -> None:
     round_i = 0
     while True:
         try:
+            pids = []
             for p in _list_projects():
                 pid = (p.get("id") or "").strip()
-                if not pid:
-                    continue
+                if pid and pid not in pids:
+                    pids.append(pid)
+            # A share can outlive its workspace entry (twin clone of the same
+            # repo, renamed workspace id, project removed from the list) while
+            # its PUBLIC gate keeps serving that root. Sync those roots too,
+            # or the share's discussion silently forks from the owner's
+            # editor: found live - a gate stuck at 13 comments while the
+            # owner's open project had the full merged list.
+            try:
+                for s in _shares.shares_load().get("shares", []):
+                    sp = (s.get("project") or "").strip()
+                    if sp and not s.get("liveOnly") and sp not in pids:
+                        pids.append(sp)
+            except Exception:
+                pass
+            seen_roots = set()
+            for pid in pids:
                 try:
                     root = resolve_project_root({"project": pid})
                 except Exception:
                     continue
+                if root in seen_roots:
+                    continue                # two ids, one folder - sync once
+                seen_roots.add(root)
                 # Periodically reconcile with the branch-independent
                 # woven-share-links branch (fetch teammates' links, publish
                 # mine) - the union below then sees them immediately.
