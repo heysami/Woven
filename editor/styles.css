@@ -6607,50 +6607,49 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   color: var(--text);
   background: color-mix(in oklab, var(--text) 12%, transparent);
 }
-/* "Open as code" modal - the .workflow-modal shell sized for source bodies.
-   Override the shell's 4-row grid: head / editor / footer. Doubled class so
-   it beats .workflow-modal, which appears later in this stylesheet. */
-.workflow-modal.pv-code-modal {
-  width: min(980px, 94vw);
-  height: min(82vh, 860px);
-  max-height: min(82vh, 860px);
-  grid-template-rows: auto 1fr auto;
+/* "Open as code" preview tab - a source-editor pane in the proto viewer
+   stage. Same mount/visibility contract as .workflow-proto-frame (always
+   mounted, data-active toggles display) so drafts survive tab switches. */
+.workflow-proto-codepane {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  background: var(--surface);
 }
-.pv-code-modal-title-wrap { min-width: 0; }
-.pv-code-modal .workflow-modal-title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-}
-.pv-code-modal .workflow-modal-sub {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.pv-code-modal-glyph { display: inline-flex; color: var(--text-muted); }
-.pv-code-modal-body {
+.workflow-proto-codepane[data-active="true"] { display: flex; }
+.workflow-proto-codepane-body {
+  flex: 1;
   min-height: 0;
   display: flex;
   overflow: hidden;
-  background: var(--surface);
 }
-.pv-code-modal-body > .pv-panel-empty {
+.workflow-proto-codepane-body > .pv-panel-empty {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.pv-code-modal-foot {
+.workflow-proto-codepane-foot {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 14px;
+  padding: 6px 12px;
   border-top: 1px solid var(--border);
   background: var(--surface-2);
-  min-height: 0;
+  flex: 0 0 auto;
+  min-width: 0;
 }
-.pv-code-modal-err {
+.workflow-proto-codepane-path {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.workflow-proto-codepane-err {
   color: var(--danger, #c0392b);
   font-size: 11px;
   overflow: hidden;
@@ -6658,10 +6657,20 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   white-space: nowrap;
   min-width: 0;
 }
-.pv-code-modal-note {
+.workflow-proto-codepane-note {
   color: var(--text-muted);
   font-size: 11px;
+  flex: 0 0 auto;
 }
+/* Code-tab glyph in the viewer tabstrip. */
+.workflow-proto-tab-glyph {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+.workflow-proto-tab.is-active .workflow-proto-tab-glyph { color: var(--text); }
 /* Floating left chat panel for the standalone views (User testing /
    Development) that mount RightRailDock - the mirror of the floating right
    dock, pinned to the LEFT edge. Same z tier as .right-rail-dock-host

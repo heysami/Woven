@@ -49462,12 +49462,15 @@ function pvRevealInFinder(path) {
   } catch {}
 }
 
-/* Single-file code modal for the preview panels' "Open as code" row action.
-   Same fetch/draft/save mechanics as WorkflowCodePanel, but modal (the
-   preview panels have no canvas node to dock against). Saves only land on
-   source/ paths - /__write_text rejects everything else - so the textarea
-   drops to read-only outside source/. */
-function PreviewCodeModal({ path, onClose }) {
+/* Source-editor pane for a preview-viewer CODE tab (tab.kind === "code",
+   opened by the panels' "Open as code" row action). Lives in the viewer
+   stage exactly like ProtoViewerFrame - always mounted, visibility toggled
+   by data-active - so drafts survive tab switches. Same fetch/draft/save
+   mechanics as WorkflowCodePanel. Saves only land on source/ paths -
+   /__write_text rejects everything else - so the textarea drops to
+   read-only outside source/. */
+function ProtoViewerCodePane({ tab, isActive }) {
+  const path = tab.path;
   const [body, setBody]         = useState({ text: "", loading: true, error: null });
   const [draft, setDraft]       = useState(null);   // null = clean
   const [saving, setSaving]     = useState(false);
@@ -49489,12 +49492,6 @@ function PreviewCodeModal({ path, onClose }) {
       .catch(err => { if (alive) setBody({ text: "", loading: false, error: String(err.message || err) }); });
     return () => { alive = false; };
   }, [path]);
-
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
 
   const cleanText = (!body.loading && !body.error) ? (body.text || "") : "";
   const displayText = draft === null ? cleanText : draft;
@@ -49550,48 +49547,38 @@ function PreviewCodeModal({ path, onClose }) {
     }
   };
 
-  const basename = (path || "").split("/").pop() || path;
   return html`
-    <div className="workflow-modal-backdrop" onMouseDown=${onClose}>
-      <div className="workflow-modal pv-code-modal" onMouseDown=${(e) => e.stopPropagation()}>
-        <div className="workflow-modal-head">
-          <div className="pv-code-modal-title-wrap">
-            <div className="workflow-modal-title">
-              <span className="pv-code-modal-glyph"><${Icon.Code}/></span>
-              ${basename}${dirty ? html`<span className="workflow-code-panel-dirty" title="Unsaved changes">●</span>` : null}
-            </div>
-            <div className="workflow-modal-sub" title=${path}>${path}</div>
-          </div>
-          <button type="button" className="workflow-modal-close" onClick=${onClose} aria-label="Close">×</button>
-        </div>
-        <div className="pv-code-modal-body">
-          ${body.loading && html`<div className="pv-panel-empty">Loading…</div>`}
-          ${body.error && html`<div className="pv-panel-empty">Could not read this file: ${body.error}</div>`}
-          ${!body.loading && !body.error && html`
-            <textarea
-              className="workflow-code-panel-editor"
-              wrap="off"
-              spellCheck=${false}
-              readOnly=${!editable}
-              value=${displayText}
-              onInput=${editable ? ((e) => setDraft(e.target.value)) : undefined}
-              onKeyDown=${editable ? onTextareaKeyDown : undefined}
-            />
-          `}
-        </div>
-        <div className="pv-code-modal-foot">
-          ${saveError && html`<span className="pv-code-modal-err" title=${saveError}>${saveError}</span>`}
-          ${!canSave && !body.loading && !body.error && html`<span className="pv-code-modal-note">Read-only: only files under source/ can be saved here.</span>`}
-          <span className="workflow-node-bar-spacer"/>
-          ${canSave && html`
-            <button
-              type="button"
-              className=${"workflow-code-panel-save" + (dirty ? " is-dirty" : "") + (saving ? " is-saving" : "") + (saveFlash ? " is-saved" : "")}
-              disabled=${!dirty || saving}
-              onClick=${save}
-            >${saveFlash ? "Saved ✓" : saving ? "Saving…" : "Save"}</button>
-          `}
-        </div>
+    <div className="workflow-proto-codepane" data-active=${isActive ? "true" : "false"}>
+      <div className="workflow-proto-codepane-body">
+        ${body.loading && html`<div className="pv-panel-empty">Loading…</div>`}
+        ${body.error && html`<div className="pv-panel-empty">Could not read this file: ${body.error}</div>`}
+        ${!body.loading && !body.error && html`
+          <textarea
+            className="workflow-code-panel-editor"
+            wrap="off"
+            spellCheck=${false}
+            readOnly=${!editable}
+            value=${displayText}
+            onInput=${editable ? ((e) => setDraft(e.target.value)) : undefined}
+            onKeyDown=${editable ? onTextareaKeyDown : undefined}
+          />
+        `}
+      </div>
+      <div className="workflow-proto-codepane-foot">
+        <span className="workflow-proto-codepane-path" title=${path}>
+          ${path}${dirty ? html`<span className="workflow-code-panel-dirty" title="Unsaved changes">●</span>` : null}
+        </span>
+        ${saveError && html`<span className="workflow-proto-codepane-err" title=${saveError}>${saveError}</span>`}
+        ${!canSave && !body.loading && !body.error && html`<span className="workflow-proto-codepane-note">Read-only: only files under source/ can be saved here.</span>`}
+        <span className="workflow-node-bar-spacer"/>
+        ${canSave && html`
+          <button
+            type="button"
+            className=${"workflow-code-panel-save" + (dirty ? " is-dirty" : "") + (saving ? " is-saving" : "") + (saveFlash ? " is-saved" : "")}
+            disabled=${!dirty || saving}
+            onClick=${save}
+          >${saveFlash ? "Saved ✓" : saving ? "Saving…" : "Save"}</button>
+        `}
       </div>
     </div>
   `;
@@ -49607,7 +49594,6 @@ function PreviewAssetsPanel({ activePath, onClose }) {
   const [livePath, setLivePath]     = useState(null);
   const [filter, setFilter]         = useState("");
   const [kindFilter, setKindFilter] = useState(null);
-  const [codePath, setCodePath]     = useState(null);   // file open in the code modal
   const lastHrefRef = useRef(null);
   const activeFrame = () => document.querySelector('.workflow-proto-frame[data-active="true"]');
   const scan = useCallback(() => {
@@ -49746,8 +49732,12 @@ function PreviewAssetsPanel({ activePath, onClose }) {
               ${isFile && html`
                 <span className="pv-row-actions">
                   ${codeable && html`
-                    <button type="button" className="pv-rowbtn" title="Open as code" aria-label="Open as code"
-                      onClick=${(e) => { e.stopPropagation(); setCodePath(item.path); }}><${Icon.Code}/></button>
+                    <button type="button" className="pv-rowbtn" title="Open as code in a preview tab" aria-label="Open as code"
+                      onClick=${(e) => {
+                        e.stopPropagation();
+                        window.dispatchEvent(new CustomEvent("th:proto-open-tab",
+                          { detail: { path: item.path, label: basename, kind: "code" } }));
+                      }}><${Icon.Code}/></button>
                   `}
                   <button type="button" className="pv-rowbtn" title="Reveal in Finder" aria-label="Reveal in Finder"
                     onClick=${(e) => { e.stopPropagation(); pvRevealInFinder(item.path); }}><${Icon.External}/></button>
@@ -49758,7 +49748,6 @@ function PreviewAssetsPanel({ activePath, onClose }) {
           `;
         })}
       </div>
-      ${codePath && html`<${PreviewCodeModal} path=${codePath} onClose=${() => setCodePath(null)}/>`}
     </div>
   `;
 }
@@ -49769,7 +49758,6 @@ function PreviewAssetsPanel({ activePath, onClose }) {
 function PreviewFilesPanel({ activePath, onClose }) {
   const [entries, setEntries] = useState(null);   // null = loading
   const [collapsed, setCollapsed] = useState(() => new Set());
-  const [codePath, setCodePath] = useState(null); // file open in the code modal
   const load = useCallback(async () => {
     try {
       const [pr, hp] = await Promise.all([
@@ -49876,8 +49864,12 @@ function PreviewFilesPanel({ activePath, onClose }) {
                   <span className="pv-file-name">${f.label}</span>
                 </button>
                 <span className="pv-row-actions">
-                  <button type="button" className="pv-rowbtn" title="Open as code" aria-label="Open as code"
-                    onClick=${(e) => { e.stopPropagation(); setCodePath(f.path); }}><${Icon.Code}/></button>
+                  <button type="button" className="pv-rowbtn" title="Open as code in a preview tab" aria-label="Open as code"
+                    onClick=${(e) => {
+                      e.stopPropagation();
+                      window.dispatchEvent(new CustomEvent("th:proto-open-tab",
+                        { detail: { path: f.path, label: f.path.split("/").pop() || f.label, kind: "code" } }));
+                    }}><${Icon.Code}/></button>
                   <button type="button" className="pv-rowbtn" title="Reveal in Finder" aria-label="Reveal in Finder"
                     onClick=${(e) => { e.stopPropagation(); pvRevealInFinder(f.path); }}><${Icon.External}/></button>
                 </span>
@@ -49910,7 +49902,6 @@ function PreviewFilesPanel({ activePath, onClose }) {
         ${entries !== null && total === 0 && html`<div className="pv-panel-empty">No prototype pages under source/ yet.</div>`}
         ${entries !== null && total > 0 && renderDir(tree, 0)}
       </div>
-      ${codePath && html`<${PreviewCodeModal} path=${codePath} onClose=${() => setCodePath(null)}/>`}
     </div>
   `;
 }
@@ -50066,6 +50057,9 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
       if (!paths.length || tabs.length === 0) return;
       const hit = [];
       for (const t of tabs) {
+        // Code tabs hold the user's unsaved draft - a remount would drop it.
+        // They refresh via the toolbar Reload button instead.
+        if (t.kind === "code") continue;
         const dir = t.path.includes("/") ? t.path.slice(0, t.path.lastIndexOf("/") + 1) : "";
         if (paths.some(p => typeof p === "string" && (p === t.path || (dir && p.startsWith(dir))))) hit.push(t.id);
       }
@@ -50080,13 +50074,17 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
     window.addEventListener("th:asset-refresh", onAsset);
     return () => window.removeEventListener("th:asset-refresh", onAsset);
   }, [tabs]);
-  const addTab = useCallback((path, label) => {
+  // kind: undefined/"page" = rendered iframe; "code" = source editor pane.
+  // The same path can be open once per kind (page tab + code tab side by side).
+  const addTab = useCallback((path, label, kind) => {
     setState(s => {
-      const existing = s.tabs.find(t => t.path === path);
+      const existing = s.tabs.find(t => t.path === path && (t.kind || "page") === (kind || "page"));
       if (existing) return { ...s, activeId: existing.id };
       const id = "pt" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const fallback = path.split("/").filter(Boolean).slice(-2).join("/");
-      return { tabs: [...s.tabs, { id, path, label: label || fallback }], activeId: id };
+      const tab = { id, path, label: label || fallback };
+      if (kind === "code") tab.kind = "code";
+      return { tabs: [...s.tabs, tab], activeId: id };
     });
     setPickerOpen(false);
   }, []);
@@ -50119,7 +50117,7 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
       const d = (e && e.detail) || {};
       if (!d.path || typeof d.path !== "string") return;
       try { delete window.__thProtoPendingTab; } catch {}
-      addTab(d.path, d.label || null);
+      addTab(d.path, d.label || null, d.kind || null);
     };
     window.addEventListener("th:proto-open-tab", onOpenTab);
     // Drain a pending open that fired before this viewer mounted (first
@@ -50128,7 +50126,7 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
       const pending = window.__thProtoPendingTab;
       if (pending && pending.path) {
         delete window.__thProtoPendingTab;
-        addTab(pending.path, pending.label || null);
+        addTab(pending.path, pending.label || null, pending.kind || null);
       }
     } catch {}
     return () => window.removeEventListener("th:proto-open-tab", onOpenTab);
@@ -50198,6 +50196,9 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
   }, [active, tabs.length, addTab]);
   const activeTab = tabs.find(t => t.id === activeId) || null;
   const activeNav = (activeId && navControls[activeId]) || null;
+  // Code tabs are a text editor, not a rendered page - device/zoom/nav/edit
+  // tools don't apply; Reload (refetch) and Open-in-browser stay.
+  const isCodeTab = !!(activeTab && activeTab.kind === "code");
   const srcFor = (t) => apiUrl("/" + t.path);
   return html`
     <div className="workflow-proto-viewer" data-active=${active ? "true" : "false"}>
@@ -50212,6 +50213,7 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
             onClick=${() => setState(s => ({ ...s, activeId: t.id }))}
             onAuxClick=${(e) => { if (e.button === 1) { e.preventDefault(); closeTab(t.id); } }}
           >
+            ${t.kind === "code" && html`<span className="workflow-proto-tab-glyph"><${Icon.Code}/></span>`}
             <span className="workflow-proto-tab-label">${t.label}</span>
             <button
               type="button"
@@ -50230,7 +50232,7 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
           onClick=${openPicker}
         ><${Icon.Plus}/></button>
         <div className="workflow-proto-tabstrip-spacer"/>
-        ${activeTab && html`
+        ${activeTab && !isCodeTab && html`
           <div className="workflow-proto-device" role="group" aria-label="Device preview">
             ${PROTO_DEVICE_PRESETS.map(d => {
               const isActive = device === d.id;
@@ -50295,7 +50297,7 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
             onClick=${() => activeNav && activeNav.canGoForward && activeNav.goForward()}
           ><${Icon.Forward}/><//>
         `}
-        ${activeTab && onEditTab && html`
+        ${activeTab && onEditTab && !isCodeTab && html`
           <${HoverTip}
             className="workflow-proto-tool workflow-proto-tool-edit"
             tip="Edit this page"
@@ -50334,7 +50336,13 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
             <button type="button" className="workflow-proto-empty-btn" onClick=${openPicker}>+ Open a prototype</button>
           </div>
         `)}
-        ${tabs.map(t => html`
+        ${tabs.map(t => t.kind === "code" ? html`
+          <${ProtoViewerCodePane}
+            key=${t.id + ":" + (nonces[t.id] || 0)}
+            tab=${t}
+            isActive=${t.id === activeId}
+          />
+        ` : html`
           <${ProtoViewerFrame}
             key=${t.id + ":" + (nonces[t.id] || 0)}
             tab=${t}
