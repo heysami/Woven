@@ -294,35 +294,115 @@
     }
   };
 
-  // Cubic between the facing edges of two frames; mid is the curve's t=0.5
-  // point, where the action label chip sits.
-  const arrowGeom = (a, b) => {
-    const acx = a.x + a.w / 2, acy = a.y + a.h / 2;
-    const bcx = b.x + b.w / 2, bcy = b.y + b.h / 2;
-    const dx = bcx - acx, dy = bcy - acy;
-    let p1, p2, c1, c2;
-    if (Math.abs(dx) >= Math.abs(dy)) {
-      const dir = dx >= 0 ? 1 : -1;
-      p1 = { x: dir > 0 ? a.x + a.w : a.x, y: acy };
-      p2 = { x: dir > 0 ? b.x : b.x + b.w, y: bcy };
-      const bend = Math.max(60, Math.abs(p2.x - p1.x) / 2);
-      c1 = { x: p1.x + dir * bend, y: p1.y };
-      c2 = { x: p2.x - dir * bend, y: p2.y };
-    } else {
-      const dir = dy >= 0 ? 1 : -1;
-      p1 = { x: acx, y: dir > 0 ? a.y + a.h : a.y };
-      p2 = { x: bcx, y: dir > 0 ? b.y : b.y + b.h };
-      const bend = Math.max(60, Math.abs(p2.y - p1.y) / 2);
-      c1 = { x: p1.x, y: p1.y + dir * bend };
-      c2 = { x: p2.x, y: p2.y - dir * bend };
-    }
-    return {
-      d: `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${p2.x} ${p2.y}`,
-      mid: {
-        x: (p1.x + 3 * c1.x + 3 * c2.x + p2.x) / 8,
-        y: (p1.y + 3 * c1.y + 3 * c2.y + p2.y) / 8,
-      },
+  // ── Edge routing + label placement ─────────────────────────────────────
+  // Verbatim ports of the editor's canvas helpers (app.js routeEdge /
+  // routeEdges / cubicPt / labelBBox / rectsOverlap / placeLabel) so the
+  // shared flow map draws the SAME arrows and chip placement the owner sees
+  // in Woven's Architecture canvas. Pure functions - keep in sync by copy.
+  const routeEdge = (A, B, opts = {}) => {
+    const ax = A.x + A.w / 2, ay = A.y + A.h / 2;
+    const bx = B.x + B.w / 2, by = B.y + B.h / 2;
+    const sideOf = (rect, towardX, towardY) => {
+      const cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
+      const ddx = towardX - cx, ddy = towardY - cy;
+      if (Math.abs(ddy) * rect.w > Math.abs(ddx) * rect.h) return ddy > 0 ? "bottom" : "top";
+      return ddx > 0 ? "right" : "left";
     };
+    const ptOf = (rect, side, t = 0.5) => {
+      switch (side) {
+        case "right":  return { x: rect.x + rect.w,     y: rect.y + rect.h * t, nx:  1, ny:  0 };
+        case "left":   return { x: rect.x,              y: rect.y + rect.h * t, nx: -1, ny:  0 };
+        case "bottom": return { x: rect.x + rect.w * t, y: rect.y + rect.h,     nx:  0, ny:  1 };
+        default:       return { x: rect.x + rect.w * t, y: rect.y,              nx:  0, ny: -1 };
+      }
+    };
+    const sideA = opts.sideA != null ? opts.sideA : sideOf(A, bx, by);
+    const sideB = opts.sideB != null ? opts.sideB : sideOf(B, ax, ay);
+    const A0 = ptOf(A, sideA, opts.exitT != null ? opts.exitT : 0.5);
+    const B0 = ptOf(B, sideB, opts.entryT != null ? opts.entryT : 0.5);
+    const tMin = opts.tensionMin != null ? opts.tensionMin : 40;
+    const tMax = opts.tensionMax != null ? opts.tensionMax : 180;
+    const tension = Math.max(tMin, Math.min(tMax, Math.hypot(bx - ax, by - ay) * 0.4));
+    return {
+      fx: A0.x, fy: A0.y, tx: B0.x, ty: B0.y,
+      c1x: A0.x + A0.nx * tension, c1y: A0.y + A0.ny * tension,
+      c2x: B0.x + B0.nx * tension, c2y: B0.y + B0.ny * tension,
+      sideA, sideB,
+    };
+  };
+  const routeEdges = (arrows, getRect, opts = {}) => {
+    const sides = arrows.map((a) => {
+      const A = getRect(a.from), B = getRect(a.to);
+      if (!A || !B) return null;
+      const probe = routeEdge(A, B, opts);
+      return { sideA: probe.sideA, sideB: probe.sideB };
+    });
+    const counts = new Map();
+    const inc = (k) => counts.set(k, (counts.get(k) || 0) + 1);
+    sides.forEach((r, i) => {
+      if (!r) return;
+      inc(arrows[i].from + ":out:" + r.sideA);
+      inc(arrows[i].to   + ":in:"  + r.sideB);
+    });
+    const used = new Map();
+    return arrows.map((a, i) => {
+      const r = sides[i]; if (!r) return null;
+      const A = getRect(a.from), B = getRect(a.to);
+      const outKey = a.from + ":out:" + r.sideA;
+      const inKey  = a.to   + ":in:"  + r.sideB;
+      const outTotal = counts.get(outKey), inTotal = counts.get(inKey);
+      const outIdx = used.get(outKey) || 0, inIdx = used.get(inKey) || 0;
+      used.set(outKey, outIdx + 1);
+      used.set(inKey,  inIdx  + 1);
+      const exitT  = (outIdx + 1) / (outTotal + 1);
+      const entryT = (inIdx  + 1) / (inTotal  + 1);
+      return routeEdge(A, B, { ...opts, sideA: r.sideA, sideB: r.sideB, exitT, entryT });
+    });
+  };
+  const cubicPt = (e, t) => {
+    const u = 1 - t;
+    return {
+      x: u*u*u*e.fx + 3*u*u*t*e.c1x + 3*u*t*t*e.c2x + t*t*t*e.tx,
+      y: u*u*u*e.fy + 3*u*u*t*e.c1y + 3*u*t*t*e.c2y + t*t*t*e.ty,
+    };
+  };
+  const labelBBox = (pt, text, opts = {}) => {
+    const maxW = opts.maxWidth != null ? opts.maxWidth : 160;
+    const charW = opts.charW != null ? opts.charW : 7.2;
+    const lineH = opts.lineH != null ? opts.lineH : 16;
+    const padX = opts.padX != null ? opts.padX : 18;
+    const padY = opts.padY != null ? opts.padY : 10;
+    const minW = opts.minW != null ? opts.minW : 48;
+    const t = String(text || "");
+    const naturalW = t.length * charW + padX;
+    const w = Math.min(maxW, Math.max(minW, naturalW));
+    const lines = naturalW > maxW ? Math.ceil(naturalW / (maxW - padX)) : 1;
+    const h = lines * lineH + padY;
+    return { x: pt.x - w/2, y: pt.y - h/2, w, h, cx: pt.x, cy: pt.y };
+  };
+  const rectsOverlap = (a, b, pad = 4) =>
+    !(a.x + a.w + pad < b.x || b.x + b.w + pad < a.x ||
+      a.y + a.h + pad < b.y || b.y + b.h + pad < a.y);
+  const placeLabel = (edge, text, obstacles, opts = {}) => {
+    const tries = opts.tries || [0.5, 0.42, 0.58, 0.34, 0.66, 0.28, 0.72];
+    const perpAmts = opts.perpAmts || [0, -16, 16, -28, 28];
+    for (const perp of perpAmts) {
+      for (const t of tries) {
+        const pt = cubicPt(edge, t);
+        const dt = 0.01;
+        const p2 = cubicPt(edge, Math.min(1, t + dt));
+        const dx = p2.x - pt.x, dy = p2.y - pt.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len, ny = dx / len;
+        const offsetPt = { x: pt.x + nx * perp, y: pt.y + ny * perp };
+        const bbox = labelBBox(offsetPt, text, opts);
+        if (!obstacles.some((o) => rectsOverlap(bbox, o))) {
+          return { pt: offsetPt, bbox, t, perp };
+        }
+      }
+    }
+    const pt = cubicPt(edge, 0.5);
+    return { pt, bbox: labelBBox(pt, text, opts), t: 0.5, perp: 0 };
   };
 
   // The flow map itself: every frame as a live page embed on the editor's
@@ -383,13 +463,45 @@
           h: f.h || cellH,
         };
       });
+      // Arrow routing + chip placement - the editor's exact pipeline: rects
+      // include the 32px label band, anchors spread per (frame, side), chips
+      // collision-avoid against frames and each other (see ArrowLayer).
+      const LABEL_BAND = 32;
       const byId = new Map(placed.map((f) => [f.id, f]));
-      const arrows = (D.arrows || [])
-        .filter((a) => a && a.from !== a.to && byId.has(a.from) && byId.has(a.to))
-        .map((a, i) => ({ ...a, key: a.id || "arrow-" + i, geom: arrowGeom(byId.get(a.from), byId.get(a.to)) }));
+      const rectFor = (f) => ({ x: f.x, y: f.y, w: f.w, h: f.h + LABEL_BAND });
+      const getRect = (id) => { const f = byId.get(id); return f ? rectFor(f) : null; };
+      const rawArrows = (D.arrows || [])
+        .filter((a) => a && a.from !== a.to && byId.has(a.from) && byId.has(a.to));
+      const routes = routeEdges(rawArrows, getRect, { tensionMin: 60, tensionMax: 220 });
+      const sourceCount = new Map();
+      rawArrows.forEach((a) => sourceCount.set(a.from, (sourceCount.get(a.from) || 0) + 1));
+      const sourceIdx = new Map();
+      const obstacles = placed.map(rectFor);
+      const arrows = rawArrows.map((a, i) => {
+        const r = routes[i];
+        if (!r) return null;
+        let chip = null;
+        if (a.action) {
+          const N = sourceCount.get(a.from) || 1;
+          const k = sourceIdx.get(a.from) || 0;
+          sourceIdx.set(a.from, k + 1);
+          const center = N === 1 ? 0.5 : 0.3 + (k / Math.max(1, N - 1)) * 0.4;
+          const tries = [center, center - 0.08, center + 0.08, center - 0.16, center + 0.16, 0.5, 0.35, 0.65]
+            .map((t) => Math.max(0.15, Math.min(0.85, t)));
+          chip = placeLabel(r, a.action, obstacles, { tries });
+          obstacles.push(chip.bbox);
+        }
+        return {
+          ...a,
+          key: a.id || "arrow-" + i,
+          d: `M ${r.fx} ${r.fy} C ${r.c1x} ${r.c1y}, ${r.c2x} ${r.c2y}, ${r.tx} ${r.ty}`,
+          ends: r,
+          chip,
+        };
+      }).filter(Boolean);
       const w = Math.max(0, ...placed.map((f) => f.x + f.w)) + MARGIN;
-      const h = Math.max(0, ...placed.map((f) => f.y + f.h)) + MARGIN;
-      return { frames: placed, arrows, w, h };
+      const h = Math.max(0, ...placed.map((f) => f.y + f.h + LABEL_BAND)) + MARGIN;
+      return { frames: placed, arrows, w, h, labelBand: LABEL_BAND };
     }, [flow]);
 
     const fit = useCallback(() => {
@@ -472,35 +584,49 @@
             <svg className="sv-flow-arrows" width=${world.w} height=${world.h}
               viewBox=${`0 0 ${world.w} ${world.h}`}>
               <defs>
-                <marker id="sv-arrowhead" markerWidth="7" markerHeight="7"
-                  refX="5.6" refY="3.5" orient="auto">
-                  <path d="M0 0 L7 3.5 L0 7 Z" fill="currentColor" stroke="none"/>
+                <marker id="sv-arrowhead" viewBox="0 0 12 12" refX="10" refY="6"
+                  markerWidth="8" markerHeight="8" orient="auto">
+                  <path d="M0 0 L10 6 L0 12 L3 6 z" fill="oklch(54% 0.16 252)"/>
                 </marker>
               </defs>
-              ${world.arrows.map((a) => html`
-                <path key=${a.key} d=${a.geom.d} fill="none" stroke="currentColor"
-                  stroke-width=${1.5 / view.k} marker-end="url(#sv-arrowhead)"/>
+              ${world.arrows.map((a, i) => html`
+                <g key=${a.key}>
+                  <linearGradient id=${"sv-grad-" + i} gradientUnits="userSpaceOnUse"
+                    x1=${a.ends.fx} y1=${a.ends.fy} x2=${a.ends.tx} y2=${a.ends.ty}>
+                    <stop offset="0%"   stopColor="oklch(54% 0.16 252)" stopOpacity="0.1"/>
+                    <stop offset="100%" stopColor="oklch(54% 0.16 252)" stopOpacity="1"/>
+                  </linearGradient>
+                  <path className="sv-edge-flow" d=${a.d} fill="none"
+                    stroke=${`url(#sv-grad-${i})`} stroke-width="2"
+                    marker-end="url(#sv-arrowhead)"/>
+                </g>
+              `)}
+              ${world.arrows.filter((a) => a.chip).map((a) => html`
+                <foreignObject key=${"chip-" + a.key}
+                  x=${a.chip.bbox.x} y=${a.chip.bbox.y}
+                  width=${a.chip.bbox.w} height=${a.chip.bbox.h}
+                  style=${{ overflow: "visible", pointerEvents: "none" }}>
+                  <div xmlns="http://www.w3.org/1999/xhtml" className="sv-edge-chip"
+                    title=${a.action}>${a.action}</div>
+                </foreignObject>
               `)}
             </svg>
-            ${view.k >= 0.12 && world.arrows.filter((a) => a.action).map((a) => html`
-              <div key=${"lbl-" + a.key} className="sv-flow-arrow-label"
-                style=${{ left: a.geom.mid.x + "px", top: a.geom.mid.y + "px",
-                          transform: `translate(-50%, -50%) scale(${1 / view.k})` }}
-              >${a.action}</div>
-            `)}
             ${world.frames.map((f) => html`
               <div key=${f.id} className="sv-flow-frame"
-                style=${{ left: f.x + "px", top: f.y + "px", width: f.w + "px", height: f.h + "px" }}>
-                <div className="sv-flow-frame-label"
-                  style=${{ transform: `translateY(-8px) scale(${1 / view.k})` }}>
-                  ${f.kind === "start" ? html`<span className="sv-flow-start" title="Start screen"></span>` : null}
-                  ${f.label || f.id}
+                style=${{ left: f.x + "px", top: f.y + "px", width: f.w + "px",
+                          height: (f.h + world.labelBand) + "px" }}>
+                <div className="sv-flow-frame-head">
+                  <span className="sv-flow-frame-kind" data-kind=${f.kind || "page"}>${f.kind || "page"}</span>
+                  <span className="sv-flow-frame-name">${f.label || f.id}</span>
+                  <span className="sv-flow-frame-meta">${f.hash || "-"}</span>
                 </div>
-                <iframe src=${base + "p/source/" + prototype + "/" + f.entry + (f.hash || "")}
-                  loading="lazy" scrolling="no" tabIndex=${-1} title=${f.label || f.id}></iframe>
-                <button type="button" className="sv-flow-frame-open"
-                  title=${"Open " + (f.label || f.entry) + " in the prototype"}
-                  onClick=${() => { if (!suppressClickRef.current) onOpenFrame(f); }}></button>
+                <div className="sv-flow-frame-shot">
+                  <iframe src=${base + "p/source/" + prototype + "/" + f.entry + (f.hash || "")}
+                    loading="lazy" scrolling="no" tabIndex=${-1} title=${f.label || f.id}></iframe>
+                  <button type="button" className="sv-flow-frame-open"
+                    title=${"Open " + (f.label || f.entry) + " in the prototype"}
+                    onClick=${() => { if (!suppressClickRef.current) onOpenFrame(f); }}></button>
+                </div>
               </div>
             `)}
           </div>
