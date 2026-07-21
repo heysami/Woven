@@ -12,6 +12,7 @@ Called at three points with three modes:
 """
 import glob
 import os
+import re
 
 from .registry import kind_contract
 
@@ -91,27 +92,35 @@ def _check_schema(node, contract, mode):
 
 # ── Completion checks (used at status:done and commit) ─────────────────
 def _resolve_path_template(template, node, project_root):
-    """Resolve {branch}, {variant}, {dsId}, etc. in an outputsRoot/file path.
-    Returns the resolved absolute path under project_root."""
+    """Resolve {branch}, {prototype}, {simId}, {gameId}, {sceneId}, ... in an
+    outputsRoot/file path. Substitution is GENERIC: any {key} resolves from the
+    node's own top-level field (or node.vars), so new orchestrator families
+    never need this list extended - a hand-maintained key list is exactly what
+    stranded {gameId}/{sceneId}/{msId} commits before. Returns the resolved
+    absolute path under project_root, or None when a placeholder has no value
+    on the node (caller treats an unresolved root as un-checkable, never as
+    project-root-relative)."""
     if not template:
         return None
-    # node may carry branch/variant/dsId in various places
-    repl = {
-        "branch":   node.get("branch")   or "main",
-        "variant":  node.get("variant")  or "",
-        "dsId":     node.get("dsId")     or "main",
-        "id":       node.get("id")       or "",
-        # Simulation + interactive-media + narrative-experience families.
-        # The orchestrator sets these on each component node when it scaffolds.
-        "simId":    node.get("simId")    or "",
-        "imId":     node.get("imId")     or "",
-        "nxId":     node.get("nxId")     or "",
-        "modality": node.get("modality") or "",
-        "medium":   node.get("medium")   or "",
-    }
-    out = template
-    for k, v in repl.items():
-        out = out.replace("{" + k + "}", str(v))
+    node_vars = node.get("vars") if isinstance(node.get("vars"), dict) else {}
+
+    def _lookup(key):
+        if key in ("branch", "prototype"):
+            return node.get("prototype") or node.get("branch") or "main"
+        if key == "dsId":
+            return node.get("dsId") or "main"
+        if key == "id":
+            return node.get("id") or ""
+        v = node.get(key)
+        if v in (None, ""):
+            v = node_vars.get(key)
+        return v
+
+    def _sub(m):
+        v = _lookup(m.group(1))
+        return str(v) if v not in (None, "") else m.group(0)
+
+    out = re.sub(r"\{([A-Za-z][A-Za-z0-9_]*)\}", _sub, template)
     # Defensive: ensure no leftover {placeholder}
     if "{" in out and "}" in out:
         return None
@@ -132,6 +141,14 @@ def _check_files_exist(node, contract, project_root):
         # Parse "files: <path-or-pattern> exists" / "files: <pattern> non-empty"
         if rs.startswith("files:"):
             spec = rs[len("files:"):].strip()
+            # A spec that depends on outputsRoot cannot be checked when the
+            # root template didn't resolve (missing node var) - that covers
+            # both explicit "outputsRoot/..." specs AND bare filenames (which
+            # resolve relative to the root). Skipping beats inventing a
+            # project-root path and failing a correct commit.
+            _root_relative = ("outputsRoot" in spec) or ("/" not in spec.split(" ", 1)[0])
+            if outputs_root_tmpl and not outputs_root and _root_relative:
+                continue
             # Substitute {outputsRoot}
             if outputs_root:
                 spec = spec.replace("outputsRoot", outputs_root.replace(project_root + "/", ""))
@@ -142,7 +159,22 @@ def _check_files_exist(node, contract, project_root):
             lower = spec.lower()
             if " exists" in lower:
                 rel = spec.split(" ", 1)[0].strip()
-                full = os.path.join(project_root, rel)
+                # A bare filename (no slash) is relative to the node's
+                # outputsRoot, NOT the project root: "files: research.md
+                # exists" means the research.md the contract's outputsRoot
+                # names. Resolving it at project root is the bug that made
+                # every correct single-file research/entities commit fail
+                # FILE_MISSING and taught agents to bypass /commit entirely.
+                if "/" not in rel and outputs_root:
+                    if os.path.basename(outputs_root) == rel:
+                        full = outputs_root          # root IS the file
+                    elif os.path.splitext(outputs_root)[1]:
+                        full = os.path.join(os.path.dirname(outputs_root), rel)
+                    else:
+                        full = os.path.join(outputs_root, rel)
+                    rel = os.path.relpath(full, project_root)
+                else:
+                    full = os.path.join(project_root, rel)
                 if not os.path.exists(full):
                     viols.append(_violation(FILE_MISSING,
                         f"required file missing: {rel}", path=rel))

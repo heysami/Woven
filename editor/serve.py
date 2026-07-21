@@ -14633,23 +14633,44 @@ class H(http.server.SimpleHTTPRequestHandler):
               # Resolve outputsRoot path. If template ends with .md/.html (no
               # trailing slash) the target is a single file at that path -
               # we still write atomically (temp file + rename).
-              resolved = outputs_root_tmpl
+              # GENERIC template substitution: any {key} resolves from the
+              # node's own top-level field (or node.vars). The old
+              # hand-maintained key list stranded every family it didn't
+              # name ({imId}/{gameId}/{sceneId}/{msId}/... -> "unresolved
+              # template" on perfectly good nodes), which taught agents to
+              # bypass /commit. Never extend a key list here again.
               _proto = node.get("prototype") or node.get("branch") or "main"
-              for k, v in (("prototype", _proto),
-                           ("branch", _proto),   # legacy alias
-                           ("variant", node.get("variant") or ""),
-                           ("dsId", node.get("dsId") or "main"),
-                           ("simId", node.get("simId") or ""),
-                           ("id", node_id)):
-                resolved = resolved.replace("{" + k + "}", str(v))
+              _nvars = node.get("vars") if isinstance(node.get("vars"), dict) else {}
+              def _tmpl_val(m):
+                k = m.group(1)
+                if k in ("prototype", "branch"): return _proto
+                if k == "dsId": return node.get("dsId") or "main"
+                if k == "id": return node_id
+                v = node.get(k)
+                if v in (None, ""): v = _nvars.get(k)
+                return str(v) if v not in (None, "") else m.group(0)
+              resolved = re.sub(r"\{([A-Za-z][A-Za-z0-9_]*)\}", _tmpl_val, outputs_root_tmpl)
               if "{" in resolved or "}" in resolved:
-                return self._reply(400, {"error": "unresolved template in outputsRoot", "outputsRoot": resolved})
+                return self._reply(400, {"error": "unresolved template in outputsRoot", "outputsRoot": resolved,
+                                         "hint": "the node is missing the template's var (set it on the node or node.vars)"})
               committed_dir = os.path.join(project_root, resolved.lstrip("/").rstrip("/"))
-              # Treat a path with an extension and a single posted file as
-              # single-file commit semantics; otherwise it's a folder commit.
-              is_single_file_target = (os.path.splitext(resolved)[1] != "" and len(posted_files) == 1
-                                        and posted_files[0].get("relPath","") in ("", os.path.basename(resolved)))
+              # A path with an extension IS a single-file target - period.
+              # It must never fall through to the folder branch: that branch
+              # mkdirs the file path as a DIRECTORY, renames the agent's real
+              # file to .prev.<epoch>, and buries a MANIFEST.json inside -
+              # the destructive mangle that made agents swear off /commit.
+              is_single_file_target = os.path.splitext(resolved)[1] != ""
               if is_single_file_target:
+                if len(posted_files) != 1:
+                  return self._reply(400, {
+                    "error": "outputsRoot names a single file; post exactly one files[] entry",
+                    "outputsRoot": resolved, "posted": len(posted_files)})
+                _rp = (posted_files[0].get("relPath") or posted_files[0].get("path") or "").lstrip("/")
+                if _rp not in ("", os.path.basename(resolved), resolved):
+                  return self._reply(400, {
+                    "error": "files[0] path does not match the single-file outputsRoot",
+                    "outputsRoot": resolved, "got": _rp,
+                    "hint": "use relPath \"%s\" (or omit it)" % os.path.basename(resolved)})
                 # Write the one file atomically.
                 tmp_path = committed_dir + ".staging"
                 os.makedirs(os.path.dirname(committed_dir) or ".", exist_ok=True)
@@ -14678,7 +14699,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 os.makedirs(staging_dir, exist_ok=True)
                 for fspec in posted_files:
                   if not isinstance(fspec, dict): continue
-                  rel = fspec.get("relPath") or ""
+                  rel = fspec.get("relPath") or fspec.get("path") or ""
                   if not rel or ".." in rel.split("/"): continue
                   full = os.path.join(staging_dir, rel)
                   os.makedirs(os.path.dirname(full) or staging_dir, exist_ok=True)
