@@ -63,6 +63,17 @@
       <path d="M3 11l3-3 2.5 2.5L11 7l2 2"/>
     </svg>`;
 
+  // Flow glyph - the "Flows" screen-map toggle (two screens + a hop arrow).
+  const FlowIcon = ({ size = 14 }) => html`
+    <svg viewBox="0 0 16 16" width=${size} height=${size} fill="none"
+      stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+      stroke-linejoin="round" aria-hidden="true" style=${{ display: "block" }}>
+      <rect x="1.5" y="2" width="6" height="5" rx="1"/>
+      <rect x="8.5" y="9" width="6" height="5" rx="1"/>
+      <path d="M7.5 4.5h3.5a1.5 1.5 0 011.5 1.5v3"/>
+      <path d="M10.8 7.3l1.7 1.7 1.7-1.7"/>
+    </svg>`;
+
   // ── URL plumbing ──────────────────────────────────────────────────────
   // location.pathname is /s/<token>/ (gate 301s the slash-less form).
   const BASE = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
@@ -267,6 +278,244 @@
   };
   const pathPart = (page) => (page || "index.html").split("#")[0] || "index.html";
 
+  // ── Screen flows (read-only frames + arrows map) ──────────────────────
+  // flowdata.js is the editor's own data files served verbatim by the gate
+  // (window.EDITOR_DATA + window.EDITOR_LAYOUT assignments). Evaluate them
+  // against a bare stand-in window - same contract editor/index.html uses.
+  const parseFlowData = (srcText) => {
+    try {
+      const win = {};
+      new Function("window", "document", srcText)(win, { write: () => {} });
+      const D = win.EDITOR_DATA;
+      if (!D || !Array.isArray(D.frames) || D.frames.length === 0) return null;
+      return { D, L: win.EDITOR_LAYOUT || null };
+    } catch {
+      return null;
+    }
+  };
+
+  // Cubic between the facing edges of two frames; mid is the curve's t=0.5
+  // point, where the action label chip sits.
+  const arrowGeom = (a, b) => {
+    const acx = a.x + a.w / 2, acy = a.y + a.h / 2;
+    const bcx = b.x + b.w / 2, bcy = b.y + b.h / 2;
+    const dx = bcx - acx, dy = bcy - acy;
+    let p1, p2, c1, c2;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      const dir = dx >= 0 ? 1 : -1;
+      p1 = { x: dir > 0 ? a.x + a.w : a.x, y: acy };
+      p2 = { x: dir > 0 ? b.x : b.x + b.w, y: bcy };
+      const bend = Math.max(60, Math.abs(p2.x - p1.x) / 2);
+      c1 = { x: p1.x + dir * bend, y: p1.y };
+      c2 = { x: p2.x - dir * bend, y: p2.y };
+    } else {
+      const dir = dy >= 0 ? 1 : -1;
+      p1 = { x: acx, y: dir > 0 ? a.y + a.h : a.y };
+      p2 = { x: bcx, y: dir > 0 ? b.y : b.y + b.h };
+      const bend = Math.max(60, Math.abs(p2.y - p1.y) / 2);
+      c1 = { x: p1.x, y: p1.y + dir * bend };
+      c2 = { x: p2.x, y: p2.y - dir * bend };
+    }
+    return {
+      d: `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${p2.x} ${p2.y}`,
+      mid: {
+        x: (p1.x + 3 * c1.x + 3 * c2.x + p2.x) / 8,
+        y: (p1.y + 3 * c1.y + 3 * c2.y + p2.y) / 8,
+      },
+    };
+  };
+
+  // The flow map itself: every frame as a live page embed on the editor's
+  // col/row grid, arrows as SVG curves, drag to pan, Cmd/Ctrl-scroll or the
+  // corner buttons to zoom, click a screen to open it in the prototype view.
+  function FlowMap({ flow, base, prototype, onOpenFrame }) {
+    const stageRef = useRef(null);
+    const [view, setView] = useState(null);   // {x, y, k}; null until first fit
+    const dragRef = useRef(null);
+    const suppressClickRef = useRef(false);
+
+    // World layout - mirrors the editor's grid math (CANVAS_MARGIN 120,
+    // pitch = defaultFrame + canvasGap, layout sidecar positions win over
+    // the frame's own col/row, unplaced frames take the first free cell).
+    const world = useMemo(() => {
+      const D = flow.D || {};
+      const L = flow.L || {};
+      const meta = D.meta || {};
+      const lmeta = L.meta || {};
+      const df = lmeta.defaultFrame || meta.defaultFrame || {};
+      const cellW = df.w || 1440, cellH = df.h || 900;
+      const gap = lmeta.canvasGap != null ? lmeta.canvasGap
+        : (meta.canvasGap != null ? meta.canvasGap : 120);
+      const MARGIN = 120;
+      const pitchX = cellW + gap, pitchY = cellH + gap;
+      const pos = L.positions || {};
+      const frames = (D.frames || []).filter((f) => f && f.id && f.entry);
+      const occupied = new Set();
+      const cells = new Map();
+      for (const f of frames) {
+        const p = pos[f.id];
+        const col = p && p.col != null ? p.col : f.col;
+        const row = p && p.row != null ? p.row : f.row;
+        if (col != null && row != null) {
+          cells.set(f.id, { col, row });
+          occupied.add(col + "," + row);
+        }
+      }
+      for (const f of frames) {
+        if (cells.has(f.id)) continue;
+        let cell = null;
+        for (let r = 0; r < 200 && !cell; r++) {
+          for (let c = 0; c < 40; c++) {
+            if (!occupied.has(c + "," + r)) { cell = { col: c, row: r }; break; }
+          }
+        }
+        cell = cell || { col: 0, row: 0 };
+        cells.set(f.id, cell);
+        occupied.add(cell.col + "," + cell.row);
+      }
+      const placed = frames.map((f) => {
+        const cell = cells.get(f.id);
+        return {
+          ...f,
+          x: MARGIN + cell.col * pitchX,
+          y: MARGIN + cell.row * pitchY,
+          w: f.w || cellW,
+          h: f.h || cellH,
+        };
+      });
+      const byId = new Map(placed.map((f) => [f.id, f]));
+      const arrows = (D.arrows || [])
+        .filter((a) => a && a.from !== a.to && byId.has(a.from) && byId.has(a.to))
+        .map((a, i) => ({ ...a, key: a.id || "arrow-" + i, geom: arrowGeom(byId.get(a.from), byId.get(a.to)) }));
+      const w = Math.max(0, ...placed.map((f) => f.x + f.w)) + MARGIN;
+      const h = Math.max(0, ...placed.map((f) => f.y + f.h)) + MARGIN;
+      return { frames: placed, arrows, w, h };
+    }, [flow]);
+
+    const fit = useCallback(() => {
+      const el = stageRef.current;
+      if (!el || !world.w || !world.h) return;
+      const sw = el.clientWidth, sh = el.clientHeight;
+      const k = Math.max(0.02, Math.min(1, (sw - 48) / world.w, (sh - 48) / world.h));
+      setView({ k, x: (sw - world.w * k) / 2, y: (sh - world.h * k) / 2 });
+    }, [world]);
+    useEffect(() => { fit(); }, [fit]);
+
+    const zoomAt = (factor, cx, cy) => setView((v) => {
+      if (!v) return v;
+      const k = Math.max(0.02, Math.min(2, v.k * factor));
+      const f = k / v.k;
+      return { k, x: cx - (cx - v.x) * f, y: cy - (cy - v.y) * f };
+    });
+    const zoomCenter = (factor) => {
+      const el = stageRef.current;
+      if (el) zoomAt(factor, el.clientWidth / 2, el.clientHeight / 2);
+    };
+
+    // Wheel: pan by default, zoom with Cmd/Ctrl (covers trackpad pinch, which
+    // arrives as ctrlKey wheel). Attached natively so preventDefault sticks.
+    useEffect(() => {
+      const el = stageRef.current;
+      if (!el) return;
+      const onWheel = (e) => {
+        e.preventDefault();
+        if (e.ctrlKey || e.metaKey) {
+          const r = el.getBoundingClientRect();
+          zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top);
+        } else {
+          setView((v) => v ? { ...v, x: v.x - e.deltaX, y: v.y - e.deltaY } : v);
+        }
+      };
+      el.addEventListener("wheel", onWheel, { passive: false });
+      return () => el.removeEventListener("wheel", onWheel);
+    }, []);
+
+    const onPointerDown = (e) => {
+      if (e.button !== 0 || !view) return;
+      // No capture yet: grabbing the pointer here would eat the click on
+      // whatever button is under it (zoom tools, frame-open). Capture only
+      // once the gesture provably becomes a drag (onPointerMove).
+      dragRef.current = {
+        sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y,
+        moved: false, pointerId: e.pointerId, el: e.currentTarget,
+      };
+    };
+    const onPointerMove = (e) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+      if (!d.moved && Math.abs(dx) + Math.abs(dy) > 4) {
+        d.moved = true;
+        try { d.el.setPointerCapture(d.pointerId); } catch {}
+      }
+      if (d.moved) setView((v) => v ? { ...v, x: d.vx + dx, y: d.vy + dy } : v);
+    };
+    const onPointerUp = () => {
+      const d = dragRef.current;
+      dragRef.current = null;
+      if (d && d.moved) {
+        // A pan ends with a click on whatever's under the pointer - eat it.
+        suppressClickRef.current = true;
+        setTimeout(() => { suppressClickRef.current = false; }, 0);
+      }
+    };
+
+    return html`
+      <div className="sv-flow" ref=${stageRef}
+        onPointerDown=${onPointerDown}
+        onPointerMove=${onPointerMove}
+        onPointerUp=${onPointerUp}
+        onPointerCancel=${onPointerUp}>
+        ${view && html`
+          <div className="sv-flow-world"
+            style=${{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }}>
+            <svg className="sv-flow-arrows" width=${world.w} height=${world.h}
+              viewBox=${`0 0 ${world.w} ${world.h}`}>
+              <defs>
+                <marker id="sv-arrowhead" markerWidth="7" markerHeight="7"
+                  refX="5.6" refY="3.5" orient="auto">
+                  <path d="M0 0 L7 3.5 L0 7 Z" fill="currentColor" stroke="none"/>
+                </marker>
+              </defs>
+              ${world.arrows.map((a) => html`
+                <path key=${a.key} d=${a.geom.d} fill="none" stroke="currentColor"
+                  stroke-width=${1.5 / view.k} marker-end="url(#sv-arrowhead)"/>
+              `)}
+            </svg>
+            ${view.k >= 0.12 && world.arrows.filter((a) => a.action).map((a) => html`
+              <div key=${"lbl-" + a.key} className="sv-flow-arrow-label"
+                style=${{ left: a.geom.mid.x + "px", top: a.geom.mid.y + "px",
+                          transform: `translate(-50%, -50%) scale(${1 / view.k})` }}
+              >${a.action}</div>
+            `)}
+            ${world.frames.map((f) => html`
+              <div key=${f.id} className="sv-flow-frame"
+                style=${{ left: f.x + "px", top: f.y + "px", width: f.w + "px", height: f.h + "px" }}>
+                <div className="sv-flow-frame-label"
+                  style=${{ transform: `translateY(-8px) scale(${1 / view.k})` }}>
+                  ${f.kind === "start" ? html`<span className="sv-flow-start" title="Start screen"></span>` : null}
+                  ${f.label || f.id}
+                </div>
+                <iframe src=${base + "p/source/" + prototype + "/" + f.entry + (f.hash || "")}
+                  loading="lazy" scrolling="no" tabIndex=${-1} title=${f.label || f.id}></iframe>
+                <button type="button" className="sv-flow-frame-open"
+                  title=${"Open " + (f.label || f.entry) + " in the prototype"}
+                  onClick=${() => { if (!suppressClickRef.current) onOpenFrame(f); }}></button>
+              </div>
+            `)}
+          </div>
+        `}
+        <div className="sv-flow-tools">
+          <button className="sv-btn" title="Zoom out" onClick=${() => zoomCenter(1 / 1.25)}>−</button>
+          <span className="sv-flow-zoom">${view ? Math.round(view.k * 100) + "%" : ""}</span>
+          <button className="sv-btn" title="Zoom in" onClick=${() => zoomCenter(1.25)}>+</button>
+          <button className="sv-btn" title="Fit every screen in view" onClick=${fit}>Fit</button>
+        </div>
+        <div className="sv-flow-hint">Drag to pan, Cmd/Ctrl-scroll to zoom, click a screen to open it</div>
+      </div>
+    `;
+  }
+
   // ── Identity modal ────────────────────────────────────────────────────
   function IdentityModal({ emailGate, initial, onDone, onCancel, reason }) {
     const [name, setName] = useState(initial?.name || "");
@@ -455,6 +704,8 @@
     const [drawing, setDrawing] = useState(false);    // annotation layer armed
     const [strokes, setStrokes] = useState([]);       // committed annotation strokes
     const [attachments, setAttachments] = useState([]); // [{name, dataUrl}] pending upload
+    const [flowData, setFlowData] = useState(null);   // parsed screen-flow model (null = none)
+    const [flowsOpen, setFlowsOpen] = useState(false); // Flows map replaces the prototype stage
 
     // URL prefix that pins prototype loads to the picked branch ("" when
     // reviewing the checked-out branch). Slashes in branch names stay literal
@@ -511,6 +762,17 @@
       fetch(api("links")).then((r) => (r.ok ? r.json() : null)).then((j) => {
         if (j && Array.isArray(j.links)) setLinks(j.links);
       }).catch(() => {});   // owner offline / pre-links gate - meta.links stands
+    }, [meta]);
+
+    // Screen-flow data: the gate serves the editor's frames/arrows model at
+    // /flowdata.js when the project has one. 404 = no map; hide the button.
+    useEffect(() => {
+      if (!meta) return;
+      fetch(BASE + "flowdata.js").then((r) => (r.ok ? r.text() : null)).then((t) => {
+        if (!t) return;
+        const fd = parseFlowData(t);
+        if (fd) setFlowData(fd);
+      }).catch(() => {});
     }, [meta]);
 
     const refetchComments = useCallback(() => {
@@ -814,7 +1076,19 @@
       if (!frame || !meta) return;
       setCommentMode(false);
       setDraft(null);
+      setFlowsOpen(false);
       frame.src = BASE + branchPfx + meta.entry;
+    }, [meta, branchPfx]);
+
+    // Flows → prototype hop: land the main iframe on the clicked screen.
+    const openFlowFrame = useCallback((f) => {
+      setFlowsOpen(false);
+      setCommentMode(false);
+      setDraft(null);
+      const frame = iframeRef.current;
+      if (frame && meta) {
+        frame.src = BASE + branchPfx + "p/source/" + meta.prototype + "/" + f.entry + (f.hash || "");
+      }
     }, [meta, branchPfx]);
 
     // Pick a branch to review: reload the prototype from that branch's
@@ -944,11 +1218,19 @@
             <span className="sv-brand-sub">· shared for review</span>
           </span>
           <span className="sv-topbar-spacer"></span>
-          <span className="sv-page-chip" title=${page}>${page}</span>
+          <span className="sv-page-chip" title=${flowsOpen ? "Screen flows" : page}>${flowsOpen ? "screen flows" : page}</span>
+          ${!gateBlocked && flowData && html`<button
+            className=${"sv-btn" + (flowsOpen ? " is-active" : "")}
+            title=${flowsOpen ? "Back to the prototype" : "Screen flows - every screen and how they connect"}
+            onClick=${() => {
+              setCommentMode(false); setDraft(null);
+              setFlowsOpen(!flowsOpen);
+            }}
+          ><${FlowIcon}/><span className="sv-btn-label">Flows</span></button>`}
           ${!gateBlocked && html`<button
             className="sv-btn"
-            disabled=${page === "index.html"}
-            title=${page === "index.html" ? "Already on the first page" : "Reset - back to the first page of the prototype"}
+            disabled=${!flowsOpen && page === "index.html"}
+            title=${!flowsOpen && page === "index.html" ? "Already on the first page" : "Reset - back to the first page of the prototype"}
             onClick=${resetToFirstPage}
           ><${HomeIcon}/><span className="sv-btn-label">Reset</span></button>`}
           <button
@@ -956,6 +1238,7 @@
             title=${commentMode ? "Exit comment mode (Esc)" : "Comment on an element - click anything in the prototype"}
             onClick=${() => {
               if (!commentMode && !requireIdentity("Add a name before commenting.")) return;
+              setFlowsOpen(false);
               setDraft(null); setCommentMode(!commentMode);
             }}
           ><${CommentIcon}/><span className="sv-btn-label">${commentMode ? "Click an element…" : "Comment"}</span></button>
@@ -971,8 +1254,17 @@
               ref=${iframeRef}
               src=${BASE + meta.entry}
               title="Shared prototype"
+              style=${flowsOpen ? { display: "none" } : null}
               onLoad=${onFrameLoad}
             ></iframe>`}
+            ${!gateBlocked && flowsOpen && flowData && html`
+              <${FlowMap}
+                flow=${flowData}
+                base=${BASE}
+                prototype=${meta.prototype}
+                onOpenFrame=${openFlowFrame}
+              />
+            `}
             ${commentMode && html`<div className="sv-hint">Click any element to pin a comment - Esc to cancel</div>`}
             ${commentMode && pins.map((p) => html`
               <button

@@ -1278,6 +1278,12 @@ def _hosted_snapshot_members(rec):
     # /api/links refetch while the owner is offline.
     members.append(("share/api/links",
                     json.dumps({"links": meta["links"]}).encode("utf-8")))
+    # Screen-flow data (frames/arrows model + layout sidecar) so the viewer's
+    # Flows view works with the owner's daemon offline. Same bytes the tunnel
+    # gate serves at /s/<t>/flowdata.js.
+    flow = flowdata_bytes(rec)
+    if flow is not None:
+        members.append(("share/flowdata.js", flow))
     # Hosted marker - the worker treats its presence as "this share is
     # hosted" (static misses become real 404s instead of tunnel fallthrough).
     # Carries uploadedAt, so it is always part of a delta - which conveniently
@@ -2697,6 +2703,48 @@ def gate_serve_project_file_at_ref(handler, project_root, prototype, sub, ref):
     handler._send_blob(data, rel, cache=is_media); return True
 
 
+_FLOWDATA_SLUG_OK = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
+_FLOWDATA_MAX = 4 * 1024 * 1024
+
+def flowdata_bytes(rec):
+    """Concatenated editor data for the shared prototype's read-only screen-
+    flow map (the viewer's Flows view): editor/<slug>.data.js when a per-
+    prototype override exists, else editor/data.js, plus the
+    editor/<slug>.layout.js position sidecar when present. The viewer
+    evaluates this the same way editor/index.html does (window.EDITOR_DATA /
+    window.EDITOR_LAYOUT). None when the project has no editor data yet."""
+    try:
+        root = _RESOLVE_PROJECT_ROOT(rec.get("project") or "")
+    except Exception:
+        return None
+    slug = rec.get("prototype") or ""
+    if not _FLOWDATA_SLUG_OK.match(slug):
+        return None
+    ed = os.path.join(root, "editor")
+    data_path = os.path.join(ed, slug + ".data.js")
+    if not os.path.isfile(data_path):
+        data_path = os.path.join(ed, "data.js")
+    if not os.path.isfile(data_path):
+        return None
+    parts = []
+    total = 0
+    for p in (data_path, os.path.join(ed, slug + ".layout.js")):
+        if not os.path.isfile(p):
+            continue
+        try:
+            size = os.path.getsize(p)
+            if total + size > _FLOWDATA_MAX:
+                return None
+            with open(p, "rb") as f:
+                parts.append(f.read())
+            total += size
+        except OSError:
+            return None
+    if not parts:
+        return None
+    return b"\n;\n".join(parts) + b"\n"
+
+
 # File extensions the gate will serve out of a project. Everything a
 # build-less htm+React prototype legitimately uses; notably NO .py and no
 # dotfiles (filtered separately).
@@ -2934,6 +2982,15 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             return self._send_json(200, {"links": _links_for_viewer(rec),
                                          "sync": sync_status_get(rec.get("project") or ""),
                                          "daemon": tree_version()})
+        # Screen-flow data for the viewer's Flows view - the editor's frames/
+        # arrows model + position sidecar, served verbatim as JS. 404 (not an
+        # error) when the project has no editor data; the viewer just hides
+        # its Flows button.
+        if sub == "/flowdata.js":
+            body = flowdata_bytes(rec)
+            if body is None:
+                return self._send_json(404, {"error": "no flow data"})
+            return self._send_blob(body, "flowdata.js")
         if sub == "/api/comments":
             root = self._project_root(rec)
             if root is None:

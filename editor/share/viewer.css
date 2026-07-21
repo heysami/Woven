@@ -355,3 +355,109 @@ button { font: inherit; cursor: pointer; }
   .sv-btn { padding: 6px 8px; }
   .sv-btn .sv-btn-label { display: none; }
 }
+
+/* ── Screen flows (Flows button) ─────────────────────────────────────── */
+/* Pannable/zoomable read-only map of the prototype's screens + arrows.
+   World coordinates mirror the editor's Canvas grid; one transform on
+   .sv-flow-world carries pan + zoom, labels inverse-scale so they stay
+   readable at any zoom. */
+.sv-flow {
+  position: absolute; inset: 0;
+  overflow: hidden;
+  background: var(--sv-bg);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.sv-flow:active { cursor: grabbing; }
+.sv-flow-world {
+  position: absolute; left: 0; top: 0;
+  transform-origin: 0 0;
+}
+.sv-flow-arrows {
+  position: absolute; left: 0; top: 0;
+  overflow: visible;
+  color: var(--sv-faint);
+  pointer-events: none;
+}
+.sv-flow-arrow-label {
+  position: absolute; z-index: 3;
+  background: var(--sv-panel);
+  border: 1px solid var(--sv-line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11px;
+  color: var(--sv-muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.sv-flow-frame {
+  position: absolute; z-index: 2;
+  background: #fff;
+  border: 1px solid var(--sv-line-strong);
+  border-radius: 4px;
+}
+/* Card embeds size to the frame box - overrides the stage-wide
+   `.sv-stage iframe` inset rule (the main prototype iframe's). */
+.sv-flow-frame iframe {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  border: 0; border-radius: inherit;
+  background: #fff;
+  pointer-events: none;
+}
+.sv-flow-frame-label {
+  position: absolute; left: 0; bottom: 100%;
+  transform-origin: 0 100%;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600;
+  color: var(--sv-muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.sv-flow-start {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--sv-accent);
+  flex: none;
+}
+.sv-flow-frame-open {
+  position: absolute; inset: 0; z-index: 4;
+  border: 0; border-radius: inherit;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+.sv-flow-frame-open:hover {
+  box-shadow: inset 0 0 0 3px var(--sv-accent);
+  background: rgba(0,0,0,.02);
+}
+.sv-flow-tools {
+  position: absolute; right: 14px; bottom: 14px; z-index: 10;
+  display: flex; align-items: center; gap: 6px;
+  background: var(--sv-panel);
+  border: 1px solid var(--sv-line);
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: var(--sv-shadow);
+}
+.sv-flow-tools .sv-btn { border: 0; padding: 4px 8px; }
+.sv-flow-zoom {
+  font-family: var(--sv-mono); font-size: 11px;
+  color: var(--sv-muted);
+  min-width: 40px; text-align: center;
+}
+.sv-flow-hint {
+  position: absolute; left: 50%; bottom: 14px; z-index: 10;
+  transform: translateX(-50%);
+  background: var(--sv-panel);
+  border: 1px solid var(--sv-line);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--sv-muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+@media (max-width: 760px) {
+  .sv-flow-hint { display: none; }
+}
