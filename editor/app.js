@@ -11657,7 +11657,12 @@ function ShareMenuButton() {
   })();
   const VISUAL_SKIP = new Set(["html", "html-set", "text"]);
   const assetNodes = nodes.filter(n => n.kind === "asset" && !VISUAL_SKIP.has(n.assetKind));
-  const labelOf = (n) => n.label || n.title || shareSlugForNode(n) || n.id;
+  // Display name for a share row: node text, else its source slug, else the
+  // file it points at - the raw node id ("nmrisrsjb9lkml") only as a last
+  // resort, since untitled non-source assets (DS gallery pages) hit this.
+  const labelOf = (n) => n.label || n.title || shareSlugForNode(n)
+    || ((n.path || n.sourceEntry || "").split("/").pop() || "").trim()
+    || n.id;
   const shareForSlug = (slug) => shares.find(s => s.prototype === slug) || null;
   // Teammates' stable links from the git-synced registry. This install's own
   // entries are already managed by the share rows above - only OTHER
