@@ -4692,7 +4692,14 @@ def _peer_comments_loop() -> None:
                         _shares.publish_project_links(pid)
                     except Exception:
                         pass
-                    _sync_links_meta(root)
+                    # Peer news (a teammate shared/renamed/moved a branch)
+                    # also stales hosted viewers' dropdown data - push the
+                    # merged view to this install's hosted copies.
+                    if _sync_links_meta(root):
+                        try:
+                            _shares.hosted_links_push_soon(pid)
+                        except Exception:
+                            pass
                 links = _shares.links_list(pid).get("links") or []
                 seen = set()
                 changed = False

@@ -1273,6 +1273,11 @@ def _hosted_snapshot_members(rec):
         "links":     _links_for_viewer(rec),
     }
     members.append(("share/api/meta", json.dumps(meta).encode("utf-8")))
+    # Standalone copy of the registry on the same key the daemon's links push
+    # refreshes (hosted_links_push_soon) - the worker serves it to the viewer's
+    # /api/links refetch while the owner is offline.
+    members.append(("share/api/links",
+                    json.dumps({"links": meta["links"]}).encode("utf-8")))
     # Hosted marker - the worker treats its presence as "this share is
     # hosted" (static misses become real 404s instead of tunnel fallthrough).
     # Carries uploadedAt, so it is always part of a delta - which conveniently
@@ -2436,6 +2441,55 @@ def _hosted_comments_push_soon(rec):
     threading.Thread(target=run, daemon=True, name="hosted-comments-push").start()
 
 
+# ── Hosted links push - the R2 copy of the sibling-share registry ─────────
+# The snapshot bakes the project's link registry in at upload time; this
+# keeps every hosted share's copy current afterwards, so the viewer's
+# prototype/branch hop dropdowns learn about NEW shares (and branch moves,
+# renames, peers' links) without anyone pressing Update. Coalesced per
+# project - one push a few seconds after a burst of registry changes.
+
+_HOSTED_LPUSH_PENDING = set()
+_HOSTED_LPUSH_LOCK = threading.Lock()
+_HOSTED_LINKS_MAX = 256 * 1024   # serialized cap; broker enforces too
+
+
+def hosted_links_push_soon(project):
+    project = project or ""
+    if not project or not WOVEN_BROKER_URL:
+        return
+    with _HOSTED_LPUSH_LOCK:
+        if project in _HOSTED_LPUSH_PENDING:
+            return                          # a push is already scheduled
+        _HOSTED_LPUSH_PENDING.add(project)
+
+    def run():
+        time.sleep(3)                       # coalesce mutation bursts
+        with _HOSTED_LPUSH_LOCK:
+            _HOSTED_LPUSH_PENDING.discard(project)
+        try:
+            links = _links_for_viewer({"project": project})
+            iid = woven_install_id()
+            for s in shares_load().get("shares", []):
+                if s.get("project") != project or not share_hosted_on(s):
+                    continue
+                token = s.get("token") or ""
+                if not token:
+                    continue
+                body = json.dumps({"installId": iid, "token": token,
+                                   "links": links}).encode("utf-8")
+                if len(body) > _HOSTED_LINKS_MAX:
+                    print("[share] hosted links push skipped (too large)", flush=True)
+                    return
+                try:
+                    _hosted_broker_post("/shares/update_links", data=body, timeout=30)
+                except Exception as e:
+                    print("[share] hosted links push failed: {}".format(e), flush=True)
+        except Exception as e:
+            print("[share] hosted links push failed: {}".format(e), flush=True)
+
+    threading.Thread(target=run, daemon=True, name="hosted-links-push").start()
+
+
 # ═════════════════════════════════════════════════════════════════════════
 # 4. Gate - the ONLY surface a tunnel exposes
 # ═════════════════════════════════════════════════════════════════════════
@@ -3215,7 +3269,10 @@ def publish_project_links(project):
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"links": merged}, f, indent=2)
         os.replace(tmp, path)
-        return True
+    # Any registry change makes hosted viewers' dropdown data stale - refresh
+    # their R2 copies in the background (no-op when nothing is hosted).
+    hosted_links_push_soon(project)
+    return True
 
 
 def _links_for_viewer(rec):

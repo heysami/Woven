@@ -138,6 +138,16 @@ async function serveApi(request, env, token, sub) {
   // Owner offline. Only degrade for hosted shares - an unhosted share with a
   // dead tunnel should look dead, exactly as it does today.
   if (!(await isHosted(env, token))) return json(530, { error: "share offline" });
+  if ((request.method === "GET" || request.method === "HEAD") && sub === "/api/links") {
+    // Sibling-share links (the viewer's prototype/branch hop dropdowns):
+    // baked at upload and re-pushed by the owner's daemon on every registry
+    // change, so this is current as of the owner's last online moment. A
+    // miss (pre-links snapshot) must NOT answer an empty list - an error
+    // makes the viewer keep the copy baked into its meta instead.
+    const obj = await env.SHARES.get("s/" + token + "/api/links");
+    if (obj !== null) return objectResponse(request, obj, "api/links.json");
+    return json(503, { error: "links unavailable while the share owner is offline" });
+  }
   if (request.method === "GET" && sub === "/api/comments") {
     // The stored copy of the discussion: baked into the snapshot at upload
     // and re-pushed by the daemon on every change, so it is CURRENT as of the

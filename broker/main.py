@@ -625,6 +625,42 @@ async def shares_update_comments(request: Request) -> dict:
     return {"ok": True, "bytes": len(payload)}
 
 
+HOSTED_LINKS_MAX = int(os.environ.get("HOSTED_LINKS_MAX_KB", "256")) * 1024
+
+
+@app.post("/shares/update_links")
+async def shares_update_links(request: Request) -> dict:
+    """Owner's daemon refreshes the R2 copy of a hosted share's sibling-link
+    list (the project's other shared prototypes / branches) so the viewer's
+    hop dropdowns stay current WITHOUT a snapshot re-upload. Same trust model
+    as /shares/update_comments: installId-bound, only touches the caller's
+    own share."""
+    _hosted_ready()
+    raw = await request.body()
+    if len(raw) > HOSTED_LINKS_MAX:
+        raise HTTPException(413, "links payload too large")
+    try:
+        body = _json_loads(raw)
+    except ValueError:
+        raise HTTPException(400, "JSON body required")
+    install_id = _validate(str(body.get("installId") or ""))
+    token = _validate_share_token(str(body.get("token") or ""))
+    row = await store.hosted_get(token)
+    if row is None:
+        raise HTTPException(404, "not a hosted share")
+    if row["install_id"] != install_id:
+        raise HTTPException(403, "token is hosted by a different install")
+    links = body.get("links")
+    if not isinstance(links, list):
+        raise HTTPException(400, "links must be a list")
+    import json as _json
+    payload = _json.dumps({"links": links}).encode("utf-8")
+    await r2.run_blocking(
+        r2.put_bytes, "s/" + token + "/api/links", payload,
+        "application/json; charset=utf-8")
+    return {"ok": True, "bytes": len(payload)}
+
+
 def _json_loads(raw: bytes):
     import json as _json
     try:
