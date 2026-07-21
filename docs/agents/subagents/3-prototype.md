@@ -80,6 +80,35 @@ Tabs almost always share a single `activeTab` / `selectedTab` / `active` useStat
 "setupScript": "window.__pokeBy(\"LearningTasksCard\", \"active\", 1)"
 ```
 
+### Wizard / stepper steps - same rule as tabs, one substep PER STEP
+
+A multi-step flow (wizard, stepper, checkout, application form with a step
+indicator) is tabs wearing a progress bar: a single `step` / `currentStep` /
+`stage` useState chooses which section renders. **Every step is a `substep`
+frame of the wizard's page - do NOT collapse the wizard to its entry + final
+step.** Each button that advances the flow produces a different rendered
+state; the map must show each one. Per step:
+
+```js
+// checkout.html has  const [step, setStep] = useState("cart")
+// frame: checkout-step-shipping
+"setupScript": "window.__pokeBy(\"CheckoutWizard\", \"step\", \"shipping\")"
+// frame: checkout-step-payment
+"setupScript": "window.__pokeBy(\"CheckoutWizard\", \"step\", \"payment\")"
+```
+
+When the step is guarded (validation blocks a bare state flip) or the stepper
+is DOM-driven rather than useState-driven, drive it the way a user would -
+click through:
+
+```js
+"setupScript": "setTimeout(function(){var b=document.getElementById('beginBtn');if(b)b.click();setTimeout(function(){var el=document.querySelector('.wiz-step[data-step=\\\"g-review\\\"]');if(el)el.click();},120);},80)"
+```
+
+The entry state stays on the parent `page` frame (`setupScript: null` when it
+IS the default render); steps 2..N are its substeps. Subagent 4 chains them
+with arrows labeled by each step's actual advance-button text.
+
 To find which component owns the tab state:
 
 1. Grep for the tab label / tab key (`"runs"`, `"timeline"`, `"in-house"`) in `.js` files.

@@ -100,6 +100,7 @@ For each pair of enumerated frames `A → B`, include in `arrows[]` if it's:
 
 - **Sequential** - user clicks something on A and source navigates to B. Action quotes the click ("Click Submit").
 - **Tab / substep switch under same parent** - clicking a tab on a page that swaps content within the same shell IS task progression. Emit `parent → tab` for each tab the user can switch to. Don't drop these because they're "nav-driven" - they're sequential.
+- **Wizard / stepper step advance** - a multi-step flow's steps chain as `step1 → step2 → … → stepN`, one arrow per advance, action quoting that step's actual button text ("Next: Qualifications", "Go to Review step"). Do NOT collapse the chain into one `entry → final-step` arrow - Subagent 3 emits one substep frame per step (see 3-prototype.md), and every one of them needs its inbound arrow or reconciliation flags it orphaned.
 - **Dashboard / list → specific item / form** - clicking a task tile, a queue row, a list card, or a "Start application" tile that opens a specific item/form IS task progression. Emit it even though the dashboard is in the global nav.
 - **External page link** - `<a href>` pointing at a page that doesn't exist in `source/`. Don't silently drop it; instead emit a `kind: "external"` frame for the destination (with that filename as the label) and arrow into it.
 

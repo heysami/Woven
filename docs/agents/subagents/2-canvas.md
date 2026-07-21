@@ -40,7 +40,7 @@ Include `label` so reconciliation has the same name across subagents.
 
 A canvas card is anything with renderable UI that the user would want to see on the workspace. Through the canvas lens:
 
-- **Include**: pages, useState branches with distinct UI, modals/sheets, form sub-screens.
+- **Include**: pages, useState branches with distinct UI, modals/sheets, form sub-screens, **every step of a wizard/stepper** (one card per step - a step chooser is tabs wearing a progress bar; do not collapse a wizard to entry + final step).
 - **Exclude (Flow-only kinds)**: triggers, notifications, externals, decisions, starts, inputs. These have no UI to render in an iframe.
 - **Exclude**: the storyboard `index.html` (workflow documentation, not a screen the user works with).
 
@@ -86,6 +86,7 @@ Each item requires **evidence**.
 - **Child placed far from parent.** A useState branch frame placed at `(col: 5, row: 8)` when its parent is at `(col: 0, row: 0)` is visually confusing. Keep children column-adjacent (parent col + 1) on the parent's row.
 - **Stacking from sloppy placement.** Two new frames computed to the same `(col, row)` because both walked the "next free slot" rule without checking the other's placement. Validate uniqueness before returning.
 - **Forgetting modals.** Modal/sheet/popover frames are real UI surfaces with a state branch - include them even though they aren't whole pages.
+- **Collapsing wizards.** A stepper's intermediate steps are real UI surfaces too - a 9-step wizard represented as entry + review loses 7 screens. One card per step, placed as a column-adjacent chain of children off the wizard's page.
 - **Including triggers/notifications/decisions.** These are Flow-only kinds with no rendered UI. Excluding them is correct; including them gives the editor empty cards.
 
 ## Don't
