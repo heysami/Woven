@@ -70,6 +70,11 @@ button { font: inherit; cursor: pointer; }
 }
 .sv-branch-select:hover, .sv-branch-select:focus-visible { color: var(--sv-ink, #1c1c1e); }
 .sv-brand-branch .sv-branch-caret { margin-left: -10px; pointer-events: none; }
+/* Prototype chip: same quiet select treatment as the branch chip when the
+   project has other shared prototypes to hop to. */
+.sv-brand-proto-pick { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; overflow: visible; }
+.sv-proto-select { font-weight: 650; }
+.sv-brand-proto-pick .sv-branch-caret { margin-left: -10px; pointer-events: none; }
 .sv-topbar-spacer { flex: 1; }
 .sv-page-chip {
   color: var(--sv-muted); background: var(--sv-bg);

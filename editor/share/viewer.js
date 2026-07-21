@@ -445,6 +445,11 @@
     // gate serves out of that branch's COMMITTED tree - picking a branch here
     // never touches the owner's checkout.
     const [viewBranch, setViewBranch] = useState("");
+    // Sibling shares from the contributor registry: the project's OTHER
+    // published links (more prototypes, other installs' branches). Boot meta
+    // carries the upload-time copy for hosted shares; /api/links refreshes it
+    // through the worker whenever the owner's daemon answers.
+    const [links, setLinks] = useState(null);
     const [error, setError] = useState(null);
     const [posting, setPosting] = useState(false);
     const [drawing, setDrawing] = useState(false);    // annotation layer armed
@@ -501,6 +506,12 @@
         return r.json();
       }).then(setMeta).catch(() => setMetaErr("This share link is no longer available."));
     }, []);
+    useEffect(() => {
+      if (!meta) return;
+      fetch(api("links")).then((r) => (r.ok ? r.json() : null)).then((j) => {
+        if (j && Array.isArray(j.links)) setLinks(j.links);
+      }).catch(() => {});   // owner offline / pre-links gate - meta.links stands
+    }, [meta]);
 
     const refetchComments = useCallback(() => {
       fetch(api("comments")).then((r) => (r.ok ? r.json() : { comments: [] }))
@@ -831,20 +842,78 @@
 
     // Brand: branch reads BEFORE the prototype name (project · ⎇branch / proto).
     // A custom label can't be decomposed, so it keeps label-then-branch order.
-    // The branch becomes a dropdown when the share offers more than one.
     const defaultLabel = meta.project && meta.label === meta.project + " / " + meta.prototype;
     const branchShown = viewBranch || meta.branch;
+
+    // Sibling shares from the contributor registry (live refetch wins over the
+    // boot meta's upload-time copy). "Self" = the entry whose URL carries this
+    // page's token - never offered as a hop target.
+    const curToken = (location.pathname.match(/\/s\/([a-f0-9]+)/) || [])[1] || "";
+    const allLinks = (links || meta.links || []).filter((e) => e && e.url && e.prototype);
+    const isSelf = (e) => curToken && e.url.indexOf("/s/" + curToken + "/") !== -1;
+    const selfEntry = allLinks.find(isSelf) || null;
+    const linkScore = (e) =>
+      (selfEntry && e.install === selfEntry.install ? 4 : 0) + (e.hosted ? 2 : 0) + (e.live ? 1 : 0);
+
+    // One hop target per OTHER shared prototype. Same-install links win when
+    // several installs share a prototype (stay on the host you were given);
+    // hosted beats live-only among the rest.
+    const protoOptions = [];
+    for (const e of allLinks) {
+      if (e.prototype === meta.prototype) continue;
+      const i = protoOptions.findIndex((o) => o.prototype === e.prototype);
+      if (i === -1) protoOptions.push(e);
+      else if (linkScore(e) > linkScore(protoOptions[i])) protoOptions[i] = e;
+    }
+    protoOptions.sort((a, b) => a.prototype.localeCompare(b.prototype));
+
+    // Branch options: local branches switch IN PLACE via the /b/ gate route
+    // (live shares only - meta.branches); other installs' shares of THIS
+    // prototype on other branches are navigation hops. Local wins on a name
+    // clash - an in-place flip beats leaving the page.
+    const localBranches = meta.branches || [];
+    const crossBranches = [];
+    for (const e of allLinks) {
+      if (e.prototype !== meta.prototype || isSelf(e) || !e.branch) continue;
+      if (e.branch === meta.branch || localBranches.indexOf(e.branch) !== -1) continue;
+      const i = crossBranches.findIndex((o) => o.branch === e.branch);
+      if (i === -1) crossBranches.push(e);
+      else if (linkScore(e) > linkScore(crossBranches[i])) crossBranches[i] = e;
+    }
+    const onPickBranchOption = (v) => {
+      if (v.slice(0, 2) === "b:") onPickBranch(v.slice(2));
+      else if (v.slice(0, 2) === "l:") {
+        const e = crossBranches[+v.slice(2)];
+        if (e) location.href = e.url;
+      }
+    };
+    const branchDropdown = localBranches.length > 1 || crossBranches.length > 0;
     const branchEl = meta.branch ? html`<span className="sv-brand-sub sv-brand-branch" title=${"git branch: " + branchShown}>
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>
-      </svg>${(meta.branches || []).length > 1 ? html`<select
-          className="sv-branch-select" value=${branchShown}
-          title="Review another branch's committed version - the owner's checkout is untouched"
-          onChange=${(e) => onPickBranch(e.target.value)}>
-          ${meta.branches.map((b) => html`<option key=${b} value=${b}>${b}</option>`)}
+      </svg>${branchDropdown ? html`<select
+          className="sv-branch-select" value=${"b:" + branchShown}
+          title="Review another branch of this prototype - the owner's checkout is untouched"
+          onChange=${(e) => onPickBranchOption(e.target.value)}>
+          ${(localBranches.length ? localBranches : [branchShown]).map((b) => html`
+            <option key=${"b:" + b} value=${"b:" + b}>${b}</option>`)}
+          ${crossBranches.map((e, i) => html`
+            <option key=${"l:" + e.branch} value=${"l:" + i}>${e.branch + (e.owner ? " · " + e.owner : "")}</option>`)}
         </select><svg className="sv-branch-caret" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M6 9l6 6 6-6"/>
         </svg>` : branchShown}</span>` : null;
+
+    // Prototype chip: a dropdown when the project has other shared prototypes
+    // to hop to; a plain label otherwise.
+    const protoEl = protoOptions.length ? html`<span className="sv-brand-label sv-brand-proto sv-brand-proto-pick">/<select
+        className="sv-branch-select sv-proto-select" value=""
+        title="Open another shared prototype of this project"
+        onChange=${(e) => { if (e.target.value) location.href = e.target.value; }}>
+        <option value="">${meta.prototype}</option>
+        ${protoOptions.map((e) => html`<option key=${e.prototype} value=${e.url}>${e.prototype}</option>`)}
+      </select><svg className="sv-branch-caret" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 9l6 6 6-6"/>
+      </svg></span>` : html`<span className="sv-brand-label sv-brand-proto">/ ${meta.prototype}</span>`;
 
     // Clamp composer near its pin inside the stage.
     const composerStyle = draft ? {
@@ -862,9 +931,10 @@
             ${defaultLabel ? html`
               <span className="sv-brand-label">${meta.project}</span>
               ${branchEl}
-              <span className="sv-brand-label sv-brand-proto">/ ${meta.prototype}</span>` : html`
+              ${protoEl}` : html`
               <span className="sv-brand-label">${meta.label}</span>
-              ${branchEl}`}
+              ${branchEl}
+              ${protoOptions.length ? protoEl : null}`}
             <span className="sv-brand-sub">· shared for review</span>
           </span>
           <span className="sv-topbar-spacer"></span>

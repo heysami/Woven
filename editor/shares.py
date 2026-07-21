@@ -1258,7 +1258,11 @@ def _hosted_snapshot_members(rec):
     # `branch` is the branch AT SNAPSHOT TIME - that is what the hosted
     # copy actually contains, even if the owner switches later. No
     # `branches` list: a snapshot holds ONE tree, so there is nothing
-    # for a picker to switch to.
+    # for a picker to switch to IN PLACE - but `links` (the contributor
+    # registry as of upload) still lets the viewer hop to the project's
+    # OTHER shares: sibling prototypes, and other branches published by
+    # other installs. The viewer refetches /api/links for a fresher list
+    # whenever the owner's tunnel is up.
     meta = {
         "label":     rec.get("label") or "",
         "project":   rec.get("project") or "",
@@ -1266,6 +1270,7 @@ def _hosted_snapshot_members(rec):
         "branch":    _project_branch(project_root),
         "emailGate": bool(rec.get("emailGate")),
         "entry":     "p/source/{}/index.html".format(slug),
+        "links":     _links_for_viewer(rec),
     }
     members.append(("share/api/meta", json.dumps(meta).encode("utf-8")))
     # Hosted marker - the worker treats its presence as "this share is
@@ -1478,12 +1483,23 @@ def _hosted_upload_worker(share_id):
             res = _hosted_post_snapshot(rec, tmp)
             print("[share] hosted snapshot uploaded for {} ({} files, {} bytes)".format(
                 share_id, res.get("files"), res.get("bytes")), flush=True)
+        # Remember which branch this snapshot captured - the contributor
+        # registry publishes it so viewers can offer cross-share branch hops.
+        try:
+            snap_branch = _project_branch(_RESOLVE_PROJECT_ROOT(rec.get("project") or ""))
+        except Exception:
+            snap_branch = ""
         share_update(share_id, {
             "hostedAt":    _now_iso(),
             "hostedBytes": int(res.get("bytes") or 0),
             "hostedFiles": int(res.get("files") or 0),
+            "hostedBranch": snap_branch,
         })
         _hosted_job_set(share_id, "done")
+        try:
+            publish_project_links(rec.get("project") or "")
+        except Exception:
+            pass
     except Exception as e:
         _hosted_job_set(share_id, "error", str(e))
         print("[share] hosted upload failed for {}: {}".format(share_id, e), flush=True)
@@ -2737,7 +2753,15 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
                 "branches":  branch_list,
                 "emailGate": bool(rec.get("emailGate")),
                 "entry":     f"p/source/{rec.get('prototype')}/index.html",
+                # Every contributor's stable links for this project - the
+                # viewer's prototype/branch dropdowns hop between them.
+                "links":     _links_for_viewer(rec),
             })
+        # Fresh registry read on its own route: hosted viewers boot from the
+        # SNAPSHOT meta (upload-time links), then refetch this to pick up
+        # shares published since - the worker passes /api/* to the tunnel.
+        if sub == "/api/links":
+            return self._send_json(200, {"links": _links_for_viewer(rec)})
         if sub == "/api/comments":
             root = self._project_root(rec)
             if root is None:
@@ -3126,6 +3150,7 @@ def _own_link_entries(project, project_root):
         return []
     iid = woven_install_id()
     owner = _git_user_name(project_root)
+    cur_branch = _project_branch(project_root)
     out = []
     for s in shares_load().get("shares", []):
         if s.get("project") != project or s.get("liveOnly"):
@@ -3134,12 +3159,17 @@ def _own_link_entries(project, project_root):
         hosted = share_hosted_on(s)
         if not (woven or hosted):
             continue
+        # The branch this link SERVES: a hosted snapshot pins the branch
+        # captured at upload (the worker prefers R2 over the tunnel), a
+        # live-only tunnel serves whatever is checked out right now.
+        branch = (s.get("hostedBranch") or cur_branch) if hosted else cur_branch
         out.append({
             "key":       iid + ":" + (s.get("prototype") or ""),
             "install":   iid,
             "owner":     owner,
             "prototype": s.get("prototype") or "",
             "label":     s.get("label") or "",
+            "branch":    branch,
             "url":       base.rstrip("/") + "/s/" + (s.get("token") or "") + "/",
             "hosted":    hosted,
             "live":      woven,
@@ -3169,7 +3199,8 @@ def publish_project_links(project):
         for e in _own_link_entries(project, root):
             old = prev.get(e["key"])
             if old is not None and all(old.get(k) == e.get(k) for k in
-                                       ("owner", "prototype", "label", "url", "hosted", "live")):
+                                       ("owner", "prototype", "label", "branch",
+                                        "url", "hosted", "live")):
                 e = old                                # unchanged - keep timestamp
             mine.append(e)
         merged = sorted(others + mine,
@@ -3185,6 +3216,22 @@ def publish_project_links(project):
             json.dump({"links": merged}, f, indent=2)
         os.replace(tmp, path)
         return True
+
+
+def _links_for_viewer(rec):
+    """Registry entries a share VIEWER may see: every contributor's stable
+    links for the share's project, trimmed to what the topbar dropdowns
+    need. Anyone holding one share link is deliberately offered the
+    project's other published links - hopping between shared prototypes
+    and between branches is the point (each hop still lands on that
+    share's own gate, email gate included). Best-effort, never raises."""
+    try:
+        links = links_list(rec.get("project") or "").get("links") or []
+    except Exception:
+        return []
+    return [{k: e.get(k) for k in ("install", "owner", "prototype", "label",
+                                   "branch", "url", "hosted", "live")}
+            for e in links]
 
 
 def links_cache_path(root):
