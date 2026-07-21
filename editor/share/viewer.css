@@ -391,6 +391,10 @@ button { font: inherit; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .sv-edge-flow { stroke-dasharray: none; animation: none; }
 }
+/* Chip + kind-tag colors are the EDITOR's canvas tokens verbatim (editor
+   styles.css :root - accent mint, surface-2, warning-soft, accent-soft),
+   NOT the viewer's own --sv-accent, so the shared map matches what the
+   owner sees in Woven's Architecture canvas. */
 .sv-edge-chip {
   display: flex;
   align-items: center;
@@ -399,9 +403,9 @@ button { font: inherit; cursor: pointer; }
   height: 100%;
   box-sizing: border-box;
   font: 500 11px/1.3 var(--sv-font);
-  color: #fff;
-  background: var(--sv-accent);
-  border: 1px solid var(--sv-accent);
+  color: oklch(100% 0 0);
+  background: oklch(70% 0.11 174);
+  border: 1px solid oklch(70% 0.11 174);
   border-radius: 5px;
   padding: 4px 8px;
   text-align: center;
@@ -437,17 +441,13 @@ button { font: inherit; cursor: pointer; }
   font-weight: 500;
   padding: 1px 6px;
   border-radius: 3px;
-  background: var(--sv-bg);
-  border: 1px solid var(--sv-line);
+  background: oklch(97% 0 0);
   color: var(--sv-muted);
   text-transform: lowercase;
   flex: none;
 }
-.sv-flow-frame-kind[data-kind="start"] {
-  background: var(--sv-accent-soft);
-  border-color: var(--sv-accent);
-  color: var(--sv-accent-text);
-}
+.sv-flow-frame-kind[data-kind="overlay"] { background: oklch(96% 0.05 85); color: oklch(40% 0.14 75); }
+.sv-flow-frame-kind[data-kind="state"]   { background: oklch(95% 0.04 174); color: oklch(48% 0.095 174); }
 .sv-flow-frame-name {
   overflow: hidden;
   text-overflow: ellipsis;

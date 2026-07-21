@@ -29200,6 +29200,7 @@ if __name__ == "__main__":
             WORKSPACE_DIR, INSTALL_ROOT,
             lambda pid: resolve_project_root({"project": pid}),
             on_comments_changed=_broadcast_share_comments_changed,
+            poke_helper=POKE_HELPER,
         )
         _shares.start_gate_server(PORT)
         # Live Session - same gate, delegated /s/<token>/live* routes.

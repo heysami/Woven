@@ -405,6 +405,44 @@
     return { pt, bbox: labelBBox(pt, text, opts), t: 0.5, perp: 0 };
   };
 
+  // Port of the editor's runSetupScriptWithRetry (app.js): evals a frame's
+  // setupScript inside its same-origin embed, re-firing across DOM mutations
+  // for ~3s so single-page prototypes land on the right useState branch even
+  // when React commits after iframe load. Without this every substep frame
+  // renders its page's DEFAULT state - not the state the editor shows.
+  // (The gate injects the __poke/__pokeBy helpers the scripts call.)
+  const runSetupScriptWithRetry = (iframeEl, script) => {
+    if (!iframeEl || !script) return;
+    const win = iframeEl.contentWindow;
+    const doc = iframeEl.contentDocument;
+    if (!win || !doc) return;
+    try { win.eval(script); } catch (_) { /* cross-origin or syntax */ }
+    const target = doc.body || doc.documentElement;
+    if (!target || typeof MutationObserver !== "function") return;
+    let fires = 0;
+    const MAX_FIRES = 8;
+    const DEADLINE_MS = 3000;
+    const deadline = Date.now() + DEADLINE_MS;
+    let observer;
+    let timer;
+    const fire = () => {
+      if (Date.now() > deadline || fires >= MAX_FIRES) {
+        if (observer) observer.disconnect();
+        if (timer) clearTimeout(timer);
+        return;
+      }
+      fires++;
+      try { win.eval(script); } catch (_) { /* cross-origin or syntax */ }
+    };
+    try {
+      observer = new MutationObserver(() => fire());
+      observer.observe(target, { childList: true, subtree: true });
+    } catch (_) { return; }
+    setTimeout(fire, 250);
+    setTimeout(fire, 1000);
+    timer = setTimeout(() => { if (observer) observer.disconnect(); }, DEADLINE_MS);
+  };
+
   // The flow map itself: every frame as a live page embed on the editor's
   // col/row grid, arrows as SVG curves, drag to pan, Cmd/Ctrl-scroll or the
   // corner buttons to zoom, click a screen to open it in the prototype view.
@@ -622,7 +660,8 @@
                 </div>
                 <div className="sv-flow-frame-shot">
                   <iframe src=${base + "p/source/" + prototype + "/" + f.entry + (f.hash || "")}
-                    loading="lazy" scrolling="no" tabIndex=${-1} title=${f.label || f.id}></iframe>
+                    loading="lazy" scrolling="no" tabIndex=${-1} title=${f.label || f.id}
+                    onLoad=${(e) => { if (f.setupScript) runSetupScriptWithRetry(e.currentTarget, f.setupScript); }}></iframe>
                   <button type="button" className="sv-flow-frame-open"
                     title=${"Open " + (f.label || f.entry) + " in the prototype"}
                     onClick=${() => { if (!suppressClickRef.current) onOpenFrame(f); }}></button>

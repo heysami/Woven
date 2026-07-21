@@ -101,13 +101,43 @@ INSTALL_ID_RE     = re.compile(r"^[a-f0-9]{32}$")
 _WOVEN_HEARTBEAT_INTERVAL = 6 * 3600   # seconds; reaper TTL is 45 days, so this is ample
 
 
-def init(workspace_dir, install_root, resolve_project_root, on_comments_changed=None):
+def init(workspace_dir, install_root, resolve_project_root, on_comments_changed=None,
+         poke_helper=None):
     """Called once from serve.py before any other function here."""
-    global WORKSPACE_DIR, INSTALL_ROOT, _RESOLVE_PROJECT_ROOT, _ON_COMMENTS_CHANGED
+    global WORKSPACE_DIR, INSTALL_ROOT, _RESOLVE_PROJECT_ROOT, _ON_COMMENTS_CHANGED, _POKE_HELPER
     WORKSPACE_DIR = workspace_dir
     INSTALL_ROOT  = install_root
     _RESOLVE_PROJECT_ROOT = resolve_project_root
     _ON_COMMENTS_CHANGED  = on_comments_changed
+    _POKE_HELPER = poke_helper
+
+
+_POKE_HELPER = None  # serve.py's POKE_HELPER JS, threaded in via init()
+
+
+def _html_with_poke(data):
+    """Inject the daemon's React-fiber poke helpers into an HTML payload -
+    the same injection serve.py's _serve_source_html does locally. Without
+    it, per-frame setupScripts (which call __poke/__pokeBy) silently no-op
+    on gate-served pages, so the share viewer's flow map renders every
+    substep frame in its default state instead of the state the editor
+    shows. Mirrors serve.py's placement rules: after <head>, else after
+    <body...>, else prepended."""
+    if not _POKE_HELPER or not isinstance(data, bytes):
+        return data
+    inject = b"<script>" + _POKE_HELPER.encode("utf-8") + b"</script>"
+    lower = data.lower()
+    head = lower.find(b"<head>")
+    if head >= 0:
+        cut = head + len(b"<head>")
+        return data[:cut] + inject + data[cut:]
+    body = lower.find(b"<body")
+    if body >= 0:
+        close = lower.find(b">", body)
+        if close >= 0:
+            cut = close + 1
+            return data[:cut] + inject + data[cut:]
+    return inject + data
 
 
 def _now_iso():
@@ -1326,7 +1356,18 @@ def _hosted_snapshot_members(rec):
             "prototype has no source/{}/ directory - it may have been renamed "
             "or deleted. Turn hosting off and share the renamed prototype, or "
             "rename it back.".format(slug))
-    members += _hosted_tree_members(src_tree, "share/p/source/" + slug)
+    # HTML pages get the poke helpers baked in (the worker serves statics
+    # verbatim, so the tunnel gate's on-the-fly injection can't help hosted
+    # viewers) - keeps setupScript-driven flow-map states working offline.
+    for arc, src in _hosted_tree_members(src_tree, "share/p/source/" + slug):
+        if isinstance(src, str) and os.path.splitext(arc)[1].lower() in (".html", ".htm"):
+            try:
+                with open(src, "rb") as f:
+                    members.append((arc, _html_with_poke(f.read())))
+                continue
+            except OSError:
+                pass
+        members.append((arc, src))
     ds_tree = os.path.join(project_root, "design-systems")
     if os.path.isdir(ds_tree):
         members += _hosted_tree_members(ds_tree, "share/p/design-systems")
@@ -2667,6 +2708,13 @@ def gate_serve_project_file(handler, project_root, prototype, sub):
     if not os.path.isfile(abs_path):
         handler._send_json(404, {"error": "not found"}); return True
     is_media = ext not in (".html", ".htm", ".css", ".js", ".mjs", ".json")
+    if ext in (".html", ".htm"):
+        try:
+            with open(abs_path, "rb") as f:
+                data = f.read()
+        except OSError:
+            handler._send_json(404, {"error": "not found"}); return True
+        handler._send_blob(_html_with_poke(data), os.path.basename(abs_path)); return True
     handler._send_file(abs_path, cache=is_media); return True
 
 def gate_serve_project_file_at_ref(handler, project_root, prototype, sub, ref):
@@ -2700,6 +2748,8 @@ def gate_serve_project_file_at_ref(handler, project_root, prototype, sub, ref):
     if data is None:
         handler._send_json(404, {"error": "not found"}); return True
     is_media = ext not in (".html", ".htm", ".css", ".js", ".mjs", ".json")
+    if ext in (".html", ".htm"):
+        data = _html_with_poke(data)
     handler._send_blob(data, rel, cache=is_media); return True
 
 
@@ -3068,6 +3118,13 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             if not os.path.isfile(abs_path):
                 return self._send_json(404, {"error": "not found"})
             is_media = ext not in (".html", ".htm", ".css", ".js", ".mjs", ".json")
+            if ext in (".html", ".htm"):
+                try:
+                    with open(abs_path, "rb") as f:
+                        data = f.read()
+                except OSError:
+                    return self._send_json(404, {"error": "not found"})
+                return self._send_blob(_html_with_poke(data), base)
             return self._send_file(abs_path, cache=is_media)
         return self._send_json(404, {"error": "not found"})
 
