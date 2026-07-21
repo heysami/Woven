@@ -870,13 +870,17 @@
     // Branch options: local branches switch IN PLACE via the /b/ gate route
     // (live shares only - meta.branches); other installs' shares of THIS
     // prototype on other branches are navigation hops. Local wins on a name
-    // clash - an in-place flip beats leaving the page.
+    // clash - an in-place flip beats leaving the page. An entry with NO
+    // branch (published by an install predating the branch field) is still
+    // offered - it IS another contributor's copy, we just can't name the
+    // branch yet - keyed per install so several such contributors coexist.
     const localBranches = meta.branches || [];
     const crossBranches = [];
     for (const e of allLinks) {
-      if (e.prototype !== meta.prototype || isSelf(e) || !e.branch) continue;
-      if (e.branch === meta.branch || localBranches.indexOf(e.branch) !== -1) continue;
-      const i = crossBranches.findIndex((o) => o.branch === e.branch);
+      if (e.prototype !== meta.prototype || isSelf(e)) continue;
+      if (e.branch && (e.branch === meta.branch || localBranches.indexOf(e.branch) !== -1)) continue;
+      const key = e.branch || "@" + (e.install || e.url);
+      const i = crossBranches.findIndex((o) => (o.branch || "@" + (o.install || o.url)) === key);
       if (i === -1) crossBranches.push(e);
       else if (linkScore(e) > linkScore(crossBranches[i])) crossBranches[i] = e;
     }
@@ -898,7 +902,9 @@
           ${(localBranches.length ? localBranches : [branchShown]).map((b) => html`
             <option key=${"b:" + b} value=${"b:" + b}>${b}</option>`)}
           ${crossBranches.map((e, i) => html`
-            <option key=${"l:" + e.branch} value=${"l:" + i}>${e.branch + (e.owner ? " · " + e.owner : "")}</option>`)}
+            <option key=${"l:" + (e.branch || e.install || i)} value=${"l:" + i}>${e.branch
+              ? e.branch + (e.owner ? " · " + e.owner : "")
+              : (e.owner || "contributor") + " · their copy"}</option>`)}
         </select><svg className="sv-branch-caret" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M6 9l6 6 6-6"/>
         </svg>` : branchShown}</span>` : null;
