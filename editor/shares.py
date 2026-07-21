@@ -2463,6 +2463,22 @@ def sync_status_get(project):
         return dict(_SYNC_STATUS.get(project or "") or {})
 
 
+def tree_version():
+    """Version of the RUNNING tree, derived from the install path - macapp
+    installs live at ~/Woven/app/<vX.Y.Z>/ (realpath resolves the `current`
+    symlink). Dev checkouts have no tag: 'dev'. Served on /api/links so a
+    share URL answers 'which daemon version is this machine actually
+    running' - a whole day was lost to updated-on-disk vs running-process
+    ambiguity."""
+    try:
+        for seg in os.path.realpath(INSTALL_ROOT or "").split(os.sep):
+            if re.match(r"^v\d+\.\d+\.\d+$", seg):
+                return seg
+    except Exception:
+        pass
+    return "dev"
+
+
 def hosted_comments_push_project(project):
     """Refresh the R2 discussion copy of EVERY hosted share of `project`.
     The per-mutation path (_notify_comments_changed) only fires on local
@@ -2854,7 +2870,8 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         # is enough to diagnose why its discussion/registry might lag.
         if sub == "/api/links":
             return self._send_json(200, {"links": _links_for_viewer(rec),
-                                         "sync": sync_status_get(rec.get("project") or "")})
+                                         "sync": sync_status_get(rec.get("project") or ""),
+                                         "daemon": tree_version()})
         if sub == "/api/comments":
             root = self._project_root(rec)
             if root is None:
