@@ -31,7 +31,23 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         super.init()
 
         if let button = statusItem.button {
-            let img = NSImage(systemSymbolName: "w.circle.fill", accessibilityDescription: "Woven")
+            // The Woven logogram as a template image (1x + 2x reps bundled by
+            // build.sh); macOS tints it to match the menu bar. Fall back to
+            // the old SF Symbol if the resources are missing.
+            var img: NSImage?
+            if let base = Bundle.main.image(forResource: "woven-mark-18") {
+                let mark = NSImage(size: NSSize(width: 18, height: 18))
+                for rep in base.representations { mark.addRepresentation(rep) }
+                if let hi = Bundle.main.image(forResource: "woven-mark-36") {
+                    for rep in hi.representations {
+                        rep.size = NSSize(width: 18, height: 18)   // 2x rep
+                        mark.addRepresentation(rep)
+                    }
+                }
+                img = mark
+            } else {
+                img = NSImage(systemSymbolName: "w.circle.fill", accessibilityDescription: "Woven")
+            }
             img?.isTemplate = true
             button.image = img
         }

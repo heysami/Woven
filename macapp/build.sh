@@ -20,6 +20,9 @@ cp .build/release/WovenApp "$APP/Contents/MacOS/Woven"
 sed "s/__VERSION__/$VERSION/g" Support/Info.plist > "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 [ -f Support/AppIcon.icns ] && cp Support/AppIcon.icns "$APP/Contents/Resources/"
+# Menu-bar template icon - the Woven logogram (1x + 2x), rendered from
+# editor/favicon.svg. Template = alpha-only black; macOS tints it per theme.
+cp Support/woven-mark-18.png Support/woven-mark-36.png "$APP/Contents/Resources/" 2>/dev/null || true
 
 if [ -n "${CODESIGN_IDENTITY:-}" ]; then
   # Developer ID path: hardened runtime + secure timestamp, then notarize.
