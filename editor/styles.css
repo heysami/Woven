@@ -6561,6 +6561,107 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   white-space: nowrap;
   min-width: 0;
 }
+/* File rows are a div wrapping an open-button + row actions (a button can't
+   nest buttons) - the inner button carries the click, the row the hover. */
+.pv-file-open {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* Hover-revealed icon-only row actions (Open as code / Reveal in Finder) -
+   same pattern as .workflow-node-folder-rowactions. */
+.pv-row-actions {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.pv-asset-row:hover .pv-row-actions,
+.pv-file-row:hover .pv-row-actions { opacity: 1; }
+.pv-rowbtn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.pv-rowbtn:hover {
+  color: var(--text);
+  background: color-mix(in oklab, var(--text) 12%, transparent);
+}
+/* "Open as code" modal - the .workflow-modal shell sized for source bodies.
+   Override the shell's 4-row grid: head / editor / footer. Doubled class so
+   it beats .workflow-modal, which appears later in this stylesheet. */
+.workflow-modal.pv-code-modal {
+  width: min(980px, 94vw);
+  height: min(82vh, 860px);
+  max-height: min(82vh, 860px);
+  grid-template-rows: auto 1fr auto;
+}
+.pv-code-modal-title-wrap { min-width: 0; }
+.pv-code-modal .workflow-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.pv-code-modal .workflow-modal-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pv-code-modal-glyph { display: inline-flex; color: var(--text-muted); }
+.pv-code-modal-body {
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  background: var(--surface);
+}
+.pv-code-modal-body > .pv-panel-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pv-code-modal-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  min-height: 0;
+}
+.pv-code-modal-err {
+  color: var(--danger, #c0392b);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.pv-code-modal-note {
+  color: var(--text-muted);
+  font-size: 11px;
+}
 /* Floating left chat panel for the standalone views (User testing /
    Development) that mount RightRailDock - the mirror of the floating right
    dock, pinned to the LEFT edge. Same z tier as .right-rail-dock-host

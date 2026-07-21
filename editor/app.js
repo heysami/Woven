@@ -49449,6 +49449,154 @@ const PV_ASSET_KIND_GLYPH = {
   viz:    () => html`<${Icon.Chart}/>`,
 };
 
+// Reveal a project-relative path in Finder via the daemon (macOS `open -R`).
+// Same endpoint the folder node's row actions use; fire-and-forget.
+function pvRevealInFinder(path) {
+  if (!path) return;
+  try {
+    fetch(apiUrl("/__fs_reveal"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    }).catch(() => {});
+  } catch {}
+}
+
+/* Single-file code modal for the preview panels' "Open as code" row action.
+   Same fetch/draft/save mechanics as WorkflowCodePanel, but modal (the
+   preview panels have no canvas node to dock against). Saves only land on
+   source/ paths - /__write_text rejects everything else - so the textarea
+   drops to read-only outside source/. */
+function PreviewCodeModal({ path, onClose }) {
+  const [body, setBody]         = useState({ text: "", loading: true, error: null });
+  const [draft, setDraft]       = useState(null);   // null = clean
+  const [saving, setSaving]     = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [saveFlash, setSaveFlash] = useState(false);
+  const canSave = typeof path === "string" && path.startsWith("source/");
+
+  useEffect(() => {
+    let alive = true;
+    setBody({ text: "", loading: true, error: null });
+    setDraft(null);
+    setSaveError(null);
+    // Cache-bust like WorkflowCodePanel so edits elsewhere show up fresh.
+    const url = apiUrl("/" + path);
+    const sep = url.includes("?") ? "&" : "?";
+    fetch(url + sep + "_c=" + Date.now())
+      .then(r => r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(text => { if (alive) setBody({ text, loading: false, error: null }); })
+      .catch(err => { if (alive) setBody({ text: "", loading: false, error: String(err.message || err) }); });
+    return () => { alive = false; };
+  }, [path]);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
+  const cleanText = (!body.loading && !body.error) ? (body.text || "") : "";
+  const displayText = draft === null ? cleanText : draft;
+  const dirty = draft !== null && draft !== cleanText;
+  const editable = canSave && !body.loading && !body.error;
+
+  const save = async () => {
+    if (!dirty || saving || !canSave) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const text = draft;
+      const r = await fetch(apiUrl("/__write_text"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, text }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${r.status}`);
+      }
+      setBody({ text, loading: false, error: null });
+      setDraft(null);
+      setSaveFlash(true);
+      setTimeout(() => setSaveFlash(false), 1200);
+      // Same broadcast the code panel sends - open preview tabs showing this
+      // file reload themselves.
+      try {
+        window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [path] } }));
+      } catch {}
+    } catch (err) {
+      setSaveError(String((err && err.message) || err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onTextareaKeyDown = (e) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "S")) {
+      e.preventDefault();
+      e.stopPropagation();
+      save();
+    }
+    if (e.key === "Tab" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      const ta = e.currentTarget;
+      const start = ta.selectionStart, end = ta.selectionEnd;
+      const next = displayText.slice(0, start) + "  " + displayText.slice(end);
+      setDraft(next);
+      requestAnimationFrame(() => {
+        try { ta.selectionStart = ta.selectionEnd = start + 2; } catch {}
+      });
+    }
+  };
+
+  const basename = (path || "").split("/").pop() || path;
+  return html`
+    <div className="workflow-modal-backdrop" onMouseDown=${onClose}>
+      <div className="workflow-modal pv-code-modal" onMouseDown=${(e) => e.stopPropagation()}>
+        <div className="workflow-modal-head">
+          <div className="pv-code-modal-title-wrap">
+            <div className="workflow-modal-title">
+              <span className="pv-code-modal-glyph"><${Icon.Code}/></span>
+              ${basename}${dirty ? html`<span className="workflow-code-panel-dirty" title="Unsaved changes">●</span>` : null}
+            </div>
+            <div className="workflow-modal-sub" title=${path}>${path}</div>
+          </div>
+          <button type="button" className="workflow-modal-close" onClick=${onClose} aria-label="Close">×</button>
+        </div>
+        <div className="pv-code-modal-body">
+          ${body.loading && html`<div className="pv-panel-empty">Loading…</div>`}
+          ${body.error && html`<div className="pv-panel-empty">Could not read this file: ${body.error}</div>`}
+          ${!body.loading && !body.error && html`
+            <textarea
+              className="workflow-code-panel-editor"
+              wrap="off"
+              spellCheck=${false}
+              readOnly=${!editable}
+              value=${displayText}
+              onInput=${editable ? ((e) => setDraft(e.target.value)) : undefined}
+              onKeyDown=${editable ? onTextareaKeyDown : undefined}
+            />
+          `}
+        </div>
+        <div className="pv-code-modal-foot">
+          ${saveError && html`<span className="pv-code-modal-err" title=${saveError}>${saveError}</span>`}
+          ${!canSave && !body.loading && !body.error && html`<span className="pv-code-modal-note">Read-only: only files under source/ can be saved here.</span>`}
+          <span className="workflow-node-bar-spacer"/>
+          ${canSave && html`
+            <button
+              type="button"
+              className=${"workflow-code-panel-save" + (dirty ? " is-dirty" : "") + (saving ? " is-saving" : "") + (saveFlash ? " is-saved" : "")}
+              disabled=${!dirty || saving}
+              onClick=${save}
+            >${saveFlash ? "Saved ✓" : saving ? "Saving…" : "Save"}</button>
+          `}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 /* Visual assets of the page OPEN in the Preview viewer - the panel sibling of
    the Prototype node's "Manage exposed assets" dialog (same scanner, filters
    off, read-only list). Scans the active tab iframe's LIVE DOM, so it follows
@@ -49459,6 +49607,7 @@ function PreviewAssetsPanel({ activePath, onClose }) {
   const [livePath, setLivePath]     = useState(null);
   const [filter, setFilter]         = useState("");
   const [kindFilter, setKindFilter] = useState(null);
+  const [codePath, setCodePath]     = useState(null);   // file open in the code modal
   const lastHrefRef = useRef(null);
   const activeFrame = () => document.querySelector('.workflow-proto-frame[data-active="true"]');
   const scan = useCallback(() => {
@@ -49575,6 +49724,8 @@ function PreviewAssetsPanel({ activePath, onClose }) {
         ${visible.map(item => {
           const basename = item.path?.split("/").pop() || item.path;
           const isFile = !!item.path && !item.path.startsWith("inline:");
+          const ext = basename && basename.includes(".") ? basename.split(".").pop().toLowerCase() : "";
+          const codeable = isFile && _TEXT_EXTS.has(ext);
           return html`
             <div
               key=${item.path}
@@ -49592,11 +49743,22 @@ function PreviewAssetsPanel({ activePath, onClose }) {
                 </div>
                 <div className="pv-asset-path">${item.path}</div>
               </div>
+              ${isFile && html`
+                <span className="pv-row-actions">
+                  ${codeable && html`
+                    <button type="button" className="pv-rowbtn" title="Open as code" aria-label="Open as code"
+                      onClick=${(e) => { e.stopPropagation(); setCodePath(item.path); }}><${Icon.Code}/></button>
+                  `}
+                  <button type="button" className="pv-rowbtn" title="Reveal in Finder" aria-label="Reveal in Finder"
+                    onClick=${(e) => { e.stopPropagation(); pvRevealInFinder(item.path); }}><${Icon.External}/></button>
+                </span>
+              `}
               <div className="pv-asset-kind">${glyphFor(item.kind)}</div>
             </div>
           `;
         })}
       </div>
+      ${codePath && html`<${PreviewCodeModal} path=${codePath} onClose=${() => setCodePath(null)}/>`}
     </div>
   `;
 }
@@ -49607,6 +49769,7 @@ function PreviewAssetsPanel({ activePath, onClose }) {
 function PreviewFilesPanel({ activePath, onClose }) {
   const [entries, setEntries] = useState(null);   // null = loading
   const [collapsed, setCollapsed] = useState(() => new Set());
+  const [codePath, setCodePath] = useState(null); // file open in the code modal
   const load = useCallback(async () => {
     try {
       const [pr, hp] = await Promise.all([
@@ -49698,17 +49861,27 @@ function PreviewFilesPanel({ activePath, onClose }) {
         ${!isCollapsed && html`
           <${React.Fragment}>
             ${files.map(f => html`
-              <button
-                type="button"
+              <div
                 key=${f.path}
                 className=${"pv-file-row" + (f.path === activePath ? " is-active" : "")}
                 style=${{ paddingLeft: (8 + depth * 14) + "px" }}
-                title=${f.path}
-                onClick=${() => openFile(f)}
               >
-                <span className="pv-file-glyph">${f.isProto ? html`<${Icon.Play}/>` : html`<${Icon.Canvas}/>`}</span>
-                <span className="pv-file-name">${f.label}</span>
-              </button>
+                <button
+                  type="button"
+                  className="pv-file-open"
+                  title=${f.path}
+                  onClick=${() => openFile(f)}
+                >
+                  <span className="pv-file-glyph">${f.isProto ? html`<${Icon.Play}/>` : html`<${Icon.Canvas}/>`}</span>
+                  <span className="pv-file-name">${f.label}</span>
+                </button>
+                <span className="pv-row-actions">
+                  <button type="button" className="pv-rowbtn" title="Open as code" aria-label="Open as code"
+                    onClick=${(e) => { e.stopPropagation(); setCodePath(f.path); }}><${Icon.Code}/></button>
+                  <button type="button" className="pv-rowbtn" title="Reveal in Finder" aria-label="Reveal in Finder"
+                    onClick=${(e) => { e.stopPropagation(); pvRevealInFinder(f.path); }}><${Icon.External}/></button>
+                </span>
+              </div>
             `)}
             ${subdirs.map(d => renderDir(d, depth + 1))}
           <//>
@@ -49737,6 +49910,7 @@ function PreviewFilesPanel({ activePath, onClose }) {
         ${entries !== null && total === 0 && html`<div className="pv-panel-empty">No prototype pages under source/ yet.</div>`}
         ${entries !== null && total > 0 && renderDir(tree, 0)}
       </div>
+      ${codePath && html`<${PreviewCodeModal} path=${codePath} onClose=${() => setCodePath(null)}/>`}
     </div>
   `;
 }
