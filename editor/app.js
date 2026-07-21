@@ -58947,6 +58947,69 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
   const cfg = PROTOTYPE_VIEW_NODE[node.kind] || PROTOTYPE_VIEW_NODE.frames;
   const { live: lodLive, lod } = useWorkflowLod(lodVisible, zoom < WORKFLOW_LOD_EMBED_ZOOM);
 
+  // ── Default frame size + grid gap (frames kind only) ─────────────────
+  // The editor's Architecture toolbar owns this setting (FrameSizeDialog →
+  // POST /__layout), but the embed strips that toolbar - so the node bar
+  // gets the same ⤢ control. Current values + the full positions snapshot
+  // are read from the embed's live EDITOR_DATA (same-origin): /__layout
+  // REPLACES the sidecar wholesale, so posting meta without the existing
+  // positions would wipe every saved rearrangement.
+  const [sizeDialogOpen, setSizeDialogOpen] = useState(false);
+  const [sizeMeta, setSizeMeta] = useState(null);   // captured at open
+  const readEmbedData = () => {
+    try {
+      const win = iframeRef.current && iframeRef.current.contentWindow;
+      const ed = win && win.EDITOR_DATA;
+      return (ed && ed.meta) ? ed : null;
+    } catch { return null; }
+  };
+  const openSizeDialog = useCallback(() => {
+    const ed = readEmbedData();
+    if (!ed) {
+      uiAlert("The canvas is still loading - try again in a moment.");
+      return;
+    }
+    const df = (ed.meta.defaultFrame && typeof ed.meta.defaultFrame === "object")
+      ? { w: ed.meta.defaultFrame.w || 1440, h: ed.meta.defaultFrame.h || 900 }
+      : { w: 1440, h: 900 };
+    setSizeMeta({
+      defaultFrame: df,
+      canvasGap: (typeof ed.meta.canvasGap === "number" && ed.meta.canvasGap >= 0) ? ed.meta.canvasGap : 120,
+    });
+    setSizeDialogOpen(true);
+  }, []);
+  const saveFrameSize = useCallback(async (w, h, gap) => {
+    setSizeDialogOpen(false);
+    const ed = readEmbedData();
+    if (!ed) {
+      uiAlert("The canvas reloaded mid-edit - open the dialog again.");
+      return;
+    }
+    const positions = {};
+    for (const f of (Array.isArray(ed.frames) ? ed.frames : [])) {
+      if (f && f.id && Number.isFinite(f.col) && Number.isFinite(f.row)) {
+        positions[f.id] = { col: Math.round(f.col), row: Math.round(f.row) };
+      }
+    }
+    try {
+      const r = await fetch(apiUrl(`/__layout?prototype=${encodeURIComponent(protoSlug)}`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ positions, meta: { defaultFrame: { w, h }, canvasGap: gap } }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${r.status}`);
+      }
+      // The daemon's watcher doesn't cover editor/ - reload the embed
+      // ourselves so the new grid paints immediately.
+      loadRetryRef.current = 0;
+      setNonce(n => n + 1);
+    } catch (err) {
+      uiAlert("Could not save the frame size: " + String((err && err.message) || err));
+    }
+  }, [protoSlug]);
+
   // Iframe URL: hits editor/index.html with embed=1 (skip toolbar/chat/
   // edits panel) + view=<cfg.view> (lock the right tab) + prototype=<slug>
   // (point editor/data.js scope at the right prototype). apiUrl appends
@@ -59107,6 +59170,15 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
           }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.OpenExt}/><//>
+        ${node.kind === "frames" && html`
+          <${HoverTip}
+            className="workflow-node-action workflow-node-frames-size"
+            tip="Default frame size + grid gap"
+            ariaLabel="Default frame size and grid gap"
+            onClick=${(e) => { e.stopPropagation(); openSizeDialog(); }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          >⤢<//>
+        `}
         ${onRegenerate && html`
           <${HoverTip}
             className="workflow-node-action"
@@ -59180,6 +59252,14 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
         onMouseDown=${onResizeDown}
         title="Drag to resize"
       />
+      ${sizeDialogOpen && sizeMeta && createPortal(html`
+        <${FrameSizeDialog}
+          defaultFrame=${sizeMeta.defaultFrame}
+          canvasGap=${sizeMeta.canvasGap}
+          onCancel=${() => setSizeDialogOpen(false)}
+          onSave=${saveFrameSize}
+        />
+      `, document.body)}
     </div>
   `;
 }

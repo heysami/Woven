@@ -12455,7 +12455,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                               extra={"prototype": slug}):
             with open(dest, "w", encoding="utf-8") as f:
                 f.write(js)
-        return self._reply(200, {"ok": True, "path": rel_dest, "frames": len(sanitized)})
+        return self._reply(200, {"ok": True, "path": rel_dest, "frames": len(sanitized_positions)})
 
     # ── GET /__workflow / POST /__workflow ──────────────────────────────
     # Persists the Workflow Canvas surface (Phase 3.5b+): pan/zoom + a flat
