@@ -1969,10 +1969,49 @@ def _clean_author(raw):
     }
 
 
+# applicable_renames shells out to git log; the gate filters comments on
+# every poll (viewers refetch every 8s), so the pairs are cached per root.
+# Renames are rare - short staleness is invisible.
+_RENAMES_PAIRS_CACHE = {}
+_RENAMES_PAIRS_LOCK = threading.Lock()
+_RENAMES_PAIRS_TTL = 120
+
+
+def _applicable_renames_cached(project_root):
+    now = time.time()
+    with _RENAMES_PAIRS_LOCK:
+        hit = _RENAMES_PAIRS_CACHE.get(project_root)
+        if hit and hit[0] > now:
+            return hit[1]
+    try:
+        pairs = applicable_renames(project_root)
+    except Exception:
+        pairs = []
+    with _RENAMES_PAIRS_LOCK:
+        _RENAMES_PAIRS_CACHE[project_root] = (now + _RENAMES_PAIRS_TTL, pairs)
+    return pairs
+
+
+def _current_slug(remap, slug):
+    """Follow rename pairs to the slug's current name (cycle-guarded)."""
+    s, seen = slug or "", set()
+    while s in remap and s not in seen:
+        seen.add(s)
+        s = remap[s]
+    return s
+
+
 def comments_list(project_root, prototype=None):
     items = comments_load(project_root).get("comments", [])
     if prototype:
-        items = [c for c in items if c.get("prototype") == prototype]
+        # Rename-proof filter: a record filed under a slug the ledger / git
+        # history says became `prototype` still belongs to it. Found live:
+        # 25 comments rode the sync channel filed under pre-rename "main"
+        # and every gate's exact-match filter made them invisible.
+        remap = dict(_applicable_renames_cached(project_root))
+        items = [c for c in items
+                 if c.get("prototype") == prototype
+                 or _current_slug(remap, c.get("prototype")) == prototype]
     return items
 
 
@@ -3433,11 +3472,19 @@ def comments_peer_union(project_root, payload):
             cid = c.get("id")
             if cid and cid not in tombs:
                 out[cid] = c
+        # Incoming records normalize through the rename ledger: a peer whose
+        # store predates a prototype rename ships records filed under the
+        # old slug, which this project's gates would filter invisible.
+        remap = dict(_applicable_renames_cached(project_root))
         new_ids = []
         for pc in peer_comments:
             cid = pc.get("id")
             if cid in tombs:
                 continue
+            cur = _current_slug(remap, pc.get("prototype"))
+            if cur and cur != pc.get("prototype"):
+                pc = dict(pc)
+                pc["prototype"] = cur
             if cid in out:
                 out[cid] = _merge_comment_entry({}, out[cid], pc)
             else:

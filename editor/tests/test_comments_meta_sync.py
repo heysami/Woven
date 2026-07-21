@@ -100,6 +100,31 @@ def main():
         # quiet when converged
         assert serve._sync_comments_meta(clone_a) is False
         assert serve._sync_comments_meta(clone_b) is False
+
+        # Rename-proofing: a record filed under a PRE-RENAME slug (a peer
+        # store that never applied main->prototype) must still (a) show
+        # through the current slug's filter and (b) normalize on union.
+        # Found live: 25 comments rode the sync doc as "main" and every
+        # gate's exact-match filter hid them.
+        for c in (clone_a, clone_b):
+            os.makedirs(os.path.join(c, "source", "prototype"), exist_ok=True)
+            os.makedirs(os.path.join(c, "share"), exist_ok=True)
+            with open(os.path.join(c, "share", "renames.json"), "w") as f:
+                json.dump({"renames": [{"old": "main", "new": "prototype",
+                                        "at": "2026-01-01T00:00:00",
+                                        "install": "c" * 32}]}, f)
+        shares._RENAMES_PAIRS_CACHE.clear()
+        cm = shares.comment_add(clone_a, "main", page="index.html",
+                                anchor={"selector": "b"}, pin={"x": 0.2, "y": 0.2},
+                                text="filed pre-rename", author={"name": "A"})
+        ids_a = {c["id"] for c in shares.comments_list(clone_a, "prototype")}
+        assert cm["id"] in ids_a, "old-slug record visible through current filter"
+        serve._sync_comments_meta(clone_a)
+        assert serve._sync_comments_meta(clone_b) is True, "B unions the record"
+        got = [c for c in shares.comments_list(clone_b, "prototype")
+               if c["id"] == cm["id"]]
+        assert got and got[0].get("prototype") == "prototype", \
+            "union normalized the old slug, got %r" % (got and got[0].get("prototype"))
     finally:
         shares.WORKSPACE_DIR, shares.WOVEN_DIR, shares._RESOLVE_PROJECT_ROOT = saved
         shutil.rmtree(tmp)
