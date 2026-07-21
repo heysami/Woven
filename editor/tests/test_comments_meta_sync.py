@@ -125,6 +125,24 @@ def main():
                if c["id"] == cm["id"]]
         assert got and got[0].get("prototype") == "prototype", \
             "union normalized the old slug, got %r" % (got and got[0].get("prototype"))
+
+        # Status converges on the NEWEST FLIP across machines (was: local
+        # always won in the peer-union path, so done/open disagreed forever).
+        shares.comment_set_status(clone_a, cb["id"], "done")
+        serve._sync_comments_meta(clone_a)
+        assert serve._sync_comments_meta(clone_b) is True, "B applies the flip"
+        st_b = [c for c in shares.comments_list(clone_b, "prototype")
+                if c["id"] == cb["id"]][0]
+        assert st_b.get("status") == "done", "B converged to done, got %r" % st_b.get("status")
+        # The newer flip wins in BOTH directions - B reopens, A follows.
+        import time as _t
+        _t.sleep(1.1)   # statusAt has second resolution
+        shares.comment_set_status(clone_b, cb["id"], "open")
+        serve._sync_comments_meta(clone_b)
+        assert serve._sync_comments_meta(clone_a) is True, "A applies the reopen"
+        st_a = [c for c in shares.comments_list(clone_a, "prototype")
+                if c["id"] == cb["id"]][0]
+        assert st_a.get("status") == "open", "A converged to reopen, got %r" % st_a.get("status")
     finally:
         shares.WORKSPACE_DIR, shares.WOVEN_DIR, shares._RESOLVE_PROJECT_ROOT = saved
         shutil.rmtree(tmp)

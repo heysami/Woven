@@ -1869,10 +1869,29 @@ def _merge_comment_entry(base, ours, theirs):
         if k in ("replies", "attachments"):
             merged[k] = _union_subitems(ours.get(k) or [], theirs.get(k) or [])
             continue
+        if k in ("status", "statusAt"):
+            continue                       # resolved as a pair below
         ov = ours.get(k)
         # ours untouched vs base → take theirs (their change, or same value);
         # ours changed → ours wins (host-authoritative on double edits).
         merged[k] = theirs.get(k) if ov == base.get(k) else ov
+    # Status resolves by NEWEST FLIP, not by which side is "local" - the
+    # peer-union path has no base, so local-wins meant two machines could
+    # disagree on done/open forever (found live). statusAt stamps each flip;
+    # a stamped flip beats an unstamped legacy value, and equal stamps (or
+    # two legacy values) tie-break AWAY from the "open" default - flipping
+    # away from open was a deliberate act somewhere.
+    def _rank(side):
+        return (side.get("statusAt") or "",
+                0 if (side.get("status") or "open") == "open" else 1,
+                side.get("status") or "")   # deterministic final tie-break
+    if "status" in ours or "status" in theirs:
+        win = ours if _rank(ours) >= _rank(theirs) else theirs
+        merged["status"] = win.get("status")
+        if win.get("statusAt"):
+            merged["statusAt"] = win.get("statusAt")
+        else:
+            merged.pop("statusAt", None)
     return merged
 
 
@@ -2135,6 +2154,10 @@ def comment_set_status(project_root, comment_id, status):
         if c is None:
             raise ValueError(f"unknown comment: {comment_id}")
         c["status"] = status
+        # Stamp the flip: merges resolve status by NEWEST flip (see
+        # _merge_comment_entry), so done/open converges across machines
+        # instead of each side keeping its own local opinion forever.
+        c["statusAt"] = _now_iso()
         _comments_save(project_root, data)
     return c
 
