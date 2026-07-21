@@ -271,7 +271,9 @@ Concept-lens scores against the assembled piece. Quote `successFeel` verbatim as
 
 ### 3.8 Harness contract: the test-cases runner drives this (block on craft)
 
-The QA gate runs the piece's plan-time `test-cases.json` (written by research, next to `research.md`) through your devtools harness, BEFORE the lens trio. `window.__game` MUST expose, or the runner's preflight FAILS the gate and routes the failure to YOU (not the input drawer):
+**Build the harness with the seam library - do NOT hand-roll `window.__game`.** Copy the canonical library `editor/kinds/game-seam.js` (repo root; workspace-relative) into your game dir as `seam.js`, load it FIRST in runtime.html (`<script src="seam.js"></script>`), and call `window.__seam.makeHarness(cfg)` with your bound accessors (state/intents/injectFakeInput/tick/snapshot/avatarObject/activeClip/start/debugDraw/spawnTarget - the cfg surface is documented in the library header). The library IS the contract as code: it installs the full harness shape below, the error ring, and the model-forward/anim probes under the fixed conventions (rest-facing -Z, facing-as-vector). Also use `__seam.applyFacing` / `__seam.forwardToYaw` at the render seam instead of inventing a facing conversion. Never hand-edit the seam.js copy (QA re-syncs it verbatim from the canonical library on every run).
+
+The QA gate runs the piece's plan-time `test-cases.json` (written by research, next to `research.md`) through your devtools harness, BEFORE the lens trio. `window.__game` MUST expose (makeHarness installs all of this), or the runner's preflight FAILS the gate and routes the failure to YOU (not the input drawer):
 
 - `intents`: array covering EVERY intent listed in `test-cases.json`.
 - `injectFakeInput(kind, opts)`: accepts every listed intent in EVERY phase. Return `false` for "ignored in this phase"; NEVER throw on an unexpected phase or malformed opts.

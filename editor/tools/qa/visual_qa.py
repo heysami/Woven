@@ -1303,6 +1303,35 @@ def _seam_eval(page: Any, js: str) -> Any:
     return res.get("val")
 
 
+_SEAM_LIB_PATH = os.path.abspath(os.path.join(
+    os.path.dirname(__file__), "..", "..", "kinds", "game-seam.js"))
+
+
+def sync_seam_library(cases_path: str) -> None:
+    """Copy the canonical seam library (editor/kinds/game-seam.js) into the
+    game dir as seam.js - test-cases.json lives in that dir, so its parent is
+    the copy target. Verbatim refresh on every QA run so builds always execute
+    the current library; the copy is never hand-edited (header says so).
+    Non-fatal: a failed copy leaves the build's own copy in place and the
+    seam asserts still judge the runtime."""
+    try:
+        with open(_SEAM_LIB_PATH, "r") as f:
+            lib = f.read()
+        dest = os.path.join(os.path.dirname(os.path.abspath(cases_path)),
+                            "seam.js")
+        try:
+            with open(dest, "r") as f:
+                if f.read() == lib:
+                    return
+        except Exception:
+            pass
+        with open(dest, "w") as f:
+            f.write(lib)
+        log("seam library synced -> %s" % dest)
+    except Exception as exc:
+        log("seam library sync skipped (%s)" % exc)
+
+
 def run_seam_test(context: Any, url: str, settle_ms: int,
                   out_dir: str) -> Dict[str, Any]:
     """Boot the game, start it, drive one forward move, and assert the seam:
@@ -1339,6 +1368,20 @@ def run_seam_test(context: Any, url: str, settle_ms: int,
         _seam_eval(page, "(typeof window.__game.start==='function'"
                          "?(window.__game.start(),1):1)")
         page.wait_for_timeout(800)
+
+        # Games with NO steerable avatar (pure drag-physics / puzzle pieces)
+        # declare it by omitting snapshot().avatar - the facing/anim asserts
+        # do not apply to them. Harness keys + error ring are still enforced.
+        has_avatar = _seam_eval(
+            page, "(function(){var s=window.__game.snapshot()||{};"
+                  "return !!s.avatar;})()")
+        if not has_avatar:
+            out["evidence"]["skipped"] = ("no steerable avatar declared "
+                                          "(snapshot().avatar absent)")
+            errs = _seam_eval(page, "window.__game.errors.slice(0,10)")
+            if errs:
+                fail("harness error ring is not empty: %r" % (errs[:3],))
+            return out
 
         s0 = _seam_eval(page, _SEAM_SNAP_JS)
         if not (isinstance(s0.get("pos"), list) and len(s0["pos"]) >= 3):
@@ -1489,6 +1532,7 @@ def run_cases(args: argparse.Namespace) -> int:
                 % "; ".join(report["preflight"].get("problems") or []))
 
         if is_game_target(url):
+            sync_seam_library(args.cases)
             report["seam"] = run_seam_test(context, url, settle_ms, out_dir)
             log("seam test: %s"
                 % ("pass" if report["seam"]["ok"]

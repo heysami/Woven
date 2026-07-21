@@ -29,6 +29,8 @@ before any lens runs - there is no fallback path.
 
 ## The `window.__game` harness (composer builds it; daemon preflight hard-fails without it)
 
+**This contract is CODE, not prose to re-implement: `editor/kinds/game-seam.js`.** The composer copies it into the game dir as `seam.js`, loads it first, and calls `window.__seam.makeHarness(cfg)` - the library installs the exact shape below plus the error ring and the qa probes under the fixed conventions above (`applyFacing`/`forwardToYaw` are exported for the render seam too). The QA runner re-syncs the copy verbatim from the canonical library on every run; never hand-edit the copy. Hand-rolling `window.__game` instead of calling `makeHarness` is a build error.
+
 ```js
 window.__game = {
   state,                       // the loop's live state (read-only use)
