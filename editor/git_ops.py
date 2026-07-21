@@ -960,31 +960,32 @@ def _origin_auth_url(root, token):
     return r
 
 
-def meta_links_fetch(root, token=None):
-    """Fetch the repo's woven-share-links sync branch. Returns (sha, text) -
-    ("", "") when the branch doesn't exist or the remote is unreachable."""
+def _meta_blob_fetch(root, remote_ref, local_ref, fname, token=None):
+    """Fetch one orphan sync branch holding exactly one file. Returns
+    (sha, text) - ("", "") when the branch doesn't exist or the remote is
+    unreachable."""
     url = _origin_auth_url(root, token)
     if not url or not is_repo(root):
         return "", ""
     code, _o, _e = _git(root, "fetch", "-q", url,
-                        "+{}:{}".format(_META_LINKS_REF, _META_LINKS_LOCAL),
+                        "+{}:{}".format(remote_ref, local_ref),
                         timeout=45)
     if code != 0:
         return "", ""
-    _c, sha, _e = _git(root, "rev-parse", _META_LINKS_LOCAL)
+    _c, sha, _e = _git(root, "rev-parse", local_ref)
     sha = sha.strip()
     if _c != 0 or not sha:
         return "", ""
-    _c, text, _e = _git(root, "show", "{}:links.json".format(_META_LINKS_LOCAL))
+    _c, text, _e = _git(root, "show", "{}:{}".format(local_ref, fname))
     return sha, (text if _c == 0 else "")
 
 
-def meta_links_push(root, text, parent_sha="", token=None):
-    """Write `text` as the sync branch's links.json and push. `parent_sha` is
-    the fetched tip, so the push stays fast-forward; a rejected push (someone
-    else pushed meanwhile) just returns False and the next sync round
-    re-fetches and re-merges. Builds the commit with plumbing - no checkout,
-    no index, no working-tree involvement."""
+def _meta_blob_push(root, remote_ref, fname, subject, text, parent_sha="", token=None):
+    """Write `text` as the sync branch's single file and push. `parent_sha`
+    is the fetched tip, so the push stays fast-forward; a rejected push
+    (someone else pushed meanwhile) just returns False and the next sync
+    round re-fetches and re-merges. Builds the commit with plumbing - no
+    checkout, no index, no working-tree involvement."""
     url = _origin_auth_url(root, token)
     if not url or not is_repo(root):
         return False
@@ -992,19 +993,53 @@ def meta_links_push(root, text, parent_sha="", token=None):
     if code != 0:
         return False
     code, tree, _e = _git(root, "mktree",
-                          input_text="100644 blob {}\tlinks.json\n".format(blob.strip()))
+                          input_text="100644 blob {}\t{}\n".format(blob.strip(), fname))
     if code != 0:
         return False
     args = ["-c", "user.name=woven", "-c", "user.email=woven@local",
-            "commit-tree", tree.strip(), "-m", "woven share links"]
+            "commit-tree", tree.strip(), "-m", subject]
     if parent_sha:
         args += ["-p", parent_sha]
     code, commit, _e = _git(root, *args)
     if code != 0:
         return False
     code, _o, _e = _git(root, "push", "-q", url,
-                        "{}:{}".format(commit.strip(), _META_LINKS_REF), timeout=45)
+                        "{}:{}".format(commit.strip(), remote_ref), timeout=45)
     return code == 0
+
+
+def meta_links_fetch(root, token=None):
+    """Fetch the repo's woven-share-links sync branch. Returns (sha, text) -
+    ("", "") when the branch doesn't exist or the remote is unreachable."""
+    return _meta_blob_fetch(root, _META_LINKS_REF, _META_LINKS_LOCAL,
+                            "links.json", token=token)
+
+
+def meta_links_push(root, text, parent_sha="", token=None):
+    return _meta_blob_push(root, _META_LINKS_REF, "links.json",
+                           "woven share links", text,
+                           parent_sha=parent_sha, token=token)
+
+
+# Comments ride a second sync branch of the same shape. The HTTP peer-pull
+# path needs every daemon to reach every other gate; a contributor whose
+# network can't complete those pulls (found live) still syncs fine over git
+# - the same transport that already delivers the link registry.
+_META_COMMENTS_REF = "refs/heads/woven-share-comments"
+_META_COMMENTS_LOCAL = "refs/woven/share-comments"
+
+
+def meta_comments_fetch(root, token=None):
+    """Fetch the repo's woven-share-comments sync branch. Returns (sha, text)
+    - ("", "") when the branch doesn't exist or the remote is unreachable."""
+    return _meta_blob_fetch(root, _META_COMMENTS_REF, _META_COMMENTS_LOCAL,
+                            "comments.json", token=token)
+
+
+def meta_comments_push(root, text, parent_sha="", token=None):
+    return _meta_blob_push(root, _META_COMMENTS_REF, "comments.json",
+                           "woven share comments", text,
+                           parent_sha=parent_sha, token=token)
 
 
 def show_bytes_at_ref(root, ref, rel):

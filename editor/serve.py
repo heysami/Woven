@@ -4655,6 +4655,53 @@ def _sync_links_meta(root) -> bool:
         return False
 
 
+_COMMENTS_META_MAX = 2 * 1024 * 1024   # doc cap - matches the broker's copy cap
+
+
+def _sync_comments_meta(root) -> bool:
+    """Review comments over a dedicated woven-share-comments sync branch,
+    the same git-plumbing channel the link registry uses. The HTTP peer-pull
+    path requires every daemon to reach every other install's gate; found
+    live: one contributor's network never completed those pulls, so their
+    share's public discussion sat forked at their own comments while their
+    registry (which rides git) stayed perfectly fresh. Union the branch's
+    doc into the local store, then push the local union back when it adds
+    anything - comments_peer_union is monotone (adds + field-merge +
+    tombstones-win), so concurrent pushers converge. Screenshots and
+    attachments still travel over the HTTP path best-effort; a comment
+    synced this way shows text-first until that succeeds. Returns True when
+    the LOCAL store changed."""
+    try:
+        if not _gitops.is_repo(root):
+            return False
+        tok = None
+        try:
+            tok = (_gitops.host_token() or "") or None
+        except Exception:
+            pass
+        sha, remote_text = _gitops.meta_comments_fetch(root, token=tok)
+        try:
+            payload = json.loads(remote_text or "{}")
+        except ValueError:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        changed, _new_ids = _shares.comments_peer_union(root, payload)
+        data = _shares.comments_load(root)
+        local_doc = {"comments": data.get("comments") or [],
+                     "deleted": data.get("deleted") or []}
+        remote_doc = {"comments": payload.get("comments") or [],
+                      "deleted": payload.get("deleted") or []}
+        if json.dumps(local_doc, sort_keys=True) != json.dumps(remote_doc, sort_keys=True):
+            merged_text = json.dumps(local_doc, indent=2)
+            if len(merged_text) <= _COMMENTS_META_MAX and (local_doc["comments"] or
+                                                          local_doc["deleted"] or sha):
+                _gitops.meta_comments_push(root, merged_text, parent_sha=sha, token=tok)
+        return changed
+    except Exception:
+        return False
+
+
 def _peer_comments_loop() -> None:
     """Connect contributors' review comments WITHOUT git: every round, for
     each project whose share/links.json (the git-tracked contributor link
@@ -4717,6 +4764,19 @@ def _peer_comments_loop() -> None:
                     if _sync_links_meta(root):
                         try:
                             _shares.hosted_links_push_soon(pid)
+                        except Exception:
+                            pass
+                    # Comments ride their own sync branch too - the git
+                    # channel keeps discussions converging even when a
+                    # contributor's network can't reach peer gates over
+                    # HTTP (the union below then serves everyone fresh).
+                    if _sync_comments_meta(root):
+                        try:
+                            _broadcast_share_comments_changed(pid, "")
+                        except Exception:
+                            pass
+                        try:
+                            _shares.hosted_comments_push_project(pid)
                         except Exception:
                             pass
                 links = _shares.links_list(pid).get("links") or []
