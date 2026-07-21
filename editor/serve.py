@@ -4658,7 +4658,7 @@ def _sync_links_meta(root) -> bool:
 _COMMENTS_META_MAX = 2 * 1024 * 1024   # doc cap - matches the broker's copy cap
 
 
-def _sync_comments_meta(root) -> bool:
+def _sync_comments_meta(root, pid="") -> bool:
     """Review comments over a dedicated woven-share-comments sync branch,
     the same git-plumbing channel the link registry uses. The HTTP peer-pull
     path requires every daemon to reach every other install's gate; found
@@ -4680,6 +4680,11 @@ def _sync_comments_meta(root) -> bool:
         except Exception:
             pass
         sha, remote_text = _gitops.meta_comments_fetch(root, token=tok)
+        if not sha:
+            # No tip: branch not created yet OR fetch/auth failed - the two
+            # are indistinguishable here, so report it and push-only below.
+            _shares.sync_status_set(pid, "commentsMeta", False,
+                                    "fetch returned nothing (branch missing, remote unreachable, or auth failed)")
         try:
             payload = json.loads(remote_text or "{}")
         except ValueError:
@@ -4697,8 +4702,16 @@ def _sync_comments_meta(root) -> bool:
             if len(merged_text) <= _COMMENTS_META_MAX and (local_doc["comments"] or
                                                           local_doc["deleted"] or sha):
                 _gitops.meta_comments_push(root, merged_text, parent_sha=sha, token=tok)
+        if sha:
+            _shares.sync_status_set(pid, "commentsMeta", True)
         return changed
-    except Exception:
+    except Exception as e:
+        print("[share] comments meta sync failed for {}: {}".format(pid or root, e),
+              flush=True)
+        try:
+            _shares.sync_status_set(pid, "commentsMeta", False, repr(e))
+        except Exception:
+            pass
         return False
 
 
@@ -4719,17 +4732,16 @@ def _peer_comments_loop() -> None:
     round_i = 0
     while True:
         try:
+            # Projects with a PUBLIC share sync FIRST - their gates are what
+            # visitors see, and a slow unrelated repo earlier in the round
+            # must never starve them. A share can also outlive its workspace
+            # entry (twin clone of the same repo, renamed workspace id,
+            # project removed from the list) while its gate keeps serving
+            # that root - sync those roots too, or the share's discussion
+            # silently forks from the owner's editor: found live - a gate
+            # stuck at 13 comments while the owner's open project had the
+            # full merged list.
             pids = []
-            for p in _list_projects():
-                pid = (p.get("id") or "").strip()
-                if pid and pid not in pids:
-                    pids.append(pid)
-            # A share can outlive its workspace entry (twin clone of the same
-            # repo, renamed workspace id, project removed from the list) while
-            # its PUBLIC gate keeps serving that root. Sync those roots too,
-            # or the share's discussion silently forks from the owner's
-            # editor: found live - a gate stuck at 13 comments while the
-            # owner's open project had the full merged list.
             try:
                 for s in _shares.shares_load().get("shares", []):
                     sp = (s.get("project") or "").strip()
@@ -4737,6 +4749,10 @@ def _peer_comments_loop() -> None:
                         pids.append(sp)
             except Exception:
                 pass
+            for p in _list_projects():
+                pid = (p.get("id") or "").strip()
+                if pid and pid not in pids:
+                    pids.append(pid)
             seen_roots = set()
             for pid in pids:
                 try:
@@ -4770,7 +4786,7 @@ def _peer_comments_loop() -> None:
                     # channel keeps discussions converging even when a
                     # contributor's network can't reach peer gates over
                     # HTTP (the union below then serves everyone fresh).
-                    if _sync_comments_meta(root):
+                    if _sync_comments_meta(root, pid):
                         try:
                             _broadcast_share_comments_changed(pid, "")
                         except Exception:

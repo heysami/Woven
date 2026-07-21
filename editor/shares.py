@@ -2441,6 +2441,28 @@ def _hosted_comments_push_soon(rec):
     threading.Thread(target=run, daemon=True, name="hosted-comments-push").start()
 
 
+# ── Sync self-reporting ───────────────────────────────────────────────────
+# The background sync loops fail SILENTLY by design (network hiccups are
+# normal), which made a real failure undiagnosable without shell access to
+# the affected machine. Each loop now records its last attempt per project;
+# the gate serves it on /api/links, so any share URL reveals its own
+# install's sync health remotely.
+
+_SYNC_STATUS = {}
+_SYNC_STATUS_LOCK = threading.Lock()
+
+
+def sync_status_set(project, kind, ok, error=""):
+    with _SYNC_STATUS_LOCK:
+        _SYNC_STATUS.setdefault(project or "", {})[kind] = {
+            "at": _now_iso(), "ok": bool(ok), "error": (error or "")[:300]}
+
+
+def sync_status_get(project):
+    with _SYNC_STATUS_LOCK:
+        return dict(_SYNC_STATUS.get(project or "") or {})
+
+
 def hosted_comments_push_project(project):
     """Refresh the R2 discussion copy of EVERY hosted share of `project`.
     The per-mutation path (_notify_comments_changed) only fires on local
@@ -2828,8 +2850,11 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         # Fresh registry read on its own route: hosted viewers boot from the
         # SNAPSHOT meta (upload-time links), then refetch this to pick up
         # shares published since - the worker passes /api/* to the tunnel.
+        # `sync` piggybacks this install's last sync attempts so a share URL
+        # is enough to diagnose why its discussion/registry might lag.
         if sub == "/api/links":
-            return self._send_json(200, {"links": _links_for_viewer(rec)})
+            return self._send_json(200, {"links": _links_for_viewer(rec),
+                                         "sync": sync_status_get(rec.get("project") or "")})
         if sub == "/api/comments":
             root = self._project_root(rec)
             if root is None:
