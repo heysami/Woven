@@ -44846,63 +44846,72 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!merged || !Array.isArray(merged.points) || !merged.points.length) throw new Error("Could not merge the findings.");
       merged.points = merged.points.slice(0, 8).map((p, i) => ({ ...p, id: p.id || (i + 1), perAgent: p.perAgent || {} }));
 
-      // Phase 4: build the board - drop any previous run's outputs first.
+      // Phase 4: build the board. The whole section layout lives in ONE
+      // rebuildable function because the content CHANGES over the run - the
+      // final review rewords points and writes a much longer conclusion, and
+      // patching text into fixed-height items left overlapping / clipped
+      // boards. Every (re)build re-measures at the ACTUAL rendered font
+      // sizes (header xl, body sm), auto-sizes each sticky row to its
+      // tallest note, re-derives the section height, keeps the section's
+      // CURRENT frame position (the user may have dragged it mid-run), and
+      // rewires the assistant node's ownership ids atomically.
       setRun({ status: "loading", phase: "building board" });
       if (node.tableId) _assistantDropTable(node.tableId);
-      if (node.sectionId || (node.drIds && node.drIds.wbIds)) {
-        const oldWb = new Set((node.drIds && node.drIds.wbIds) || []);
-        const oldSec = node.sectionId;
-        setData(d => ({
-          ...d,
-          nodes: (d.nodes || []).filter(n => n.id !== oldSec),
-          wb: (Array.isArray(d.wb) ? d.wb : []).filter(it => !oldWb.has(it.id) && !(it.sec && it.sec.sectionId === oldSec)),
-        }));
-      }
-
-      // The section: header + description + sticky grid + conclusion, every
-      // wb item sec-bound so the section carries its contents when moved.
-      const secX = Math.round(node.x + (node.w || 440) + 460), secY = Math.round(node.y);
       const SECW = 760, PAD = 24, INNER = SECW - PAD * 2;
-      const secId = workflowNewNodeId();
-      const wbIds = [];
-      const stickyByPoint = {};
-      let conclId = null;
-      setData(d => {
-        const secBody = workflowMakeNodeOfKind("section", { title: header });
-        const items = [];
-        const bind = (it, x, y) => {
-          it.x = x; it.y = y;
-          it.sec = { sectionId: secId, ox: Math.round(x - secX), oy: Math.round(y - secY) };
-          items.push(it); wbIds.push(it.id);
-          return it;
-        };
-        let y = secY + PAD + 8;
-        bind(wbMakeItem("text", { text: header, w: INNER, fontSize: "xl", bold: true, align: "left", color: "ink" }), secX + PAD, y);
-        y += Math.max(44, _measureWrappedTextHeight(header, INNER) + 26);
-        if (desc) {
-          bind(wbMakeItem("text", { text: desc, w: INNER, fontSize: "sm", align: "left", color: "gray" }), secX + PAD, y);
-          y += _measureWrappedTextHeight(desc, INNER) + 20;
-        }
-        const STK = 200, GAP = 16;
-        merged.points.forEach((p, i) => {
-          const col = i % 3, row = Math.floor(i / 3);
-          const st = bind(
-            wbMakeItem("sticky", { text: String(p.point || ""), w: STK, h: STK, color: "yellow", fontSize: "sm", align: "left" }),
-            secX + PAD + col * (STK + GAP), y + row * (STK + GAP));
-          stickyByPoint[p.id] = st.id;
+      // Ownership carried across rebuilds; seeded from the previous run's
+      // ids so the first build replaces that run's board.
+      let boardIds = { sectionId: node.sectionId || null, wbIds: (node.drIds && node.drIds.wbIds) || [] };
+      const buildBoard = (pts, conclusionText, colorOf) => {
+        setData(d => {
+          const prev = (d.nodes || []).find(n => n.id === boardIds.sectionId);
+          const bx = prev ? prev.x : Math.round(node.x + (node.w || 440) + 460);
+          const by = prev ? prev.y : Math.round(node.y);
+          const oldWb = new Set(boardIds.wbIds);
+          const keptWb = (Array.isArray(d.wb) ? d.wb : []).filter(it =>
+            !oldWb.has(it.id) && !(it.sec && it.sec.sectionId === boardIds.sectionId));
+          let nodes = (d.nodes || []).filter(n => n.id !== boardIds.sectionId);
+          const secId = workflowNewNodeId();
+          const items = [], wbIds = [];
+          const bind = (it, x, y) => {
+            it.x = x; it.y = y;
+            it.sec = { sectionId: secId, ox: Math.round(x - bx), oy: Math.round(y - by) };
+            items.push(it); wbIds.push(it.id);
+            return it;
+          };
+          let y = by + PAD + 8;
+          bind(wbMakeItem("text", { text: header, w: INNER, fontSize: "xl", bold: true, align: "left", color: "ink" }), bx + PAD, y);
+          y += _measureWrappedTextHeight(header, INNER, WB_FONT_SIZES.xl) + 18;
+          if (desc) {
+            bind(wbMakeItem("text", { text: desc, w: INNER, fontSize: "sm", align: "left", color: "gray" }), bx + PAD, y);
+            y += _measureWrappedTextHeight(desc, INNER, WB_FONT_SIZES.sm) + 20;
+          }
+          const STK = 200, GAP = 16;
+          for (let r0 = 0; r0 * 3 < pts.length; r0++) {
+            const rowPts = pts.slice(r0 * 3, r0 * 3 + 3);
+            const heights = rowPts.map(p =>
+              Math.max(STK, _measureWrappedTextHeight(String(p.point || ""), STK - 20, WB_FONT_SIZES.sm) + 30));
+            rowPts.forEach((p, ci) => {
+              bind(wbMakeItem("sticky", { text: String(p.point || ""), w: STK, h: heights[ci], color: colorOf(p), fontSize: "sm", align: "left" }),
+                bx + PAD + ci * (STK + GAP), y);
+            });
+            y += Math.max(...heights) + GAP;
+          }
+          y += 8;
+          bind(wbMakeItem("text", { text: "Conclusion", w: INNER, fontSize: "sm", bold: true, align: "left", color: "ink" }), bx + PAD, y);
+          y += 30;
+          const cText = String(conclusionText || "");
+          const cH = _measureWrappedTextHeight(cText, INNER - 14, WB_FONT_SIZES.sm) + 28;
+          bind(wbMakeItem("textbox", { text: cText, w: INNER, h: cH, color: "gray", align: "left", fontSize: "sm" }), bx + PAD, y);
+          y += cH + PAD;
+          const secBody = workflowMakeNodeOfKind("section", { title: header });
+          nodes = nodes
+            .map(n => n.id === nodeId ? { ...n, sectionId: secId, drIds: { wbIds } } : n)
+            .concat([{ id: secId, ...secBody, x: bx, y: by, w: SECW, h: Math.max(360, y - by) }]);
+          boardIds = { sectionId: secId, wbIds };
+          return { ...d, nodes, wb: [...keptWb, ...items] };
         });
-        y += Math.ceil(merged.points.length / 3) * (STK + GAP) + 8;
-        bind(wbMakeItem("text", { text: "Conclusion", w: INNER, fontSize: "sm", bold: true, align: "left", color: "ink" }), secX + PAD, y);
-        y += 28;
-        const cH = Math.min(400, _measureWrappedTextHeight(String(merged.conclusion || ""), INNER - 14) + 24);
-        const cIt = bind(
-          wbMakeItem("textbox", { text: String(merged.conclusion || ""), w: INNER, h: cH, color: "gray", align: "left", fontSize: "sm" }),
-          secX + PAD, y);
-        conclId = cIt.id;
-        y += cH + PAD;
-        const secNode = { id: secId, ...secBody, x: secX, y: secY, w: SECW, h: Math.max(360, y - secY) };
-        return { ...d, nodes: [...(d.nodes || []), secNode], wb: [...(Array.isArray(d.wb) ? d.wb : []), ...items] };
-      });
+      };
+      buildBoard(merged.points, merged.conclusion, () => "yellow");
 
       // The evidence table: one row per merged point, one column per agent
       // (stance boxes APPEND per round - the debate stays visible), then
@@ -44912,9 +44921,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const rows = merged.points.map(p => [p.point || "", ...agents.map(() => ""), "", ""]);
       const tableId = workflowBuildResultTable({
         title: "Evidence: " + header.slice(0, 32), headers, rows,
-        x: secX + SECW + 80, y: secY, colWidths,
+        x: Math.round(node.x + (node.w || 440) + 460) + SECW + 80, y: Math.round(node.y), colWidths,
       });
-      updateNode(nodeId, { tableId, sectionId: secId, drIds: { wbIds } });
+      // sectionId + drIds are wired inside buildBoard's updater (atomically,
+      // per rebuild) - only the table id lands here.
+      updateNode(nodeId, { tableId });
       updateNode(tableId, { runStatus: "running" });
 
       const SRC_COL = 1 + agents.length, SNAP_COL = SRC_COL + 1;
@@ -45011,11 +45022,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const fin = _drExtractObj(fText) || {};
       const finPoints = Array.isArray(fin.points) ? fin.points : [];
       const consensusById = {};
-      const stickyToFinal = {};
       for (const fp of finPoints) {
         if (!fp || fp.id == null) continue;
         consensusById[fp.id] = fp.consensus || "";
-        if (stickyByPoint[fp.id]) stickyToFinal[stickyByPoint[fp.id]] = fp;
         const p = merged.points.find(mp => String(mp.id) === String(fp.id));
         if (p && fp.point) {
           p.point = fp.point;
@@ -45023,15 +45032,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           workflowSetCellText(tableId, ri + 1, 0, fp.point);
         }
       }
-      setData(d => ({
-        ...d,
-        wb: (Array.isArray(d.wb) ? d.wb : []).map(it => {
-          const fp = stickyToFinal[it.id];
-          if (fp) return { ...it, text: String(fp.point || it.text), color: _drConsensus(fp.consensus).color };
-          if (conclId && it.id === conclId && fin.conclusion) return { ...it, text: String(fin.conclusion) };
-          return it;
-        }),
-      }));
+      // REBUILD the board with the final texts (not an in-place text patch):
+      // heights re-measure, sticky rows re-flow, the (longer) conclusion box
+      // resizes, and the section grows to fit.
+      buildBoard(merged.points, fin.conclusion || merged.conclusion,
+        (p) => consensusById[p.id] ? _drConsensus(consensusById[p.id]).color : "yellow");
       writeResult(roundsDone, fin.conclusion || merged.conclusion, consensusById);
 
       updateNode(nodeId, { runStatus: "done" });
