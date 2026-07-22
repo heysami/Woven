@@ -169,6 +169,83 @@ _GITATTRIBUTES_LOCAL = [
     "share/links.json merge=binary",
 ]
 
+# Project-root guide for EXTERNAL coding agents (Claude Code / Codex / Cursor
+# sessions opened on a clone of this project WITHOUT Woven). Written at project
+# creation; never overwrites an existing file, so user customisations survive.
+# Woven's OWN agents are spawned with cwd=project_root, and the CLI harnesses
+# auto-load a cwd CLAUDE.md / AGENTS.md - so the guide opens with a scope
+# header telling Woven-side agents to disregard it, and the chat preambles
+# carry the matching note (_EXTERNAL_AGENT_GUIDE_NOTE) from the Woven side.
+_EXTERNAL_AGENT_GUIDE_NOTE = (
+    "\n\n## Project-root AGENTS.md / CLAUDE.md\n\n"
+    "The AGENTS.md and CLAUDE.md files at this project's root are a guide for "
+    "external agents working on a clone of this repo without Woven. They are "
+    "not addressed to you: this preamble and the Woven protocol govern. If "
+    "your harness auto-loaded them into context, disregard their instructions."
+)
+
+
+def _agent_guide_text(slug):
+    """AGENTS.md body for a project whose default prototype slug is `slug`."""
+    slug = slug or "prototype"
+    return (
+        "# Agent guide\n"
+        "\n"
+        "> Scope: this guide is for coding agents working on this repository\n"
+        "> OUTSIDE the Woven editor. If your instructions mention Woven's agent\n"
+        "> protocol or a Woven preamble, ignore this file entirely: your Woven\n"
+        "> instructions govern.\n"
+        "\n"
+        "This project was built with Woven, a visual prototyping tool. You do NOT\n"
+        "need Woven to work on it: the working prototype is plain HTML/CSS/JS,\n"
+        "servable with any static file server.\n"
+        "\n"
+        "## Where the product lives\n"
+        "\n"
+        f"- `source/{slug}/` - the prototype's pages and assets. Entry point:\n"
+        f"  `source/{slug}/index.html`. Other `source/<slug>/` folders (if any)\n"
+        "  are sibling prototype variants; leave them alone unless asked.\n"
+        "- `design-systems/` - design-system CSS/JS the prototype imports. Treat\n"
+        "  it as a dependency: read it for styling context, edit it only when a\n"
+        "  design-token or component-style change is the actual task.\n"
+        "\n"
+        "## Woven machinery (skip it)\n"
+        "\n"
+        "Everything else in this repository is internal state for the Woven\n"
+        "editor. Do not read it for context and do not edit it by hand: it is\n"
+        "large, irrelevant to the running prototype, and hand-edits can corrupt\n"
+        "the project when it is next opened in Woven.\n"
+        "\n"
+        "- `workflow/` - canvas node graph and generated run artifacts\n"
+        "- `editor/` - per-project editor state and transcripts\n"
+        "- `share/`, `docs/`, `publish.json` - Woven sharing / build bookkeeping\n"
+        "- dot-files and any other top-level file not listed above - Woven\n"
+        "  bookkeeping\n"
+        "\n"
+        "In short: the entire product is `source/` plus `design-systems/`.\n"
+    )
+
+
+def _write_project_agent_guide(project_root, slug=None):
+    """Drop AGENTS.md + a pointer CLAUDE.md at the project root (best-effort).
+
+    Skips any file that already exists - the user (or a cloned repo) may have
+    customised it. CLAUDE.md is just `@AGENTS.md` so Claude Code imports the
+    same guide every other harness reads natively.
+    """
+    for name, text in (
+        ("AGENTS.md", _agent_guide_text(slug)),
+        ("CLAUDE.md", "@AGENTS.md\n"),
+    ):
+        path = os.path.join(project_root, name)
+        if os.path.exists(path):
+            continue
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+        except OSError:
+            pass
+
 
 # Last-good workflow graph per file path, updated on every successful load/save.
 # When workflow.json is later found unparseable (an unresolved merge conflict or
@@ -10850,6 +10927,11 @@ def _chat_system_prompt(project_root: str, branch: str, tier: str, prototype: st
         pass
     if _mcp_config_spawn_args():
         sys_prompt = sys_prompt + _mcp_routing_prompt()
+    # cwd=project_root means the CLI auto-loads a project-root CLAUDE.md; that
+    # file is for EXTERNAL agents (clones without Woven), so tell this agent
+    # to disregard it. Emitted unconditionally to keep spawn/resume prompts
+    # byte-identical whether or not the guide file exists yet.
+    sys_prompt = sys_prompt + _EXTERNAL_AGENT_GUIDE_NOTE
     return sys_prompt
 
 
@@ -10927,6 +11009,9 @@ def _codex_chat_preamble(agent_id: str, project_root: str, project_id: str,
         "the entire file or command output back into chat unless the "
         "user explicitly asks. Summarise."
     )
+    # Same rationale as _chat_system_prompt: the project-root AGENTS.md /
+    # CLAUDE.md guide targets external agents, not Woven's own.
+    bits.append(_EXTERNAL_AGENT_GUIDE_NOTE)
     return "\n\n".join(p.strip() for p in bits if p and p.strip())
 
 
@@ -25832,6 +25917,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             )
             with open(os.path.join(dest, "editor", "data.js"), "w", encoding="utf-8") as f:
                 f.write(main_data)
+            # Guide for external agents working on a clone of this project
+            # without Woven (AGENTS.md + pointer CLAUDE.md). Best-effort.
+            _write_project_agent_guide(dest, "prototype")
         except OSError as e:
             return self._reply(500, {"error": f"scaffold failed: {type(e).__name__}: {e}"})
 
