@@ -9171,7 +9171,15 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-wb-layer * {
   pointer-events: none;
 }
-.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer,
+/* Whiteboard mode: the ITEMS become interactive, but the layer DIV itself
+   stays hit-transparent. It used to flip to auto too - a full-canvas box
+   ABOVE every node - so it swallowed mousedowns aimed at node chrome
+   underneath (resize corners most visibly), and only over the part of the
+   canvas its box happened to cover at the current pan/zoom: "resize works
+   sometimes" in whiteboard mode. The wrap-level capture handler routes wb
+   gestures geometrically and never needed the layer as a DOM target; the
+   delegated dblclick on the layer only acts on [data-wb-id] targets, which
+   remain auto via the descendant rule. */
 .workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer * {
   pointer-events: auto;
 }

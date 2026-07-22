@@ -47565,10 +47565,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               // falls through to wbPointerDown, which resolves the table by its DOM
               // id and moves it (so a table is draggable in whiteboard mode, not just
               // marquee'd). Creation tools fall through here too, to drop onto a table.
-              // .workflow-node-section-resize is the table/section corner
-              // handle - it owns its drag in EVERY mode, so resizing works
-              // identically in whiteboard and build mode.
-              if (e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-wb-table-hit, .workflow-wb-table-colgrip, .workflow-wb-table-rowgrip, .workflow-node-section-resize")) return;
+              // Resize affordances own their drag in EVERY mode, so resizing
+              // works identically in whiteboard and build mode:
+              // .workflow-node-section-resize = table/section corner handle,
+              // .workflow-node-resize-corner = the standard node corner
+              // (prompt / assistant / composer / iterator ...).
+              if (e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-wb-table-hit, .workflow-wb-table-colgrip, .workflow-wb-table-rowgrip, .workflow-node-section-resize, .workflow-node-resize-corner")) return;
               wbPointerDownRef.current && wbPointerDownRef.current(e);
               return;
             }
