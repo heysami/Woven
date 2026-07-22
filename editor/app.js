@@ -37371,12 +37371,43 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const list = Array.isArray(d.wb) ? d.wb : [];
       const tables = (d.nodes || []).filter(n => n.kind === "table");
       if (!tables.length) return d;
-      const cellFor = (bb) => {
+      // Host-chain depth of a table (how many tables IT is bound into) + a
+      // "is `id` an ancestor host of t?" walk. Both loop-guarded. Used so a
+      // drop over NESTED tables binds to the innermost one, and so binding a
+      // TABLE never creates a self/cycle chain (A in B while B in A).
+      const byId = new Map(tables.map(t => [t.id, t]));
+      const chainDepth = (t) => {
+        let depth = 0; const seen = new Set();
+        let cur = t;
+        while (cur && cur.cell && cur.cell.tableId && !seen.has(cur.id)) {
+          seen.add(cur.id);
+          cur = byId.get(cur.cell.tableId) || null;
+          depth++;
+        }
+        return depth;
+      };
+      const chainHasHost = (t, id) => {
+        const seen = new Set();
+        let cur = t;
+        while (cur && cur.cell && cur.cell.tableId && !seen.has(cur.id)) {
+          if (cur.cell.tableId === id) return true;
+          seen.add(cur.id);
+          cur = byId.get(cur.cell.tableId) || null;
+        }
+        return false;
+      };
+      const cellFor = (bb, excludeId) => {
         const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
-        let best = null, bz = -Infinity;
+        let best = null, bestKey = null;
         for (const t of tables) {
+          if (excludeId && (t.id === excludeId || chainHasHost(t, excludeId))) continue;
           if (cx < t.x || cy < t.y || cx > t.x + (t.w || 0) || cy > t.y + (t.h || 0)) continue;
-          if ((t.z || 0) >= bz) { bz = t.z || 0; best = t; }
+          // Innermost wins: deepest host chain first, then the smaller rect
+          // (covers overlapping-but-unbound tables), then legacy z.
+          const key = [chainDepth(t), -((t.w || 0) * (t.h || 0)), t.z || 0];
+          if (!best || key[0] > bestKey[0]
+              || (key[0] === bestKey[0] && (key[1] > bestKey[1]
+              || (key[1] === bestKey[1] && key[2] >= bestKey[2])))) { best = t; bestKey = key; }
         }
         if (!best) return null;
         const cell = wbTableCellAt(best, cx, cy);
@@ -37393,8 +37424,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         return it;
       });
       const nextNodes = (d.nodes || []).map(n => {
-        if (n.kind === "table" || !nodeIds.has(n.id)) return n;
-        const cell = cellFor({ x: n.x || 0, y: n.y || 0, w: n.w || 0, h: n.h || 0 });
+        if (!nodeIds.has(n.id)) return n;
+        // Tables may bind INTO another table's cell (table-in-table); the
+        // exclusion arg keeps a table from binding to itself or to any table
+        // already nested inside it.
+        const cell = cellFor({ x: n.x || 0, y: n.y || 0, w: n.w || 0, h: n.h || 0 },
+                             n.kind === "table" ? n.id : null);
         if (cell) { changed = true; return { ...n, cell }; }
         if (n.cell) { changed = true; return wbStripCell(n); }
         return n;
@@ -38220,7 +38255,20 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const contained = new Set([sid]);
       for (const n of nodes) {
         if (n.id === sid) continue;
-        if (n.kind === "section" || n.kind === "table") continue;   // sections don't nest; tables use cell-binding, not containment
+        // Sections don't NEST semantically, but a smaller section whose rect
+        // sits FULLY inside the moved frame rides along (Figma-style) so a
+        // stacked pair moves as one. Center-rule would grab half-overlapping
+        // peer frames, so full containment only.
+        if (n.kind === "section") {
+          const sw = n.w || 880, sh = n.h || 560;
+          if ((n.x || 0) >= x0 && (n.y || 0) >= y0
+              && (n.x || 0) + sw <= x1 && (n.y || 0) + sh <= y1) contained.add(n.id);
+          continue;
+        }
+        // Tables ride by the same center rule as any other node; their
+        // cell-bound content follows via the binding reconcile + the wb walk
+        // below. (They used to be skipped entirely - a table inside a moved
+        // section was left behind, which read as "contents don't follow".)
         const cx = (n.x || 0) + ((n.w || 0) / 2);
         const cy = (n.y || 0) + ((n.h || 0) / 2);
         if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) contained.add(n.id);
@@ -80408,7 +80456,7 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
           onMouseDown=${(e) => e.stopPropagation()}>×</button>
       </div>
       ${selected && html`<div className="workflow-node-section-resize" title="Drag to resize"
-        style=${{ width: px(14) + "px", height: px(14) + "px", borderBottomRightRadius: px(14) + "px" }}
+        style=${{ width: px(24) + "px", height: px(24) + "px", borderBottomRightRadius: px(14) + "px" }}
         onMouseDown=${onResizeDown}/>`}
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
            title="Populate cells - wire an Agent or Skill here."
@@ -80646,8 +80694,8 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
              ~3 screen px once a big section/table is viewed zoomed out, which
              reads as "corner resize doesn't work". Same inverse-scale as the
              other chrome. */
-          width: (14 / Math.max(zoom || 1, 0.1)) + "px",
-          height: (14 / Math.max(zoom || 1, 0.1)) + "px",
+          width: (24 / Math.max(zoom || 1, 0.1)) + "px",
+          height: (24 / Math.max(zoom || 1, 0.1)) + "px",
           borderBottomRightRadius: (14 / Math.max(zoom || 1, 0.1)) + "px",
         }}
         onMouseDown=${onResizeDown}

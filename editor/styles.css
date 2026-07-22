@@ -8963,6 +8963,15 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   /* Re-enable pointer events for the resize handle; the section frame
      itself is pointer-events: none so canvas pan passes through. */
   pointer-events: auto;
+  z-index: 7;   /* above cell grips / port zones so the corner always wins */
+}
+.workflow-node-section-resize:hover {
+  opacity: 1;
+  background:
+    linear-gradient(135deg,
+      transparent 0%, transparent 55%,
+      var(--accent) 55%, var(--accent) 70%,
+      transparent 70%);
 }
 
 /* Canvas */
