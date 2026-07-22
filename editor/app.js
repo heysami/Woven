@@ -60014,10 +60014,13 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
   // remount-on-every-source-write behavior made the node strobe. Now:
   //   • editor DATA changes (data.js / <slug>.data.js - a frames/arrows
   //     regen) still remount: the frame LIST itself changed.
-  //   • source/<slug>/ changes soft-refresh IN PLACE: reload just the
-  //     embed's affected inner frame iframes (same-origin). The embed's own
-  //     per-frame load handler re-runs each setupScript. A changed css/js
-  //     asset can affect any page, so non-HTML changes reload every frame.
+  //   • source/<slug>/ changes soft-refresh IN PLACE: reload ONLY the embed's
+  //     inner frame iframes a given write actually touches - the frame whose
+  //     own HTML entry changed, or a frame that actually loaded the changed
+  //     asset (css / js / image / font). A frame's real subresource list comes
+  //     from its Performance timeline (same-origin), so a page-specific image
+  //     edit reloads that one page instead of strobing all 26 frames. Each
+  //     reloaded frame's own load handler re-runs its setupScript.
   //   • events are debounced so an agent's write burst lands as ONE refresh.
   const softRefreshEmbedFrames = (paths, scope) => {
     try {
@@ -60026,16 +60029,42 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
       if (!doc || !win || !(win.EDITOR_DATA && win.EDITOR_DATA.meta)) return false;
       const inner = Array.from(doc.querySelectorAll(".frame-body iframe"));
       if (!inner.length) return true;   // empty canvas - nothing stale to show
-      const htmlChanged = paths.filter(p => typeof p === "string" && p.startsWith(scope) && /\.html?$/i.test(p));
-      const nonHtmlChanged = paths.some(p => typeof p === "string" && p.startsWith(scope) && !/\.html?$/i.test(p));
+      const inScope = paths.filter(p => typeof p === "string" && p.startsWith(scope));
+      if (!inScope.length) return true;
+      const htmlChanged = inScope.filter(p => /\.html?$/i.test(p));
+      const assetChanged = inScope.filter(p => !/\.html?$/i.test(p));
+      const reloadList = [];
       for (const fr of inner) {
         let pathname = "";
         try { pathname = new URL(fr.getAttribute("src") || "", win.location.href).pathname; } catch {}
-        const affected = nonHtmlChanged || htmlChanged.some(cp => pathname.endsWith("/" + cp));
-        if (!affected) continue;
-        try { fr.contentWindow.location.reload(); }
-        catch { try { fr.setAttribute("src", fr.getAttribute("src")); } catch {} }
+        // 1) this frame's own page (HTML entry) changed
+        let hit = htmlChanged.some(cp => pathname.endsWith("/" + cp));
+        // 2) an asset this frame actually loaded changed. Read the frame's live
+        //    subresource list; `null` means we couldn't introspect (reload to be
+        //    safe), an empty/no-match list means the change doesn't touch this
+        //    frame - so we leave it alone instead of blindly reloading it.
+        if (!hit && assetChanged.length) {
+          let resources = null;
+          try {
+            resources = fr.contentWindow.performance.getEntriesByType("resource")
+              .map(r => { try { return new URL(r.name).pathname; } catch { return ""; } });
+          } catch { resources = null; }
+          hit = resources
+            ? assetChanged.some(cp => resources.some(rp => rp.endsWith("/" + cp)))
+            : true;
+        }
+        if (hit) reloadList.push(fr);
       }
+      // Stagger a multi-frame hit (e.g. a shared stylesheet) into a quick sweep
+      // instead of a simultaneous flash of every affected frame.
+      reloadList.forEach((fr, i) => {
+        const doReload = () => {
+          try { fr.contentWindow.location.reload(); }
+          catch { try { fr.setAttribute("src", fr.getAttribute("src")); } catch {} }
+        };
+        if (i === 0) doReload();
+        else setTimeout(doReload, i * 80);
+      });
       return true;
     } catch { return false; }
   };
