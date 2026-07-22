@@ -36293,9 +36293,17 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // every node component's onMove prop below.
   const onMoveForNode = useCallback((nid, singleMover) => (dx, dy) => {
     // Every node kind's move funnels through here - stamp the gesture's node
-    // id so the drop rebind + drop-target highlight work even for kinds whose
-    // onDragStart wiring never reaches startNodeDrag.
+    // id AND flip the nodeDragging flag so the drop rebind + drop-target
+    // highlight work even for kinds whose drag wiring never reaches
+    // startNodeDrag (e.g. skill nodes). The one-shot window mouseup resets
+    // the flag for those kinds; components that DO call onDragEnd reset it
+    // again harmlessly.
     lastDragNodeIdRef.current = nid;
+    if (!nodeDraggingRef.current) {
+      setNodeDragging(true);
+      const up = () => { window.removeEventListener("mouseup", up); setNodeDragging(false); };
+      window.addEventListener("mouseup", up);
+    }
     if (selectedNodeIds.size > 1 && selectedNodeIds.has(nid)) {
       moveSelectedNodes(dx, dy);
     } else {
@@ -44675,6 +44683,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         role: String(a.role || ""), lens: String(a.lens || ""),
         method: (a.method === "context" && hasMaterial) ? "context" : "web",
       }));
+      const header = String(plan.header || task.slice(0, 60));
+      const desc = String(plan.description || "");
+      // Skeleton result NOW, so the right panel floats out during the (long)
+      // gather phase - agent roster + counters visible, points still empty.
+      // Mirrors the testing assistant's live-fill behaviour.
+      updateNode(nodeId, { result: {
+        kind: "deepresearch", task, builtAt: Date.now(),
+        statement: plan.statement, header, description: desc,
+        agents: agents.map(a => ({ name: a.name, method: a.method, lens: a.lens })),
+        counters: { agents: agents.length, points: 0, rounds: 0, elapsedMs: Date.now() - t0 },
+        points: [], conclusion: "",
+      } });
 
       // One agent turn. Web agents run as a REAL subagent with WebSearch /
       // WebFetch (/__assistant/research); material agents are plain LLM calls
@@ -44742,8 +44762,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // wb item sec-bound so the section carries its contents when moved.
       const secX = Math.round(node.x + (node.w || 440) + 460), secY = Math.round(node.y);
       const SECW = 760, PAD = 24, INNER = SECW - PAD * 2;
-      const header = String(plan.header || task.slice(0, 60));
-      const desc = String(plan.description || "");
       const secId = workflowNewNodeId();
       const wbIds = [];
       const stickyByPoint = {};
@@ -77961,11 +77979,25 @@ function WorkflowAssistantResultPanel({ node }) {
                 <span className=${"wap-pill wap-pill-" + cs.tone}>${p.consensus ? cs.label : "…"}</span>
               </div>`;
           })}
-          ${!pts.length && html`<div className="wap-empty">Gathering…</div>`}
+          ${!pts.length && html`<div className="wap-empty">Agents gathering…</div>`}
         </div>
+        ${(() => {
+          // Consensus tally - the testing panel's pass-rate block, for points.
+          const judged = pts.filter(p => p.consensus);
+          if (!judged.length) return null;
+          const sup = judged.filter(p => _drConsensus(p.consensus).key === "supported").length;
+          const rate = Math.round((sup * 100) / judged.length);
+          return html`
+            <div className="wap-section-label">Consensus</div>
+            <div className="wap-rate-row">
+              <div className="wap-rate-num">${rate}%</div>
+              <div className="wap-rate-pill">${sup} / ${judged.length} supported</div>
+            </div>
+            <div className="wap-rate-bar"><div className="wap-rate-fill" style=${{ width: rate + "%" }}/></div>`;
+        })()}
         ${res.conclusion && html`
           <div className="wap-section-label">Conclusion</div>
-          <div className="wap-sub">${res.conclusion}</div>`}
+          <div className="wap-conclusion">${res.conclusion}</div>`}
       </div>`;
   }
   return null;
@@ -78249,7 +78281,9 @@ function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onRe
   const clar = node.clarify;
   const clarActive = !!(clar && !clar.done && clar.forTask === task && (clar.questions || []).length);
   const clarDone = !!(clar && clar.done && clar.forTask === task);
-  const hasResult = !!(node.result && (node.result.points || []).length);
+  // The skeleton result (agents planned, points still gathering) already
+  // detaches the panel - mirrors the testing assistant's live report.
+  const hasResult = !!(node.result && ((node.result.points || []).length || (node.result.agents || []).length));
   const detached = selected && hasResult;
   const panelR = detached ? 438 : 0;
   const setAnswer = (i, v) => onChange({ clarify: { ...clar, answers: { ...(clar.answers || {}), [i]: v } } });

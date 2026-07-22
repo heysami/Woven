@@ -15300,6 +15300,15 @@ a.ds-badge:hover, button.ds-badge:hover {
   border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; }
 .wap-rate-bar { height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
 .wap-rate-fill { height: 100%; background: var(--success); border-radius: 999px; transition: width 0.3s ease; }
+/* Deep research panel: the lead's conclusion, set apart as a proper block
+   (not a subtitle line) so the takeaway reads at a glance. */
+.wap-conclusion {
+  font-size: 12px; line-height: 1.5; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 3px solid var(--success);
+  border-radius: 6px; padding: 8px 10px;
+  white-space: pre-wrap; word-break: break-word;
+}
 
 /* Testing: agent roster. */
 .wap-agents { display: flex; flex-direction: column; gap: 2px; }
