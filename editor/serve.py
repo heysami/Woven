@@ -13092,13 +13092,18 @@ class H(http.server.SimpleHTTPRequestHandler):
                                 n["text"] = disk_n.get("text")
                             n["_thTextRev"] = _disk_trev
                         disk_status = disk_n.get("runStatus")
-                        # ...EXCEPT design-system nodes: they have no
-                        # subprocess owner to ever flip "running" back, so
-                        # preserving it re-wedges the editor's clear on every
-                        # save (worker badge spins forever). The editor
-                        # (on-load sanitize + lastRunId reconcile) is
-                        # authoritative for them.
-                        if disk_status == "running" and disk_n.get("kind") != "design-system":
+                        # ...EXCEPT kinds whose runs are driven entirely in the
+                        # BROWSER with no daemon subprocess owner to ever flip
+                        # "running" back: design-system, the assistant nodes
+                        # (research / testing), and the result tables they
+                        # build. For those, preserving disk's "running"
+                        # re-wedges the editor's on-load sanitize on every
+                        # save - the badge floats forever, revived on each
+                        # reload-merge. The editor is authoritative for them
+                        # (same kind list as the app.js load sanitizer).
+                        _no_owner_kinds = ("design-system", "assistant-research",
+                                           "assistant-testing", "table")
+                        if disk_status == "running" and disk_n.get("kind") not in _no_owner_kinds:
                             n["runStatus"] = "running"
                             disk_error = disk_n.get("runError")
                             if disk_error is not None:
