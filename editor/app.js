@@ -59021,29 +59021,71 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     ? baseUrl
     : baseUrl + "&_n=" + nonce;
 
-  // Refresh on asset-changed events scoped to source/<slug>/ so the
-  // iframe re-fetches editor/<slug>.data.js when frames get regenerated
-  // (after the user runs the "generate frames" flow from this same node).
+  // Freshness on asset-changed events - WITHOUT the flicker. The embed is
+  // the whole editor app; remounting it (nonce bump) means a white flash, a
+  // full React/app.js reboot, and every frame iframe reloading - and source
+  // files change CONSTANTLY during agent runs, so the old
+  // remount-on-every-source-write behavior made the node strobe. Now:
+  //   • editor DATA changes (data.js / <slug>.data.js - a frames/arrows
+  //     regen) still remount: the frame LIST itself changed.
+  //   • source/<slug>/ changes soft-refresh IN PLACE: reload just the
+  //     embed's affected inner frame iframes (same-origin). The embed's own
+  //     per-frame load handler re-runs each setupScript. A changed css/js
+  //     asset can affect any page, so non-HTML changes reload every frame.
+  //   • events are debounced so an agent's write burst lands as ONE refresh.
+  const softRefreshEmbedFrames = (paths, scope) => {
+    try {
+      const doc = iframeRef.current && iframeRef.current.contentDocument;
+      const win = iframeRef.current && iframeRef.current.contentWindow;
+      if (!doc || !win || !(win.EDITOR_DATA && win.EDITOR_DATA.meta)) return false;
+      const inner = Array.from(doc.querySelectorAll(".frame-body iframe"));
+      if (!inner.length) return true;   // empty canvas - nothing stale to show
+      const htmlChanged = paths.filter(p => typeof p === "string" && p.startsWith(scope) && /\.html?$/i.test(p));
+      const nonHtmlChanged = paths.some(p => typeof p === "string" && p.startsWith(scope) && !/\.html?$/i.test(p));
+      for (const fr of inner) {
+        let pathname = "";
+        try { pathname = new URL(fr.getAttribute("src") || "", win.location.href).pathname; } catch {}
+        const affected = nonHtmlChanged || htmlChanged.some(cp => pathname.endsWith("/" + cp));
+        if (!affected) continue;
+        try { fr.contentWindow.location.reload(); }
+        catch { try { fr.setAttribute("src", fr.getAttribute("src")); } catch {} }
+      }
+      return true;
+    } catch { return false; }
+  };
   useEffect(() => {
-    const handler = (e) => {
-      const paths = (e && e.detail && e.detail.paths) || [];
-      if (!paths.length) return;
-      const scope = `source/${protoSlug}/`;
-      const editorData = "editor/data.js";
-      const perProtoData = `editor/${protoSlug}.data.js`;
-      if (paths.some(p => p && (
-        p.startsWith(scope) ||
-        p === editorData || p === perProtoData ||
-        p.endsWith("/editor/data.js") || p.endsWith(`/editor/${protoSlug}.data.js`)
-      ))) {
-        // Fresh data landed - give the reload a clean retry budget so the
-        // self-heal can recover even if this write also lands mid-flight.
+    let timer = 0;
+    let pending = [];
+    const scope = `source/${protoSlug}/`;
+    const isDataPath = (p) => typeof p === "string" && (
+      p === "editor/data.js" || p === `editor/${protoSlug}.data.js` ||
+      p.endsWith("/editor/data.js") || p.endsWith(`/editor/${protoSlug}.data.js`));
+    const flush = () => {
+      const paths = pending;
+      pending = [];
+      if (paths.some(isDataPath)) {
+        // Fresh frames/arrows data - give the reload a clean retry budget so
+        // the self-heal can recover even if this write lands mid-flight.
+        loadRetryRef.current = 0;
+        setNonce(n => n + 1);
+        return;
+      }
+      if (!paths.some(p => typeof p === "string" && p.startsWith(scope))) return;
+      if (!softRefreshEmbedFrames(paths, scope)) {
+        // Embed not booted (or unreachable) - fall back to the remount.
         loadRetryRef.current = 0;
         setNonce(n => n + 1);
       }
     };
+    const handler = (e) => {
+      const paths = (e && e.detail && e.detail.paths) || [];
+      if (!paths.length) return;
+      pending.push(...paths);
+      clearTimeout(timer);
+      timer = setTimeout(flush, 600);
+    };
     window.addEventListener("th:asset-refresh", handler);
-    return () => window.removeEventListener("th:asset-refresh", handler);
+    return () => { clearTimeout(timer); window.removeEventListener("th:asset-refresh", handler); };
   }, [protoSlug]);
 
   // Await-generation poll. A node spawned via the generate path (awaitFrames)
