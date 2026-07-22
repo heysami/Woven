@@ -13473,7 +13473,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # just stacks upstream + node text.
     def _llm_dispatch(self, node, full_prompt):
         provider = (node.get("provider") or "anthropic").strip()
-        model    = (node.get("model")    or ("claude-opus-4-7" if provider == "anthropic" else "gpt-4o-mini")).strip()
+        model    = (node.get("model")    or ("claude-opus-4-8" if provider == "anthropic" else "gpt-4o-mini")).strip()
         api_key  = _resolve_provider_key(provider)
         messages = [{"role": "user", "content": full_prompt}]
         if provider == "anthropic":
@@ -14012,7 +14012,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     full_prompt = full_prompt + "\n\n<output-destinations>\n" + downstream_text + "\n</output-destinations>"
                 text = self._llm_dispatch(node, full_prompt)
                 out = {"text": text, "provider": node.get("provider") or "anthropic",
-                       "model": node.get("model") or "claude-opus-4-7"}
+                       "model": node.get("model") or "claude-opus-4-8"}
                 # store the LLM response in node['output'], NOT
                 # node['text']. node['text'] stays the user-editable prompt;
                 # the response lives in 'output' so the frontend's debounced
@@ -15759,7 +15759,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # the node hasn't been run yet.
                 "output":   node.get("output"),
                 "provider": node.get("provider") or "anthropic",
-                "model":    node.get("model")    or "claude-opus-4-7",
+                "model":    node.get("model")    or "claude-opus-4-8",
             })
         # The assistant-* nodes are client-driven (their output is a spawned
         # table / prompt node, not a daemon-composable string), so they have no

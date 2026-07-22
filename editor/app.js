@@ -8788,7 +8788,7 @@ function formatSelectionContext({ selectedIds, nodes } = {}) {
     const title   = n.title || n.name || n.id;
     const meta    = [];
     if (n.path)                                  meta.push(`path: ${n.path}`);
-    if (n.provider || n.model)                   meta.push(`${n.provider || "anthropic"}/${n.model || "claude-opus-4-7"}`);
+    if (n.provider || n.model)                   meta.push(`${n.provider || "anthropic"}/${n.model || "claude-opus-4-8"}`);
     if (n.runStatus && n.runStatus !== "queued") meta.push(`runStatus: ${n.runStatus}`);
     if (typeof n.n === "number")                 meta.push(`n: ${n.n}`);
     const text = trim(n.metaPrompt) || trim(n.text);
@@ -42722,7 +42722,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               body: JSON.stringify({
                 skill: "llm",
                 provider: terminalSpec.provider || terminal.node.provider || "anthropic",
-                model: _resolveLiveModel(terminal.node.model || terminalSpec.defaultModel || "claude-opus-4-7"),
+                model: _resolveLiveModel(terminal.node.model || terminalSpec.defaultModel || "claude-opus-4-8"),
                 prompt: composed,
               }),
             });
@@ -42736,7 +42736,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 userMsg: composed,
                 dsRef: variantDsRef,
                 dsBlock,
-                model: (terminalSpec.id || "?") + " · " + (terminal.node.model || terminalSpec.defaultModel || "claude-opus-4-7"),
+                model: (terminalSpec.id || "?") + " · " + (terminal.node.model || terminalSpec.defaultModel || "claude-opus-4-8"),
                 variantIndex: i + 1, n,
               },
             });
@@ -43034,7 +43034,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             const llmR = await fetch(apiUrl("/__llm_run"), {
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                skill: "llm", provider: "anthropic", model: "claude-opus-4-7",
+                skill: "llm", provider: "anthropic", model: "claude-opus-4-8",
                 messages: [
                   { role: "system", content: variantSys },
                   { role: "user",   content: variantUser },
@@ -43065,7 +43065,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 dsRef: variantDsRef,
                 dsBlock,
                 producedPrompt: variantPrompt,
-                model: "claude-opus-4-7 → " + (rmx.model || "gpt-image-2"),
+                model: "claude-opus-4-8 → " + (rmx.model || "gpt-image-2"),
                 variantIndex: i + 1, n,
               },
             });
@@ -43133,7 +43133,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             const llmR = await fetch(apiUrl("/__llm_run"), {
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                skill: "llm", provider: "anthropic", model: "claude-opus-4-7",
+                skill: "llm", provider: "anthropic", model: "claude-opus-4-8",
                 messages: [
                   { role: "system", content: sys },
                   { role: "user",   content: userMsg },
@@ -43182,7 +43182,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 dsRef: variantDsRef,
                 dsBlock,
                 variantGuidance: v,
-                model: "claude-opus-4-7",
+                model: "claude-opus-4-8",
                 variantIndex: i + 1, n,
               },
             });
@@ -43229,7 +43229,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             const llmR = await fetch(apiUrl("/__llm_run"), {
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                skill: "llm", provider: "anthropic", model: "claude-opus-4-7",
+                skill: "llm", provider: "anthropic", model: "claude-opus-4-8",
                 messages: [
                   { role: "system", content: sys },
                   { role: "user",   content: userMsg },
@@ -43250,7 +43250,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 userMsg,
                 dsRef: variantDsRef,
                 dsBlock,
-                model: "claude-opus-4-7",
+                model: "claude-opus-4-8",
                 variantIndex: i + 1, n,
               },
             });
@@ -43580,7 +43580,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           const llmR = await fetch(apiUrl("/__llm_run"), {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              skill: "llm", provider: "anthropic", model: "claude-opus-4-7",
+              skill: "llm", provider: "anthropic", model: "claude-opus-4-8",
               messages: [
                 { role: "system", content: imageSys },
                 { role: "user",   content: userMessage },
@@ -43611,7 +43611,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               dsRef: blend.dsRef || null,
               dsBlock: blendDsBlock,
               producedPrompt: synthPrompt,
-              model: "claude-opus-4-7 → gpt-image-2",
+              model: "claude-opus-4-8 → gpt-image-2",
             },
           });
           window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [blendOutPath] } }));
@@ -43643,7 +43643,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           const llmR = await fetch(apiUrl("/__llm_run"), {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              skill: "llm", provider: "anthropic", model: "claude-opus-4-7",
+              skill: "llm", provider: "anthropic", model: "claude-opus-4-8",
               messages: [
                 { role: "system", content: htmlSys },
                 { role: "user",   content: userMessage },
@@ -43691,7 +43691,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               userMsg: userMessage,
               dsRef: blend.dsRef || null,
               dsBlock: blendDsBlock,
-              model: "claude-opus-4-7",
+              model: "claude-opus-4-8",
             },
           });
           window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [blendOutPath] } }));
@@ -43707,7 +43707,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           const r = await fetch(apiUrl("/__llm_run"), {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              skill: "llm", provider: "anthropic", model: "claude-opus-4-7",
+              skill: "llm", provider: "anthropic", model: "claude-opus-4-8",
               messages: [
                 { role: "system", content: systemInstruction },
                 { role: "user",   content: userMessage },
@@ -43726,7 +43726,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               userMsg: userMessage,
               dsRef: blend.dsRef || null,
               dsBlock: blendDsBlock,
-              model: "claude-opus-4-7",
+              model: "claude-opus-4-8",
             },
           });
         } catch (err) {
@@ -46315,7 +46315,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         body: JSON.stringify({
           skill: "llm",
           provider: "anthropic",
-          model: "claude-opus-4-7",
+          model: "claude-opus-4-8",
           prompt: sysPrompt + "\n\nBrief:\n" + brief,
           options: { max_tokens: 8000 },
         }),
@@ -59942,7 +59942,7 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
                 const llmR = await fetch(apiUrl("/__llm_run"), {
                   method: "POST", headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    skill: "llm", provider: "anthropic", model: "claude-opus-4-7",
+                    skill: "llm", provider: "anthropic", model: "claude-opus-4-8",
                     messages: [{ role: "system", content: sys }, { role: "user", content: userMsg }],
                     options: { max_tokens: 24000 },
                   }),
@@ -62104,7 +62104,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       // the node (and inside promptDebug) - we re-inject them so the refine
       // pass stays inside the variant's original direction instead of
       // collapsing every sibling to a single canonical DS look.
-      setRefineStage("Redesigning against DS " + assetDsRef + " with claude-opus-4.7…");
+      setRefineStage("Redesigning against DS " + assetDsRef + " with claude-opus-4.8…");
       const variantGuidance = node.variantGuidance
         || (node.promptDebug && node.promptDebug.variantGuidance)
         || null;
@@ -62197,7 +62197,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       const llmR = await fetch(apiUrl("/__llm_run"), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          skill: "llm", provider: "anthropic", model: "claude-opus-4-7",
+          skill: "llm", provider: "anthropic", model: "claude-opus-4-8",
           messages: [
             { role: "system", content: sys },
             { role: "user",   content: userMsg },
@@ -75436,7 +75436,7 @@ async function requestSettingProposal(node, description, existing) {
   const r = await fetch(apiUrl("/__llm_run"), {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      skill: "llm", provider: "anthropic", model: _resolveLiveModel("claude-opus-4-7"),
+      skill: "llm", provider: "anthropic", model: _resolveLiveModel("claude-opus-4-8"),
       messages: [{ role: "system", content: system }, { role: "user", content: user }],
       options: { max_tokens: 2000 },
     }),
@@ -84236,7 +84236,7 @@ function WorkflowSkillNode({ node, zoom, selected, onSelect, onMove, onResize, o
           <div className="workflow-node-skill-meta">
             <${HoverTip} as="span" tip="Provider" ariaLabel="Provider">${node.provider || "anthropic"}<//>
             <span className="workflow-node-skill-meta-dot">·</span>
-            <${HoverTip} as="span" tip="Model" ariaLabel="Model">${node.model || "claude-opus-4-7"}<//>
+            <${HoverTip} as="span" tip="Model" ariaLabel="Model">${node.model || "claude-opus-4-8"}<//>
           </div>
           <textarea
             className="workflow-node-skill-text"

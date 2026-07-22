@@ -17,7 +17,7 @@
     openai: {
       id: "openai",
       label: "OpenAI",
-      hint: "gpt-image-2 · gpt-image-1.5 · gpt-4.1",
+      hint: "gpt-image-2 · gpt-5.6 (Sol / Terra / Luna)",
       docsUrl: "https://platform.openai.com/api-keys",
       integrated: true,
       testable: true,
@@ -25,7 +25,7 @@
     anthropic: {
       id: "anthropic",
       label: "Anthropic",
-      hint: "Claude Opus 4.8 · Sonnet 5 · Haiku 4.5 (text models for `llm` / `describe`)",
+      hint: "Claude Fable 5 · Opus 4.8 · Sonnet 5 · Haiku 4.5 (text models for `llm` / `describe`)",
       docsUrl: "https://console.anthropic.com/settings/keys",
       integrated: true,
       testable: true,
@@ -155,6 +155,17 @@
     },
   };
 
+  // v3.4.8 (July 2026) - Text + video rows refreshed:
+  //   • OpenAI GPT-5.6 family (Sol / Terra / Luna, GA July 9 2026) added;
+  //     gpt-5 demoted to prior flagship. `gpt-5.6` is the API alias for Sol.
+  //   • Anthropic claude-fable-5 (Mythos-class, GA June 9 2026) added.
+  //   • Kling 3.0 Pro (fal-ai/kling-video/v3/pro/...) added - native audio.
+  //   • Alibaba HappyHorse 1.0 (alibaba/happy-horse/...) added - fal-hosted,
+  //     #1 on Artificial Analysis video leaderboard; note the endpoint id has
+  //     NO fal-ai/ prefix (serve.py posts to fal.run/<id> verbatim, so fine).
+  //   • Seedance 2.5 NOT added - announced June 23 2026 but not yet live on
+  //     fal (enterprise beta only as of mid-July). Revisit when it ships.
+  //
   // v3.4.7 (June 2026) - Catalog refreshed against current provider APIs.
   // DEPRECATIONS applied:
   //   • DALL·E 2 + DALL·E 3 - shut down May 12, 2026 (removed entirely).
@@ -213,8 +224,11 @@
     // user's `codex login` / `claude login` settings). Both rows show up
     // at the top of their provider's filter so they're easy to find.
     { id: "codex-default",   provider: "openai",    label: "Codex CLI default", hint: "OpenAI · uses Codex CLI's own default model", caps: ["text"],           integrated: true, cliOnly: true },
-    { id: "gpt-5",           provider: "openai",    label: "gpt-5",             hint: "OpenAI · current flagship",   caps: ["text", "vision"], integrated: true, default: true },
-    { id: "gpt-5-mini",      provider: "openai",    label: "gpt-5-mini",        hint: "OpenAI · fast + cheap",       caps: ["text", "vision"], integrated: true },
+    { id: "gpt-5.6-sol",     provider: "openai",    label: "gpt-5.6-sol",       hint: "OpenAI · current flagship (alias: gpt-5.6)", caps: ["text", "vision"], integrated: true, default: true },
+    { id: "gpt-5.6-terra",   provider: "openai",    label: "gpt-5.6-terra",     hint: "OpenAI · balanced mid-tier",  caps: ["text", "vision"], integrated: true },
+    { id: "gpt-5.6-luna",    provider: "openai",    label: "gpt-5.6-luna",      hint: "OpenAI · fast + cheap",       caps: ["text", "vision"], integrated: true },
+    { id: "gpt-5",           provider: "openai",    label: "gpt-5",             hint: "OpenAI · prior flagship",     caps: ["text", "vision"], integrated: true },
+    { id: "gpt-5-mini",      provider: "openai",    label: "gpt-5-mini",        hint: "OpenAI · prior gen · fast",   caps: ["text", "vision"], integrated: true },
     { id: "gpt-5-nano",      provider: "openai",    label: "gpt-5-nano",        hint: "OpenAI · ultra-light",        caps: ["text"],           integrated: true },
     { id: "o3",              provider: "openai",    label: "o3",                hint: "OpenAI · reasoning flagship", caps: ["text"],           integrated: true },
     { id: "o4-mini",         provider: "openai",    label: "o4-mini",           hint: "OpenAI · reasoning · fast",   caps: ["text"],           integrated: true },
@@ -223,6 +237,7 @@
     { id: "gpt-4o",          provider: "openai",    label: "gpt-4o",            hint: "OpenAI · vision-capable",     caps: ["text", "vision"], integrated: true },
     { id: "gpt-4o-mini",     provider: "openai",    label: "gpt-4o-mini",       hint: "OpenAI · legacy fast + cheap",caps: ["text", "vision"], integrated: true },
     { id: "claude-default",        provider: "anthropic", label: "Claude CLI default", hint: "Anthropic · uses Claude CLI's own default model", caps: ["text"], integrated: true, cliOnly: true },
+    { id: "claude-fable-5",        provider: "anthropic", label: "claude-fable-5",     hint: "Anthropic · Mythos-class frontier", caps: ["text", "vision"], integrated: true },
     { id: "claude-opus-4-8",       provider: "anthropic", label: "claude-opus-4.8",    hint: "Anthropic · top reasoning",   caps: ["text", "vision"], integrated: true },
     { id: "claude-opus-4-7",       provider: "anthropic", label: "claude-opus-4.7",    hint: "Anthropic · prior opus",      caps: ["text", "vision"], integrated: true },
     { id: "claude-opus-4-6",       provider: "anthropic", label: "claude-opus-4.6",    hint: "Anthropic · 1M context",      caps: ["text", "vision"], integrated: true },
@@ -263,13 +278,21 @@
     // Luma - Ray 2 family (the bare `luma-dream-machine` endpoint is deprecated).
     { id: "fal-ai/luma-dream-machine/ray-2/text-to-video",         provider: "fal", label: "luma-ray-2",         hint: "fal · Luma Ray 2 (t2v)",                        caps: ["t2v"],         integrated: true },
     { id: "fal-ai/luma-dream-machine/ray-2/image-to-video",        provider: "fal", label: "luma-ray-2-i2v",     hint: "fal · Luma Ray 2 (image → video)",              caps: ["i2v"],         integrated: true },
-    // Kling - v2.5 Turbo Pro is the current cinematic default; v2.6 i2v is newer.
-    { id: "fal-ai/kling-video/v2.5-turbo/pro/text-to-video",       provider: "fal", label: "kling-2.5-pro",      hint: "fal · Kling 2.5 Turbo Pro (cinematic)",         caps: ["t2v"],         integrated: true },
-    { id: "fal-ai/kling-video/v2.6/pro/image-to-video",            provider: "fal", label: "kling-2.6-pro-i2v",  hint: "fal · Kling 2.6 Pro (image → video + audio)",   caps: ["i2v"],         integrated: true },
+    // Kling - 3.0 Pro is current (native 4K / 60fps / audio); 2.5/2.6 kept as
+    // cheaper prior-gen fallbacks (their endpoints still work).
+    { id: "fal-ai/kling-video/v3/pro/text-to-video",               provider: "fal", label: "kling-3.0-pro",      hint: "fal · Kling 3.0 Pro (cinematic · native audio)", caps: ["t2v"],        integrated: true },
+    { id: "fal-ai/kling-video/v3/pro/image-to-video",              provider: "fal", label: "kling-3.0-pro-i2v",  hint: "fal · Kling 3.0 Pro (image → video + audio)",   caps: ["i2v"],         integrated: true },
+    { id: "fal-ai/kling-video/v2.5-turbo/pro/text-to-video",       provider: "fal", label: "kling-2.5-pro",      hint: "fal · Kling 2.5 Turbo Pro (prior gen · cheaper)", caps: ["t2v"],       integrated: true },
+    { id: "fal-ai/kling-video/v2.6/pro/image-to-video",            provider: "fal", label: "kling-2.6-pro-i2v",  hint: "fal · Kling 2.6 Pro (prior gen · image → video)", caps: ["i2v"],       integrated: true },
+    // Alibaba HappyHorse 1.0 - fal-hosted (#1 Artificial Analysis video Elo).
+    // NOTE: endpoint id has no fal-ai/ prefix - fal.run/<id> takes it verbatim.
+    { id: "alibaba/happy-horse/text-to-video",                     provider: "fal", label: "happyhorse-1.0",     hint: "fal · Alibaba HappyHorse 1.0 (t2v · native audio · top-ranked)", caps: ["t2v"], integrated: true },
+    { id: "alibaba/happy-horse/image-to-video",                    provider: "fal", label: "happyhorse-1.0-i2v", hint: "fal · Alibaba HappyHorse 1.0 (image → video + audio)",           caps: ["i2v"], integrated: true },
     // MiniMax Hailuo - 2.3 Fast is the current entry.
     { id: "fal-ai/minimax/hailuo-2.3-fast/pro/text-to-video",      provider: "fal", label: "hailuo-2.3-fast",    hint: "fal · MiniMax Hailuo 2.3 Fast (1080p)",         caps: ["t2v"],         integrated: true },
     { id: "fal-ai/minimax/hailuo-2.3-fast/pro/image-to-video",     provider: "fal", label: "hailuo-2.3-fast-i2v", hint: "fal · Hailuo 2.3 Fast (image → video)",        caps: ["i2v"],         integrated: true },
-    // ByteDance Seedance 2.0 - launched April 2026.
+    // ByteDance Seedance 2.0 - launched April 2026. (Seedance 2.5 announced
+    // June 23 2026 but not yet live on fal as of mid-July - add when it ships.)
     { id: "fal-ai/seedance-2.0",                                   provider: "fal", label: "seedance-2.0",       hint: "fal · ByteDance Seedance 2.0",                  caps: ["t2v", "i2v"], integrated: true },
     // Pika - v2 Turbo still current.
     { id: "fal-ai/pika/v2/turbo/text-to-video",                    provider: "fal", label: "pika-v2",            hint: "fal · Pika v2 (animated)",                      caps: ["t2v"],         integrated: true },
