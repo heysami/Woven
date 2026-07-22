@@ -8964,6 +8964,13 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
      itself is pointer-events: none so canvas pan passes through. */
   pointer-events: auto;
 }
+/* Drop-capture preview: while something is dragged, the section frame that
+   will OWN it on release lights up (table cells tint inline instead). */
+.workflow-node-section[data-drop-hint="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  background: color-mix(in oklab, var(--accent) 5%, transparent);
+}
 
 /* Canvas */
 .workflow-canvas-wrap {

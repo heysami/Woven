@@ -27130,6 +27130,10 @@ function WorkflowCanvas() {
           // instead of leaving the size permanently dirty.
           w: _stableClone(n.w),
           h: _stableClone(n.h),
+          // Container bindings ride the same contract as geometry - snapshot
+          // so a drop goes clean once saved and converges across sessions.
+          cell: _stableClone(n.cell),
+          sec:  _stableClone(n.sec),
           // runStatus / runError participate in the snapshot so
           // dirty-tracking works for them too (Bug B). Once the save POST
           // returns 200, savedSnapshotRef gets bumped to the latest local
@@ -27447,6 +27451,11 @@ function WorkflowCanvas() {
             // snapshotted on save (below) so a resize flips back to clean once
             // it persists and the next reload converges - same contract as x/y.
             pullField("x"); pullField("y"); pullField("w"); pullField("h");
+            // Container bindings (cell:{tableId,r,c,...} / sec:{sectionId,...})
+            // are user gestures on ANY kind (drop into a cell / onto a frame) -
+            // pull them like geometry so a second session doesn't echo a stale
+            // binding back over a fresh drop.
+            pullField("cell"); pullField("sec");
             // Bug B: conditional pull for runStatus / runError.
             // Pull from disk ONLY when local matches the last-saved
             // snapshot (i.e. no client-side change is in flight). If local
@@ -30198,16 +30207,97 @@ async function workflowCaptureProtoRaster(protoId) {
   return dataUri;
 }
 
-// Section containment. A node belongs to a section when its CENTER
-// lies inside the section's rect - the SAME rule moveSection uses for group
-// drag, so "what moves with the section" and "what flows through the
-// section's connector" never disagree. Sections don't nest.
+/* ── Sticky containment (sec / cell bindings) ────────────────────────────────
+   Ownership of "what sits on a section / lives in a table cell" is EXPLICIT
+   and assigned when the thing is DROPPED (wbReassignBindings), not recomputed
+   from pure geometry on every move. Two binding shapes on wb items AND nodes:
+     cell:{tableId,r,c,ox,oy}   - lives in that table cell (existing)
+     sec:{sectionId,ox,oy}      - sits on that section frame
+   Sticky ownership is what makes overlap sane: text bound to section A stays
+   A's even when section B is later dropped ON TOP of it - B captures the text
+   only when the USER moves the text and drops it while B is the topmost frame
+   under it. Unbound things (old projects) fall back to the legacy geometric
+   rules, so nothing regresses until a thing is first dragged. */
+function workflowBoundTo(o) {
+  if (o && o.sec && o.sec.sectionId) return o.sec.sectionId;
+  if (o && o.cell && o.cell.tableId) return o.cell.tableId;
+  return null;
+}
+// True when `containerId` appears anywhere up `start`'s binding chain - the
+// cycle guard that keeps A-inside-B-inside-A unrepresentable, and lets the
+// drop-binding skip a candidate container that is nested inside the mover.
+function workflowChainHasContainer(byId, start, containerId) {
+  let cur = start;
+  const seen = new Set();
+  for (let i = 0; i < 12 && cur; i++) {
+    const host = workflowBoundTo(cur);
+    if (!host || seen.has(host)) return false;
+    if (host === containerId) return true;
+    seen.add(host);
+    cur = byId.get(host) || null;
+  }
+  return false;
+}
+// Pick the container that would capture a thing dropped with bbox `bb`:
+// the VISUALLY TOPMOST table or section under the bbox center. Tables paint
+// above sections (nodes layer vs sections layer), so any table under the
+// point wins over any section; among peers, later paint order (array index,
+// then z) wins - which is exactly what "bring to front" changes, so capture
+// always follows what the user SEES on top. `excludeIds` = the dragged ids;
+// containers nested inside any of them are skipped too (cycle guard).
+// Returns { cell:{tableId,r,c,ox,oy} } | { sec:{sectionId,ox,oy} } | null.
+function workflowPickDropContainer(nodes, bb, excludeIds, opts) {
+  const allowCell = !opts || opts.allowCell !== false;
+  const byId = new Map((nodes || []).map(n => [n.id, n]));
+  const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
+  const excluded = (n) => {
+    if (excludeIds && excludeIds.has(n.id)) return true;
+    if (excludeIds) {
+      for (const ex of excludeIds) {
+        if (workflowChainHasContainer(byId, n, ex)) return true;
+      }
+    }
+    return false;
+  };
+  const paintKey = (n, idx) => idx * 1000 + (typeof n.z === "number" ? Math.max(-499, Math.min(499, n.z)) : 0);
+  let bestT = null, bestTKey = -Infinity;
+  let bestS = null, bestSKey = -Infinity;
+  (nodes || []).forEach((n, idx) => {
+    if (!n || (n.kind !== "table" && n.kind !== "section")) return;
+    if (excluded(n)) return;
+    const w = n.w || (n.kind === "table" ? 0 : 880);
+    const h = n.h || (n.kind === "table" ? 0 : 560);
+    if (cx < n.x || cy < n.y || cx > n.x + w || cy > n.y + h) return;
+    const key = paintKey(n, idx);
+    if (n.kind === "table") { if (allowCell && key > bestTKey) { bestT = n; bestTKey = key; } }
+    else                    { if (key > bestSKey) { bestS = n; bestSKey = key; } }
+  });
+  if (bestT) {
+    const cell = wbTableCellAt(bestT, cx, cy);
+    if (cell) {
+      const rect = wbTableCellRect(bestT, cell.r, cell.c);
+      return { cell: { tableId: bestT.id, r: cell.r, c: cell.c, ox: Math.round(bb.x - rect.x), oy: Math.round(bb.y - rect.y) } };
+    }
+  }
+  if (bestS) {
+    return { sec: { sectionId: bestS.id, ox: Math.round(bb.x - bestS.x), oy: Math.round(bb.y - bestS.y) } };
+  }
+  return null;
+}
+
+// Section containment - OWNERSHIP-AWARE. A node belongs to a section when it
+// is explicitly bound to it (sec binding), or - legacy fallback - when it is
+// UNBOUND and its center lies inside the rect. A node bound to a DIFFERENT
+// container never counts, even when it geometrically overlaps this frame
+// (that's the "new section dropped over my text doesn't steal it" rule).
 function workflowSectionContainedNodes(section, nodes) {
   if (!section) return [];
   const x0 = section.x, y0 = section.y;
   const x1 = x0 + (section.w || 880), y1 = y0 + (section.h || 560);
   return (nodes || []).filter(n => {
     if (!n || n.id === section.id || n.kind === "section" || n.kind === "table") return false;
+    const host = workflowBoundTo(n);
+    if (host) return host === section.id;
     const cx = (n.x || 0) + (n.w || 280) / 2;
     const cy = (n.y || 0) + (n.h || 200) / 2;
     return cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1;
@@ -36146,9 +36236,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   //      already-in-set), don't undo it here.
   const startNodeDrag = useCallback((id) => {
     setNodeDragging(true);
+    // Remember which node the gesture started on. A FRESH drag of an
+    // unselected node defers its selection commit to mouseup (select
+    // suppression), so the drag→idle rebind would otherwise run with an
+    // empty selection and the dropped node would never (re)bind to the
+    // container under it until a second drag.
+    lastDragNodeIdRef.current = id;
     if (suppressSelectUntilUpRef.current) return;
     setSelectedNodeIds(prev => prev.has(id) ? prev : new Set([id]));
   }, []);
+  const lastDragNodeIdRef = useRef(null);
 
   // Mirror live pan/zoom into the persisted state. Skip the first sync so we
   // don't overwrite the loaded values with the initial mount echo.
@@ -37321,12 +37418,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // cleared. Returns the same object on no-change so it can't render-loop.
   useEffect(() => {
     const nodes = data.nodes;
-    if (!Array.isArray(nodes) || !nodes.some(n => n && n.kind === "table")) return;
-    const hasBound = (data.wb || []).some(it => it && it.cell) || nodes.some(n => n && n.cell);
+    if (!Array.isArray(nodes)) return;
+    const hasBound = (data.wb || []).some(it => it && (it.cell || it.sec))
+      || nodes.some(n => n && (n.cell || n.sec));
     if (!hasBound) return;
     setData(d => {
       const list = Array.isArray(d.wb) ? d.wb : [];
       const tById = new Map((d.nodes || []).filter(n => n.kind === "table").map(t => [t.id, t]));
+      // sec bindings are MEMBERSHIP-only (sections don't reflow their
+      // contents), so the reconcile never re-pins them - it only clears a
+      // binding whose section was deleted.
+      const sById = new Map((d.nodes || []).filter(n => n.kind === "section").map(s => [s.id, s]));
+      const stripSec = (o) => { const { sec, ...rest } = o; return rest; };
       // Skip items being HAND-dragged (so reconcile doesn't fight them). But
       // when a TABLE is the thing being dragged, its bound items must follow
       // even if they happen to be selected - so don't skip then.
@@ -37344,7 +37447,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       };
       let changed = false;
       const nextWb = list.map(it => {
-        if (!it || !it.cell) return it;
+        if (!it) return it;
+        if (it.sec && !sById.has(it.sec.sectionId)) { changed = true; it = stripSec(it); }
+        if (!it.cell) return it;
         if (skipWb && skipWb.has(it.id)) return it;
         if (!tById.has(it.cell.tableId)) { changed = true; return wbStripCell(it); }
         const tg = target(it.cell);
@@ -37352,7 +37457,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         changed = true; return { ...it, x: tg.x, y: tg.y };
       });
       const nextNodes = (d.nodes || []).map(n => {
-        if (!n || !n.cell) return n;
+        if (!n) return n;
+        if (n.sec && !sById.has(n.sec.sectionId)) { changed = true; n = stripSec(n); }
+        if (!n.cell) return n;
         if (skipNode && skipNode.has(n.id)) return n;
         if (!tById.has(n.cell.tableId)) { changed = true; return wbStripCell(n); }
         const tg = target(n.cell);
@@ -37363,41 +37470,52 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     });
   }, [data.wb, data.nodes, setData]);
 
-  // (Re)bind moved wb items + nodes to whatever table cell now sits under
-  // their centre - or unbind them if they were dragged off every table. The
-  // offset is captured from the drop position so reconcile leaves them put.
+  // (Re)bind DROPPED wb items + nodes to the visually-topmost container now
+  // under their centre - a table cell or a section frame - or unbind them if
+  // dropped over open canvas. This is the ONLY place ownership changes:
+  // dropping a new section over already-bound things never steals them; each
+  // thing re-binds only when IT is dragged and released (or freshly placed).
   const wbReassignBindings = useCallback((wbIds, nodeIds) => {
     setData(d => {
       const list = Array.isArray(d.wb) ? d.wb : [];
-      const tables = (d.nodes || []).filter(n => n.kind === "table");
-      if (!tables.length) return d;
-      const cellFor = (bb) => {
-        const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
-        let best = null, bz = -Infinity;
-        for (const t of tables) {
-          if (cx < t.x || cy < t.y || cx > t.x + (t.w || 0) || cy > t.y + (t.h || 0)) continue;
-          if ((t.z || 0) >= bz) { bz = t.z || 0; best = t; }
+      const nodes = d.nodes || [];
+      if (!nodes.some(n => n && (n.kind === "table" || n.kind === "section"))) return d;
+      // Everything in the dragged set is excluded as a candidate container
+      // (plus containers nested inside them, via the chain guard) so a group
+      // drop can't bind into itself.
+      const dragged = new Set([...(nodeIds || [])]);
+      const strip = (o) => { const { cell, sec, ...rest } = o; return rest; };
+      const rebind = (o, bb, allowCell) => {
+        const hit = workflowPickDropContainer(nodes, bb, dragged, { allowCell });
+        if (hit && hit.cell) {
+          const cur = o.cell;
+          if (cur && cur.tableId === hit.cell.tableId && cur.r === hit.cell.r && cur.c === hit.cell.c
+              && cur.ox === hit.cell.ox && cur.oy === hit.cell.oy && !o.sec) return o;
+          return { ...strip(o), cell: hit.cell };
         }
-        if (!best) return null;
-        const cell = wbTableCellAt(best, cx, cy);
-        if (!cell) return null;
-        const rect = wbTableCellRect(best, cell.r, cell.c);
-        return { tableId: best.id, r: cell.r, c: cell.c, ox: Math.round(bb.x - rect.x), oy: Math.round(bb.y - rect.y) };
+        if (hit && hit.sec) {
+          const cur = o.sec;
+          if (cur && cur.sectionId === hit.sec.sectionId
+              && cur.ox === hit.sec.ox && cur.oy === hit.sec.oy && !o.cell) return o;
+          return { ...strip(o), sec: hit.sec };
+        }
+        return (o.cell || o.sec) ? strip(o) : o;
       };
       let changed = false;
       const nextWb = list.map(it => {
         if (it.type === "table" || !wbIds.has(it.id)) return it;
-        const cell = cellFor(wbItemBBox(it));
-        if (cell) { changed = true; return { ...it, cell }; }
-        if (it.cell) { changed = true; return wbStripCell(it); }
-        return it;
+        const next = rebind(it, wbItemBBox(it), true);
+        if (next !== it) changed = true;
+        return next;
       });
-      const nextNodes = (d.nodes || []).map(n => {
-        if (n.kind === "table" || !nodeIds.has(n.id)) return n;
-        const cell = cellFor({ x: n.x || 0, y: n.y || 0, w: n.w || 0, h: n.h || 0 });
-        if (cell) { changed = true; return { ...n, cell }; }
-        if (n.cell) { changed = true; return wbStripCell(n); }
-        return n;
+      const nextNodes = nodes.map(n => {
+        if (!nodeIds.has(n.id)) return n;
+        // Tables may live in another table's cell (table-in-table) or on a
+        // section; sections bind to sections only - never into cells.
+        const next = rebind(n, { x: n.x || 0, y: n.y || 0, w: n.w || 0, h: n.h || 0 },
+                            n.kind !== "section");
+        if (next !== n) changed = true;
+        return next;
       });
       return changed ? { ...d, wb: nextWb, nodes: nextNodes } : d;
     });
@@ -37413,6 +37531,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (wbPrevDragRef.current && !dragging) {
       const wbIds = new Set(selectedWbIdsRef.current);
       const nodeIds = new Set(selectedNodeIdsRef.current);
+      // Include the node the gesture STARTED on - a fresh drag's selection
+      // commit is deferred to mouseup, which can land after this effect.
+      if (lastDragNodeIdRef.current) {
+        nodeIds.add(lastDragNodeIdRef.current);
+        lastDragNodeIdRef.current = null;
+      }
       if (wbIds.size || nodeIds.size) wbReassignBindings(wbIds, nodeIds);
     }
     wbPrevDragRef.current = dragging;
@@ -38245,46 +38369,87 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // whose CENTER lies inside the section's rect moves with it. The contained
   // set is recomputed at the start of every drag (in moveSection itself),
   // so resizing or moving a child out of the section between drags is fine.
+  // Moving a section carries its GROUP: everything explicitly bound to it
+  // (sec / cell bindings), recursively through bound inner sections and
+  // tables - so section-on-section, table-on-section and table-in-table all
+  // move as one - plus, as a LEGACY fallback for old projects, unbound
+  // things by the old geometric rules (center-in-rect; unbound inner
+  // sections only when their rect sits FULLY inside). A thing bound to a
+  // DIFFERENT container never rides, even when it geometrically overlaps
+  // this frame - ownership is sticky until the user re-drops the thing.
+  // Dragging an INNER section by its own tab moves only ITS subtree (this
+  // same function, keyed on the inner id).
   const moveSection = useCallback((sid, dx, dy) => {
     setData(d => {
       const nodes = d.nodes || [];
       const sec = nodes.find(n => n.id === sid && n.kind === "section");
       if (!sec) return d;
+      const wb = Array.isArray(d.wb) ? d.wb : [];
+      const wbSel = selectedWbIdsRef.current;
+
+      const movedNodes = new Set([sid]);
+      const movedWb = new Set();
+      // 1) Explicit members, walked recursively through bound containers.
+      const queue = [sid];
+      let guard = 0;
+      while (queue.length && guard++ < 400) {
+        const host = queue.shift();
+        for (const n of nodes) {
+          if (!n || movedNodes.has(n.id)) continue;
+          if (workflowBoundTo(n) === host) {
+            movedNodes.add(n.id);
+            if (n.kind === "section" || n.kind === "table") queue.push(n.id);
+          }
+        }
+        for (const it of wb) {
+          if (!it || movedWb.has(it.id)) continue;
+          if (workflowBoundTo(it) === host) movedWb.add(it.id);
+        }
+      }
+      // 2) Legacy geometric fallback - UNBOUND things only.
       const x0 = sec.x, y0 = sec.y;
       const x1 = sec.x + (sec.w || 0);
       const y1 = sec.y + (sec.h || 0);
-      const contained = new Set([sid]);
       for (const n of nodes) {
-        if (n.id === sid) continue;
-        if (n.kind === "section" || n.kind === "table") continue;   // sections don't nest; tables use cell-binding, not containment
+        if (!n || movedNodes.has(n.id) || workflowBoundTo(n)) continue;
+        if (n.kind === "section") {
+          const sw = n.w || 880, sh = n.h || 560;
+          if ((n.x || 0) >= x0 && (n.y || 0) >= y0
+              && (n.x || 0) + sw <= x1 && (n.y || 0) + sh <= y1) movedNodes.add(n.id);
+          continue;
+        }
         const cx = (n.x || 0) + ((n.w || 0) / 2);
         const cy = (n.y || 0) + ((n.h || 0) / 2);
-        if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) contained.add(n.id);
+        if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) movedNodes.add(n.id);
       }
-      // Whiteboard items (the top-level `wb` array - sticky notes, ink, shapes,
-      // arrows drawn ON TOP of a section) are siblings of nodes, not nodes, so
-      // they were stranded when the frame moved. Carry the ones whose center
-      // sits inside the frame, by the same delta. Skip items in the active
+      // Whiteboard items ride the same two rules. Skip items in the active
       // whiteboard selection - those already ride via onMoveForNode's
       // mixed-selection shiftWbItems call, so moving them here too would
       // double-shift them.
-      const wb = Array.isArray(d.wb) ? d.wb : [];
-      const wbSel = selectedWbIdsRef.current;
-      const wbContained = new Set();
       for (const it of wb) {
-        if (wbSel.has(it.id)) continue;
+        if (!it || movedWb.has(it.id) || wbSel.has(it.id) || workflowBoundTo(it)) continue;
         const bb = wbItemBBox(it);
         const cx = bb.x + (bb.w / 2);
         const cy = bb.y + (bb.h / 2);
-        if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) wbContained.add(it.id);
+        if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) movedWb.add(it.id);
       }
-      const nextNodes = nodes.map(n => contained.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n);
-      if (wbContained.size === 0) return { ...d, nodes: nextNodes };
+      // 3) Cell-bound riders of any CARRIED table shift immediately too (the
+      // reconcile would fix them next tick; shifting now avoids a one-frame
+      // lag on every mousemove).
+      for (const n of nodes) {
+        if (n && !movedNodes.has(n.id) && n.cell && movedNodes.has(n.cell.tableId)) movedNodes.add(n.id);
+      }
+      for (const it of wb) {
+        if (it && !movedWb.has(it.id) && !wbSel.has(it.id) && it.cell && movedNodes.has(it.cell.tableId)) movedWb.add(it.id);
+      }
+
+      const nextNodes = nodes.map(n => movedNodes.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n);
+      if (movedWb.size === 0) return { ...d, nodes: nextNodes };
       return {
         ...d,
         nodes: nextNodes,
         wb: wb.map(it => {
-          if (!wbContained.has(it.id)) return it;
+          if (!movedWb.has(it.id)) return it;
           if (it.type === "arrow") return wbShiftArrow(it, dx, dy);
           return { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
         }),
@@ -45634,6 +45799,35 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     window.addEventListener("mouseup", onUp);
   }, [data.nodes, screenToWorld, addEdge]);
 
+  // While a node / wb drag is live, the container that would CAPTURE the
+  // dragged thing on release - drives the section-outline / table-cell
+  // highlight so the user sees where the thing will land BEFORE dropping.
+  // Derived from state (positions update every mousemove), no listeners.
+  // Wire drags (pendingEdge) are not drops - no highlight.
+  const dropTarget = useMemo(() => {
+    if (!(wbDragging || nodeDragging) || pendingEdge) return null;
+    const nodes = data.nodes || [];
+    const dragged = new Set(selectedNodeIds);
+    // A fresh drag's selection commit is deferred to mouseup - the ref knows
+    // which node the gesture started on (recomputed every mousemove anyway).
+    if (nodeDragging && lastDragNodeIdRef.current) dragged.add(lastDragNodeIdRef.current);
+    let bb = null, allowCell = true;
+    if (selectedWbIds.size) {
+      const it = (data.wb || []).find(i => i && selectedWbIds.has(i.id));
+      if (it) bb = wbItemBBox(it);
+    }
+    if (!bb) {
+      const n = nodes.find(nn => nn && dragged.has(nn.id));
+      if (!n) return null;
+      if (n.kind === "section") allowCell = false;
+      bb = { x: n.x || 0, y: n.y || 0, w: n.w || 0, h: n.h || 0 };
+    }
+    const hit = workflowPickDropContainer(nodes, bb, dragged, { allowCell });
+    if (!hit) return null;
+    if (hit.cell) return { kind: "cell", tableId: hit.cell.tableId, r: hit.cell.r, c: hit.cell.c };
+    return { kind: "sec", sectionId: hit.sec.sectionId };
+  }, [wbDragging, nodeDragging, pendingEdge, data.nodes, data.wb, selectedNodeIds, selectedWbIds]);
+
   // Each prototype reports its iframe's current URL state up here so we can
   // compute orphan status centrally and dim bound asset nodes accordingly.
   // Keyed by prototype node id.
@@ -47765,6 +47959,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 zoom=${zoom}
                 selected=${selectedNodeIds.has(n.id)}
+                dropHint=${!!(dropTarget && dropTarget.kind === "sec" && dropTarget.sectionId === n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveSection(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -47825,6 +48020,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 zoom=${zoom}
                 selected=${selectedNodeIds.has(n.id)}
+                dropCell=${dropTarget && dropTarget.kind === "cell" && dropTarget.tableId === n.id
+                  ? { r: dropTarget.r, c: dropTarget.c } : null}
                 tableSel=${tableSel}
                 onSelect=${() => {
                   // Only the select tool selects the table - a creation tool
@@ -80249,7 +80446,7 @@ function formatDirectionForPrompt(d) {
    with section-style left/right connector ports. Reuses the .workflow-node card
    treatment (glow + selected outline) and the .workflow-wb-table-* cell CSS.
    Geometry lives on the node (node.cols / node.rows / node.merges). */
-function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onOp, onCellSelect, onCellMenu, onCellSpawn, tableSel }) {
+function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onOp, onCellSelect, onCellMenu, onCellSpawn, tableSel, dropCell }) {
   const cols = wbTableCols(node), rows = wbTableRows(node);
   // Per-cell fill: node.cellFills["r,c"] overrides the table default node.fill.
   // The line colour is AUTOMATIC from each cell's fill (clean light grey for
@@ -80420,12 +80617,17 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
           if (covered(r, c)) return null;
           const sp = span(r, c);
           const isSel = !!selRange && r >= selRange.r0 && r <= selRange.r1 && c >= selRange.c0 && c <= selRange.c1;
+          // Drop-capture preview: while something is dragged over this cell,
+          // tint it so the user sees which cell will own the thing on release.
+          const isDrop = !!dropCell && dropCell.r === r && dropCell.c === c;
           const cc = cellColors(r, c);
           return html`<div key=${"c" + r + "_" + c} className="workflow-wb-table-cell"
             style=${{
               left: colX[c] + "px", top: rowY[r] + "px",
               width: (colX[c + sp.cs] - colX[c]) + "px", height: (rowY[r + sp.rs] - rowY[r]) + "px",
-              background: isSel ? selBg : cc.bg, borderColor: cc.border, borderWidth: line + "px",
+              background: isDrop ? "color-mix(in oklab, var(--accent) 14%, var(--surface))" : (isSel ? selBg : cc.bg),
+              borderColor: isDrop ? "var(--accent)" : cc.border,
+              borderWidth: line + "px",
             }}/>`;
         }))}
       </div>
@@ -80568,7 +80770,7 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
     </div>`;
 }
 
-function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onTidy, hasContents, hasEditorNode, onSaveToLibrary, onConvertToApp, onDragStart, onDragEnd, onStartEdge }) {
+function WorkflowSectionNode({ node, zoom, selected, dropHint, onSelect, onMove, onResize, onRemove, onChange, onTidy, hasContents, hasEditorNode, onSaveToLibrary, onConvertToApp, onDragStart, onDragEnd, onStartEdge }) {
   const [dragging, setDragging] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -80639,6 +80841,7 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
       className="workflow-node-section"
       data-dragging=${dragging ? "true" : "false"}
       data-selected=${selected ? "true" : "false"}
+      data-drop-hint=${dropHint ? "true" : "false"}
       data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
       onMouseDown=${(e) => { onSelect && onSelect(); }}
     >

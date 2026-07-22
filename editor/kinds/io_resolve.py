@@ -297,6 +297,16 @@ def _r_section(up, prov, ctx):
         sx0, sy0 = _node_pos(up, ctx)
         sx1 = sx0 + float(up.get("w") or 880); sy1 = sy0 + float(up.get("h") or 560)
 
+    def _bound_host(obj):
+        """Explicit container this object is bound to (sec/cell), or None."""
+        sb = obj.get("sec")
+        if isinstance(sb, dict) and sb.get("sectionId"):
+            return sb.get("sectionId")
+        cb = obj.get("cell")
+        if isinstance(cb, dict) and cb.get("tableId"):
+            return cb.get("tableId")
+        return None
+
     def _member(obj, cx, cy):
         cb = obj.get("cell")
         if cell is not None and isinstance(cb, dict) and cb.get("tableId") == up.get("id"):
@@ -305,6 +315,14 @@ def _r_section(up, prov, ctx):
             except Exception:  # noqa: BLE001
                 return False
             return ar <= br < ar + rs and ac <= bc < ac + cs
+        # Sticky ownership (mirrors the editor): a thing explicitly bound to
+        # a container belongs to THAT container - it counts here iff bound to
+        # this one, and a thing bound elsewhere never leaks in just because
+        # it geometrically overlaps this frame. Unbound things (old projects)
+        # keep the legacy center-in-rect rule.
+        host = _bound_host(obj)
+        if host:
+            return host == up.get("id") and cell is None
         return sx0 <= cx <= sx1 and sy0 <= cy <= sy1
 
     parts = []
