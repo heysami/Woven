@@ -27845,12 +27845,20 @@ function workflowPortPosition(node, side, ctx) {
     if (side === "out") return { x: node.x + w, y: node.y + bodyTop + bodyH * 0.5 };
   }
   // Assistant family (interview / research / testing): single LEFT `in`,
-  // single RIGHT `out`, both at body mid-height.
+  // single RIGHT `out`. Their dots are the DEFAULT full-height-centred port
+  // zones (no custom offset), and each component CLAMPS its rendered size to
+  // per-kind minimums - mirror BOTH here or the wire endpoint lands below /
+  // beside the drawn diamond (the old bodyTop-offset math missed by 16px on
+  // every assistant edge).
   if (node.kind === "assistant-interview" || node.kind === "assistant-research" || node.kind === "assistant-testing") {
-    const bodyTop = 32;
-    const bodyH = Math.max(0, h - bodyTop);
-    if (side === "in")  return { x: node.x,     y: node.y + bodyTop + bodyH * 0.5 };
-    if (side === "out") return { x: node.x + w, y: node.y + bodyTop + bodyH * 0.5 };
+    const cw = node.kind === "assistant-interview" ? Math.max(360, node.w || 440)
+             : node.kind === "assistant-testing"   ? Math.max(380, node.w || 440)
+             :                                       Math.max(360, node.w || 420);
+    const ch = node.kind === "assistant-interview" ? Math.max(420, node.h || 480)
+             : node.kind === "assistant-testing"   ? Math.max(460, node.h || 500)
+             :                                       Math.max(440, node.h || 460);
+    if (side === "in")  return { x: node.x,      y: node.y + ch / 2 };
+    if (side === "out") return { x: node.x + cw, y: node.y + ch / 2 };
   }
   // Logic Graph (W1A): named provides (right edge) + accepts (left edge),
   // evenly spaced below the 30px spec-node bar. Same distribution the renderer
