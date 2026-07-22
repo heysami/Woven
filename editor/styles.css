@@ -9338,6 +9338,14 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   bottom: auto;
   z-index: 6;
 }
+/* Cell zones only EXIST while their cell is hovered or single-selected, so
+   the quiet-dot convention (opacity 0 until node hover) would leave a
+   selected cell's dots invisible whenever the pointer is elsewhere. The
+   zone's presence already encodes intent - keep its dot always visible.
+   (Two-class descendant selector outranks the base opacity:0 rule.) */
+.workflow-port-zone-cell .workflow-port-dot {
+  opacity: 1;
+}
 .workflow-wb-table-cellspawn {
   z-index: 6;
   border-radius: 50%;
