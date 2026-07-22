@@ -13102,7 +13102,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                         # reload-merge. The editor is authoritative for them
                         # (same kind list as the app.js load sanitizer).
                         _no_owner_kinds = ("design-system", "assistant-research",
-                                           "assistant-testing", "table")
+                                           "assistant-testing", "assistant-deepresearch",
+                                           "table")
                         if disk_status == "running" and disk_n.get("kind") not in _no_owner_kinds:
                             n["runStatus"] = "running"
                             disk_error = disk_n.get("runError")
@@ -13128,6 +13129,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                             "assistant-interview": ("goal", "focus", "pushPast", "model"),
                             "assistant-research":  ("goal", "criteria", "model", "numResults", "category"),
                             "assistant-testing":   ("task", "model", "personaTypes", "testersPerType", "maxTesters"),
+                            # deliberately NOT "clarify": posting null is how the
+                            # editor clears saved answers ("Re-ask questions").
+                            "assistant-deepresearch": ("task", "model", "maxAgents", "rounds"),
                             "iterator-remix":   ("variants",),
                             "design-system":    ("spec",),
                         }.get(nkind, ())
@@ -14592,11 +14596,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             # before the user clicks Run; the client drivers read these at
             # click-time. Text fields, then numbers, then the pushPast array.
             akind = node.get("kind")
-            if akind in ("assistant-interview", "assistant-research", "assistant-testing"):
+            if akind in ("assistant-interview", "assistant-research", "assistant-testing", "assistant-deepresearch"):
                 _str_fields = {
                     "assistant-interview": ("goal", "focus", "model"),
                     "assistant-research":  ("goal", "criteria", "model", "searchVia", "category"),
                     "assistant-testing":   ("task", "model"),
+                    "assistant-deepresearch": ("task", "model"),
                 }.get(akind, ())
                 for f in _str_fields:
                     if f in body and isinstance(body[f], str) and body[f].strip():
@@ -14605,6 +14610,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 _num_fields = {
                     "assistant-research":  (("numResults", 1, 25),),
                     "assistant-testing":   (("personaTypes", 1, 8), ("testersPerType", 1, 8), ("maxTesters", 1, 40)),
+                    "assistant-deepresearch": (("maxAgents", 2, 5), ("rounds", 1, 3)),
                 }.get(akind, ())
                 for (f, lo, hi) in _num_fields:
                     if f in body:
@@ -14630,7 +14636,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._reply(400, {"error": "no recognised fields in body",
                                           "accepted": ["runStatus", "text", "runError", "output", "spec", "variants",
                                                        "goal", "focus", "criteria", "task", "pushPast", "model",
-                                                       "numResults", "personaTypes", "testersPerType", "maxTesters"]})
+                                                       "numResults", "personaTypes", "testersPerType", "maxTesters",
+                                                       "maxAgents", "rounds"]})
             try:
                 with _history_bracket(project_root, ["workflow/workflow.json"],
                                        kind="workflow-op",
