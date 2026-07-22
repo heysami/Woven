@@ -8953,11 +8953,17 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   width: 14px;
   height: 14px;
   cursor: nwse-resize;
-  background:
+  /* Longhand background so the components can inline background-SIZE (the
+     visible triangle stays a subtle ~14 screen px) while the ELEMENT box is
+     a bigger inverse-zoom-scaled grab target - a shorthand here would reset
+     size/position on hover. Hover recolors via the custom property only. */
+  background-image:
     linear-gradient(135deg,
       transparent 0%, transparent 55%,
-      var(--text-faint) 55%, var(--text-faint) 70%,
+      var(--th-resize-ink, var(--text-faint)) 55%, var(--th-resize-ink, var(--text-faint)) 70%,
       transparent 70%);
+  background-repeat: no-repeat;
+  background-position: bottom right;
   border-bottom-right-radius: 14px;
   opacity: 0.55;
   /* Re-enable pointer events for the resize handle; the section frame
@@ -8967,11 +8973,7 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 }
 .workflow-node-section-resize:hover {
   opacity: 1;
-  background:
-    linear-gradient(135deg,
-      transparent 0%, transparent 55%,
-      var(--accent) 55%, var(--accent) 70%,
-      transparent 70%);
+  --th-resize-ink: var(--accent);
 }
 
 /* Canvas */

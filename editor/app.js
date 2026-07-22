@@ -80470,7 +80470,8 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
           onMouseDown=${(e) => e.stopPropagation()}>×</button>
       </div>
       ${selected && html`<div className="workflow-node-section-resize" title="Drag to resize"
-        style=${{ width: px(24) + "px", height: px(24) + "px", borderBottomRightRadius: px(14) + "px" }}
+        style=${{ width: px(24) + "px", height: px(24) + "px", borderBottomRightRadius: px(14) + "px",
+                  backgroundSize: px(14) + "px " + px(14) + "px" }}
         onMouseDown=${onResizeDown}/>`}
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
            title="Populate cells - wire an Agent or Skill here."
@@ -80707,10 +80708,12 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
           /* constant SCREEN size at any zoom - a fixed 14 world-px handle is
              ~3 screen px once a big section/table is viewed zoomed out, which
              reads as "corner resize doesn't work". Same inverse-scale as the
-             other chrome. */
+             other chrome. The grab BOX is 24 screen px; the painted triangle
+             (background-size) stays the subtle 14 screen px. */
           width: (24 / Math.max(zoom || 1, 0.1)) + "px",
           height: (24 / Math.max(zoom || 1, 0.1)) + "px",
           borderBottomRightRadius: (14 / Math.max(zoom || 1, 0.1)) + "px",
+          backgroundSize: (14 / Math.max(zoom || 1, 0.1)) + "px " + (14 / Math.max(zoom || 1, 0.1)) + "px",
         }}
         onMouseDown=${onResizeDown}
       />
