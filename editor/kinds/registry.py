@@ -1263,7 +1263,7 @@ KINDS = {
 
     # ── assistant-research (Exa web search → result table + visuals) ───────
     "assistant-research": {
-        "title":        "Comparative research (web search)",
+        "title":        "Research assistant (Exa web search)",
         "category":     "assistant",
         "inputs": {
             "goal":       {"type": "markdown", "userEditable": True},
