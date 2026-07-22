@@ -80419,14 +80419,14 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
         return html`
           <div key=${"cpz-in-" + cr.ar + "_" + cr.ac} className="workflow-port-zone workflow-port-zone-in workflow-port-zone-cell"
             data-port-node=${node.id} data-port-side=${pin}
-            style=${{ left: lx + "px", top: ly + "px", height: cr.h + "px" }}
+            style=${{ left: lx + "px", top: ly + "px", height: cr.h + "px", width: "14px" }}
             title="Populate this cell - wire an Agent or Skill here."
             onMouseDown=${(e) => onStartEdge && onStartEdge(pin, e)}>
             <div className="workflow-port-dot"/>
           </div>
           <div key=${"cpz-out-" + cr.ar + "_" + cr.ac} className="workflow-port-zone workflow-port-zone-out workflow-port-zone-cell"
             data-port-node=${node.id} data-port-side=${pout}
-            style=${{ left: (lx + cr.w - 14) + "px", top: ly + "px", height: cr.h + "px" }}
+            style=${{ left: (lx + cr.w - 14) + "px", top: ly + "px", height: cr.h + "px", width: "14px" }}
             title="Cell contents - wire into an Agent / Skill / Design system."
             onMouseDown=${(e) => onStartEdge && onStartEdge(pout, e)}>
             <div className="workflow-port-dot"/>

@@ -9329,7 +9329,11 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
    override the node-level zone's half-card geometry. The dot itself reuses the
    standard diamond. The ⊕ spawn buttons reuse the table-add pill look and sit
    just outside the selected cell's edges. */
-.workflow-port-zone-cell {
+/* Doubled selector: the base .workflow-port-zone rule (width:50%, bottom:0)
+   lives LATER in this file, so a single-class override here loses the
+   cascade and the flex-end out-dot drifts to zone-left + half the table
+   width. Two classes outrank it regardless of order. */
+.workflow-port-zone.workflow-port-zone-cell {
   width: 14px;
   bottom: auto;
   z-index: 6;
