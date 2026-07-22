@@ -28025,6 +28025,20 @@ function _drExtractObj(text) {
   return (v && !Array.isArray(v)) ? v : null;
 }
 
+// Run `worker(item, index)` over items with at most `limit` in flight.
+// Completion order is free. Used to parallelise per-tester / per-agent
+// subagent runs without unbounded process fan-out (each browser tester
+// spawns its own headless isolated Chrome).
+async function _assistantPool(items, limit, worker) {
+  const queue = items.map((it, i) => ({ it, i }));
+  const lanes = Array.from({ length: Math.max(1, Math.min(limit, queue.length)) }, async () => {
+    for (let next = queue.shift(); next; next = queue.shift()) {
+      await worker(next.it, next.i);
+    }
+  });
+  await Promise.all(lanes);
+}
+
 // Deep-research stance → wb colour token. A stance is ONE agent's position on
 // a merged point; consensus is the lead's final read across all agents.
 function _drStanceWord(s) {
@@ -44595,19 +44609,29 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         return await assistantLlm([{ role: "system", content: system }, { role: "user", content: prompt }], { model: node.model, maxTokens: 700 });
       };
 
-      // Pass 1: run every tester sequentially (each is its own subagent).
+      // Pass 1: run every tester IN PARALLEL through a small pool (each is
+      // its own subagent thread + CLI process on the threading daemon).
+      // Browser testers each spawn their own headless isolated Chrome
+      // (chrome-devtools-mcp --isolated), so concurrency is safe but heavy -
+      // cap in-flight runs instead of fanning out all N at once.
+      const POOL = useBrowser ? 4 : 8;
       const state = testers.map(t => ({ t, reply: "", idea: "", questions: [] }));
-      for (let i = 0; i < state.length; i++) {
-        setRun({ status: "loading", phase: "tester " + (i + 1) + "/" + state.length + (useBrowser ? " (browsing)" : "") });
-        try {
-          const p = parseTester(await runTester(state[i].t));
-          Object.assign(state[i], p);
-        } catch (e) {
-          state[i].reply = "(run failed: " + String(e?.message || e) + ")";
-        }
-        workflowAppendCellBox(tableId, i + 1, 6, state[i].reply, "gray");
-        if (state[i].idea) workflowAppendCellBox(tableId, i + 1, 6, state[i].idea, "yellow");
-        writeTestingResult(state, null);   // live-fill the panel as replies land
+      {
+        let landed = 0;
+        setRun({ status: "loading", phase: `0/${state.length} testers in (parallel${useBrowser ? ", browsing" : ""})` });
+        await _assistantPool(state, POOL, async (s, i) => {
+          try {
+            const p = parseTester(await runTester(s.t));
+            Object.assign(s, p);
+          } catch (e) {
+            s.reply = "(run failed: " + String(e?.message || e) + ")";
+          }
+          workflowAppendCellBox(tableId, i + 1, 6, s.reply, "gray");
+          if (s.idea) workflowAppendCellBox(tableId, i + 1, 6, s.idea, "yellow");
+          landed++;
+          setRun({ status: "loading", phase: `${landed}/${state.length} testers in (parallel${useBrowser ? ", browsing" : ""})` });
+          writeTestingResult(state, null);   // live-fill the panel as replies land
+        });
       }
 
       // Clarification passes (max 3 total). For testers that asked a lot of
@@ -44616,8 +44640,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       for (let pass = 2; pass <= 3; pass++) {
         const needy = state.map((s, i) => ({ s, i })).filter(x => x.s.questions.length >= QTHRESH);
         if (!needy.length) break;
-        setRun({ status: "loading", phase: "clarifying (pass " + pass + ", " + needy.length + ")" });
-        for (const { s, i } of needy) {
+        // Each needy tester's answer-then-re-run is independent - same
+        // parallel pool as pass 1. Passes stay sequential (pass 3 only
+        // re-runs testers still question-heavy AFTER pass 2's answers).
+        let landed = 0;
+        setRun({ status: "loading", phase: `clarifying pass ${pass}: 0/${needy.length} (parallel)` });
+        await _assistantPool(needy, POOL, async ({ s, i }) => {
           let answers = "";
           try {
             answers = await assistantLlm([{ role: "user", content:
@@ -44636,7 +44664,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             workflowAppendCellBox(tableId, i + 1, 6, s.reply, "gray");
             if (s.idea) workflowAppendCellBox(tableId, i + 1, 6, s.idea, "yellow");
           } catch (e) { /* keep prior reply */ }
-        }
+          landed++;
+          setRun({ status: "loading", phase: `clarifying pass ${pass}: ${landed}/${needy.length} (parallel)` });
+        });
       }
 
       // Judging pass: the assistant reads every tester's reply and gives a
