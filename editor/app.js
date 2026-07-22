@@ -27130,6 +27130,10 @@ function WorkflowCanvas() {
           // instead of leaving the size permanently dirty.
           w: _stableClone(n.w),
           h: _stableClone(n.h),
+          // Cell binding rides the same contract (drop into / out of a table
+          // cell is a user gesture; the merge pulls it) - snapshot it so a
+          // binding change goes clean once saved and converges across sessions.
+          cell: _stableClone(n.cell),
           // runStatus / runError participate in the snapshot so
           // dirty-tracking works for them too (Bug B). Once the save POST
           // returns 200, savedSnapshotRef gets bumped to the latest local
@@ -27447,6 +27451,10 @@ function WorkflowCanvas() {
             // snapshotted on save (below) so a resize flips back to clean once
             // it persists and the next reload converges - same contract as x/y.
             pullField("x"); pullField("y"); pullField("w"); pullField("h");
+            // Cell binding (cell:{tableId,r,c,ox,oy}) is user-driven on ANY
+            // kind (drop into / out of a table cell) - pull it like geometry
+            // so a second session doesn't echo a stale binding back.
+            pullField("cell");
             // Bug B: conditional pull for runStatus / runError.
             // Pull from disk ONLY when local matches the last-saved
             // snapshot (i.e. no client-side change is in flight). If local
@@ -47780,6 +47788,44 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
               />
             `)}
+            ${convertCfg && html`<${ConvertSectionModal}
+              cfg=${convertCfg}
+              onPatch=${(p) => setConvertCfg(c => ({ ...c, ...p }))}
+              onCancel=${() => setConvertCfg(null)}
+              onConfirm=${() => convertSectionToCustomApp(convertCfg)}
+            />`}
+            ${(() => {
+              const ex = (data.nodes || []).find(n => n.kind === "custom-app" && n._expandedSectionId);
+              if (!ex) return null;
+              return createPortal(html`
+                <div className="workflow-expand-bar">
+                  <span className="workflow-expand-bar-label">
+                    Editing <b>${ex.title || "Custom app"}</b> - change the nodes, then save back into the app.
+                  </span>
+                  <button type="button" className="tbtn" onClick=${() => cancelExpandCustomApp(ex.id)}>Cancel</button>
+                  <button type="button" className="tbtn" onClick=${() => saveExpandedCustomApp(ex.id, "existing")}>Save existing</button>
+                  <button type="button" className="tbtn tbtn-primary" onClick=${() => saveExpandedCustomApp(ex.id, "new")}>Save as new</button>
+                </div>`, document.body);
+            })()}
+            <div className="workflow-agent-tether-layer" ref=${agentTetherRef}></div>
+            <${WorkflowEdgesLayer}
+              nodes=${data.nodes || []}
+              edges=${data.edges || []}
+              orphanMap=${orphanMap}
+              pendingEdge=${pendingEdge}
+              selectedEdge=${selectedEdge}
+              onSelectEdge=${setSelectedEdge}
+              selectedNodeId=${selectedNodeId}
+              selectedNodeIds=${selectedNodeIds}
+              appNodeLayout=${appNodeLayout}
+              layerGeom=${layerGeomRef.current}
+            />
+            ${/* Tables render ABOVE the edges layer (like every other node)
+                 but BEFORE the rest so cell-bound content stays on top of the
+                 grid. They used to sit UNDER the edges svg with the sections -
+                 on any WIRED table (every assistant result table) the wire's
+                 fat invisible hit-stroke swallowed clicks over the table's
+                 chrome: the resize corner, row/col grips, cell dots. */ ""}
             ${(data.nodes || []).filter(n => n.kind === "table").map(n => html`
               <${WorkflowTableNode}
                 key=${n.id}
@@ -47816,38 +47862,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 }}
               />
             `)}
-            ${convertCfg && html`<${ConvertSectionModal}
-              cfg=${convertCfg}
-              onPatch=${(p) => setConvertCfg(c => ({ ...c, ...p }))}
-              onCancel=${() => setConvertCfg(null)}
-              onConfirm=${() => convertSectionToCustomApp(convertCfg)}
-            />`}
-            ${(() => {
-              const ex = (data.nodes || []).find(n => n.kind === "custom-app" && n._expandedSectionId);
-              if (!ex) return null;
-              return createPortal(html`
-                <div className="workflow-expand-bar">
-                  <span className="workflow-expand-bar-label">
-                    Editing <b>${ex.title || "Custom app"}</b> - change the nodes, then save back into the app.
-                  </span>
-                  <button type="button" className="tbtn" onClick=${() => cancelExpandCustomApp(ex.id)}>Cancel</button>
-                  <button type="button" className="tbtn" onClick=${() => saveExpandedCustomApp(ex.id, "existing")}>Save existing</button>
-                  <button type="button" className="tbtn tbtn-primary" onClick=${() => saveExpandedCustomApp(ex.id, "new")}>Save as new</button>
-                </div>`, document.body);
-            })()}
-            <div className="workflow-agent-tether-layer" ref=${agentTetherRef}></div>
-            <${WorkflowEdgesLayer}
-              nodes=${data.nodes || []}
-              edges=${data.edges || []}
-              orphanMap=${orphanMap}
-              pendingEdge=${pendingEdge}
-              selectedEdge=${selectedEdge}
-              onSelectEdge=${setSelectedEdge}
-              selectedNodeId=${selectedNodeId}
-              selectedNodeIds=${selectedNodeIds}
-              appNodeLayout=${appNodeLayout}
-              layerGeom=${layerGeomRef.current}
-            />
             ${(data.nodes || []).filter(n => n.kind === "prototype").map(n => html`
               <${WorkflowPrototypeNode}
                 key=${n.id}
