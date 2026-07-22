@@ -21188,7 +21188,7 @@ const ONBOARDING_ASSET_PROVIDERS = [
   { id: "anthropic",  covers: "Claude text models · vision-based describe" },
   { id: "elevenlabs", covers: "audio - voiceover · sound effects · music" },
   { id: "meshy",      covers: "3D - text/image to textured .glb" },
-  { id: "exa",        covers: "web search (Research assistant)" },
+  { id: "exa",        covers: "web search (Comparative research)" },
 ];
 
 /* Slim inline row for one provider in the onboarding "Asset providers"
@@ -29659,9 +29659,9 @@ const WORKFLOW_CONNECT_DEFS = {
     accepts:  { in:  { label: "Seed prompt / context", tags: ["text", "section"] } },
   },
   "assistant-research": {
-    label: "Research assistant",
+    label: "Comparative research",
     // Out is the generated result table (a "section" contents bundle).
-    provides: { out: { label: "Research table", tags: ["section"] } },
+    provides: { out: { label: "Comparison table", tags: ["section"] } },
     accepts:  { in:  { label: "Context (prompt / asset / folder / section)",
                        tags: ["text", "text-gen", "asset", "section", "folder"] } },
   },
@@ -51344,9 +51344,9 @@ function WorkflowLibrary({ tab = "nodes" }) {
                  e.dataTransfer.effectAllowed = "copy";
                  e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-research" }));
                }}
-               title="Drag onto canvas - web research filtered to your criteria, distilled into a table with visuals.">
+               title="Drag onto canvas - web research filtered to your criteria, distilled into a side-by-side comparison table with visuals.">
             <span className="workflow-library-item-glyph"><${Icon.Search}/></span>
-            <span className="workflow-library-item-label">Research assistant</span>
+            <span className="workflow-library-item-label">Comparative research</span>
             <span className="workflow-library-item-id">web research</span>
           </div>
           <div className="workflow-library-item"
@@ -77361,10 +77361,10 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined, "--node-panel-r": panelR + "px" }}>
       <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-iter-glyph"><${Icon.Search}/></span>
-        <span className="workflow-node-iter-title">Research assistant</span>
+        <span className="workflow-node-iter-title">Comparative research</span>
         <span className="workflow-node-bar-spacer"/>
-        <${HoverTip} className="workflow-node-close" tip="Remove this research assistant."
-          ariaLabel="Remove research assistant"
+        <${HoverTip} className="workflow-node-close" tip="Remove this comparative research node."
+          ariaLabel="Remove comparative research node"
           onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×<//>
       </div>
       <div className="workflow-node-iter-body workflow-node-refiner-body" onMouseDown=${(e) => e.stopPropagation()}>
@@ -77425,7 +77425,7 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
       ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
-      <${WorkflowQuietFace} glyph=${html`<${Icon.Search}/>`} name=${"Research assistant"} sub=${(node.goal || "").trim() || null} />
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Search}/>`} name=${"Comparative research"} sub=${(node.goal || "").trim() || null} />
     </div>
   `;
 }

@@ -3060,7 +3060,7 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
       - "browser" : wire the chrome MCP so the agent can open / screenshot /
                     click an asset by sight (Testing assistant).
       - "web"     : enable Claude Code's built-in WebSearch + WebFetch so the
-                    agent can research the live web (Research assistant) - NO
+                    agent can research the live web (Comparative research) - NO
                     paid Exa key needed.
     Returns the agent's final text. Picks the CLI from the chosen model's
     provider (claude-* -> Claude Code; gpt/o*/codex -> Codex CLI).
@@ -17569,7 +17569,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         contents?, includeDomains? }. Runs an Exa web search server-side so the
         key never reaches the browser, returns { ok, results:[...] }.
         COST NOTE: Exa is paid + metered. This endpoint only fires on an
-        explicit caller request (the Research assistant's Run button, or an
+        explicit caller request (the Comparative research node's Run button, or an
         agent the user confirmed). Never wire it to run automatically."""
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0 or length > MAX_BYTES:
@@ -17642,7 +17642,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _assistant_research_run(self, qs):
         """POST /__assistant/research  Body: { model, system, prompt }.
         Runs ONE real agent with WebSearch/WebFetch enabled (NO paid Exa key) so
-        the Research assistant can research the live web via the user's own agent
+        the Comparative research node can research the live web via the user's own agent
         CLI. Returns { ok, text } - the caller parses the agent's JSON results."""
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0 or length > MAX_BYTES:
