@@ -28009,6 +28009,22 @@ function _assistantVerdict(v) {
   return { key: "nothing", emoji: "😐", color: "gray", label: "Nothing notable" };
 }
 
+// Object-preferring twin of _assistantExtractJson. The generic helper slices
+// the FIRST [...] span it finds, so an OBJECT payload that carries arrays
+// (the deep-research plan / merge / final shapes: {"statement":...,
+// "agents":[...]}) loses its outer keys - only the inner array comes back.
+// Prefer the outermost {...} span instead.
+function _drExtractObj(text) {
+  if (typeof text !== "string") return null;
+  const s = text.replace(/```json/gi, "").replace(/```/g, "");
+  const c = s.indexOf("{"), d = s.lastIndexOf("}");
+  if (c >= 0 && d > c) {
+    try { return JSON.parse(s.slice(c, d + 1)); } catch (e) { /* fall through */ }
+  }
+  const v = _assistantExtractJson(s);
+  return (v && !Array.isArray(v)) ? v : null;
+}
+
 // Deep-research stance → wb colour token. A stance is ONE agent's position on
 // a merged point; consensus is the lead's final read across all agents.
 function _drStanceWord(s) {
@@ -44676,7 +44692,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         `\n2. Design ${nAgents} agents with DELIBERATELY DIFFERENT viewpoints or source methods, picked to fit this statement and the user's direction. Examples: validating an idea -> a champion arguing FOR it, a skeptic arguing AGAINST it, a market-evidence hunter; gathering facts -> official/primary web sources, community/user-generated web sources${hasMaterial ? ", the linked material" : ""}. Each agent's "method" is "web" (live web research through its lens) or "context" (reads ONLY the linked material${hasMaterial ? "" : ' - do NOT use "context", nothing is linked'}).` +
         `\n\nReturn ONLY JSON: {"statement":"...","header":"<board title, <=8 words>","description":"<1-2 sentence board intro>","agents":[{"name":"<short role name>","role":"<one-line persona>","lens":"<what it hunts for / argues>","method":"web|context"}]}. No prose.` }],
         { model: node.model, maxTokens: 2200 });
-      const plan = _assistantExtractJson(planText);
+      const plan = _drExtractObj(planText);
       if (!plan || !plan.statement || !Array.isArray(plan.agents) || !plan.agents.length) throw new Error("Could not form the research plan.");
       const agents = plan.agents.slice(0, nAgents).map((a, i) => ({
         name: String(a.name || ("Agent " + (i + 1))).slice(0, 28),
@@ -44741,7 +44757,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         JSON.stringify(findings) +
         `\n\nReturn ONLY JSON: {"points":[{"id":<1..n>,"point":"<merged point, one sentence>","perAgent":{"<agent name>":{"stance":"support|oppose|challenge|unverified","note":"...","url":"...","snippet":"...","image":"..."}}}],"conclusion":"<2-3 sentence current read>"}. Only include agents that actually addressed a point. No prose.` }],
         { model: node.model, maxTokens: 3500 });
-      const merged = _assistantExtractJson(mText);
+      const merged = _drExtractObj(mText);
       if (!merged || !Array.isArray(merged.points) || !merged.points.length) throw new Error("Could not merge the findings.");
       merged.points = merged.points.slice(0, 8).map((p, i) => ({ ...p, id: p.id || (i + 1), perAgent: p.perAgent || {} }));
 
@@ -44897,7 +44913,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         JSON.stringify(merged.points) +
         `\n\nReturn ONLY JSON: {"points":[{"id":<id>,"point":"<final wording, one sentence>","consensus":"supported|contested|disputed|unverified"}],"conclusion":"<3-5 sentence final conclusion for the user>"}. No prose.` }],
         { model: node.model, maxTokens: 2500 });
-      const fin = _assistantExtractJson(fText) || {};
+      const fin = _drExtractObj(fText) || {};
       const finPoints = Array.isArray(fin.points) ? fin.points : [];
       const consensusById = {};
       const stickyToFinal = {};
