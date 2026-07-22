@@ -27869,6 +27869,14 @@ function workflowPortPosition(node, side, ctx) {
       return { x: logicSide === "out" ? node.x + w : node.x, y };
     }
   }
+  // Table per-cell ports - left/right edge of the (merged) cell at mid-height.
+  if (node.kind === "table") {
+    const cp = workflowParseCellPort(side);
+    if (cp) {
+      const rect = wbTableCellRect(node, cp.r, cp.c);
+      return { x: cp.dir === "in" ? rect.x : rect.x + rect.w, y: rect.y + rect.h / 2 };
+    }
+  }
   // number-generator pixel-map image input - LEFT edge, near the top.
   if (side === "pixmap") return { x: node.x, y: node.y + 24 };
   // Spec-layout nodes (position / effect / trigger / number-generator / sketch /
@@ -28083,6 +28091,7 @@ function workflowIsSourcePort(side, node) {
   return side === "out"
     || (typeof side === "string" && /^layerout:/.test(side))
     || (typeof side === "string" && /^paramout:/.test(side))   // logic read-back source
+    || (typeof side === "string" && /^cellout:/.test(side))    // table cell contents source
     || WORKFLOW_PROTO_RIGHT_SIDES.has(side)
     || WORKFLOW_AGENT_RIGHT_SIDES.has(side);
 }
@@ -28695,6 +28704,50 @@ function wbTableNormRange(rg) {
     r0: Math.min(rg.r0, rg.r1), c0: Math.min(rg.c0, rg.c1),
     r1: Math.max(rg.r0, rg.r1), c1: Math.max(rg.c0, rg.c1),
   };
+}
+
+/* ── Table per-cell connector ports ──────────────────────────────────────────
+   A table CELL exposes section-style ports named "cellin:<r>:<c>" (left edge)
+   and "cellout:<r>:<c>" (right edge), where r/c are the cell's MERGE-ANCHOR
+   row/col. They behave exactly like the table's whole-grid in/out connectors,
+   scoped to one cell: out carries the cell's contents bundle, in means
+   "populate THIS cell". Port names avoid dots so "nodeId.port" edge refs
+   parse unchanged. */
+function workflowParseCellPort(side) {
+  if (typeof side !== "string") return null;
+  const m = /^cell(in|out):(\d+):(\d+)$/.exec(side);
+  return m ? { dir: m[1], r: parseInt(m[2], 10), c: parseInt(m[3], 10) } : null;
+}
+function workflowCellPortName(dir, r, c) { return "cell" + dir + ":" + r + ":" + c; }
+// Nodes living IN the (merged) cell anchored at (r,c). Cell BINDING is
+// authoritative when present (the reconcile keeps bound content in-cell);
+// unbound nodes fall back to the same center-in-rect rule sections use.
+function workflowTableCellNodes(table, nodes, r, c) {
+  const rect = wbTableCellRect(table, r, c);
+  return (nodes || []).filter(n => {
+    if (!n || n.id === table.id || n.kind === "section" || n.kind === "table") return false;
+    if (n.cell && n.cell.tableId === table.id) {
+      return n.cell.r >= rect.ar && n.cell.r < rect.ar + rect.rs
+          && n.cell.c >= rect.ac && n.cell.c < rect.ac + rect.cs;
+    }
+    const cx = (n.x || 0) + (n.w || 280) / 2;
+    const cy = (n.y || 0) + (n.h || 200) / 2;
+    return cx >= rect.x && cx <= rect.x + rect.w && cy >= rect.y && cy <= rect.y + rect.h;
+  });
+}
+// Same membership rule for whiteboard text carriers (text / textbox / sticky).
+function workflowTableCellWbItems(table, wbItems, r, c) {
+  const rect = wbTableCellRect(table, r, c);
+  return (wbItems || []).filter(it => {
+    if (!it || (it.type !== "text" && it.type !== "textbox" && it.type !== "sticky")) return false;
+    if (it.cell && it.cell.tableId === table.id) {
+      return it.cell.r >= rect.ar && it.cell.r < rect.ar + rect.rs
+          && it.cell.c >= rect.ac && it.cell.c < rect.ac + rect.cs;
+    }
+    const cx = (it.x || 0) + (it.w || 0) / 2;
+    const cy = (it.y || 0) + (it.h || 0) / 2;
+    return cx >= rect.x && cx <= rect.x + rect.w && cy >= rect.y && cy <= rect.y + rect.h;
+  });
 }
 
 function wbDistToSeg(px, py, x1, y1, x2, y2) {
@@ -37479,7 +37532,33 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
 
       const nextWb = list.map(it => it.cell ? remap(it) : it);
       const nextNodes = (d.nodes || []).map(n => n.id === tableId ? nt : (n.cell ? remap(n) : n));
-      return { ...d, wb: nextWb, nodes: nextNodes };
+
+      // Remap per-cell port EDGES ("<tableId>.cellin:r:c" / ".cellout:r:c") by
+      // the same index/merge maps, so a wire into a cell rides its cell. A
+      // deleted cell's edges are dropped; merge snaps swallowed cells' edges
+      // to the anchor.
+      let edgesChanged = false;
+      const remapEdgeRef = (ref) => {
+        const p = workflowParseEdgeRef(ref);
+        if (!p || p.node !== tableId) return ref;
+        const cp = workflowParseCellPort(p.port);
+        if (!cp) return ref;
+        let r = cp.r, c = cp.c;
+        if (rowMap) { const nr = rowMap(r); if (nr === null) return null; r = nr; }
+        if (colMap) { const nc = colMap(c); if (nc === null) return null; c = nc; }
+        if (mergeRemap) { const a = mergeRemap({ r, c }); if (a) { r = a.r; c = a.c; } }
+        const next = tableId + "." + workflowCellPortName(cp.dir, r, c);
+        return next === ref ? ref : next;
+      };
+      const nextEdges = (d.edges || []).map(e => {
+        const nf = remapEdgeRef(e.from), ntp = remapEdgeRef(e.to);
+        if (nf === null || ntp === null) { edgesChanged = true; return null; }
+        if (nf === e.from && ntp === e.to) return e;
+        edgesChanged = true;
+        return { ...e, from: nf, to: ntp };
+      }).filter(Boolean);
+
+      return { ...d, wb: nextWb, nodes: nextNodes, ...(edgesChanged ? { edges: nextEdges } : {}) };
     });
     setTableSel(null);
   }, [setData]);
@@ -38041,7 +38120,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // to the anchor. side "left" → new node feeds the anchor; side "right" →
   // the anchor feeds the new node. Placement: beside the anchor with a
   // collision-avoiding downward nudge. The spawn becomes the selection.
-  const spawnConnectedNode = useCallback((anchorId, side, item) => {
+  // opts (optional): { anchorPort, anchorRect } - override the anchor-side
+  // edge port and the rect the new node spawns beside. Used by table CELL
+  // spawns so the node lands beside the cell and wires to its cell port.
+  const spawnConnectedNode = useCallback((anchorId, side, item, opts) => {
     let newId = null;
     setData(d => {
       const anchor = (d.nodes || []).find(n => n.id === anchorId);
@@ -38051,11 +38133,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       newId = workflowNewNodeId();
       const gap = 90;
       const w = body.w || 280, h = body.h || 200;
-      const x0 = side === "left" ? anchor.x - w - gap : anchor.x + (anchor.w || 280) + gap;
-      const spot = workflowFindFreeSpot(d.nodes, x0, anchor.y, w, h);
+      const ar = (opts && opts.anchorRect) || { x: anchor.x, y: anchor.y, w: anchor.w || 280, h: null };
+      const x0 = side === "left" ? ar.x - w - gap : ar.x + (ar.w || 280) + gap;
+      const y0 = ar.h != null ? ar.y + ar.h / 2 - h / 2 : ar.y;
+      const spot = workflowFindFreeSpot(d.nodes, x0, y0, w, h);
       const node = { id: newId, ...body, x: Math.round(spot.x), y: Math.round(spot.y) };
       if (node.kind === "prototype") node.instanceId = newId;
-      const anchorPort = workflowResolveAcceptPort(anchor, item.anchorPort, d.edges);
+      const anchorPort = (opts && opts.anchorPort)
+        || workflowResolveAcceptPort(anchor, item.anchorPort, d.edges);
       const edge = side === "left"
         ? { from: `${newId}.${item.newPort}`, to: `${anchorId}.${anchorPort}` }
         : { from: `${anchorId}.${anchorPort}`, to: `${newId}.${item.newPort}` };
@@ -44379,14 +44464,22 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               return;
             }
           }
-        } else if (up.kind === "section") {
+        } else if (up.kind === "section" || up.kind === "table") {
           // Section upstream: the COMBINATION of every node inside
           // the frame. Text-bearing nodes (prompts, skill outputs, palette /
           // typography / DS descriptors) flatten into one context block;
           // the first contained file-backed image asset covers an asset
           // input; if the skill wants an asset and none is inside, capture
           // "whatever is seen inside" the section as a PNG.
-          const contained = workflowSectionContainedNodes(up, nodes);
+          // A table rides the same path (its cells host nodes like a frame);
+          // a per-cell "cellout:r:c" port narrows everything to that cell.
+          const cellPort = up.kind === "table" ? workflowParseCellPort(f.port) : null;
+          const cellRect = cellPort ? wbTableCellRect(up, cellPort.r, cellPort.c) : null;
+          const bundleName = (up.title || (up.kind === "table" ? "Table" : "Section"))
+            + (cellPort ? " cell " + (cellPort.r + 1) + "," + (cellPort.c + 1) : "");
+          const contained = cellPort
+            ? workflowTableCellNodes(up, nodes, cellPort.r, cellPort.c)
+            : workflowSectionContainedNodes(up, nodes);
           const parts = [];
           for (const cn of contained) {
             if (cn.kind === "prompt" && (cn.text || "").trim()) {
@@ -44428,20 +44521,30 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           }
           // Whiteboard text items (sticky notes / textboxes / text labels) live
           // in data.wb, not in nodes - walk them with the same center-in-rect
-          // containment so their text flows out of the section too.
-          const sx0 = up.x, sy0 = up.y, sx1 = up.x + (up.w || 880), sy1 = up.y + (up.h || 560);
-          for (const it of (data.wb || [])) {
-            if (!it || (it.type !== "sticky" && it.type !== "textbox" && it.type !== "text")) continue;
-            const icx = (it.x || 0) + (it.w || 0) / 2, icy = (it.y || 0) + (it.h || 0) / 2;
-            if (!(icx >= sx0 && icx <= sx1 && icy >= sy0 && icy <= sy1)) continue;
-            if ((it.text || "").trim()) parts.push(it.text.trim());
+          // containment so their text flows out of the section too. Cell ports
+          // narrow the walk to the cell (binding-aware, geometry fallback).
+          if (cellPort) {
+            for (const it of workflowTableCellWbItems(up, data.wb || [], cellPort.r, cellPort.c)) {
+              if ((it.text || "").trim()) parts.push(it.text.trim());
+            }
+          } else {
+            const sx0 = up.x, sy0 = up.y, sx1 = up.x + (up.w || 880), sy1 = up.y + (up.h || 560);
+            for (const it of (data.wb || [])) {
+              if (!it || (it.type !== "sticky" && it.type !== "textbox" && it.type !== "text")) continue;
+              const icx = (it.x || 0) + (it.w || 0) / 2, icy = (it.y || 0) + (it.h || 0) / 2;
+              if (!(icx >= sx0 && icx <= sx1 && icy >= sy0 && icy <= sy1)) continue;
+              if ((it.text || "").trim()) parts.push(it.text.trim());
+            }
           }
           if (parts.length) {
-            promptTexts.push("Section '" + (up.title || "Section") + "' contents:\n" + parts.join("\n\n"));
+            promptTexts.push((up.kind === "table" ? "Table '" : "Section '") + bundleName + "' contents:\n" + parts.join("\n\n"));
           }
           if (wantsAsset && !assetInputPath && !assetInputDataUri) {
             try {
-              assetInputDataUri = await workflowCaptureSectionRaster(up);
+              // For a cell port, rasterise just the cell's rect (the capture
+              // helper only reads x/y/w/h off the object it's handed).
+              assetInputDataUri = await workflowCaptureSectionRaster(
+                cellRect ? { x: cellRect.x, y: cellRect.y, w: cellRect.w, h: cellRect.h } : up);
             } catch (e) {
               update(skillId, { status: "error", error:
                 "Couldn't capture the section's visible contents. "
@@ -47640,6 +47743,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragEnd=${() => { tableDragRef.current = false; setNodeDragging(false); }}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onOp=${tableOp}
+                onCellSpawn=${(side, item, cellPort, cellRect) =>
+                  spawnConnectedNode(n.id, side, item, { anchorPort: cellPort, anchorRect: cellRect })}
                 onCellSelect=${(tableId, range) => setTableSel({ tableId, ...range })}
                 onCellMenu=${(tableId, r, c, vpX, vpY) => {
                   const cur = tableSelRef.current;
@@ -48077,9 +48182,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                       // connects the user's "the table" to this input - a wired
                       // table must never be silently dropped, or the agent never
                       // sees what the user was pointing at.
-                      const tblName = up.title || "Table";
+                      // A per-cell port ("cellout:r:c") narrows the grid walk
+                      // to that one (merged) cell; plain "out" keeps the grid.
+                      const cellPort = workflowParseCellPort(f.port);
+                      const cellSpan = cellPort ? wbTableCellRect(up, cellPort.r, cellPort.c) : null;
+                      const inSpan = (r, c) => !cellSpan
+                        || (r >= cellSpan.ar && r < cellSpan.ar + cellSpan.rs && c >= cellSpan.ac && c < cellSpan.ac + cellSpan.cs);
+                      const tblName = (up.title || "Table") + (cellPort ? " cell " + (cellPort.r + 1) + "," + (cellPort.c + 1) : "");
                       const wbItems = Array.isArray(data.wb) ? data.wb : [];
-                      const cells = wbItems.filter(it => it && it.cell && it.cell.tableId === up.id && it.type === "text" && (it.text || "").trim());
+                      const cells = wbItems.filter(it => it && it.cell && it.cell.tableId === up.id && it.type === "text" && (it.text || "").trim() && inSpan(it.cell.r || 0, it.cell.c || 0));
                       if (cells.length) {
                         const maxC = cells.reduce((m, it) => Math.max(m, (it.cell.c || 0)), 0);
                         const byRow = {};
@@ -48097,6 +48208,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                       }
                       for (const cn of (data.nodes || [])) {
                         if (!cn || !cn.cell || cn.cell.tableId !== up.id) continue;
+                        if (!inSpan(cn.cell.r || 0, cn.cell.c || 0)) continue;
                         if (cn.kind === "color-palette") {
                           summary.inputs.push({ kind: "color-palette", label: tblName + " · " + (cn.name || "palette"), swatches: cn.swatches || [] });
                         } else if (cn.kind === "typography") {
@@ -49093,8 +49205,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         rightMenu=${connectorMenus.right}
         leftBundles=${connectorMenus.leftBundles}
         rightBundles=${connectorMenus.rightBundles}
-        suppressLeft=${commentsPanelNodeId === connectorNode.id}
-        suppressRight=${codePanelNodeId === connectorNode.id || (pickedElement && pickedElement.nodeId === connectorNode.id)}
+        suppressLeft=${commentsPanelNodeId === connectorNode.id
+          || (connectorNode.kind === "table" && !!tableSel && tableSel.tableId === connectorNode.id)}
+        suppressRight=${codePanelNodeId === connectorNode.id || (pickedElement && pickedElement.nodeId === connectorNode.id)
+          || (connectorNode.kind === "table" && !!tableSel && tableSel.tableId === connectorNode.id)}
         onPickItem=${(side, item) => spawnConnectedNode(connectorNode.id, side, item)}
         onPickBundle=${(side, id) => runConnectBundle(connectorNode.id, id)}
       />`}
@@ -65954,14 +66068,20 @@ function resolveUpstreamInputs(node, allNodes, allEdges, opts) {
     }
     if (resolve === "sectionBundle" || up.kind === "section") {
       const depth = opts._depth || 0;
+      // A table's per-cell out port ("cellout:r:c") narrows the bundle to that
+      // one cell's contents; the plain "out" port keeps whole-grid semantics.
+      const cp = up.kind === "table" ? workflowParseCellPort(from.port) : null;
+      const cellLabel = cp ? label + " · cell " + (cp.r + 1) + "," + (cp.c + 1) : label;
       let children = [];
       if (depth < 3) {
-        const inside = workflowSectionContainedNodes(up, allNodes || []);
+        const inside = cp
+          ? workflowTableCellNodes(up, allNodes || [], cp.r, cp.c)
+          : workflowSectionContainedNodes(up, allNodes || []);
         const synth = inside.map(cn => ({ from: cn.id + "." + _firstProvidePort(cn.kind), to: "__sec__." + (opts.toPort || "in") }));
         children = resolveUpstreamInputs({ id: "__sec__" }, [{ id: "__sec__" }, ...inside], synth, { _depth: depth + 1, toPort: opts.toPort })
-          .map(c => ({ ...c, label: label + " · " + c.label }));
+          .map(c => ({ ...c, label: cellLabel + " · " + c.label }));
       }
-      out.push({ ...base, type: "section", label, children });
+      out.push({ ...base, type: "section", label: cellLabel, children });
       continue;
     }
     if (resolve === "text" || up.kind === "prompt" || up.kind === "skill"
@@ -80063,7 +80183,7 @@ function formatDirectionForPrompt(d) {
    with section-style left/right connector ports. Reuses the .workflow-node card
    treatment (glow + selected outline) and the .workflow-wb-table-* cell CSS.
    Geometry lives on the node (node.cols / node.rows / node.merges). */
-function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onOp, onCellSelect, onCellMenu, tableSel }) {
+function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onOp, onCellSelect, onCellMenu, onCellSpawn, tableSel }) {
   const cols = wbTableCols(node), rows = wbTableRows(node);
   // Per-cell fill: node.cellFills["r,c"] overrides the table default node.fill.
   // The line colour is AUTOMATIC from each cell's fill (clean light grey for
@@ -80168,11 +80288,61 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
 
   const selRange = (selected && tableSel && tableSel.tableId === node.id) ? wbTableNormRange(tableSel) : null;
 
+  // ── Per-cell connectors ───────────────────────────────────────────────────
+  // Each cell carries section-style in/out ports ("cellin:r:c" / "cellout:r:c").
+  // The dots surface ONLY for the hovered cell or the single SELECTED cell; a
+  // multi-cell selection hides them. The ⊕ spawn buttons need a deliberate
+  // single-cell SELECTION (hover alone doesn't show them).
+  const [hoverCell, setHoverCell] = useState(null);
+  const [cellSpawn, setCellSpawn] = useState(null);   // {side,r,c,vx,vy} open ⊕ menu
+  const selSingle = !!selRange && selRange.r0 === selRange.r1 && selRange.c0 === selRange.c1;
+  const selMulti = !!selRange && !selSingle;
+  // merge-anchor {r,c} of the single selected cell (⊕ buttons key off this).
+  let selCell = null;
+  if (selSingle) {
+    const m = wbTableMergeAt(node, selRange.r0, selRange.c0);
+    selCell = m ? { r: m.r, c: m.c } : { r: selRange.r0, c: selRange.c0 };
+  }
+  // Cells whose connector dots are live: the selected cell + the hovered cell.
+  const portCells = [];
+  if (!selMulti) {
+    if (selCell) portCells.push(selCell);
+    if (hoverCell && !(selCell && selCell.r === hoverCell.r && selCell.c === hoverCell.c)) portCells.push(hoverCell);
+  }
+  const onRootMouseMove = (e) => {
+    if (!rootRef.current) return;
+    const rect = rootRef.current.getBoundingClientRect();
+    const cc = cellAtClient(e.clientX, e.clientY, rect);
+    const m = wbTableMergeAt(node, cc.r, cc.c);
+    const a = m ? { r: m.r, c: m.c } : cc;
+    setHoverCell(h => (h && h.r === a.r && h.c === a.c) ? h : a);
+  };
+  // The ⊕ menu closes on outside-click / Escape / losing the single-cell
+  // selection. Capture phase so canvas handlers can't swallow the close.
+  useEffect(() => {
+    if (!cellSpawn) return;
+    const onDown = (e) => {
+      if (e.target && e.target.closest
+          && (e.target.closest(".workflow-connector-menu") || e.target.closest(".workflow-wb-table-cellspawn"))) return;
+      setCellSpawn(null);
+    };
+    const onKey = (e) => { if (e.key === "Escape") setCellSpawn(null); };
+    window.addEventListener("mousedown", onDown, true);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("mousedown", onDown, true);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [cellSpawn]);
+  useEffect(() => { if (!selSingle) setCellSpawn(null); }, [selSingle]);
+
   return html`
     <div ref=${rootRef} className="workflow-node workflow-node-table" data-node-id=${node.id}
       data-selected=${selected ? "true" : "false"}
       style=${{ left: node.x + "px", top: node.y + "px", width: totalW + "px", height: totalH + "px" }}
       onMouseDown=${(e) => { onSelect && onSelect(); }}
+      onMouseMove=${onRootMouseMove}
+      onMouseLeave=${() => setHoverCell(null)}
       onContextMenu=${(e) => {
         e.preventDefault(); e.stopPropagation();
         const rect = rootRef.current.getBoundingClientRect();
@@ -80239,6 +80409,94 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
         <div className="workflow-port-dot"/>
         <span className="workflow-port-label workflow-port-label-right">contents</span>
       </div>
+      ${portCells.map(pc => {
+        // Per-cell in/out dots at the live cell's left/right edge mid-height.
+        // Same section-connector semantics, scoped to this one cell.
+        const cr = wbTableCellRect(node, pc.r, pc.c);
+        const lx = cr.x - node.x, ly = cr.y - node.y;
+        const pin = workflowCellPortName("in", cr.ar, cr.ac);
+        const pout = workflowCellPortName("out", cr.ar, cr.ac);
+        return html`
+          <div key=${"cpz-in-" + cr.ar + "_" + cr.ac} className="workflow-port-zone workflow-port-zone-in workflow-port-zone-cell"
+            data-port-node=${node.id} data-port-side=${pin}
+            style=${{ left: lx + "px", top: ly + "px", height: cr.h + "px" }}
+            title="Populate this cell - wire an Agent or Skill here."
+            onMouseDown=${(e) => onStartEdge && onStartEdge(pin, e)}>
+            <div className="workflow-port-dot"/>
+          </div>
+          <div key=${"cpz-out-" + cr.ar + "_" + cr.ac} className="workflow-port-zone workflow-port-zone-out workflow-port-zone-cell"
+            data-port-node=${node.id} data-port-side=${pout}
+            style=${{ left: (lx + cr.w - 14) + "px", top: ly + "px", height: cr.h + "px" }}
+            title="Cell contents - wire into an Agent / Skill / Design system."
+            onMouseDown=${(e) => onStartEdge && onStartEdge(pout, e)}>
+            <div className="workflow-port-dot"/>
+          </div>`;
+      })}
+      ${selCell && (() => {
+        // ⊕ spawn buttons for the single SELECTED cell - the cell-scoped twin
+        // of the node-level WorkflowConnectorSpawn buttons.
+        const cr = wbTableCellRect(node, selCell.r, selCell.c);
+        const lx = cr.x - node.x, ly = cr.y - node.y;
+        const B = px(20), GAP = px(10);
+        const openMenu = (side) => (e) => {
+          e.stopPropagation();
+          const br = e.currentTarget.getBoundingClientRect();
+          setCellSpawn(s => (s && s.side === side) ? null : {
+            side, r: cr.ar, c: cr.ac,
+            vx: side === "left" ? br.left : br.right,
+            vy: br.top + br.height / 2,
+          });
+        };
+        return html`
+          <button key="csp-l" type="button" className="workflow-wb-table-add workflow-wb-table-cellspawn"
+            title="Add a node that feeds this cell"
+            style=${{ left: (lx - B - GAP) + "px", top: (ly + cr.h / 2 - B / 2) + "px", width: B + "px", height: B + "px", fontSize: px(13) + "px" }}
+            onMouseDown=${(e) => e.stopPropagation()}
+            onClick=${openMenu("left")}>+</button>
+          <button key="csp-r" type="button" className="workflow-wb-table-add workflow-wb-table-cellspawn"
+            title="Add a node this cell feeds into"
+            style=${{ left: (lx + cr.w + GAP) + "px", top: (ly + cr.h / 2 - B / 2) + "px", width: B + "px", height: B + "px", fontSize: px(13) + "px" }}
+            onMouseDown=${(e) => e.stopPropagation()}
+            onClick=${openMenu("right")}>+</button>`;
+      })()}
+      ${cellSpawn && (() => {
+        // Cell spawn-menu popover - reuses the connector-menu vocabulary and
+        // the table's own connect-def (a cell accepts / provides exactly what
+        // the grid does), but wires the picked node to THIS cell's port.
+        const side = cellSpawn.side;
+        const groups = workflowConnectMenu(node, side);
+        if (!groups.length) return null;
+        const POP_W = 264;
+        let popLeft = side === "left" ? cellSpawn.vx - POP_W - 8 : cellSpawn.vx + 8;
+        popLeft = Math.max(8, Math.min(popLeft, window.innerWidth - POP_W - 8));
+        const popTop = Math.max(8, Math.min(cellSpawn.vy - 20, window.innerHeight - 340));
+        const cr = wbTableCellRect(node, cellSpawn.r, cellSpawn.c);
+        const cellPort = workflowCellPortName(side === "left" ? "in" : "out", cr.ar, cr.ac);
+        return createPortal(html`
+          <div className="workflow-connector-menu"
+            style=${{ position: "fixed", left: popLeft + "px", top: popTop + "px", width: POP_W + "px", zIndex: 50 }}
+            onMouseDown=${(e) => e.stopPropagation()}>
+            <div className="workflow-connector-menu-title">
+              ${side === "left" ? "Add a node that feeds this cell" : "Add a node this cell feeds into"}
+            </div>
+            ${groups.map(g => html`
+              <div key=${"group-" + g.port} className="workflow-connector-menu-group">
+                <div className="workflow-connector-menu-group-label">${g.label}</div>
+                ${g.items.map(it => html`
+                  <button key=${it.key} className="workflow-connector-menu-item"
+                    onClick=${() => {
+                      setCellSpawn(null);
+                      onCellSpawn && onCellSpawn(side, it, cellPort, { x: cr.x, y: cr.y, w: cr.w, h: cr.h });
+                    }}>
+                    <span className="workflow-connector-menu-item-label">${it.label}</span>
+                    ${it.hint && it.hint !== g.label && html`<span className="workflow-connector-menu-item-hint">${it.hint}</span>`}
+                  </button>
+                `)}
+              </div>
+            `)}
+          </div>
+        `, document.body);
+      })()}
     </div>`;
 }
 

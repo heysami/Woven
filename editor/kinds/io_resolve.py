@@ -56,6 +56,41 @@ def _pick(entries, port):
     return entries[0]
 
 
+# Table per-cell connector ports: "cellin:<r>:<c>" / "cellout:<r>:<c>" (r/c =
+# the cell's merge-anchor row/col). Same semantics as the table's whole-grid
+# in/out, scoped to one cell. Mirrors workflowParseCellPort in app.js.
+_CELL_PORT_RE = re.compile(r"^cell(in|out):(\d+):(\d+)$")
+
+
+def _cell_port(port):
+    """('in'|'out', r, c) for a per-cell table port name, else None."""
+    m = _CELL_PORT_RE.match(port or "")
+    return (m.group(1), int(m.group(2)), int(m.group(3))) if m else None
+
+
+def _table_cell_rect(t, ctx, r, c):
+    """World rect of table cell (r,c), expanded to its merge region. Mirrors
+    the editor's wbTableCellRect. Returns (x, y, w, h, ar, ac, rs, cs)."""
+    cols = [float(v or 0) for v in (t.get("cols") or [150, 150, 150])]
+    rows = [float(v or 0) for v in (t.get("rows") or [44, 44, 44])]
+    ar, ac, rs, cs = r, c, 1, 1
+    for m in (t.get("merges") or []):
+        try:
+            mr, mc = int(m.get("r", 0)), int(m.get("c", 0))
+            mrs, mcs = int(m.get("rs", 1)), int(m.get("cs", 1))
+        except Exception:  # noqa: BLE001
+            continue
+        if mr <= r < mr + mrs and mc <= c < mc + mcs:
+            ar, ac, rs, cs = mr, mc, mrs, mcs
+            break
+    tx, ty = _node_pos(t, ctx)
+    x = tx + sum(cols[:ac])
+    y = ty + sum(rows[:ar])
+    w = sum(cols[ac:ac + cs]) or 150.0
+    h = sum(rows[ar:ar + rs]) or 44.0
+    return x, y, w, h, ar, ac, rs, cs
+
+
 def _resolve_tpl(tpl: str, node, proto_slug: str) -> str:
     return (tpl or "").replace("{prototype}", proto_slug) \
                       .replace("{branch}", proto_slug) \
@@ -247,10 +282,31 @@ def _node_pos(node, ctx):
 def _r_section(up, prov, ctx):
     """A section frame wired upstream: the combination of every node whose
     CENTER sits inside the frame rect (same containment rule as the editor's
-    group-drag)."""
+    group-drag). A TABLE rides the same resolver; when the edge leaves a
+    per-cell port ("cellout:r:c", stashed on ctx["edge_from_port"]) the walk
+    narrows to that one (merged) cell - cell BINDING (obj["cell"]) is
+    authoritative for bound content, geometry is the fallback."""
     wf = ctx["wf"]
-    sx0, sy0 = _node_pos(up, ctx)
-    sx1 = sx0 + float(up.get("w") or 880); sy1 = sy0 + float(up.get("h") or 560)
+    cell = _cell_port(ctx.get("edge_from_port") or "") if up.get("kind") == "table" else None
+    if cell:
+        _dir, _cr, _cc = cell
+        sx0, sy0, _cw, _ch, ar, ac, rs, cs = _table_cell_rect(up, ctx, _cr, _cc)
+        sx1, sy1 = sx0 + _cw, sy0 + _ch
+    else:
+        ar = ac = rs = cs = 0
+        sx0, sy0 = _node_pos(up, ctx)
+        sx1 = sx0 + float(up.get("w") or 880); sy1 = sy0 + float(up.get("h") or 560)
+
+    def _member(obj, cx, cy):
+        cb = obj.get("cell")
+        if cell is not None and isinstance(cb, dict) and cb.get("tableId") == up.get("id"):
+            try:
+                br, bc = int(cb.get("r") or 0), int(cb.get("c") or 0)
+            except Exception:  # noqa: BLE001
+                return False
+            return ar <= br < ar + rs and ac <= bc < ac + cs
+        return sx0 <= cx <= sx1 and sy0 <= cy <= sy1
+
     parts = []
     for cn in (wf.get("nodes") or []):
         if not cn or cn.get("id") == up.get("id") or cn.get("kind") == "section":
@@ -258,7 +314,7 @@ def _r_section(up, prov, ctx):
         _cx0, _cy0 = _node_pos(cn, ctx)
         cx = _cx0 + float(cn.get("w") or 280) / 2
         cy = _cy0 + float(cn.get("h") or 200) / 2
-        if not (sx0 <= cx <= sx1 and sy0 <= cy <= sy1):
+        if not _member(cn, cx, cy):
             continue
         line = _section_line(cn, ctx)
         if line:
@@ -271,7 +327,7 @@ def _r_section(up, prov, ctx):
             continue
         cx = float(it.get("x") or 0) + float(it.get("w") or 0) / 2
         cy = float(it.get("y") or 0) + float(it.get("h") or 0) / 2
-        if not (sx0 <= cx <= sx1 and sy0 <= cy <= sy1):
+        if not _member(it, cx, cy):
             continue
         itxt = it.get("text")
         itxt = itxt.strip() if isinstance(itxt, str) else ""
@@ -280,6 +336,9 @@ def _r_section(up, prov, ctx):
             parts.append(f"- {label}:\n{itxt}")
     if not parts:
         return None
+    if cell:
+        return (f"### {_label(up)} - cell {ar + 1},{ac + 1} (table cell - combined contents of this cell)\n"
+                + "\n".join(parts))
     return (f"### {_label(up)} (section - combined contents of every node inside)\n"
             + "\n".join(parts))
 
@@ -345,6 +404,11 @@ def resolve_upstream(wf, node_id, ctx) -> str:
         fn = _UP_RESOLVERS.get(prov.get("resolve"))
         if not fn:
             continue
+        # The actual from-port rides along so port-scoped resolvers (a table's
+        # per-cell "cellout:r:c") can narrow their walk. `_pick` falls back to
+        # the first provide for unknown port names, so this is the only way the
+        # resolver learns which port the wire really left from.
+        ctx["edge_from_port"] = _edge_port(e.get("from") or "")
         chunk = fn(up, prov, ctx)
         if chunk:
             chunks.append(chunk)
@@ -353,23 +417,40 @@ def resolve_upstream(wf, node_id, ctx) -> str:
 
 # ── downstream instructors: consumer node -> instruction (str) or None ───────
 
-def _section_grid_instr(node_id, dn, ctx):
+def _section_grid_instr(node_id, dn, ctx, to_port=""):
     """Build the sectionWrite instruction from the declared `authoring` contract
     (single source of truth in registry._SECTION_AUTHORING), injecting the live
-    canvas rect + this section's node id. Falls back to a minimal line if the
+    canvas rect + this section's node id. Tables ride the same contract; a wire
+    landing on a per-cell port ("cellin:r:c") narrows the rect to that cell and
+    adds the cell-binding instruction. Falls back to a minimal line if the
     contract somehow lacks authoring (the import-time check forbids that)."""
-    sx, sy = _node_pos(dn, ctx)   # position lives in the sidecar, not workflow.json
-    sw = float(dn.get("w") or 880); sh = float(dn.get("h") or 560)
     dlabel = _label(dn)
-    rect = f"“{dlabel}” - canvas rect x={sx:.0f} y={sy:.0f} w={sw:.0f} h={sh:.0f}"
+    cell = _cell_port(to_port or "") if dn.get("kind") == "table" else None
+    if cell:
+        cx, cy, cw, ch, ar, ac, _rs, _cs = _table_cell_rect(dn, ctx, cell[1], cell[2])
+        rect = f"“{dlabel}” cell {ar + 1},{ac + 1} - canvas rect x={cx:.0f} y={cy:.0f} w={cw:.0f} h={ch:.0f}"
+    else:
+        sx, sy = _node_pos(dn, ctx)   # position lives in the sidecar, not workflow.json
+        sw = float(dn.get("w") or 880); sh = float(dn.get("h") or 560)
+        rect = f"“{dlabel}” - canvas rect x={sx:.0f} y={sy:.0f} w={sw:.0f} h={sh:.0f}"
     accepts = _io(dn).get("accepts") or []
     sw_accept = next((a for a in accepts if a.get("ingest") == "sectionWrite"), None)
     authoring = (sw_accept or {}).get("authoring") or ""
     if authoring:
-        body = authoring.replace("{rect}", rect).replace("{id}", str(node_id))
-        return "- " + body
-    return (f"- Generate INTO the section frame {rect}. Register each output as an asset node "
-            f"inside that rect via POST /__workflow/node/{node_id}/commit addNodes:[…].")
+        out = "- " + authoring.replace("{rect}", rect).replace("{id}", str(node_id))
+    else:
+        out = (f"- Generate INTO the section frame {rect}. Register each output as an asset node "
+               f"inside that rect via POST /__workflow/node/{node_id}/commit addNodes:[…].")
+    if cell:
+        out += (f"\n  TARGET CELL: this wire lands on ONE table cell. Bind every node you add to it by "
+                f"including \"cell\": {{\"tableId\": \"{dn.get('id')}\", \"r\": {ar}, \"c\": {ac}, "
+                f"\"ox\": 8, \"oy\": 8}} in each addNodes entry (the editor keeps cell-bound content "
+                f"inside its cell), and keep each node's x/y/w/h inside the cell rect. Plain text can "
+                f"instead be written as a whiteboard text item bound to the same cell via "
+                f"POST /__workflow/wb with {{\"add\":[{{\"type\":\"text\",\"text\":\"…\",\"x\":…,\"y\":…,"
+                f"\"w\":…,\"h\":…,\"cell\":{{\"tableId\":\"{dn.get('id')}\",\"r\":{ar},\"c\":{ac},"
+                f"\"ox\":6,\"oy\":6}}}}]}}.")
+    return out
 
 
 def resolve_downstream(wf, node_id, node, ctx) -> str:
@@ -390,9 +471,11 @@ def resolve_downstream(wf, node_id, node, ctx) -> str:
         dpath = (dn.get("path") or "").lstrip("/")
         accepts = _io(dn).get("accepts") or []
 
-        # Section frame: generate INTO it (verbatim layout contract).
-        if dkind == "section":
-            targets.append(_section_grid_instr(node_id, dn, ctx))
+        # Section frame / table grid: generate INTO it (verbatim layout
+        # contract). A table's per-cell "cellin:r:c" port narrows the target
+        # to that one cell.
+        if dkind in ("section", "table"):
+            targets.append(_section_grid_instr(node_id, dn, ctx, _edge_port(e.get("to") or "")))
             continue
 
         # Agent wired INTO a complex node = EDIT it. The agent rewrites the

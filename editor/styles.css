@@ -9324,6 +9324,20 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   box-shadow: 0 1px 3px oklch(0% 0 0 / 0.12);
 }
 .workflow-wb-table-add:hover { background: var(--accent-soft); }
+/* Per-cell connector chrome. The port ZONE is a thin 14px strip pinned to the
+   live cell's left/right edge (inline left/top/height from WorkflowTableNode);
+   override the node-level zone's half-card geometry. The dot itself reuses the
+   standard diamond. The ⊕ spawn buttons reuse the table-add pill look and sit
+   just outside the selected cell's edges. */
+.workflow-port-zone-cell {
+  width: 14px;
+  bottom: auto;
+  z-index: 6;
+}
+.workflow-wb-table-cellspawn {
+  z-index: 6;
+  border-radius: 50%;
+}
 .workflow-wb-table-movegrip {
   position: absolute;
   display: flex;
