@@ -30327,7 +30327,24 @@ function workflowPickDropContainer(nodes, bb, excludeIds, opts) {
     }
     return false;
   };
-  const paintKey = (n, idx) => idx * 1000 + (typeof n.z === "number" ? Math.max(-499, Math.min(499, n.z)) : 0);
+  // Rank candidates exactly like the RENDER order: binding-chain depth first
+  // (the render maps sort hosts-first so bound children paint on top), then
+  // array index, then z. Using raw index alone would pick an outer frame over
+  // the inner one painted above it.
+  const chainDepth = (o) => {
+    let d = 0, cur = o;
+    const seen = new Set();
+    for (let i = 0; i < 8 && cur; i++) {
+      const host = workflowBoundTo(cur);
+      if (!host || seen.has(host)) break;
+      seen.add(host);
+      d++;
+      cur = byId.get(host) || null;
+    }
+    return d;
+  };
+  const paintKey = (n, idx) => chainDepth(n) * 10000000 + idx * 1000
+    + (typeof n.z === "number" ? Math.max(-499, Math.min(499, n.z)) : 0);
   let bestT = null, bestTKey = -Infinity;
   let bestS = null, bestSKey = -Infinity;
   (nodes || []).forEach((n, idx) => {
@@ -36938,13 +36955,32 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // mode, so node clicks there can't be resolved from e.target). Non-section
   // nodes win over sections; later array order wins within a kind.
   const nodeHitAt = (wx, wy) => {
-    let hit = null, hitSection = null;
-    for (const n of (dataNodesRef.current || [])) {
-      if (!n || typeof n.x !== "number" || typeof n.y !== "number") continue;
+    // Rank overlapping hits like the RENDER paints them: non-sections above
+    // sections, and within each class deeper binding-chain first (bound inner
+    // containers paint on top of their hosts), then array order.
+    const all = dataNodesRef.current || [];
+    const byId = new Map(all.map(n => [n && n.id, n]));
+    const depth = (o) => {
+      let d = 0, cur = o;
+      const seen = new Set();
+      for (let i = 0; i < 8 && cur; i++) {
+        const host = workflowBoundTo(cur);
+        if (!host || seen.has(host)) break;
+        seen.add(host);
+        d++;
+        cur = byId.get(host) || null;
+      }
+      return d;
+    };
+    let hit = null, hitKey = -Infinity, hitSection = null, hitSectionKey = -Infinity;
+    all.forEach((n, idx) => {
+      if (!n || typeof n.x !== "number" || typeof n.y !== "number") return;
       const w = n.w || 200, h = n.h || 120;
-      if (wx < n.x || wx > n.x + w || wy < n.y || wy > n.y + h) continue;
-      if (n.kind === "section") hitSection = n.id; else hit = n.id;
-    }
+      if (wx < n.x || wx > n.x + w || wy < n.y || wy > n.y + h) return;
+      const key = depth(n) * 1000000 + idx;
+      if (n.kind === "section") { if (key > hitSectionKey) { hitSection = n.id; hitSectionKey = key; } }
+      else                      { if (key > hitKey) { hit = n.id; hitKey = key; } }
+    });
     return hit || hitSection;
   };
 
@@ -36997,6 +37033,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (selectedWbIdsRef.current.size) setSelectedWbIds(new Set());
     }
     e.preventDefault();
+    // Same gesture stamp as onMoveForNode: the drop rebind, drop-target
+    // highlight and reconcile drag-skip all key off which node the gesture
+    // started on - whiteboard-mode node drags must behave identically.
+    lastDragNodeIdRef.current = nodeId;
     let lastX = e.clientX, lastY = e.clientY, moved = false;
     const onMove = (ev) => {
       const dx = (ev.clientX - lastX) / zoomNow();
@@ -37539,6 +37579,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const dragging = (wbDraggingRef.current || nodeDraggingRef.current) && !tableDragRef.current;
       const skipWb = dragging ? selectedWbIdsRef.current : null;
       const skipNode = dragging ? selectedNodeIdsRef.current : null;
+      // The node the CURRENT gesture is moving is never re-pinned, even when
+      // tableDragRef disables the selection skip (that exception exists so a
+      // dragged TABLE's bound items follow it - but the dragged table itself
+      // may be cell-bound, and re-pinning it every frame fights the hand and
+      // reads as flicker).
+      const activeDragId = (wbDraggingRef.current || nodeDraggingRef.current)
+        ? lastDragNodeIdRef.current : null;
       const target = (cell) => {
         const t = tById.get(cell.tableId);
         if (!t) return undefined;                 // table gone → drop bind
@@ -37563,6 +37610,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         if (!n) return n;
         if (n.sec && !sById.has(n.sec.sectionId)) { changed = true; n = stripSec(n); }
         if (!n.cell) return n;
+        if (n.id === activeDragId) return n;
         if (skipNode && skipNode.has(n.id)) return n;
         if (!tById.has(n.cell.tableId)) { changed = true; return wbStripCell(n); }
         const tg = target(n.cell);
@@ -44733,20 +44781,27 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         return _assistantExtractJson(t) || [];
       };
 
-      // Phase 2: initial gather - one run per agent, sequential.
+      // Phase 2: initial gather - every agent runs IN PARALLEL (the daemon is
+      // a threading server; each run is its own thread + CLI process, and the
+      // viewpoints are independent by design). Wall time = slowest agent, not
+      // the sum.
       const FINDINGS_FORMAT = `Return ONLY a JSON array of your findings (max 6): [{"point":"<claim / finding in one sentence>","stance":"support|oppose|challenge|unverified","note":"<why, in your voice, <=40 words>","url":"<source url or empty>","snippet":"<short verbatim quote from the source, or empty>","image":"<direct image url that shows it, else empty>"}]. "stance" is YOUR position on the point given your lens; use "unverified" when you looked and could not validate it. No prose outside the JSON.`;
       const findings = {};
-      for (let i = 0; i < agents.length; i++) {
-        const a = agents[i];
-        setRun({ status: "loading", phase: `agent ${i + 1}/${agents.length}: ${a.name}` });
-        const prompt =
-          `RESEARCH STATEMENT:\n${plan.statement}\n` +
-          (a.method === "context"
-            ? `\nTHE MATERIAL (all you may use):\n${ctx.slice(0, 4000)}\n`
-            : `\nResearch this through YOUR lens. Cite real URLs you actually opened; quote snippets verbatim.\n`) +
-          `\n${FINDINGS_FORMAT}`;
-        try { findings[a.name] = (await runAgent(a, prompt)).filter(x => x && x.point); }
-        catch (e) { findings[a.name] = []; }
+      {
+        let landed = 0;
+        setRun({ status: "loading", phase: `${agents.length} agents researching in parallel…` });
+        await Promise.all(agents.map(async (a) => {
+          const prompt =
+            `RESEARCH STATEMENT:\n${plan.statement}\n` +
+            (a.method === "context"
+              ? `\nTHE MATERIAL (all you may use):\n${ctx.slice(0, 4000)}\n`
+              : `\nResearch this through YOUR lens. Cite real URLs you actually opened; quote snippets verbatim.\n`) +
+            `\n${FINDINGS_FORMAT}`;
+          try { findings[a.name] = (await runAgent(a, prompt)).filter(x => x && x.point); }
+          catch (e) { findings[a.name] = []; }
+          landed++;
+          setRun({ status: "loading", phase: `agents ${landed}/${agents.length} in (parallel)` });
+        }));
       }
       if (!Object.values(findings).some(list => list.length)) throw new Error("No agent returned findings - try again.");
 
@@ -44880,25 +44935,35 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const roundsN = Math.max(1, Math.min(3, node.rounds || 2));
       let roundsDone = 0;
       for (let round = 1; round <= roundsN; round++) {
-        let changes = 0;
-        for (let i = 0; i < agents.length; i++) {
-          const a = agents[i];
-          setRun({ status: "loading", phase: `debate ${round}/${roundsN}: ${a.name}` });
+        // Every agent debates IN PARALLEL against the SAME round snapshot of
+        // the matrix (fairer than sequential, where later agents see earlier
+        // agents' same-round updates). Table boxes append as each agent
+        // lands; the matrix mutations apply once all are in.
+        const snapshot = JSON.stringify(merged.points);
+        let landed = 0;
+        setRun({ status: "loading", phase: `debate ${round}/${roundsN}: ${agents.length} agents in parallel…` });
+        const roundResults = await Promise.all(agents.map(async (a) => {
           const prompt =
             `RESEARCH STATEMENT:\n${plan.statement}\n\nCURRENT MERGED POINT MATRIX (every agent's stance):\n` +
-            JSON.stringify(merged.points) +
+            snapshot +
             `\n\nRe-review as "${a.name}". Where OTHER agents dispute you, or where you can now confirm / refute / challenge a point${a.method === "web" ? " (verify with a quick web check when it matters)" : " (using ONLY the linked material)"}, respond. Return ONLY points where your stance or evidence CHANGES or where you rebut another agent - return [] if you fully stand by the matrix.\n\n` +
             (a.method === "context" && ctx ? `THE MATERIAL:\n${ctx.slice(0, 3000)}\n\n` : "") +
             `Return ONLY JSON: [{"id":<point id>,"stance":"support|oppose|challenge|unverified","note":"<your rebuttal / update, <=40 words>","url":"<source url or empty>","snippet":"<verbatim quote or empty>","image":""}]. No prose.`;
           let resp = [];
           try { resp = (await runAgent(a, prompt)).filter(x => x && x.id != null); } catch (e) { resp = []; }
+          landed++;
+          setRun({ status: "loading", phase: `debate ${round}/${roundsN}: ${landed}/${agents.length} in` });
+          if (resp.length) appendEntries(resp.map(u => ({ id: u.id, perAgent: { [a.name]: u } })), "R" + (round + 1) + ":");
+          return { a, resp };
+        }));
+        let changes = 0;
+        for (const { a, resp } of roundResults) {
           for (const u of resp) {
             const p = merged.points.find(mp => String(mp.id) === String(u.id));
             if (!p) continue;
             p.perAgent[a.name] = { stance: u.stance, note: u.note, url: u.url, snippet: u.snippet, image: u.image };
             changes++;
           }
-          if (resp.length) appendEntries(resp.map(u => ({ id: u.id, perAgent: { [a.name]: u } })), "R" + (round + 1) + ":");
         }
         roundsDone = round;
         writeResult(roundsDone, merged.conclusion, null);
