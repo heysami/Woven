@@ -2789,17 +2789,9 @@ KINDS = {
             "title":     {"type": "text",   "userEditable": True},
             "w":         {"type": "number", "userEditable": True},
             "h":         {"type": "number", "userEditable": True},
-            # cols/rows/merges/cellFills are USER-edited structure (corner
-            # resize scales cols/rows; merge/split/insert edit merges; cell
-            # paint edits cellFills). userEditable puts them on the editor's
-            # reload-merge pull list - without it, a second open session
-            # pulls only w/h, keeps stale cols/rows, and its next debounced
-            # save ECHOES the old geometry back: every table resize reverts
-            # a second later whenever the project is open twice.
-            "cols":      {"type": "object", "userEditable": True},
-            "rows":      {"type": "object", "userEditable": True},
-            "merges":    {"type": "object", "userEditable": True},
-            "cellFills": {"type": "object", "userEditable": True},
+            "cols":      {"type": "object"},
+            "rows":      {"type": "object"},
+            "merges":    {"type": "object"},
             "fill":      {"type": "text",   "userEditable": True},
             "lineColor": {"type": "text",   "userEditable": True},
         },
