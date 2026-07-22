@@ -19054,6 +19054,18 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: block;
   background: oklch(100% 0 0);
 }
+/* Virtualized-out frame in the Canvas-frames embed: a same-size, cheap stand-in
+   for a live iframe so off-screen frames don't each boot a full page. It goes
+   live (real iframe) the moment it scrolls into the node's viewport. Kept flat
+   and quiet - the frame's label bar above already identifies it. */
+.frame-body-dormant {
+  width: 100%; height: 100%;
+  background:
+    repeating-linear-gradient(45deg,
+      var(--surface) 0, var(--surface) 11px,
+      color-mix(in oklch, var(--surface) 94%, var(--border)) 11px,
+      color-mix(in oklch, var(--surface) 94%, var(--border)) 22px);
+}
 .frame-empty {
   display: grid;
   place-items: center;

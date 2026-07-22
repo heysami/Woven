@@ -1431,7 +1431,7 @@ function useDsProposalIndex() {
 }
 
 /* ────────── Frame ────────── */
-function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onStartArrow, arrowFromId, onCompleteArrow, edits, strokes, onAddStroke, rearrangeDrag, onRearrangeMouseDown, gridMeta, rearrangeSelected, auditCount }) {
+function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onStartArrow, arrowFromId, onCompleteArrow, edits, strokes, onAddStroke, rearrangeDrag, onRearrangeMouseDown, gridMeta, rearrangeSelected, auditCount, live = true }) {
   const captureActive = !!tool && tool !== "draw" && tool !== "rearrange";  // draw / rearrange use their own overlays
   const drawActive = tool === "draw";
   const rearrangeActive = tool === "rearrange";
@@ -1453,7 +1453,11 @@ function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onSta
     };
     f.addEventListener("load", handle);
     return () => f.removeEventListener("load", handle);
-  }, [frame.id]);
+    // `live` is in the deps because virtualization mounts a FRESH iframe when a
+    // dormant frame comes back on-screen - without re-running, the new iframe
+    // would carry no load handler and its setupScript would never fire (it'd
+    // show the default screen). When live=false there's no iframe (early return).
+  }, [frame.id, live]);
 
   // Only DOM-target edits carry a `rect` for the picker-anchor overlay below.
   // Model edits (target: "frame"/"arrow"/"entity"/...) also share `frameId` but
@@ -1579,6 +1583,13 @@ function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onSta
       <div className="frame-body" style=${{ width: frameW, height: frameH }}>
         ${frameNeedsPlaceholder(frame)
           ? html`<${FramePlaceholder} frame=${frame}/>`
+          : !live
+          // Virtualized out (Canvas-frames embed only): render a same-size
+          // dormant body instead of a live iframe so off-screen frames don't
+          // each boot a full page. Goes live the moment it scrolls into the
+          // node's viewport or is selected. See WorkflowFramesNode's
+          // updateFrameVisibility + CanvasView's __wovenSetFrameVisibility.
+          ? html`<div className="frame-body-dormant" aria-hidden="true"></div>`
           : html`<iframe
               ref=${iframeRef}
               src=${withProjectQuery(resolveEntry(frame.entry), "t=" + EDITOR_SESSION) + hashOf(frame.hash)}
@@ -6500,6 +6511,27 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
   const { byFrame: auditByFrame } = useDsProposalIndex();
   const [selected, setSelected] = useState(null);
   const [picked, setPicked] = useState(null);
+  // ── Frame virtualization (Canvas-frames embed only) ──────────────────
+  // The embed renders EVERY frame as a live iframe; at 60+ frames that's 60+
+  // full pages booting at once, saturating the tab's shared main thread /
+  // compositor and making the whole workflow UI stutter. The embed can't pan
+  // (interactive:false), so the OUTER node computes which frames are actually
+  // on the user's screen and calls __wovenSetFrameVisibility with the ids to
+  // keep LIVE; every other frame renders a same-size dormant body until it
+  // scrolls back in. `null` = every frame live (default + standalone view).
+  // Initial value in embed mode caps the FIRST paint too (first N by model
+  // order) so the node never boots all 60+ before the outer refines the set.
+  const VIRT_CAP = 24;
+  const [liveFrameIds, setLiveFrameIds] = useState(() =>
+    _embedNoInteract && Array.isArray(frames) && frames.length > VIRT_CAP
+      ? new Set(frames.slice(0, VIRT_CAP).map(f => f.id))
+      : null);
+  useEffect(() => {
+    if (!_embedNoInteract) return;
+    window.__wovenSetFrameVisibility = (ids) =>
+      setLiveFrameIds(Array.isArray(ids) ? new Set(ids) : null);
+    return () => { try { delete window.__wovenSetFrameVisibility; } catch { window.__wovenSetFrameVisibility = undefined; } };
+  }, [_embedNoInteract]);
   const [popoverAt, setPopoverAt] = useState(null);
   // Live grid metrics - pulled from the *model* so size + gap edits flow
   // through immediately. Every gridXY/snapToCell/gridCellSize call below
@@ -7002,6 +7034,7 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
           <${Frame}
             key=${f.id}
             frame=${f}
+            live=${!liveFrameIds || liveFrameIds.has(f.id) || selected === f.id}
             selected=${selected === f.id}
             dimmed=${connectedFrames && !connectedFrames.has(f.id)}
             tool=${tool}
@@ -60102,6 +60135,90 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     window.addEventListener("th:asset-refresh", handler);
     return () => { clearTimeout(timer); window.removeEventListener("th:asset-refresh", handler); };
   }, [protoSlug]);
+
+  // ── Frame virtualization driver ──────────────────────────────────────
+  // The embed renders every frame as a live iframe; at 60+ frames that's 60+
+  // full pages booting at once, which saturates the tab's shared main thread /
+  // compositor and stutters the WHOLE workflow UI. The embed can't pan, so we
+  // compute which frames are actually on the user's SCREEN (the embed is one
+  // big element scaled by the outer workflow zoom) and tell the embed to keep
+  // only those - plus a bounded cap - LIVE; the rest render a dormant body.
+  // Geometry: an inner `.frame` element's rect is in the embed's own viewport
+  // (px, incl. the embed's fixed internal transform); the embed element's own
+  // on-screen box already carries the outer workflow zoom, so
+  // screenPos = embedBox.origin + frameRectInEmbed * (embedBox / embed.client).
+  const VIRT_LIVE_CAP = 24;   // hard ceiling on simultaneously-live frames
+  const VIRT_BUFFER   = 6;    // nearest off-screen frames kept warm for small pans
+  const updateFrameVisibility = useCallback(() => {
+    try {
+      const embed = iframeRef.current;
+      if (!embed) return;
+      const win = embed.contentWindow, doc = embed.contentDocument;
+      if (!win || !doc || typeof win.__wovenSetFrameVisibility !== "function") return;
+      const els = doc.querySelectorAll(".frame[data-frame-id]");
+      if (!els.length) return;
+      const embedBox = embed.getBoundingClientRect();
+      if (!embedBox.width || !embed.clientWidth) return;
+      const scaleX = embedBox.width / embed.clientWidth;
+      const scaleY = embedBox.height / embed.clientHeight;
+      const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+      const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+      const cx0 = vw / 2, cy0 = vh / 2;
+      const onScreen = [], offScreen = [];
+      for (const el of els) {
+        const id = el.getAttribute("data-frame-id");
+        if (!id) continue;
+        const r = el.getBoundingClientRect();
+        const sx0 = embedBox.left + r.left * scaleX, sy0 = embedBox.top + r.top * scaleY;
+        const sx1 = embedBox.left + r.right * scaleX, sy1 = embedBox.top + r.bottom * scaleY;
+        const vis = sx1 > 0 && sx0 < vw && sy1 > 0 && sy0 < vh;
+        const dist = Math.hypot((sx0 + sx1) / 2 - cx0, (sy0 + sy1) / 2 - cy0);
+        (vis ? onScreen : offScreen).push({ id, dist });
+      }
+      onScreen.sort((a, b) => a.dist - b.dist);
+      offScreen.sort((a, b) => a.dist - b.dist);
+      let ids = onScreen.slice(0, VIRT_LIVE_CAP).map(s => s.id);
+      if (ids.length < VIRT_LIVE_CAP) {
+        ids = ids.concat(offScreen.slice(0, Math.min(VIRT_BUFFER, VIRT_LIVE_CAP - ids.length)).map(s => s.id));
+      }
+      win.__wovenSetFrameVisibility(ids);
+      return true;
+    } catch { /* embed mid-reload / cross-origin - retry on next signal */ }
+    return false;
+  }, []);
+  useEffect(() => {
+    if (!lodLive) return;   // embed is a blank veil at LOD - nothing to cull
+    let raf = 0, t = 0;
+    const schedule = () => {
+      clearTimeout(t);
+      t = setTimeout(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(updateFrameVisibility); }, 140);
+    };
+    // Initial handoff - the embed + its frames land asynchronously, so poll
+    // until __wovenSetFrameVisibility exists and a pass posts, then stop. Until
+    // then the embed's own first-N cap keeps the initial boot bounded.
+    let boot = 0, bootTimer = 0;
+    const bootTry = () => {
+      if (updateFrameVisibility() || ++boot >= 12) return;
+      bootTimer = setTimeout(bootTry, 500);
+    };
+    bootTimer = setTimeout(bootTry, 300);
+    // Outer pan/zoom moves the whole node on screen -> the transformed
+    // `.workflow-canvas` restyles; watch it to recompute which frames show.
+    const canvasEl = iframeRef.current && iframeRef.current.closest(".workflow-canvas");
+    const mo = canvasEl ? new MutationObserver(schedule) : null;
+    if (mo) mo.observe(canvasEl, { attributes: true, attributeFilter: ["style"] });
+    window.addEventListener("resize", schedule);
+    window.addEventListener("focus", schedule);
+    document.addEventListener("visibilitychange", schedule);
+    return () => {
+      clearTimeout(bootTimer); clearTimeout(t);
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("focus", schedule);
+      document.removeEventListener("visibilitychange", schedule);
+      if (mo) mo.disconnect();
+    };
+  }, [lodLive, updateFrameVisibility, nonce, node.x, node.y, node.w, node.h]);
 
   // Await-generation poll. A node spawned via the generate path (awaitFrames)
   // loads its embed BEFORE editor/data.js exists, so it boots empty. The
