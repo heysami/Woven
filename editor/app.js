@@ -28063,9 +28063,6 @@ function workflowPortDir(side, node) {
   // Layer-anchored ports: input layer rows curve leftward, source rows rightward.
   if (/^layerout:/.test(side)) return 1;
   if (/^layerin:/.test(side))  return -1;
-  // Table per-cell ports: cell contents exit rightward, populate enters leftward.
-  if (/^cellout:/.test(side)) return 1;
-  if (/^cellin:/.test(side))  return -1;
   // Logic Graph read-back ports (paramout:) emit rightward; param: inputs leftward.
   if (typeof side === "string" && side.startsWith("paramout:")) return 1;
   // Logic Graph ports: provides curve rightward, accepts leftward. Names can
