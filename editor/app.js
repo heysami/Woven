@@ -37717,6 +37717,42 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     });
   }, [setData]);
 
+  // APPEND a coloured textbox under whatever already sits in the cell, growing
+  // the row to fit the stack. Unlike workflowSetCellText (replaces) or
+  // workflowAddCellBox (overlaps), each call adds one more box below the last,
+  // so a cell can hold a conversation thread: tester reply, assistant answer,
+  // updated reply, idea - colour-coded per speaker.
+  const workflowAppendCellBox = useCallback((tableId, r, c, text, colorToken) => {
+    setData(d => {
+      const t = (d.nodes || []).find(n => n.id === tableId && n.kind === "table");
+      if (!t) return d;
+      const cols = wbTableCols(t).slice(), rows = wbTableRows(t).slice();
+      const w = Math.max(80, (cols[c] || 220) - 12);
+      const boxH = Math.min(700, _measureWrappedTextHeight(String(text || ""), w - 14) + 24);
+      const list = Array.isArray(d.wb) ? d.wb : [];
+      // Bottom of the existing stack. Empty placeholder text items (created by
+      // the table scaffold for cells filled later) don't count.
+      let bottom = 0;
+      for (const it of list) {
+        if (it && it.cell && it.cell.tableId === tableId && it.cell.r === r && it.cell.c === c
+            && !(it.type === "text" && !(it.text || "").trim())) {
+          bottom = Math.max(bottom, (it.cell.oy || 0) + (it.h || 24));
+        }
+      }
+      const oy = bottom ? bottom + 6 : 6;
+      let nt = t;
+      if ((rows[r] || 0) < oy + boxH + 12) { rows[r] = oy + boxH + 12; nt = wbTableSync({ ...t, cols, rows }); }
+      const rect = wbTableCellRect(nt, r, c);
+      const it = wbMakeItem("textbox", {
+        text: String(text == null ? "" : text), x: rect.x + 6, y: rect.y + oy,
+        w, h: boxH, color: colorToken || "gray", align: "left", fontSize: "sm",
+      });
+      it.cell = { tableId, r, c, ox: 6, oy };
+      const nodes = nt === t ? (d.nodes || []) : (d.nodes || []).map(n => n.id === tableId ? nt : n);
+      return { ...d, wb: [...list, it], nodes };
+    });
+  }, [setData]);
+
   // Drop a big emoji sticker (the verdict stamp) into a cell, centred, growing
   // the cell to fit.
   const workflowAddCellSticker = useCallback((tableId, r, c, emoji, size) => {
@@ -44169,14 +44205,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       testers = testers.slice(0, cap);
 
       if (node.tableId) _assistantDropTable(node.tableId);
-      const headers = ["Tester", "Type", "Background", "Personality", "Preference", "Task", "Reply", "Idea", "Verdict", "Assistant"];
-      const rows = testers.map(t => [t.name || "", t.type || "", t.background || "", t.personality || "", t.preference || "", t.task || task, "", "", "", ""]);
+      // Reply + idea share ONE Feedback cell as a colour-coded stack of boxes:
+      // tester replies neutral gray, assistant clarification answers neutral
+      // ink, ideas highlighted yellow. Clarification passes APPEND to the
+      // thread instead of replacing the pass-1 text.
+      const headers = ["Tester", "Type", "Background", "Personality", "Preference", "Task", "Feedback", "Verdict", "Assistant"];
+      const rows = testers.map(t => [t.name || "", t.type || "", t.background || "", t.personality || "", t.preference || "", t.task || task, "", "", ""]);
       // Clear of the node's floating result panel (~378px) so the table never
       // sits under it when the node is selected.
       const tx = Math.round(node.x + (node.w || 440) + 420), ty = Math.round(node.y);
       const tableId = workflowBuildResultTable({
         title: "Testers: " + task.slice(0, 30), headers, rows, x: tx, y: ty,
-        colWidths: [140, 120, 200, 180, 160, 220, 300, 260, 90, 300],
+        colWidths: [140, 120, 200, 180, 160, 220, 340, 90, 300],
       });
       updateNode(nodeId, { tableId });
 
@@ -44249,8 +44289,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         } catch (e) {
           state[i].reply = "(run failed: " + String(e?.message || e) + ")";
         }
-        workflowSetCellText(tableId, i + 1, 6, state[i].reply);
-        workflowSetCellText(tableId, i + 1, 7, state[i].idea);
+        workflowAppendCellBox(tableId, i + 1, 6, state[i].reply, "gray");
+        if (state[i].idea) workflowAppendCellBox(tableId, i + 1, 6, state[i].idea, "yellow");
         writeTestingResult(state, null);   // live-fill the panel as replies land
       }
 
@@ -44274,8 +44314,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             const p = parseTester(await runTester(s.t,
               `\n\nEarlier you asked:\n${s.questions.join("\n")}\nHere are answers:\n${answers}\nGiven these, give your UPDATED reply in the same REPLY / IDEA / QUESTIONS format.`));
             Object.assign(s, p);
-            workflowSetCellText(tableId, i + 1, 6, s.reply);
-            workflowSetCellText(tableId, i + 1, 7, s.idea);
+            // Append the exchange to the thread: our answer, then the tester's
+            // updated take. Pass-1 boxes stay visible above.
+            workflowAppendCellBox(tableId, i + 1, 6, "Assistant: " + answers, "ink");
+            workflowAppendCellBox(tableId, i + 1, 6, s.reply, "gray");
+            if (s.idea) workflowAppendCellBox(tableId, i + 1, 6, s.idea, "yellow");
           } catch (e) { /* keep prior reply */ }
         }
       }
@@ -44297,8 +44340,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       for (let i = 0; i < state.length; i++) {
         const v = verdicts[i] || {};
         const vd = _assistantVerdict(v.verdict || "");
-        workflowAddCellSticker(tableId, i + 1, 8, vd.emoji, 44);
-        workflowAddCellBox(tableId, i + 1, 9, (v.comment || vd.label), vd.color);
+        workflowAddCellSticker(tableId, i + 1, 7, vd.emoji, 44);
+        workflowAddCellBox(tableId, i + 1, 8, (v.comment || vd.label), vd.color);
       }
       writeTestingResult(state, verdicts);   // final: judged verdicts + pass rate
 
@@ -44309,7 +44352,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       updateNode(nodeId, { runStatus: "error" });
       setRun({ status: "error", error: String(e?.message || e) });
     }
-  }, [data, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellBox, workflowAddCellSticker, workflowSetCellText, _assistantDropTable]);
+  }, [data, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellBox, workflowAppendCellBox, workflowAddCellSticker, _assistantDropTable]);
 
   // first (so a chain like `prompt → gen-image → rembg → asset` works when
   // you click Run on either skill - the runner figures out the dependency
