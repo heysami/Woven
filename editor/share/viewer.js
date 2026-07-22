@@ -20,6 +20,15 @@
   const html = htm.bind(React.createElement);
   const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
+  // Frame URL fragment. A frame's `hash` is a URL fragment (e.g. "state=2"),
+  // but only meaningful with a leading "#" - concatenating it raw onto the
+  // entry ("dashboard.html" + "state=2" = "dashboard.htmlstate=2") requests a
+  // file that doesn't exist, so the gate 404s with {"error":"not found"} and
+  // the browser renders that JSON (its "Pretty print" view) instead of the
+  // screen. Mirror the editor's hashOf (app.js) so the share loads the real
+  // page + lets the frame's setupScript drive the state.
+  const hashOf = (h) => !h ? "" : (h[0] === "#" ? h : "#" + h);
+
   // Woven line-icon - mirrors editor's Icon.Comment (16-box, 1.5pt round
   // stroke). `size` defaults to the editor's 14px glyph footprint.
   const CommentIcon = ({ size = 14 }) => html`
@@ -659,7 +668,7 @@
                   <span className="sv-flow-frame-meta">${f.hash || "-"}</span>
                 </div>
                 <div className="sv-flow-frame-shot">
-                  <iframe src=${base + "p/source/" + prototype + "/" + f.entry + (f.hash || "")}
+                  <iframe src=${base + "p/source/" + prototype + "/" + f.entry + hashOf(f.hash)}
                     loading="lazy" scrolling="no" tabIndex=${-1} title=${f.label || f.id}
                     onLoad=${(e) => { if (f.setupScript) runSetupScriptWithRetry(e.currentTarget, f.setupScript); }}></iframe>
                   <button type="button" className="sv-flow-frame-open"
@@ -1252,7 +1261,7 @@
       setDraft(null);
       const frame = iframeRef.current;
       if (frame && meta) {
-        frame.src = BASE + branchPfx + "p/source/" + meta.prototype + "/" + f.entry + (f.hash || "");
+        frame.src = BASE + branchPfx + "p/source/" + meta.prototype + "/" + f.entry + hashOf(f.hash);
       }
     }, [meta, branchPfx]);
 
