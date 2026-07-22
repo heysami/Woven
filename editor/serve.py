@@ -24679,7 +24679,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         except LookupError:
             body = raw.decode("utf-8", errors="replace")
         return {"finalUrl": final_url, "contentType": ctype, "body": body,
-                "xfo": xfo, "csp": csp}
+                "raw": raw, "xfo": xfo, "csp": csp}
+
+    @staticmethod
+    def _web_ctype_is_html(ctype):
+        # No content type → assume HTML (matches prior behavior for sloppy
+        # servers). Anything explicitly non-HTML (image/webp, image/png,
+        # application/pdf, video/*) must NOT go through the text pipeline.
+        base = (ctype or "").split(";")[0].strip().lower()
+        return base in ("", "text/html", "application/xhtml+xml")
 
     @staticmethod
     def _web_url_from_qs(qs):
@@ -24720,7 +24728,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not url:
             return self._reply(400, {"error": "url query param required (http/https)"})
         try:
-            page = self._web_fetch(url)
+            page = self._web_fetch(url, max_bytes=15_000_000)
         except Exception as e:
             body = ("<!doctype html><meta charset='utf-8'><body style='font:13px system-ui;"
                     "padding:24px;color:#444'><b>Couldn't load page</b><br>"
@@ -24729,6 +24737,22 @@ class H(http.server.SimpleHTTPRequestHandler):
             self.send_response(502)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        # Non-HTML target (image / pdf / video routed through the proxy
+        # because the site frame-blocks EVERY response, media included):
+        # pass the ORIGINAL bytes through with the upstream content type.
+        # Running binary through the utf-8 decode + <base>/overlay injection
+        # below mangles it into mojibake (the "�PNG IHDR" screen).
+        if not self._web_ctype_is_html(page["contentType"]):
+            data = page["raw"]
+            ctype = page["contentType"].split(";")[0].strip() or "application/octet-stream"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
             self.wfile.write(data)
             return
@@ -24787,6 +24811,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             page = self._web_fetch(url)
         except Exception as e:
             return self._reply(502, {"ok": False, "error": str(e)})
+        if not self._web_ctype_is_html(page["contentType"]):
+            return self._reply(200, {"ok": True, "title": "",
+                                     "text": "(non-HTML resource: " + (page["contentType"] or "unknown type") + ")",
+                                     "finalUrl": page["finalUrl"]})
         title, text = self._web_extract_text(page["body"])
         return self._reply(200, {"ok": True, "title": title, "text": text,
                                  "finalUrl": page["finalUrl"]})
