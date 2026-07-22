@@ -3449,8 +3449,15 @@ def _own_link_entries(project, project_root):
         # captured at upload (the worker prefers R2 over the tunnel), a
         # live-only tunnel serves whatever is checked out right now.
         branch = (s.get("hostedBranch") or cur_branch) if hosted else cur_branch
+        # Token in the key: a project can hold TWO shares of the same
+        # prototype (hosted + live-only). install:prototype alone collided
+        # them, and every key-dict consumer (publish's unchanged-check,
+        # links_merge_texts, the cache merge) collapsed one entry - the
+        # unchanged-check then re-stamped updatedAt each round, pushing a
+        # no-op commit to woven-share-links every sync (~3 min, forever).
         out.append({
-            "key":       iid + ":" + (s.get("prototype") or ""),
+            "key":       iid + ":" + (s.get("prototype") or "") + ":" +
+                         (s.get("token") or ""),
             "install":   iid,
             "owner":     owner,
             "prototype": s.get("prototype") or "",
