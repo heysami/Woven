@@ -21188,7 +21188,7 @@ const ONBOARDING_ASSET_PROVIDERS = [
   { id: "anthropic",  covers: "Claude text models · vision-based describe" },
   { id: "elevenlabs", covers: "audio - voiceover · sound effects · music" },
   { id: "meshy",      covers: "3D - text/image to textured .glb" },
-  { id: "exa",        covers: "web search (Research assistant)" },
+  { id: "exa",        covers: "web search (Comparative research)" },
 ];
 
 /* Slim inline row for one provider in the onboarding "Asset providers"
@@ -27845,12 +27845,20 @@ function workflowPortPosition(node, side, ctx) {
     if (side === "out") return { x: node.x + w, y: node.y + bodyTop + bodyH * 0.5 };
   }
   // Assistant family (interview / research / testing): single LEFT `in`,
-  // single RIGHT `out`, both at body mid-height.
+  // single RIGHT `out`. Their dots are the DEFAULT full-height-centred port
+  // zones (no custom offset), and each component CLAMPS its rendered size to
+  // per-kind minimums - mirror BOTH here or the wire endpoint lands below /
+  // beside the drawn diamond (the old bodyTop-offset math missed by 16px on
+  // every assistant edge).
   if (node.kind === "assistant-interview" || node.kind === "assistant-research" || node.kind === "assistant-testing") {
-    const bodyTop = 32;
-    const bodyH = Math.max(0, h - bodyTop);
-    if (side === "in")  return { x: node.x,     y: node.y + bodyTop + bodyH * 0.5 };
-    if (side === "out") return { x: node.x + w, y: node.y + bodyTop + bodyH * 0.5 };
+    const cw = node.kind === "assistant-interview" ? Math.max(360, node.w || 440)
+             : node.kind === "assistant-testing"   ? Math.max(380, node.w || 440)
+             :                                       Math.max(360, node.w || 420);
+    const ch = node.kind === "assistant-interview" ? Math.max(420, node.h || 480)
+             : node.kind === "assistant-testing"   ? Math.max(460, node.h || 500)
+             :                                       Math.max(440, node.h || 460);
+    if (side === "in")  return { x: node.x,      y: node.y + ch / 2 };
+    if (side === "out") return { x: node.x + cw, y: node.y + ch / 2 };
   }
   // Logic Graph (W1A): named provides (right edge) + accepts (left edge),
   // evenly spaced below the 30px spec-node bar. Same distribution the renderer
@@ -28063,6 +28071,9 @@ function workflowPortDir(side, node) {
   // Layer-anchored ports: input layer rows curve leftward, source rows rightward.
   if (/^layerout:/.test(side)) return 1;
   if (/^layerin:/.test(side))  return -1;
+  // Table per-cell ports: cell contents exit rightward, populate enters leftward.
+  if (/^cellout:/.test(side)) return 1;
+  if (/^cellin:/.test(side))  return -1;
   // Logic Graph read-back ports (paramout:) emit rightward; param: inputs leftward.
   if (typeof side === "string" && side.startsWith("paramout:")) return 1;
   // Logic Graph ports: provides curve rightward, accepts leftward. Names can
@@ -29648,9 +29659,9 @@ const WORKFLOW_CONNECT_DEFS = {
     accepts:  { in:  { label: "Seed prompt / context", tags: ["text", "section"] } },
   },
   "assistant-research": {
-    label: "Research assistant",
+    label: "Comparative research",
     // Out is the generated result table (a "section" contents bundle).
-    provides: { out: { label: "Research table", tags: ["section"] } },
+    provides: { out: { label: "Comparison table", tags: ["section"] } },
     accepts:  { in:  { label: "Context (prompt / asset / folder / section)",
                        tags: ["text", "text-gen", "asset", "section", "folder"] } },
   },
@@ -47554,7 +47565,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               // falls through to wbPointerDown, which resolves the table by its DOM
               // id and moves it (so a table is draggable in whiteboard mode, not just
               // marquee'd). Creation tools fall through here too, to drop onto a table.
-              if (e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-wb-table-hit, .workflow-wb-table-colgrip, .workflow-wb-table-rowgrip")) return;
+              // .workflow-node-section-resize is the table/section corner
+              // handle - it owns its drag in EVERY mode, so resizing works
+              // identically in whiteboard and build mode.
+              if (e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-wb-table-hit, .workflow-wb-table-colgrip, .workflow-wb-table-rowgrip, .workflow-node-section-resize")) return;
               wbPointerDownRef.current && wbPointerDownRef.current(e);
               return;
             }
@@ -47721,6 +47735,45 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
               />
             `)}
+            ${convertCfg && html`<${ConvertSectionModal}
+              cfg=${convertCfg}
+              onPatch=${(p) => setConvertCfg(c => ({ ...c, ...p }))}
+              onCancel=${() => setConvertCfg(null)}
+              onConfirm=${() => convertSectionToCustomApp(convertCfg)}
+            />`}
+            ${(() => {
+              const ex = (data.nodes || []).find(n => n.kind === "custom-app" && n._expandedSectionId);
+              if (!ex) return null;
+              return createPortal(html`
+                <div className="workflow-expand-bar">
+                  <span className="workflow-expand-bar-label">
+                    Editing <b>${ex.title || "Custom app"}</b> - change the nodes, then save back into the app.
+                  </span>
+                  <button type="button" className="tbtn" onClick=${() => cancelExpandCustomApp(ex.id)}>Cancel</button>
+                  <button type="button" className="tbtn" onClick=${() => saveExpandedCustomApp(ex.id, "existing")}>Save existing</button>
+                  <button type="button" className="tbtn tbtn-primary" onClick=${() => saveExpandedCustomApp(ex.id, "new")}>Save as new</button>
+                </div>`, document.body);
+            })()}
+            <div className="workflow-agent-tether-layer" ref=${agentTetherRef}></div>
+            <${WorkflowEdgesLayer}
+              nodes=${data.nodes || []}
+              edges=${data.edges || []}
+              orphanMap=${orphanMap}
+              pendingEdge=${pendingEdge}
+              selectedEdge=${selectedEdge}
+              onSelectEdge=${setSelectedEdge}
+              selectedNodeId=${selectedNodeId}
+              selectedNodeIds=${selectedNodeIds}
+              appNodeLayout=${appNodeLayout}
+              layerGeom=${layerGeomRef.current}
+            />
+            ${/* Tables render ABOVE the edges layer, like every other node
+                 kind, so a wire's fat invisible hit-stroke can never sit on
+                 top of the table's chrome (resize corner, row/col grips) and
+                 swallow clicks - EVERY assistant result table is wired, so
+                 the old sections-grouped placement made wired tables read as
+                 "corner resize doesn't work" in both canvas modes. Rendered
+                 before the other nodes so cell-bound content stays on top. */ ""}
             ${(data.nodes || []).filter(n => n.kind === "table").map(n => html`
               <${WorkflowTableNode}
                 key=${n.id}
@@ -47757,38 +47810,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 }}
               />
             `)}
-            ${convertCfg && html`<${ConvertSectionModal}
-              cfg=${convertCfg}
-              onPatch=${(p) => setConvertCfg(c => ({ ...c, ...p }))}
-              onCancel=${() => setConvertCfg(null)}
-              onConfirm=${() => convertSectionToCustomApp(convertCfg)}
-            />`}
-            ${(() => {
-              const ex = (data.nodes || []).find(n => n.kind === "custom-app" && n._expandedSectionId);
-              if (!ex) return null;
-              return createPortal(html`
-                <div className="workflow-expand-bar">
-                  <span className="workflow-expand-bar-label">
-                    Editing <b>${ex.title || "Custom app"}</b> - change the nodes, then save back into the app.
-                  </span>
-                  <button type="button" className="tbtn" onClick=${() => cancelExpandCustomApp(ex.id)}>Cancel</button>
-                  <button type="button" className="tbtn" onClick=${() => saveExpandedCustomApp(ex.id, "existing")}>Save existing</button>
-                  <button type="button" className="tbtn tbtn-primary" onClick=${() => saveExpandedCustomApp(ex.id, "new")}>Save as new</button>
-                </div>`, document.body);
-            })()}
-            <div className="workflow-agent-tether-layer" ref=${agentTetherRef}></div>
-            <${WorkflowEdgesLayer}
-              nodes=${data.nodes || []}
-              edges=${data.edges || []}
-              orphanMap=${orphanMap}
-              pendingEdge=${pendingEdge}
-              selectedEdge=${selectedEdge}
-              onSelectEdge=${setSelectedEdge}
-              selectedNodeId=${selectedNodeId}
-              selectedNodeIds=${selectedNodeIds}
-              appNodeLayout=${appNodeLayout}
-              layerGeom=${layerGeomRef.current}
-            />
             ${(data.nodes || []).filter(n => n.kind === "prototype").map(n => html`
               <${WorkflowPrototypeNode}
                 key=${n.id}
@@ -51333,9 +51354,9 @@ function WorkflowLibrary({ tab = "nodes" }) {
                  e.dataTransfer.effectAllowed = "copy";
                  e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-research" }));
                }}
-               title="Drag onto canvas - web research filtered to your criteria, distilled into a table with visuals.">
+               title="Drag onto canvas - web research filtered to your criteria, distilled into a side-by-side comparison table with visuals.">
             <span className="workflow-library-item-glyph"><${Icon.Search}/></span>
-            <span className="workflow-library-item-label">Research assistant</span>
+            <span className="workflow-library-item-label">Comparative research</span>
             <span className="workflow-library-item-id">web research</span>
           </div>
           <div className="workflow-library-item"
@@ -77350,10 +77371,10 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined, "--node-panel-r": panelR + "px" }}>
       <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-iter-glyph"><${Icon.Search}/></span>
-        <span className="workflow-node-iter-title">Research assistant</span>
+        <span className="workflow-node-iter-title">Comparative research</span>
         <span className="workflow-node-bar-spacer"/>
-        <${HoverTip} className="workflow-node-close" tip="Remove this research assistant."
-          ariaLabel="Remove research assistant"
+        <${HoverTip} className="workflow-node-close" tip="Remove this comparative research node."
+          ariaLabel="Remove comparative research node"
           onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×<//>
       </div>
       <div className="workflow-node-iter-body workflow-node-refiner-body" onMouseDown=${(e) => e.stopPropagation()}>
@@ -77414,7 +77435,7 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
       ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
-      <${WorkflowQuietFace} glyph=${html`<${Icon.Search}/>`} name=${"Research assistant"} sub=${(node.goal || "").trim() || null} />
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Search}/>`} name=${"Comparative research"} sub=${(node.goal || "").trim() || null} />
     </div>
   `;
 }
@@ -80396,7 +80417,9 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
           onClick=${(e) => { e.stopPropagation(); onRemove && onRemove(); }}
           onMouseDown=${(e) => e.stopPropagation()}>×</button>
       </div>
-      ${selected && html`<div className="workflow-node-section-resize" title="Drag to resize" onMouseDown=${onResizeDown}/>`}
+      ${selected && html`<div className="workflow-node-section-resize" title="Drag to resize"
+        style=${{ width: px(14) + "px", height: px(14) + "px", borderBottomRightRadius: px(14) + "px" }}
+        onMouseDown=${onResizeDown}/>`}
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
            title="Populate cells - wire an Agent or Skill here."
            onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
@@ -80628,6 +80651,15 @@ function WorkflowSectionNode({ node, zoom, selected, onSelect, onMove, onResize,
       <div
         className="workflow-node-section-resize"
         title="Drag to resize"
+        style=${{
+          /* constant SCREEN size at any zoom - a fixed 14 world-px handle is
+             ~3 screen px once a big section/table is viewed zoomed out, which
+             reads as "corner resize doesn't work". Same inverse-scale as the
+             other chrome. */
+          width: (14 / Math.max(zoom || 1, 0.1)) + "px",
+          height: (14 / Math.max(zoom || 1, 0.1)) + "px",
+          borderBottomRightRadius: (14 / Math.max(zoom || 1, 0.1)) + "px",
+        }}
         onMouseDown=${onResizeDown}
       />
       <div className="workflow-port-zone workflow-port-zone-in"

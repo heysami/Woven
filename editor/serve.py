@@ -3060,7 +3060,7 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
       - "browser" : wire the chrome MCP so the agent can open / screenshot /
                     click an asset by sight (Testing assistant).
       - "web"     : enable Claude Code's built-in WebSearch + WebFetch so the
-                    agent can research the live web (Research assistant) - NO
+                    agent can research the live web (Comparative research) - NO
                     paid Exa key needed.
     Returns the agent's final text. Picks the CLI from the chosen model's
     provider (claude-* -> Claude Code; gpt/o*/codex -> Codex CLI).
@@ -13092,13 +13092,18 @@ class H(http.server.SimpleHTTPRequestHandler):
                                 n["text"] = disk_n.get("text")
                             n["_thTextRev"] = _disk_trev
                         disk_status = disk_n.get("runStatus")
-                        # ...EXCEPT design-system nodes: they have no
-                        # subprocess owner to ever flip "running" back, so
-                        # preserving it re-wedges the editor's clear on every
-                        # save (worker badge spins forever). The editor
-                        # (on-load sanitize + lastRunId reconcile) is
-                        # authoritative for them.
-                        if disk_status == "running" and disk_n.get("kind") != "design-system":
+                        # ...EXCEPT kinds whose runs are driven entirely in the
+                        # BROWSER with no daemon subprocess owner to ever flip
+                        # "running" back: design-system, the assistant nodes
+                        # (research / testing), and the result tables they
+                        # build. For those, preserving disk's "running"
+                        # re-wedges the editor's on-load sanitize on every
+                        # save - the badge floats forever, revived on each
+                        # reload-merge. The editor is authoritative for them
+                        # (same kind list as the app.js load sanitizer).
+                        _no_owner_kinds = ("design-system", "assistant-research",
+                                           "assistant-testing", "table")
+                        if disk_status == "running" and disk_n.get("kind") not in _no_owner_kinds:
                             n["runStatus"] = "running"
                             disk_error = disk_n.get("runError")
                             if disk_error is not None:
@@ -17564,7 +17569,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         contents?, includeDomains? }. Runs an Exa web search server-side so the
         key never reaches the browser, returns { ok, results:[...] }.
         COST NOTE: Exa is paid + metered. This endpoint only fires on an
-        explicit caller request (the Research assistant's Run button, or an
+        explicit caller request (the Comparative research node's Run button, or an
         agent the user confirmed). Never wire it to run automatically."""
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0 or length > MAX_BYTES:
@@ -17637,7 +17642,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _assistant_research_run(self, qs):
         """POST /__assistant/research  Body: { model, system, prompt }.
         Runs ONE real agent with WebSearch/WebFetch enabled (NO paid Exa key) so
-        the Research assistant can research the live web via the user's own agent
+        the Comparative research node can research the live web via the user's own agent
         CLI. Returns { ok, text } - the caller parses the agent's JSON results."""
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0 or length > MAX_BYTES:

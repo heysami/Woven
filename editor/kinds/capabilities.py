@@ -220,7 +220,7 @@ def _daemon_endpoints() -> list:
         {"method": "POST", "path": "/__decision/<id>",      "purpose": "Persist a checkpoint pick (DECISION_<id>.json)"},
         {"method": "POST", "path": "/__exa/search",         "purpose": "Exa (exa.ai) web search - PAID + METERED. Body {query, numResults?, type?, category?, contents?}. NEVER auto-run: only on explicit user request, and offer-first if you reach for it mid-task. See the 'Exa web search' capability rule"},
         {"method": "POST", "path": "/__assistant/tester",   "purpose": "Run ONE 'simple agent' subagent (bare preamble, per-node model) for a Testing-assistant persona row. Body {model, system, prompt, useBrowser?}. With useBrowser it gets the chrome MCP to open + screenshot + click an asset by sight. Returns {ok, text}"},
-        {"method": "POST", "path": "/__assistant/research",  "purpose": "Run ONE 'simple agent' subagent with Claude Code's built-in WebSearch + WebFetch enabled (NO paid Exa key) for the Research assistant's agent mode. Body {model, system, prompt}. Returns {ok, text}"},
+        {"method": "POST", "path": "/__assistant/research",  "purpose": "Run ONE 'simple agent' subagent with Claude Code's built-in WebSearch + WebFetch enabled (NO paid Exa key) for the Comparative research node's agent mode. Body {model, system, prompt}. Returns {ok, text}"},
         {"method": "GET",  "path": "/__publish",             "purpose": "PUBLISH FEATURE - read a project's publish.json state (per prototype: ?prototype=<id>): deploy status, milestones, tasks, activity log"},
         {"method": "GET",  "path": "/__providers/status",    "purpose": "PUBLISH - which backend/db providers (supabase, cloudflare) are CONNECTED host-side; never returns the token"},
         {"method": "POST", "path": "/__providers/connect",   "purpose": "PUBLISH - connect a backend provider (?provider=supabase|cloudflare, body {token}); verifies + stores the token host-side (0600). Connect-once so publishing is hands-off - never ask the user to paste a token in chat"},
@@ -1294,7 +1294,7 @@ The app can research the live web two ways. The DEFAULT, no-extra-key path is an
 - **Structured output** (`output_schema`) - extract typed JSON from results.
 - **Category search** - company / people / research-paper / news / financial indexes.
 
-**Exa is metered and costs real money, so it is NEVER auto-run.** Only call `/__exa/search` when (a) the user explicitly asked for web research / external data, OR (b) Exa is clearly the best tool for the step - and in case (b) you MUST offer first and wait for the user's go-ahead before spending a call. Pressing Run on the Research assistant node counts as explicit user intent. Do not silently reach for Exa to "double-check" or "enrich" something the user did not ask to research.
+**Exa is metered and costs real money, so it is NEVER auto-run.** Only call `/__exa/search` when (a) the user explicitly asked for web research / external data, OR (b) Exa is clearly the best tool for the step - and in case (b) you MUST offer first and wait for the user's go-ahead before spending a call. Pressing Run on the Comparative research node counts as explicit user intent. Do not silently reach for Exa to "double-check" or "enrich" something the user did not ask to research.
 
 ## A DS build policy is a directive, not a permission (v3.13 hard rule)
 
