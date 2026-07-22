@@ -48336,7 +48336,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               // .workflow-node-section-resize = table/section corner handle,
               // .workflow-node-resize-corner = the standard node corner
               // (prompt / assistant / composer / iterator ...).
-              if (e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-wb-table-hit, .workflow-wb-table-colgrip, .workflow-wb-table-rowgrip, .workflow-node-section-resize, .workflow-node-resize-corner")) return;
+              // .workflow-port-zone: connector DOTS own their mousedown in
+              // whiteboard mode too, so wiring works identically in both
+              // modes (routing them to wbPointerDown moved the node instead).
+              // .workflow-edge-hit: the fat invisible wire stroke - clicking
+              // a wire selects it in whiteboard mode like in build mode.
+              if (e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-wb-table-hit, .workflow-wb-table-colgrip, .workflow-wb-table-rowgrip, .workflow-node-section-resize, .workflow-node-resize-corner, .workflow-port-zone, .workflow-edge-hit")) return;
               wbPointerDownRef.current && wbPointerDownRef.current(e);
               return;
             }
@@ -48348,6 +48353,28 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             if (editingWbIdRef.current
                 && !(e.target.closest && e.target.closest('[data-wb-id="' + editingWbIdRef.current + '"]'))) {
               commitWbEditingNowRef.current && commitWbEditingNowRef.current();
+            }
+            // Whiteboard items PAINT above every node (the wb layer is the
+            // canvas's last child), so they get FIRST claim on the pointer in
+            // build mode too - same visual-truth rule as whiteboard mode.
+            // They're pointer-events:none in build mode, so the DOM target is
+            // the node underneath and only a geometric test can see them;
+            // without this, a sticky sitting on a table/prompt was
+            // unselectable outside whiteboard mode. Pan gestures + form
+            // controls keep priority (the exemptions above already returned).
+            if (e.button === 0 && !e.altKey && !e.metaKey && !e.ctrlKey && !spaceHeld
+                && !e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-node-section-resize, .workflow-node-resize-corner, .workflow-port-zone, .workflow-edge-hit")) {
+              const wpGrab = screenToWorld(e.clientX, e.clientY);
+              const wbGrabId = wbHitTest(wbItemsRef.current, wpGrab.x, wpGrab.y, zoom);
+              if (wbGrabId) {
+                // Stop the capture DESCENT: in build mode the DOM target is
+                // the node underneath (items are pointer-events:none), so the
+                // node's own onMouseDownCapture select would fire next and
+                // stomp the item selection we just made.
+                e.stopPropagation();
+                wbSelectPointerDown(e, wbGrabId);
+                return;
+              }
             }
             // A code panel docked to a host node carries
             // `data-host-node-id` (not `data-node-id`). Without this
@@ -48448,6 +48475,23 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               setSelectedWbIds(new Set());
             }
             e.preventDefault();
+          }}
+          onDoubleClick=${(e) => {
+            // Build-mode double-click on a wb TEXT carrier enters inline
+            // editing, matching whiteboard mode (which has its own delegated
+            // path on the wb layer). Items are pointer-events:none in build
+            // mode, so only a geometric test can see them.
+            if (wbMode) return;
+            if (e.target.closest && e.target.closest("input, textarea, select, [contenteditable], button")) return;
+            const wp = screenToWorld(e.clientX, e.clientY);
+            const id = wbHitTest(wbItemsRef.current, wp.x, wp.y, zoom);
+            if (!id) return;
+            const it = (wbItemsRef.current || []).find(i => i && i.id === id);
+            if (it && (it.type === "text" || it.type === "textbox" || it.type === "sticky")) {
+              e.preventDefault();
+              setSelectedWbIds(new Set([id]));
+              setEditingWbId(id);
+            }
           }}
           data-panning=${panning ? "true" : "false"}
           data-space=${spaceHeld ? "true" : "false"}
