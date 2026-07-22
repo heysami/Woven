@@ -26016,6 +26016,7 @@ const _LEGACY_EDITABLE_FIELDS = {
   "assistant-interview": ["goal", "focus", "pushPast", "model"],
   "assistant-research":  ["goal", "criteria", "model", "searchVia", "numResults", "category"],
   "assistant-testing":   ["task", "model", "personaTypes", "testersPerType", "maxTesters"],
+  "assistant-deepresearch": ["task", "model", "maxAgents", "rounds"],
   "iterator-remix":   ["variants"],
   "design-system":    ["spec"],
 };
@@ -26952,6 +26953,7 @@ function WorkflowCanvas() {
             // always stale and safe to clear here.
             const assistantStuck = (n.kind === "assistant-research"
                                  || n.kind === "assistant-testing"
+                                 || n.kind === "assistant-deepresearch"
                                  || n.kind === "table")
                                  && n.runStatus === "running";
             if (n.runStatus !== "pending" && n.runStatus !== "paused" && !dsStuck && !assistantStuck) return n;
@@ -27859,12 +27861,14 @@ function workflowPortPosition(node, side, ctx) {
   // per-kind minimums - mirror BOTH here or the wire endpoint lands below /
   // beside the drawn diamond (the old bodyTop-offset math missed by 16px on
   // every assistant edge).
-  if (node.kind === "assistant-interview" || node.kind === "assistant-research" || node.kind === "assistant-testing") {
+  if (node.kind === "assistant-interview" || node.kind === "assistant-research" || node.kind === "assistant-testing" || node.kind === "assistant-deepresearch") {
     const cw = node.kind === "assistant-interview" ? Math.max(360, node.w || 440)
              : node.kind === "assistant-testing"   ? Math.max(380, node.w || 440)
+             : node.kind === "assistant-deepresearch" ? Math.max(380, node.w || 440)
              :                                       Math.max(360, node.w || 420);
     const ch = node.kind === "assistant-interview" ? Math.max(420, node.h || 480)
              : node.kind === "assistant-testing"   ? Math.max(460, node.h || 500)
+             : node.kind === "assistant-deepresearch" ? Math.max(480, node.h || 540)
              :                                       Math.max(440, node.h || 460);
     if (side === "in")  return { x: node.x,      y: node.y + ch / 2 };
     if (side === "out") return { x: node.x + cw, y: node.y + ch / 2 };
@@ -28003,6 +28007,33 @@ function _assistantVerdict(v) {
   if (/possib|maybe|could|potential|might/.test(s)) return { key: "possible", emoji: "💡", color: "blue", label: "Possibly good" };
   if (/bad|poor|weak|no\b|avoid|reject/.test(s)) return { key: "bad", emoji: "👎", color: "pink", label: "Bad" };
   return { key: "nothing", emoji: "😐", color: "gray", label: "Nothing notable" };
+}
+
+// Deep-research stance → wb colour token. A stance is ONE agent's position on
+// a merged point; consensus is the lead's final read across all agents.
+function _drStanceWord(s) {
+  const k = String(s == null ? "" : s).toLowerCase();
+  // Negatives FIRST: "disapprove" / "disagree" / "invalid" / "failed to
+  // validate" all contain the positive words, so the support regex would
+  // swallow them.
+  if (/unverif|fail|unable|cannot|can't|no evidence|not found/.test(k)) return "unverified";
+  if (/oppose|disapprove|refute|reject|disagree|invalid/.test(k)) return "oppose";
+  if (/challenge|partial|conditional|mixed|contest/.test(k)) return "challenge";
+  if (/support|approve|confirm|agree|valid/.test(k)) return "support";
+  return "unverified";
+}
+function _drStanceColor(s) {
+  const w = _drStanceWord(s);
+  return w === "support" ? "green" : w === "oppose" ? "pink" : w === "challenge" ? "orange" : "gray";
+}
+// Final per-point consensus → sticky colour + panel tone.
+function _drConsensus(s) {
+  const k = String(s == null ? "" : s).toLowerCase();
+  if (/support/.test(k)) return { key: "supported",  color: "green",  tone: "pass", label: "SUPPORTED" };
+  if (/disput|reject/.test(k)) return { key: "disputed", color: "pink", tone: "fail", label: "DISPUTED" };
+  if (/contest|mixed|challenge/.test(k)) return { key: "contested", color: "orange", tone: "warn", label: "CONTESTED" };
+  if (/unverif|unknown|open/.test(k)) return { key: "unverified", color: "gray", tone: "warn", label: "UNVERIFIED" };
+  return { key: "open", color: "yellow", tone: "warn", label: "OPEN" };
 }
 
 // Collect folder scopes from upstream entries.
@@ -29332,6 +29363,21 @@ const WORKFLOW_NODE_FACTORY = {
     maxTesters: p.maxTesters || 12,         // hard cap on total rows
     tableId: p.tableId || null,
   }),
+  // Deep research assistant: forms a structured statement, asks the user a few
+  // directing questions, then runs viewpoint agents (champion / skeptic /
+  // official / community / linked-material) that gather + debate evidence over
+  // rounds. Output: a section of merged-point stickies + per-agent evidence table.
+  "assistant-deepresearch": (p) => ({
+    kind: "assistant-deepresearch", w: 440, h: 540,
+    task:  p.task  || "",   // what to research / validate
+    model: p.model || "claude-opus-4-8",
+    maxAgents: p.maxAgents || 4,    // viewpoint agents (2-5)
+    rounds: p.rounds || 2,          // debate rounds after the initial gather (1-3)
+    clarify: p.clarify || null,     // { forTask, questions:[{q,options[]}], answers:{}, done }
+    tableId: p.tableId || null,     // evidence table (for re-run cleanup)
+    sectionId: p.sectionId || null, // board section (for re-run cleanup)
+    drIds: p.drIds || null,         // { wbIds: [...] } board wb items (for re-run cleanup)
+  }),
   "composer": (p) => ({
     kind: "composer", w: 900, h: 600,
     canvasW: p.canvasW || 1600,
@@ -29678,6 +29724,12 @@ const WORKFLOW_CONNECT_DEFS = {
     label: "Testing assistant",
     provides: { out: { label: "Tester feedback table", tags: ["section"] } },
     accepts:  { in:  { label: "What to test (prompt / asset / folder / section)",
+                       tags: ["text", "text-gen", "asset", "section", "folder"] } },
+  },
+  "assistant-deepresearch": {
+    label: "Deep research assistant",
+    provides: { out: { label: "Research board (section + evidence table)", tags: ["section"] } },
+    accepts:  { in:  { label: "Context (prompt / asset / folder / section)",
                        tags: ["text", "text-gen", "asset", "section", "folder"] } },
   },
   "composer": {
@@ -30283,6 +30335,29 @@ function workflowPickDropContainer(nodes, bb, excludeIds, opts) {
     return { sec: { sectionId: bestS.id, ox: Math.round(bb.x - bestS.x), oy: Math.round(bb.y - bestS.y) } };
   }
   return null;
+}
+
+// Stable sort by binding-chain depth (hosts first, bound children after), so
+// render maps paint contained containers ON TOP of their hosts regardless of
+// creation order. Ties keep array order.
+function _workflowSortByBindingDepth(list, allNodes) {
+  const byId = new Map((allNodes || []).map(n => [n && n.id, n]));
+  const depth = (o) => {
+    let d = 0, cur = o;
+    const seen = new Set();
+    for (let i = 0; i < 8 && cur; i++) {
+      const host = workflowBoundTo(cur);
+      if (!host || seen.has(host)) break;
+      seen.add(host);
+      d++;
+      cur = byId.get(host) || null;
+    }
+    return d;
+  };
+  return (list || [])
+    .map((n, i) => ({ n, i, d: depth(n) }))
+    .sort((a, b) => (a.d - b.d) || (a.i - b.i))
+    .map(e => e.n);
 }
 
 // Section containment - OWNERSHIP-AWARE. A node belongs to a section when it
@@ -36217,6 +36292,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // otherwise the per-node single-move fallback the caller supplies. Used by
   // every node component's onMove prop below.
   const onMoveForNode = useCallback((nid, singleMover) => (dx, dy) => {
+    // Every node kind's move funnels through here - stamp the gesture's node
+    // id so the drop rebind + drop-target highlight work even for kinds whose
+    // onDragStart wiring never reaches startNodeDrag.
+    lastDragNodeIdRef.current = nid;
     if (selectedNodeIds.size > 1 && selectedNodeIds.has(nid)) {
       moveSelectedNodes(dx, dy);
     } else {
@@ -44519,6 +44598,322 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }
   }, [data, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellBox, workflowAppendCellBox, workflowAddCellSticker, _assistantDropTable]);
 
+  // ── Assistant 4: Deep research assistant ──────────────────────────────────
+  // Multi-agent research with deliberately OPPOSED viewpoints. Flow:
+  //   0. clarify  - up to 3 quick questions to the USER; the answers pick the
+  //                 agent panel (so they come before anything runs)
+  //   1. plan     - structured research statement + 2-5 viewpoint agents
+  //                 (champion / skeptic / official-web / community-web /
+  //                 linked-material - whatever fits the statement)
+  //   2. gather   - each agent researches the statement its own way (web
+  //                 agents via /__assistant/research; material agents as
+  //                 plain LLM calls scoped to the wired context)
+  //   3. merge    - findings folded into ONE point matrix (per-agent stances)
+  //   4. debate   - N rounds where agents confirm / refute / challenge each
+  //                 other; every round APPENDS colour-coded stance boxes to
+  //                 the evidence table (nothing is overwritten)
+  //   5. conclude - the lead reviews the final matrix, rewords the points,
+  //                 recolours the stickies by consensus, rewrites the
+  //                 conclusion
+  // Canvas output: a SECTION (header + description + one sticky per merged
+  // point + conclusion box) with a per-agent evidence table beside it.
+  const setupDeepResearch = useCallback(async (nodeId, clarifyArg) => {
+    const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
+    const node = (data.nodes || []).find(n => n.id === nodeId);
+    if (!node) return;
+    const task = (node.task || "").trim();
+    if (!task) { setRun({ status: "error", error: "Describe what to research first." }); return; }
+    const t0 = Date.now();
+    try {
+      const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
+      const ctx = _assistantCollectText(ups);
+      const hasMaterial = !!ctx;
+
+      // Phase 0: clarifying questions. Generated once per task text; the node
+      // body collects answers and re-invokes with the answered copy
+      // (clarifyArg beats the possibly-stale node snapshot in this closure).
+      const clar = clarifyArg || node.clarify;
+      if (!clar || clar.forTask !== task) {
+        setRun({ status: "loading", phase: "forming questions", error: null });
+        updateNode(nodeId, { runStatus: "running" });
+        const qText = await assistantLlm([{ role: "user", content:
+          `You are planning MULTI-AGENT deep research: several subagents with deliberately different viewpoints or source methods will research the task, and the user's answers below decide WHICH agents to spawn.\n\nTASK:\n${task}\n` +
+          (ctx ? "\nLINKED MATERIAL (excerpt):\n" + ctx.slice(0, 800) : "") +
+          `\n\nAsk up to 3 SHORT questions whose answers would change the agent panel or the research angle (e.g. validate an idea vs gather facts, official sources vs community experience, region / timeframe, what "good" means). Each question gets 2-4 short answer OPTIONS.\n\nReturn ONLY JSON: [{"q":"...","options":["...","..."]}]. No prose.` }],
+          { model: node.model, maxTokens: 800 });
+        const qs = _assistantExtractJson(qText);
+        if (!Array.isArray(qs) || !qs.length) throw new Error("Could not form directing questions - try again.");
+        updateNode(nodeId, {
+          runStatus: null,
+          clarify: { forTask: task, done: false, answers: {},
+            questions: qs.slice(0, 3).map(x => ({ q: String(x.q || ""), options: (Array.isArray(x.options) ? x.options : []).slice(0, 4).map(String) })) },
+        });
+        setRun({ status: "await", phase: "questions ready", error: null });
+        return;
+      }
+      if (!clar.done) { setRun({ status: "await", phase: "answer the questions" }); return; }
+
+      // Phase 1: structured statement + agent panel.
+      setRun({ status: "loading", phase: "planning agents", error: null });
+      updateNode(nodeId, { runStatus: "running" });
+      const answers = (clar.questions || [])
+        .map((qq, i) => (clar.answers && String(clar.answers[i] || "").trim()) ? `Q: ${qq.q}\nA: ${clar.answers[i]}` : "")
+        .filter(Boolean).join("\n");
+      const nAgents = Math.max(2, Math.min(5, node.maxAgents || 4));
+      const planText = await assistantLlm([{ role: "user", content:
+        `You LEAD a multi-agent deep research. Write the research plan.\n\nTASK:\n${task}\n` +
+        (answers ? `\nUSER'S DIRECTION (clarifying Q&A):\n${answers}\n` : "") +
+        (ctx ? `\nLINKED MATERIAL (excerpt):\n${ctx.slice(0, 1500)}\n` : "") +
+        `\n1. Write a STRUCTURED RESEARCH STATEMENT: the claim / question decomposed into its testable parts, with scope and what counts as validation.` +
+        `\n2. Design ${nAgents} agents with DELIBERATELY DIFFERENT viewpoints or source methods, picked to fit this statement and the user's direction. Examples: validating an idea -> a champion arguing FOR it, a skeptic arguing AGAINST it, a market-evidence hunter; gathering facts -> official/primary web sources, community/user-generated web sources${hasMaterial ? ", the linked material" : ""}. Each agent's "method" is "web" (live web research through its lens) or "context" (reads ONLY the linked material${hasMaterial ? "" : ' - do NOT use "context", nothing is linked'}).` +
+        `\n\nReturn ONLY JSON: {"statement":"...","header":"<board title, <=8 words>","description":"<1-2 sentence board intro>","agents":[{"name":"<short role name>","role":"<one-line persona>","lens":"<what it hunts for / argues>","method":"web|context"}]}. No prose.` }],
+        { model: node.model, maxTokens: 2200 });
+      const plan = _assistantExtractJson(planText);
+      if (!plan || !plan.statement || !Array.isArray(plan.agents) || !plan.agents.length) throw new Error("Could not form the research plan.");
+      const agents = plan.agents.slice(0, nAgents).map((a, i) => ({
+        name: String(a.name || ("Agent " + (i + 1))).slice(0, 28),
+        role: String(a.role || ""), lens: String(a.lens || ""),
+        method: (a.method === "context" && hasMaterial) ? "context" : "web",
+      }));
+
+      // One agent turn. Web agents run as a REAL subagent with WebSearch /
+      // WebFetch (/__assistant/research); material agents are plain LLM calls
+      // (no tools, so they can't wander off the wired material).
+      const runAgent = async (a, prompt) => {
+        const system = `You are "${a.name}" - ${a.role} Your lens: ${a.lens}. Stay strictly in this viewpoint; it is DELIBERATE that other agents disagree with you. Output strictly JSON, no prose.`;
+        if (a.method === "web") {
+          const r = await fetch(apiUrl("/__assistant/research"), {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: node.model, system, prompt }),
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok || !j.ok) throw new Error(j.error || ("agent run failed (HTTP " + r.status + ")"));
+          return _assistantExtractJson(j.text) || [];
+        }
+        const t = await assistantLlm([
+          { role: "system", content: system + " You have NO web access - work ONLY from the material given." },
+          { role: "user", content: prompt },
+        ], { model: node.model, maxTokens: 1800 });
+        return _assistantExtractJson(t) || [];
+      };
+
+      // Phase 2: initial gather - one run per agent, sequential.
+      const FINDINGS_FORMAT = `Return ONLY a JSON array of your findings (max 6): [{"point":"<claim / finding in one sentence>","stance":"support|oppose|challenge|unverified","note":"<why, in your voice, <=40 words>","url":"<source url or empty>","snippet":"<short verbatim quote from the source, or empty>","image":"<direct image url that shows it, else empty>"}]. "stance" is YOUR position on the point given your lens; use "unverified" when you looked and could not validate it. No prose outside the JSON.`;
+      const findings = {};
+      for (let i = 0; i < agents.length; i++) {
+        const a = agents[i];
+        setRun({ status: "loading", phase: `agent ${i + 1}/${agents.length}: ${a.name}` });
+        const prompt =
+          `RESEARCH STATEMENT:\n${plan.statement}\n` +
+          (a.method === "context"
+            ? `\nTHE MATERIAL (all you may use):\n${ctx.slice(0, 4000)}\n`
+            : `\nResearch this through YOUR lens. Cite real URLs you actually opened; quote snippets verbatim.\n`) +
+          `\n${FINDINGS_FORMAT}`;
+        try { findings[a.name] = (await runAgent(a, prompt)).filter(x => x && x.point); }
+        catch (e) { findings[a.name] = []; }
+      }
+      if (!Object.values(findings).some(list => list.length)) throw new Error("No agent returned findings - try again.");
+
+      // Phase 3: merge into one point matrix.
+      setRun({ status: "loading", phase: "merging points" });
+      const mText = await assistantLlm([{ role: "user", content:
+        `You LEAD the research. Merge the agents' findings into ONE list of distinct points (max 8). Findings several agents touched merge into one point, keeping each agent's OWN stance on it (they may approve, disapprove, challenge, or have failed to validate).\n\nSTATEMENT:\n${plan.statement}\n\nAGENT FINDINGS (JSON by agent):\n` +
+        JSON.stringify(findings) +
+        `\n\nReturn ONLY JSON: {"points":[{"id":<1..n>,"point":"<merged point, one sentence>","perAgent":{"<agent name>":{"stance":"support|oppose|challenge|unverified","note":"...","url":"...","snippet":"...","image":"..."}}}],"conclusion":"<2-3 sentence current read>"}. Only include agents that actually addressed a point. No prose.` }],
+        { model: node.model, maxTokens: 3500 });
+      const merged = _assistantExtractJson(mText);
+      if (!merged || !Array.isArray(merged.points) || !merged.points.length) throw new Error("Could not merge the findings.");
+      merged.points = merged.points.slice(0, 8).map((p, i) => ({ ...p, id: p.id || (i + 1), perAgent: p.perAgent || {} }));
+
+      // Phase 4: build the board - drop any previous run's outputs first.
+      setRun({ status: "loading", phase: "building board" });
+      if (node.tableId) _assistantDropTable(node.tableId);
+      if (node.sectionId || (node.drIds && node.drIds.wbIds)) {
+        const oldWb = new Set((node.drIds && node.drIds.wbIds) || []);
+        const oldSec = node.sectionId;
+        setData(d => ({
+          ...d,
+          nodes: (d.nodes || []).filter(n => n.id !== oldSec),
+          wb: (Array.isArray(d.wb) ? d.wb : []).filter(it => !oldWb.has(it.id) && !(it.sec && it.sec.sectionId === oldSec)),
+        }));
+      }
+
+      // The section: header + description + sticky grid + conclusion, every
+      // wb item sec-bound so the section carries its contents when moved.
+      const secX = Math.round(node.x + (node.w || 440) + 460), secY = Math.round(node.y);
+      const SECW = 760, PAD = 24, INNER = SECW - PAD * 2;
+      const header = String(plan.header || task.slice(0, 60));
+      const desc = String(plan.description || "");
+      const secId = workflowNewNodeId();
+      const wbIds = [];
+      const stickyByPoint = {};
+      let conclId = null;
+      setData(d => {
+        const secBody = workflowMakeNodeOfKind("section", { title: header });
+        const items = [];
+        const bind = (it, x, y) => {
+          it.x = x; it.y = y;
+          it.sec = { sectionId: secId, ox: Math.round(x - secX), oy: Math.round(y - secY) };
+          items.push(it); wbIds.push(it.id);
+          return it;
+        };
+        let y = secY + PAD + 8;
+        bind(wbMakeItem("text", { text: header, w: INNER, fontSize: "xl", bold: true, align: "left", color: "ink" }), secX + PAD, y);
+        y += Math.max(44, _measureWrappedTextHeight(header, INNER) + 26);
+        if (desc) {
+          bind(wbMakeItem("text", { text: desc, w: INNER, fontSize: "sm", align: "left", color: "gray" }), secX + PAD, y);
+          y += _measureWrappedTextHeight(desc, INNER) + 20;
+        }
+        const STK = 200, GAP = 16;
+        merged.points.forEach((p, i) => {
+          const col = i % 3, row = Math.floor(i / 3);
+          const st = bind(
+            wbMakeItem("sticky", { text: String(p.point || ""), w: STK, h: STK, color: "yellow", fontSize: "sm", align: "left" }),
+            secX + PAD + col * (STK + GAP), y + row * (STK + GAP));
+          stickyByPoint[p.id] = st.id;
+        });
+        y += Math.ceil(merged.points.length / 3) * (STK + GAP) + 8;
+        bind(wbMakeItem("text", { text: "Conclusion", w: INNER, fontSize: "sm", bold: true, align: "left", color: "ink" }), secX + PAD, y);
+        y += 28;
+        const cH = Math.min(400, _measureWrappedTextHeight(String(merged.conclusion || ""), INNER - 14) + 24);
+        const cIt = bind(
+          wbMakeItem("textbox", { text: String(merged.conclusion || ""), w: INNER, h: cH, color: "gray", align: "left", fontSize: "sm" }),
+          secX + PAD, y);
+        conclId = cIt.id;
+        y += cH + PAD;
+        const secNode = { id: secId, ...secBody, x: secX, y: secY, w: SECW, h: Math.max(360, y - secY) };
+        return { ...d, nodes: [...(d.nodes || []), secNode], wb: [...(Array.isArray(d.wb) ? d.wb : []), ...items] };
+      });
+
+      // The evidence table: one row per merged point, one column per agent
+      // (stance boxes APPEND per round - the debate stays visible), then
+      // Sources (links + verbatim snippets) and Snapshot (image evidence).
+      const headers = ["Point", ...agents.map(a => a.name), "Sources", "Snapshot"];
+      const colWidths = [260, ...agents.map(() => 240), 320, 300];
+      const rows = merged.points.map(p => [p.point || "", ...agents.map(() => ""), "", ""]);
+      const tableId = workflowBuildResultTable({
+        title: "Evidence: " + header.slice(0, 32), headers, rows,
+        x: secX + SECW + 80, y: secY, colWidths,
+      });
+      updateNode(nodeId, { tableId, sectionId: secId, drIds: { wbIds } });
+      updateNode(tableId, { runStatus: "running" });
+
+      const SRC_COL = 1 + agents.length, SNAP_COL = SRC_COL + 1;
+      const snapped = new Set();   // one snapshot browser node per point, max
+      const appendEntries = (pts, label) => {
+        for (const p of pts) {
+          const ri = merged.points.findIndex(mp => String(mp.id) === String(p.id));
+          if (ri < 0) continue;
+          const per = p.perAgent || {};
+          agents.forEach((a, ai) => {
+            const e = per[a.name];
+            if (!e) return;
+            const sw = _drStanceWord(e.stance);
+            workflowAppendCellBox(tableId, ri + 1, 1 + ai,
+              (label ? label + " " : "") + sw.toUpperCase() + (e.note ? ": " + e.note : ""), _drStanceColor(sw));
+            if (e.url || e.snippet) {
+              workflowAppendCellBox(tableId, ri + 1, SRC_COL,
+                (e.snippet ? "“" + e.snippet + "”\n" : "") + (e.url || "") + "\n(" + a.name + (label ? ", " + label.replace(":", "") : "") + ")", "blue");
+            }
+            if (e.image && /^https?:/i.test(e.image) && !snapped.has(ri)) {
+              snapped.add(ri);
+              workflowAddCellNode(tableId, ri + 1, SNAP_COL, "browser", { url: e.image, cellW: 280, cellH: 190 });
+            }
+          });
+        }
+      };
+      appendEntries(merged.points, "");
+
+      // The floating-panel summary twin (the canvas board stays the detailed view).
+      const writeResult = (roundsDone, conclusion, consensusById) => updateNode(nodeId, { result: {
+        kind: "deepresearch", task, builtAt: Date.now(),
+        statement: plan.statement, header, description: desc,
+        agents: agents.map(a => ({ name: a.name, method: a.method, lens: a.lens })),
+        counters: { agents: agents.length, points: merged.points.length, rounds: roundsDone, elapsedMs: Date.now() - t0 },
+        points: merged.points.map(p => ({
+          id: p.id, point: p.point,
+          consensus: (consensusById && consensusById[p.id]) || "",
+          perAgent: p.perAgent,
+        })),
+        conclusion: conclusion || "",
+      } });
+      writeResult(0, merged.conclusion, null);
+
+      // Phase 5: debate rounds. Each agent re-reviews the whole matrix and
+      // only reports points where its stance / evidence CHANGES or where it
+      // rebuts another agent; those land as appended boxes. A round with no
+      // changes ends the debate early.
+      const roundsN = Math.max(1, Math.min(3, node.rounds || 2));
+      let roundsDone = 0;
+      for (let round = 1; round <= roundsN; round++) {
+        let changes = 0;
+        for (let i = 0; i < agents.length; i++) {
+          const a = agents[i];
+          setRun({ status: "loading", phase: `debate ${round}/${roundsN}: ${a.name}` });
+          const prompt =
+            `RESEARCH STATEMENT:\n${plan.statement}\n\nCURRENT MERGED POINT MATRIX (every agent's stance):\n` +
+            JSON.stringify(merged.points) +
+            `\n\nRe-review as "${a.name}". Where OTHER agents dispute you, or where you can now confirm / refute / challenge a point${a.method === "web" ? " (verify with a quick web check when it matters)" : " (using ONLY the linked material)"}, respond. Return ONLY points where your stance or evidence CHANGES or where you rebut another agent - return [] if you fully stand by the matrix.\n\n` +
+            (a.method === "context" && ctx ? `THE MATERIAL:\n${ctx.slice(0, 3000)}\n\n` : "") +
+            `Return ONLY JSON: [{"id":<point id>,"stance":"support|oppose|challenge|unverified","note":"<your rebuttal / update, <=40 words>","url":"<source url or empty>","snippet":"<verbatim quote or empty>","image":""}]. No prose.`;
+          let resp = [];
+          try { resp = (await runAgent(a, prompt)).filter(x => x && x.id != null); } catch (e) { resp = []; }
+          for (const u of resp) {
+            const p = merged.points.find(mp => String(mp.id) === String(u.id));
+            if (!p) continue;
+            p.perAgent[a.name] = { stance: u.stance, note: u.note, url: u.url, snippet: u.snippet, image: u.image };
+            changes++;
+          }
+          if (resp.length) appendEntries(resp.map(u => ({ id: u.id, perAgent: { [a.name]: u } })), "R" + (round + 1) + ":");
+        }
+        roundsDone = round;
+        writeResult(roundsDone, merged.conclusion, null);
+        if (!changes) break;
+      }
+
+      // Phase 6: final review - the lead settles each point, the stickies
+      // reword + recolour by consensus, the conclusion box rewrites.
+      setRun({ status: "loading", phase: "final review" });
+      const fText = await assistantLlm([{ role: "user", content:
+        `You LEAD the research. The debate is over - review the FINAL matrix and settle each point for the user.\n\nSTATEMENT:\n${plan.statement}\n\nFINAL MATRIX:\n` +
+        JSON.stringify(merged.points) +
+        `\n\nReturn ONLY JSON: {"points":[{"id":<id>,"point":"<final wording, one sentence>","consensus":"supported|contested|disputed|unverified"}],"conclusion":"<3-5 sentence final conclusion for the user>"}. No prose.` }],
+        { model: node.model, maxTokens: 2500 });
+      const fin = _assistantExtractJson(fText) || {};
+      const finPoints = Array.isArray(fin.points) ? fin.points : [];
+      const consensusById = {};
+      const stickyToFinal = {};
+      for (const fp of finPoints) {
+        if (!fp || fp.id == null) continue;
+        consensusById[fp.id] = fp.consensus || "";
+        if (stickyByPoint[fp.id]) stickyToFinal[stickyByPoint[fp.id]] = fp;
+        const p = merged.points.find(mp => String(mp.id) === String(fp.id));
+        if (p && fp.point) {
+          p.point = fp.point;
+          const ri = merged.points.indexOf(p);
+          workflowSetCellText(tableId, ri + 1, 0, fp.point);
+        }
+      }
+      setData(d => ({
+        ...d,
+        wb: (Array.isArray(d.wb) ? d.wb : []).map(it => {
+          const fp = stickyToFinal[it.id];
+          if (fp) return { ...it, text: String(fp.point || it.text), color: _drConsensus(fp.consensus).color };
+          if (conclId && it.id === conclId && fin.conclusion) return { ...it, text: String(fin.conclusion) };
+          return it;
+        }),
+      }));
+      writeResult(roundsDone, fin.conclusion || merged.conclusion, consensusById);
+
+      updateNode(nodeId, { runStatus: "done" });
+      updateNode(tableId, { runStatus: "done" });
+      setRun({ status: "done", phase: "done", ranAt: Date.now() });
+    } catch (e) {
+      updateNode(nodeId, { runStatus: "error" });
+      setRun({ status: "error", error: String(e?.message || e) });
+    }
+  }, [data, setData, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellNode, workflowAppendCellBox, workflowSetCellText, _assistantDropTable]);
+
   // first (so a chain like `prompt → gen-image → rembg → asset` works when
   // you click Run on either skill - the runner figures out the dependency
   // order and runs each one). Between two chained skills, the upstream
@@ -47953,7 +48348,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                      }}/>
               `;
             })()}
-            ${(data.nodes || []).filter(n => n.kind === "section").map(n => html`
+            ${/* Bound (inner) sections render AFTER their host so they paint
+                 on top and stay clickable - array order alone would bury a
+                 section that was created before the frame it now sits on. */ ""}
+            ${_workflowSortByBindingDepth((data.nodes || []).filter(n => n.kind === "section"), data.nodes).map(n => html`
               <${WorkflowSectionNode}
                 key=${n.id}
                 node=${n}
@@ -48014,7 +48412,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                  the old sections-grouped placement made wired tables read as
                  "corner resize doesn't work" in both canvas modes. Rendered
                  before the other nodes so cell-bound content stays on top. */ ""}
-            ${(data.nodes || []).filter(n => n.kind === "table").map(n => html`
+            ${/* Bound (inner) tables render AFTER their host table/section so
+                 a table dropped into a cell paints ABOVE the outer grid and
+                 stays selectable - array order alone would bury a table that
+                 was created before its host. */ ""}
+            ${_workflowSortByBindingDepth((data.nodes || []).filter(n => n.kind === "table"), data.nodes).map(n => html`
               <${WorkflowTableNode}
                 key=${n.id}
                 node=${n}
@@ -49229,6 +49631,24 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onSetup=${setupTesting}
+              />
+            `)}
+            ${(data.nodes || []).filter(n => n.kind === "assistant-deepresearch").map(n => html`
+              <${WorkflowDeepResearchNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                runState=${runStates[n.id]}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onSetup=${setupDeepResearch}
               />
             `)}
             ${(data.nodes || []).filter(n => n.kind === "skill").map(n => html`
@@ -51611,6 +52031,17 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph"><${Icon.Spark}/></span>
             <span className="workflow-library-item-label">Testing assistant</span>
             <span className="workflow-library-item-id">persona testers</span>
+          </div>
+          <div className="workflow-library-item"
+               draggable=${true}
+               onDragStart=${(e) => {
+                 e.dataTransfer.effectAllowed = "copy";
+                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-deepresearch" }));
+               }}
+               title="Drag onto canvas - asks a few directing questions, then viewpoint agents (champion / skeptic / official / community / your material) research a structured statement, debate it over rounds, and build a board: merged-point stickies + a per-agent evidence table.">
+            <span className="workflow-library-item-glyph"><${Icon.Brain}/></span>
+            <span className="workflow-library-item-label">Deep research assistant</span>
+            <span className="workflow-library-item-id">viewpoint agents debate</span>
           </div>
           <div className="workflow-library-item"
                draggable=${true}
@@ -77491,6 +77922,52 @@ function WorkflowAssistantResultPanel({ node }) {
           </div>`}
       </div>`;
   }
+
+  if (res.kind === "deepresearch") {
+    const pts = res.points || [];
+    const c = res.counters || {};
+    return html`
+      <div className="workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-research" ...${swallow}>
+        <div className="wap-head">
+          <span className="wap-kicker">Deep research</span>
+          <span className="wap-count">${pts.length} point${pts.length === 1 ? "" : "s"}</span>
+        </div>
+        ${res.header && html`<div className="wap-sub">${res.header}</div>`}
+        <div className="wap-section-label">Live counters</div>
+        <div className="wap-counters">
+          <div className="wap-counter"><div className="wap-counter-num">${c.agents ?? 0}</div><div className="wap-counter-lbl">Agents</div></div>
+          <div className="wap-counter"><div className="wap-counter-num">${c.points ?? 0}</div><div className="wap-counter-lbl">Points</div></div>
+          <div className="wap-counter"><div className="wap-counter-num">${c.rounds ?? 0}</div><div className="wap-counter-lbl">Debate rounds</div></div>
+          <div className="wap-counter"><div className="wap-counter-num">${_assistFmtElapsed(c.elapsedMs)}</div><div className="wap-counter-lbl">Elapsed</div></div>
+        </div>
+        ${(res.agents || []).length > 0 && html`
+          <div className="wap-section-label">Agents</div>
+          <div className="wap-agents">
+            ${res.agents.map((a, i) => html`
+              <div key=${i} className="wap-agent">
+                <span className="wap-dot" style=${{ background: _assistDotColor(i) }}/>
+                <span className="wap-agent-name">${a.name}</span>
+                <span className="wap-agent-count">${a.method}</span>
+              </div>`)}
+          </div>`}
+        <div className="wap-section-label">Points</div>
+        <div className="wap-list">
+          ${pts.map((p, i) => {
+            const cs = _drConsensus(p.consensus);
+            return html`
+              <div key=${i} className="wap-probe">
+                <span className=${"wap-dot wap-dot-" + cs.tone}/>
+                <span className="wap-probe-text">${p.point}</span>
+                <span className=${"wap-pill wap-pill-" + cs.tone}>${p.consensus ? cs.label : "…"}</span>
+              </div>`;
+          })}
+          ${!pts.length && html`<div className="wap-empty">Gathering…</div>`}
+        </div>
+        ${res.conclusion && html`
+          <div className="wap-section-label">Conclusion</div>
+          <div className="wap-sub">${res.conclusion}</div>`}
+      </div>`;
+  }
   return null;
 }
 
@@ -77753,6 +78230,124 @@ function WorkflowTestingNode({ node, zoom, selected, onSelect, onMove, onResize,
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
       ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
       <${WorkflowQuietFace} glyph=${html`<${Icon.Users || Icon.User || Icon.Spark}/>`} name=${"Testing assistant"} sub=${(node.task || "").trim() || null} />
+    </div>
+  `;
+}
+
+// ── Assistant 4: Deep research assistant ──────────────────────────────────
+// Two-step body: the config fields, then - once Run has generated them - the
+// directing QUESTIONS replace the fields until answered (they pick the agent
+// panel, so nothing researches before them). "Start research" re-invokes
+// onSetup with the answered clarify object (the node snapshot in the setup
+// closure may not have flushed yet).
+function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  const w = Math.max(380, node.w || 440), h = Math.max(480, node.h || 540);
+  const busy = runState?.status === "loading";
+  const task = (node.task || "").trim();
+  const clar = node.clarify;
+  const clarActive = !!(clar && !clar.done && clar.forTask === task && (clar.questions || []).length);
+  const clarDone = !!(clar && clar.done && clar.forTask === task);
+  const hasResult = !!(node.result && (node.result.points || []).length);
+  const detached = selected && hasResult;
+  const panelR = detached ? 438 : 0;
+  const setAnswer = (i, v) => onChange({ clarify: { ...clar, answers: { ...(clar.answers || {}), [i]: v } } });
+  const start = (answersKept) => {
+    const done = { ...clar, done: true, answers: answersKept ? (clar.answers || {}) : {} };
+    onChange({ clarify: done });
+    onSetup && onSetup(node.id, done);
+  };
+  return html`
+    <div className="workflow-node workflow-node-iter workflow-node-assistant"
+         data-quiet="face"
+         data-selected=${selected ? "true" : "false"}
+         data-detached=${detached ? "true" : "false"}
+         onMouseDownCapture=${() => onSelect && onSelect()}
+         data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined, "--node-panel-r": panelR + "px" }}>
+      <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-iter-glyph"><${Icon.Brain}/></span>
+        <span className="workflow-node-iter-title">Deep research assistant</span>
+        <span className="workflow-node-bar-spacer"/>
+        <${HoverTip} className="workflow-node-close" tip="Remove this deep research assistant."
+          ariaLabel="Remove deep research assistant"
+          onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×<//>
+      </div>
+      <div className="workflow-node-iter-body workflow-node-refiner-body" onMouseDown=${(e) => e.stopPropagation()}>
+        ${clarActive ? html`
+          <div className="workflow-node-dr-questions">
+            <span className="workflow-node-iter-field-label">Direct the research - your answers pick the agents</span>
+            ${(clar.questions || []).map((qq, i) => html`
+              <div key=${i} className="workflow-node-dr-q">
+                <div className="workflow-node-dr-qtext">${qq.q}</div>
+                <div className="workflow-node-dr-opts">
+                  ${(qq.options || []).map(op => html`
+                    <button key=${op} className="workflow-node-dr-opt"
+                      data-picked=${(clar.answers || {})[i] === op ? "true" : "false"}
+                      onClick=${() => setAnswer(i, op)}>${op}</button>`)}
+                </div>
+                <input className="workflow-node-dr-other" placeholder="or type your own…"
+                  value=${(() => { const a = (clar.answers || {})[i]; return (a && !(qq.options || []).includes(a)) ? a : ""; })()}
+                  onInput=${(e) => setAnswer(i, e.target.value)}/>
+              </div>`)}
+            <div className="workflow-node-iter-actions">
+              <button className="workflow-node-skill-run" disabled=${busy}
+                title="Run the viewpoint agents with your answers steering the panel."
+                onClick=${(e) => { e.stopPropagation(); start(true); }}>
+                <${Icon.Play}/> Start research
+              </button>
+              <button className="workflow-node-refiner-pushadd" disabled=${busy}
+                title="Skip the questions - the lead picks the agent panel itself."
+                onClick=${(e) => { e.stopPropagation(); start(false); }}>Skip questions</button>
+            </div>
+          </div>` : html`
+          <label className="workflow-node-iter-field">
+            <span className="workflow-node-iter-field-label">What to research or validate</span>
+            <textarea rows=${3} placeholder="e.g. Would indie game studios pay for a playtest-recruiting service?"
+              value=${node.task || ""} onInput=${(e) => onChange({ task: e.target.value })}/>
+          </label>
+          <div className="workflow-node-assistant-row">
+            <label className="workflow-node-iter-field workflow-node-assistant-num">
+              <span className="workflow-node-iter-field-label">Agents</span>
+              <input type="number" min="2" max="5" value=${node.maxAgents || 4}
+                onInput=${(e) => onChange({ maxAgents: Math.max(2, Math.min(5, parseInt(e.target.value, 10) || 4)) })}/>
+            </label>
+            <label className="workflow-node-iter-field workflow-node-assistant-num">
+              <span className="workflow-node-iter-field-label">Debate rounds</span>
+              <input type="number" min="1" max="3" value=${node.rounds || 2}
+                onInput=${(e) => onChange({ rounds: Math.max(1, Math.min(3, parseInt(e.target.value, 10) || 2)) })}/>
+            </label>
+          </div>
+          <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}
+            title="Model the lead and every viewpoint agent run on."/>
+          <div className="workflow-node-iter-actions">
+            <button className="workflow-node-skill-run" disabled=${busy}
+              title=${clarDone
+                ? "Run the viewpoint agents, merge + debate their findings, and build the board."
+                : "First forms a structured statement and asks you a few directing questions."}
+              onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
+              ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>`
+                     : html`<${React.Fragment}><${Icon.Spark}/> ${clarDone ? "Run deep research" : "Start (asks questions first)"}<//>`}
+            </button>
+            ${clarDone && !busy && html`
+              <button className="workflow-node-refiner-pushadd"
+                title="Clear the saved answers and ask fresh directing questions on the next run."
+                onClick=${(e) => { e.stopPropagation(); onChange({ clarify: null }); }}>Re-ask questions</button>`}
+            ${runState?.status === "done" && html`<span className="workflow-node-iter-done">board built</span>`}
+            ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+          </div>`}
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
+           title="Context: prompt / asset / folder / section." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
+        <div className="workflow-port-dot"/>
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
+           title="The research board: section of merged points + evidence table." onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
+        <div className="workflow-port-dot"/>
+      </div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+      ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Brain}/>`} name=${"Deep research assistant"} sub=${task || null} />
     </div>
   `;
 }

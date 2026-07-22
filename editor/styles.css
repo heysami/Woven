@@ -15185,6 +15185,28 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-node-assistant-num input:focus,
 .workflow-node-assistant-cat select:focus { border-color: var(--accent); }
 .workflow-node-assistant-note { color: var(--text-faint); font-size: 10.5px; margin-top: 6px; }
+
+/* Deep research assistant: directing-question step (replaces the config
+   fields until answered). Option chips toggle; free input overrides. */
+.workflow-node-dr-questions { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-height: 0; }
+.workflow-node-dr-q { display: flex; flex-direction: column; gap: 5px; }
+.workflow-node-dr-qtext { font-size: 12px; font-weight: 600; line-height: 1.35; color: var(--text); }
+.workflow-node-dr-opts { display: flex; flex-wrap: wrap; gap: 5px; }
+.workflow-node-dr-opt {
+  font: inherit; font-size: 11px; padding: 3px 9px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 99px;
+  background: var(--surface); color: var(--text-muted);
+}
+.workflow-node-dr-opt:hover { border-color: var(--accent); color: var(--accent-text); }
+.workflow-node-dr-opt[data-picked="true"] {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text);
+}
+.workflow-node-dr-other {
+  border: 1px solid var(--border); background: var(--surface);
+  font: inherit; font-size: 11px; color: var(--text);
+  border-radius: 3px; padding: 4px 6px; outline: none;
+}
+.workflow-node-dr-other:focus { border-color: var(--accent); }
 .workflow-node-assistant-chat {
   display: flex; flex-direction: column; gap: 6px;
   max-height: 280px; overflow-y: auto; padding: 4px 2px;

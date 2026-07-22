@@ -1308,6 +1308,31 @@ KINDS = {
         "notes": "Generates persona TYPES then variant testers per type (shared background, varied personality), builds a feedback table, and runs ONE real 'simple agent' subagent per row via /__assistant/tester (bare preamble, per-node model). Non-text assets are opened + screenshotted + clicked by sight (chrome MCP). A clarification loop (max 3 passes) answers question-heavy testers and re-runs them.",
     },
 
+    # ── assistant-deepresearch (viewpoint agents debate a point matrix) ────
+    "assistant-deepresearch": {
+        "title":        "Deep research assistant (viewpoint agents)",
+        "category":     "assistant",
+        "inputs": {
+            "task":      {"type": "markdown", "userEditable": True},
+            "model":     {"type": "text",     "default": "claude-opus-4-8", "userEditable": True},
+            "maxAgents": {"type": "number",   "default": 4, "userEditable": True},
+            "rounds":    {"type": "number",   "default": 2, "userEditable": True},
+            "clarify":   {"type": "object",   "userEditable": False},
+            "tableId":   {"type": "text",     "userEditable": False},
+            "sectionId": {"type": "text",     "userEditable": False},
+            "drIds":     {"type": "object",   "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "client-iterator",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "runStatusFlow": ["queued", "running", "done", "error"],
+        "pauseAfter":   False,
+        "notes": "Forms a structured research statement, asks the user up to 3 clarifying questions that pick the agent panel, then runs 2-5 viewpoint agents (champion / skeptic / official-web / community-web / linked-material) - web agents via /__assistant/research, material agents as plain LLM calls. Findings merge into one point matrix that the agents DEBATE over N rounds (each round appends colour-coded stance boxes to the evidence table). Output: a canvas section with header + description + one sticky per merged point + conclusion, plus a per-agent evidence table (links, snippets, snapshots) beside it. The lead reviews the final matrix and recolours/rewords the stickies by consensus.",
+    },
+
     # ── iterator-remix ────────────────────────────────────────────────────
     "iterator-remix": {
         "title":        "Iterator - remix (N parallel HTML variants)",
