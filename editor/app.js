@@ -7848,6 +7848,76 @@ function getDefaultForCapability(cap) {
   if (!v || !v.provider) return null;
   return v;
 }
+
+/* ────────── Search-provider defaults (three-tier cascade) ──────────
+   Which web-search backend a search runs on: "agent" (free, built-in
+   WebSearch/WebFetch) or "exa" (paid exa.ai, higher recall). Three tiers:
+
+     GLOBAL      - the app-wide default (default "agent" so Exa is never a
+                   silent cost).
+     ASSISTANT   - overrides GLOBAL for the assistant node family (Comparative
+                   research assistant, Deep research assistant).
+     APP         - overrides GLOBAL for the rest of the app (the main chat
+                   agent's web research). Read daemon-side by the capabilities
+                   preamble.
+
+   A per-node `searchVia` override beats the ASSISTANT default, which beats
+   GLOBAL. An empty group value = inherit GLOBAL. Same storage tier +
+   daemon-sync shape as the default-providers map: localStorage is source of
+   truth, re-POSTed to /__search_defaults on load + change. */
+const SEARCH_DEFAULTS_KEY = "th.editor.search-defaults.v1";
+const SEARCH_PROVIDERS = ["agent", "exa"];   // agent = free web tools; exa = paid
+function loadSearchDefaults() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SEARCH_DEFAULTS_KEY) || "{}");
+    return (v && typeof v === "object") ? v : {};
+  } catch { return {}; }
+}
+function saveSearchDefaults(patch) {
+  const next = { ...loadSearchDefaults(), ...patch };
+  // Only "agent"/"exa" survive per tier; anything else (incl "") = inherit.
+  for (const k of ["global", "assistant", "app"]) {
+    if (!SEARCH_PROVIDERS.includes(next[k])) delete next[k];
+  }
+  try { localStorage.setItem(SEARCH_DEFAULTS_KEY, JSON.stringify(next)); } catch {}
+  try { window.dispatchEvent(new CustomEvent("th:search-defaults-changed", { detail: next })); } catch {}
+  try { syncSearchDefaultsToDaemon(next); } catch {}
+  return next;
+}
+function syncSearchDefaultsToDaemon(map) {
+  try {
+    fetch("/__search_defaults", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(map || {}),
+    }).catch(() => {});
+  } catch {}
+}
+// The GLOBAL default is "agent" (free) unless the user set it otherwise.
+function globalSearchDefault() {
+  const v = loadSearchDefaults().global;
+  return SEARCH_PROVIDERS.includes(v) ? v : "agent";
+}
+// Effective backend for an ASSISTANT node: node override → assistant-group
+// default → global default. `nodeSearchVia` is the node's own field (may be
+// "" / undefined to inherit).
+function resolveSearchVia(nodeSearchVia) {
+  if (SEARCH_PROVIDERS.includes(nodeSearchVia)) return nodeSearchVia;
+  const g = loadSearchDefaults();
+  if (SEARCH_PROVIDERS.includes(g.assistant)) return g.assistant;
+  return globalSearchDefault();
+}
+// Boot-time push so a daemon restart (cache lost) re-receives the cascade.
+if (typeof window !== "undefined") {
+  try {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => syncSearchDefaultsToDaemon(loadSearchDefaults()), { once: true });
+    } else {
+      syncSearchDefaultsToDaemon(loadSearchDefaults());
+    }
+  } catch {}
+}
+
 /* Which CLI (`claude` / `codex` / `opencode`) the chat spawn should use,
    based on the user's agent-capability default. Falls back to "claude" so the
    historical default keeps working when no preference is saved. The daemon
@@ -26049,7 +26119,7 @@ const _LEGACY_EDITABLE_FIELDS = {
   "assistant-interview": ["goal", "focus", "pushPast", "model"],
   "assistant-research":  ["goal", "criteria", "model", "searchVia", "numResults", "category"],
   "assistant-testing":   ["task", "model", "personaTypes", "testersPerType", "maxTesters"],
-  "assistant-deepresearch": ["task", "model", "maxAgents", "rounds"],
+  "assistant-deepresearch": ["task", "model", "searchVia", "maxAgents", "rounds"],
   "iterator-remix":   ["variants"],
   "design-system":    ["spec"],
 };
@@ -29410,7 +29480,7 @@ const WORKFLOW_NODE_FACTORY = {
     goal:     p.goal     || "",   // what to research
     criteria: p.criteria || "",   // quality criteria a good result must meet
     model:    p.model    || "claude-opus-4-8",
-    searchVia: p.searchVia || "agent",  // "agent" (free web tools) | "exa" (paid)
+    searchVia: p.searchVia || "",  // "" (inherit cascade) | "agent" (free) | "exa" (paid)
     numResults: p.numResults || 8,
     category: p.category || "",   // exa only: "" | company | people | research paper | news | financial report
     tableId:  p.tableId  || null, // the generated result table node id (for re-run)
@@ -29434,6 +29504,7 @@ const WORKFLOW_NODE_FACTORY = {
     kind: "assistant-deepresearch", w: 440, h: 540,
     task:  p.task  || "",   // what to research / validate
     model: p.model || "claude-opus-4-8",
+    searchVia: p.searchVia || "",   // "" (inherit cascade) | "agent" (free) | "exa" (paid)
     maxAgents: p.maxAgents || 4,    // viewpoint agents (2-5)
     rounds: p.rounds || 2,          // debate rounds after the initial gather (1-3)
     clarify: p.clarify || null,     // { forTask, questions:[{q,options[]}], answers:{}, done }
@@ -29777,14 +29848,14 @@ const WORKFLOW_CONNECT_DEFS = {
     accepts:  { in:  { label: "Seed prompt / context", tags: ["text", "section"] } },
   },
   "assistant-research": {
-    label: "Comparative research",
+    label: "Comparative research assistant",
     // Out is the generated result table (a "section" contents bundle).
     provides: { out: { label: "Comparison table", tags: ["section"] } },
     accepts:  { in:  { label: "Context (prompt / asset / folder / section)",
                        tags: ["text", "text-gen", "asset", "section", "folder"] } },
   },
   "assistant-testing": {
-    label: "Testing assistant",
+    label: "Simulated testing assistant",
     provides: { out: { label: "Tester feedback table", tags: ["section"] } },
     accepts:  { in:  { label: "What to test (prompt / asset / folder / section)",
                        tags: ["text", "text-gen", "asset", "section", "folder"] } },
@@ -44369,7 +44440,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const ctx = _assistantCollectText(ups);
       const folders = _assistantCollectFolders(ups);
       const criteria = (node.criteria || "").trim() || "relevant, specific, and trustworthy";
-      const via = node.searchVia || "agent";
+      const via = resolveSearchVia(node.searchVia);
       let kept = [], visById = {};
 
       if (via === "exa") {
@@ -44660,7 +44731,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             s.reply = "(run failed: " + String(e?.message || e) + ")";
           }
           workflowAppendCellBox(tableId, i + 1, 6, s.reply, "gray");
-          if (s.idea) workflowAppendCellBox(tableId, i + 1, 6, s.idea, "yellow");
+          // Highlighted point: a lightbulb emoji marks it as an IDEA beyond just
+          // the yellow colour, so the takeaway reads at a glance.
+          if (s.idea) workflowAppendCellBox(tableId, i + 1, 6, "💡 " + s.idea, "yellow");
           landed++;
           setRun({ status: "loading", phase: `${landed}/${state.length} testers in (parallel${useBrowser ? ", browsing" : ""})` });
           writeTestingResult(state, null);   // live-fill the panel as replies land
@@ -44695,7 +44768,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             // updated take. Pass-1 boxes stay visible above.
             workflowAppendCellBox(tableId, i + 1, 6, "Assistant: " + answers, "ink");
             workflowAppendCellBox(tableId, i + 1, 6, s.reply, "gray");
-            if (s.idea) workflowAppendCellBox(tableId, i + 1, 6, s.idea, "yellow");
+            if (s.idea) workflowAppendCellBox(tableId, i + 1, 6, "💡 " + s.idea, "yellow");
           } catch (e) { /* keep prior reply */ }
           landed++;
           setRun({ status: "loading", phase: `clarifying pass ${pass}: ${landed}/${needy.length} (parallel)` });
@@ -44823,12 +44896,47 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         points: [], conclusion: "",
       } });
 
-      // One agent turn. Web agents run as a REAL subagent with WebSearch /
-      // WebFetch (/__assistant/research); material agents are plain LLM calls
-      // (no tools, so they can't wander off the wired material).
+      // Search backend for this node's WEB agents: node override → assistant
+      // group default → global default (Settings → Web search). "agent" (free)
+      // or "exa" (paid). Context agents ignore this - they never touch the web.
+      const via = resolveSearchVia(node.searchVia);
+      // Exa is metered, so a web agent hits it AT MOST ONCE per run: the first
+      // call for that agent caches its source set, reused across debate rounds.
+      const _exaCache = {};
+      const _exaSourcesFor = async (a) => {
+        if (_exaCache[a.name] !== undefined) return _exaCache[a.name];
+        let results = [];
+        try {
+          const q = ((a.lens ? a.lens + " - " : "") + plan.statement).slice(0, 400);
+          const er = await fetch(apiUrl("/__exa/search"), {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: q, numResults: 6, type: "auto" }),
+          });
+          const ej = await er.json().catch(() => ({}));
+          if (er.ok && ej.ok) results = ej.results || [];
+        } catch { /* fall through to knowledge-only reasoning */ }
+        _exaCache[a.name] = results;
+        return results;
+      };
+      // One agent turn. Web agents research via the resolved backend - a real
+      // subagent with WebSearch/WebFetch (/__assistant/research), OR an Exa
+      // search whose results an in-lens LLM reasons over. Material agents are
+      // plain LLM calls (no tools, so they can't wander off the wired material).
       const runAgent = async (a, prompt) => {
         const system = `You are "${a.name}" - ${a.role} Your lens: ${a.lens}. Stay strictly in this viewpoint; it is DELIBERATE that other agents disagree with you. Output strictly JSON, no prose.`;
         if (a.method === "web") {
+          if (via === "exa") {
+            const sources = await _exaSourcesFor(a);
+            const srcText = (sources && sources.length)
+              ? "\n\nWEB SOURCES (Exa search for your lens - use + cite these; quote snippets verbatim):\n" +
+                JSON.stringify(sources.map(s => ({ title: s.title, url: s.url, summary: s.summary || (s.highlights || [])[0] || "", text: (s.text || "").slice(0, 400), image: s.image || "" })))
+              : "\n\n(Exa returned no sources - reason in-lens from your own knowledge and mark points \"unverified\".)";
+            const t = await assistantLlm([
+              { role: "system", content: system },
+              { role: "user", content: prompt + srcText },
+            ], { model: node.model, maxTokens: 1800 });
+            return _assistantExtractJson(t) || [];
+          }
           const r = await fetch(apiUrl("/__assistant/research"), {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ model: node.model, system, prompt }),
@@ -44900,15 +45008,24 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           const bx = prev ? prev.x : Math.round(node.x + (node.w || 440) + 460);
           const by = prev ? prev.y : Math.round(node.y);
           const oldWb = new Set(boardIds.wbIds);
+          // Drop every prior board item this node ever laid down: by tracked
+          // id, by current section binding, OR by the durable _dr owner tag.
+          // The tag is the backstop - an earlier build's items can lose their
+          // `sec` (stripSec fires when their section node is swapped out mid
+          // run) and fall out of drIds.wbIds, which used to strand them as
+          // unowned floaters the next rebuild stamped straight on top of.
           const keptWb = (Array.isArray(d.wb) ? d.wb : []).filter(it =>
-            !oldWb.has(it.id) && !(it.sec && it.sec.sectionId === boardIds.sectionId));
+            !oldWb.has(it.id)
+            && !(it.sec && it.sec.sectionId === boardIds.sectionId)
+            && it._dr !== nodeId);
           let nodes = (d.nodes || []).filter(n => n.id !== boardIds.sectionId);
           const secId = workflowNewNodeId();
           const items = [], wbIds = [];
           const bind = (it, x, y) => {
             it.x = x; it.y = y;
             it.sec = { sectionId: secId, ox: Math.round(x - bx), oy: Math.round(y - by) };
-            items.push(it); wbIds.push(it.id);
+            it._dr = nodeId; // durable owner tag; survives stripSec so a later
+            items.push(it); wbIds.push(it.id); // rebuild can always reclaim it
             return it;
           };
           let y = by + PAD + 8;
@@ -52229,7 +52346,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
                }}
                title="Drag onto canvas - web research filtered to your criteria, distilled into a side-by-side comparison table with visuals.">
             <span className="workflow-library-item-glyph"><${Icon.Search}/></span>
-            <span className="workflow-library-item-label">Comparative research</span>
+            <span className="workflow-library-item-label">Comparative research assistant</span>
             <span className="workflow-library-item-id">web research</span>
           </div>
           <div className="workflow-library-item"
@@ -52240,7 +52357,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
                }}
                title="Drag onto canvas - synthesises persona testers into a table and gathers each one's honest feedback.">
             <span className="workflow-library-item-glyph"><${Icon.Spark}/></span>
-            <span className="workflow-library-item-label">Testing assistant</span>
+            <span className="workflow-library-item-label">Simulated testing assistant</span>
             <span className="workflow-library-item-id">persona testers</span>
           </div>
           <div className="workflow-library-item"
@@ -78428,10 +78545,10 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined, "--node-panel-r": panelR + "px" }}>
       <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-iter-glyph"><${Icon.Search}/></span>
-        <span className="workflow-node-iter-title">Comparative research</span>
+        <span className="workflow-node-iter-title">Comparative research assistant</span>
         <span className="workflow-node-bar-spacer"/>
-        <${HoverTip} className="workflow-node-close" tip="Remove this comparative research node."
-          ariaLabel="Remove comparative research node"
+        <${HoverTip} className="workflow-node-close" tip="Remove this comparative research assistant."
+          ariaLabel="Remove comparative research assistant"
           onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×<//>
       </div>
       <div className="workflow-node-iter-body workflow-node-refiner-body" onMouseDown=${(e) => e.stopPropagation()}>
@@ -78448,7 +78565,10 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
         <div className="workflow-node-assistant-row">
           <label className="workflow-node-iter-field workflow-node-assistant-cat">
             <span className="workflow-node-iter-field-label">Search via</span>
-            <select value=${node.searchVia || "agent"} onChange=${(e) => onChange({ searchVia: e.target.value })}>
+            <select value=${SEARCH_PROVIDERS.includes(node.searchVia) ? node.searchVia : ""}
+              title="Override the search backend for this node, or inherit the app default (Settings → Web search)."
+              onChange=${(e) => onChange({ searchVia: e.target.value })}>
+              <option value="">Default (${resolveSearchVia("") === "exa" ? "Exa" : "Agent"})</option>
               <option value="agent">Agent (web)</option>
               <option value="exa">Exa</option>
             </select>
@@ -78458,7 +78578,7 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
             <input type="number" min="1" max="25" value=${node.numResults || 8}
               onInput=${(e) => onChange({ numResults: Math.max(1, Math.min(25, parseInt(e.target.value, 10) || 8)) })}/>
           </label>
-          ${(node.searchVia || "agent") === "exa" && html`
+          ${resolveSearchVia(node.searchVia) === "exa" && html`
             <label className="workflow-node-iter-field workflow-node-assistant-cat">
               <span className="workflow-node-iter-field-label">Category</span>
               <select value=${node.category || ""} onChange=${(e) => onChange({ category: e.target.value })}>
@@ -78476,7 +78596,7 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
           <button className="workflow-node-skill-run" disabled=${busy}
             title="Research the web, filter against your criteria, and build a result table with visuals."
             onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
-            ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>` : html`<${React.Fragment}><${Icon.Spark}/> ${(node.searchVia || "agent") === "exa" ? "Research (Exa)" : "Research (Agent)"}<//>`}
+            ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>` : html`<${React.Fragment}><${Icon.Spark}/> ${resolveSearchVia(node.searchVia) === "exa" ? "Research (Exa)" : "Research (Agent)"}<//>`}
           </button>
           ${runState?.status === "done" && html`<span className="workflow-node-iter-done">table built</span>`}
           ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
@@ -78492,7 +78612,7 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
       ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
-      <${WorkflowQuietFace} glyph=${html`<${Icon.Search}/>`} name=${"Comparative research"} sub=${(node.goal || "").trim() || null} />
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Search}/>`} name=${"Comparative research assistant"} sub=${(node.goal || "").trim() || null} />
     </div>
   `;
 }
@@ -78516,10 +78636,10 @@ function WorkflowTestingNode({ node, zoom, selected, onSelect, onMove, onResize,
          data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined, "--node-panel-r": panelR + "px" }}>
       <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-iter-glyph"><${Icon.Users || Icon.User || Icon.Spark}/></span>
-        <span className="workflow-node-iter-title">Testing assistant</span>
+        <span className="workflow-node-iter-title">Simulated testing assistant</span>
         <span className="workflow-node-bar-spacer"/>
-        <${HoverTip} className="workflow-node-close" tip="Remove this testing assistant."
-          ariaLabel="Remove testing assistant"
+        <${HoverTip} className="workflow-node-close" tip="Remove this simulated testing assistant."
+          ariaLabel="Remove simulated testing assistant"
           onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×<//>
       </div>
       <div className="workflow-node-iter-body workflow-node-refiner-body" onMouseDown=${(e) => e.stopPropagation()}>
@@ -78567,7 +78687,7 @@ function WorkflowTestingNode({ node, zoom, selected, onSelect, onMove, onResize,
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
       ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
-      <${WorkflowQuietFace} glyph=${html`<${Icon.Users || Icon.User || Icon.Spark}/>`} name=${"Testing assistant"} sub=${(node.task || "").trim() || null} />
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Users || Icon.User || Icon.Spark}/>`} name=${"Simulated testing assistant"} sub=${(node.task || "").trim() || null} />
     </div>
   `;
 }
@@ -78656,6 +78776,16 @@ function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onRe
               <span className="workflow-node-iter-field-label">Debate rounds</span>
               <input type="number" min="1" max="3" value=${node.rounds || 2}
                 onInput=${(e) => onChange({ rounds: Math.max(1, Math.min(3, parseInt(e.target.value, 10) || 2)) })}/>
+            </label>
+            <label className="workflow-node-iter-field workflow-node-assistant-cat">
+              <span className="workflow-node-iter-field-label">Search via</span>
+              <select value=${SEARCH_PROVIDERS.includes(node.searchVia) ? node.searchVia : ""}
+                title="Web-search backend for this node's web agents, or inherit the app default (Settings → Web search)."
+                onChange=${(e) => onChange({ searchVia: e.target.value })}>
+                <option value="">Default (${resolveSearchVia("") === "exa" ? "Exa" : "Agent"})</option>
+                <option value="agent">Agent (web)</option>
+                <option value="exa">Exa</option>
+              </select>
             </label>
           </div>
           <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}
@@ -84417,6 +84547,56 @@ function WorkflowDefaultProvidersSection({ mediaConfig }) {
   `;
 }
 
+/* The three-tier web-search default cascade, surfaced in the API-keys tab
+   (next to the Exa key row it depends on). One GLOBAL default, plus group
+   overrides for the assistant nodes and for the rest of the app; individual
+   assistant nodes can still override per node on the canvas. Storage +
+   daemon-sync via saveSearchDefaults (localStorage source of truth). */
+function WorkflowSearchDefaultsSection({ mediaConfig }) {
+  const [state, setState] = useState(() => loadSearchDefaults());
+  useEffect(() => {
+    const on = () => setState(loadSearchDefaults());
+    window.addEventListener("th:search-defaults-changed", on);
+    return () => window.removeEventListener("th:search-defaults-changed", on);
+  }, []);
+  const setTier = (tier, val) => setState(saveSearchDefaults({ [tier]: val }));
+  const exaReady = _providerHasKey(mediaConfig, "exa");
+  const globalVal = SEARCH_PROVIDERS.includes(state.global) ? state.global : "agent";
+  // Group rows show what "Inherit" resolves to so the cascade is legible.
+  const inheritLabel = `Inherit global (${globalVal === "exa" ? "Exa" : "Agent (web)"})`;
+  const ROWS = [
+    { tier: "global",    label: "Global default",    inherit: false,
+      hint: "The app-wide web-search backend." },
+    { tier: "assistant", label: "Assistant nodes",   inherit: true,
+      hint: "Comparative + Deep research assistants (each node can still override)." },
+    { tier: "app",       label: "Rest of the app",   inherit: true,
+      hint: "The main chat agent's web research." },
+  ];
+  return html`
+    <div className="workflow-default-providers">
+      <div className="workflow-settings-section-group-head">Web search</div>
+      <div className="workflow-settings-section-group-sub">
+        Agent = free built-in web tools · Exa = paid exa.ai (higher recall)${exaReady ? "" : " · ⚠ needs an Exa key below"}
+      </div>
+      ${ROWS.map(r => html`
+        <div key=${r.tier} className="workflow-default-provider-row" title=${r.hint}>
+          <div className="workflow-default-provider-label">${r.label}</div>
+          <div className="workflow-default-provider-controls">
+            <select
+              className="workflow-default-provider-select"
+              value=${r.inherit ? (SEARCH_PROVIDERS.includes(state[r.tier]) ? state[r.tier] : "") : globalVal}
+              onChange=${(e) => setTier(r.tier, e.target.value)}>
+              ${r.inherit && html`<option value="">${inheritLabel}</option>`}
+              <option value="agent">Agent (web) · free</option>
+              <option value="exa">Exa${exaReady ? "" : " · no key"}</option>
+            </select>
+          </div>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
 /* A provider has a "key configured" when the media-config row for
    its id is true / has saved set to true. The daemon's status payload uses
    `{ saved: true, ... }` per provider. CLI fallback applies to anthropic
@@ -84859,6 +85039,7 @@ function WorkflowSettingsDialog({ onClose }) {
         <div className="workflow-settings-body">
           ${tab === "api" ? html`
             <${WorkflowDefaultProvidersSection} mediaConfig=${config}/>
+            <${WorkflowSearchDefaultsSection} mediaConfig=${config}/>
             ${providerIds.map(pid => html`
               <${WorkflowProviderSection}
                 key=${pid}
