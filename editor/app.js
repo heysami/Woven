@@ -46800,6 +46800,22 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       writeResult("");
       const summaries = [];
       for (let i = 0; i < parts.length; i++) {
+        // Resume: a part whose board already landed (done run, same task)
+        // is reused rather than re-run, so an interrupted chain - closed
+        // tab, error later in the sequence - picks up where it stopped.
+        const subNow = (dataNodesRef.current || []).find(n2 => n2.id === ids[i]);
+        if (subNow && subNow.result && subNow.result.kind === "strategy"
+            && subNow.runStatus === "done"
+            && (subNow.task || "").trim() === (parts[i].task || "").trim()) {
+          const flat = _strategySummaryText(subNow.result.summary) || subNow.result.statement || "";
+          if (flat) {
+            summaries.push((parts[i].title ? parts[i].title + ": " : "") + flat);
+            partStates[i].status = "done";
+            partStates[i].summary = flat;
+            writeResult("");
+            continue;
+          }
+        }
         partStates[i].status = "running";
         writeResult("");
         setRun({ status: "loading", phase: `part ${i + 1}/${parts.length}: ${partStates[i].title}` });
@@ -54101,17 +54117,11 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-label">Strategy assistant</span>
             <span className="workflow-library-item-id">plan-gated strategy board</span>
           </div>
-          <div className="workflow-library-item"
-               draggable=${true}
-               onDragStart=${(e) => {
-                 e.dataTransfer.effectAllowed = "copy";
-                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-strategy-orchestrator" }));
-               }}
-               title="Drag onto canvas - for asks too broad for one board (a whole business strategy): decomposes into a chain of supporting strategies you approve, scaffolds one strategy assistant per part, and auto-drives them in order, feeding each part the previous parts' summaries.">
-            <span className="workflow-library-item-glyph"><${Icon.Tree}/></span>
-            <span className="workflow-library-item-label">Strategy chain orchestrator</span>
-            <span className="workflow-library-item-id">auto-drives strategy assistants</span>
-          </div>
+          ${null /* The Strategy chain orchestrator is deliberately NOT a
+            library card: the Strategy assistant is the single entry point,
+            and its plan gate routes chain-worthy asks to the orchestrator
+            (spawned pre-seeded via "Build as chain"). One card, the machine
+            decides the shape - the user never has to pre-diagnose. */}
           <div className="workflow-library-item"
                draggable=${true}
                onDragStart=${(e) => {
@@ -80814,13 +80824,9 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
             ${plan.chain && plan.chain.recommended && html`
               <div className="workflow-node-strategy-chainhint">
                 <div className="workflow-node-strategy-note">
-                  This ask looks like a CHAIN of ${(plan.chain.parts || []).length} strategies${plan.chain.why ? ": " + plan.chain.why : "."}
+                  This ask decomposes into a CHAIN of ${(plan.chain.parts || []).length} strategies${plan.chain.why ? ": " + plan.chain.why : "."}
+                  Recommended: build it as a chain - ${(plan.chain.parts || []).map(p => p.title).join(" -> ")}.
                 </div>
-                <button className="workflow-node-refiner-pushadd"
-                  title=${"Spawn a Strategy chain orchestrator pre-seeded with: " + (plan.chain.parts || []).map(p => p.title).join(" -> ")}
-                  onClick=${(e) => { e.stopPropagation(); onSpawnChain && onSpawnChain(node.id); }}>
-                  Use a strategy chain instead
-                </button>
               </div>`}
             <div className="workflow-node-strategy-keyview">
               <span className="workflow-node-iter-field-label">Key view</span>
@@ -80863,11 +80869,20 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
                 value=${plan.custom || ""} onInput=${(e) => patchPlan({ custom: e.target.value })}/>
             </label>
             <div className="workflow-node-iter-actions">
-              <button className="workflow-node-skill-run" disabled=${busy}
-                title="Research each key point and build the strategy board per this plan."
-                onClick=${(e) => { e.stopPropagation(); buildStrategy(); }}>
-                <${Icon.Play}/> Build strategy
-              </button>
+              ${plan.chain && plan.chain.recommended ? html`
+                <button className="workflow-node-skill-run" disabled=${busy}
+                  title=${"Spawn the chain runner pre-seeded with " + (plan.chain.parts || []).length + " parts for your review - each part becomes its own strategy board, run in order."}
+                  onClick=${(e) => { e.stopPropagation(); onSpawnChain && onSpawnChain(node.id); }}>
+                  <${Icon.Play}/> Build as chain (${(plan.chain.parts || []).length} parts)
+                </button>
+                <button className="workflow-node-refiner-pushadd" disabled=${busy}
+                  title="Ignore the chain recommendation and build one board from this plan."
+                  onClick=${(e) => { e.stopPropagation(); buildStrategy(); }}>Single board anyway</button>` : html`
+                <button className="workflow-node-skill-run" disabled=${busy}
+                  title="Research each key point and build the strategy board per this plan."
+                  onClick=${(e) => { e.stopPropagation(); buildStrategy(); }}>
+                  <${Icon.Play}/> Build strategy
+                </button>`}
               <button className="workflow-node-refiner-pushadd" disabled=${busy}
                 title="Throw this plan away and have the lead propose a fresh one."
                 onClick=${(e) => { e.stopPropagation(); onChange({ presPlan: null }); onSetup && onSetup(node.id, { replan: true }); }}>Re-plan</button>
