@@ -46731,80 +46731,29 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const task = (node.task || "").trim();
     if (!task) { setRun({ status: "error", error: "Describe the overall strategy ask first." }); return; }
     try {
-      // Phase A: the chain plan gate.
-      const plan = (gateArg && gateArg.replan) ? null : ((gateArg && gateArg.chainPlan) || node.chainPlan);
-      if (!plan || plan.forTask !== task) {
-        setRun({ status: "loading", phase: "planning the chain", error: null });
-        updateNode(nodeId, { runStatus: "running" });
-        const ups = resolveUpstreamInputs(node, data.nodes, data.edges, { wb: data.wb });
-        const ctx = _assistantCollectText(ups);
-        const cText = await assistantLlm([{ role: "user", content:
-          `You LEAD a strategy engagement that is too broad for one board. Decompose it into a CHAIN of 2-5 supporting strategies (e.g. a business strategy chains positioning -> product -> go-to-market -> pricing), ordered so each part builds on the ones before it.\n\nOVERALL ASK:\n${task}\n` +
-          (ctx ? `\nLINKED MATERIAL (excerpt):\n${ctx.slice(0, 1200)}\n` : "") +
-          `\nReturn ONLY JSON: {"why":"<one line on the decomposition logic>","parts":[{"title":"<short name>","task":"<the sub-strategy ask, one sentence>","focus":"<what this part must nail for the chain, one line>"}]}. No prose.` }],
-          { model: node.model, maxTokens: 1400 });
-        const cp = _drExtractObj(cText);
-        if (!cp || !Array.isArray(cp.parts) || cp.parts.length < 2) throw new Error("Could not plan the chain - try again.");
-        updateNode(nodeId, {
-          runStatus: null,
-          chainPlan: { forTask: task, done: false, why: String(cp.why || ""),
-            parts: cp.parts.slice(0, 5).map(p => ({
-              title: String(p.title || "").slice(0, 60),
-              task: String(p.task || ""),
-              focus: String(p.focus || "") })) },
-        });
-        setRun({ status: "await", phase: "chain plan ready - review it on the node", error: null });
-        return;
-      }
-      if (!plan.done) { setRun({ status: "await", phase: "review the chain plan" }); return; }
-      const parts = (plan.parts || []).filter(p => p && (p.task || "").trim()).slice(0, 5);
-      if (parts.length < 2) throw new Error("The chain needs at least 2 parts.");
+      // ONE dispatch, agent-owned end to end: the chain-driver agent PLANS
+      // the decomposition (an approved seed from the strategy assistant's
+      // plan gate rides along when present), SCAFFOLDS the part nodes via
+      // the workflow endpoints, ANNOUNCES chainPlan + partIds back to this
+      // node (the panel tracks it live), DRIVES each part (strategyRun
+      // payloads the editor renders), and SETTLES the chain summary. The
+      // run is a daemon agent run - transcript, Task subagents, resume -
+      // watchable via the Chat button.
+      setRun({ status: "loading", phase: "dispatching the chain agent", error: null });
       updateNode(nodeId, { runStatus: "running" });
-
-      // Phase B: scaffold one strategy assistant per part (reused on re-run).
-      let ids = (node.partIds && node.partIds.forTask === task) ? node.partIds.ids.slice(0, parts.length) : null;
-      if (!ids || ids.length < parts.length) {
-        ids = [];
-        setData(d => {
-          const nodes = [...(d.nodes || [])], edges = [...(d.edges || [])];
-          parts.forEach((p, i) => {
-            const id = workflowNewNodeId();
-            ids.push(id);
-            const body = workflowMakeNodeOfKind("assistant-strategy", {
-              task: p.task, model: node.model, searchVia: node.searchVia || "",
-            });
-            // Each part gets a tall row of its own - its board (right of the
-            // node) and breakdown table (right of that) both need the space.
-            nodes.push({ id, ...body, x: node.x, y: node.y + (node.h || 560) + 120 + i * 2600 });
-            edges.push({ from: nodeId + ".out", to: id + ".in" });
-            if (i > 0) edges.push({ from: ids[i - 1] + ".out", to: id + ".in" });
-          });
-          return { ...d, nodes, edges };
-        });
-        updateNode(nodeId, { partIds: { forTask: task, ids } });
-      }
-
-      // Phase C: dispatch the AGENT chain driver - a real tracked daemon run
-      // (RunState, streamed transcript, Task-subagent visibility, resume)
-      // with a BARE system prompt: the driver contract only, none of the
-      // capabilities-preamble weight. The agent researches each part and
-      // posts its finished payload back as `strategyRun`; the reconcile
-      // effects below render each board with the client layout engine and
-      // settle the chain result. Wired material reaches the agent through
-      // the daemon's own upstream resolve (prompts / folders / web pages /
-      // section bundles), so nothing needs to be forwarded from here.
-      setRun({ status: "loading", phase: "saving canvas, dispatching the chain agent" });
-      // Let the debounced workflow save flush so the just-scaffolded part
-      // nodes exist on disk for the agent's status POSTs.
+      // Let the debounced save flush so a just-created orchestrator node
+      // exists on disk for the run endpoint + the agent's status POSTs.
       await new Promise(r => setTimeout(r, 1500));
+      const seed = (gateArg && gateArg.chainPlan) || node.chainPlan || null;
       const proj = activeProjectId();
       const slug = activePrototypeSlug();
       const rr = await fetch(apiUrl(`/__workflow/node/${nodeId}/run?project=${encodeURIComponent(proj || "")}&prototype=${encodeURIComponent(slug || "")}`), {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chainPlan: plan, partIds: ids }),
+        body: JSON.stringify(seed ? { chainPlan: seed } : {}),
       });
       const j = await rr.json().catch(() => ({}));
-      if (!rr.ok || !j.runId) throw new Error(j.error || ("chain dispatch failed (HTTP " + rr.status + ")"));
+      if (!rr.ok) throw new Error(j.error || ("chain dispatch failed (HTTP " + rr.status + ")"));
+      if (!j.runId) throw new Error("the daemon accepted the call but returned no run - it is likely running an older build. Restart Woven, then Run again.");
       updateNode(nodeId, { runStatus: "running", runId: j.runId, runRunId: j.runId });
       setRun({ status: "done", phase: "agent driving - open Chat to watch", ranAt: Date.now() });
     } catch (e) {
@@ -46813,25 +46762,36 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }
   }, [data, setData, updateNode, assistantLlm]);
 
-  // Spawn a chain orchestrator from a strategy node's plan-gate suggestion,
-  // pre-seeded with the plan's proposed parts (still gated - the user
-  // reviews the chain before anything runs).
+  // Latest-instance ref for the auto-dispatch below (same stale-closure
+  // rule as setupStrategyRef).
+  const setupStrategyChainRef = useRef(null);
+  setupStrategyChainRef.current = setupStrategyChain;
+
+  // "Build as chain" on the strategy assistant's plan gate: spawn the chain
+  // runner pre-seeded with the (user-edited) parts and DISPATCH IMMEDIATELY.
+  // The user already approved the chain on the plan gate - the orchestrator
+  // node is the tracking surface (live part checklist + Chat), never a
+  // second approval stop.
   const spawnStrategyChain = useCallback((nodeId) => {
     const node = (data.nodes || []).find(n => n.id === nodeId);
     if (!node) return;
     const chain = node.presPlan && node.presPlan.chain;
+    const seed = chain && Array.isArray(chain.parts) && chain.parts.filter(p => (p.task || "").trim()).length >= 2
+      ? { forTask: (node.task || "").trim(), done: true, why: chain.why || "",
+          parts: chain.parts.filter(p => (p.task || "").trim()).map(p => ({ title: p.title, task: p.task, focus: p.focus })) }
+      : null;
     const id = workflowNewNodeId();
     setData(d => {
       const body = workflowMakeNodeOfKind("assistant-strategy-orchestrator", {
         task: node.task || "", model: node.model, searchVia: node.searchVia || "",
-        chainPlan: chain && chain.parts ? {
-          forTask: (node.task || "").trim(), done: false, why: chain.why || "",
-          parts: chain.parts.map(p => ({ title: p.title, task: p.task, focus: p.focus })),
-        } : null,
+        chainPlan: seed,
       });
       return { ...d, nodes: [...(d.nodes || []), { id, ...body, x: (node.x || 0) + (node.w || 460) + 60, y: node.y || 0 }] };
     });
-    setTimeout(() => window.dispatchEvent(new CustomEvent("th:focus-node", { detail: { nodeId: id } })), 60);
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent("th:focus-node", { detail: { nodeId: id } }));
+      if (setupStrategyChainRef.current) setupStrategyChainRef.current(id, seed ? { chainPlan: seed } : undefined);
+    }, 300);
   }, [data, setData]);
 
   // ── Agent-driven strategy materializer ───────────────────────────────
@@ -80941,8 +80901,26 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
               <div className="workflow-node-strategy-chainhint">
                 <div className="workflow-node-strategy-note">
                   This ask decomposes into a CHAIN of ${(plan.chain.parts || []).length} strategies${plan.chain.why ? ": " + plan.chain.why : "."}
-                  Recommended: build it as a chain - ${(plan.chain.parts || []).map(p => p.title).join(" -> ")}.
+                  Edit the parts here; "Build as chain" starts the run immediately.
                 </div>
+                ${(plan.chain.parts || []).map((p, i) => html`
+                  <div key=${i} className="workflow-node-strategy-part">
+                    <div className="workflow-node-strategy-partrow">
+                      <span className="workflow-node-strategy-partnum">${i + 1}</span>
+                      <input className="workflow-node-strategy-noteinput" placeholder="part name"
+                        value=${p.title || ""}
+                        onInput=${(e) => patchPlan({ chain: { ...plan.chain, parts: plan.chain.parts.map((pp, j) => j === i ? { ...pp, title: e.target.value } : pp) } })}/>
+                      <button className="workflow-node-strategy-partdrop" title="Drop this part"
+                        onClick=${(e) => { e.stopPropagation(); patchPlan({ chain: { ...plan.chain, parts: plan.chain.parts.filter((_, j) => j !== i) } }); }}>×</button>
+                    </div>
+                    <textarea rows=${2} className="workflow-node-strategy-parttask" placeholder="what this part must figure out…"
+                      value=${p.task || ""}
+                      onInput=${(e) => patchPlan({ chain: { ...plan.chain, parts: plan.chain.parts.map((pp, j) => j === i ? { ...pp, task: e.target.value } : pp) } })}/>
+                  </div>`)}
+                ${(plan.chain.parts || []).length < 5 && html`
+                  <button className="workflow-node-refiner-pushadd" disabled=${busy}
+                    onClick=${(e) => { e.stopPropagation(); patchPlan({ chain: { ...plan.chain, parts: [...(plan.chain.parts || []), { title: "New part", task: "", focus: "" }] } }); }}>
+                    + Add part</button>`}
               </div>`}
             <div className="workflow-node-strategy-keyview">
               <span className="workflow-node-iter-field-label">Key view</span>
@@ -81098,18 +81076,10 @@ function WorkflowStrategyChainNode({ node, zoom, selected, onSelect, onMove, onR
   const busy = runState?.status === "loading";
   const task = (node.task || "").trim();
   const plan = node.chainPlan;
-  const planActive = !!(plan && !plan.done && plan.forTask === task && (plan.parts || []).length);
-  const planDone = !!(plan && plan.done && plan.forTask === task);
+  const running = node.runStatus === "running";
   const hasResult = !!(node.result && (node.result.parts || []).length);
   const detached = selected && hasResult;
   const panelR = detached ? 438 : 0;
-  const patchPlan = (patch) => onChange({ chainPlan: { ...plan, ...patch } });
-  const patchPart = (i, patch) => patchPlan({ parts: (plan.parts || []).map((p, j) => j === i ? { ...p, ...patch } : p) });
-  const runChain = () => {
-    const done = { ...plan, done: true };
-    onChange({ chainPlan: done });
-    onSetup && onSetup(node.id, { chainPlan: done });
-  };
   return html`
     <div className="workflow-node workflow-node-iter workflow-node-assistant"
          data-quiet="face"
@@ -81126,75 +81096,44 @@ function WorkflowStrategyChainNode({ node, zoom, selected, onSelect, onMove, onR
           onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×<//>
       </div>
       <div className="workflow-node-iter-body workflow-node-refiner-body" onMouseDown=${(e) => e.stopPropagation()}>
-        ${planActive ? html`
-          <div className="workflow-node-dr-questions workflow-node-strategy-plan">
-            <span className="workflow-node-iter-field-label">Chain plan - each part becomes its own strategy assistant, run in order</span>
-            ${plan.why && html`<div className="workflow-node-strategy-note">${plan.why}</div>`}
-            ${(plan.parts || []).map((p, i) => html`
-              <div key=${i} className="workflow-node-strategy-part">
-                <div className="workflow-node-strategy-partrow">
-                  <span className="workflow-node-strategy-partnum">${i + 1}</span>
-                  <input className="workflow-node-strategy-noteinput" placeholder="part name"
-                    value=${p.title || ""} onInput=${(e) => patchPart(i, { title: e.target.value })}/>
-                  <button className="workflow-node-strategy-partdrop" title="Drop this part"
-                    onClick=${(e) => { e.stopPropagation(); patchPlan({ parts: plan.parts.filter((_, j) => j !== i) }); }}>×</button>
-                </div>
-                <textarea rows=${2} className="workflow-node-strategy-parttask" placeholder="what this part must figure out…"
-                  value=${p.task || ""} onInput=${(e) => patchPart(i, { task: e.target.value })}/>
-              </div>`)}
-            <button className="workflow-node-refiner-pushadd" disabled=${busy || (plan.parts || []).length >= 5}
-              onClick=${(e) => { e.stopPropagation(); patchPlan({ parts: [...(plan.parts || []), { title: "New part", task: "", focus: "" }] }); }}>
-              + Add part</button>
-            <div className="workflow-node-iter-actions">
-              <button className="workflow-node-skill-run" disabled=${busy || (plan.parts || []).filter(p => (p.task || "").trim()).length < 2}
-                title="Scaffold one strategy assistant per part and auto-drive them in order (gates skipped, summaries fed forward)."
-                onClick=${(e) => { e.stopPropagation(); runChain(); }}>
-                <${Icon.Play}/> Run the chain
-              </button>
-              <button className="workflow-node-refiner-pushadd" disabled=${busy}
-                title="Throw this decomposition away and plan a fresh chain."
-                onClick=${(e) => { e.stopPropagation(); onChange({ chainPlan: null }); onSetup && onSetup(node.id, { replan: true }); }}>Re-plan</button>
-            </div>
-          </div>` : html`
-          <label className="workflow-node-iter-field">
-            <span className="workflow-node-iter-field-label">The overall strategy ask (broad is fine - it gets decomposed)</span>
-            <textarea rows=${3} placeholder="e.g. A full business strategy for my playtest-recruiting service"
-              value=${node.task || ""} onInput=${(e) => onChange({ task: e.target.value })}/>
+        <label className="workflow-node-iter-field">
+          <span className="workflow-node-iter-field-label">The overall strategy ask (broad is fine - the agent decomposes it)</span>
+          <textarea rows=${3} placeholder="e.g. A full business strategy for my playtest-recruiting service"
+            value=${node.task || ""} onInput=${(e) => onChange({ task: e.target.value })}/>
+        </label>
+        <div className="workflow-node-assistant-row">
+          <label className="workflow-node-iter-field workflow-node-assistant-cat">
+            <span className="workflow-node-iter-field-label">Search via</span>
+            <select value=${SEARCH_PROVIDERS.includes(node.searchVia) ? node.searchVia : ""}
+              title="Web-search backend the part assistants inherit."
+              onChange=${(e) => onChange({ searchVia: e.target.value })}>
+              <option value="">Default (${resolveSearchVia("") === "exa" ? "Exa" : "Agent"})</option>
+              <option value="agent">Agent (web)</option>
+              <option value="exa">Exa</option>
+            </select>
           </label>
-          <div className="workflow-node-assistant-row">
-            <label className="workflow-node-iter-field workflow-node-assistant-cat">
-              <span className="workflow-node-iter-field-label">Search via</span>
-              <select value=${SEARCH_PROVIDERS.includes(node.searchVia) ? node.searchVia : ""}
-                title="Web-search backend the part assistants inherit."
-                onChange=${(e) => onChange({ searchVia: e.target.value })}>
-                <option value="">Default (${resolveSearchVia("") === "exa" ? "Exa" : "Agent"})</option>
-                <option value="agent">Agent (web)</option>
-                <option value="exa">Exa</option>
-              </select>
-            </label>
-          </div>
-          <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}
-            title="Model the chain planner and every part assistant run on."/>
-          <div className="workflow-node-iter-actions">
-            <button className="workflow-node-skill-run" disabled=${busy}
-              title=${planDone
-                ? "Re-run the whole chain with the saved plan (existing part assistants are reused)."
-                : "First proposes the chain decomposition for your review; nothing runs until you approve it."}
-              onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
-              ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>`
-                     : html`<${React.Fragment}><${Icon.Spark}/> ${planDone ? "Run the chain" : "Plan the chain"}<//>`}
-            </button>
-            ${planDone && !busy && html`
-              <button className="workflow-node-refiner-pushadd"
-                title="Clear the saved chain plan and decompose fresh on the next run."
-                onClick=${(e) => { e.stopPropagation(); onChange({ chainPlan: null }); }}>Re-plan</button>`}
-            ${node.runId && html`
-              <button className="workflow-node-refiner-pushadd"
-                title="Watch the chain-driver agent: live transcript, its subagents, stop / resume."
-                onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}><${Icon.CommentDots}/> Chat</button>`}
-            ${runState?.status === "done" && html`<span className="workflow-node-iter-done">${node.runId ? "agent driving" : "chain done"}</span>`}
-            ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+        </div>
+        <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}
+          title="Model the chain-driver agent and every part run on."/>
+        ${plan && (plan.parts || []).length > 0 && html`
+          <div className="workflow-node-strategy-note" title="The chain the driver agent announced / was seeded with.">
+            Chain: ${(plan.parts || []).map((p, i) => (i + 1) + ". " + (p.title || (p.task || "").slice(0, 30))).join("  ·  ")}
           </div>`}
+        <div className="workflow-node-iter-actions">
+          <button className="workflow-node-skill-run" disabled=${busy || running}
+            title="Dispatch ONE tracked agent run that plans the decomposition (your approved seed rides along), scaffolds a strategy assistant per part, drives them in order, and settles the chain summary. Watch it via Chat."
+            onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
+            ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "dispatching…"}<//>`
+                   : running ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>agent driving…<//>`
+                   : html`<${React.Fragment}><${Icon.Spark}/> Run the chain<//>`}
+          </button>
+          ${node.runId && html`
+            <button className="workflow-node-refiner-pushadd"
+              title="Watch the chain-driver agent: live transcript, its subagents, stop / resume."
+              onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}><${Icon.CommentDots}/> Chat</button>`}
+          ${runState?.status === "done" && !running && html`<span className="workflow-node-iter-done">chain done</span>`}
+          ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+        </div>
       </div>
       ${chatOpen && html`<${WorkflowAgentChatDialog}
         node=${{

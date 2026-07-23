@@ -13321,8 +13321,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                             # editor may echo a stale node without it); the editor
                             # clears it via the status endpoint, not the save-merge.
                             "assistant-strategy": ("task", "model", "maxAgents", "strategyRun"),
-                            # chainPlan deliberately NOT guarded (null clears it).
-                            "assistant-strategy-orchestrator": ("task", "model"),
+                            # chainPlan + partIds are agent-ANNOUNCED (the chain
+                            # driver posts them mid-run) - guard them against
+                            # stale editor echoes; clears go through the status
+                            # endpoint, never the save-merge.
+                            "assistant-strategy-orchestrator": ("task", "model", "chainPlan", "partIds"),
                             "iterator-remix":   ("variants",),
                             "design-system":    ("spec",),
                         }.get(nkind, ())
@@ -14307,22 +14310,23 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # part's node; the EDITOR's reconcile effect renders the board
                 # with the client layout engine. Parts already done resume for
                 # free (flagged SKIP below).
+                # Optional SEED decomposition (from the strategy assistant's
+                # approved plan gate). The agent owns planning either way -
+                # a seed is a strong suggestion, not a contract.
                 plan = body.get("chainPlan") or node.get("chainPlan") or {}
-                part_ids = body.get("partIds") or ((node.get("partIds") or {}).get("ids")) or []
-                parts = [p for p in (plan.get("parts") or []) if isinstance(p, dict) and (p.get("task") or "").strip()]
-                if len(parts) < 2 or len(part_ids) < len(parts):
-                    err = (400, {"error": "chain not ready: approve the chain plan first (need >=2 parts + scaffolded part nodes)"})
-                else:
-                    part_ids = [str(p) for p in part_ids[: len(parts)]]
-                    lines = []
-                    for i, p in enumerate(parts):
-                        pn = nodes_by_id.get(part_ids[i]) or {}
-                        done = bool((pn.get("result") or {}).get("kind") == "strategy" and pn.get("runStatus") == "done")
-                        lines.append("%d. node `%s`%s - %s: %s%s" % (
-                            i + 1, part_ids[i], " [ALREADY DONE - SKIP, reuse its summary]" if done else "",
-                            (p.get("title") or "part"), p.get("task"),
-                            (" (focus: %s)" % p.get("focus")) if p.get("focus") else ""))
-                    parts_block = "\n".join(lines)
+                seed_parts = [p for p in (plan.get("parts") or []) if isinstance(p, dict) and (p.get("task") or "").strip()]
+                # Prior parts (a re-run / resume): tell the agent what already
+                # exists so it reuses nodes + skips finished boards.
+                prior_ids = ((node.get("partIds") or {}).get("ids")) or []
+                prior_lines = []
+                for pid in prior_ids:
+                    pn = nodes_by_id.get(str(pid)) or {}
+                    if not pn:
+                        continue
+                    done = bool((pn.get("result") or {}).get("kind") == "strategy" and pn.get("runStatus") == "done")
+                    prior_lines.append("- node `%s`%s: %s" % (pid, " [BOARD DONE - skip, reuse its summary]" if done else "",
+                                                             str(pn.get("task") or "")[:140]))
+                if True:
                     catalog = (
                         'statement: no per-point fields | metrics: "value","unit" | affinity: "cluster" | '
                         'positioning: "px","py" in 0..1 (+ top-level "axes":{"x":["left","right"],"y":["bottom","top"]}) | '
@@ -14346,36 +14350,59 @@ class H(http.server.SimpleHTTPRequestHandler):
                         '  "insights": [{"title": "<short>", "text": "<2-4 sentences>"}]}},\n'
                         ' "summary": {"headline": "<ONE punchy sentence>", "support": "<=2 sentences>", "bullets": ["<one line each, 4-8>"]}}')
                     system_prompt = (
-                        "You DRIVE a chain of strategy boards on the Woven canvas. You are the researcher "
-                        "and writer; the EDITOR is the renderer - never draw boards or edit files yourself, "
-                        "you deliver finished part payloads over HTTP and stop.\n\n"
-                        "PROCESS - for each part in the task list, IN ORDER (skip parts marked ALREADY DONE, "
-                        "but reuse their summaries as grounding):\n"
-                        "1. RESEARCH the part's ask properly. Fan out Task subagents for parallel legwork "
-                        "(one per candidate key point works well) and use web search/fetch to validate. Ground "
-                        "on the CONTEXT block and every earlier part's summary; never repeat an earlier part.\n"
-                        "2. COMPOSE the part payload - EXACTLY this JSON shape:\n" + contract + "\n"
+                        "You PLAN and DRIVE a chain of strategy boards on the Woven canvas. You own the "
+                        "whole run - decomposition, scaffolding, research, delivery - and the harness "
+                        "tracks you (transcript + your Task subagents). The EDITOR is the renderer: never "
+                        "draw boards or edit project files yourself; the two HTTP endpoints below are your "
+                        "ONLY write paths.\n\n"
+                        "PHASE 1 - PLAN. Settle the chain: 2-5 supporting strategies, ordered so each "
+                        "builds on the ones before (e.g. positioning -> product -> go-to-market -> "
+                        "pricing). A SEED decomposition may be provided in the task - treat it as approved "
+                        "direction, refine only where it is clearly wrong. Each part: {title, task (one "
+                        "sentence ask), focus (what it must nail)}.\n\n"
+                        "PHASE 2 - SCAFFOLD. Create one strategy-assistant node per part (reuse EXISTING "
+                        "part nodes listed in the task instead of creating duplicates):\n"
+                        "curl -sS -X POST \"$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID\" -H 'Content-Type: application/json' --data-binary @scaffold.json\n"
+                        "where scaffold.json is {\"addNodes\": [{\"id\": \"strat_" + str(node_id) + "_p1\", \"kind\": \"assistant-strategy\", "
+                        "\"task\": \"<part 1 ask>\", \"model\": \"" + str(node.get("model") or "claude-opus-4-8") + "\", \"w\": 460, \"h\": 560, \"x\": 0, \"y\": 0}, "
+                        "{\"id\": \"strat_" + str(node_id) + "_p2\", ... \"y\": 2600} ...], "
+                        "\"addEdges\": [{\"from\": \"" + str(node_id) + ".out\", \"to\": \"strat_" + str(node_id) + "_p1.in\"}, "
+                        "{\"from\": \"strat_" + str(node_id) + "_p1.out\", \"to\": \"strat_" + str(node_id) + "_p2.in\"} ...], "
+                        "\"placement\": \"anchor\", \"anchorId\": \"" + str(node_id) + "\"} "
+                        "(ids MUST follow that strat_<orch>_pN pattern; y steps of 2600 leave room for each board).\n"
+                        "Then ANNOUNCE the plan so the canvas tracks it - POST to YOUR OWN node:\n"
+                        "curl -sS -X POST \"$TH_DAEMON_URL/__workflow/node/" + str(node_id) + "/status?project=$TH_PROJECT_ID\" "
+                        "-H 'Content-Type: application/json' --data-binary @announce.json\n"
+                        "where announce.json is {\"chainPlan\": {\"forTask\": \"<the overall ask verbatim>\", \"why\": \"<one line>\", "
+                        "\"done\": true, \"parts\": [{\"title\": ..., \"task\": ..., \"focus\": ...}]}, "
+                        "\"partIds\": {\"forTask\": \"<the overall ask verbatim>\", \"ids\": [\"strat_..._p1\", ...]}}\n\n"
+                        "PHASE 3 - DRIVE each part IN ORDER (skip parts marked BOARD DONE, reusing their "
+                        "summaries):\n"
+                        "a. RESEARCH the part's ask properly. Fan out Task subagents for parallel legwork "
+                        "(one per candidate key point works well) and use web search/fetch to validate. "
+                        "Ground on the CONTEXT block and every earlier part's summary; never repeat an "
+                        "earlier part.\n"
+                        "b. COMPOSE the part payload - EXACTLY this JSON shape:\n" + contract + "\n"
                         "Rules: 3-8 points; pick the key-view layout that genuinely fits and supply each "
                         "point's layout fields; honest stances (unverified when you could not validate); "
                         "1-3 insights per point, 12 max; drivers only when the part is change-oriented.\n"
                         "KEY-VIEW LAYOUT CATALOG (id: per-point fields): " + catalog + "\n"
-                        "3. DELIVER the part - POST to the daemon (this is your ONLY write path):\n"
-                        "curl -sS -X POST \"$TH_DAEMON_URL/__workflow/node/<partNodeId>/status?project=$TH_PROJECT_ID\" "
-                        "-H 'Content-Type: application/json' --data-binary @payload.json\n"
-                        "where payload.json is {\"strategyRun\": <the payload object>, \"task\": \"<the part's ask>\"} "
-                        "(write it to a temp file first; heredocs mangle big JSON).\n"
-                        "4. Carry the part's summary forward and continue.\n\n"
-                        "WHEN EVERY PART IS DELIVERED: settle the chain - one final POST to YOUR OWN node:\n"
-                        "curl -sS -X POST \"$TH_DAEMON_URL/__workflow/node/" + str(node_id) + "/status?project=$TH_PROJECT_ID\" "
-                        "-H 'Content-Type: application/json' --data-binary '{\"output\": \"<JSON string: "
-                        "{\\\"headline\\\":..., \\\"support\\\":..., \\\"bullets\\\":[...]} - the overall strategy across the parts>\"}'\n"
+                        "c. DELIVER it - POST {\"strategyRun\": <payload>, \"task\": \"<the part's ask>\"} to "
+                        "\"$TH_DAEMON_URL/__workflow/node/<partNodeId>/status?project=$TH_PROJECT_ID\" "
+                        "(write the JSON to a temp file and use --data-binary @file; heredocs mangle big JSON). "
+                        "The editor renders the board from it.\n\n"
+                        "PHASE 4 - SETTLE. One final POST to YOUR OWN node: {\"output\": \"<JSON string: "
+                        "{\\\"headline\\\":..., \\\"support\\\":..., \\\"bullets\\\":[...]} - the overall strategy across the parts>\"}. "
                         "Then print a one-line completion summary and STOP.\n\n"
-                        "HARD RULES: never edit workflow.json or any project file directly; never invent a "
-                        "part node id; if a POST fails retry once, then report the failure and continue to "
-                        "the next part.")
-                    kick = ("Drive this strategy chain.\n\nOVERALL ASK:\n" + str(node.get("task") or "") +
-                            ("\n\nCHAIN LOGIC: " + str(plan.get("why") or "") if plan.get("why") else "") +
-                            "\n\nPARTS (in order):\n" + parts_block)
+                        "HARD RULES: never edit workflow.json or any project file directly; if a POST "
+                        "fails retry once, then report the failure and continue.")
+                    kick = ("Plan and drive this strategy chain.\n\nOVERALL ASK:\n" + str(node.get("task") or "") +
+                            ("\n\nSEED DECOMPOSITION (user-approved direction):\n" + "\n".join(
+                                "%d. %s: %s%s" % (i + 1, p.get("title") or "part", p.get("task"),
+                                                  (" (focus: %s)" % p.get("focus")) if p.get("focus") else "")
+                                for i, p in enumerate(seed_parts)) if seed_parts else "") +
+                            ("\n\nCHAIN LOGIC (seed): " + str(plan.get("why") or "") if plan.get("why") else "") +
+                            ("\n\nEXISTING PART NODES from a previous run (reuse, do not duplicate):\n" + "\n".join(prior_lines) if prior_lines else ""))
                     prompt_text = kick + (("\n\n<context>\n" + upstream_text + "\n</context>") if upstream_text else "")
                     project_id = (qs.get("project") or ["default"])[0] if hasattr(qs, "get") else "default"
                     branch2 = self._default_prototype_slug(project_root) or "main"
@@ -14928,6 +14955,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                     if v is None or isinstance(v, dict):
                         node["strategyRun"] = v
                         changed["strategyRun"] = "cleared" if v is None else "payload"
+                # Chain-driver ANNOUNCE: the agent posts its settled plan +
+                # scaffolded part ids so the canvas tracks the chain live.
+                if akind == "assistant-strategy-orchestrator":
+                    for f in ("chainPlan", "partIds"):
+                        if f in body and (body[f] is None or isinstance(body[f], dict)):
+                            node[f] = body[f]
+                            changed[f] = "cleared" if body[f] is None else "set"
                 if akind == "assistant-interview" and "pushPast" in body and isinstance(body["pushPast"], list):
                     cleaned_pp = []
                     for entry in body["pushPast"][:10]:
