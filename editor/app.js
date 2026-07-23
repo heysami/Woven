@@ -80805,6 +80805,17 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
           </div>
           <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}
             title="Model the lead and every gather agent run on."/>
+          ${planDone && plan && plan.chain && plan.chain.recommended && html`
+            <div className="workflow-node-strategy-chainhint">
+              <div className="workflow-node-strategy-note">
+                This ask looks like a CHAIN of ${(plan.chain.parts || []).length} strategies${plan.chain.why ? ": " + plan.chain.why : "."}
+              </div>
+              <button className="workflow-node-refiner-pushadd"
+                title=${"Spawn a Strategy chain orchestrator pre-seeded with: " + (plan.chain.parts || []).map(p => p.title).join(" -> ")}
+                onClick=${(e) => { e.stopPropagation(); onSpawnChain && onSpawnChain(node.id); }}>
+                Use a strategy chain instead
+              </button>
+            </div>`}
           <div className="workflow-node-iter-actions">
             <button className="workflow-node-skill-run" disabled=${busy}
               title=${planDone
