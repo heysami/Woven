@@ -26291,6 +26291,9 @@ function WorkflowCanvas() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const loadedRef = useRef(false);
+  // Live mirror of `data` for code that needs the current doc OUTSIDE a
+  // setData updater (the micro-fx exit pre-pass reads it before the merge).
+  const dataLiveRef = useRef(null); dataLiveRef.current = data;
   // Undo/redo (Phase 2). Workflow mode shares the project history stack with
   // editor mode. Files outside workflow.json (source/, branches/) reload via
   // the hook's default reload path.
@@ -27028,6 +27031,8 @@ function WorkflowCanvas() {
       .then(j => {
         if (cancelled) return;
         loadedRef.current = true;
+        // Whole-doc population - never enter-animate the initial load.
+        _wfxSuppressEnterOnce = true;
         // Sanitize stale run state on load. `pending` and `paused` are
         // both runtime-only states tied to a live agent run; once the
         // session is over they're misleading. Clear them so the canvas
@@ -27422,6 +27427,50 @@ function WorkflowCanvas() {
             nodes: fresh.nodes || [], edges: fresh.edges || [], wb: fresh.wb || [],
           });
         } catch {}
+        // Micro-fx: agent/collaborator REMOVALS play the same exit animation
+        // as local deletes (the merge below would drop them instantly).
+        // Predict the drops with the merge's own guards (persisted snapshot
+        // exists, not tombstoned, disk missing; wb: clean local gone from
+        // disk), tag the DOM roots, give the animation one beat, THEN merge.
+        // A wrong prediction can't stick: the tagged survivors get the class
+        // stripped right after the merge commit paints.
+        if (!forceReplace && !_wfxReduce.matches) {
+          try {
+            const cur = dataLiveRef.current;
+            if (cur) {
+              const diskNodeIds = new Set((fresh.nodes || []).map(n => n && n.id));
+              const diskWbIds = new Set((Array.isArray(fresh.wb) ? fresh.wb : []).map(it => it && it.id));
+              const savedNodeIds0 = new Set();
+              for (const k of savedSnapshotRef.current.keys()) {
+                if (k.indexOf("wb:") === 0) continue;
+                const bar = k.indexOf("|");
+                if (bar > 0) savedNodeIds0.add(k.slice(0, bar));
+              }
+              const delSet = (deletedIdsRef && deletedIdsRef.current) || new Set();
+              const delWbSet = (deletedWbIdsRef && deletedWbIdsRef.current) || new Set();
+              const els = [];
+              for (const n of (cur.nodes || [])) {
+                if (!n || diskNodeIds.has(n.id)) continue;
+                if (!savedNodeIds0.has(n.id) || delSet.has(n.id)) continue;
+                const el = document.querySelector('.workflow-canvas [data-node-id="' + n.id + '"]');
+                if (el) els.push(el);
+              }
+              for (const it of (Array.isArray(cur.wb) ? cur.wb : [])) {
+                if (!it || diskWbIds.has(it.id) || delWbSet.has(it.id)) continue;
+                if (!_stableEqual(it, savedSnapshotRef.current.get("wb:" + it.id))) continue; // dirty local - merge keeps it
+                const el = document.querySelector('.workflow-wb-layer [data-wb-id="' + it.id + '"]');
+                if (el) els.push(el);
+              }
+              if (els.length) {
+                for (const el of els) el.classList.add("wf-exit");
+                await new Promise(res => setTimeout(res, 180));
+                setTimeout(() => {
+                  for (const el of els) { if (el.isConnected) el.classList.remove("wf-exit"); }
+                }, 250);
+              }
+            }
+          } catch {}
+        }
         setData(prev => {
           if (!prev) return fresh;
           // When the caller requests a full replace (history undo/
@@ -27434,6 +27483,9 @@ function WorkflowCanvas() {
           // and prune the redo tail beyond it, breaking subsequent redos.
           if (forceReplace) {
             skipNextSaveRef.current = true;
+            // Whole-doc swap (undo/redo, git discard, rename) - mute the
+            // enter-animation diff for this arrival.
+            _wfxSuppressEnterOnce = true;
             // Disk is truth wholesale - rebaseline the per-field dirty-tracking
             // snapshots to the fresh doc and drop delete tombstones. Leaving
             // the old baselines would judge every replaced field DIRTY against
@@ -27628,6 +27680,16 @@ function WorkflowCanvas() {
             }
             if (allMatch) return local;
             statusChanged = true;
+            // Micro-fx: an agent CONTENT update (text / output / new asset
+            // version / ...) fires a completion wave. Geometry + run
+            // bookkeeping changes don't (the runStatus done-flip has its own
+            // diff; fxCompletionWave dedupes the overlap).
+            try {
+              for (const k of Object.keys(dDaemon)) {
+                if (_wfxMergeIgnoreKeys.has(k)) continue;
+                if (!stable(local[k], dDaemon[k])) { _wfxPendingNodeIds.add(local.id); break; }
+              }
+            } catch {}
             return { ...local, ...dDaemon };
           }).filter(Boolean);  // drop nodes a collaborator deleted
           // ── Whiteboard merge - whole-item clean/dirty via "wb:<id>"
@@ -46958,6 +47020,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const header = String(plan.header || (node.task || "").slice(0, 60));
       const desc = String(plan.description || "");
       const summary = _strategySummaryObj(raw.summary);
+      const images = (Array.isArray(raw.images) ? raw.images : [])
+        .map(x => ({ path: String((x && x.path) || ""), prompt: String((x && x.prompt) || "") }))
+        .filter(x => x.path).slice(0, 4);
       if (node.tableId) _assistantDropTable(node.tableId);
       let tableId = null;
       const INS_COL = 1 + attributes.length + 2, VIS_COL = INS_COL + 1;
@@ -46996,7 +47061,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const built = _strategyBuildBoard({
         setData, node, nodeId, layoutId,
         plan: { ...plan, keyView: plan.keyView || { layout: layoutId } },
-        sk, gathered, insights, summary, images: [], header, desc, enabled, tableId,
+        sk, gathered, insights, summary, images, header, desc, enabled, tableId,
       });
       if (tableId && enabled("insights")) {
         for (const ins of insights) {
@@ -48495,9 +48560,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // Micro-fx: enter animation for freshly-created nodes / wb items. Diffs ids
   // against the previous render, so it covers every creation path with one
   // hook: palette / library drops, spawn menus, paste, AND agent or daemon
-  // written nodes arriving through the SSE merge. Guards: the first run only
-  // records a baseline, and a bulk arrival (initial load, project switch,
-  // giant paste) stays silent. Layout effect so the class lands BEFORE first
+  // written nodes arriving through the SSE merge - INCLUDING an agent's
+  // first nodes on an empty canvas and big agent scaffolds (those get a
+  // staggered cascade). Whole-doc arrivals (initial load, undo/redo, git
+  // discard, rename replace) are muted by the one-shot suppress flag their
+  // setData sites raise. Layout effect so the class lands BEFORE first
   // paint - no full-size flash. The imperative class survives re-renders
   // (React never rewrites an unchanged className prop).
   const prevCanvasIdsRef = useRef(null);
@@ -48507,22 +48574,28 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     for (const it of (data.wb || [])) if (it && it.id) ids.add("w:" + it.id);
     const prev = prevCanvasIdsRef.current;
     prevCanvasIdsRef.current = ids;
-    if (!prev || prev.size === 0 || _wfxReduce.matches) return;
+    const muted = _wfxSuppressEnterOnce;
+    if (muted) _wfxSuppressEnterOnce = false;
+    if (!prev || muted || _wfxReduce.matches) return;
     const fresh = [];
     for (const key of ids) if (!prev.has(key)) fresh.push(key);
-    if (!fresh.length || fresh.length > 12) return;
-    for (const key of fresh) {
+    if (!fresh.length) return;
+    // Cap: beyond 40 fresh things, the rest appear instantly. Batches larger
+    // than a few get a staggered cascade instead of one simultaneous pop.
+    fresh.slice(0, 40).forEach((key, i) => {
       const id = key.slice(2);
-      if (exitingIdsRef.current.has(id)) continue;
+      if (exitingIdsRef.current.has(id)) return;
       const el = document.querySelector(key[0] === "n"
         ? '.workflow-canvas [data-node-id="' + id + '"]'
         : '.workflow-wb-layer [data-wb-id="' + id + '"]');
-      if (!el) continue;
+      if (!el) return;
+      const delay = fresh.length > 3 ? Math.min(500, i * 24) : 0;
+      if (delay) el.style.animationDelay = delay + "ms";
       el.classList.add("wf-enter");
-      const done = () => el.classList.remove("wf-enter");
+      const done = () => { el.classList.remove("wf-enter"); if (delay) el.style.animationDelay = ""; };
       el.addEventListener("animationend", done, { once: true });
-      setTimeout(done, 450);
-    }
+      setTimeout(done, 500 + delay);
+    });
   }, [data.nodes, data.wb]);
 
   // Path 1: node.runStatus leaving "pending" for done (or the null-after-
@@ -48552,6 +48625,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       wfx("shockwave", { x: bb.x, y: bb.y, w: bb.w, h: bb.h, r: 8 });
     }
   }, [data.wb]);
+  // Path 4: agent updated a NODE's content through the daemon merge (text,
+  // output, a new asset version, ...). Parked in _wfxPendingNodeIds by the
+  // merge; routed through fxCompletionWave so the runStatus done-flip that
+  // often rides the same merge can't double-fire.
+  useEffect(() => {
+    if (!_wfxPendingNodeIds.size) return;
+    const ids = Array.from(_wfxPendingNodeIds);
+    _wfxPendingNodeIds.clear();
+    for (const id of ids) fxCompletionWave(id);
+  }, [data.nodes, fxCompletionWave]);
 
   // Each prototype reports its iframe's current URL state up here so we can
   // compute orphan status centrally and dim bound asset nodes accordingly.
