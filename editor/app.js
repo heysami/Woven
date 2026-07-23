@@ -9717,9 +9717,23 @@ function CliIndicator({ compact }) {
   const credits = useCredits(usageOpen);
   useEffect(() => {
     if (!usageOpen) return;
-    const off = (e) => { if (usageRef.current && !usageRef.current.contains(e.target)) setUsageOpen(false); };
+    // The popover is body-portaled (see below), so it is NOT inside
+    // usageRef - a click inside it must not count as "outside".
+    const off = (e) => {
+      if (e.target && e.target.closest && e.target.closest(".cli-usage-pop")) return;
+      if (usageRef.current && !usageRef.current.contains(e.target)) setUsageOpen(false);
+    };
     document.addEventListener("mousedown", off);
     return () => document.removeEventListener("mousedown", off);
+  }, [usageOpen]);
+  // Re-anchor the open popover when the window resizes (its position is
+  // computed from the chip's rect at render time).
+  const [, setPopTick] = useState(0);
+  useEffect(() => {
+    if (!usageOpen) return;
+    const on = () => setPopTick(t => t + 1);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
   }, [usageOpen]);
   if (!loaded) {
     return html`<span className="cli-indicator cli-indicator-loading" title="Checking CLI…" data-tip-host="true">
@@ -9814,7 +9828,33 @@ function CliIndicator({ compact }) {
       ${!compact && html`<span className="cli-label">${labelText}</span>`}
       <span className="tab-tip">${tipShort}</span>
     </span>
-    ${usageOpen && html`<${CliUsagePopover} usage=${usage} credits=${credits} onClose=${() => setUsageOpen(false)}/>`}
+    ${usageOpen && (() => {
+      // Body-portal the popover with fixed coordinates computed from the
+      // chip. Rendering it nested (the old way) trapped it in the host
+      // surface's stacking context - in the workflow view the right rail
+      // lives inside .workflow-root (position:fixed = its own stacking
+      // context in Chromium), so the popover could never paint above the
+      // body-level dock (z 60) / rail panels (z 63) docked beside it.
+      // Placement mirrors the old CSS: rail-status chips fly LEFT + UP
+      // (bottom-right corner anchor); top-bar chips drop below, right-
+      // aligned to the chip.
+      const host = usageRef.current;
+      const r = host ? host.getBoundingClientRect() : null;
+      const inRail = !!(host && host.closest && host.closest(".th-right-rail-status"));
+      const style = !r ? {} : inRail
+        ? { position: "fixed", top: "auto", left: "auto",
+            right: (window.innerWidth - r.left + 10) + "px",
+            bottom: Math.max(8, window.innerHeight - r.bottom) + "px",
+            zIndex: 8000 }
+        : { position: "fixed", bottom: "auto", left: "auto",
+            top: (r.bottom + 6) + "px",
+            right: Math.max(8, window.innerWidth - r.right) + "px",
+            zIndex: 8000 };
+      return createPortal(
+        html`<${CliUsagePopover} style=${style} usage=${usage} credits=${credits} onClose=${() => setUsageOpen(false)}/>`,
+        document.body
+      );
+    })()}
   </span>`;
 }
 
@@ -9824,7 +9864,7 @@ function CliIndicator({ compact }) {
    cards). Each shows the session (5h) + weekly bars, any per-model or extra
    rows, and a live reset countdown. Purely a read-out of /__usage; the daemon
    does the reading. Mirrors the AgentPicker popover idiom. */
-function CliUsagePopover({ usage, credits, onClose }) {
+function CliUsagePopover({ usage, credits, onClose, style }) {
   // Two tabs: CLI (plan windows per signed-in CLI, with opencode's own BYOK
   // provider credits nested beneath) and API keys (credit / quota per
   // configured media-config or TH_* env key).
@@ -9839,7 +9879,7 @@ function CliUsagePopover({ usage, credits, onClose }) {
   const byokLive = byok.filter(r => r.ok === true);
   const byokQuiet = byok.filter(r => r.ok !== true);
   const empty = usage.loaded && rows.length === 0 && !usage.loading;
-  return html`<div className="cli-usage-pop" role="dialog" aria-label="Usage & credits">
+  return html`<div className="cli-usage-pop" role="dialog" aria-label="Usage & credits" style=${style}>
     <div className="cli-usage-head">
       <div className="cli-usage-tabs" role="tablist" aria-label="Usage tabs">
         <button role="tab" data-active=${tab === "cli"} aria-selected=${tab === "cli"} onClick=${(e) => { e.stopPropagation(); setTab("cli"); }}>CLI</button>
@@ -26524,7 +26564,14 @@ function WorkflowCanvas() {
     if (chatRun) window.dispatchEvent(new CustomEvent("th:chat-claim", { detail: { owner: "main" } }));
   }, [chatRun]);
   useEffect(() => {
-    const onClaim = (e) => { if (e.detail?.owner !== "main") setChatRun(null); };
+    // Owner "rail" = the nav rail dismissing floating per-node chats on a
+    // panel switch. That switch only HIDES the main chat column (leftPanel
+    // moves off "chat"), so the main thread must stay attached - dropping
+    // chatRun here would lose the conversation the chat icon brings back.
+    const onClaim = (e) => {
+      const o = e.detail && e.detail.owner;
+      if (o !== "main" && o !== "rail") setChatRun(null);
+    };
     window.addEventListener("th:chat-claim", onClaim);
     return () => window.removeEventListener("th:chat-claim", onClaim);
   }, []);
@@ -32755,6 +32802,38 @@ function nodeFloatingBarClearance(nodeId) {
   return 0;
 }
 
+/* wfChromeHost - the shared body-level layer every piece of node-anchored
+   canvas chrome portals into (action bars, badges, top-action strips, the
+   ⊕ connector-spawn buttons, floating asset panels, their popovers).
+   Exists because in Chromium a position:fixed element is its own stacking
+   context: .workflow-root (fixed) traps the library column / nav rail /
+   right rail at ITS z-level, so body-portaled chrome could never be
+   out-stacked by the side panels via z-index alone - it painted over them
+   whenever its anchor node panned underneath. The host spans the viewport;
+   `contain: paint` (see #wf-chrome-layer in styles.css) makes it the
+   containing block for the fixed chrome inside (whose viewport left/top
+   values are unchanged - the host sits at 0,0) AND clips its painting.
+   WorkflowSurface keeps the host's clip-path synced to
+   .workflow-canvas-wrap's rect, so chrome renders ONLY over the canvas
+   column and slides under the panels at its edges like the nodes do.
+   Deliberately NOT used by full-viewport overlays (bulk bar, compress
+   modal, pick toast, context menu) - those are canvas-wide UI, not
+   node-anchored chrome. */
+let __wfChromeHostEl = null;
+function wfChromeHost() {
+  let el = __wfChromeHostEl;
+  if (!el || !el.isConnected) {
+    el = document.getElementById("wf-chrome-layer");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "wf-chrome-layer";
+      document.body.appendChild(el);
+    }
+    __wfChromeHostEl = el;
+  }
+  return el;
+}
+
 function shouldHideNodeChrome(rect, barLeft, barRight, minNodeWidth) {
   if (!rect) return true;
   // Multi-select: ALL per-node floating chrome (top-action strips, asset
@@ -32976,7 +33055,7 @@ function WorkflowAssetActionBar({ node, selected, allNodes, allEdges }) {
       ${tipBubble}
       ${popover}
     <//>
-  `, document.body);
+  `, wfChromeHost());
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -33541,7 +33620,7 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
       ${groups.map((g) => renderGroup(g.name, g.items, renderKnob, g.name))}
     </div>`}
   </div>`;
-  return createPortal(panel, document.body);
+  return createPortal(panel, wfChromeHost());
 }
 
 /* The floating LEFT pipeline panel. Walks the asset's generating lineage
@@ -33663,7 +33742,7 @@ function WorkflowAssetInputsPanel({ node, selected, allNodes, allEdges, onRunSki
       ` : null}
     </div>
   </div>`;
-  return createPortal(panel, document.body);
+  return createPortal(panel, wfChromeHost());
 }
 
 /* AssetActionPopover: the dropdown panel rendered by both
@@ -34368,7 +34447,7 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
       ${tipBubble}
       ${popover}
     <//>
-  `, document.body);
+  `, wfChromeHost());
 }
 
 /* The floating select-element badge. Mounted outside a node's top-right
@@ -34486,7 +34565,7 @@ function WorkflowNodeStagePill({ nodeId }) {
         title=${"Save " + pendingCount + " edit" + (pendingCount === 1 ? "" : "s") + " to disk"}
       >Save changes${pendingCount > 1 ? ` (${pendingCount})` : ""}</button>
     </div>
-  `, document.body);
+  `, wfChromeHost());
 }
 
 function WorkflowNodeSelectBadge({ nodeId, selected }) {
@@ -34654,7 +34733,7 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
       ><${Icon.PickEl}/></button>
       ${tipBubble}
     <//>
-  `, document.body);
+  `, wfChromeHost());
 }
 
 /* ─── Export helpers shared by the modal + the dispatch entrypoint ─── */
@@ -35236,7 +35315,7 @@ function WorkflowNodeTopActions({ nodeId, selected, actions }) {
       ` : null}
       ${tipBubble}
     <//>
-  `, document.body);
+  `, wfChromeHost());
 }
 
 /* ────────── Multi-select group align ──────────
@@ -35611,7 +35690,7 @@ function WorkflowGroupAlignBar({ onAlign, onSaveGroup }) {
           }}>${tipState.text}</div>
       ` : null}
     <//>
-  `, document.body);
+  `, wfChromeHost());
 }
 
 // Floating "convert" chip for a selection of text carriers (plain text / text
@@ -35676,7 +35755,7 @@ function WorkflowConvertBar({ count, hasNodeEdges, onConvert }) {
           ${hasNodeEdges ? html`<div className="workflow-convert-note">Converting a wired prompt node to a whiteboard item drops its connections.</div>` : null}
         </div>`}
     </div>
-  `, document.body);
+  `, wfChromeHost());
 }
 
 /* Floating action chip for a single selected insight MARKER. Navigation is
@@ -35737,7 +35816,7 @@ function WorkflowMarkerBar({ marker, targetExists, picking, onArmPick, onCancelP
           onMouseDown=${(e) => e.stopPropagation()}
           onClick=${(e) => { e.stopPropagation(); onArmPick(); }}>${marker.targetWb ? "Re-link" : "Link…"}</button>`}
     </div>
-  `, document.body);
+  `, wfChromeHost());
 }
 
 /* Connector-spawn chrome. When EXACTLY ONE node is selected and its
@@ -35854,11 +35933,16 @@ function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightB
     const bundles = side === "left" ? (leftBundles || []) : (rightBundles || []);
     const btnLeft = side === "left" ? rect.left - BTN - GAP : rect.right + GAP;
     // Anchor the popover beside the button, growing AWAY from the node so it
-    // never covers the card. Clamp to the viewport.
+    // never covers the card. Clamp to the CANVAS COLUMN, not the viewport -
+    // the left/right panels now stack above this chrome (z 55/60+ vs 50), so
+    // a viewport-clamped menu near a panel edge would slide underneath it.
     const POP_W = 264;
+    const canvasEl = document.querySelector(".workflow-canvas-wrap");
+    const c = canvasEl ? canvasEl.getBoundingClientRect()
+      : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
     let popLeft = side === "left" ? btnLeft - POP_W - 6 : btnLeft + BTN + 6;
-    popLeft = Math.max(8, Math.min(popLeft, window.innerWidth - POP_W - 8));
-    const popTop = Math.max(8, Math.min(midY, window.innerHeight - 340));
+    popLeft = Math.max(c.left + 8, Math.min(popLeft, c.right - POP_W - 8));
+    const popTop = Math.max(c.top + 8, Math.min(midY, c.bottom - 340));
     return html`
       <div
         className="workflow-connector-menu"
@@ -35920,7 +36004,7 @@ function WorkflowConnectorSpawn({ node, leftMenu, rightMenu, leftBundles, rightB
       `}
       ${openSide && renderMenu(openSide)}
     </div>
-  `, document.body);
+  `, wfChromeHost());
 }
 
 /* Toast for pick-mode element ops (copy / paste / delete).
@@ -37588,6 +37672,35 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     window.addEventListener("th:wf-mainview", h);
     return () => window.removeEventListener("th:wf-mainview", h);
   }, []);
+  // Keep the shared chrome layer's clip-path in lockstep with the canvas
+  // column (see wfChromeHost). Clip-path - not width/left - so the fixed
+  // chrome inside keeps plain viewport coordinates. A ResizeObserver on
+  // .workflow-canvas-wrap catches every layout that moves the column edges
+  // (panel open/close/resize, chat column, dock reserve, window resize -
+  // all of them change the wrap's SIZE, which is what RO fires on).
+  useEffect(() => {
+    const host = wfChromeHost();
+    const sync = () => {
+      const wrap = document.querySelector(".workflow-canvas-wrap");
+      if (!wrap) { host.style.clipPath = ""; return; }
+      const r = wrap.getBoundingClientRect();
+      host.style.clipPath = "inset("
+        + Math.max(0, r.top) + "px "
+        + Math.max(0, window.innerWidth - r.right) + "px "
+        + Math.max(0, window.innerHeight - r.bottom) + "px "
+        + Math.max(0, r.left) + "px)";
+    };
+    sync();
+    const wrap = document.querySelector(".workflow-canvas-wrap");
+    let ro = null;
+    if (wrap && window.ResizeObserver) { ro = new ResizeObserver(sync); ro.observe(wrap); }
+    window.addEventListener("resize", sync);
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener("resize", sync);
+      host.style.clipPath = "";
+    };
+  }, [mainView]);
   // A chat spawn / reopen (chatOpenTick bump from WorkflowCanvas) opens the
   // LEFT chat panel - the chat's home after the move off the right dock.
   // Mirrors onRailPanel's "asking for the panel" semantics: always opens,
@@ -37612,6 +37725,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // is already showing does the icon (now a list glyph) open the runs
   // popover. A visible popover always toggles closed.
   const onChatIconClick = useCallback(() => {
+    // A per-node agent chat (WorkflowAgentChatDialog - a fixed drawer portaled
+    // over the left column) may be covering the panel. The rail chat icon
+    // adopts the MAIN chat surface, so claim the docked slot first - the same
+    // one-docked-chat bus the node dialogs use between themselves. Their run
+    // keeps going on the daemon and stays reachable from the runs list / the
+    // node's Chat button.
+    try { window.dispatchEvent(new CustomEvent("th:chat-claim", { detail: { owner: "main" } })); } catch {}
     if (runsOverlay) { setRunsOverlay(false); return; }
     if (wbMode || leftPanel !== "chat") { toggleWbMode(false); setLeftPanel("chat"); return; }
     setRunsOverlay(true);
@@ -37623,7 +37743,17 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     window.addEventListener("th:left-chat-close", onCloseChat);
     return () => window.removeEventListener("th:left-chat-close", onCloseChat);
   }, []);
+  // Rail navigation dismisses any floating per-node agent chat so the column
+  // the user just asked for is actually visible - the node dialogs render a
+  // FIXED drawer over the left column (outside the leftPanel state machine),
+  // so without this a panel switch changed the column underneath while the
+  // drawer kept covering it. Owner "rail" is ignored by the main canvas chat
+  // (its thread only HIDES on a panel switch and must stay attached).
+  const dismissNodeChats = useCallback(() => {
+    try { window.dispatchEvent(new CustomEvent("th:chat-claim", { detail: { owner: "rail" } })); } catch {}
+  }, []);
   const onRailPanel = useCallback((which) => {
+    dismissNodeChats();
     // Panel icons always land in Build mode - the whiteboard rail icon is
     // the only way in, so Nodes/Outputs double as the way back out.
     const wasWhiteboard = wbModeRef.current;
@@ -37637,18 +37767,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return;
     }
     setLeftPanel(p => (p === which ? null : which));
-  }, [mainView, toggleWbMode]);
+  }, [mainView, toggleWbMode, dismissNodeChats]);
   // Whiteboard lives on the rail like a panel: click to enter whiteboard
   // mode (tool strip replaces the library), click again to drop back to
   // Build. From the prototype view it returns to the canvas first.
   const onRailWhiteboard = useCallback(() => {
+    dismissNodeChats();
     if (mainView === "proto") {
       setMainView("canvas");
       toggleWbMode(true);
       return;
     }
     toggleWbMode();
-  }, [mainView, toggleWbMode]);
+  }, [mainView, toggleWbMode, dismissNodeChats]);
 
   // Zoom overlay state - set to { filePath, branch, nodeId } when the user
   // clicks 🔍 on a Workflow prototype node or HTML asset card, or "Edit" on
@@ -48403,6 +48534,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // remembers it); only once a file is showing does the icon (now a tree
   // glyph) open the files panel. An open panel always toggles closed.
   const onRailPreviewFiles = useCallback(() => {
+    dismissNodeChats();
     if (leftPanel === "pv-files") { setLeftPanel(null); return; }
     if (!protoViewerPath) {
       window.dispatchEvent(new CustomEvent("th:proto-open-last"));
@@ -48410,11 +48542,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }
     toggleWbMode(false);   // wb tools may still own the column from canvas mode
     setLeftPanel("pv-files");
-  }, [leftPanel, protoViewerPath, toggleWbMode]);
+  }, [leftPanel, protoViewerPath, toggleWbMode, dismissNodeChats]);
   const onRailPreviewAssets = useCallback(() => {
+    dismissNodeChats();
     toggleWbMode(false);
     setLeftPanel(p => (p === "pv-assets" ? null : "pv-assets"));
-  }, [toggleWbMode]);
+  }, [toggleWbMode, dismissNodeChats]);
   // The prototype the user is actively PREVIEWING - derived from the VIEW, not
   // from sticky iframe interaction. Only the dedicated preview surfaces count:
   // the zoom overlay (a full-screen preview of one page) or the Preview view

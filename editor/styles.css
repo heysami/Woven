@@ -4219,6 +4219,13 @@ select.sysadd-input {
   background: var(--surface);
   border-right: 1px solid var(--border);
   min-height: 0;
+  /* Above the body-portaled canvas chrome (node float bars / ⊕ spawn
+     buttons / docked panels, inline z 40-50) so chrome tracking a node
+     that panned under the left column never paints over the rail. One
+     notch above .workflow-library-col (55) so the rail's right-flying
+     tips stay readable over the panel. Below the chat drawer / dock (60). */
+  position: relative;
+  z-index: 56;
 }
 /* Live pulse on the rail's chat button while the agent is mid-turn - the
    same "something is running" cue the runs icon uses, so a busy build stays
@@ -4280,10 +4287,13 @@ select.sysadd-input {
   background: var(--surface);
   border-left: 1px solid var(--border);
   min-height: 0;
-  /* Keep the rail above the fixed chat drawer (z 60) so its buttons stay
-     clickable; the drawer docks to its left so they never actually overlap. */
+  /* Keep the rail above the fixed chat drawer / dock (z 60) AND the rail
+     panels (.th-rail-panel / .left-runs-pop, z 63) - none of them overlap
+     the rail itself (they dock to its left), but the rail's left-flying
+     .tab-tip chips and the bottom-status CLI usage popover land OVER them
+     and must not paint underneath (same rationale as .editor-left-rail). */
   position: relative;
-  z-index: 61;
+  z-index: 64;
 }
 /* Fixed host for the rail + floating dock on the standalone top-level views
    (User testing, Development), which have no .app/.workflow-body grid column to
@@ -4433,13 +4443,10 @@ select.sysadd-input {
   right: -3px;
   transform: translateY(-50%) rotate(45deg);
 }
-/* CLI usage popover: anchor to the chip's bottom-left so it opens UP and
-   beside the rail instead of dropping below the viewport. */
-.th-right-rail-status .cli-usage-pop {
-  top: auto;
-  bottom: 0;
-  right: calc(100% + 10px);
-}
+/* CLI usage popover: body-portaled with inline fixed coordinates (see
+   CliIndicator in app.js) - rail-status chips fly it LEFT + UP beside the
+   rail. It is no longer a descendant of the rail, so it can paint above
+   the body-level dock (z 60) / rail panels (z 63) that dock beside it. */
 
 /* Full-height panel that opens just left of the rail. Fixed so it starts below
    the top bar and runs to the viewport bottom regardless of the host layout. */
@@ -5828,7 +5835,9 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   background: var(--surface);
   transition: background 0.1s ease;
   user-select: none;
-  z-index: 5;
+  /* Same stacking tier as .workflow-library-col: the body-portaled canvas
+     chrome (z 40-50) must not cover the 4px grab strip. */
+  z-index: 55;
 }
 .workflow-resize-handle:hover,
 .workflow-resize-handle:active {
@@ -6293,6 +6302,13 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   background: var(--surface);
   border-right: 1px solid var(--border);
   overflow: hidden;
+  /* Above the body-portaled canvas chrome (node float bars / ⊕ spawn
+     buttons / spawn menus, inline z 40-50): the canvas column clips its
+     own nodes, but the portaled chrome is position:fixed on body and used
+     to paint OVER this panel when its anchor node panned underneath.
+     Below the chat drawer / dock (60) and the nav rail (56). */
+  position: relative;
+  z-index: 55;
 }
 /* Left chat panel (workflow mode) - lives in the library column when the
    "chat" rail option is active. Stays MOUNTED (display:none) while other
@@ -7060,6 +7076,26 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   color: var(--text);
 }
 .workflow-node-top-menu-label { flex: 1; }
+
+/* Shared portal layer for node-anchored canvas chrome - see wfChromeHost()
+   in app.js. Spans the viewport; `contain: paint` makes the layer the
+   containing block for the fixed chrome portaled inside (their viewport
+   left/top values are unchanged - the layer sits at 0,0) AND clips their
+   painting; the inline clip-path (synced to .workflow-canvas-wrap's rect
+   by WorkflowSurface) confines the chrome to the canvas column so it never
+   paints over the left library/chat column, the nav rail, the right rail,
+   or the rail panels - Chromium makes .workflow-root (position:fixed) a
+   stacking context, so those panels could never out-z body-level chrome.
+   z 40 = the chrome tier: above the whole canvas (.workflow-root, z auto),
+   below the chat drawer / floating dock (60) and the rail panels (63). */
+#wf-chrome-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  contain: paint;
+}
+#wf-chrome-layer > * { pointer-events: auto; }
 
 /* v3.8 - Connector-spawn chrome: floating ⊕ buttons at the left/right
    connector midpoints of the selected node, plus the spawn-menu popover.
