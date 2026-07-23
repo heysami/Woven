@@ -15279,6 +15279,21 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: var(--surface-2); border-radius: 6px; padding: 6px 8px;
 }
 .wap-insist-keychange .wap-why-label { display: block; margin-bottom: 2px; }
+/* Structured summary: headline phrase → brief support → detail bullets. */
+.wap-summary { display: flex; flex-direction: column; gap: 6px; }
+.wap-summary-headline {
+  font-size: 13.5px; font-weight: 700; line-height: 1.35; color: var(--text);
+}
+.wap-summary-support {
+  font-size: 11.5px; line-height: 1.45; color: var(--text-muted);
+}
+.wap-summary-bullets {
+  margin: 0; padding-left: 16px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.wap-summary-bullets li {
+  font-size: 11.5px; line-height: 1.45; color: var(--text);
+}
 .workflow-node-assistant-chat {
   display: flex; flex-direction: column; gap: 6px;
   max-height: 280px; overflow-y: auto; padding: 4px 2px;

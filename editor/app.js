@@ -28199,6 +28199,26 @@ const STRATEGY_LAYOUTS = {
   "keyvisual":   { label: "Key visual",         fields: `"imagePrompt":"<what a mood image should depict>"`, hint: "a visual direction board: generated imagery + palette + typography (mood board, design north-star)" },
   "composite":   { label: "Composite",          fields: `"cluster":"<group name>"`, hint: "anything else: grouped blocks composed freely" },
 };
+// Structured summary { headline, support, bullets[] } → flat text (for LLM
+// grounding prompts + legacy renderers). Accepts a legacy plain string too.
+function _strategySummaryText(sum) {
+  if (!sum) return "";
+  if (typeof sum === "string") return sum;
+  return [sum.headline, sum.support, ...((sum.bullets || []).map(b => "- " + b))]
+    .filter(Boolean).join("\n");
+}
+// Coerce an LLM summary payload (object or string) to the structured shape.
+function _strategySummaryObj(raw) {
+  if (raw && typeof raw === "object") {
+    return {
+      headline: String(raw.headline || ""),
+      support: String(raw.support || ""),
+      bullets: (Array.isArray(raw.bullets) ? raw.bullets : []).slice(0, 8).map(String).filter(Boolean),
+    };
+  }
+  return { headline: String(raw || ""), support: "", bullets: [] };
+}
+
 // Driving-factor role → wb colour token.
 function _strategyFactorColor(role) {
   const k = String(role || "").toLowerCase();
@@ -28643,13 +28663,26 @@ function _strategyBuildBoard({ setData, node, nodeId, layoutId, plan, sk, gather
       y += 6;
     }
 
-    // ── Summary ──
-    if (enabled("summary") && summary) {
+    // ── Summary ── headline phrase first, brief support, then detail
+    // bullets - a paragraph blob is the hardest thing to read on a board.
+    const sum = _strategySummaryObj(summary);
+    if (enabled("summary") && (sum.headline || sum.support || sum.bullets.length)) {
       bind(wbMakeItem("text", { text: "Summary", w: INNER, fontSize: "md", bold: true, align: "left", color: "ink" }), bx + PAD, y);
       y += 34;
-      const shh = mh(summary, INNER - 14) + 28;
-      bind(wbMakeItem("textbox", { text: summary, w: INNER, h: shh, color: "gray", align: "left", fontSize: "sm" }), bx + PAD, y);
-      y += shh + PAD;
+      if (sum.headline) {
+        bind(wbMakeItem("text", { text: sum.headline, w: INNER, fontSize: "lg", bold: true, align: "left", color: "ink" }), bx + PAD, y);
+        y += mh(sum.headline, INNER, WB_FONT_SIZES.lg) + 10;
+      }
+      if (sum.support) {
+        bind(wbMakeItem("text", { text: sum.support, w: INNER, fontSize: "sm", align: "left", color: "gray" }), bx + PAD, y);
+        y += mh(sum.support, INNER) + 12;
+      }
+      for (const b of sum.bullets) {
+        const line = "•  " + b;
+        bind(wbMakeItem("text", { text: line, w: INNER - 10, fontSize: "sm", align: "left", color: "ink" }), bx + PAD + 10, y);
+        y += mh(line, INNER - 10) + 8;
+      }
+      y += PAD - 8;
     }
 
     const secBody = workflowMakeNodeOfKind("section", { title: header });
@@ -46204,12 +46237,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         `You LEAD the strategy work. The research is in - settle the board.\n\nSTATEMENT:\n${sk.statement}\n\nPOINTS + FINDINGS (JSON):\n` +
         JSON.stringify(sk.points.map(p => ({ id: p.id, point: p.point, ...(gathered[p.id] || {}) }))) +
         (customNote ? `\n\nCUSTOM PRESENTATION REQUIREMENT (obey): ${customNote}` : "") +
-        `\n\nReturn ONLY JSON: {"summary":"<4-6 sentence summary for the user: the strategy, why it holds, what to do next>"` +
+        `\n\nReturn ONLY JSON: {"summary":{"headline":"<ONE punchy sentence - the whole strategy as a phrase the user can repeat>","support":"<1-2 sentences backing the headline, NO MORE>","bullets":["<one concrete detail / implication / next step per line>", "..."]}` +
         (wantVisuals ? `,"visual":{"palette":[{"name":"--<token>","value":"#<hex>"}],"fonts":[{"family":"<font family>","role":"heading|body"}],"imagePrompts":["<mood image prompt>"]}` : "") +
-        `}. Palette max 6 swatches, fonts max 2, imagePrompts max 4. No prose.` }],
+        `}. 4-8 bullets, each ONE line. Palette max 6 swatches, fonts max 2, imagePrompts max 4. No prose.` }],
         { model: node.model, maxTokens: 2200 });
       const fin = _drExtractObj(sumText) || {};
-      const summary = String(fin.summary || "");
+      const summary = _strategySummaryObj(fin.summary);
 
       // Phase 5.5: generated imagery (only with the user's plan-gate consent).
       // Failures degrade to a text-only board - never fail the run over images.
@@ -46292,7 +46325,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       updateNode(nodeId, { runStatus: "done" });
       if (tableId) updateNode(tableId, { runStatus: "done" });
       setRun({ status: "done", phase: "done", ranAt: Date.now() });
-      return { summary, header, statement: sk.statement || "" };
+      return { summary: _strategySummaryText(summary), header, statement: sk.statement || "" };
     } catch (e) {
       updateNode(nodeId, { runStatus: "error" });
       setRun({ status: "error", error: String(e?.message || e) });
@@ -46336,7 +46369,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         setRun({ status: "loading", phase: `insist ${r}/${MAXR}: generating approaches` });
         const iText = await assistantLlm([{ role: "user", content:
           `A strategy point failed validation against PAST evidence, but the user INSISTS the goal is reachable - your job is to find the change that makes it true, not to relitigate the past.\n\nSTRATEGY TASK:\n${task}\n\nSTATEMENT:\n${res.statement || ""}\n\nWEAK POINT (stance: ${point.stance || "unverified"}):\n${point.point}\n` +
-          (res.summary ? `\nBOARD SUMMARY:\n${res.summary}\n` : "") +
+          (_strategySummaryText(res.summary) ? `\nBOARD SUMMARY:\n${_strategySummaryText(res.summary)}\n` : "") +
           (feedback ? `\nLAST ROUND'S BEST IDEA + THE PANEL'S OBJECTIONS (fix these, keep what worked):\n${feedback}\n` : "") +
           `\nGenerate 4 DISTINCT bold approaches that could make this point work despite the thin evidence - different mechanisms, not rewordings (e.g. change the offer, the audience, the channel, the business model, the sequencing).\n\nReturn ONLY JSON: [{"idea":"<the approach in 1-2 sentences>","rationale":"<why it could bridge the gap, one line>"}]. No prose.` }],
           { model: node.model, maxTokens: 1400 });
@@ -46548,9 +46581,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       let chainSummary = "";
       if (summaries.length) {
         const sText = await assistantLlm([{ role: "user", content:
-          `You LEAD this strategy chain. Compose the OVERALL strategy from the parts' summaries - how they lock together, the sequence, and the single thread that makes it one strategy.\n\nOVERALL ASK:\n${task}\n\nPART SUMMARIES:\n${summaries.map((s, i) => (i + 1) + ". " + s).join("\n")}\n\nReturn ONLY JSON: {"summary":"<5-8 sentence overall strategy summary>"}. No prose.` }],
+          `You LEAD this strategy chain. Compose the OVERALL strategy from the parts' summaries - how they lock together, the sequence, and the single thread that makes it one strategy.\n\nOVERALL ASK:\n${task}\n\nPART SUMMARIES:\n${summaries.map((s, i) => (i + 1) + ". " + s).join("\n")}\n\nReturn ONLY JSON: {"summary":{"headline":"<ONE punchy sentence - the whole chain as a phrase>","support":"<1-2 sentences backing it, NO MORE>","bullets":["<one line per part: how it locks into the chain>", "..."]}}. 4-8 bullets. No prose.` }],
           { model: node.model, maxTokens: 1500 });
-        chainSummary = String((_drExtractObj(sText) || {}).summary || "");
+        chainSummary = _strategySummaryObj((_drExtractObj(sText) || {}).summary);
       }
       writeResult(chainSummary);
       const anyError = partStates.some(p => p.status === "error");
@@ -79744,6 +79777,23 @@ function _assistFmtElapsed(ms) {
   return Math.floor(s / 60) + "m " + Math.round(s % 60) + "s";
 }
 
+// Structured summary block: headline phrase → brief support → detail
+// bullets. Legacy plain-string summaries keep the old paragraph rendering.
+function WapSummary({ sum }) {
+  if (typeof sum === "string") return sum ? html`<div className="wap-conclusion">${sum}</div>` : null;
+  const o = _strategySummaryObj(sum);
+  if (!o.headline && !o.support && !o.bullets.length) return null;
+  return html`
+    <div className="wap-summary">
+      ${o.headline && html`<div className="wap-summary-headline">${o.headline}</div>`}
+      ${o.support && html`<div className="wap-summary-support">${o.support}</div>`}
+      ${o.bullets.length > 0 && html`
+        <ul className="wap-summary-bullets">
+          ${o.bullets.map((b, i) => html`<li key=${i}>${b}</li>`)}
+        </ul>`}
+    </div>`;
+}
+
 function WorkflowAssistantResultPanel({ node, onExplore, exploreBusy }) {
   const res = node.result;
   if (!res) return null;
@@ -79956,9 +80006,9 @@ function WorkflowAssistantResultPanel({ node, onExplore, exploreBusy }) {
                 <span className="wap-probe-text">${it.n}. ${it.title}</span>
               </div>`)}
           </div>`}
-        ${res.summary && html`
+        ${_strategySummaryText(res.summary) && html`
           <div className="wap-section-label">Summary</div>
-          <div className="wap-conclusion">${res.summary}</div>`}
+          <${WapSummary} sum=${res.summary}/>`}
       </div>`;
   }
 
@@ -79986,9 +80036,9 @@ function WorkflowAssistantResultPanel({ node, onExplore, exploreBusy }) {
             </div>`)}
           ${!parts.length && html`<div className="wap-empty">Planning the chain…</div>`}
         </div>
-        ${res.summary && html`
+        ${_strategySummaryText(res.summary) && html`
           <div className="wap-section-label">Overall strategy</div>
-          <div className="wap-conclusion">${res.summary}</div>`}
+          <${WapSummary} sum=${res.summary}/>`}
       </div>`;
   }
   return null;
