@@ -3580,6 +3580,29 @@ _STRAT_PAYLOAD_CONTRACT = (
     ' "visual": <ONLY when visual direction is approved: {"palette": [{"name": "--token", "value": "#hex"}], "fonts": [{"family": "...", "role": "heading|body"}]}, else omit>,\n'
     ' "images": <ONLY when approved AND you generated mood images: [{"path": "source/<branch>/strategy/<file>.png", "prompt": "..."}], else omit>}')
 
+# Payload contracts for the other agent-run assistants (client twins:
+# materializeResearchRun / materializeTestingRun / materializeDeepresearchRun
+# in app.js - update both sides together).
+_RESEARCH_PAYLOAD_CONTRACT = (
+    '{"items": [{"title": "...", "url": "https://...", "summary": "<=2 sentences", '
+    '"why": "<why it meets the criteria, one line>", '
+    '"visual": "image|color|font|link", "value": "<image url | #hex | font family | page url>", '
+    '"verdict": "recommended|good|possible|bad|nothing", "comment": "<one-line assessment>"}]}')
+_TESTING_PAYLOAD_CONTRACT = (
+    '{"testers": [{"name": "...", "type": "<persona type>", "background": "...", "personality": "...", '
+    '"preference": "...", "task": "<what this tester did>", '
+    '"reply": "<their honest reaction, 2-5 sentences>", "idea": "<one concrete suggestion or empty>", '
+    '"verdict": "recommended|good|possible|bad|nothing", "comment": "<one-line assistant assessment>"}]}')
+_DR_PAYLOAD_CONTRACT = (
+    '{"statement": "<the structured research statement>", "header": "<board title, <=8 words>", '
+    '"description": "<1-2 sentence board intro>", '
+    '"agents": [{"name": "<short role>", "role": "<one line>", "lens": "<what it hunts>", "method": "web|context"}],\n'
+    ' "points": [{"id": 1, "point": "<final wording, one sentence>", '
+    '"consensus": "supported|contested|disputed|unverified", '
+    '"perAgent": {"<agent name>": {"stance": "support|oppose|challenge|unverified", "note": "<=40 words", '
+    '"url": "", "snippet": "<verbatim quote or empty>", "image": ""}}}],\n'
+    ' "conclusion": {"headline": "<ONE punchy sentence>", "support": "<=2 sentences", "bullets": ["<one line each, 3-6>"]}}')
+
 
 # ── Local font library ───────────────────────────────────────────────────
 # Uploaded fonts are collected under design-systems/<dsId>/fonts/ - one file
@@ -13336,14 +13359,18 @@ class H(http.server.SimpleHTTPRequestHandler):
                         nkind = disk_n.get("kind")
                         kind_fields = {
                             "assistant-interview": ("goal", "focus", "pushPast", "model"),
-                            "assistant-research":  ("goal", "criteria", "model", "numResults", "category"),
-                            "assistant-testing":   ("task", "model", "personaTypes", "testersPerType", "maxTesters"),
+                            # *Run payload fields are agent-posted mid-run -
+                            # guarded against stale editor echoes; the editor
+                            # clears them via the status endpoint, never the
+                            # save-merge.
+                            "assistant-research":  ("goal", "criteria", "model", "numResults", "category", "researchRun"),
+                            "assistant-testing":   ("task", "model", "personaTypes", "testersPerType", "maxTesters", "testingRun"),
                             # deliberately NOT "clarify": posting null is how the
                             # editor clears saved answers ("Re-ask questions").
                             # searchVia is deliberately NOT guarded: "" (inherit)
                             # is a valid user choice the stomp guard would treat
                             # as empty-echo and refuse to let the user clear back.
-                            "assistant-deepresearch": ("task", "model", "maxAgents", "rounds"),
+                            "assistant-deepresearch": ("task", "model", "maxAgents", "rounds", "deepresearchRun"),
                             # clarify + presPlan deliberately NOT guarded: posting
                             # null is how the editor clears them (Re-ask / Re-plan).
                             # strategyRun IS guarded (the agent posts it while the
@@ -14329,6 +14356,155 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "hint":    "Subprocess dispatched. Poll /__run/<runId> for live status; the node's runStatus will flip on the canvas when the subprocess exits.",
                 }
 
+            elif kind == "assistant-research":
+                # AGENT-RUN comparative research: one tracked bare run that
+                # searches, filters to the user's criteria, and POSTs the
+                # result set; the editor builds the comparison table.
+                goal = str(node.get("goal") or "").strip()
+                if not goal:
+                    err = (400, {"error": "set the research goal on the node first"})
+                else:
+                    criteria = str(node.get("criteria") or "").strip() or "relevant, specific, and trustworthy"
+                    nres = int(node.get("numResults") or 8)
+                    exa_hint = (
+                        "The user prefers the Exa search backend: fetch sources via "
+                        "curl -sS -X POST \"$TH_DAEMON_URL/__exa/search\" with {\"query\": ..., \"numResults\": %d, \"type\": \"auto\"%s} "
+                        "and rank/filter those. " % (nres, (", \"category\": \"%s\"" % node.get("category")) if node.get("category") else "")
+                    ) if (body.get("searchVia") == "exa") else "Use your own web search/fetch tools. "
+                    system_prompt = (
+                        "You run ONE web research pass for the Woven canvas. The EDITOR renders the "
+                        "comparison table; you never draw or edit files - the status endpoint below is "
+                        "your ONLY write path.\n\n"
+                        "PROCESS:\n"
+                        "1. " + exa_hint + "Fan out Task subagents when parallel angles help. Find up to "
+                        + str(nres) + " results and keep ONLY those meeting the user's quality criteria, best first.\n"
+                        "2. For each kept result pick the best VISUAL: \"image\" (real image url), \"color\" "
+                        "(#hex it stands for), \"font\" (typeface it references), or \"link\". Verdict each "
+                        "for the user.\n"
+                        "3. COMPOSE the payload - EXACTLY this JSON shape:\n" + _RESEARCH_PAYLOAD_CONTRACT + "\n"
+                        "4. DELIVER - POST {\"researchRun\": <the payload object>} to "
+                        "\"$TH_DAEMON_URL/__workflow/node/" + str(node_id) + "/status?project=$TH_PROJECT_ID\" "
+                        "(temp file + --data-binary @file). Then one-line summary and STOP.\n\n"
+                        "HARD RULES: never edit project files; cite only urls you actually opened; if the "
+                        "POST fails retry once, then report.")
+                    kick = ("Research this.\n\nGOAL:\n" + goal + "\n\nQUALITY CRITERIA a result MUST meet:\n" + criteria)
+                    prompt_text = kick + (("\n\n<context>\n" + upstream_text + "\n</context>") if upstream_text else "")
+                    project_id = (qs.get("project") or ["default"])[0] if hasattr(qs, "get") else "default"
+                    branch2 = self._default_prototype_slug(project_root) or "main"
+                    run_id, err_reply = self._spawn_node_agent(
+                        project_root=project_root, project_id=project_id, branch=branch2,
+                        node_id=node_id, system_prompt=system_prompt, prompt_text=prompt_text,
+                        title="Research: " + goal[:48], chain_rest=chain_rest, bare=True)
+                    if err_reply:
+                        raise RuntimeError(err_reply[1].get("error") or "spawn failed")
+                    node["runStatus"] = "running"; node["runId"] = run_id; node["runRunId"] = run_id
+                    node.pop("runError", None)
+                    async_dispatched = True
+                    out = {"spawned": True, "runId": run_id, "kind": kind}
+
+            elif kind == "assistant-testing":
+                # AGENT-RUN simulated testing: the driver generates the persona
+                # panel, runs each tester ITSELF (Task subagents; browser MCP
+                # available for wired apps), answers their questions from the
+                # material, and POSTs the tester set; the editor builds the
+                # feedback table.
+                ttask = str(node.get("task") or "").strip()
+                if not ttask:
+                    err = (400, {"error": "describe what to test on the node first"})
+                else:
+                    types_n = int(node.get("personaTypes") or 3)
+                    per_n = int(node.get("testersPerType") or 2)
+                    cap_n = int(node.get("maxTesters") or 12)
+                    system_prompt = (
+                        "You run ONE simulated-testing pass for the Woven canvas. The EDITOR renders the "
+                        "feedback table; you never draw or edit files - the status endpoint below is your "
+                        "ONLY write path.\n\n"
+                        "PROCESS:\n"
+                        "1. Generate " + str(types_n) + " DISTINCT persona TYPES for the task, then " + str(per_n) +
+                        " testers per type (shared background, varied personality), max " + str(cap_n) + " total.\n"
+                        "2. RUN EVERY TESTER for real: one Task subagent per tester, fully in persona. "
+                        "SCOPE STRICTLY to the wired material in <context>: if it references a served page "
+                        "or prototype, testers open it in the browser and judge BY SIGHT (screenshot "
+                        "first); if it is only a text idea, testers react to the idea AS WRITTEN and must "
+                        "not invent an app. Answer testers' honest questions from the material and let "
+                        "them refine their reply (max one clarification round).\n"
+                        "3. Verdict each tester's reaction for the user (recommended|good|possible|bad|nothing) "
+                        "with a one-line comment.\n"
+                        "4. COMPOSE the payload - EXACTLY this JSON shape:\n" + _TESTING_PAYLOAD_CONTRACT + "\n"
+                        "5. DELIVER - POST {\"testingRun\": <the payload object>} to "
+                        "\"$TH_DAEMON_URL/__workflow/node/" + str(node_id) + "/status?project=$TH_PROJECT_ID\" "
+                        "(temp file + --data-binary @file). Then one-line summary and STOP.\n\n"
+                        "HARD RULES: never edit project files; honest persona reactions, not politeness; "
+                        "if the POST fails retry once, then report.")
+                    kick = "Run the simulated test.\n\nTASK / GOAL:\n" + ttask
+                    prompt_text = kick + (("\n\n<context>\n" + upstream_text + "\n</context>") if upstream_text else "")
+                    project_id = (qs.get("project") or ["default"])[0] if hasattr(qs, "get") else "default"
+                    branch2 = self._default_prototype_slug(project_root) or "main"
+                    run_id, err_reply = self._spawn_node_agent(
+                        project_root=project_root, project_id=project_id, branch=branch2,
+                        node_id=node_id, system_prompt=system_prompt, prompt_text=prompt_text,
+                        title="Testing: " + ttask[:48], chain_rest=chain_rest, bare=True)
+                    if err_reply:
+                        raise RuntimeError(err_reply[1].get("error") or "spawn failed")
+                    node["runStatus"] = "running"; node["runId"] = run_id; node["runRunId"] = run_id
+                    node.pop("runError", None)
+                    async_dispatched = True
+                    out = {"spawned": True, "runId": run_id, "kind": kind}
+
+            elif kind == "assistant-deepresearch":
+                # AGENT-RUN deep research: the clarify gate stays on the node
+                # (browser); the answered direction ships here and ONE tracked
+                # bare run plans the viewpoint panel, runs the agents as its
+                # own Task subagents, merges + debates, and POSTs the settled
+                # matrix; the editor builds the board + evidence table.
+                dtask = str(node.get("task") or "").strip()
+                if not dtask:
+                    err = (400, {"error": "describe what to research on the node first"})
+                else:
+                    answers = str(body.get("answers") or "")
+                    n_agents = max(2, min(5, int(node.get("maxAgents") or 4)))
+                    rounds_n = max(1, min(3, int(node.get("rounds") or 2)))
+                    exa_hint = ("Web agents fetch sources via curl -sS -X POST \"$TH_DAEMON_URL/__exa/search\" "
+                                "{\"query\": ..., \"numResults\": 6, \"type\": \"auto\"} (user's preferred backend). "
+                                ) if (body.get("searchVia") == "exa") else ""
+                    system_prompt = (
+                        "You LEAD a multi-agent deep research for the Woven canvas. The EDITOR renders "
+                        "the board + evidence table; you never draw or edit files - the status endpoint "
+                        "below is your ONLY write path.\n\n"
+                        "PROCESS:\n"
+                        "1. Write a STRUCTURED RESEARCH STATEMENT (testable parts, scope, what counts as "
+                        "validation), honouring the user's direction.\n"
+                        "2. Design " + str(n_agents) + " agents with DELIBERATELY different viewpoints or source "
+                        "methods (champion / skeptic / official-web / community-web / linked-material). "
+                        "Run each as a real Task subagent through its lens. " + exa_hint +
+                        "Context-method agents use ONLY the <context> material.\n"
+                        "3. Merge findings into ONE point matrix (max 8 points, each agent's own stance "
+                        "kept), then run " + str(rounds_n) + " debate round(s): every agent re-reviews the matrix and "
+                        "responds only where its stance changes or it rebuts another. Stop early when a "
+                        "round changes nothing.\n"
+                        "4. SETTLE each point's consensus and the conclusion, then COMPOSE the payload - "
+                        "EXACTLY this JSON shape:\n" + _DR_PAYLOAD_CONTRACT + "\n"
+                        "5. DELIVER - POST {\"deepresearchRun\": <the payload object>} to "
+                        "\"$TH_DAEMON_URL/__workflow/node/" + str(node_id) + "/status?project=$TH_PROJECT_ID\" "
+                        "(temp file + --data-binary @file). Then one-line summary and STOP.\n\n"
+                        "HARD RULES: never edit project files; cite only urls actually opened; honest "
+                        "stances (unverified when not validated); if the POST fails retry once, then report.")
+                    kick = ("Run the deep research.\n\nTASK:\n" + dtask +
+                            (("\n\nUSER'S DIRECTION (their answers to the directing questions):\n" + answers) if answers else ""))
+                    prompt_text = kick + (("\n\n<context>\n" + upstream_text + "\n</context>") if upstream_text else "")
+                    project_id = (qs.get("project") or ["default"])[0] if hasattr(qs, "get") else "default"
+                    branch2 = self._default_prototype_slug(project_root) or "main"
+                    run_id, err_reply = self._spawn_node_agent(
+                        project_root=project_root, project_id=project_id, branch=branch2,
+                        node_id=node_id, system_prompt=system_prompt, prompt_text=prompt_text,
+                        title="Deep research: " + dtask[:48], chain_rest=chain_rest, bare=True)
+                    if err_reply:
+                        raise RuntimeError(err_reply[1].get("error") or "spawn failed")
+                    node["runStatus"] = "running"; node["runId"] = run_id; node["runRunId"] = run_id
+                    node.pop("runError", None)
+                    async_dispatched = True
+                    out = {"spawned": True, "runId": run_id, "kind": kind}
+
             elif kind == "assistant-strategy":
                 # AGENT-DRIVEN single board. Same tracked bare run + strategyRun
                 # seam as the chain driver, for ONE board. The browser keeps the
@@ -15021,15 +15197,21 @@ class H(http.server.SimpleHTTPRequestHandler):
                                 changed[f] = v
                         except (TypeError, ValueError):
                             pass
-                # Agent-driven strategy payload seam: the chain-driver agent
-                # POSTs a part's finished research here as `strategyRun`; the
-                # editor's reconcile effect materializes the board with the
-                # client layout engine, then POSTs null to clear it.
-                if akind == "assistant-strategy" and "strategyRun" in body:
-                    v = body["strategyRun"]
+                # Agent-run payload seam: a driver agent POSTs its finished
+                # research here as the kind's payload field; the editor's
+                # reconcile effect materializes the output with the client
+                # layout engine, then POSTs null to clear the seam.
+                _payload_field = {
+                    "assistant-strategy":     "strategyRun",
+                    "assistant-research":     "researchRun",
+                    "assistant-testing":      "testingRun",
+                    "assistant-deepresearch": "deepresearchRun",
+                }.get(akind)
+                if _payload_field and _payload_field in body:
+                    v = body[_payload_field]
                     if v is None or isinstance(v, dict):
-                        node["strategyRun"] = v
-                        changed["strategyRun"] = "cleared" if v is None else "payload"
+                        node[_payload_field] = v
+                        changed[_payload_field] = "cleared" if v is None else "payload"
                 # Chain-driver ANNOUNCE: the agent posts its settled plan +
                 # scaffolded part ids so the canvas tracks the chain live.
                 if akind == "assistant-strategy-orchestrator":

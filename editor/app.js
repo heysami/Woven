@@ -27093,11 +27093,12 @@ function WorkflowCanvas() {
             // assistant-strategy-orchestrator is deliberately NOT in this
             // list: its chain runs are DAEMON agent runs with a completion
             // hook (an owner), so a persisted "running" may be live.
-            // assistant-strategy is stuck only WITHOUT a runId: its gates are
-            // browser-owned, but its build is a daemon agent run too.
-            const assistantStuck = (n.kind === "assistant-research"
-                                 || n.kind === "assistant-testing"
-                                 || n.kind === "assistant-deepresearch"
+            // The other assistants are stuck only WITHOUT a runId: their
+            // gates are browser-owned, but their builds are daemon agent
+            // runs (an owner) as of the agent-run conversion.
+            const assistantStuck = ((n.kind === "assistant-research" && !n.runId)
+                                 || (n.kind === "assistant-testing" && !n.runId)
+                                 || (n.kind === "assistant-deepresearch" && !n.runId)
                                  || (n.kind === "assistant-strategy" && !n.runId)
                                  || n.kind === "table")
                                  && n.runStatus === "running";
@@ -45441,161 +45442,50 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   }, [data, setData]);
 
   // ── Assistant 1: Research assistant (Exa search → result table + visuals) ─
+  // Shared dispatcher for the AGENT-RUN assistants: waits out the debounced
+  // save (the node must exist on disk), POSTs /run, rides out a lost
+  // response (the daemon may spawn + persist the run yet drop the reply -
+  // restart window), and records the runId. Throws on real failure.
+  const dispatchAssistantRun = useCallback(async (nodeId, body, label) => {
+    const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
+    await new Promise(r => setTimeout(r, 1200));
+    const proj = activeProjectId(), slug = activePrototypeSlug();
+    const rr = await fetch(apiUrl(`/__workflow/node/${nodeId}/run?project=${encodeURIComponent(proj || "")}&prototype=${encodeURIComponent(slug || "")}`), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    const j = await rr.json().catch(() => ({}));
+    if (!rr.ok || !j.runId) {
+      await new Promise(r => setTimeout(r, 2500));
+      const now = (dataNodesRef.current || []).find(n2 => n2.id === nodeId);
+      if (now && now.runId && now.runStatus === "running") {
+        setRun({ status: "done", phase: (label || "agent") + " running - open Chat to watch", error: null, ranAt: Date.now() });
+        return;
+      }
+      if (!rr.ok) throw new Error(j.error || ("dispatch failed (HTTP " + rr.status + ")"));
+      throw new Error("the daemon accepted the call but returned no run - it is likely running an older build. Restart Woven, then Run again.");
+    }
+    updateNode(nodeId, { runStatus: "running", runId: j.runId, runRunId: j.runId });
+    setRun({ status: "done", phase: (label || "agent") + " running - open Chat to watch", error: null, ranAt: Date.now() });
+  }, [updateNode]);
+
   const setupResearch = useCallback(async (nodeId) => {
     const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
     const node = (data.nodes || []).find(n => n.id === nodeId);
     if (!node) return;
-    const query = (node.goal || "").trim();
-    if (!query) { setRun({ status: "error", error: "Enter what to research first." }); return; }
-    setRun({ status: "loading", phase: "searching", error: null });
-    // Float the working badge (orange diamond) on this node while it runs.
-    updateNode(nodeId, { runStatus: "running" });
+    if (!(node.goal || "").trim()) { setRun({ status: "error", error: "Enter what to research first." }); return; }
     try {
-      const ups = resolveUpstreamInputs(node, data.nodes, data.edges, { wb: data.wb });
-      let ctx = _assistantCollectText(ups);
-      // Local folders + wired web pages ground the search (they resolve to
-      // real content now, not just references).
-      const rFolderText = await assistantFetchFolderText(ups);
-      if (rFolderText) ctx = ctx ? (ctx + "\n\n" + rFolderText) : rFolderText;
-      const rWebText = await assistantFetchWebText(ups);
-      if (rWebText) ctx = ctx ? (ctx + "\n\n" + rWebText) : rWebText;
-      const folders = _assistantCollectFolders(ups);
-      const criteria = (node.criteria || "").trim() || "relevant, specific, and trustworthy";
-      const via = resolveSearchVia(node.searchVia);
-      let kept = [], visById = {};
-
-      if (via === "exa") {
-        // Exa is paid - pressing Run is the explicit consent the cost rule needs.
-        const er = await fetch(apiUrl("/__exa/search"), {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            query: ctx ? (query + "\n\nContext:\n" + ctx).slice(0, 800) : query,
-            numResults: node.numResults || 8, type: "auto",
-            category: node.category || undefined,
-          }),
-        });
-        const ej = await er.json().catch(() => ({}));
-        if (!er.ok || !ej.ok) throw new Error(ej.error || ("Exa search failed (HTTP " + er.status + "). Add an Exa key in Settings, or switch Search via to Agent."));
-        const results = ej.results || [];
-        if (!results.length) { setRun({ status: "error", error: "Exa returned no results." }); return; }
-
-        // Criteria pass: keep only results that meet the user's quality bar.
-        setRun({ status: "loading", phase: "filtering" });
-        const filtText = await assistantLlm([{ role: "user", content:
-          `Filter web search results against the user's quality criteria.\n\nRESEARCH GOAL:\n${query}\n\nQUALITY CRITERIA a good result MUST meet:\n${criteria}\n\nRESULTS (JSON):\n` +
-          JSON.stringify(results.map((x, i) => ({ i, title: x.title, url: x.url, summary: x.summary || (x.highlights || [])[0] || "", text: (x.text || "").slice(0, 500) }))) +
-          `\n\nReturn ONLY a JSON array of the results that PASS, best first, each {"i":<index>,"title":"...","url":"...","summary":"<=2 sentences","why":"why it meets the criteria","verdict":"recommended|good|possible|bad|nothing","comment":"<one-line assessment for the user>"}. Drop low-quality results. No prose.` }],
-          { model: node.model, maxTokens: 3500 });
-        kept = _assistantExtractJson(filtText);
-        if (!Array.isArray(kept) || !kept.length) {
-          kept = results.map((x, i) => ({ i, title: x.title, url: x.url, summary: x.summary || "", why: "" }));
-        }
-
-        // Visual-illustration pass: pick the best visual per kept result.
-        setRun({ status: "loading", phase: "illustrating" });
-        const vmText = await assistantLlm([{ role: "user", content:
-          `For each kept research result, choose the single best VISUAL to illustrate it.\nOptions: "image" (use an image URL present in the result, else ""), "color" (a representative hex like #1a2b3c), "font" (a typeface name it references), or "link" (default).\nResults:\n` +
-          JSON.stringify(kept.map(k => ({ i: k.i, title: k.title, url: k.url, summary: k.summary }))) +
-          `\nAvailable image urls per index: ` + JSON.stringify(results.map((x, i) => ({ i, image: x.image || "" }))) +
-          `\nReturn ONLY a JSON array [{"i":<index>,"visual":"image|color|font|link","value":"<url|hex|font name|>"}]. No prose.` }],
-          { model: node.model, maxTokens: 1500 });
-        const visuals = _assistantExtractJson(vmText);
-        for (const v of (Array.isArray(visuals) ? visuals : [])) if (v && typeof v.i === "number") visById[v.i] = v;
-      } else {
-        // Agent web search (default, no paid key): one real agent run with
-        // built-in WebSearch/WebFetch does the search + criteria filter + visual
-        // pick in a single pass, returning the final JSON.
-        setRun({ status: "loading", phase: "researching (agent web)" });
-        const sys = "You are a web research assistant. Use your WebSearch and WebFetch tools to research the question, then return ONLY results that meet the stated quality criteria. Prefer primary sources. Output strictly JSON, no prose.";
-        const prompt =
-          `RESEARCH GOAL:\n${query}\n` + (ctx ? `\nCONTEXT:\n${ctx.slice(0, 1500)}` : "") +
-          `\n\nQUALITY CRITERIA a good result MUST meet:\n${criteria}\n\n` +
-          `Find up to ${node.numResults || 8} high-quality results via web search. For each, also choose the single best VISUAL to illustrate it: "image" (a real image URL from the page, else ""), "color" (a representative hex like #1a2b3c), "font" (a typeface name it references), or "link".\n\n` +
-          `Also give a VERDICT for the user on each result: "recommended" | "good" | "possible" | "bad" | "nothing", plus a one-line "comment".\n\n` +
-          `Return ONLY a JSON array, best first, each: {"title","url","summary (<=2 sentences)","why (why it meets the criteria)","visual":"image|color|font|link","value":"<url|hex|font name|>","verdict":"recommended|good|possible|bad|nothing","comment":"<one-line assessment>"}.`;
-        const rr = await fetch(apiUrl("/__assistant/research"), {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: node.model, system: sys, prompt }),
-        });
-        const rj = await rr.json().catch(() => ({}));
-        if (!rr.ok || !rj.ok) throw new Error(rj.error || ("agent research failed (HTTP " + rr.status + ")"));
-        const arr = _assistantExtractJson(rj.text);
-        if (!Array.isArray(arr) || !arr.length) throw new Error("Agent returned no parseable results - try again, or switch Search via to Exa.");
-        kept = arr.map((x, i) => ({ i, title: x.title || x.url || "", url: x.url || "", summary: x.summary || "", why: x.why || "", verdict: x.verdict || "", comment: x.comment || "" }));
-        arr.forEach((x, i) => { visById[i] = { i, visual: x.visual || "link", value: x.value || x.url || "" }; });
-      }
-
-      // Build the result table (fresh each run).
-      setRun({ status: "loading", phase: "building table" });
-      if (node.tableId) _assistantDropTable(node.tableId);
-      const headers = ["Result", "Source", "Summary", "Why it qualifies", "Visual", "Verdict", "Assistant"];
-      const colWidths = [220, 200, 320, 240, 300, 90, 300];
-      const rows = kept.map(k => [k.title || "", k.url || "", k.summary || "", k.why || "", "", "", ""]);
-      // Clear of the node's floating result panel (~438px) so the table never
-      // sits under it when the node is selected.
-      const tx = Math.round(node.x + (node.w || 420) + 480), ty = Math.round(node.y);
-      const tableId = workflowBuildResultTable({
-        title: "Research: " + query.slice(0, 40), headers, rows, x: tx, y: ty,
-        colWidths, rowH: 190,
-      });
-      // Summary twin for the floating right panel (the table stays the detailed view).
-      const _host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return (u || "").slice(0, 40); } };
-      updateNode(nodeId, { tableId, result: {
-        kind: "research", query, builtAt: Date.now(),
-        items: kept.map(k => ({
-          title: k.title || "", source: _host(k.url), url: k.url || "",
-          summary: k.summary || "", why: k.why || "",
-          verdict: k.verdict || (k.why ? "good" : "nothing"),
-        })),
-      } });
-      updateNode(tableId, { runStatus: "running" });   // diamond floats on the table too
-
-      // Per result: Visual node IN the cell (col 4), Verdict emoji sticker
-      // (col 5), Assistant commentary box (col 6). A returned image/page URL
-      // becomes a live BROWSER node right inside the Visual cell (the asset node
-      // can't render remote URLs - the browser node actually shows the page).
-      kept.forEach((k, ri) => {
-        const v = visById[k.i] || { visual: "link", value: k.url };
-        const r = ri + 1;
-        const val = (v.value || "").trim();
-        if (v.visual === "color" && /^#?[0-9a-fA-F]{3,8}$/.test(val.replace("#", ""))) {
-          const hex = val.startsWith("#") ? val : "#" + val;
-          workflowAddCellNode(tableId, r, 4, "color-palette", { name: (k.title || "Color").slice(0, 24), swatches: [{ name: "--accent", value: hex }] });
-        } else if (v.visual === "font" && val) {
-          workflowAddCellNode(tableId, r, 4, "typography", { name: val, fontFamily: val });
-        } else if (v.visual === "image" && /^https?:/i.test(val)) {
-          workflowAddCellNode(tableId, r, 4, "browser", { url: val, cellW: 300, cellH: 220 });
-        } else if (/^https?:/i.test(val)) {
-          workflowAddCellNode(tableId, r, 4, "browser", { url: val, cellW: 300, cellH: 220 });
-        } else {
-          workflowSetCellText(tableId, r, 4, k.url || "(link)");
-        }
-        // Verdict sticker + commentary box.
-        const vd = _assistantVerdict(k.verdict || (k.why ? "good" : "nothing"));
-        workflowAddCellSticker(tableId, r, 5, vd.emoji, 44);
-        workflowAddCellBox(tableId, r, 6, (k.comment || k.why || vd.label), vd.color);
-      });
-
-      // If the research drew on local folders, drop a folder node so the user
-      // can see where the gathered files live.
-      if (folders.length) {
-        setData(d => {
-          const nd = (d.nodes || []).find(n => n.id === nodeId);
-          if (!nd) return d;
-          const newId = workflowNewNodeId();
-          const fbody = workflowMakeNodeOfKind("folder", { path: folders[0].path, title: folders[0].label || "Gathered files" });
-          if (!fbody) return d;
-          return { ...d, nodes: [...(d.nodes || []), { id: newId, ...fbody, x: tx, y: ty + 40 + rows.length * 190 + 40 }] };
-        });
-      }
-      updateNode(nodeId, { runStatus: "done" });
-      if (node.tableId || tableId) updateNode(tableId, { runStatus: "done" });
-      setRun({ status: "done", phase: "done", ranAt: Date.now() });
+      // AGENT-RUN: one tracked bare run searches, filters to the criteria,
+      // and POSTs the result set back as `researchRun`; the materializer
+      // builds the comparison table.
+      setRun({ status: "loading", phase: "dispatching the research agent", error: null });
+      updateNode(nodeId, { runStatus: "running" });
+      await dispatchAssistantRun(nodeId, { searchVia: resolveSearchVia(node.searchVia) }, "research agent");
     } catch (e) {
       updateNode(nodeId, { runStatus: "error" });
       setRun({ status: "error", error: String(e?.message || e) });
     }
-  }, [data, setData, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellNode, workflowAddCellBox, workflowAddCellSticker, workflowSetCellText, _assistantDropTable]);
+  }, [data, updateNode, dispatchAssistantRun]);
 
   // ── Assistant 2: Testing assistant (persona testers → per-row feedback) ───
   // Each tester row runs as a REAL "simple agent" subagent via
@@ -45607,231 +45497,20 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
     const node = (data.nodes || []).find(n => n.id === nodeId);
     if (!node) return;
-    const task = (node.task || "").trim();
-    if (!task) { setRun({ status: "error", error: "Describe what to test first." }); return; }
-    const t0 = Date.now();
-    setRun({ status: "loading", phase: "personas", error: null });
-    updateNode(nodeId, { runStatus: "running" });   // float the working badge
+    if (!(node.task || "").trim()) { setRun({ status: "error", error: "Describe what to test first." }); return; }
     try {
-      const ups = resolveUpstreamInputs(node, data.nodes, data.edges, { wb: data.wb });
-      const ctx = _assistantCollectText(ups);
-      const assets = _assistantCollectAssets(ups);
-      // A wired prototype's real SOURCE, for the clarification-answer step ONLY
-      // (so "is the click detection wired?" gets a real answer, not "I need more
-      // context"). Kept OUT of `ctx` so the persona testers still react to the
-      // RENDERED app they browse, never to a source dump.
-      const protoMaterial = await assistantFetchPrototypeText(node, data.nodes, data.edges);
-      // A wired PROTOTYPE resolves to nothing upstream (its source-read port
-      // is a folder provide with no resolve strategy), but for testing a
-      // prototype IS a browsable app - default it to its served index.html so
-      // testers open the real thing.
-      const protoUrls = (data.edges || [])
-        .filter(e => { const t = workflowParseEdgeRef(e.to || ""); return t && t.node === nodeId; })
-        .map(e => { const f = workflowParseEdgeRef(e.from || ""); return f && (data.nodes || []).find(n => n.id === f.node); })
-        .filter(n => n && n.kind === "prototype")
-        .map(n => { const slug = prototypeSlugForNode(n); return slug ? apiUrl("/source/" + slug + "/index.html") : ""; })
-        .filter(Boolean);
-      // Resolve wired assets to absolute http(s) URLs a browser subagent could
-      // navigate to. data:/blob: inlines drop out.
-      const browseUrls = [
-        ...assets.map(a => a.url || (a.path ? apiUrl("/" + a.path) : "")),
-        ...protoUrls,
-      ]
-        .map(u => { if (!u) return ""; try { return new URL(u, location.href).href; } catch (e) { return u; } })
-        .filter(u => /^https?:/i.test(u));
-      const useBrowser = browseUrls.length > 0;
-      const interactive = assets.some(a => (a.assetKind || "") === "html") || browseUrls.some(u => /\.html?($|\?)/i.test(u));
-      // SCOPE STRICTLY to what is actually wired in. Do NOT assume an app exists.
-      // With only a prompt/idea linked there is no app/prototype/repo to open -
-      // testers must react to the idea as written, not hunt for or invent one.
-      const materialKind = useBrowser ? "asset" : (ctx ? "idea" : "none");
-      const scopeNote = materialKind === "asset"
-        ? "The user linked a real artifact to evaluate (opened in a browser below)."
-        : materialKind === "idea"
-          ? "The user linked ONLY a text idea/brief (below). There is NO built app, prototype, website, screens, UI, repository, or files - nothing to open, click, or run. Evaluate the IDEA exactly as written. Do NOT assume, invent, or go looking for any app or files, and do NOT ask for a link or for it to be built - react to the concept itself."
-          : "The user linked nothing but the task text. Evaluate the task/idea as stated; there is no app or asset to open.";
-
-      const types = Math.max(1, Math.min(8, node.personaTypes || 3));
-      const per = Math.max(1, Math.min(8, node.testersPerType || 2));
-      const cap = Math.max(1, node.maxTesters || 12);
-      const pText = await assistantLlm([{ role: "user", content:
-        `Generate ${types} DISTINCT user persona TYPES for evaluating the task below, then ${per} individual testers per type who SHARE their type's background / preference / expectation but VARY in personality and name. Total testers must be <= ${cap}.\n\n` +
-        `WHAT IS BEING EVALUATED: ${scopeNote}\n\nTASK / GOAL:\n${task}\n` +
-        (ctx ? "\nLINKED MATERIAL:\n" + ctx.slice(0, 1200) : "") +
-        `\n\nEach tester's "task" must be framed as reacting to ${materialKind === "asset" ? "the linked asset" : "this idea (not a finished app)"} - never assume features or screens that were not provided. Return ONLY a JSON array of testers: [{"name","type","background","personality","preference","task"}]. No prose.` }],
-        { model: "claude-opus-4-8", maxTokens: 3000 });
-      let testers = _assistantExtractJson(pText);
-      if (!Array.isArray(testers) || !testers.length) throw new Error("Could not generate personas.");
-      testers = testers.slice(0, cap);
-
-      if (node.tableId) _assistantDropTable(node.tableId);
-      // Reply + idea share ONE Feedback cell as a colour-coded stack of boxes:
-      // tester replies neutral gray, assistant clarification answers neutral
-      // ink, ideas highlighted yellow. Clarification passes APPEND to the
-      // thread instead of replacing the pass-1 text.
-      const headers = ["Tester", "Type", "Background", "Personality", "Preference", "Task", "Feedback", "Verdict", "Assistant"];
-      const rows = testers.map(t => [t.name || "", t.type || "", t.background || "", t.personality || "", t.preference || "", t.task || task, "", "", ""]);
-      // Clear of the node's floating result panel (~378px) so the table never
-      // sits under it when the node is selected.
-      const tx = Math.round(node.x + (node.w || 440) + 420), ty = Math.round(node.y);
-      const tableId = workflowBuildResultTable({
-        title: "Testers: " + task.slice(0, 30), headers, rows, x: tx, y: ty,
-        colWidths: [140, 120, 200, 180, 160, 220, 340, 90, 300],
-      });
-      updateNode(nodeId, { tableId });
-
-      // Build the floating-panel summary (the "Simulation report"). Written
-      // twice: a preliminary pass once replies are in (verdicts pending), then a
-      // final pass with the judged verdicts + pass rate. Keeps the canvas table
-      // as the detailed view; this is the glanceable twin.
-      const writeTestingResult = (rep, vby) => {
-        const out = rep.map((s, i) => {
-          const v = (vby && vby[i]) || {};
-          return { name: s.t.name || ("Tester " + (i + 1)), type: s.t.type || "", comment: v.comment || (s.idea || "").slice(0, 90) || "", verdict: v.verdict || "" };
-        });
-        const judged = out.filter(t => t.verdict);
-        const issues = judged.filter(t => { const k = _assistantVerdict(t.verdict).key; return k === "bad" || k === "nothing"; }).length;
-        const passCount = judged.filter(t => { const k = _assistantVerdict(t.verdict).key; return k === "recommended" || k === "good"; }).length;
-        const typeList = [...new Set(out.map(t => t.type).filter(Boolean))];
-        const agents = typeList.map(ty => ({ name: ty, count: out.filter(t => t.type === ty).length }));
-        updateNode(nodeId, { result: {
-          kind: "testing", task, builtAt: Date.now(),
-          counters: { testers: out.length, issues, types: typeList.length, elapsedMs: Date.now() - t0 },
-          passRate: judged.length ? Math.round((passCount * 100) / judged.length) : 0,
-          passCount, total: judged.length, agents, testers: out,
-        } });
-      };
-      updateNode(tableId, { runStatus: "running" });   // diamond floats on the table while it fills
-
-      // Parse a tester's reply into reply / idea / questions[].
-      const parseTester = (txt) => {
-        const t1 = (txt.match(/REPLY:\s*([\s\S]*?)(?:\n\s*IDEA:|\n\s*QUESTIONS:|$)/i) || [])[1];
-        const t2 = (txt.match(/IDEA:\s*([\s\S]*?)(?:\n\s*QUESTIONS:|$)/i) || [])[1];
-        const t3 = (txt.match(/QUESTIONS:\s*([\s\S]*)$/i) || [])[1];
-        const reply = (t1 || txt || "").trim();
-        const idea = (t2 || "").trim();
-        const qraw = (t3 || "").trim();
-        const questions = (!qraw || /^(none|n\/a|-)$/i.test(qraw)) ? []
-          : qraw.split(/[;\n]+/).map(s => s.replace(/^[-*\d.\s]+/, "").trim()).filter(Boolean).filter(s => !/^none$/i.test(s));
-        return { reply, idea, questions };
-      };
-
-      // Run ONE tester. Asset wired -> a REAL browser subagent (opens + screenshots
-      // + clicks by sight). Idea-only -> a pure persona LLM completion (NO tools,
-      // so it can't go hunting a repo/app that doesn't exist).
-      const FORMAT = `\n\nRespond in EXACTLY this format:\nREPLY: <your honest reaction as this persona, 2-5 sentences>\nIDEA: <one concrete suggestion>\nQUESTIONS: <semicolon-separated things you are genuinely unsure about, or "none">`;
-      const runTester = async (t, extraNote) => {
-        const system = `You ARE this user persona; stay fully in character and never break it. Background: ${t.background}. Personality: ${t.personality}. Preference: ${t.preference}. Give honest, persona-coloured feedback. Where you are genuinely unsure, ASK questions rather than guessing. ${scopeNote}`;
-        if (useBrowser) {
-          const browseBlock = `\n\nOpen this and JUDGE IT WITH YOUR OWN EYES: ${browseUrls.join(", ")}. Take a screenshot FIRST so you see it as a real user would. ${interactive ? "If it is interactive, decide what to do from the SCREENSHOT (what you can actually see on screen), then click there - do NOT read the HTML source to find controls." : ""} React strictly as your persona would.`;
-          const prompt = `Your task: ${t.task || task}.${browseBlock}${extraNote || ""}${FORMAT}`;
-          const r = await fetch(apiUrl("/__assistant/tester"), {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: node.model, system, prompt, useBrowser: true, timeout: 1200 }),
-          });
-          const j = await r.json().catch(() => ({}));
-          if (!r.ok || !j.ok) throw new Error(j.error || ("tester run failed (HTTP " + r.status + ")"));
-          return j.text || "";
-        }
-        // Idea / text-only: pure persona reaction, no tools.
-        const ideaBlock = ctx ? `\n\nTHE IDEA / BRIEF (this is ALL that exists - there is no app to open or run):\n${ctx.slice(0, 2000)}` : "";
-        const prompt = `Your task: ${t.task || task}.${ideaBlock}${extraNote || ""}\n\nReact to the idea itself as this persona - do not pretend to use an app.${FORMAT}`;
-        return await assistantLlm([{ role: "system", content: system }, { role: "user", content: prompt }], { model: node.model, maxTokens: 700 });
-      };
-
-      // Pass 1: run every tester IN PARALLEL through a small pool (each is
-      // its own subagent thread + CLI process on the threading daemon).
-      // Browser testers each spawn their own headless isolated Chrome
-      // (chrome-devtools-mcp --isolated), so concurrency is safe but heavy -
-      // cap in-flight runs instead of fanning out all N at once.
-      const POOL = useBrowser ? 4 : 8;
-      const state = testers.map(t => ({ t, reply: "", idea: "", questions: [] }));
-      {
-        let landed = 0;
-        setRun({ status: "loading", phase: `0/${state.length} testers in (parallel${useBrowser ? ", browsing" : ""})` });
-        await _assistantPool(state, POOL, async (s, i) => {
-          try {
-            const p = parseTester(await runTester(s.t));
-            Object.assign(s, p);
-          } catch (e) {
-            s.reply = "(run failed: " + String(e?.message || e) + ")";
-          }
-          workflowAppendCellBox(tableId, i + 1, 6, s.reply, "gray");
-          // Highlighted point: a lightbulb emoji marks it as an IDEA beyond just
-          // the yellow colour, so the takeaway reads at a glance.
-          if (s.idea) workflowAppendCellBox(tableId, i + 1, 6, "💡 " + s.idea, "yellow");
-          landed++;
-          setRun({ status: "loading", phase: `${landed}/${state.length} testers in (parallel${useBrowser ? ", browsing" : ""})` });
-          writeTestingResult(state, null);   // live-fill the panel as replies land
-        });
-      }
-
-      // Clarification passes (max 3 total). For testers that asked a lot of
-      // questions, answer them from the material, then re-run that tester.
-      const QTHRESH = 2;
-      for (let pass = 2; pass <= 3; pass++) {
-        const needy = state.map((s, i) => ({ s, i })).filter(x => x.s.questions.length >= QTHRESH);
-        if (!needy.length) break;
-        // Each needy tester's answer-then-re-run is independent - same
-        // parallel pool as pass 1. Passes stay sequential (pass 3 only
-        // re-runs testers still question-heavy AFTER pass 2's answers).
-        let landed = 0;
-        setRun({ status: "loading", phase: `clarifying pass ${pass}: 0/${needy.length} (parallel)` });
-        await _assistantPool(needy, POOL, async ({ s, i }) => {
-          let answers = "";
-          try {
-            const clarMaterial = [ctx, protoMaterial].filter(Boolean).join("\n\n");
-            answers = await assistantLlm([{ role: "user", content:
-              `A tester evaluating this task asked questions. Answer them concisely and factually from the material below (it is the actual app/source under test) so they can continue. If the material genuinely does not say, answer "not specified" - do NOT ask for a link or say you need more context.\n\nTASK:\n${task}\n` +
-              (clarMaterial ? "\nMATERIAL (the actual thing under test):\n" + clarMaterial.slice(0, 4000) : "") +
-              `\n\nQUESTIONS:\n${s.questions.join("\n")}\n\nReturn one plain answer per question.` }],
-              { model: node.model, maxTokens: 800 });
-          } catch (e) { answers = "(could not resolve)"; }
-          try {
-            const p = parseTester(await runTester(s.t,
-              `\n\nEarlier you asked:\n${s.questions.join("\n")}\nHere are answers:\n${answers}\nGiven these, give your UPDATED reply in the same REPLY / IDEA / QUESTIONS format.`));
-            Object.assign(s, p);
-            // Append the exchange to the thread: our answer, then the tester's
-            // updated take. Pass-1 boxes stay visible above.
-            workflowAppendCellBox(tableId, i + 1, 6, "Assistant: " + answers, "ink");
-            workflowAppendCellBox(tableId, i + 1, 6, s.reply, "gray");
-            if (s.idea) workflowAppendCellBox(tableId, i + 1, 6, "💡 " + s.idea, "yellow");
-          } catch (e) { /* keep prior reply */ }
-          landed++;
-          setRun({ status: "loading", phase: `clarifying pass ${pass}: ${landed}/${needy.length} (parallel)` });
-        });
-      }
-
-      // Judging pass: the assistant reads every tester's reply and gives a
-      // per-tester verdict + one-line commentary, rendered as a big emoji
-      // sticker (Verdict) + a coloured commentary box (Assistant).
-      setRun({ status: "loading", phase: "judging" });
-      let verdicts = [];
-      try {
-        const jText = await assistantLlm([{ role: "user", content:
-          `For each tester below, judge - from THEIR reply - how that persona feels about the idea, as a verdict for the user.\n\nTASK / GOAL:\n${task}\n\nTESTERS (JSON):\n` +
-          JSON.stringify(state.map((s, i) => ({ i, name: s.t.name || ("Tester " + (i + 1)), reply: (s.reply || "").slice(0, 600) }))) +
-          `\n\nReturn ONLY a JSON array aligned by index: [{"i":<index>,"verdict":"recommended|good|possible|bad|nothing","comment":"<one-line takeaway for the user>"}]. No prose.` }],
-          { model: node.model, maxTokens: 1500 });
-        const arr = _assistantExtractJson(jText);
-        if (Array.isArray(arr)) for (const v of arr) if (v && typeof v.i === "number") verdicts[v.i] = v;
-      } catch (e) { /* verdicts optional */ }
-      for (let i = 0; i < state.length; i++) {
-        const v = verdicts[i] || {};
-        const vd = _assistantVerdict(v.verdict || "");
-        workflowAddCellSticker(tableId, i + 1, 7, vd.emoji, 44);
-        workflowAddCellBox(tableId, i + 1, 8, (v.comment || vd.label), vd.color);
-      }
-      writeTestingResult(state, verdicts);   // final: judged verdicts + pass rate
-
-      updateNode(nodeId, { runStatus: "done" });
-      updateNode(tableId, { runStatus: "done" });
-      setRun({ status: "done", phase: "done", ranAt: Date.now() });
+      // AGENT-RUN: one tracked bare run generates the persona panel, runs
+      // every tester as its own subagent (browser MCP for wired apps), and
+      // POSTs the tester set back as `testingRun`; the materializer builds
+      // the feedback table.
+      setRun({ status: "loading", phase: "dispatching the testing agent", error: null });
+      updateNode(nodeId, { runStatus: "running" });
+      await dispatchAssistantRun(nodeId, {}, "testing agent");
     } catch (e) {
       updateNode(nodeId, { runStatus: "error" });
       setRun({ status: "error", error: String(e?.message || e) });
     }
-  }, [data, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellBox, workflowAppendCellBox, workflowAddCellSticker, _assistantDropTable]);
+  }, [data, updateNode, dispatchAssistantRun]);
 
   // ── Assistant 4: Deep research assistant ──────────────────────────────────
   // Multi-agent research with deliberately OPPOSED viewpoints. Flow:
@@ -45899,353 +45578,22 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
       if (!clar.done) { setRun({ status: "await", phase: "answer the questions" }); return; }
 
-      // Wired visual material (images / prototypes / web pages) digested BY
-      // SIGHT once per run - after the question gate so that click stays
-      // snappy. A browser subagent opens + screenshots + interacts, and its
-      // report joins the grounding material.
-      updateNode(nodeId, { runStatus: "running" });
-      setRun({ status: "loading", phase: "reading wired material (browser)", error: null });
-      try {
-        const vis = await assistantFetchVisualDigest({ node, nodes: data.nodes, edges: data.edges, entries: ups, model: node.model });
-        if (vis) ctx = (ctx ? ctx + "\n\n" : "") + "VISUAL MATERIAL DIGEST (a browser agent opened + saw the wired material):\n" + vis;
-      } catch { /* text grounding only */ }
-
-      // Phase 1: structured statement + agent panel.
-      setRun({ status: "loading", phase: "planning agents", error: null });
+      // AGENT-RUN build: clarify stayed interactive on the node; the
+      // answered direction ships to ONE tracked bare run that plans the
+      // viewpoint panel, runs the agents as its own Task subagents, debates,
+      // settles, and POSTs the matrix back as `deepresearchRun`; the
+      // materializer renders the board + evidence table.
       const answers = (clar.questions || [])
         .map((qq, i) => (clar.answers && String(clar.answers[i] || "").trim()) ? `Q: ${qq.q}\nA: ${clar.answers[i]}` : "")
         .filter(Boolean).join("\n");
-      const nAgents = Math.max(2, Math.min(5, node.maxAgents || 4));
-      const planText = await assistantLlm([{ role: "user", content:
-        `You LEAD a multi-agent deep research. Write the research plan.\n\nTASK:\n${task}\n` +
-        (answers ? `\nUSER'S DIRECTION (clarifying Q&A):\n${answers}\n` : "") +
-        (ctx ? `\nLINKED MATERIAL (excerpt):\n${ctx.slice(0, 1500)}\n` : "") +
-        `\n1. Write a STRUCTURED RESEARCH STATEMENT: the claim / question decomposed into its testable parts, with scope and what counts as validation.` +
-        `\n2. Design ${nAgents} agents with DELIBERATELY DIFFERENT viewpoints or source methods, picked to fit this statement and the user's direction. Examples: validating an idea -> a champion arguing FOR it, a skeptic arguing AGAINST it, a market-evidence hunter; gathering facts -> official/primary web sources, community/user-generated web sources${hasMaterial ? ", the linked material" : ""}. Each agent's "method" is "web" (live web research through its lens) or "context" (reads ONLY the linked material${hasMaterial ? "" : ' - do NOT use "context", nothing is linked'}).` +
-        `\n\nReturn ONLY JSON: {"statement":"...","header":"<board title, <=8 words>","description":"<1-2 sentence board intro>","agents":[{"name":"<short role name>","role":"<one-line persona>","lens":"<what it hunts for / argues>","method":"web|context"}]}. No prose.` }],
-        { model: node.model, maxTokens: 2200 });
-      const plan = _drExtractObj(planText);
-      if (!plan || !plan.statement || !Array.isArray(plan.agents) || !plan.agents.length) throw new Error("Could not form the research plan.");
-      const agents = plan.agents.slice(0, nAgents).map((a, i) => ({
-        name: String(a.name || ("Agent " + (i + 1))).slice(0, 28),
-        role: String(a.role || ""), lens: String(a.lens || ""),
-        method: (a.method === "context" && hasMaterial) ? "context" : "web",
-      }));
-      const header = String(plan.header || task.slice(0, 60));
-      const desc = String(plan.description || "");
-      // Skeleton result NOW, so the right panel floats out during the (long)
-      // gather phase - agent roster + counters visible, points still empty.
-      // Mirrors the testing assistant's live-fill behaviour.
-      updateNode(nodeId, { result: {
-        kind: "deepresearch", task, builtAt: Date.now(),
-        statement: plan.statement, header, description: desc,
-        agents: agents.map(a => ({ name: a.name, method: a.method, lens: a.lens })),
-        counters: { agents: agents.length, points: 0, rounds: 0, elapsedMs: Date.now() - t0 },
-        points: [], conclusion: "",
-      } });
-
-      // Search backend for this node's WEB agents: node override → assistant
-      // group default → global default (Settings → Web search). "agent" (free)
-      // or "exa" (paid). Context agents ignore this - they never touch the web.
-      const via = resolveSearchVia(node.searchVia);
-      // Exa is metered, so a web agent hits it AT MOST ONCE per run: the first
-      // call for that agent caches its source set, reused across debate rounds.
-      const _exaCache = {};
-      const _exaSourcesFor = async (a) => {
-        if (_exaCache[a.name] !== undefined) return _exaCache[a.name];
-        let results = [];
-        try {
-          const q = ((a.lens ? a.lens + " - " : "") + plan.statement).slice(0, 400);
-          const er = await fetch(apiUrl("/__exa/search"), {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: q, numResults: 6, type: "auto" }),
-          });
-          const ej = await er.json().catch(() => ({}));
-          if (er.ok && ej.ok) results = ej.results || [];
-        } catch { /* fall through to knowledge-only reasoning */ }
-        _exaCache[a.name] = results;
-        return results;
-      };
-      // One agent turn. Web agents research via the resolved backend - a real
-      // subagent with WebSearch/WebFetch (/__assistant/research), OR an Exa
-      // search whose results an in-lens LLM reasons over. Material agents are
-      // plain LLM calls (no tools, so they can't wander off the wired material).
-      const runAgent = async (a, prompt) => {
-        const system = `You are "${a.name}" - ${a.role} Your lens: ${a.lens}. Stay strictly in this viewpoint; it is DELIBERATE that other agents disagree with you. Output strictly JSON, no prose.`;
-        if (a.method === "web") {
-          if (via === "exa") {
-            const sources = await _exaSourcesFor(a);
-            const srcText = (sources && sources.length)
-              ? "\n\nWEB SOURCES (Exa search for your lens - use + cite these; quote snippets verbatim):\n" +
-                JSON.stringify(sources.map(s => ({ title: s.title, url: s.url, summary: s.summary || (s.highlights || [])[0] || "", text: (s.text || "").slice(0, 400), image: s.image || "" })))
-              : "\n\n(Exa returned no sources - reason in-lens from your own knowledge and mark points \"unverified\".)";
-            const t = await assistantLlm([
-              { role: "system", content: system },
-              { role: "user", content: prompt + srcText },
-            ], { model: node.model, maxTokens: 1800 });
-            return _assistantExtractJson(t) || [];
-          }
-          const r = await fetch(apiUrl("/__assistant/research"), {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: node.model, system, prompt }),
-          });
-          const j = await r.json().catch(() => ({}));
-          if (!r.ok || !j.ok) throw new Error(j.error || ("agent run failed (HTTP " + r.status + ")"));
-          return _assistantExtractJson(j.text) || [];
-        }
-        const t = await assistantLlm([
-          { role: "system", content: system + " You have NO web access - work ONLY from the material given." },
-          { role: "user", content: prompt },
-        ], { model: node.model, maxTokens: 1800 });
-        return _assistantExtractJson(t) || [];
-      };
-
-      // Phase 2: initial gather - every agent runs IN PARALLEL (the daemon is
-      // a threading server; each run is its own thread + CLI process, and the
-      // viewpoints are independent by design). Wall time = slowest agent, not
-      // the sum.
-      const FINDINGS_FORMAT = `Return ONLY a JSON array of your findings (max 6): [{"point":"<claim / finding in one sentence>","stance":"support|oppose|challenge|unverified","note":"<why, in your voice, <=40 words>","url":"<source url or empty>","snippet":"<short verbatim quote from the source, or empty>","image":"<direct image url that shows it, else empty>"}]. "stance" is YOUR position on the point given your lens; use "unverified" when you looked and could not validate it. No prose outside the JSON.`;
-      const findings = {};
-      {
-        let landed = 0;
-        setRun({ status: "loading", phase: `${agents.length} agents researching in parallel…` });
-        await Promise.all(agents.map(async (a) => {
-          const prompt =
-            `RESEARCH STATEMENT:\n${plan.statement}\n` +
-            (a.method === "context"
-              ? `\nTHE MATERIAL (all you may use):\n${ctx.slice(0, 4000)}\n`
-              : `\nResearch this through YOUR lens. Cite real URLs you actually opened; quote snippets verbatim.\n` +
-                (ctx ? `\nGROUNDING MATERIAL - the actual thing under evaluation. Judge THIS, but VALIDATE every claim against EXTERNAL web sources; do not just restate the material:\n${ctx.slice(0, 3000)}\n` : "")) +
-            `\n${FINDINGS_FORMAT}`;
-          try { findings[a.name] = (await runAgent(a, prompt)).filter(x => x && x.point); }
-          catch (e) { findings[a.name] = []; }
-          landed++;
-          setRun({ status: "loading", phase: `agents ${landed}/${agents.length} in (parallel)` });
-        }));
-      }
-      if (!Object.values(findings).some(list => list.length)) throw new Error("No agent returned findings - try again.");
-
-      // Phase 3: merge into one point matrix.
-      setRun({ status: "loading", phase: "merging points" });
-      const mText = await assistantLlm([{ role: "user", content:
-        `You LEAD the research. Merge the agents' findings into ONE list of distinct points (max 8). Findings several agents touched merge into one point, keeping each agent's OWN stance on it (they may approve, disapprove, challenge, or have failed to validate).\n\nSTATEMENT:\n${plan.statement}\n\nAGENT FINDINGS (JSON by agent):\n` +
-        JSON.stringify(findings) +
-        `\n\nReturn ONLY JSON: {"points":[{"id":<1..n>,"point":"<merged point, one sentence>","perAgent":{"<agent name>":{"stance":"support|oppose|challenge|unverified","note":"...","url":"...","snippet":"...","image":"..."}}}],"conclusion":"<2-3 sentence current read>"}. Only include agents that actually addressed a point. No prose.` }],
-        { model: node.model, maxTokens: 3500 });
-      const merged = _drExtractObj(mText);
-      if (!merged || !Array.isArray(merged.points) || !merged.points.length) throw new Error("Could not merge the findings.");
-      merged.points = merged.points.slice(0, 8).map((p, i) => ({ ...p, id: p.id || (i + 1), perAgent: p.perAgent || {} }));
-
-      // Phase 4: build the board. The whole section layout lives in ONE
-      // rebuildable function because the content CHANGES over the run - the
-      // final review rewords points and writes a much longer conclusion, and
-      // patching text into fixed-height items left overlapping / clipped
-      // boards. Every (re)build re-measures at the ACTUAL rendered font
-      // sizes (header xl, body sm), auto-sizes each sticky row to its
-      // tallest note, re-derives the section height, keeps the section's
-      // CURRENT frame position (the user may have dragged it mid-run), and
-      // rewires the assistant node's ownership ids atomically.
-      setRun({ status: "loading", phase: "building board" });
-      if (node.tableId) _assistantDropTable(node.tableId);
-      const SECW = 760, PAD = 24, INNER = SECW - PAD * 2;
-      // Ownership carried across rebuilds; seeded from the previous run's
-      // ids so the first build replaces that run's board.
-      let boardIds = { sectionId: node.sectionId || null, wbIds: (node.drIds && node.drIds.wbIds) || [] };
-      const buildBoard = (pts, conclusionText, colorOf) => {
-        setData(d => {
-          const prev = (d.nodes || []).find(n => n.id === boardIds.sectionId);
-          const bx = prev ? prev.x : Math.round(node.x + (node.w || 440) + 460);
-          const by = prev ? prev.y : Math.round(node.y);
-          const oldWb = new Set(boardIds.wbIds);
-          // Drop every prior board item this node ever laid down: by tracked
-          // id, by current section binding, OR by the durable _dr owner tag.
-          // The tag is the backstop - an earlier build's items can lose their
-          // `sec` (stripSec fires when their section node is swapped out mid
-          // run) and fall out of drIds.wbIds, which used to strand them as
-          // unowned floaters the next rebuild stamped straight on top of.
-          const keptWb = (Array.isArray(d.wb) ? d.wb : []).filter(it =>
-            !oldWb.has(it.id)
-            && !(it.sec && it.sec.sectionId === boardIds.sectionId)
-            && it._dr !== nodeId);
-          let nodes = (d.nodes || []).filter(n => n.id !== boardIds.sectionId);
-          const secId = workflowNewNodeId();
-          const items = [], wbIds = [];
-          const bind = (it, x, y) => {
-            it.x = x; it.y = y;
-            it.sec = { sectionId: secId, ox: Math.round(x - bx), oy: Math.round(y - by) };
-            it._dr = nodeId; // durable owner tag; survives stripSec so a later
-            items.push(it); wbIds.push(it.id); // rebuild can always reclaim it
-            return it;
-          };
-          let y = by + PAD + 8;
-          bind(wbMakeItem("text", { text: header, w: INNER, fontSize: "xl", bold: true, align: "left", color: "ink" }), bx + PAD, y);
-          y += _measureWrappedTextHeight(header, INNER, WB_FONT_SIZES.xl) + 18;
-          if (desc) {
-            bind(wbMakeItem("text", { text: desc, w: INNER, fontSize: "sm", align: "left", color: "gray" }), bx + PAD, y);
-            y += _measureWrappedTextHeight(desc, INNER, WB_FONT_SIZES.sm) + 20;
-          }
-          const STK = 200, GAP = 16;
-          for (let r0 = 0; r0 * 3 < pts.length; r0++) {
-            const rowPts = pts.slice(r0 * 3, r0 * 3 + 3);
-            const heights = rowPts.map(p =>
-              Math.max(STK, _measureWrappedTextHeight(String(p.point || ""), STK - 20, WB_FONT_SIZES.sm) + 30));
-            rowPts.forEach((p, ci) => {
-              bind(wbMakeItem("sticky", { text: String(p.point || ""), w: STK, h: heights[ci], color: colorOf(p), fontSize: "sm", align: "left" }),
-                bx + PAD + ci * (STK + GAP), y);
-            });
-            y += Math.max(...heights) + GAP;
-          }
-          y += 8;
-          bind(wbMakeItem("text", { text: "Conclusion", w: INNER, fontSize: "sm", bold: true, align: "left", color: "ink" }), bx + PAD, y);
-          y += 30;
-          const cText = String(conclusionText || "");
-          const cH = _measureWrappedTextHeight(cText, INNER - 14, WB_FONT_SIZES.sm) + 28;
-          bind(wbMakeItem("textbox", { text: cText, w: INNER, h: cH, color: "gray", align: "left", fontSize: "sm" }), bx + PAD, y);
-          y += cH + PAD;
-          const secBody = workflowMakeNodeOfKind("section", { title: header });
-          nodes = nodes
-            .map(n => n.id === nodeId ? { ...n, sectionId: secId, drIds: { wbIds } } : n)
-            .concat([{ id: secId, ...secBody, x: bx, y: by, w: SECW, h: Math.max(360, y - by) }]);
-          boardIds = { sectionId: secId, wbIds };
-          return { ...d, nodes, wb: [...keptWb, ...items] };
-        });
-      };
-      buildBoard(merged.points, merged.conclusion, () => "yellow");
-
-      // The evidence table: one row per merged point, one column per agent
-      // (stance boxes APPEND per round - the debate stays visible), then
-      // Sources (links + verbatim snippets) and Snapshot (image evidence).
-      const headers = ["Point", ...agents.map(a => a.name), "Sources", "Snapshot"];
-      const colWidths = [260, ...agents.map(() => 240), 320, 300];
-      const rows = merged.points.map(p => [p.point || "", ...agents.map(() => ""), "", ""]);
-      const tableId = workflowBuildResultTable({
-        title: "Evidence: " + header.slice(0, 32), headers, rows,
-        x: Math.round(node.x + (node.w || 440) + 460) + SECW + 80, y: Math.round(node.y), colWidths,
-      });
-      // sectionId + drIds are wired inside buildBoard's updater (atomically,
-      // per rebuild) - only the table id lands here.
-      updateNode(nodeId, { tableId });
-      updateNode(tableId, { runStatus: "running" });
-
-      const SRC_COL = 1 + agents.length, SNAP_COL = SRC_COL + 1;
-      const snapped = new Set();   // one snapshot browser node per point, max
-      const appendEntries = (pts, label) => {
-        for (const p of pts) {
-          const ri = merged.points.findIndex(mp => String(mp.id) === String(p.id));
-          if (ri < 0) continue;
-          const per = p.perAgent || {};
-          agents.forEach((a, ai) => {
-            const e = per[a.name];
-            if (!e) return;
-            const sw = _drStanceWord(e.stance);
-            workflowAppendCellBox(tableId, ri + 1, 1 + ai,
-              (label ? label + " " : "") + sw.toUpperCase() + (e.note ? ": " + e.note : ""), _drStanceColor(sw));
-            if (e.url || e.snippet) {
-              workflowAppendCellBox(tableId, ri + 1, SRC_COL,
-                (e.snippet ? "“" + e.snippet + "”\n" : "") + (e.url || "") + "\n(" + a.name + (label ? ", " + label.replace(":", "") : "") + ")", "blue");
-            }
-            if (e.image && /^https?:/i.test(e.image) && !snapped.has(ri)) {
-              snapped.add(ri);
-              workflowAddCellNode(tableId, ri + 1, SNAP_COL, "browser", { url: e.image, cellW: 280, cellH: 190 });
-            }
-          });
-        }
-      };
-      appendEntries(merged.points, "");
-
-      // The floating-panel summary twin (the canvas board stays the detailed view).
-      const writeResult = (roundsDone, conclusion, consensusById) => updateNode(nodeId, { result: {
-        kind: "deepresearch", task, builtAt: Date.now(),
-        statement: plan.statement, header, description: desc,
-        agents: agents.map(a => ({ name: a.name, method: a.method, lens: a.lens })),
-        counters: { agents: agents.length, points: merged.points.length, rounds: roundsDone, elapsedMs: Date.now() - t0 },
-        points: merged.points.map(p => ({
-          id: p.id, point: p.point,
-          consensus: (consensusById && consensusById[p.id]) || "",
-          perAgent: p.perAgent,
-        })),
-        conclusion: conclusion || "",
-      } });
-      writeResult(0, merged.conclusion, null);
-
-      // Phase 5: debate rounds. Each agent re-reviews the whole matrix and
-      // only reports points where its stance / evidence CHANGES or where it
-      // rebuts another agent; those land as appended boxes. A round with no
-      // changes ends the debate early.
-      const roundsN = Math.max(1, Math.min(3, node.rounds || 2));
-      let roundsDone = 0;
-      for (let round = 1; round <= roundsN; round++) {
-        // Every agent debates IN PARALLEL against the SAME round snapshot of
-        // the matrix (fairer than sequential, where later agents see earlier
-        // agents' same-round updates). Table boxes append as each agent
-        // lands; the matrix mutations apply once all are in.
-        const snapshot = JSON.stringify(merged.points);
-        let landed = 0;
-        setRun({ status: "loading", phase: `debate ${round}/${roundsN}: ${agents.length} agents in parallel…` });
-        const roundResults = await Promise.all(agents.map(async (a) => {
-          const prompt =
-            `RESEARCH STATEMENT:\n${plan.statement}\n\nCURRENT MERGED POINT MATRIX (every agent's stance):\n` +
-            snapshot +
-            `\n\nRe-review as "${a.name}". Where OTHER agents dispute you, or where you can now confirm / refute / challenge a point${a.method === "web" ? " (verify with a quick web check when it matters)" : " (using ONLY the linked material)"}, respond. Return ONLY points where your stance or evidence CHANGES or where you rebut another agent - return [] if you fully stand by the matrix.\n\n` +
-            (a.method === "context" && ctx ? `THE MATERIAL:\n${ctx.slice(0, 3000)}\n\n` : "") +
-            `Return ONLY JSON: [{"id":<point id>,"stance":"support|oppose|challenge|unverified","note":"<your rebuttal / update, <=40 words>","url":"<source url or empty>","snippet":"<verbatim quote or empty>","image":""}]. No prose.`;
-          let resp = [];
-          try { resp = (await runAgent(a, prompt)).filter(x => x && x.id != null); } catch (e) { resp = []; }
-          landed++;
-          setRun({ status: "loading", phase: `debate ${round}/${roundsN}: ${landed}/${agents.length} in` });
-          if (resp.length) appendEntries(resp.map(u => ({ id: u.id, perAgent: { [a.name]: u } })), "R" + (round + 1) + ":");
-          return { a, resp };
-        }));
-        let changes = 0;
-        for (const { a, resp } of roundResults) {
-          for (const u of resp) {
-            const p = merged.points.find(mp => String(mp.id) === String(u.id));
-            if (!p) continue;
-            p.perAgent[a.name] = { stance: u.stance, note: u.note, url: u.url, snippet: u.snippet, image: u.image };
-            changes++;
-          }
-        }
-        roundsDone = round;
-        writeResult(roundsDone, merged.conclusion, null);
-        if (!changes) break;
-      }
-
-      // Phase 6: final review - the lead settles each point, the stickies
-      // reword + recolour by consensus, the conclusion box rewrites.
-      setRun({ status: "loading", phase: "final review" });
-      const fText = await assistantLlm([{ role: "user", content:
-        `You LEAD the research. The debate is over - review the FINAL matrix and settle each point for the user.\n\nSTATEMENT:\n${plan.statement}\n\nFINAL MATRIX:\n` +
-        JSON.stringify(merged.points) +
-        `\n\nReturn ONLY JSON: {"points":[{"id":<id>,"point":"<final wording, one sentence>","consensus":"supported|contested|disputed|unverified"}],"conclusion":"<3-5 sentence final conclusion for the user>"}. No prose.` }],
-        { model: node.model, maxTokens: 2500 });
-      const fin = _drExtractObj(fText) || {};
-      const finPoints = Array.isArray(fin.points) ? fin.points : [];
-      const consensusById = {};
-      for (const fp of finPoints) {
-        if (!fp || fp.id == null) continue;
-        consensusById[fp.id] = fp.consensus || "";
-        const p = merged.points.find(mp => String(mp.id) === String(fp.id));
-        if (p && fp.point) {
-          p.point = fp.point;
-          const ri = merged.points.indexOf(p);
-          workflowSetCellText(tableId, ri + 1, 0, fp.point);
-        }
-      }
-      // REBUILD the board with the final texts (not an in-place text patch):
-      // heights re-measure, sticky rows re-flow, the (longer) conclusion box
-      // resizes, and the section grows to fit.
-      buildBoard(merged.points, fin.conclusion || merged.conclusion,
-        (p) => consensusById[p.id] ? _drConsensus(consensusById[p.id]).color : "yellow");
-      writeResult(roundsDone, fin.conclusion || merged.conclusion, consensusById);
-
-      updateNode(nodeId, { runStatus: "done" });
-      updateNode(tableId, { runStatus: "done" });
-      setRun({ status: "done", phase: "done", ranAt: Date.now() });
+      setRun({ status: "loading", phase: "dispatching the deep research agent", error: null });
+      updateNode(nodeId, { runStatus: "running" });
+      await dispatchAssistantRun(nodeId, { answers, searchVia: resolveSearchVia(node.searchVia) }, "deep research agent");
     } catch (e) {
       updateNode(nodeId, { runStatus: "error" });
       setRun({ status: "error", error: String(e?.message || e) });
     }
-  }, [data, setData, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellNode, workflowAppendCellBox, workflowSetCellText, _assistantDropTable]);
+  }, [data, updateNode, assistantLlm, dispatchAssistantRun]);
 
   // ── Assistant 5: Strategy assistant (clarify → presentation plan → board) ──
   // Two user gates BEFORE any research spend: Phase 0 asks up to 3 directing
@@ -47144,13 +46492,241 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       _materializingRef.current.delete(nodeId);
     }
   }, [setData, updateNode, workflowBuildResultTable, workflowAppendCellBox, workflowAddCellNode, workflowAddCellMarker, _assistantDropTable]);
+  // Comparative research payload → comparison table + panel.
+  const materializeResearchRun = useCallback(async (nodeId) => {
+    if (_materializingRef.current.has(nodeId)) return;
+    _materializingRef.current.add(nodeId);
+    try {
+      const node = (dataNodesRef.current || []).find(n => n.id === nodeId);
+      const raw = node && node.researchRun;
+      if (!node || !raw || typeof raw !== "object") return;
+      const items = (Array.isArray(raw.items) ? raw.items : []).slice(0, 16)
+        .map(x => ({ title: String((x && x.title) || ""), url: String((x && x.url) || ""),
+                     summary: String((x && x.summary) || ""), why: String((x && x.why) || ""),
+                     visual: String((x && x.visual) || "link"), value: String((x && x.value) || ""),
+                     verdict: String((x && x.verdict) || ""), comment: String((x && x.comment) || "") }))
+        .filter(x => x.title || x.url);
+      if (!items.length) return;
+      if (node.tableId) _assistantDropTable(node.tableId);
+      const headers = ["Result", "Source", "Summary", "Why it qualifies", "Visual", "Verdict", "Assistant"];
+      const colWidths = [220, 200, 320, 240, 300, 90, 300];
+      const rows = items.map(k => [k.title, k.url, k.summary, k.why, "", "", ""]);
+      const tableId = workflowBuildResultTable({
+        title: "Research: " + (node.goal || "").slice(0, 40), headers, rows,
+        x: Math.round(node.x + (node.w || 420) + 480), y: Math.round(node.y), colWidths, rowH: 190,
+      });
+      const _host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return (u || "").slice(0, 40); } };
+      items.forEach((k, ri) => {
+        const r = ri + 1, val = k.value.trim();
+        if (k.visual === "color" && /^#?[0-9a-fA-F]{3,8}$/.test(val.replace("#", ""))) {
+          workflowAddCellNode(tableId, r, 4, "color-palette", { name: (k.title || "Color").slice(0, 24), swatches: [{ name: "--accent", value: val.startsWith("#") ? val : "#" + val }] });
+        } else if (k.visual === "font" && val) {
+          workflowAddCellNode(tableId, r, 4, "typography", { name: val, fontFamily: val });
+        } else if (/^https?:/i.test(val)) {
+          workflowAddCellNode(tableId, r, 4, "browser", { url: val, cellW: 300, cellH: 220 });
+        } else {
+          workflowSetCellText(tableId, r, 4, k.url || "(link)");
+        }
+        const vd = _assistantVerdict(k.verdict || (k.why ? "good" : "nothing"));
+        workflowAddCellSticker(tableId, r, 5, vd.emoji, 44);
+        workflowAddCellBox(tableId, r, 6, (k.comment || k.why || vd.label), vd.color);
+      });
+      updateNode(nodeId, { tableId, researchRun: null, runStatus: "done",
+        result: { kind: "research", query: node.goal || "", builtAt: Date.now(),
+          items: items.map(k => ({ title: k.title, source: _host(k.url), url: k.url, summary: k.summary, why: k.why, verdict: k.verdict || (k.why ? "good" : "nothing") })) } });
+      updateNode(tableId, { runStatus: "done" });
+      try {
+        await fetch(apiUrl(`/__workflow/node/${nodeId}/status?project=${encodeURIComponent(activeProjectId() || "")}`), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ researchRun: null, runStatus: "done" }) });
+      } catch { /* local clear landed */ }
+    } finally { _materializingRef.current.delete(nodeId); }
+  }, [updateNode, workflowBuildResultTable, workflowAddCellNode, workflowAddCellBox, workflowAddCellSticker, workflowSetCellText, _assistantDropTable]);
+
+  // Simulated-testing payload → feedback table + simulation report panel.
+  const materializeTestingRun = useCallback(async (nodeId) => {
+    if (_materializingRef.current.has(nodeId)) return;
+    _materializingRef.current.add(nodeId);
+    try {
+      const node = (dataNodesRef.current || []).find(n => n.id === nodeId);
+      const raw = node && node.testingRun;
+      if (!node || !raw || typeof raw !== "object") return;
+      const testers = (Array.isArray(raw.testers) ? raw.testers : []).slice(0, 40)
+        .map(t => ({ name: String((t && t.name) || ""), type: String((t && t.type) || ""),
+                     background: String((t && t.background) || ""), personality: String((t && t.personality) || ""),
+                     preference: String((t && t.preference) || ""), task: String((t && t.task) || ""),
+                     reply: String((t && t.reply) || ""), idea: String((t && t.idea) || ""),
+                     verdict: String((t && t.verdict) || ""), comment: String((t && t.comment) || "") }))
+        .filter(t => t.name || t.reply);
+      if (!testers.length) return;
+      if (node.tableId) _assistantDropTable(node.tableId);
+      const headers = ["Tester", "Type", "Background", "Personality", "Preference", "Task", "Feedback", "Verdict", "Assistant"];
+      const rows = testers.map(t => [t.name, t.type, t.background, t.personality, t.preference, t.task, "", "", ""]);
+      const tableId = workflowBuildResultTable({
+        title: "Testers: " + (node.task || "").slice(0, 30), headers, rows,
+        x: Math.round(node.x + (node.w || 440) + 420), y: Math.round(node.y),
+        colWidths: [140, 120, 200, 180, 160, 220, 340, 90, 300],
+      });
+      testers.forEach((t, i) => {
+        if (t.reply) workflowAppendCellBox(tableId, i + 1, 6, t.reply, "gray");
+        if (t.idea) workflowAppendCellBox(tableId, i + 1, 6, "💡 " + t.idea, "yellow");
+        const vd = _assistantVerdict(t.verdict);
+        workflowAddCellSticker(tableId, i + 1, 7, vd.emoji, 44);
+        workflowAddCellBox(tableId, i + 1, 8, (t.comment || vd.label), vd.color);
+      });
+      const out = testers.map(t => ({ name: t.name, type: t.type, comment: t.comment || (t.idea || "").slice(0, 90), verdict: t.verdict }));
+      const judged = out.filter(t => t.verdict);
+      const issues = judged.filter(t => { const k = _assistantVerdict(t.verdict).key; return k === "bad" || k === "nothing"; }).length;
+      const passCount = judged.filter(t => { const k = _assistantVerdict(t.verdict).key; return k === "recommended" || k === "good"; }).length;
+      const typeList = [...new Set(out.map(t => t.type).filter(Boolean))];
+      updateNode(nodeId, { tableId, testingRun: null, runStatus: "done",
+        result: { kind: "testing", task: node.task || "", builtAt: Date.now(),
+          counters: { testers: out.length, issues, types: typeList.length, elapsedMs: 0 },
+          passRate: judged.length ? Math.round((passCount * 100) / judged.length) : 0,
+          passCount, total: judged.length,
+          agents: typeList.map(ty => ({ name: ty, count: out.filter(t => t.type === ty).length })),
+          testers: out } });
+      updateNode(tableId, { runStatus: "done" });
+      try {
+        await fetch(apiUrl(`/__workflow/node/${nodeId}/status?project=${encodeURIComponent(activeProjectId() || "")}`), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ testingRun: null, runStatus: "done" }) });
+      } catch { /* local clear landed */ }
+    } finally { _materializingRef.current.delete(nodeId); }
+  }, [updateNode, workflowBuildResultTable, workflowAppendCellBox, workflowAddCellBox, workflowAddCellSticker, _assistantDropTable]);
+
+  // Deep-research payload → consensus board + per-agent evidence table.
+  const materializeDeepresearchRun = useCallback(async (nodeId) => {
+    if (_materializingRef.current.has(nodeId)) return;
+    _materializingRef.current.add(nodeId);
+    try {
+      const node = (dataNodesRef.current || []).find(n => n.id === nodeId);
+      const raw = node && node.deepresearchRun;
+      if (!node || !raw || typeof raw !== "object") return;
+      const agents = (Array.isArray(raw.agents) ? raw.agents : []).slice(0, 5)
+        .map((a, i) => ({ name: String((a && a.name) || ("Agent " + (i + 1))).slice(0, 28),
+                          role: String((a && a.role) || ""), lens: String((a && a.lens) || ""),
+                          method: (a && a.method) === "context" ? "context" : "web" }));
+      const points = (Array.isArray(raw.points) ? raw.points : []).slice(0, 8)
+        .map((p2, i) => ({ id: (p2 && p2.id) || (i + 1), point: String((p2 && p2.point) || ""),
+                           consensus: String((p2 && p2.consensus) || ""), perAgent: (p2 && p2.perAgent) || {} }))
+        .filter(p2 => p2.point);
+      if (!points.length || !agents.length) return;
+      const header = String(raw.header || (node.task || "").slice(0, 60));
+      const desc = String(raw.description || "");
+      const conclusion = raw.conclusion;
+      if (node.tableId) _assistantDropTable(node.tableId);
+      // Board section: sweep by tracked ids + section binding + _dr tag.
+      const SECW = 760, PAD = 24, INNER = SECW - PAD * 2, STK = 200, GAP = 16;
+      const mh = (text, w2, fs) => _measureWrappedTextHeight(String(text == null ? "" : text), w2, fs || WB_FONT_SIZES.sm);
+      setData(d => {
+        const prevSecId = node.sectionId || null;
+        const prev = (d.nodes || []).find(n2 => n2.id === prevSecId);
+        const bx = prev ? prev.x : Math.round(node.x + (node.w || 440) + 460);
+        const by = prev ? prev.y : Math.round(node.y);
+        const oldWb = new Set((node.drIds && node.drIds.wbIds) || []);
+        const keptWb = (Array.isArray(d.wb) ? d.wb : []).filter(it =>
+          !oldWb.has(it.id) && !(it.sec && it.sec.sectionId === prevSecId) && it._dr !== nodeId);
+        let nodes = (d.nodes || []).filter(n2 => n2.id !== prevSecId);
+        const secId = workflowNewNodeId();
+        const items = [], wbIds = [];
+        const bind = (it, x, yy) => {
+          it.x = x; it.y = yy;
+          it.sec = { sectionId: secId, ox: Math.round(x - bx), oy: Math.round(yy - by) };
+          it._dr = nodeId;
+          items.push(it); wbIds.push(it.id);
+          return it;
+        };
+        let y = by + PAD + 8;
+        bind(wbMakeItem("text", { text: header, w: INNER, fontSize: "xl", bold: true, align: "left", color: "ink" }), bx + PAD, y);
+        y += mh(header, INNER, WB_FONT_SIZES.xl) + 18;
+        if (desc) {
+          bind(wbMakeItem("text", { text: desc, w: INNER, fontSize: "sm", align: "left", color: "gray" }), bx + PAD, y);
+          y += mh(desc, INNER) + 20;
+        }
+        for (let r0 = 0; r0 * 3 < points.length; r0++) {
+          const rowPts = points.slice(r0 * 3, r0 * 3 + 3);
+          const heights = rowPts.map(p2 => Math.max(STK, mh(p2.point, STK - 20) + 30));
+          rowPts.forEach((p2, ci) => {
+            bind(wbMakeItem("sticky", { text: p2.point, w: STK, h: heights[ci], color: _drConsensus(p2.consensus).color, fontSize: "sm", align: "left" }),
+              bx + PAD + ci * (STK + GAP), y);
+          });
+          y += Math.max(...heights) + GAP;
+        }
+        y += 8;
+        bind(wbMakeItem("text", { text: "Conclusion", w: INNER, fontSize: "sm", bold: true, align: "left", color: "ink" }), bx + PAD, y);
+        y += 30;
+        const cObj = _strategySummaryObj(conclusion);
+        if (cObj.headline) {
+          bind(wbMakeItem("text", { text: cObj.headline, w: INNER, fontSize: "lg", bold: true, align: "left", color: "ink" }), bx + PAD, y);
+          y += mh(cObj.headline, INNER, WB_FONT_SIZES.lg) + 10;
+        }
+        if (cObj.support) {
+          bind(wbMakeItem("text", { text: cObj.support, w: INNER, fontSize: "sm", align: "left", color: "gray" }), bx + PAD, y);
+          y += mh(cObj.support, INNER) + 12;
+        }
+        for (const b2 of cObj.bullets) {
+          const line = "•  " + b2;
+          bind(wbMakeItem("text", { text: line, w: INNER - 10, fontSize: "sm", align: "left", color: "ink" }), bx + PAD + 10, y);
+          y += mh(line, INNER - 10) + 8;
+        }
+        y += PAD;
+        const secBody = workflowMakeNodeOfKind("section", { title: header });
+        nodes = nodes
+          .map(n2 => n2.id === nodeId ? { ...n2, sectionId: secId, drIds: { wbIds } } : n2)
+          .concat([{ id: secId, ...secBody, x: bx, y: by, w: SECW, h: Math.max(360, y - by) }]);
+        return { ...d, nodes, wb: [...keptWb, ...items] };
+      });
+      // Evidence table beside the board.
+      const headers = ["Point", ...agents.map(a => a.name), "Sources", "Snapshot"];
+      const colWidths = [260, ...agents.map(() => 240), 320, 300];
+      const rows = points.map(p2 => [p2.point, ...agents.map(() => ""), "", ""]);
+      const tableId = workflowBuildResultTable({
+        title: "Evidence: " + header.slice(0, 32), headers, rows,
+        x: Math.round(node.x + (node.w || 440) + 460) + SECW + 80, y: Math.round(node.y), colWidths,
+      });
+      const SRC_COL = 1 + agents.length, SNAP_COL = SRC_COL + 1;
+      const snapped = new Set();
+      points.forEach((p2, ri) => {
+        agents.forEach((a, ai) => {
+          const e = (p2.perAgent || {})[a.name];
+          if (!e) return;
+          const sw = _drStanceWord(e.stance);
+          workflowAppendCellBox(tableId, ri + 1, 1 + ai, sw.toUpperCase() + (e.note ? ": " + e.note : ""), _drStanceColor(sw));
+          if (e.url || e.snippet) {
+            workflowAppendCellBox(tableId, ri + 1, SRC_COL,
+              (e.snippet ? "“" + e.snippet + "”\n" : "") + (e.url || "") + "\n(" + a.name + ")", "blue");
+          }
+          if (e.image && /^https?:/i.test(e.image) && !snapped.has(ri)) {
+            snapped.add(ri);
+            workflowAddCellNode(tableId, ri + 1, SNAP_COL, "browser", { url: e.image, cellW: 280, cellH: 190 });
+          }
+        });
+      });
+      updateNode(nodeId, { tableId, deepresearchRun: null, runStatus: "done",
+        result: { kind: "deepresearch", task: node.task || "", builtAt: Date.now(),
+          statement: String(raw.statement || ""), header, description: desc,
+          agents: agents.map(a => ({ name: a.name, method: a.method, lens: a.lens })),
+          counters: { agents: agents.length, points: points.length, rounds: Number(node.rounds) || 0, elapsedMs: 0 },
+          points, conclusion } });
+      updateNode(tableId, { runStatus: "done" });
+      try {
+        await fetch(apiUrl(`/__workflow/node/${nodeId}/status?project=${encodeURIComponent(activeProjectId() || "")}`), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deepresearchRun: null, runStatus: "done" }) });
+      } catch { /* local clear landed */ }
+    } finally { _materializingRef.current.delete(nodeId); }
+  }, [setData, updateNode, workflowBuildResultTable, workflowAppendCellBox, workflowAddCellNode, _assistantDropTable]);
+
   useEffect(() => {
     for (const n of (data.nodes || [])) {
-      if (n && n.kind === "assistant-strategy" && n.strategyRun && typeof n.strategyRun === "object") {
-        materializeStrategyRun(n.id);
-      }
+      if (!n) continue;
+      if (n.kind === "assistant-strategy" && n.strategyRun && typeof n.strategyRun === "object") materializeStrategyRun(n.id);
+      else if (n.kind === "assistant-research" && n.researchRun && typeof n.researchRun === "object") materializeResearchRun(n.id);
+      else if (n.kind === "assistant-testing" && n.testingRun && typeof n.testingRun === "object") materializeTestingRun(n.id);
+      else if (n.kind === "assistant-deepresearch" && n.deepresearchRun && typeof n.deepresearchRun === "object") materializeDeepresearchRun(n.id);
     }
-  }, [data.nodes, materializeStrategyRun]);
+  }, [data.nodes, materializeStrategyRun, materializeResearchRun, materializeTestingRun, materializeDeepresearchRun]);
 
   // Chain settle: derive the orchestrator's float-panel result live from its
   // part nodes (payload pending = running, board landed = done) and fold in
@@ -80686,9 +80262,9 @@ function WorkflowAssistantResultPanel({ node, onExplore, exploreBusy, closing })
             </div>
             <div className="wap-rate-bar"><div className="wap-rate-fill" style=${{ width: rate + "%" }}/></div>`;
         })()}
-        ${res.conclusion && html`
+        ${_strategySummaryText(res.conclusion) && html`
           <div className="wap-section-label">Conclusion</div>
-          <div className="wap-conclusion">${res.conclusion}</div>`}
+          <${WapSummary} sum=${res.conclusion}/>`}
       </div>`;
   }
 
@@ -80907,6 +80483,17 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const w = Math.max(360, node.w || 420), h = Math.max(440, node.h || 460);
   const busy = runState?.status === "loading";
+  const running = node.runStatus === "running" && !!node.runId;
+  // Agent-run tracking: the standard chat dialog attaches by runId.
+  const [chatOpen, setChatOpen] = useState(false);
+  useEffect(() => {
+    if (chatOpen) window.dispatchEvent(new CustomEvent("th:chat-claim", { detail: { owner: node.id } }));
+  }, [chatOpen, node.id]);
+  useEffect(() => {
+    const onClaim = (e) => { if (e.detail?.owner !== node.id) setChatOpen(false); };
+    window.addEventListener("th:chat-claim", onClaim);
+    return () => window.removeEventListener("th:chat-claim", onClaim);
+  }, [node.id]);
   const hasResult = !!(node.result && (node.result.items || []).length);
   const detached = selected && hasResult;
   // Micro-fx: keep the float panel mounted briefly after deselect so it can
@@ -80970,15 +80557,38 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
         </div>
         <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}/>
         <div className="workflow-node-iter-actions">
-          <button className="workflow-node-skill-run" disabled=${busy}
+          <button className="workflow-node-skill-run" disabled=${busy || running}
             title="Research the web, filter against your criteria, and build a result table with visuals."
             onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
-            ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>` : html`<${React.Fragment}><${Icon.Spark}/> ${resolveSearchVia(node.searchVia) === "exa" ? "Research (Exa)" : "Research (Agent)"}<//>`}
+            ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>`
+                   : running ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>agent researching…<//>` : html`<${React.Fragment}><${Icon.Spark}/> ${resolveSearchVia(node.searchVia) === "exa" ? "Research (Exa)" : "Research (Agent)"}<//>`}
           </button>
           ${runState?.status === "done" && html`<span className="workflow-node-iter-done">table built</span>`}
-          ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+                    ${node.runId && html`
+            <button className="workflow-node-refiner-pushadd"
+              title="Watch the agent run: live transcript, its subagents, stop / resume."
+              onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}><${Icon.CommentDots}/> Chat</button>`}
+          ${runState?.error && !running && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
         </div>
       </div>
+      ${chatOpen && html`<${WorkflowAgentChatDialog}
+        node=${{
+          id: node.id,
+          name: "Research agent",
+          runId: node.runId,
+          runStatus: running ? "pending" : null,
+          conversation: [],
+          outputMode: "folder",
+          outputPath: "",
+        }}
+        wiredSystem=${""}
+        wiredInputs=${[]}
+        wiredReadRoot=${""}
+        wiredWriteRoot=${""}
+        wiredFileOut=${""}
+        onClose=${() => setChatOpen(false)}
+        onChange=${(patch) => { if (patch && patch.runId !== undefined) onChange({ runId: patch.runId, runRunId: patch.runId }); }}
+      />`}
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
            title="Context: prompt / asset / folder / web page / palette / typography / section - wire as many as you like." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
         <div className="workflow-port-dot"/>
@@ -81000,6 +80610,17 @@ function WorkflowTestingNode({ node, zoom, selected, onSelect, onMove, onResize,
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const w = Math.max(380, node.w || 440), h = Math.max(460, node.h || 500);
   const busy = runState?.status === "loading";
+  const running = node.runStatus === "running" && !!node.runId;
+  // Agent-run tracking: the standard chat dialog attaches by runId.
+  const [chatOpen, setChatOpen] = useState(false);
+  useEffect(() => {
+    if (chatOpen) window.dispatchEvent(new CustomEvent("th:chat-claim", { detail: { owner: node.id } }));
+  }, [chatOpen, node.id]);
+  useEffect(() => {
+    const onClaim = (e) => { if (e.detail?.owner !== node.id) setChatOpen(false); };
+    window.addEventListener("th:chat-claim", onClaim);
+    return () => window.removeEventListener("th:chat-claim", onClaim);
+  }, [node.id]);
   const total = Math.min(node.maxTesters || 12, (node.personaTypes || 3) * (node.testersPerType || 2));
   const hasResult = !!(node.result && ((node.result.testers || []).length || node.result.total));
   const detached = selected && hasResult;
@@ -81048,15 +80669,38 @@ function WorkflowTestingNode({ node, zoom, selected, onSelect, onMove, onResize,
         <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}
           title="Model each tester runs on - pick a cheap one to minimise tokens."/>
         <div className="workflow-node-iter-actions">
-          <button className="workflow-node-skill-run" disabled=${busy}
+          <button className="workflow-node-skill-run" disabled=${busy || running}
             title="Generate persona testers into a table, then gather each one's feedback."
             onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
-            ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>` : html`<${React.Fragment}><${Icon.Spark}/> Run testers (~${total})<//>`}
+            ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>`
+                   : running ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>agent testing…<//>` : html`<${React.Fragment}><${Icon.Spark}/> Run testers (~${total})<//>`}
           </button>
           ${runState?.status === "done" && html`<span className="workflow-node-iter-done">feedback in</span>`}
-          ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+                    ${node.runId && html`
+            <button className="workflow-node-refiner-pushadd"
+              title="Watch the agent run: live transcript, its subagents, stop / resume."
+              onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}><${Icon.CommentDots}/> Chat</button>`}
+          ${runState?.error && !running && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
         </div>
       </div>
+      ${chatOpen && html`<${WorkflowAgentChatDialog}
+        node=${{
+          id: node.id,
+          name: "Testing agent",
+          runId: node.runId,
+          runStatus: running ? "pending" : null,
+          conversation: [],
+          outputMode: "folder",
+          outputPath: "",
+        }}
+        wiredSystem=${""}
+        wiredInputs=${[]}
+        wiredReadRoot=${""}
+        wiredWriteRoot=${""}
+        wiredFileOut=${""}
+        onClose=${() => setChatOpen(false)}
+        onChange=${(patch) => { if (patch && patch.runId !== undefined) onChange({ runId: patch.runId, runRunId: patch.runId }); }}
+      />`}
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
            title="What to test: prompt / asset / folder / section." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
         <div className="workflow-port-dot"/>
@@ -81083,6 +80727,17 @@ function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onRe
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const w = Math.max(380, node.w || 440), h = Math.max(480, node.h || 540);
   const busy = runState?.status === "loading";
+  const running = node.runStatus === "running" && !!node.runId;
+  // Agent-run tracking: the standard chat dialog attaches by runId.
+  const [chatOpen, setChatOpen] = useState(false);
+  useEffect(() => {
+    if (chatOpen) window.dispatchEvent(new CustomEvent("th:chat-claim", { detail: { owner: node.id } }));
+  }, [chatOpen, node.id]);
+  useEffect(() => {
+    const onClaim = (e) => { if (e.detail?.owner !== node.id) setChatOpen(false); };
+    window.addEventListener("th:chat-claim", onClaim);
+    return () => window.removeEventListener("th:chat-claim", onClaim);
+  }, [node.id]);
   const task = (node.task || "").trim();
   const clar = node.clarify;
   const clarActive = !!(clar && !clar.done && clar.forTask === task && (clar.questions || []).length);
@@ -81134,7 +80789,7 @@ function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onRe
                   onInput=${(e) => setAnswer(i, e.target.value)}/>
               </div>`)}
             <div className="workflow-node-iter-actions">
-              <button className="workflow-node-skill-run" disabled=${busy}
+              <button className="workflow-node-skill-run" disabled=${busy || running}
                 title="Run the viewpoint agents with your answers steering the panel."
                 onClick=${(e) => { e.stopPropagation(); start(true); }}>
                 <${Icon.Play}/> Start research
@@ -81174,12 +80829,13 @@ function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onRe
           <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}
             title="Model the lead and every viewpoint agent run on."/>
           <div className="workflow-node-iter-actions">
-            <button className="workflow-node-skill-run" disabled=${busy}
+            <button className="workflow-node-skill-run" disabled=${busy || running}
               title=${clarDone
                 ? "Run the viewpoint agents, merge + debate their findings, and build the board."
                 : "First forms a structured statement and asks you a few directing questions."}
               onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
               ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>`
+                   : running ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>agent researching…<//>`
                      : html`<${React.Fragment}><${Icon.Spark}/> ${clarDone ? "Run deep research" : "Start (asks questions first)"}<//>`}
             </button>
             ${clarDone && !busy && html`
@@ -81187,9 +80843,31 @@ function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onRe
                 title="Clear the saved answers and ask fresh directing questions on the next run."
                 onClick=${(e) => { e.stopPropagation(); onChange({ clarify: null }); }}>Re-ask questions</button>`}
             ${runState?.status === "done" && html`<span className="workflow-node-iter-done">board built</span>`}
-            ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+                      ${node.runId && html`
+            <button className="workflow-node-refiner-pushadd"
+              title="Watch the agent run: live transcript, its subagents, stop / resume."
+              onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}><${Icon.CommentDots}/> Chat</button>`}
+          ${runState?.error && !running && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
           </div>`}
       </div>
+      ${chatOpen && html`<${WorkflowAgentChatDialog}
+        node=${{
+          id: node.id,
+          name: "Deep research agent",
+          runId: node.runId,
+          runStatus: running ? "pending" : null,
+          conversation: [],
+          outputMode: "folder",
+          outputPath: "",
+        }}
+        wiredSystem=${""}
+        wiredInputs=${[]}
+        wiredReadRoot=${""}
+        wiredWriteRoot=${""}
+        wiredFileOut=${""}
+        onClose=${() => setChatOpen(false)}
+        onChange=${(patch) => { if (patch && patch.runId !== undefined) onChange({ runId: patch.runId, runRunId: patch.runId }); }}
+      />`}
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
            title="Context: prompt / asset / folder / web page / palette / typography / section - wire as many as you like." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
         <div className="workflow-port-dot"/>
