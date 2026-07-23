@@ -8693,6 +8693,35 @@ function prototypeSlugForNode(node) {
   return sub ? `${branch}/${sub}` : branch;
 }
 
+// Fetch the readable SOURCE of every prototype wired into an assistant node,
+// as bounded material text the node can GROUND on (a prototype's source-read
+// port resolves to nothing upstream, so this is the only way an assistant sees
+// the actual thing under evaluation). Async - one daemon digest per wired
+// prototype. Returns "" when nothing is wired / resolvable. The caller still
+// validates against external sources; this is grounding, not the whole truth.
+async function assistantFetchPrototypeText(node, nodes, edges) {
+  try {
+    const proj = activeProjectId();
+    const protoNodes = (edges || [])
+      .filter(e => { const t = workflowParseEdgeRef(e.to || ""); return t && t.node === node.id; })
+      .map(e => { const f = workflowParseEdgeRef(e.from || ""); return f && (nodes || []).find(n => n.id === f.node); })
+      .filter(n => n && n.kind === "prototype");
+    const blobs = [];
+    for (const n of protoNodes) {
+      const slug = prototypeSlugForNode(n);
+      if (!slug) continue;
+      try {
+        const r = await fetch(apiUrl(`/__assistant/prototype_text?project=${encodeURIComponent(proj || "")}&slug=${encodeURIComponent(slug)}`));
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j.ok && (j.text || "").trim()) {
+          blobs.push(`PROTOTYPE "${slug}" - its actual source (the thing under evaluation):\n${j.text.trim()}`);
+        }
+      } catch { /* skip this prototype */ }
+    }
+    return blobs.join("\n\n");
+  } catch { return ""; }
+}
+
 // Resolve which prototype slug a single workflow node "belongs" to, for chat
 // targeting: a prototype node → its own slug; a frames/host node → its branch;
 // any node whose `path` lives under source/<slug>/ → that slug; else null.
@@ -45332,6 +45361,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
       const ctx = _assistantCollectText(ups);
       const assets = _assistantCollectAssets(ups);
+      // A wired prototype's real SOURCE, for the clarification-answer step ONLY
+      // (so "is the click detection wired?" gets a real answer, not "I need more
+      // context"). Kept OUT of `ctx` so the persona testers still react to the
+      // RENDERED app they browse, never to a source dump.
+      const protoMaterial = await assistantFetchPrototypeText(node, data.nodes, data.edges);
       // A wired PROTOTYPE resolves to nothing upstream (its source-read port
       // is a folder provide with no resolve strategy), but for testing a
       // prototype IS a browsable app - default it to its served index.html so
@@ -45491,9 +45525,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         await _assistantPool(needy, POOL, async ({ s, i }) => {
           let answers = "";
           try {
+            const clarMaterial = [ctx, protoMaterial].filter(Boolean).join("\n\n");
             answers = await assistantLlm([{ role: "user", content:
-              `A tester evaluating this task asked questions. Answer them concisely and factually from the material so they can continue.\n\nTASK:\n${task}\n` +
-              (ctx ? "\nMATERIAL:\n" + ctx.slice(0, 1500) : "") +
+              `A tester evaluating this task asked questions. Answer them concisely and factually from the material below (it is the actual app/source under test) so they can continue. If the material genuinely does not say, answer "not specified" - do NOT ask for a link or say you need more context.\n\nTASK:\n${task}\n` +
+              (clarMaterial ? "\nMATERIAL (the actual thing under test):\n" + clarMaterial.slice(0, 4000) : "") +
               `\n\nQUESTIONS:\n${s.questions.join("\n")}\n\nReturn one plain answer per question.` }],
               { model: node.model, maxTokens: 800 });
           } catch (e) { answers = "(could not resolve)"; }
@@ -45571,7 +45606,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const t0 = Date.now();
     try {
       const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
-      const ctx = _assistantCollectText(ups);
+      let ctx = _assistantCollectText(ups);
+      // A wired prototype resolves to no text upstream, so pull its real source
+      // in as GROUNDING material. The viewpoint agents still research + validate
+      // against EXTERNAL sources - they just now know WHAT they are judging.
+      const protoText = await assistantFetchPrototypeText(node, data.nodes, data.edges);
+      if (protoText) ctx = ctx ? (ctx + "\n\n" + protoText) : protoText;
       const hasMaterial = !!ctx;
 
       // Phase 0: clarifying questions. Generated once per task text; the node
@@ -45703,7 +45743,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             `RESEARCH STATEMENT:\n${plan.statement}\n` +
             (a.method === "context"
               ? `\nTHE MATERIAL (all you may use):\n${ctx.slice(0, 4000)}\n`
-              : `\nResearch this through YOUR lens. Cite real URLs you actually opened; quote snippets verbatim.\n`) +
+              : `\nResearch this through YOUR lens. Cite real URLs you actually opened; quote snippets verbatim.\n` +
+                (ctx ? `\nGROUNDING MATERIAL - the actual thing under evaluation. Judge THIS, but VALIDATE every claim against EXTERNAL web sources; do not just restate the material:\n${ctx.slice(0, 3000)}\n` : "")) +
             `\n${FINDINGS_FORMAT}`;
           try { findings[a.name] = (await runAgent(a, prompt)).filter(x => x && x.point); }
           catch (e) { findings[a.name] = []; }
@@ -46291,10 +46332,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // Visual-direction nodes beside the board (tracked for the next sweep).
       const visNodeIds = [];
       if (wantVisuals) {
-        const vx = built.right + 60, vy = built.top;
+        // Below the section (the space right of it belongs to the table).
         setData(d => {
           const nodes = [...(d.nodes || [])];
-          let yy = vy;
+          let xx = built.left;
+          const vy = built.bottom + 80;
           const pal = ((fin.visual || {}).palette || []).slice(0, 6)
             .filter(s => s && /^#?[0-9a-fA-F]{3,8}$/.test(String(s.value || "").replace("#", "")));
           if (pal.length) {

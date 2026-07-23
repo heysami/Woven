@@ -1263,13 +1263,13 @@ KINDS = {
 
     # ── assistant-research (Exa web search → result table + visuals) ───────
     "assistant-research": {
-        "title":        "Comparative research (web search)",
+        "title":        "Comparative research assistant (web search)",
         "category":     "assistant",
         "inputs": {
             "goal":       {"type": "markdown", "userEditable": True},
             "criteria":   {"type": "markdown", "userEditable": True},
             "model":      {"type": "text",     "default": "claude-opus-4-8", "userEditable": True},
-            "searchVia":  {"type": "text",     "default": "agent", "userEditable": True},
+            "searchVia":  {"type": "text",     "default": "", "userEditable": True},
             "numResults": {"type": "number",   "default": 8, "userEditable": True},
             "category":   {"type": "text",     "userEditable": True},
             "tableId":    {"type": "text",     "userEditable": False},
@@ -1287,7 +1287,7 @@ KINDS = {
 
     # ── assistant-testing (persona testers → per-row feedback table) ───────
     "assistant-testing": {
-        "title":        "Testing assistant (persona testers)",
+        "title":        "Simulated testing assistant (persona testers)",
         "category":     "assistant",
         "inputs": {
             "task":           {"type": "markdown", "userEditable": True},
@@ -1315,6 +1315,7 @@ KINDS = {
         "inputs": {
             "task":      {"type": "markdown", "userEditable": True},
             "model":     {"type": "text",     "default": "claude-opus-4-8", "userEditable": True},
+            "searchVia": {"type": "text",     "default": "", "userEditable": True},
             "maxAgents": {"type": "number",   "default": 4, "userEditable": True},
             "rounds":    {"type": "number",   "default": 2, "userEditable": True},
             "clarify":   {"type": "object",   "userEditable": False},

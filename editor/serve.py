@@ -765,6 +765,7 @@ MEDIA_CONFIG_PATH = os.path.join(MEDIA_CONFIG_DIR, "media-config.json")
 DEFAULT_PROVIDERS_PATH   = os.path.join(MEDIA_CONFIG_DIR, "default-providers.json")
 ORCHESTRATOR_MODELS_PATH = os.path.join(MEDIA_CONFIG_DIR, "orchestrator-models.json")
 SUBAGENT_MODELS_PATH     = os.path.join(MEDIA_CONFIG_DIR, "subagent-models.json")
+SEARCH_DEFAULTS_PATH     = os.path.join(MEDIA_CONFIG_DIR, "search-defaults.json")
 
 # Aspect ratio → OpenAI gpt-image-1 size mapping. The model accepts a small
 # fixed set: 1024×1024, 1536×1024, 1024×1536, or "auto". Unknown aspect strings
@@ -1100,6 +1101,31 @@ _SUBAGENT_MODELS: dict = _persist_json_load(SUBAGENT_MODELS_PATH)
 
 def _subagent_models_get() -> dict:
     return dict(_SUBAGENT_MODELS)
+
+
+# ── Search-provider defaults (three-tier cascade, synced from localStorage) ──
+# Which web-search backend runs: "agent" (free built-in WebSearch/WebFetch) or
+# "exa" (paid exa.ai). Three tiers: {"global","assistant","app"}; a missing /
+# empty tier means "inherit global", and an absent global means "agent" (free,
+# so Exa is never a silent cost). The assistant tier steers the assistant nodes
+# (resolved browser-side); the app tier steers the MAIN CHAT and is read here by
+# the capabilities preamble. Same lifecycle as the maps above: browser
+# localStorage is source of truth, re-POSTed to /__search_defaults on load +
+# change; persisted so a daemon restart keeps the picks before a tab re-syncs.
+_SEARCH_DEFAULTS: dict = _persist_json_load(SEARCH_DEFAULTS_PATH)
+
+def _search_defaults_get() -> dict:
+    return dict(_SEARCH_DEFAULTS)
+
+def _app_search_provider() -> str:
+    """Effective web-search backend for the REST OF THE APP (main chat):
+    app tier → global tier → "agent" (free)."""
+    d = _SEARCH_DEFAULTS if isinstance(_SEARCH_DEFAULTS, dict) else {}
+    for key in ("app", "global"):
+        v = d.get(key)
+        if v in ("agent", "exa"):
+            return v
+    return "agent"
 
 
 def _guess_image_mime(path):
@@ -3137,8 +3163,8 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
       - "browser" : wire the chrome MCP so the agent can open / screenshot /
                     click an asset by sight (Testing assistant).
       - "web"     : enable Claude Code's built-in WebSearch + WebFetch so the
-                    agent can research the live web (Comparative research) - NO
-                    paid Exa key needed.
+                    agent can research the live web (Comparative research
+                    assistant) - NO paid Exa key needed.
     Returns the agent's final text. Picks the CLI from the chosen model's
     provider (claude-* -> Claude Code; gpt/o*/codex -> Codex CLI).
 
@@ -3466,6 +3492,64 @@ def resolve_project_root(qs_or_body=None, *, require_explicit=True):
     if not os.path.isdir(os.path.join(candidate, "source")):
         raise ValueError(f"no such project (no source/ folder): {proj}")
     return candidate
+
+
+def _prototype_source_digest(src_dir: str, cap: int = 16000) -> str:
+    """Digest a prototype's SOURCE dir into a bounded plain-text blob the
+    assistant nodes can reason over (Deep research material, testing
+    clarification context). Walks source/<slug>/, collecting readable material:
+    design / research .md first (they state intent), then HTML visible text +
+    its inline <script> logic (for a game the JS IS the behaviour), then loose
+    .js / .css / .json. Strips tags + <style> noise, skips binaries / vendored
+    dirs / oversized files, and caps the total so a big build can't blow the
+    prompt. This is GROUNDING material - callers still validate against
+    external sources, they do not treat it as the whole truth."""
+    _TEXT_EXTS = (".html", ".htm", ".js", ".mjs", ".css", ".md", ".json", ".txt")
+    _SKIP_DIRS = {"node_modules", "vendor", "libs", "lib", "dist", "build"}
+    files = []
+    for root, dirs, names in os.walk(src_dir):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS and not d.startswith(".")]
+        for name in names:
+            if os.path.splitext(name)[1].lower() in _TEXT_EXTS:
+                files.append(os.path.join(root, name))
+
+    def _rank(p):
+        e = os.path.splitext(p)[1].lower()
+        base = os.path.basename(p).lower()
+        if e == ".md" or "research" in base or "design" in base or "brief" in base:
+            return 0
+        if e in (".html", ".htm"):
+            return 1
+        return 2
+    files.sort(key=lambda p: (_rank(p), len(p)))
+
+    chunks, total = [], 0
+    for path in files:
+        if total >= cap:
+            break
+        try:
+            if os.path.getsize(path) > 200000:
+                continue
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                raw = f.read()
+        except Exception:
+            continue
+        ext = os.path.splitext(path)[1].lower()
+        if ext in (".html", ".htm"):
+            no_style = re.sub(r"(?is)<style[^>]*>.*?</style>", " ", raw)
+            scripts = re.findall(r"(?is)<script[^>]*>(.*?)</script>", no_style)
+            no_script = re.sub(r"(?is)<script[^>]*>.*?</script>", " ", no_style)
+            visible = re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", " ", no_script)).strip()
+            body = (visible + ("\n" + "\n".join(s.strip() for s in scripts if s.strip()) if scripts else "")).strip()
+        else:
+            body = raw.strip()
+        if not body:
+            continue
+        rel = os.path.relpath(path, src_dir)
+        piece = (f"\n\n===== {rel} =====\n" + body)[: cap - total]
+        chunks.append(piece)
+        total += len(piece)
+    return "".join(chunks).strip()
 
 
 # ── Local font library ───────────────────────────────────────────────────
@@ -11711,6 +11795,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._orchestrator_models_set()
             if parsed.path == "/__subagent_models":
                 return self._subagent_models_set()
+            if parsed.path == "/__search_defaults":
+                return self._search_defaults_set()
             if parsed.path == "/__asset_generate":
                 return self._asset_generate(qs)
             if parsed.path == "/__llm_run":
@@ -17502,6 +17588,34 @@ class H(http.server.SimpleHTTPRequestHandler):
         _persist_json_save(DEFAULT_PROVIDERS_PATH, cleaned)
         return self._reply(200, {"ok": True, "defaults": cleaned})
 
+    def _search_defaults_set(self):
+        """POST /__search_defaults
+        Body: { global?: "agent"|"exa", assistant?: "agent"|"exa",
+                app?: "agent"|"exa" }.
+        Mirrors localStorage["th.editor.search-defaults.v1"] into the daemon
+        cache the capabilities preamble reads (app/global tier) to steer the
+        main chat's web-search backend. Only "agent"/"exa" survive per tier;
+        any other value drops that tier (= inherit global). Persisted so a
+        daemon restart keeps the picks before an editor tab re-syncs."""
+        global _SEARCH_DEFAULTS
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            return self._reply(400, {"error": "empty body"})
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception as e:
+            return self._reply(400, {"error": "invalid JSON", "detail": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        cleaned: dict = {}
+        for tier in ("global", "assistant", "app"):
+            v = body.get(tier)
+            if v in ("agent", "exa"):
+                cleaned[tier] = v
+        _SEARCH_DEFAULTS = cleaned
+        _persist_json_save(SEARCH_DEFAULTS_PATH, cleaned)
+        return self._reply(200, {"ok": True, "searchDefaults": cleaned})
+
     def _orchestrator_models_set(self):
         """POST /__orchestrator_models
         Body: { "<orchestrator-id>": {provider, model}, ... }
@@ -17673,7 +17787,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         contents?, includeDomains? }. Runs an Exa web search server-side so the
         key never reaches the browser, returns { ok, results:[...] }.
         COST NOTE: Exa is paid + metered. This endpoint only fires on an
-        explicit caller request (the Comparative research node's Run button, or an
+        explicit caller request (the Comparative research assistant node's Run button, or an
         agent the user confirmed). Never wire it to run automatically."""
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0 or length > MAX_BYTES:
@@ -17746,7 +17860,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _assistant_research_run(self, qs):
         """POST /__assistant/research  Body: { model, system, prompt }.
         Runs ONE real agent with WebSearch/WebFetch enabled (NO paid Exa key) so
-        the Comparative research node can research the live web via the user's own agent
+        the Comparative research assistant node can research the live web via the user's own agent
         CLI. Returns { ok, text } - the caller parses the agent's JSON results."""
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0 or length > MAX_BYTES:

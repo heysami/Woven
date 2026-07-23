@@ -220,7 +220,7 @@ def _daemon_endpoints() -> list:
         {"method": "POST", "path": "/__decision/<id>",      "purpose": "Persist a checkpoint pick (DECISION_<id>.json)"},
         {"method": "POST", "path": "/__exa/search",         "purpose": "Exa (exa.ai) web search - PAID + METERED. Body {query, numResults?, type?, category?, contents?}. NEVER auto-run: only on explicit user request, and offer-first if you reach for it mid-task. See the 'Exa web search' capability rule"},
         {"method": "POST", "path": "/__assistant/tester",   "purpose": "Run ONE 'simple agent' subagent (bare preamble, per-node model) for a Testing-assistant persona row. Body {model, system, prompt, useBrowser?}. With useBrowser it gets the chrome MCP to open + screenshot + click an asset by sight. Returns {ok, text}"},
-        {"method": "POST", "path": "/__assistant/research",  "purpose": "Run ONE 'simple agent' subagent with Claude Code's built-in WebSearch + WebFetch enabled (NO paid Exa key) for the Comparative research node's agent mode. Body {model, system, prompt}. Returns {ok, text}"},
+        {"method": "POST", "path": "/__assistant/research",  "purpose": "Run ONE 'simple agent' subagent with Claude Code's built-in WebSearch + WebFetch enabled (NO paid Exa key) for the Comparative research assistant node's agent mode. Body {model, system, prompt}. Returns {ok, text}"},
         {"method": "GET",  "path": "/__publish",             "purpose": "PUBLISH FEATURE - read a project's publish.json state (per prototype: ?prototype=<id>): deploy status, milestones, tasks, activity log"},
         {"method": "GET",  "path": "/__providers/status",    "purpose": "PUBLISH - which backend/db providers (supabase, cloudflare) are CONNECTED host-side; never returns the token"},
         {"method": "POST", "path": "/__providers/connect",   "purpose": "PUBLISH - connect a backend provider (?provider=supabase|cloudflare, body {token}); verifies + stores the token host-side (0600). Connect-once so publishing is hands-off - never ask the user to paste a token in chat"},
@@ -1175,6 +1175,20 @@ See `GET /__kinds/registry` for full per-kind contracts + each authoring schema.
 
 **Building an interactive / reactive app (the Logic graph).** ONLY when the user wants to make an interactive app node - input that drives output in real time (pointer / touch / keyboard / scroll / gyro / mic / camera / video sources, operators, if-else / while / state, vision hand-face detection, OCR, and a shape primitive, all wired into effect / position / param bindings) - FETCH the authoring guide first. It is MODULAR: `GET $TH_DAEMON_URL/__logic_guide?project=$TH_PROJECT_ID` returns the short INDEX (the build flow + section map), then fetch focused sections on demand with `?section=runtime|recipes|catalogue|dataflow|patterns|verify`. The `runtime` section documents every composer position mode / effect type / force / camera / feedback, so you NEVER need to read the composer source. For an interactive app-node build, ALWAYS dispatch `app-node-orchestrator` (no single-vs-multi threshold, never hand-wire a build solo): it decomposes the interaction into slots, classifies each to the nearest primitive, scaffolds the nodes, and hands back a manifest so you fan out one `app-node-slot-author` per slot. Each author CUSTOMISES or EXTENDS its primitive - tuning the spec, or extending the primitive's runtime code (the logic-graph evaluator / composer effect+render engine in editor/) when no existing primitive can yet express the slot. Extending a primitive is the DEFAULT, not an escape hatch: never decline because "no built-in fits". Only a genuine web-platform impossibility is a real limit, and even then scope it precisely and build the closest thing. For any other request, ignore this line."""
 
+    # The user's app-wide web-search default (Settings → Web search, "app" tier
+    # → "global" tier → "agent"). When they've set it to Exa, that is a standing
+    # cost opt-in: the main chat should PREFER Exa for the web research the user
+    # asks for, and skip the per-call offer-first step. "agent" (the norm) keeps
+    # the offer-first, never-auto-run rule below unchanged.
+    try:
+        _app_search = _editor_import()._app_search_provider()
+    except Exception:
+        _app_search = "agent"
+    _exa_default_note = (
+        " **This user has set Exa as the app-wide default search backend (Settings -> Web search), a standing cost opt-in: for THIS user Exa IS the default web-research path - prefer `/__exa/search` over the plain agent search for web research they ask for, and you do NOT need to offer-first before each Exa call. The 'only search when the task genuinely needs web research' part still holds: never reach for it to idly double-check something the user did not ask to research.**"
+        if _app_search == "exa" else ""
+    )
+
     _preamble = f"""## App capabilities - read this before saying "I don't have <X>"
 
 If the user asks for a feature, model, provider, subagent, or endpoint and you don't recognize the name, **check this catalog (or `GET $TH_DAEMON_URL/__capabilities`) before answering**. The app catalog is authoritative; your training-data knowledge is not.
@@ -1294,7 +1308,7 @@ The app can research the live web two ways. The DEFAULT, no-extra-key path is an
 - **Structured output** (`output_schema`) - extract typed JSON from results.
 - **Category search** - company / people / research-paper / news / financial indexes.
 
-**Exa is metered and costs real money, so it is NEVER auto-run.** Only call `/__exa/search` when (a) the user explicitly asked for web research / external data, OR (b) Exa is clearly the best tool for the step - and in case (b) you MUST offer first and wait for the user's go-ahead before spending a call. Pressing Run on the Comparative research node counts as explicit user intent. Do not silently reach for Exa to "double-check" or "enrich" something the user did not ask to research.
+**Exa is metered and costs real money, so it is NEVER auto-run.** Only call `/__exa/search` when (a) the user explicitly asked for web research / external data, OR (b) Exa is clearly the best tool for the step - and in case (b) you MUST offer first and wait for the user's go-ahead before spending a call. Pressing Run on the Comparative research assistant node counts as explicit user intent. Do not silently reach for Exa to "double-check" or "enrich" something the user did not ask to research.{_exa_default_note}
 
 ## A DS build policy is a directive, not a permission (v3.13 hard rule)
 
