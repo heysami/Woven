@@ -46855,8 +46855,41 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           why: (n.chainPlan || {}).why || "", parts: partStates, summary,
         } });
       }
+      // ONE-SECTION rule for the chain itself: maintain a super-section
+      // wrapping the orchestrator + every part assistant + their master
+      // sections, growing live as boards land - so the whole chain drags
+      // and wires downstream as one thing.
+      const rects = [{ x: n.x || 0, y: n.y || 0, w: n.w || 460, h: n.h || 520 }];
+      for (const pid of ids) {
+        const pn = (data.nodes || []).find(x => x && x.id === pid);
+        if (!pn) continue;
+        rects.push({ x: pn.x || 0, y: pn.y || 0, w: pn.w || 460, h: pn.h || 560 });
+        const sec = pn.sectionId && (data.nodes || []).find(x => x && x.id === pn.sectionId && x.kind === "section");
+        if (sec) rects.push({ x: sec.x || 0, y: sec.y || 0, w: sec.w || 400, h: sec.h || 300 });
+      }
+      if (rects.length >= 2) {
+        const PADS = 48;
+        const want = (() => {
+          const minX = Math.min(...rects.map(r => r.x)) - PADS;
+          const minY = Math.min(...rects.map(r => r.y)) - PADS - 24;
+          const maxX = Math.max(...rects.map(r => r.x + r.w)) + PADS;
+          const maxY = Math.max(...rects.map(r => r.y + r.h)) + PADS;
+          return { x: Math.round(minX), y: Math.round(minY), w: Math.round(maxX - minX), h: Math.round(maxY - minY) };
+        })();
+        const cs = n.chainSecId && (data.nodes || []).find(x => x && x.id === n.chainSecId && x.kind === "section");
+        if (!cs) {
+          const id2 = workflowNewNodeId();
+          setData(d => {
+            const body = workflowMakeNodeOfKind("section", { title: "Chain: " + (n.task || "").slice(0, 50) });
+            return { ...d, nodes: [...(d.nodes || []).map(x => x && x.id === n.id ? { ...x, chainSecId: id2 } : x), { id: id2, ...body, ...want }] };
+          });
+        } else if (Math.abs((cs.x || 0) - want.x) > 4 || Math.abs((cs.y || 0) - want.y) > 4
+                || Math.abs((cs.w || 0) - want.w) > 4 || Math.abs((cs.h || 0) - want.h) > 4) {
+          updateNode(cs.id, want);
+        }
+      }
     }
-  }, [data.nodes, updateNode]);
+  }, [data.nodes, updateNode, setData]);
 
   // first (so a chain like `prompt → gen-image → rembg → asset` works when
   // you click Run on either skill - the runner figures out the dependency
