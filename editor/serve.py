@@ -3552,6 +3552,35 @@ def _prototype_source_digest(src_dir: str, cap: int = 16000) -> str:
     return "".join(chunks).strip()
 
 
+# ── Strategy agent-run contract (shared by the single-board branch and the
+# chain-driver branch in _workflow_node_run; the CLIENT twin is app.js's
+# materializeStrategyRun - update both when the shape changes) ────────────
+_STRAT_LAYOUT_CATALOG = (
+    'statement: no per-point fields | metrics: "value","unit" | affinity: "cluster" | '
+    'positioning: "px","py" in 0..1 (+ top-level "axes":{"x":["left","right"],"y":["bottom","top"]}) | '
+    'timeline: "order" 1..n,"when" | flow: "step" 1..n,"shape" "rect"|"diamond" | loop: "step" | '
+    'matrix: "row","col" | canvas: "zone" (+ top-level "zones":[...]) | '
+    'journey: "stage","lane","mood" -1..1 (+ top-level "stages":[...],"lanes":[...]) | '
+    'cards: none | pillars: "pillar" | keyvisual: "imagePrompt" | composite: "cluster"')
+_STRAT_PAYLOAD_CONTRACT = (
+    '{"presPlan": {"header": "<board title, <=8 words>", "description": "<1-2 sentences>",\n'
+    '  "keyView": {"layout": "<catalog id>", "axes": null, "note": "<why>"},\n'
+    '  "sections": [{"key": "keyview", "on": true, "note": ""}, {"key": "breakdown", "on": true, "note": ""},\n'
+    '               {"key": "insights", "on": true, "note": ""}, {"key": "summary", "on": true, "note": ""},\n'
+    '               {"key": "drivers", "on": <true only if change-over-time>, "note": ""}],\n'
+    '  "breakdownStyle": "table", "attributes": ["<3-8 attribute names for THIS ask>"],\n'
+    '  "visuals": {"wanted": false, "kinds": [], "note": ""}},\n'
+    ' "sk": {"statement": "<the strategy in 1-2 sentences>",\n'
+    '  "points": [{"id": 1, "point": "<one sentence>", <layout fields per catalog>}],\n'
+    '  "drivers": {"current": "...", "target": "...", "factors": [{"factor": "...", "role": "driver|barrier|uncertain", "note": "..."}]}},\n'
+    ' "gathered": {"<pointId>": {"attrs": {"<attribute>": "<finding, 1-3 sentences>"},\n'
+    '  "stance": "support|oppose|challenge|unverified", "note": "<one line>", "url": "", "snippet": "", "image": "",\n'
+    '  "insights": [{"title": "<short>", "text": "<2-4 sentences>"}]}},\n'
+    ' "summary": {"headline": "<ONE punchy sentence>", "support": "<=2 sentences>", "bullets": ["<one line each, 4-8>"]},\n'
+    ' "visual": <ONLY when visual direction is approved: {"palette": [{"name": "--token", "value": "#hex"}], "fonts": [{"family": "...", "role": "heading|body"}]}, else omit>,\n'
+    ' "images": <ONLY when approved AND you generated mood images: [{"path": "source/<branch>/strategy/<file>.png", "prompt": "..."}], else omit>}')
+
+
 # ── Local font library ───────────────────────────────────────────────────
 # Uploaded fonts are collected under design-systems/<dsId>/fonts/ - one file
 # per face plus an auto-generated _fontface.css sibling and a fonts.json
@@ -14300,6 +14329,72 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "hint":    "Subprocess dispatched. Poll /__run/<runId> for live status; the node's runStatus will flip on the canvas when the subprocess exits.",
                 }
 
+            elif kind == "assistant-strategy":
+                # AGENT-DRIVEN single board. Same tracked bare run + strategyRun
+                # seam as the chain driver, for ONE board. The browser keeps the
+                # interactive gates (directing questions + board plan); the
+                # user-approved plan + Q&A ride in the body; the agent
+                # researches and POSTs the finished payload back; the editor
+                # renders it with the client layout engine.
+                plan = body.get("presPlan") or node.get("presPlan") or {}
+                if not plan.get("done"):
+                    err = (400, {"error": "board plan not approved yet - approve it on the node first"})
+                else:
+                    answers = str(body.get("answers") or "")
+                    want_visuals = bool((plan.get("visuals") or {}).get("wanted"))
+                    branch2 = self._default_prototype_slug(project_root) or "main"
+                    vis_step = (
+                        ("3. VISUAL DIRECTION is user-approved for this board: include the \"visual\" field "
+                         "(palette max 6 swatches, fonts max 2), and you MAY generate up to 4 mood images "
+                         "first - POST {\"skill\": \"generate-image\", \"output\": \"source/" + branch2 +
+                         "/strategy/" + str(node_id) + "-<n>.png\", \"prompt\": \"<mood prompt>\", \"aspect\": \"3:2\"} to "
+                         "\"$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID\" and list the written "
+                         "paths in \"images\".\n")
+                        if want_visuals else
+                        "3. Visual direction was NOT approved: omit \"visual\" and \"images\", generate nothing.\n")
+                    system_prompt = (
+                        "You RESEARCH and deliver ONE strategy board on the Woven canvas. The board plan "
+                        "is already USER-APPROVED - obey it exactly: its key-view layout, its enabled "
+                        "sections, its attribute names, its custom requirement. The EDITOR renders the "
+                        "board; you never draw or edit files. The status endpoint below is your ONLY "
+                        "write path.\n\n"
+                        "PROCESS:\n"
+                        "1. RESEARCH properly. Fan out Task subagents for parallel legwork (one per "
+                        "candidate key point works well) and validate with web search/fetch. Ground on "
+                        "the CONTEXT block. Honest stances - unverified when you could not validate.\n"
+                        "2. COMPOSE the payload - EXACTLY this JSON shape (echo the approved plan as "
+                        "presPlan; keep its layout + attributes):\n" + _STRAT_PAYLOAD_CONTRACT + "\n"
+                        "Rules: 3-8 points with the layout's per-point fields; 1-3 insights per point, "
+                        "12 max; drivers only when the plan enables them; summary.headline is ONE punchy "
+                        "sentence, support <=2 sentences, 4-8 one-line bullets.\n"
+                        "KEY-VIEW LAYOUT CATALOG (id: per-point fields): " + _STRAT_LAYOUT_CATALOG + "\n"
+                        + vis_step +
+                        "4. DELIVER - POST {\"strategyRun\": <the payload object>} to "
+                        "\"$TH_DAEMON_URL/__workflow/node/" + str(node_id) + "/status?project=$TH_PROJECT_ID\" "
+                        "(write the JSON to a temp file and use --data-binary @file; heredocs mangle big "
+                        "JSON). Then print a one-line summary and STOP.\n\n"
+                        "HARD RULES: never edit workflow.json or any project file directly; if the POST "
+                        "fails retry once, then report the failure.")
+                    kick = ("Deliver this strategy board.\n\nASK:\n" + str(node.get("task") or "") +
+                            (("\n\nUSER DIRECTION (their answers to your questions):\n" + answers) if answers else "") +
+                            "\n\nAPPROVED BOARD PLAN (JSON):\n" + json.dumps(plan)[:4000])
+                    prompt_text = kick + (("\n\n<context>\n" + upstream_text + "\n</context>") if upstream_text else "")
+                    project_id = (qs.get("project") or ["default"])[0] if hasattr(qs, "get") else "default"
+                    run_id, err_reply = self._spawn_node_agent(
+                        project_root=project_root, project_id=project_id, branch=branch2,
+                        node_id=node_id, system_prompt=system_prompt, prompt_text=prompt_text,
+                        title="Strategy board: " + str(node.get("task") or "")[:48],
+                        chain_rest=chain_rest, bare=True)
+                    if err_reply:
+                        raise RuntimeError(err_reply[1].get("error") or "spawn failed")
+                    node["runStatus"] = "running"
+                    node["runId"] = run_id
+                    node["runRunId"] = run_id
+                    node.pop("runError", None)
+                    async_dispatched = True
+                    out = {"spawned": True, "runId": run_id, "kind": kind,
+                           "hint": "Board agent dispatched BARE. The payload lands as strategyRun; the editor renders the board."}
+
             elif kind == "assistant-strategy-orchestrator":
                 # AGENT-DRIVEN strategy chain. The run gets the full harness
                 # TRACKING (RunState, streamed transcript, Task-subagent
@@ -14327,28 +14422,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                     prior_lines.append("- node `%s`%s: %s" % (pid, " [BOARD DONE - skip, reuse its summary]" if done else "",
                                                              str(pn.get("task") or "")[:140]))
                 if True:
-                    catalog = (
-                        'statement: no per-point fields | metrics: "value","unit" | affinity: "cluster" | '
-                        'positioning: "px","py" in 0..1 (+ top-level "axes":{"x":["left","right"],"y":["bottom","top"]}) | '
-                        'timeline: "order" 1..n,"when" | flow: "step" 1..n,"shape" "rect"|"diamond" | loop: "step" | '
-                        'matrix: "row","col" | canvas: "zone" (+ top-level "zones":[...]) | '
-                        'journey: "stage","lane","mood" -1..1 (+ top-level "stages":[...],"lanes":[...]) | '
-                        'cards: none | pillars: "pillar" | keyvisual: "imagePrompt" | composite: "cluster"')
-                    contract = (
-                        '{"presPlan": {"header": "<board title, <=8 words>", "description": "<1-2 sentences>",\n'
-                        '  "keyView": {"layout": "<catalog id>", "axes": null, "note": "<why>"},\n'
-                        '  "sections": [{"key": "keyview", "on": true, "note": ""}, {"key": "breakdown", "on": true, "note": ""},\n'
-                        '               {"key": "insights", "on": true, "note": ""}, {"key": "summary", "on": true, "note": ""},\n'
-                        '               {"key": "drivers", "on": <true only if change-over-time>, "note": ""}],\n'
-                        '  "breakdownStyle": "table", "attributes": ["<3-8 attribute names for THIS part>"],\n'
-                        '  "visuals": {"wanted": false, "kinds": [], "note": ""}},\n'
-                        ' "sk": {"statement": "<the part strategy in 1-2 sentences>",\n'
-                        '  "points": [{"id": 1, "point": "<one sentence>", <layout fields per catalog>}],\n'
-                        '  "drivers": {"current": "...", "target": "...", "factors": [{"factor": "...", "role": "driver|barrier|uncertain", "note": "..."}]}},\n'
-                        ' "gathered": {"<pointId>": {"attrs": {"<attribute>": "<finding, 1-3 sentences>"},\n'
-                        '  "stance": "support|oppose|challenge|unverified", "note": "<one line>", "url": "", "snippet": "", "image": "",\n'
-                        '  "insights": [{"title": "<short>", "text": "<2-4 sentences>"}]}},\n'
-                        ' "summary": {"headline": "<ONE punchy sentence>", "support": "<=2 sentences>", "bullets": ["<one line each, 4-8>"]}}')
+                    catalog = _STRAT_LAYOUT_CATALOG
+                    contract = _STRAT_PAYLOAD_CONTRACT
                     system_prompt = (
                         "You PLAN and DRIVE a chain of strategy boards on the Woven canvas. You own the "
                         "whole run - decomposition, scaffolding, research, delivery - and the harness "

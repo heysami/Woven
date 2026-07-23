@@ -27088,10 +27088,12 @@ function WorkflowCanvas() {
             // assistant-strategy-orchestrator is deliberately NOT in this
             // list: its chain runs are DAEMON agent runs with a completion
             // hook (an owner), so a persisted "running" may be live.
+            // assistant-strategy is stuck only WITHOUT a runId: its gates are
+            // browser-owned, but its build is a daemon agent run too.
             const assistantStuck = (n.kind === "assistant-research"
                                  || n.kind === "assistant-testing"
                                  || n.kind === "assistant-deepresearch"
-                                 || n.kind === "assistant-strategy"
+                                 || (n.kind === "assistant-strategy" && !n.runId)
                                  || n.kind === "table")
                                  && n.runStatus === "running";
             if (n.runStatus !== "pending" && n.runStatus !== "paused" && !dsStuck && !assistantStuck) return n;
@@ -46319,6 +46321,40 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
       if (!plan.done) { setRun({ status: "await", phase: "review the board plan" }); return null; }
 
+      // AGENT-RUN build (the normal path): the gates stayed interactive in
+      // the browser; the approved plan + Q&A now ship to ONE tracked bare
+      // agent run that researches and POSTs the finished payload back as
+      // `strategyRun` - the materializer renders the board. Same tracking
+      // surface as the chain (transcript, Task subagents, Chat button).
+      // The client build loop below remains only for auto/chain legacy.
+      if (!auto) {
+        setRun({ status: "loading", phase: "dispatching the board agent", error: null });
+        updateNode(nodeId, { runStatus: "running" });
+        await new Promise(r => setTimeout(r, 1200));   // let the debounced save flush
+        const projA = activeProjectId(), slugA = activePrototypeSlug();
+        const rrA = await fetch(apiUrl(`/__workflow/node/${nodeId}/run?project=${encodeURIComponent(projA || "")}&prototype=${encodeURIComponent(slugA || "")}`), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ presPlan: plan, answers }),
+        });
+        const jA = await rrA.json().catch(() => ({}));
+        if (!rrA.ok || !jA.runId) {
+          // The daemon may have spawned + persisted the run yet lost the
+          // response (restart window) - check the merged node state before
+          // declaring failure.
+          await new Promise(r => setTimeout(r, 2500));
+          const nowA = (dataNodesRef.current || []).find(n2 => n2.id === nodeId);
+          if (nowA && nowA.runId && nowA.runStatus === "running") {
+            setRun({ status: "done", phase: "agent researching - the board lands when it delivers", error: null, ranAt: Date.now() });
+            return null;
+          }
+          if (!rrA.ok) throw new Error(jA.error || ("board dispatch failed (HTTP " + rrA.status + ")"));
+          throw new Error("the daemon accepted the call but returned no run - it is likely running an older build. Restart Woven, then Run again.");
+        }
+        updateNode(nodeId, { runStatus: "running", runId: jA.runId, runRunId: jA.runId });
+        setRun({ status: "done", phase: "agent researching - the board lands when it delivers", error: null, ranAt: Date.now() });
+        return null;
+      }
+
       // ── Build phase ──
       const enabled = (k) => { const s = (plan.sections || []).find(x => x.key === k); return !s || s.on !== false; };
       const layoutId = STRATEGY_LAYOUTS[plan.keyView && plan.keyView.layout] ? plan.keyView.layout : "statement";
@@ -46968,6 +47004,47 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           if (ri >= 0) workflowAddCellMarker(tableId, ri + 1, INS_COL, ins.n, built.insightIdByN[ins.n] || null);
         }
       }
+      // Agent-delivered VISUAL DIRECTION (only present when the user approved
+      // it on the plan gate): palette + typography nodes inside the master
+      // section, previous run's swept, same discipline as the browser path.
+      const vis = raw.visual && typeof raw.visual === "object" ? raw.visual : null;
+      const visNodeIds = [];
+      const oldVis = (node.visIds && node.visIds.nodeIds) || [];
+      if (vis || oldVis.length) {
+        setData(d => {
+          let nodes = (d.nodes || []).filter(n2 => !oldVis.includes(n2.id));
+          let edges = (d.edges || []).filter(e2 => {
+            const f = workflowParseEdgeRef(e2.from || ""), t2 = workflowParseEdgeRef(e2.to || "");
+            return !(f && oldVis.includes(f.node)) && !(t2 && oldVis.includes(t2.node));
+          });
+          if (vis) {
+            let xx = built.left + 24;
+            const vy = built.bottom + 20;
+            let maxH = 0;
+            const pal = (Array.isArray(vis.palette) ? vis.palette : []).slice(0, 6)
+              .filter(sw => sw && /^#?[0-9a-fA-F]{3,8}$/.test(String(sw.value || "").replace("#", "")));
+            if (pal.length) {
+              const id = workflowNewNodeId();
+              const body = workflowMakeNodeOfKind("color-palette", {
+                name: header.slice(0, 24),
+                swatches: pal.map(sw => ({ name: String(sw.name || "--color"), value: String(sw.value).startsWith("#") ? String(sw.value) : "#" + String(sw.value) })),
+              });
+              if (body) { nodes.push({ id, ...body, x: xx, y: vy }); visNodeIds.push(id); xx += (body.w || 360) + 40; maxH = Math.max(maxH, body.h || 360); }
+            }
+            for (const f2 of (Array.isArray(vis.fonts) ? vis.fonts : []).slice(0, 2)) {
+              if (!f2 || !f2.family) continue;
+              const id = workflowNewNodeId();
+              const body = workflowMakeNodeOfKind("typography", { name: String(f2.family), fontFamily: String(f2.family) });
+              if (body) { nodes.push({ id, ...body, x: xx, y: vy }); visNodeIds.push(id); xx += (body.w || 360) + 40; maxH = Math.max(maxH, body.h || 360); }
+            }
+            if (maxH && built.sectionId) {
+              const needH = (vy + maxH + 24) - built.top;
+              nodes = nodes.map(n2 => n2.id === built.sectionId && (n2.h || 0) < needH ? { ...n2, h: needH } : n2);
+            }
+          }
+          return { ...d, nodes, edges };
+        });
+      }
       updateNode(nodeId, {
         result: {
           kind: "strategy", task: node.task || "", builtAt: Date.now(),
@@ -46986,6 +47063,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           visuals: { wanted: false, kinds: [], note: "" }, chain: null,
         },
         strategyRun: null, runStatus: "done",
+        visIds: visNodeIds.length ? { nodeIds: visNodeIds } : null,
       });
       if (tableId) updateNode(tableId, { runStatus: "done" });
       // Clear the seam on DISK too: the save-merge deliberately guards
@@ -81052,8 +81130,21 @@ function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onRe
 function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, onExplore, onSpawnChain, runState }) {
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  // The board build is a tracked daemon agent run - the standard chat
+  // dialog attaches by runId (transcript, Task subagents, stop). Claim bus
+  // keeps one docked chat at a time.
+  const [chatOpen, setChatOpen] = useState(false);
+  useEffect(() => {
+    if (chatOpen) window.dispatchEvent(new CustomEvent("th:chat-claim", { detail: { owner: node.id } }));
+  }, [chatOpen, node.id]);
+  useEffect(() => {
+    const onClaim = (e) => { if (e.detail?.owner !== node.id) setChatOpen(false); };
+    window.addEventListener("th:chat-claim", onClaim);
+    return () => window.removeEventListener("th:chat-claim", onClaim);
+  }, [node.id]);
   const w = Math.max(400, node.w || 460), h = Math.max(500, node.h || 560);
   const busy = runState?.status === "loading";
+  const running = node.runStatus === "running" && !!node.runId;
   const task = (node.task || "").trim();
   const clar = node.clarify;
   const clarActive = !!(clar && !clar.done && clar.forTask === task && (clar.questions || []).length);
@@ -81252,24 +81343,47 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
               </button>
             </div>`}
           <div className="workflow-node-iter-actions">
-            <button className="workflow-node-skill-run" disabled=${busy}
+            <button className="workflow-node-skill-run" disabled=${busy || running}
               title=${planDone
-                ? "Re-run the research and rebuild the strategy board with the saved plan."
+                ? "Dispatch the tracked board agent again with the saved plan (rebuilds the board when it delivers)."
                 : clarDone
                   ? "Next: the lead proposes the board plan for your review."
                   : "First asks a few directing questions, then proposes a board plan."}
               onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
               ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>`
+                     : running ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>agent researching…<//>`
                      : html`<${React.Fragment}><${Icon.Spark}/> ${planDone ? "Run strategy" : clarDone ? "Plan the board" : "Start (asks questions first)"}<//>`}
             </button>
-            ${(clarDone || planDone) && !busy && html`
+            ${(clarDone || planDone) && !busy && !running && html`
               <button className="workflow-node-refiner-pushadd"
                 title="Clear the saved answers + plan and start the gates fresh on the next run."
                 onClick=${(e) => { e.stopPropagation(); onChange({ clarify: null, presPlan: null }); }}>Re-ask</button>`}
-            ${runState?.status === "done" && html`<span className="workflow-node-iter-done">board built</span>`}
-            ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+            ${node.runId && html`
+              <button className="workflow-node-refiner-pushadd"
+                title="Watch the board agent: live transcript, its subagents, stop / resume."
+                onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}><${Icon.CommentDots}/> Chat</button>`}
+            ${runState?.status === "done" && !running && html`<span className="workflow-node-iter-done">board built</span>`}
+            ${runState?.error && !running && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
           </div>`}
       </div>
+      ${chatOpen && html`<${WorkflowAgentChatDialog}
+        node=${{
+          id: node.id,
+          name: "Strategy board",
+          runId: node.runId,
+          runStatus: running ? "pending" : null,
+          conversation: [],
+          outputMode: "folder",
+          outputPath: "",
+        }}
+        wiredSystem=${""}
+        wiredInputs=${[]}
+        wiredReadRoot=${""}
+        wiredWriteRoot=${""}
+        wiredFileOut=${""}
+        onClose=${() => setChatOpen(false)}
+        onChange=${(patch) => { if (patch && patch.runId !== undefined) onChange({ runId: patch.runId, runRunId: patch.runId }); }}
+      />`}
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
            title="Context: prompt / asset / folder / web page / palette / typography / section - wire as many as you like." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
         <div className="workflow-port-dot"/>
@@ -85245,6 +85359,19 @@ let _wfxHandle = null;
 // canvas surface's data.wb effect drains them into completion shockwaves.
 // A Set dedupes the updater's possible double-invoke for free.
 const _wfxPendingWbIds = new Set();
+// Node ids whose CONTENT the daemon merge just updated (agent wrote text /
+// output / a new asset version / ...). Same park-and-drain pattern as the wb
+// set; drained into fxCompletionWave which dedupes against the runStatus wave.
+const _wfxPendingNodeIds = new Set();
+// Merge keys that do NOT count as a content update: geometry, container
+// bindings, and run bookkeeping (runStatus's done-flip has its own diff).
+const _wfxMergeIgnoreKeys = new Set(["x", "y", "w", "h", "cell", "sec", "runRunId", "runId", "_building", "activeVersionId", "runStatus", "runError"]);
+// One-shot mute for the enter-animation id-diff: set by WHOLE-DOC arrivals
+// (initial load, undo/redo restore, git-discard reset, rename replace) so a
+// full population never plays 200 bounces; consumed by the next diff run.
+// Everything else - including an agent's first nodes on an empty canvas and
+// big agent scaffolds - animates.
+let _wfxSuppressEnterOnce = false;
 function wfx(type, payload) {
   if (!_wfxHandle || _wfxReduce.matches) return;
   try { _wfxHandle(type, payload || {}); } catch { /* fx must never break interactions */ }
