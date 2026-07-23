@@ -46674,9 +46674,38 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const desc = String(raw.description || "");
       const conclusion = raw.conclusion;
       if (node.tableId) _assistantDropTable(node.tableId);
-      // Board section: sweep by tracked ids + section binding + _dr tag.
       const SECW = 760, PAD = 24, INNER = SECW - PAD * 2, STK = 200, GAP = 16;
       const mh = (text, w2, fs) => _measureWrappedTextHeight(String(text == null ? "" : text), w2, fs || WB_FONT_SIZES.sm);
+      // Evidence table FIRST, fully filled from the payload (its final size
+      // is then known), parked right of where the board column will land;
+      // the board build below folds it INTO the master section so every
+      // component of the output lives in ONE frame.
+      const headers = ["Point", ...agents.map(a => a.name), "Sources", "Snapshot"];
+      const colWidths = [260, ...agents.map(() => 240), 320, 300];
+      const rows = points.map(p2 => [p2.point, ...agents.map(() => ""), "", ""]);
+      const tableId = workflowBuildResultTable({
+        title: "Evidence: " + header.slice(0, 32), headers, rows,
+        x: Math.round(node.x + (node.w || 440) + 460) + SECW + 60, y: Math.round(node.y) + PAD + 36, colWidths,
+      });
+      const SRC_COL = 1 + agents.length, SNAP_COL = SRC_COL + 1;
+      const snapped = new Set();
+      points.forEach((p2, ri) => {
+        agents.forEach((a, ai) => {
+          const e = (p2.perAgent || {})[a.name];
+          if (!e) return;
+          const sw = _drStanceWord(e.stance);
+          workflowAppendCellBox(tableId, ri + 1, 1 + ai, sw.toUpperCase() + (e.note ? ": " + e.note : ""), _drStanceColor(sw));
+          if (e.url || e.snippet) {
+            workflowAppendCellBox(tableId, ri + 1, SRC_COL,
+              (e.snippet ? "\u201c" + e.snippet + "\u201d\n" : "") + (e.url || "") + "\n(" + a.name + ")", "blue");
+          }
+          if (e.image && /^https?:/i.test(e.image) && !snapped.has(ri)) {
+            snapped.add(ri);
+            workflowAddCellNode(tableId, ri + 1, SNAP_COL, "browser", { url: e.image, cellW: 280, cellH: 190 });
+          }
+        });
+      });
+      // Board section wrapping the column AND the table (one master frame).
       setData(d => {
         const prevSecId = node.sectionId || null;
         const prev = (d.nodes || []).find(n2 => n2.id === prevSecId);
@@ -46724,42 +46753,27 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           y += mh(cObj.support, INNER) + 12;
         }
         for (const b2 of cObj.bullets) {
-          const line = "•  " + b2;
+          const line = "\u2022  " + b2;
           bind(wbMakeItem("text", { text: line, w: INNER - 10, fontSize: "sm", align: "left", color: "ink" }), bx + PAD + 10, y);
           y += mh(line, INNER - 10) + 8;
         }
         y += PAD;
+        // Fold the evidence table INTO this master section (strategy-board
+        // discipline): park it right of the column, size the frame to wrap
+        // both; containment + the cell reconcile make it ride section drags.
+        let secW = SECW, secH = Math.max(360, y - by);
+        const tbl = nodes.find(n2 => n2.id === tableId && n2.kind === "table");
+        if (tbl) {
+          const tx = bx + SECW + 60, ty2 = by + PAD + 36;
+          nodes = nodes.map(n2 => n2.id === tableId ? { ...n2, x: tx, y: ty2 } : n2);
+          secW = SECW + 60 + Math.round(tbl.w || 800) + PAD;
+          secH = Math.max(secH, (ty2 - by) + Math.round(tbl.h || 400) + PAD);
+        }
         const secBody = workflowMakeNodeOfKind("section", { title: header });
         nodes = nodes
           .map(n2 => n2.id === nodeId ? { ...n2, sectionId: secId, drIds: { wbIds } } : n2)
-          .concat([{ id: secId, ...secBody, x: bx, y: by, w: SECW, h: Math.max(360, y - by) }]);
+          .concat([{ id: secId, ...secBody, x: bx, y: by, w: secW, h: secH }]);
         return { ...d, nodes, wb: [...keptWb, ...items] };
-      });
-      // Evidence table beside the board.
-      const headers = ["Point", ...agents.map(a => a.name), "Sources", "Snapshot"];
-      const colWidths = [260, ...agents.map(() => 240), 320, 300];
-      const rows = points.map(p2 => [p2.point, ...agents.map(() => ""), "", ""]);
-      const tableId = workflowBuildResultTable({
-        title: "Evidence: " + header.slice(0, 32), headers, rows,
-        x: Math.round(node.x + (node.w || 440) + 460) + SECW + 80, y: Math.round(node.y), colWidths,
-      });
-      const SRC_COL = 1 + agents.length, SNAP_COL = SRC_COL + 1;
-      const snapped = new Set();
-      points.forEach((p2, ri) => {
-        agents.forEach((a, ai) => {
-          const e = (p2.perAgent || {})[a.name];
-          if (!e) return;
-          const sw = _drStanceWord(e.stance);
-          workflowAppendCellBox(tableId, ri + 1, 1 + ai, sw.toUpperCase() + (e.note ? ": " + e.note : ""), _drStanceColor(sw));
-          if (e.url || e.snippet) {
-            workflowAppendCellBox(tableId, ri + 1, SRC_COL,
-              (e.snippet ? "“" + e.snippet + "”\n" : "") + (e.url || "") + "\n(" + a.name + ")", "blue");
-          }
-          if (e.image && /^https?:/i.test(e.image) && !snapped.has(ri)) {
-            snapped.add(ri);
-            workflowAddCellNode(tableId, ri + 1, SNAP_COL, "browser", { url: e.image, cellW: 280, cellH: 190 });
-          }
-        });
       });
       updateNode(nodeId, { tableId, deepresearchRun: null, runStatus: "done",
         result: { kind: "deepresearch", task: node.task || "", builtAt: Date.now(),
