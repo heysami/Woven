@@ -48306,13 +48306,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           setPendingEdge(pe => pe ? { ...pe, toX: tp.x, toY: tp.y, snapped: true, snapTarget: hit } : null);
           const snapKey = hit.node + "." + hit.port;
           if (snapKey !== lastSnapKey) { lastSnapKey = snapKey; wfx("zap", { x: tp.x, y: tp.y }); }
-          wfx("sparkle-move", { id: "edge", x: p.x, y: p.y, boost: true });
+          // Persistent boosted emitter at the junction for as long as the
+          // snap holds - the zap burst alone reads as "appeared then died".
+          wfx("sparkle-start", { id: "edge-snap", x: tp.x, y: tp.y, boost: true });
           return;
         }
       }
       // No snap - endpoint follows the cursor freely.
       lastSnapKey = null;
-      wfx("sparkle-move", { id: "edge", x: p.x, y: p.y, boost: false });
+      wfx("sparkle-stop", { id: "edge-snap" });
       const { x, y } = screenToWorld(ev.clientX, ev.clientY);
       setPendingEdge(pe => pe ? { ...pe, toX: x, toY: y, snapped: false, snapTarget: null } : null);
     };
@@ -48320,6 +48322,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       setNodeDragging(false);
       setCanvasDraggingSync(false);
       wfx("sparkle-stop", { id: "edge" });
+      wfx("sparkle-stop", { id: "edge-snap" });
       const target = findCompatiblePort(ev.clientX, ev.clientY);
       if (target) {
         // Normalize so `from` is always the source (right-side / output) and
@@ -85291,25 +85294,48 @@ function useWorkflowFx(wrapRef) {
     };
 
     // --- effect stores -----------------------------------------------------
-    const emitters = new Map(); // id -> {x,y,boost} persistent spark source
-    const sparks = [];          // {x,y,x1,y1,mx,my,t0,life} transient bolt segments
+    const emitters = new Map(); // id -> {x,y,boost} persistent bolt source
+    const bolts = [];           // zap-glyph particles {x,y,vx,vy,rot,vr,size,t0,life}
     const trails = new Map();   // id -> {getRects, prev:Map, snaps:[], stopped}
     const waves = [];           // ring / travel / ping one-shots
     const rnd = Math.random;
     const easeOut = (p) => 1 - Math.pow(1 - p, 3);
     const easeInOut = (p) => p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
 
-    const spawnSpark = (x, y, now, len) => {
-      if (sparks.length > 140) return;
-      const a = rnd() * Math.PI * 2, L = len * (0.6 + rnd() * 0.8);
-      const x1 = x + Math.cos(a) * L, y1 = y + Math.sin(a) * L;
-      // jittered midpoint = the "electric" kink
-      const mx = (x + x1) / 2 + (rnd() - 0.5) * L * 0.8;
-      const my = (y + y1) / 2 + (rnd() - 0.5) * L * 0.8;
-      sparks.push({ x, y, x1, y1, mx, my, t0: now, life: 160 + rnd() * 180 });
+    // Lightning-bolt glyph (Lucide-style zap polygon in a 24-box, centered).
+    // Drawn as filled particles that pop out, tumble, and FALL under gravity -
+    // little zap icons, not line scribbles.
+    const BOLT = [[13, 2], [3, 14], [12, 14], [11, 22], [21, 10], [12, 10]];
+    const BOLT_G = 420; // gravity, world px/s^2
+    const drawBolt = (ctx, b, alpha, color) => {
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(b.rot);
+      const s = b.size / 24;
+      ctx.scale(s, s);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(BOLT[0][0] - 12, BOLT[0][1] - 12);
+      for (let i = 1; i < BOLT.length; i++) ctx.lineTo(BOLT[i][0] - 12, BOLT[i][1] - 12);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    };
+    const spawnBolt = (x, y, now, speed) => {
+      if (bolts.length > 120) return;
+      const a = -Math.PI / 2 + (rnd() - 0.5) * 2.2; // mostly popping upward
+      const v = speed * (0.5 + rnd());
+      bolts.push({
+        x: x + (rnd() - 0.5) * 6, y: y + (rnd() - 0.5) * 6,
+        vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+        rot: (rnd() - 0.5) * 0.9, vr: (rnd() - 0.5) * 7,
+        size: 8 + rnd() * 6,
+        t0: now, life: 550 + rnd() * 350,
+      });
     };
     const spawnZap = (x, y, now) => {
-      for (let i = 0; i < 9; i++) spawnSpark(x, y, now, 14);
+      for (let i = 0; i < 8; i++) spawnBolt(x, y, now, 130);
       waves.push({ kind: "ping", cx: x, cy: y, t0: now, dur: 260, r0: 3, r1: 13 });
     };
     const spawnWave = (p, now) => {
@@ -85357,7 +85383,7 @@ function useWorkflowFx(wrapRef) {
     };
 
     const TRAIL_LIFE = 340;
-    let rafId = 0;
+    let rafId = 0, lastFrameAt = 0;
     const loop = (now) => {
       rafId = 0;
       const { px, py, z } = parseXform();
@@ -85389,26 +85415,23 @@ function useWorkflowFx(wrapRef) {
         else alive = true;
       }
 
-      // -- persistent spark emitters (over) --
+      // -- persistent bolt emitters (over): a gentle fountain of zap icons --
       for (const e of emitters.values()) {
-        const n = e.boost ? 3 : 1 + (rnd() < 0.5 ? 1 : 0);
-        for (let i = 0; i < n; i++) spawnSpark(e.x + (rnd() - 0.5) * 6, e.y + (rnd() - 0.5) * 6, now, e.boost ? 11 : 8);
+        if (rnd() < (e.boost ? 0.65 : 0.3)) spawnBolt(e.x, e.y, now, e.boost ? 110 : 70);
         alive = true;
       }
 
-      // -- spark segments (over) --
-      octx.lineCap = "round";
-      for (let i = sparks.length - 1; i >= 0; i--) {
-        const s = sparks[i], p = (now - s.t0) / s.life;
-        if (p >= 1) { sparks.splice(i, 1); continue; }
-        octx.globalAlpha = (1 - p) * 0.9;
-        octx.strokeStyle = p < 0.35 ? hotStrong : hot;
-        octx.lineWidth = 1.4 / z;
-        octx.beginPath();
-        octx.moveTo(s.x, s.y);
-        octx.lineTo(s.mx, s.my);
-        octx.lineTo(s.x1, s.y1);
-        octx.stroke();
+      // -- zap-glyph particles (over): integrate gravity, tumble, fade --
+      const dt = Math.min((now - (lastFrameAt || now)) / 1000, 0.05);
+      lastFrameAt = now;
+      for (let i = bolts.length - 1; i >= 0; i--) {
+        const b = bolts[i], p = (now - b.t0) / b.life;
+        if (p >= 1) { bolts.splice(i, 1); continue; }
+        b.vy += BOLT_G * dt;
+        b.x += b.vx * dt;
+        b.y += b.vy * dt;
+        b.rot += b.vr * dt;
+        drawBolt(octx, b, Math.min(1, (1 - p) * 1.6) * 0.95, p < 0.3 ? hotStrong : hot);
         alive = true;
       }
 
@@ -85464,11 +85487,11 @@ function useWorkflowFx(wrapRef) {
         octx.setTransform(1, 0, 0, 1, 0, 0); octx.clearRect(0, 0, over.width, over.height);
       }
     };
-    const wake = () => { if (!rafId) { readColors(); rafId = requestAnimationFrame(loop); } };
+    const wake = () => { if (!rafId) { readColors(); lastFrameAt = 0; rafId = requestAnimationFrame(loop); } };
 
     const dispatch = (type, p) => {
       const now = performance.now();
-      if (type === "sparkle-start") emitters.set(p.id, { x: p.x, y: p.y, boost: 0 });
+      if (type === "sparkle-start") emitters.set(p.id, { x: p.x, y: p.y, boost: p.boost ? 1 : 0 });
       else if (type === "sparkle-move") { const e = emitters.get(p.id); if (e) { e.x = p.x; e.y = p.y; e.boost = p.boost ? 1 : 0; } }
       else if (type === "sparkle-stop") emitters.delete(p.id);
       else if (type === "zap") spawnZap(p.x, p.y, now);
