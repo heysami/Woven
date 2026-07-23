@@ -46752,10 +46752,23 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         body: JSON.stringify(seed ? { chainPlan: seed } : {}),
       });
       const j = await rr.json().catch(() => ({}));
-      if (!rr.ok) throw new Error(j.error || ("chain dispatch failed (HTTP " + rr.status + ")"));
-      if (!j.runId) throw new Error("the daemon accepted the call but returned no run - it is likely running an older build. Restart Woven, then Run again.");
+      if (!rr.ok || !j.runId) {
+        // The daemon can spawn the run + write runId to disk and STILL lose
+        // the HTTP response (restart window, dropped connection). The SSE
+        // merge delivers the truth moments later - check it before
+        // declaring failure, or the node shows a red error under a live
+        // "agent driving" state.
+        await new Promise(r => setTimeout(r, 2500));
+        const now = (dataNodesRef.current || []).find(n2 => n2.id === nodeId);
+        if (now && now.runId && now.runStatus === "running") {
+          setRun({ status: "done", phase: "agent driving - open Chat to watch", error: null, ranAt: Date.now() });
+          return;
+        }
+        if (!rr.ok) throw new Error(j.error || ("chain dispatch failed (HTTP " + rr.status + ")"));
+        throw new Error("the daemon accepted the call but returned no run - it is likely running an older build. Restart Woven, then Run again.");
+      }
       updateNode(nodeId, { runStatus: "running", runId: j.runId, runRunId: j.runId });
-      setRun({ status: "done", phase: "agent driving - open Chat to watch", ranAt: Date.now() });
+      setRun({ status: "done", phase: "agent driving - open Chat to watch", error: null, ranAt: Date.now() });
     } catch (e) {
       updateNode(nodeId, { runStatus: "error" });
       setRun({ status: "error", error: String(e?.message || e) });
@@ -81132,7 +81145,7 @@ function WorkflowStrategyChainNode({ node, zoom, selected, onSelect, onMove, onR
               title="Watch the chain-driver agent: live transcript, its subagents, stop / resume."
               onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}><${Icon.CommentDots}/> Chat</button>`}
           ${runState?.status === "done" && !running && html`<span className="workflow-node-iter-done">chain done</span>`}
-          ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+          ${runState?.error && !running && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
         </div>
       </div>
       ${chatOpen && html`<${WorkflowAgentChatDialog}
