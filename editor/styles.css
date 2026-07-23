@@ -15367,6 +15367,12 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-wb-marker[data-selected="true"] {
   box-shadow: 0 0 0 2px var(--accent), 0 1px 3px oklch(0% 0 0 / 0.18);
 }
+/* Marker action chip (Go to insight / Link) - reuses the convert-bar shell. */
+.workflow-marker-bar { display: flex; align-items: center; gap: 6px; }
+.workflow-marker-bar-hint {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  padding: 0 4px; white-space: nowrap;
+}
 .workflow-wb-emoji-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
 .workflow-wb-emoji-btn {
   border: 1px solid transparent; background: var(--surface-2, rgba(0,0,0,0.04));

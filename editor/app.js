@@ -35294,6 +35294,67 @@ function WorkflowConvertBar({ count, hasNodeEdges, onConvert }) {
   `, document.body);
 }
 
+/* Floating action chip for a single selected insight MARKER. Navigation is
+   deliberately a BUTTON here rather than a click-through on the marker
+   itself, so selecting or dragging a marker never teleports the canvas.
+   "Link" arms the surface's pick mode: the next click on any other wb item
+   becomes the marker's target. Rect tracking mirrors WorkflowConvertBar. */
+function WorkflowMarkerBar({ marker, targetExists, picking, onArmPick, onCancelPick, onGo }) {
+  const markerId = marker && marker.id;
+  const [rect, setRect] = useState(null);
+  useEffect(() => {
+    if (!markerId) { setRect(null); return; }
+    let raf = 0, last = null;
+    const tick = () => {
+      const el = document.querySelector('.workflow-wb-marker[data-wb-id="' + markerId + '"]');
+      if (el) {
+        const r = el.getBoundingClientRect();
+        if (!last || last.top !== r.top || last.left !== r.left
+            || last.width !== r.width || last.height !== r.height) {
+          last = { top: r.top, left: r.left, width: r.width, height: r.height };
+          setRect(last);
+        }
+      } else if (last) { last = null; setRect(null); }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [markerId]);
+  if (!rect) return null;
+  const BARW = picking ? 220 : (targetExists ? 220 : 96);
+  let left = rect.left + rect.width / 2 - BARW / 2;
+  let top = rect.top - 40;
+  const canvasEl = document.querySelector(".workflow-canvas-wrap");
+  if (canvasEl) {
+    const c = canvasEl.getBoundingClientRect();
+    left = Math.max(c.left + 8, Math.min(left, c.right - BARW - 8));
+    // If the marker hugs the top edge, flip the chip BELOW it.
+    if (top < c.top + 8) top = rect.top + rect.height + 8;
+  }
+  return createPortal(html`
+    <div className="workflow-convert-bar workflow-marker-bar"
+      style=${{ position: "fixed", top: top + "px", left: left + "px", zIndex: 45 }}
+      onMouseDown=${(e) => e.stopPropagation()}>
+      ${picking ? html`
+        <span className="workflow-marker-bar-hint">Click an item to link</span>
+        <button className="workflow-convert-chip"
+          onMouseDown=${(e) => e.stopPropagation()}
+          onClick=${(e) => { e.stopPropagation(); onCancelPick(); }}>Cancel</button>` : html`
+        ${targetExists && html`
+          <button className="workflow-convert-chip"
+            title=${"Jump to the insight this marker annotates."}
+            onMouseDown=${(e) => e.stopPropagation()}
+            onClick=${(e) => { e.stopPropagation(); onGo(); }}>
+            <${Icon.External}/> Go to insight ${marker.n ?? ""}
+          </button>`}
+        <button className="workflow-convert-chip"
+          title=${marker.targetWb ? "Pick a different item for this marker to open." : "Pick the item this marker should open."}
+          onMouseDown=${(e) => e.stopPropagation()}
+          onClick=${(e) => { e.stopPropagation(); onArmPick(); }}>${marker.targetWb ? "Re-link" : "Link…"}</button>`}
+    </div>
+  `, document.body);
+}
+
 /* Connector-spawn chrome. When EXACTLY ONE node is selected and its
    kind has a WORKFLOW_CONNECT_DEFS entry, render a floating ⊕ button at the
    vertical middle of each side that has menu content (left = upstream
@@ -37474,9 +37535,23 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // One-shot tools revert to select after a commit; pen + sticky stay armed
   // (the "make many" tools).
   const wbAfterCommit = useCallback((tool) => {
-    if (tool === "pen" || tool === "sticky" || tool === "sticker") return;
+    if (tool === "pen" || tool === "sticky" || tool === "sticker" || tool === "marker") return;
     setWbTool("select");
   }, []);
+
+  // Insight-marker link-pick mode: armed by the marker bar's Link button;
+  // the NEXT click on another wb item links the marker to it instead of
+  // changing the selection. Cleared by Cancel, by linking, or whenever the
+  // selection stops being that single marker (see the effect by the bar).
+  const [markerPickFor, setMarkerPickFor] = useState(null);
+  const markerPickForRef = useRef(null); markerPickForRef.current = markerPickFor;
+  useEffect(() => {
+    // Disarm when the selection stops being exactly the armed marker
+    // (click-away, marquee, delete, …).
+    if (markerPickFor && !(selectedWbIds.size === 1 && selectedWbIds.has(markerPickFor))) {
+      setMarkerPickFor(null);
+    }
+  }, [selectedWbIds, markerPickFor]);
 
   // Select-tool hit handling - shift-toggle / keep-group / replace, then a
   // window-listener drag that moves the whole selected set. Shared by the
@@ -37484,6 +37559,16 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // stay selectable + movable without entering whiteboard mode).
   const wbSelectPointerDown = useCallback((e, hitId) => {
     const zoomNow = () => Math.max(zoomRef.current, 0.1);
+    // Link-pick intercept: consume this click as the marker's new target.
+    if (markerPickForRef.current && hitId && hitId !== markerPickForRef.current) {
+      const mid = markerPickForRef.current;
+      e.preventDefault();
+      e.stopPropagation();
+      updateWbItem(mid, { targetWb: hitId });
+      setMarkerPickFor(null);
+      setSelectedWbIds(new Set([mid]));   // keep the marker bar up
+      return;
+    }
     if (e.shiftKey) {
       // Shift adds across kinds - the node selection stays put.
       setSelectedWbIds(prev => {
@@ -37592,7 +37677,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     window.addEventListener("mouseup", onUp);
     wbCancelGestureRef.current = onUp;
     rafId = requestAnimationFrame(frame);
-  }, [shiftWbItems, shiftNodes]);
+  }, [shiftWbItems, shiftNodes, updateWbItem]);
 
   // Geometric node hit-test (the wb layer swallows DOM events in whiteboard
   // mode, so node clicks there can't be resolved from e.target). Non-section
@@ -37894,6 +37979,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (tool === "sticker") {
       e.preventDefault();
       const item = wbMakeItem("sticker", { x: wp.x - 36, y: wp.y - 36, emoji: wbStickerEmojiRef.current || "⭐" });
+      addWbItem(item);
+      setSelectedWbIds(new Set([item.id]));
+      if (wbReassignBindingsRef.current) wbReassignBindingsRef.current(new Set([item.id]), new Set());
+      wbAfterCommit(tool);
+      return;
+    }
+
+    // ── marker - click-to-place a numbered insight badge. Auto-numbers past
+    // the highest existing marker; the floating marker bar (on selection)
+    // links it to an item and navigates. ──
+    if (tool === "marker") {
+      e.preventDefault();
+      const maxN = (wbItemsRef.current || []).reduce(
+        (a, it) => (it && it.type === "marker") ? Math.max(a, Number(it.n) || 0) : a, 0);
+      const item = wbMakeItem("marker", { x: wp.x - 14, y: wp.y - 14, n: maxN + 1, color: wbToolColor("marker") });
       addWbItem(item);
       setSelectedWbIds(new Set([item.id]));
       if (wbReassignBindingsRef.current) wbReassignBindingsRef.current(new Set([item.id]), new Set());
@@ -38768,7 +38868,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
       if (isEditingTarget(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const map = { v: "select", t: "text", b: "textbox", s: "sticky", e: "sticker", p: "pen", r: "shape", g: "table", f: "section", l: "arrow", i: "eyedropper" };
+      const map = { v: "select", t: "text", b: "textbox", s: "sticky", e: "sticker", m: "marker", p: "pen", r: "shape", g: "table", f: "section", l: "arrow", i: "eyedropper" };
       const tool = map[(e.key || "").toLowerCase()];
       if (tool) { setWbTool(tool); e.preventDefault(); }
     };
@@ -45787,9 +45887,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         setRun({ status: "loading", phase: "forming questions", error: null });
         updateNode(nodeId, { runStatus: "running" });
         const qText = await assistantLlm([{ role: "user", content:
-          `You are planning a STRATEGY deliverable (business / product / brand / positioning / design / content / growth - whatever the task implies). The user's answers will direct both the strategy's angle and how it is PRESENTED.\n\nTASK:\n${task}\n` +
+          `You are planning a STRATEGY (business / product / brand / positioning / design / content / growth - whatever the task implies). The output is ALWAYS a whiteboard BOARD (a key view like a 2x2 / timeline / affinity map / mood board, plus per-point breakdowns and insights) - it is NEVER a document, slide deck, report, or any other deliverable format, so do NOT ask about output format. The user's answers direct the strategy's ANGLE and CONTENT.\n\nTASK:\n${task}\n` +
           (ctx ? "\nLINKED MATERIAL (excerpt):\n" + ctx.slice(0, 800) : "") +
-          `\n\nAsk up to 3 SHORT questions whose answers would change the strategy's direction or presentation (e.g. audience of the strategy, current state vs future target, scope, what "winning" means, how visual the output should be). Each question gets 2-4 short answer OPTIONS.\n\nReturn ONLY JSON: [{"q":"...","options":["...","..."]}]. No prose.` }],
+          `\n\nAsk up to 3 SHORT questions whose answers would change the strategy itself (e.g. audience, current state vs future target, scope, time horizon, what "winning" means, appetite for bold vs safe bets). Each question gets 2-4 short answer OPTIONS.\n\nReturn ONLY JSON: [{"q":"...","options":["...","..."]}]. No prose.` }],
           { model: node.model, maxTokens: 800 });
         const qs = _assistantExtractJson(qText);
         if (!Array.isArray(qs) || !qs.length) throw new Error("Could not form directing questions - try again.");
@@ -51150,6 +51250,21 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           hasNodeEdges=${convertSel.hasNodeEdges}
           onConvert=${convertTextSelectionTo}/>
       `}
+      ${(() => {
+        // Single selected insight marker → floating Go-to-insight / Link chip.
+        if (selectedWbIds.size !== 1 || selectedNodeIds.size) return null;
+        const mid = selectedWbIds.values().next().value;
+        const mk = (data.wb || []).find(i => i && i.id === mid && i.type === "marker");
+        if (!mk) return null;
+        const targetExists = !!(mk.targetWb && (data.wb || []).some(i => i && i.id === mk.targetWb));
+        return html`<${WorkflowMarkerBar}
+          marker=${mk}
+          targetExists=${targetExists}
+          picking=${markerPickFor === mk.id}
+          onArmPick=${() => setMarkerPickFor(mk.id)}
+          onCancelPick=${() => setMarkerPickFor(null)}
+          onGo=${() => window.dispatchEvent(new CustomEvent("th:focus-wb", { detail: { wbId: mk.targetWb } }))}/>`;
+      })()}
       ${pickOpState && html`<${WorkflowPickOpToast} state=${pickOpState}/>`}
       ${connectorNode && connectorMenus && html`<${WorkflowConnectorSpawn}
         node=${connectorNode}
@@ -84590,9 +84705,6 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onComm
   // Mounted only while `editing`; commits on blur. isEditingTarget already
   // covers contentEditable so global canvas shortcuts auto-suppress.
   const editableRef = useRef(null);
-  // marker only: mousedown point, so a drag-then-release doesn't count as a
-  // navigate click (declared unconditionally - hooks can't live in a branch).
-  const markerDownPt = useRef(null);
   useEffect(() => {
     if (!editing || !editableRef.current) return;
     const el = editableRef.current;
@@ -84709,24 +84821,17 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onComm
         }}>${item.emoji || "⭐"}</div>`;
   }
   if (item.type === "marker") {
-    // Click navigates to the linked insight writeup; a drag must NOT navigate,
-    // so the click only fires when the pointer barely moved since mousedown.
+    // Pure render - selecting a marker floats the WorkflowMarkerBar chip,
+    // whose "Go to insight" button does the navigation. Deliberately NOT a
+    // click-through on the item itself: selecting / dragging a marker must
+    // never teleport the canvas.
     return html`
       <div className="workflow-wb-item workflow-wb-marker" data-wb-id=${item.id} data-selected=${sel}
-        title=${item.targetWb ? `Go to insight ${item.n ?? ""}` : `Insight ${item.n ?? ""}`}
+        title=${"Insight " + (item.n ?? "")}
         style=${{
           left: item.x + "px", top: item.y + "px",
           width: (item.w || 28) + "px", height: (item.h || 28) + "px", zIndex: z,
           "--wb-c": c,
-        }}
-        onMouseDown=${(e) => { markerDownPt.current = { x: e.clientX, y: e.clientY }; }}
-        onClick=${(e) => {
-          const d0 = markerDownPt.current;
-          markerDownPt.current = null;
-          if (d0 && Math.hypot(e.clientX - d0.x, e.clientY - d0.y) > 4) return;
-          if (!item.targetWb) return;
-          e.stopPropagation();
-          window.dispatchEvent(new CustomEvent("th:focus-wb", { detail: { wbId: item.targetWb } }));
         }}>${item.n ?? ""}</div>`;
   }
   if (item.type === "ink") {
@@ -85075,6 +85180,7 @@ const WB_TOOL_DEFS = [
   { id: "textbox", label: "Text box",    hotkey: "B" },
   { id: "sticky",  label: "Sticky note", hotkey: "S" },
   { id: "sticker", label: "Sticker",     hotkey: "E" },
+  { id: "marker",  label: "Marker",      hotkey: "M" },
   { id: "pen",     label: "Pen",         hotkey: "P" },
   { id: "shape",   label: "Box",         hotkey: "R" },
   { id: "table",   label: "Table",       hotkey: "G" },
@@ -85089,6 +85195,7 @@ const WB_TOOL_GLYPHS = {
   textbox: html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2.4" fill="none" stroke="currentColor" strokeWidth="1.6"/><path d="M5.4 6 H10.6 M8 6 V11" stroke="currentColor" strokeWidth="1.4" fill="none"/></svg>`,
   sticky:  html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 2.5 H13.5 V9.5 L9.5 13.5 H2.5 Z" fill="none" stroke="currentColor" strokeWidth="1.6"/><path d="M9.5 13.5 V9.5 H13.5" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg>`,
   sticker: html`<svg viewBox="0 0 16 16" width="15" height="15"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5"/><circle cx="6" cy="6.6" r="0.9" fill="currentColor"/><circle cx="10" cy="6.6" r="0.9" fill="currentColor"/><path d="M5.4 9.6 A3 3 0 0 0 10.6 9.6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>`,
+  marker:  html`<svg viewBox="0 0 16 16" width="15" height="15"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" strokeWidth="1.5"/><path d="M6.8 5.9 L8.5 4.9 V11.1" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>`,
   pen:     html`<svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 13.5 L3.4 10.4 L10.8 3 L13 5.2 L5.6 12.6 Z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>`,
   shape:   html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="2" y="3.4" width="12" height="9.2" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg>`,
   table:   html`<svg viewBox="0 0 16 16" width="15" height="15"><rect x="2" y="2.8" width="12" height="10.4" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.5"/><path d="M2 6.6 H14 M2 9.8 H14 M6.4 2.8 V13.2 M10 2.8 V13.2" stroke="currentColor" strokeWidth="1.2" fill="none"/></svg>`,
@@ -85112,7 +85219,8 @@ function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, s
     return fb;
   };
   const toolType = ({ text: "text", textbox: "textbox", sticky: "sticky",
-                      pen: "ink", shape: "shape", arrow: "arrow", table: "table" })[tool] || null;
+                      pen: "ink", shape: "shape", arrow: "arrow", table: "table",
+                      marker: "marker" })[tool] || null;
   const types = new Set(sel.length ? sel.map(i => i.type) : (toolType ? [toolType] : []));
   const has = (...ts) => ts.some(t => types.has(t));
   const apply = (patch) => {
@@ -85207,6 +85315,14 @@ function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, s
           </div>
           <div className="workflow-wb-tools-hint" style=${{ marginTop: 0 }}>
             Pick an emoji, then click the canvas to stamp it.
+          </div>
+        </div>
+      `}
+      ${(tool === "marker" || types.has("marker")) && html`
+        <div className="workflow-wb-tools-section">
+          <div className="workflow-wb-tools-sublabel">Insight marker</div>
+          <div className="workflow-wb-tools-hint" style=${{ marginTop: 0 }}>
+            Click the canvas to place a numbered marker. Select a placed marker, use Link to pick the item it opens, then Go to insight jumps there.
           </div>
         </div>
       `}
