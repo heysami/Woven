@@ -25545,6 +25545,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             "ts":    time.time(),
             "pid":   os.getpid(),
             "build": _HEALTHZ_BUILD,
+            # How this daemon was started. The Woven.app launcher sets
+            # WOVEN_MACAPP=1 when it spawns serve.py; the editor caches this
+            # so daemon-down instructions can say "menu bar icon" instead of
+            # "re-run from a terminal" for desktop-app installs.
+            "launcher": "macapp" if os.environ.get("WOVEN_MACAPP") else "terminal",
         })
 
     # ── /__kinds/registry - D3 source of truth ────────────────────────────

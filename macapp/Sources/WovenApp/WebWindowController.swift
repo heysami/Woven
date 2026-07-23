@@ -34,6 +34,11 @@ final class WebWindowController: NSWindowController, WKUIDelegate, WKNavigationD
         let cfg = WKWebViewConfiguration()
         cfg.websiteDataStore = .default() // persistent: editor localStorage survives relaunch
         cfg.preferences.setValue(true, forKey: "developerExtrasEnabled") // right-click > Inspect Element
+        // Append "Woven/1" to the UA so the editor can tell it is running
+        // inside the app shell (isWovenDesktopShell in app.js) and swap
+        // terminal-flavored instructions for menu-bar ones. Child windows
+        // inherit this via the opener-derived configuration.
+        cfg.applicationNameForUserAgent = "Woven/1"
         return cfg
     }
 

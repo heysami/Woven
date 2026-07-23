@@ -118,6 +118,10 @@ final class DaemonManager {
         env["EDITOR_PORT"] = String(port)
         env["TH_WORKSPACE_DIR"] = WovenPaths.workspaceDir
         env["PATH"] = EnvProbe.loginShellPATH()
+        // Marker the daemon surfaces via /__healthz {launcher: "macapp"} so
+        // the editor shows app-appropriate restart instructions (menu bar
+        // icon, not a terminal command) when the daemon goes down.
+        env["WOVEN_MACAPP"] = "1"
         proc.environment = env
 
         let pipe = Pipe()

@@ -39,7 +39,7 @@ if (!window.EDITOR_DATA || !window.EDITOR_DATA.meta) {
       const root = document.getElementById("root");
       if (!root) return;
       try { const _bv = document.getElementById("boot-veil"); if (_bv) _bv.remove(); } catch {}
-      root.innerHTML = `<div style="max-width:560px;margin:80px auto;padding:24px;border:1px solid var(--border);border-radius:8px;font:14px/1.5 Inter,system-ui;background:var(--surface);color:var(--text)"><h2 style="margin:0 0 8px;font-size:18px">Project data file failed to load</h2><p style="margin:0 0 12px;color:var(--text-muted)">The script at <code style="font-family:JetBrains Mono;font-size:11.5px;background:var(--surface-2);padding:1px 5px;border-radius:3px">editor/data.js</code> for project <strong>${_qs.get("project")}</strong> didn't set <code style="font-family:JetBrains Mono;font-size:11.5px;background:var(--surface-2);padding:1px 5px;border-radius:3px">window.EDITOR_DATA</code>. Most common causes:</p><ul style="margin:0 0 12px 20px;padding:0;color:var(--text-muted)"><li>The daemon hasn't been restarted after a v3.1 upgrade - restart it so the migration shim runs.</li><li>JS syntax error in editor/data.js - check DevTools console.</li><li>404 on editor/data.js - confirm the project's editor/ folder exists.</li></ul><p style="margin:0;color:var(--text-muted)"><a href="${location.pathname}" style="color:var(--accent);text-decoration:none">← Back to projects</a></p></div>`;
+      root.innerHTML = `<div style="max-width:560px;margin:80px auto;padding:24px;border:1px solid var(--border);border-radius:8px;font:14px/1.5 Inter,system-ui;background:var(--surface);color:var(--text)"><h2 style="margin:0 0 8px;font-size:18px">Project data file failed to load</h2><p style="margin:0 0 12px;color:var(--text-muted)">The script at <code style="font-family:JetBrains Mono;font-size:11.5px;background:var(--surface-2);padding:1px 5px;border-radius:3px">editor/data.js</code> for project <strong>${_qs.get("project")}</strong> didn't set <code style="font-family:JetBrains Mono;font-size:11.5px;background:var(--surface-2);padding:1px 5px;border-radius:3px">window.EDITOR_DATA</code>. Most common causes:</p><ul style="margin:0 0 12px 20px;padding:0;color:var(--text-muted)"><li>The daemon hasn't been restarted after a v3.1 upgrade - restart it (desktop app: Woven menu bar icon, then Restart Daemon; terminal: re-run serve.py) so the migration shim runs.</li><li>JS syntax error in editor/data.js - check DevTools console.</li><li>404 on editor/data.js - confirm the project's editor/ folder exists.</li></ul><p style="margin:0;color:var(--text-muted)"><a href="${location.pathname}" style="color:var(--accent);text-decoration:none">← Back to projects</a></p></div>`;
     });
     throw new Error("window.EDITOR_DATA is missing - editor/data.js didn't evaluate. See DevTools console.");
   }
@@ -9553,14 +9553,45 @@ function useDaemonStatus() {
   return { status, lastOk };
 }
 
-/* Popup with serve.py restart instructions, opened from the
+/* Desktop-shell detection. The Woven.app window is a WKWebView; the restart
+   story there is completely different from a terminal-run serve.py (the app
+   auto-respawns a crashed daemon and has a menu bar "Restart Daemon" item),
+   so instructional copy must branch on it. Two signals, either suffices:
+   - UA token "Woven/" - stamped by newer app builds via
+     applicationNameForUserAgent (exact).
+   - WKWebView heuristic - AppleWebKit engine with neither a browser token
+     nor Safari's trailing "Safari/x" segment (only Safari-the-app appends
+     "Version/x Safari/x"; a bare WKWebView does not). Covers app builds
+     shipped before the UA token existed. */
+function isWovenDesktopShell() {
+  const ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
+  if (ua.includes("Woven/")) return true;
+  return /AppleWebKit\//.test(ua)
+    && !/(Chrome|Chromium|CriOS|Edg|OPR|Firefox|FxiOS)\//.test(ua)
+    && !/Safari\//.test(ua);
+}
+
+/* Daemon-reported launcher ("macapp" | "terminal"), cached from /__healthz
+   while the daemon was healthy so it is still readable once the daemon is
+   DOWN (the only moment the dialog needs it). Covers the user viewing an
+   app-managed daemon from a regular browser tab, where the UA check above
+   can't see the app. */
+function cachedDaemonLauncher() {
+  try { return localStorage.getItem("th:daemonLauncher") || ""; } catch { return ""; }
+}
+
+/* Popup with daemon restart instructions, opened from the
    DaemonIndicator chip when the daemon is unreachable. Replaces the
    permanent "daemon-down-banner" which ate page real estate on the
    projects landing only (every other surface didn't have room for it).
    Now the explanation lives behind a click on the down-state badge,
-   consistent across landing, workflow toolbar, and editor toolbar. */
+   consistent across landing, workflow toolbar, and editor toolbar.
+   Copy branches on how the daemon is run: inside Woven.app (or when the
+   daemon last reported it was app-managed) the fix is the menu bar icon,
+   never a terminal command. */
 function DaemonDownDialog({ onClose }) {
   const cmd = "python3 editor/serve.py";
+  const appManaged = isWovenDesktopShell() || cachedDaemonLauncher() === "macapp";
   const [copied, setCopied] = useState(false);
   const onCopy = () => {
     try { navigator.clipboard.writeText(cmd); setCopied(true); setTimeout(() => setCopied(false), 1400); } catch {}
@@ -9576,11 +9607,16 @@ function DaemonDownDialog({ onClose }) {
           <button type="button" className="workflow-modal-close" onClick=${onClose} aria-label="Close">×</button>
         </div>
         <div className="daemon-down-dialog-body">
-          <div className="daemon-down-dialog-step">Re-run it from a terminal at the project root:</div>
-          <div className="daemon-down-dialog-cmd">
-            <code>${cmd}</code>
-            <button type="button" className="model-install-modal-copy" onClick=${onCopy}>${copied ? "Copied" : "Copy"}</button>
-          </div>
+          ${appManaged ? html`<${React.Fragment}>
+            <div className="daemon-down-dialog-step">The Woven app manages the daemon and restarts it automatically after a crash - give it a few seconds.</div>
+            <div className="daemon-down-dialog-step">If it stays down: click the Woven icon in the macOS menu bar and choose <strong>Restart Daemon</strong>. If the app isn't running, just launch Woven again. <strong>View Daemon Log</strong> in the same menu shows why it stopped.</div>
+          <//>` : html`<${React.Fragment}>
+            <div className="daemon-down-dialog-step">Re-run it from a terminal at the project root:</div>
+            <div className="daemon-down-dialog-cmd">
+              <code>${cmd}</code>
+              <button type="button" className="model-install-modal-copy" onClick=${onCopy}>${copied ? "Copied" : "Copy"}</button>
+            </div>
+          <//>`}
           <div className="daemon-down-dialog-hint">
             This dialog closes itself the moment the daemon comes back up.
           </div>
@@ -26170,6 +26206,13 @@ const _AGENT_POSTED_FIELDS = {
     try {
       const r = await fetch(apiUrl("/__healthz"), { cache: "no-store" });
       const j = await r.json();
+      // Piggyback: remember how this daemon is run ("macapp" | "terminal")
+      // so the daemon-down dialog can still tell once the daemon is gone.
+      try {
+        if (j && j.launcher && localStorage.getItem("th:daemonLauncher") !== j.launcher) {
+          localStorage.setItem("th:daemonLauncher", j.launcher);
+        }
+      } catch {}
       const b = j && j.build;
       if (!b) return;
       if (booted == null) { booted = b; return; }
