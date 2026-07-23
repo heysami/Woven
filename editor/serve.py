@@ -13278,10 +13278,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                         # save - the badge floats forever, revived on each
                         # reload-merge. The editor is authoritative for them
                         # (same kind list as the app.js load sanitizer).
+                        # assistant-strategy-orchestrator is NOT here: its
+                        # chain runs are daemon agent runs whose completion
+                        # hook owns the flag (mirror of the app.js sanitizer).
                         _no_owner_kinds = ("design-system", "assistant-research",
                                            "assistant-testing", "assistant-deepresearch",
-                                           "assistant-strategy", "assistant-strategy-orchestrator",
-                                           "table")
+                                           "assistant-strategy", "table")
                         if disk_status == "running" and disk_n.get("kind") not in _no_owner_kinds:
                             n["runStatus"] = "running"
                             disk_error = disk_n.get("runError")
@@ -13315,7 +13317,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                             "assistant-deepresearch": ("task", "model", "maxAgents", "rounds"),
                             # clarify + presPlan deliberately NOT guarded: posting
                             # null is how the editor clears them (Re-ask / Re-plan).
-                            "assistant-strategy": ("task", "model", "maxAgents"),
+                            # strategyRun IS guarded (the agent posts it while the
+                            # editor may echo a stale node without it); the editor
+                            # clears it via the status endpoint, not the save-merge.
+                            "assistant-strategy": ("task", "model", "maxAgents", "strategyRun"),
                             # chainPlan deliberately NOT guarded (null clears it).
                             "assistant-strategy-orchestrator": ("task", "model"),
                             "iterator-remix":   ("variants",),
@@ -13696,7 +13701,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # failure - caller passes error_dict to self._reply.
     def _spawn_node_agent(self, *, project_root, project_id, branch,
                           node_id, system_prompt, prompt_text, title,
-                          chain_rest=None, agent_id=None):
+                          chain_rest=None, agent_id=None, bare=False):
         # The build fan-out follows the user's selected AGENT runtime unless the
         # caller passes an explicit one, so codex/opencode drawers run their own
         # CLI (with GPT/model overrides) instead of always spawning Claude.
@@ -13790,15 +13795,22 @@ class H(http.server.SimpleHTTPRequestHandler):
         # spawned subagent knows what the app supports (image providers,
         # subagent drawers, endpoints, node kinds). Without this, agents
         # answer "I don't have <X>" for features that ARE integrated.
-        try:
-            from kinds.capabilities import capabilities_preamble
-            # a per-node spawn is a LEAF task by design unless the node id names
-            # an orchestrator; the leaf tier is ~25K tokens slimmer.
-            _tier = "setup" if "orchestrator" in (node_id or "").lower() else "leaf"
-            _node_tier = _tier   # recorded on the RunState below for resume weight
-            sys_prompt += "\n\n" + capabilities_preamble(project_root=project_root, tier=_tier)
-        except Exception:
-            _node_tier = None
+        # `bare=True` skips the catalog entirely: the caller's system_prompt
+        # is a self-contained contract and the run only needs the harness
+        # TRACKING (RunState, streamed transcript, Task-subagent visibility,
+        # resume) - not the ~10-35K capabilities bloat. Used by the strategy
+        # chain driver.
+        _node_tier = None
+        if not bare:
+            try:
+                from kinds.capabilities import capabilities_preamble
+                # a per-node spawn is a LEAF task by design unless the node id names
+                # an orchestrator; the leaf tier is ~25K tokens slimmer.
+                _tier = "setup" if "orchestrator" in (node_id or "").lower() else "leaf"
+                _node_tier = _tier   # recorded on the RunState below for resume weight
+                sys_prompt += "\n\n" + capabilities_preamble(project_root=project_root, tier=_tier)
+            except Exception:
+                _node_tier = None
         sys_prompt += "\n\n" + system_prompt
         # Delivery differs per runtime (mirrors _run_create): claude takes the
         # preamble via --append-system-prompt + an explicit --add-dir write grant;
@@ -14284,6 +14296,103 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "kind":    kind,
                     "hint":    "Subprocess dispatched. Poll /__run/<runId> for live status; the node's runStatus will flip on the canvas when the subprocess exits.",
                 }
+
+            elif kind == "assistant-strategy-orchestrator":
+                # AGENT-DRIVEN strategy chain. The run gets the full harness
+                # TRACKING (RunState, streamed transcript, Task-subagent
+                # visibility, resume) but a BARE system prompt - the contract
+                # below is self-contained, the capabilities catalog is dead
+                # weight here. Division of labour: the agent RESEARCHES and
+                # posts each part's finished payload as `strategyRun` on that
+                # part's node; the EDITOR's reconcile effect renders the board
+                # with the client layout engine. Parts already done resume for
+                # free (flagged SKIP below).
+                plan = body.get("chainPlan") or node.get("chainPlan") or {}
+                part_ids = body.get("partIds") or ((node.get("partIds") or {}).get("ids")) or []
+                parts = [p for p in (plan.get("parts") or []) if isinstance(p, dict) and (p.get("task") or "").strip()]
+                if len(parts) < 2 or len(part_ids) < len(parts):
+                    err = (400, {"error": "chain not ready: approve the chain plan first (need >=2 parts + scaffolded part nodes)"})
+                else:
+                    part_ids = [str(p) for p in part_ids[: len(parts)]]
+                    lines = []
+                    for i, p in enumerate(parts):
+                        pn = nodes_by_id.get(part_ids[i]) or {}
+                        done = bool((pn.get("result") or {}).get("kind") == "strategy" and pn.get("runStatus") == "done")
+                        lines.append("%d. node `%s`%s - %s: %s%s" % (
+                            i + 1, part_ids[i], " [ALREADY DONE - SKIP, reuse its summary]" if done else "",
+                            (p.get("title") or "part"), p.get("task"),
+                            (" (focus: %s)" % p.get("focus")) if p.get("focus") else ""))
+                    parts_block = "\n".join(lines)
+                    catalog = (
+                        'statement: no per-point fields | metrics: "value","unit" | affinity: "cluster" | '
+                        'positioning: "px","py" in 0..1 (+ top-level "axes":{"x":["left","right"],"y":["bottom","top"]}) | '
+                        'timeline: "order" 1..n,"when" | flow: "step" 1..n,"shape" "rect"|"diamond" | loop: "step" | '
+                        'matrix: "row","col" | canvas: "zone" (+ top-level "zones":[...]) | '
+                        'journey: "stage","lane","mood" -1..1 (+ top-level "stages":[...],"lanes":[...]) | '
+                        'cards: none | pillars: "pillar" | keyvisual: "imagePrompt" | composite: "cluster"')
+                    contract = (
+                        '{"presPlan": {"header": "<board title, <=8 words>", "description": "<1-2 sentences>",\n'
+                        '  "keyView": {"layout": "<catalog id>", "axes": null, "note": "<why>"},\n'
+                        '  "sections": [{"key": "keyview", "on": true, "note": ""}, {"key": "breakdown", "on": true, "note": ""},\n'
+                        '               {"key": "insights", "on": true, "note": ""}, {"key": "summary", "on": true, "note": ""},\n'
+                        '               {"key": "drivers", "on": <true only if change-over-time>, "note": ""}],\n'
+                        '  "breakdownStyle": "table", "attributes": ["<3-8 attribute names for THIS part>"],\n'
+                        '  "visuals": {"wanted": false, "kinds": [], "note": ""}},\n'
+                        ' "sk": {"statement": "<the part strategy in 1-2 sentences>",\n'
+                        '  "points": [{"id": 1, "point": "<one sentence>", <layout fields per catalog>}],\n'
+                        '  "drivers": {"current": "...", "target": "...", "factors": [{"factor": "...", "role": "driver|barrier|uncertain", "note": "..."}]}},\n'
+                        ' "gathered": {"<pointId>": {"attrs": {"<attribute>": "<finding, 1-3 sentences>"},\n'
+                        '  "stance": "support|oppose|challenge|unverified", "note": "<one line>", "url": "", "snippet": "", "image": "",\n'
+                        '  "insights": [{"title": "<short>", "text": "<2-4 sentences>"}]}},\n'
+                        ' "summary": {"headline": "<ONE punchy sentence>", "support": "<=2 sentences>", "bullets": ["<one line each, 4-8>"]}}')
+                    system_prompt = (
+                        "You DRIVE a chain of strategy boards on the Woven canvas. You are the researcher "
+                        "and writer; the EDITOR is the renderer - never draw boards or edit files yourself, "
+                        "you deliver finished part payloads over HTTP and stop.\n\n"
+                        "PROCESS - for each part in the task list, IN ORDER (skip parts marked ALREADY DONE, "
+                        "but reuse their summaries as grounding):\n"
+                        "1. RESEARCH the part's ask properly. Fan out Task subagents for parallel legwork "
+                        "(one per candidate key point works well) and use web search/fetch to validate. Ground "
+                        "on the CONTEXT block and every earlier part's summary; never repeat an earlier part.\n"
+                        "2. COMPOSE the part payload - EXACTLY this JSON shape:\n" + contract + "\n"
+                        "Rules: 3-8 points; pick the key-view layout that genuinely fits and supply each "
+                        "point's layout fields; honest stances (unverified when you could not validate); "
+                        "1-3 insights per point, 12 max; drivers only when the part is change-oriented.\n"
+                        "KEY-VIEW LAYOUT CATALOG (id: per-point fields): " + catalog + "\n"
+                        "3. DELIVER the part - POST to the daemon (this is your ONLY write path):\n"
+                        "curl -sS -X POST \"$TH_DAEMON_URL/__workflow/node/<partNodeId>/status?project=$TH_PROJECT_ID\" "
+                        "-H 'Content-Type: application/json' --data-binary @payload.json\n"
+                        "where payload.json is {\"strategyRun\": <the payload object>, \"task\": \"<the part's ask>\"} "
+                        "(write it to a temp file first; heredocs mangle big JSON).\n"
+                        "4. Carry the part's summary forward and continue.\n\n"
+                        "WHEN EVERY PART IS DELIVERED: settle the chain - one final POST to YOUR OWN node:\n"
+                        "curl -sS -X POST \"$TH_DAEMON_URL/__workflow/node/" + str(node_id) + "/status?project=$TH_PROJECT_ID\" "
+                        "-H 'Content-Type: application/json' --data-binary '{\"output\": \"<JSON string: "
+                        "{\\\"headline\\\":..., \\\"support\\\":..., \\\"bullets\\\":[...]} - the overall strategy across the parts>\"}'\n"
+                        "Then print a one-line completion summary and STOP.\n\n"
+                        "HARD RULES: never edit workflow.json or any project file directly; never invent a "
+                        "part node id; if a POST fails retry once, then report the failure and continue to "
+                        "the next part.")
+                    kick = ("Drive this strategy chain.\n\nOVERALL ASK:\n" + str(node.get("task") or "") +
+                            ("\n\nCHAIN LOGIC: " + str(plan.get("why") or "") if plan.get("why") else "") +
+                            "\n\nPARTS (in order):\n" + parts_block)
+                    prompt_text = kick + (("\n\n<context>\n" + upstream_text + "\n</context>") if upstream_text else "")
+                    project_id = (qs.get("project") or ["default"])[0] if hasattr(qs, "get") else "default"
+                    branch2 = self._default_prototype_slug(project_root) or "main"
+                    run_id, err_reply = self._spawn_node_agent(
+                        project_root=project_root, project_id=project_id, branch=branch2,
+                        node_id=node_id, system_prompt=system_prompt, prompt_text=prompt_text,
+                        title="Strategy chain: " + str(node.get("task") or "")[:48],
+                        chain_rest=chain_rest, bare=True)
+                    if err_reply:
+                        raise RuntimeError(err_reply[1].get("error") or "spawn failed")
+                    node["runStatus"] = "running"
+                    node["runId"] = run_id
+                    node["runRunId"] = run_id
+                    node.pop("runError", None)
+                    async_dispatched = True
+                    out = {"spawned": True, "runId": run_id, "kind": kind,
+                           "hint": "Chain driver dispatched BARE (tracking without the capabilities preamble). Parts land as strategyRun payloads; the editor lays each board."}
 
             elif kind == "animated-sprite":
                 # Headless daemon-side sprite generation - the same 3-step
@@ -14810,6 +14919,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                                 changed[f] = v
                         except (TypeError, ValueError):
                             pass
+                # Agent-driven strategy payload seam: the chain-driver agent
+                # POSTs a part's finished research here as `strategyRun`; the
+                # editor's reconcile effect materializes the board with the
+                # client layout engine, then POSTs null to clear it.
+                if akind == "assistant-strategy" and "strategyRun" in body:
+                    v = body["strategyRun"]
+                    if v is None or isinstance(v, dict):
+                        node["strategyRun"] = v
+                        changed["strategyRun"] = "cleared" if v is None else "payload"
                 if akind == "assistant-interview" and "pushPast" in body and isinstance(body["pushPast"], list):
                     cleaned_pp = []
                     for entry in body["pushPast"][:10]:

@@ -27085,11 +27085,13 @@ function WorkflowCanvas() {
             // path (brainstorm / per-card) ever touches these kinds. A fresh
             // load has no in-flight assistant run, so a persisted "running" is
             // always stale and safe to clear here.
+            // assistant-strategy-orchestrator is deliberately NOT in this
+            // list: its chain runs are DAEMON agent runs with a completion
+            // hook (an owner), so a persisted "running" may be live.
             const assistantStuck = (n.kind === "assistant-research"
                                  || n.kind === "assistant-testing"
                                  || n.kind === "assistant-deepresearch"
                                  || n.kind === "assistant-strategy"
-                                 || n.kind === "assistant-strategy-orchestrator"
                                  || n.kind === "table")
                                  && n.runStatus === "running";
             if (n.runStatus !== "pending" && n.runStatus !== "paused" && !dsStuck && !assistantStuck) return n;
@@ -46782,77 +46784,29 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         updateNode(nodeId, { partIds: { forTask: task, ids } });
       }
 
-      // Phase C: auto-drive the parts in order, feeding summaries forward.
-      // Material wired into the orchestrator (prompts / folders / web pages /
-      // section bundles) is SHARED grounding for every part - the parts have
-      // no user gates of their own to attach material at.
-      const upsC = resolveUpstreamInputs(node, data.nodes, data.edges, { wb: data.wb });
-      let sharedCtx = _assistantCollectText(upsC);
-      const cFolder = await assistantFetchFolderText(upsC);
-      if (cFolder) sharedCtx = sharedCtx ? (sharedCtx + "\n\n" + cFolder) : cFolder;
-      const cWeb = await assistantFetchWebText(upsC);
-      if (cWeb) sharedCtx = sharedCtx ? (sharedCtx + "\n\n" + cWeb) : cWeb;
-      const partStates = parts.map(p => ({ title: p.title || p.task.slice(0, 40), status: "pending", summary: "" }));
-      const writeResult = (summary) => updateNode(nodeId, { result: {
-        kind: "strategy-chain", task, builtAt: Date.now(), why: plan.why || "",
-        parts: JSON.parse(JSON.stringify(partStates)), summary: summary || "",
-      } });
-      writeResult("");
-      const summaries = [];
-      for (let i = 0; i < parts.length; i++) {
-        // Resume: a part whose board already landed (done run, same task)
-        // is reused rather than re-run, so an interrupted chain - closed
-        // tab, error later in the sequence - picks up where it stopped.
-        const subNow = (dataNodesRef.current || []).find(n2 => n2.id === ids[i]);
-        if (subNow && subNow.result && subNow.result.kind === "strategy"
-            && subNow.runStatus === "done"
-            && (subNow.task || "").trim() === (parts[i].task || "").trim()) {
-          const flat = _strategySummaryText(subNow.result.summary) || subNow.result.statement || "";
-          if (flat) {
-            summaries.push((parts[i].title ? parts[i].title + ": " : "") + flat);
-            partStates[i].status = "done";
-            partStates[i].summary = flat;
-            writeResult("");
-            continue;
-          }
-        }
-        partStates[i].status = "running";
-        writeResult("");
-        setRun({ status: "loading", phase: `part ${i + 1}/${parts.length}: ${partStates[i].title}` });
-        // Let React commit the scaffold / previous part's writes so the
-        // freshest setupStrategy instance sees the sub-node.
-        await new Promise(r => setTimeout(r, 120));
-        let r2 = null;
-        try {
-          r2 = await (setupStrategyRef.current && setupStrategyRef.current(ids[i], {
-            auto: { direction: (parts[i].focus || "") + (plan.why ? "\nChain logic: " + plan.why : ""),
-                    priorSummaries: summaries.slice(), sharedContext: sharedCtx },
-          }));
-        } catch (e) { r2 = null; }
-        if (r2 && (r2.summary || r2.statement)) {
-          summaries.push((parts[i].title ? parts[i].title + ": " : "") + (r2.summary || r2.statement));
-          partStates[i].status = "done";
-          partStates[i].summary = r2.summary || r2.statement || "";
-        } else {
-          partStates[i].status = "error";
-        }
-        writeResult("");
-      }
-      // Chain summary across the parts that landed.
-      setRun({ status: "loading", phase: "settling the chain summary" });
-      let chainSummary = "";
-      if (summaries.length) {
-        const sText = await assistantLlm([{ role: "user", content:
-          `You LEAD this strategy chain. Compose the OVERALL strategy from the parts' summaries - how they lock together, the sequence, and the single thread that makes it one strategy.\n\nOVERALL ASK:\n${task}\n\nPART SUMMARIES:\n${summaries.map((s, i) => (i + 1) + ". " + s).join("\n")}\n\nReturn ONLY JSON: {"summary":{"headline":"<ONE punchy sentence - the whole chain as a phrase>","support":"<1-2 sentences backing it, NO MORE>","bullets":["<one line per part: how it locks into the chain>", "..."]}}. 4-8 bullets. No prose.` }],
-          { model: node.model, maxTokens: 1500 });
-        chainSummary = _strategySummaryObj((_drExtractObj(sText) || {}).summary);
-      }
-      writeResult(chainSummary);
-      const anyError = partStates.some(p => p.status === "error");
-      updateNode(nodeId, { runStatus: anyError ? "error" : "done" });
-      setRun(anyError
-        ? { status: "error", error: "Some parts failed - re-run to retry them." }
-        : { status: "done", phase: "chain done", ranAt: Date.now() });
+      // Phase C: dispatch the AGENT chain driver - a real tracked daemon run
+      // (RunState, streamed transcript, Task-subagent visibility, resume)
+      // with a BARE system prompt: the driver contract only, none of the
+      // capabilities-preamble weight. The agent researches each part and
+      // posts its finished payload back as `strategyRun`; the reconcile
+      // effects below render each board with the client layout engine and
+      // settle the chain result. Wired material reaches the agent through
+      // the daemon's own upstream resolve (prompts / folders / web pages /
+      // section bundles), so nothing needs to be forwarded from here.
+      setRun({ status: "loading", phase: "saving canvas, dispatching the chain agent" });
+      // Let the debounced workflow save flush so the just-scaffolded part
+      // nodes exist on disk for the agent's status POSTs.
+      await new Promise(r => setTimeout(r, 1500));
+      const proj = activeProjectId();
+      const slug = activePrototypeSlug();
+      const rr = await fetch(apiUrl(`/__workflow/node/${nodeId}/run?project=${encodeURIComponent(proj || "")}&prototype=${encodeURIComponent(slug || "")}`), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chainPlan: plan, partIds: ids }),
+      });
+      const j = await rr.json().catch(() => ({}));
+      if (!rr.ok || !j.runId) throw new Error(j.error || ("chain dispatch failed (HTTP " + rr.status + ")"));
+      updateNode(nodeId, { runStatus: "running", runId: j.runId, runRunId: j.runId });
+      setRun({ status: "done", phase: "agent driving - open Chat to watch", ranAt: Date.now() });
     } catch (e) {
       updateNode(nodeId, { runStatus: "error" });
       setRun({ status: "error", error: String(e?.message || e) });
@@ -46879,6 +46833,168 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     });
     setTimeout(() => window.dispatchEvent(new CustomEvent("th:focus-node", { detail: { nodeId: id } })), 60);
   }, [data, setData]);
+
+  // ── Agent-driven strategy materializer ───────────────────────────────
+  // The chain-driver agent researches a part and posts the finished payload
+  // to that part's node as `strategyRun` (via the daemon status endpoint;
+  // it arrives here through the SSE workflow merge). This turns the payload
+  // into exactly what a browser-driven run builds - breakdown table, master
+  // section board, insight markers, float-panel result - with the client
+  // layout engine. Agent = research + tracking; editor = presentation.
+  const _materializingRef = useRef(new Set());
+  const materializeStrategyRun = useCallback(async (nodeId) => {
+    if (_materializingRef.current.has(nodeId)) return;
+    _materializingRef.current.add(nodeId);
+    try {
+      const node = (dataNodesRef.current || []).find(n => n.id === nodeId);
+      const raw = node && node.strategyRun;
+      if (!node || !raw || typeof raw !== "object") return;
+      const t0 = Date.now();
+      const plan = raw.presPlan || {};
+      const KEYS = ["keyview", "breakdown", "insights", "summary", "drivers"];
+      const secByKey = {};
+      for (const s of (plan.sections || [])) if (s && KEYS.includes(s.key)) secByKey[s.key] = s;
+      const enabled = (k) => { const s = secByKey[k]; return !s || s.on !== false; };
+      const layoutId = STRATEGY_LAYOUTS[(plan.keyView || {}).layout] ? plan.keyView.layout : "statement";
+      const attributes = (Array.isArray(plan.attributes) && plan.attributes.length
+        ? plan.attributes : ["Evidence", "Implication"]).slice(0, 8).map(String);
+      const sk = { ...(raw.sk || {}) };
+      sk.points = (Array.isArray(sk.points) ? sk.points : []).slice(0, 8)
+        .map((p, i) => ({ ...p, id: p.id || (i + 1), point: String(p.point || "") }));
+      if (!sk.points.length) return;
+      const gathered = {};
+      for (const p of sk.points) {
+        const g = (raw.gathered || {})[p.id] || (raw.gathered || {})[String(p.id)] || {};
+        gathered[p.id] = { ...g, attrs: g.attrs || {},
+          insights: (Array.isArray(g.insights) ? g.insights : []).slice(0, 3)
+            .map(x => ({ title: String((x && x.title) || "").slice(0, 80), text: String((x && x.text) || "") }))
+            .filter(x => x.title || x.text) };
+      }
+      const header = String(plan.header || (node.task || "").slice(0, 60));
+      const desc = String(plan.description || "");
+      const summary = _strategySummaryObj(raw.summary);
+      if (node.tableId) _assistantDropTable(node.tableId);
+      let tableId = null;
+      const INS_COL = 1 + attributes.length + 2, VIS_COL = INS_COL + 1;
+      if (enabled("breakdown")) {
+        const headers = ["Point", ...attributes, "Validation", "Sources", "Insights", "Visual"];
+        const colWidths = [240, ...attributes.map(() => 240), 240, 300, 140, 300];
+        const rows = sk.points.map(p => [p.point, ...attributes.map(a => String((gathered[p.id].attrs || {})[a] || "")), "", "", "", ""]);
+        const dims = _strategyLayoutDims(layoutId, sk);
+        tableId = workflowBuildResultTable({
+          title: "Breakdown: " + header.slice(0, 32), headers, rows,
+          x: Math.round(node.x + (node.w || 460) + 460 + dims.SECW + 80), y: Math.round(node.y), colWidths,
+        });
+        updateNode(nodeId, { tableId });
+        sk.points.forEach((p, i) => {
+          const g = gathered[p.id], r = i + 1;
+          const sw = _drStanceWord(g.stance);
+          workflowAppendCellBox(tableId, r, 1 + attributes.length, sw.toUpperCase() + (g.note ? ": " + g.note : ""), _drStanceColor(sw));
+          if (g.url || g.snippet) {
+            workflowAppendCellBox(tableId, r, 2 + attributes.length,
+              (g.snippet ? "“" + g.snippet + "”\n" : "") + (g.url || ""), "blue");
+          }
+          if (g.image && /^https?:/i.test(g.image)) {
+            workflowAddCellNode(tableId, r, VIS_COL, "browser", { url: g.image, cellW: 280, cellH: 190 });
+          }
+        });
+      }
+      const insights = [];
+      if (enabled("insights")) {
+        for (const p of sk.points) {
+          for (const ins of gathered[p.id].insights) {
+            if (insights.length >= 12) break;
+            insights.push({ n: insights.length + 1, pointId: p.id, title: ins.title || ("Insight " + (insights.length + 1)), text: ins.text || "" });
+          }
+        }
+      }
+      const built = _strategyBuildBoard({
+        setData, node, nodeId, layoutId,
+        plan: { ...plan, keyView: plan.keyView || { layout: layoutId } },
+        sk, gathered, insights, summary, images: [], header, desc, enabled, tableId,
+      });
+      if (tableId && enabled("insights")) {
+        for (const ins of insights) {
+          const ri = sk.points.findIndex(p => String(p.id) === String(ins.pointId));
+          if (ri >= 0) workflowAddCellMarker(tableId, ri + 1, INS_COL, ins.n, built.insightIdByN[ins.n] || null);
+        }
+      }
+      updateNode(nodeId, {
+        result: {
+          kind: "strategy", task: node.task || "", builtAt: Date.now(),
+          header, description: desc, statement: sk.statement || "", layout: layoutId,
+          sections: KEYS.filter(enabled),
+          counters: { points: sk.points.length, insights: insights.length, attributes: attributes.length, elapsedMs: Date.now() - t0 },
+          points: sk.points.map(p => ({ id: p.id, point: p.point, stance: _drStanceWord(gathered[p.id].stance) })),
+          insights: insights.map(i => ({ n: i.n, title: i.title })),
+          summary,
+        },
+        presPlan: {
+          forTask: (node.task || "").trim(), done: true, custom: "",
+          header, description: desc, keyView: plan.keyView || { layout: layoutId },
+          sections: KEYS.map(k => ({ key: k, on: enabled(k), note: "" })),
+          breakdownStyle: "table", attributes,
+          visuals: { wanted: false, kinds: [], note: "" }, chain: null,
+        },
+        strategyRun: null, runStatus: "done",
+      });
+      if (tableId) updateNode(tableId, { runStatus: "done" });
+      // Clear the seam on DISK too: the save-merge deliberately guards
+      // strategyRun against stale echoes, so null must go through the
+      // status endpoint.
+      try {
+        await fetch(apiUrl(`/__workflow/node/${nodeId}/status?project=${encodeURIComponent(activeProjectId() || "")}`), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ strategyRun: null, runStatus: "done" }),
+        });
+      } catch { /* the local clear already landed; disk copy is harmless */ }
+    } finally {
+      _materializingRef.current.delete(nodeId);
+    }
+  }, [setData, updateNode, workflowBuildResultTable, workflowAppendCellBox, workflowAddCellNode, workflowAddCellMarker, _assistantDropTable]);
+  useEffect(() => {
+    for (const n of (data.nodes || [])) {
+      if (n && n.kind === "assistant-strategy" && n.strategyRun && typeof n.strategyRun === "object") {
+        materializeStrategyRun(n.id);
+      }
+    }
+  }, [data.nodes, materializeStrategyRun]);
+
+  // Chain settle: derive the orchestrator's float-panel result live from its
+  // part nodes (payload pending = running, board landed = done) and fold in
+  // the agent's final chain summary (posted to the node's `output`).
+  useEffect(() => {
+    for (const n of (data.nodes || [])) {
+      if (!n || n.kind !== "assistant-strategy-orchestrator" || !n.partIds) continue;
+      const ids = (n.partIds.ids || []);
+      const parts = ((n.chainPlan || {}).parts || []);
+      if (!ids.length || !parts.length) continue;
+      const partStates = parts.slice(0, ids.length).map((p, i) => {
+        const pn = (data.nodes || []).find(x => x && x.id === ids[i]);
+        const done = !!(pn && pn.result && pn.result.kind === "strategy" && pn.runStatus === "done");
+        return {
+          title: p.title || (p.task || "").slice(0, 40),
+          status: done ? "done" : (pn && pn.strategyRun) ? "running"
+            : (n.runStatus === "running" ? "running" : "pending"),
+          summary: done ? (_strategySummaryText(pn.result.summary) || "") : "",
+        };
+      });
+      let summary = "";
+      if (typeof n.output === "string" && n.output.trim()) {
+        const parsed = _drExtractObj(n.output);
+        summary = parsed ? _strategySummaryObj(parsed) : n.output.trim();
+      }
+      const cur = n.result;
+      const same = cur && cur.kind === "strategy-chain"
+        && JSON.stringify({ p: cur.parts, s: cur.summary }) === JSON.stringify({ p: partStates, s: summary });
+      if (!same) {
+        updateNode(n.id, { result: {
+          kind: "strategy-chain", task: n.task || "", builtAt: (cur && cur.builtAt) || Date.now(),
+          why: (n.chainPlan || {}).why || "", parts: partStates, summary,
+        } });
+      }
+    }
+  }, [data.nodes, updateNode]);
 
   // first (so a chain like `prompt → gen-image → rembg → asset` works when
   // you click Run on either skill - the runner figures out the dependency
@@ -80966,6 +81082,18 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
 function WorkflowStrategyChainNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  // The chain drive is a real daemon agent run - the standard chat dialog
+  // attaches by runId for tracking (transcript, Task subagents, stop).
+  // Single-docked-chat claim bus, same as the DS node.
+  const [chatOpen, setChatOpen] = useState(false);
+  useEffect(() => {
+    if (chatOpen) window.dispatchEvent(new CustomEvent("th:chat-claim", { detail: { owner: node.id } }));
+  }, [chatOpen, node.id]);
+  useEffect(() => {
+    const onClaim = (e) => { if (e.detail?.owner !== node.id) setChatOpen(false); };
+    window.addEventListener("th:chat-claim", onClaim);
+    return () => window.removeEventListener("th:chat-claim", onClaim);
+  }, [node.id]);
   const w = Math.max(400, node.w || 460), h = Math.max(440, node.h || 520);
   const busy = runState?.status === "loading";
   const task = (node.task || "").trim();
@@ -81060,10 +81188,32 @@ function WorkflowStrategyChainNode({ node, zoom, selected, onSelect, onMove, onR
               <button className="workflow-node-refiner-pushadd"
                 title="Clear the saved chain plan and decompose fresh on the next run."
                 onClick=${(e) => { e.stopPropagation(); onChange({ chainPlan: null }); }}>Re-plan</button>`}
-            ${runState?.status === "done" && html`<span className="workflow-node-iter-done">chain done</span>`}
+            ${node.runId && html`
+              <button className="workflow-node-refiner-pushadd"
+                title="Watch the chain-driver agent: live transcript, its subagents, stop / resume."
+                onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}><${Icon.CommentDots}/> Chat</button>`}
+            ${runState?.status === "done" && html`<span className="workflow-node-iter-done">${node.runId ? "agent driving" : "chain done"}</span>`}
             ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
           </div>`}
       </div>
+      ${chatOpen && html`<${WorkflowAgentChatDialog}
+        node=${{
+          id: node.id,
+          name: "Strategy chain",
+          runId: node.runId,
+          runStatus: node.runStatus === "running" ? "pending" : null,
+          conversation: [],
+          outputMode: "folder",
+          outputPath: "",
+        }}
+        wiredSystem=${""}
+        wiredInputs=${[]}
+        wiredReadRoot=${""}
+        wiredWriteRoot=${""}
+        wiredFileOut=${""}
+        onClose=${() => setChatOpen(false)}
+        onChange=${(patch) => { if (patch && patch.runId !== undefined) onChange({ runId: patch.runId, runRunId: patch.runId }); }}
+      />`}
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
            title="Context: prompt / asset / folder / web page / palette / typography / section - wire as many as you like." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
         <div className="workflow-port-dot"/>
