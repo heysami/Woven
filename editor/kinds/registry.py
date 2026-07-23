@@ -1360,6 +1360,28 @@ KINDS = {
         "notes": "Two user gates before any research spend: (1) up to 3 clarifying questions, (2) a PRESENTATION PLAN - key-view layout picked from the strategy layout registry (statement / metrics / affinity / positioning 2x2 / timeline / flow / loop / matrix / canvas / journey / cards / pillars / keyvisual / composite) plus per-section toggles (key view, breakdown of points, collated insights, summary, key driving factors) and a free-text custom requirement - which the user edits on the node before the build. Per-key-point agents then gather + validate the plan's attributes (web via /__assistant/research or Exa per the searchVia cascade; context-only from wired material). Output: a canvas section (key view laid out per template + collated insights with numbered marker wb items that click-navigate to the writeups + summary + optional driving factors), a per-point breakdown table, and - when the user enables visual direction on the plan - palette / typography / generated-image nodes beside the board.",
     },
 
+    # ── assistant-strategy-orchestrator (chain of strategy assistants) ────
+    "assistant-strategy-orchestrator": {
+        "title":        "Strategy chain orchestrator (auto-drives strategy assistants)",
+        "category":     "assistant",
+        "inputs": {
+            "task":      {"type": "markdown", "userEditable": True},
+            "model":     {"type": "text",     "default": "claude-opus-4-8", "userEditable": True},
+            "searchVia": {"type": "text",     "default": "", "userEditable": True},
+            "chainPlan": {"type": "object",   "userEditable": False},
+            "partIds":   {"type": "object",   "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "client-iterator",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "runStatusFlow": ["queued", "running", "done", "error"],
+        "pauseAfter":   False,
+        "notes": "For strategy asks too broad for one board (e.g. a whole business strategy). Plans a CHAIN of 2-5 supporting strategies (positioning / product / go-to-market / pricing / brand ...) as an editable gate, scaffolds one assistant-strategy node per part (wired orchestrator -> part and part -> next part), then auto-drives them in order: each part runs with its clarify + presentation-plan gates skipped, taking direction from the chain plan and the previous parts' summaries as grounding (image generation stays off in auto mode). Finishes with a chain summary composed across the parts. The single strategy assistant's plan gate also detects chain-worthy asks and offers to spawn this node pre-seeded.",
+    },
+
     # ── iterator-remix ────────────────────────────────────────────────────
     "iterator-remix": {
         "title":        "Iterator - remix (N parallel HTML variants)",
@@ -3758,6 +3780,10 @@ KIND_IO = {
     },
     "assistant-strategy": {
         "provides": [{"port": "out", "label": "Strategy board", "tags": ["section"]}],
+        "accepts":  [{"port": "in", "label": "Context", "tags": ["text", "text-gen", "asset", "section", "folder"], "ingest": "context"}],
+    },
+    "assistant-strategy-orchestrator": {
+        "provides": [{"port": "out", "label": "Strategy chain", "tags": ["section"]}],
         "accepts":  [{"port": "in", "label": "Context", "tags": ["text", "text-gen", "asset", "section", "folder"], "ingest": "context"}],
     },
     "composer": {

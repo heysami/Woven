@@ -13188,7 +13188,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                         # (same kind list as the app.js load sanitizer).
                         _no_owner_kinds = ("design-system", "assistant-research",
                                            "assistant-testing", "assistant-deepresearch",
-                                           "assistant-strategy", "table")
+                                           "assistant-strategy", "assistant-strategy-orchestrator",
+                                           "table")
                         if disk_status == "running" and disk_n.get("kind") not in _no_owner_kinds:
                             n["runStatus"] = "running"
                             disk_error = disk_n.get("runError")
@@ -13223,6 +13224,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                             # clarify + presPlan deliberately NOT guarded: posting
                             # null is how the editor clears them (Re-ask / Re-plan).
                             "assistant-strategy": ("task", "model", "maxAgents"),
+                            # chainPlan deliberately NOT guarded (null clears it).
+                            "assistant-strategy-orchestrator": ("task", "model"),
                             "iterator-remix":   ("variants",),
                             "design-system":    ("spec",),
                         }.get(nkind, ())
@@ -14687,13 +14690,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             # before the user clicks Run; the client drivers read these at
             # click-time. Text fields, then numbers, then the pushPast array.
             akind = node.get("kind")
-            if akind in ("assistant-interview", "assistant-research", "assistant-testing", "assistant-deepresearch", "assistant-strategy"):
+            if akind in ("assistant-interview", "assistant-research", "assistant-testing", "assistant-deepresearch", "assistant-strategy", "assistant-strategy-orchestrator"):
                 _str_fields = {
                     "assistant-interview": ("goal", "focus", "model"),
                     "assistant-research":  ("goal", "criteria", "model", "searchVia", "category"),
                     "assistant-testing":   ("task", "model"),
                     "assistant-deepresearch": ("task", "model", "searchVia"),
                     "assistant-strategy": ("task", "model", "searchVia"),
+                    "assistant-strategy-orchestrator": ("task", "model", "searchVia"),
                 }.get(akind, ())
                 for f in _str_fields:
                     if f in body and isinstance(body[f], str) and body[f].strip():

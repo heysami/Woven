@@ -26121,6 +26121,7 @@ const _LEGACY_EDITABLE_FIELDS = {
   "assistant-testing":   ["task", "model", "personaTypes", "testersPerType", "maxTesters"],
   "assistant-deepresearch": ["task", "model", "searchVia", "maxAgents", "rounds"],
   "assistant-strategy": ["task", "model", "searchVia", "maxAgents"],
+  "assistant-strategy-orchestrator": ["task", "model", "searchVia"],
   "iterator-remix":   ["variants"],
   "design-system":    ["spec"],
 };
@@ -27059,6 +27060,7 @@ function WorkflowCanvas() {
                                  || n.kind === "assistant-testing"
                                  || n.kind === "assistant-deepresearch"
                                  || n.kind === "assistant-strategy"
+                                 || n.kind === "assistant-strategy-orchestrator"
                                  || n.kind === "table")
                                  && n.runStatus === "running";
             if (n.runStatus !== "pending" && n.runStatus !== "paused" && !dsStuck && !assistantStuck) return n;
@@ -27966,16 +27968,18 @@ function workflowPortPosition(node, side, ctx) {
   // per-kind minimums - mirror BOTH here or the wire endpoint lands below /
   // beside the drawn diamond (the old bodyTop-offset math missed by 16px on
   // every assistant edge).
-  if (node.kind === "assistant-interview" || node.kind === "assistant-research" || node.kind === "assistant-testing" || node.kind === "assistant-deepresearch" || node.kind === "assistant-strategy") {
+  if (node.kind === "assistant-interview" || node.kind === "assistant-research" || node.kind === "assistant-testing" || node.kind === "assistant-deepresearch" || node.kind === "assistant-strategy" || node.kind === "assistant-strategy-orchestrator") {
     const cw = node.kind === "assistant-interview" ? Math.max(360, node.w || 440)
              : node.kind === "assistant-testing"   ? Math.max(380, node.w || 440)
              : node.kind === "assistant-deepresearch" ? Math.max(380, node.w || 440)
              : node.kind === "assistant-strategy"  ? Math.max(400, node.w || 460)
+             : node.kind === "assistant-strategy-orchestrator" ? Math.max(400, node.w || 460)
              :                                       Math.max(360, node.w || 420);
     const ch = node.kind === "assistant-interview" ? Math.max(420, node.h || 480)
              : node.kind === "assistant-testing"   ? Math.max(460, node.h || 500)
              : node.kind === "assistant-deepresearch" ? Math.max(480, node.h || 540)
              : node.kind === "assistant-strategy"  ? Math.max(500, node.h || 560)
+             : node.kind === "assistant-strategy-orchestrator" ? Math.max(440, node.h || 520)
              :                                       Math.max(440, node.h || 460);
     if (side === "in")  return { x: node.x,      y: node.y + ch / 2 };
     if (side === "out") return { x: node.x + cw, y: node.y + ch / 2 };
@@ -28203,6 +28207,32 @@ function _strategyFactorColor(role) {
   return "gray";
 }
 
+// Layout dimensions shared by the board builder AND the driver's table /
+// visual-node placement. The breakdown table is created BEFORE the board
+// (it fills live during the gather), so its x offset must already clear the
+// section's final width - computing SECW here, from the skeleton alone, is
+// what keeps the two from stamping on top of each other.
+function _strategyLayoutDims(layoutId, sk) {
+  const PAD = 24, STK = 200, GAP = 16;
+  const pts = (sk && sk.points) || [];
+  const uniq = (vals) => { const out = []; for (const v of vals) { const s = String(v || "").trim() || "Other"; if (!out.includes(s)) out.push(s); } return out; };
+  const clusters = uniq(pts.map(p => p.cluster || p.pillar));
+  const mCols = uniq(pts.map(p => p.col)), mRows = uniq(pts.map(p => p.row));
+  const stages = (Array.isArray(sk.stages) && sk.stages.length ? sk.stages.map(String) : uniq(pts.map(p => p.stage)));
+  const lanes = (Array.isArray(sk.lanes) && sk.lanes.length ? sk.lanes.map(String) : uniq(pts.map(p => p.lane)));
+  const SECW =
+    layoutId === "affinity" || layoutId === "composite" || layoutId === "pillars"
+      ? Math.min(1240, Math.max(760, PAD * 2 + Math.min(4, Math.max(1, clusters.length)) * (STK + 32 + GAP)))
+    : layoutId === "timeline" ? Math.max(900, PAD * 2 + pts.length * 240)
+    : layoutId === "flow"     ? Math.max(760, PAD * 2 + Math.min(4, pts.length) * 250)
+    : layoutId === "matrix"   ? Math.max(760, PAD * 2 + 160 + Math.max(1, mCols.length) * 216)
+    : layoutId === "canvas"   ? 980
+    : layoutId === "journey"  ? Math.max(900, PAD * 2 + 140 + Math.max(1, stages.length) * 220)
+    : layoutId === "loop"     ? 820
+    : 760;
+  return { SECW, clusters, mCols, mRows, stages, lanes, uniq };
+}
+
 // ── Strategy board builder ────────────────────────────────────────────────
 // One atomic setData pass that lays the whole strategy board into a fresh
 // section: header / description, the key view (per STRATEGY_LAYOUTS
@@ -28224,22 +28254,7 @@ function _strategyBuildBoard({ setData, node, nodeId, layoutId, plan, sk, gather
     return g && g.stance ? _drStanceColor(g.stance) : "yellow";
   };
 
-  // Section width per layout (content-driven; the tall dimension flows).
-  const uniq = (vals) => { const out = []; for (const v of vals) { const s = String(v || "").trim() || "Other"; if (!out.includes(s)) out.push(s); } return out; };
-  const clusters = uniq(pts.map(p => p.cluster || p.pillar));
-  const mCols = uniq(pts.map(p => p.col)), mRows = uniq(pts.map(p => p.row));
-  const stages = (Array.isArray(sk.stages) && sk.stages.length ? sk.stages.map(String) : uniq(pts.map(p => p.stage)));
-  const lanes = (Array.isArray(sk.lanes) && sk.lanes.length ? sk.lanes.map(String) : uniq(pts.map(p => p.lane)));
-  const SECW =
-    layoutId === "affinity" || layoutId === "composite" || layoutId === "pillars"
-      ? Math.min(1240, Math.max(760, PAD * 2 + Math.min(4, Math.max(1, clusters.length)) * (STK + 32 + GAP)))
-    : layoutId === "timeline" ? Math.max(900, PAD * 2 + pts.length * 240)
-    : layoutId === "flow"     ? Math.max(760, PAD * 2 + Math.min(4, pts.length) * 250)
-    : layoutId === "matrix"   ? Math.max(760, PAD * 2 + 160 + Math.max(1, mCols.length) * 216)
-    : layoutId === "canvas"   ? 980
-    : layoutId === "journey"  ? Math.max(900, PAD * 2 + 140 + Math.max(1, stages.length) * 220)
-    : layoutId === "loop"     ? 820
-    : 760;
+  const { SECW, clusters, mCols, mRows, stages, lanes, uniq } = _strategyLayoutDims(layoutId, sk);
   const INNER = SECW - PAD * 2;
 
   const out = { insightIdByN: {}, right: 0, top: 0 };
@@ -28579,17 +28594,27 @@ function _strategyBuildBoard({ setData, node, nodeId, layoutId, plan, sk, gather
       y += 10;
     }
 
-    // ── Collated insights ──
+    // ── Collated insights ── two columns once the list gets long, so a
+    // 10-insight strategy doesn't turn the section into a skyscraper.
     if (insightItems.length) {
       bind(wbMakeItem("text", { text: "Collated insights", w: INNER, fontSize: "md", bold: true, align: "left", color: "ink" }), bx + PAD, y);
       y += 34;
+      const twoCol = insightItems.length > 6 && INNER >= 640;
+      const colW = twoCol ? Math.floor((INNER - GAP) / 2) : INNER;
+      const colYs = [y, y];
       for (const { ins, title, body } of insightItems) {
-        bind(title, bx + PAD, y);
-        y += mh(ins.n + ". " + ins.title, INNER - 14) + 8;
-        bind(body, bx + PAD, y);
-        y += (body.h || 60) + 14;
+        const ci = twoCol ? (colYs[0] <= colYs[1] ? 0 : 1) : 0;
+        const x = bx + PAD + ci * (colW + GAP);
+        // Re-measure to the column width (items were created at full width).
+        title.w = colW - 14;
+        body.w = colW;
+        body.h = mh(ins.text, colW - 14) + 40;
+        bind(title, x, colYs[ci]);
+        colYs[ci] += mh(ins.n + ". " + ins.title, colW - 14) + 8;
+        bind(body, x, colYs[ci]);
+        colYs[ci] += (body.h || 60) + 14;
       }
-      y += 6;
+      y = Math.max(...colYs) + 6;
     }
 
     // ── Key driving factors ──
@@ -28628,11 +28653,14 @@ function _strategyBuildBoard({ setData, node, nodeId, layoutId, plan, sk, gather
     }
 
     const secBody = workflowMakeNodeOfKind("section", { title: header });
+    const secH = Math.max(360, y - by);
     nodes = nodes
       .map(n => n.id === nodeId ? { ...n, sectionId: secId, drIds: { wbIds } } : n)
-      .concat([{ id: secId, ...secBody, x: bx, y: by, w: SECW, h: Math.max(360, y - by) }]);
+      .concat([{ id: secId, ...secBody, x: bx, y: by, w: SECW, h: secH }]);
     out.right = bx + SECW;
+    out.left = bx;
     out.top = by;
+    out.bottom = by + secH;
     return { ...d, nodes, wb: [...keptWb, ...items] };
   });
   return out;
@@ -30009,6 +30037,19 @@ const WORKFLOW_NODE_FACTORY = {
     sectionId: p.sectionId || null, // board section (for re-run cleanup)
     drIds: p.drIds || null,         // { wbIds: [...] } board wb items (for re-run cleanup)
     visIds: p.visIds || null,       // { nodeIds: [...] } emitted palette/typography/asset nodes (for re-run cleanup)
+    expIds: p.expIds || null,       // { [pointId]: {sectionId, wbIds} } insist-loop side boards (for re-explore sweep)
+  }),
+  // Strategy chain orchestrator: decomposes a too-broad ask into a chain of
+  // supporting strategies (gated, editable), scaffolds one strategy
+  // assistant per part, and auto-drives them in order - each part grounded
+  // on the previous parts' summaries.
+  "assistant-strategy-orchestrator": (p) => ({
+    kind: "assistant-strategy-orchestrator", w: 460, h: 520,
+    task:  p.task  || "",   // the overall (chain-worthy) strategy ask
+    model: p.model || "claude-opus-4-8",
+    searchVia: p.searchVia || "",
+    chainPlan: p.chainPlan || null, // { forTask, why, parts:[{title,task,focus}], done }
+    partIds: p.partIds || null,     // { forTask, ids: [...] } scaffolded sub-node ids
   }),
   "composer": (p) => ({
     kind: "composer", w: 900, h: 600,
@@ -30367,6 +30408,12 @@ const WORKFLOW_CONNECT_DEFS = {
   "assistant-strategy": {
     label: "Strategy assistant",
     provides: { out: { label: "Strategy board (key view + breakdown + insights)", tags: ["section"] } },
+    accepts:  { in:  { label: "Context (prompt / asset / folder / section)",
+                       tags: ["text", "text-gen", "asset", "section", "folder"] } },
+  },
+  "assistant-strategy-orchestrator": {
+    label: "Strategy chain orchestrator",
+    provides: { out: { label: "Strategy chain (drives the part assistants)", tags: ["section"] } },
     accepts:  { in:  { label: "Context (prompt / asset / folder / section)",
                        tags: ["text", "text-gen", "asset", "section", "folder"] } },
   },
@@ -45871,18 +45918,30 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const setupStrategy = useCallback(async (nodeId, gateArg) => {
     const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
     const node = (data.nodes || []).find(n => n.id === nodeId);
-    if (!node) return;
+    if (!node) return null;
     const task = (node.task || "").trim();
-    if (!task) { setRun({ status: "error", error: "Describe the strategy ask first." }); return; }
+    if (!task) { setRun({ status: "error", error: "Describe the strategy ask first." }); return null; }
+    // AUTO mode (orchestrator-driven): both user gates are skipped - the
+    // chain plan already carries the direction, and prior parts' summaries
+    // ground this part. Image generation stays OFF (no cost without the
+    // user's explicit plan-gate consent). Returns { summary } when done.
+    const auto = (gateArg && gateArg.auto) || null;
     const t0 = Date.now();
     try {
       const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
       let ctx = _assistantCollectText(ups);
       const protoText = await assistantFetchPrototypeText(node, data.nodes, data.edges);
       if (protoText) ctx = ctx ? (ctx + "\n\n" + protoText) : protoText;
+      if (auto && Array.isArray(auto.priorSummaries) && auto.priorSummaries.length) {
+        ctx = (ctx ? ctx + "\n\n" : "") +
+          "EARLIER PARTS OF THIS STRATEGY CHAIN (build on these, do not repeat them):\n" +
+          auto.priorSummaries.map((s, i) => (i + 1) + ". " + s).join("\n");
+      }
 
       // Phase 0: directing questions (gateArg beats the stale node snapshot).
-      const clar = (gateArg && gateArg.clarify) || node.clarify;
+      const clar = auto
+        ? { forTask: task, done: true, answers: {}, questions: [] }
+        : ((gateArg && gateArg.clarify) || node.clarify);
       if (!clar || clar.forTask !== task) {
         setRun({ status: "loading", phase: "forming questions", error: null });
         updateNode(nodeId, { runStatus: "running" });
@@ -45901,15 +45960,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         setRun({ status: "await", phase: "questions ready", error: null });
         return;
       }
-      if (!clar.done) { setRun({ status: "await", phase: "answer the questions" }); return; }
-      const answers = (clar.questions || [])
-        .map((qq, i) => (clar.answers && String(clar.answers[i] || "").trim()) ? `Q: ${qq.q}\nA: ${clar.answers[i]}` : "")
-        .filter(Boolean).join("\n");
+      if (!clar.done) { setRun({ status: "await", phase: "answer the questions" }); return null; }
+      const answers = auto
+        ? ("DIRECTION FROM THE CHAIN ORCHESTRATOR:\n" + String(auto.direction || ""))
+        : (clar.questions || [])
+            .map((qq, i) => (clar.answers && String(clar.answers[i] || "").trim()) ? `Q: ${qq.q}\nA: ${clar.answers[i]}` : "")
+            .filter(Boolean).join("\n");
 
       // Phase 1: the presentation plan gate. gateArg.replan forces a fresh
       // proposal (the Re-plan button clears node.presPlan, but this closure's
-      // node snapshot may still carry the stale copy).
-      const plan = (gateArg && gateArg.replan) ? null : ((gateArg && gateArg.presPlan) || node.presPlan);
+      // node snapshot may still carry the stale copy). In AUTO mode the plan
+      // is generated then accepted immediately - no gate.
+      let plan = (gateArg && gateArg.replan) ? null : (auto ? null : ((gateArg && gateArg.presPlan) || node.presPlan));
       if (!plan || plan.forTask !== task) {
         setRun({ status: "loading", phase: "planning the presentation", error: null });
         updateNode(nodeId, { runStatus: "running" });
@@ -45920,43 +45982,53 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           (answers ? `\nUSER'S DIRECTION (clarifying Q&A):\n${answers}\n` : "") +
           (ctx ? `\nLINKED MATERIAL (excerpt):\n${ctx.slice(0, 1200)}\n` : "") +
           `\nKEY-VIEW LAYOUTS available:\n${catalog}\n` +
-          `\nDecide:\n1. The key-view layout that best fits this strategy.\n2. Which sections to build: "keyview" (the main view), "breakdown" (a per-point table of gathered + validated attributes), "insights" (collated numbered insights the board's markers link to), "summary", "drivers" (current state -> future target + key driving factors; ONLY when the strategy involves change over time or a target).\n3. 3-8 per-point ATTRIBUTES to research, named for THIS task (e.g. "Audience need", "Evidence", "Competitor take", "Risk").\n4. Whether VISUAL DIRECTION belongs in the output (palette / typography / generated imagery - design, brand, mood, narrative strategies). Default false; it costs image generation.\n` +
-          `\nReturn ONLY JSON: {"header":"<board title, <=8 words>","description":"<1-2 sentence board intro>","keyView":{"layout":"<id>","axes":{"x":["<left>","<right>"],"y":["<bottom>","<top>"]},"note":"<why this layout, one line>"},"sections":[{"key":"keyview|breakdown|insights|summary|drivers","on":true,"note":"<one line on what goes here>"}],"breakdownStyle":"table|cards","attributes":["..."],"visuals":{"wanted":false,"kinds":["palette","typography","image"],"note":"<one line>"}}. Include ALL five section keys (set "on" false for ones this strategy does not need). No prose.` }],
-          { model: node.model, maxTokens: 1800 });
+          `\nDecide:\n1. The key-view layout that best fits this strategy.\n2. Which sections to build: "keyview" (the main view), "breakdown" (a per-point table of gathered + validated attributes), "insights" (collated numbered insights the board's markers link to), "summary", "drivers" (current state -> future target + key driving factors; ONLY when the strategy involves change over time or a target).\n3. 3-8 per-point ATTRIBUTES to research, named for THIS task (e.g. "Audience need", "Evidence", "Competitor take", "Risk").\n4. Whether VISUAL DIRECTION belongs in the output (palette / typography / generated imagery - design, brand, mood, narrative strategies). Default false; it costs image generation.\n5. Whether this ask is really a CHAIN of strategies. A broad ask (e.g. a whole business strategy) decomposes into supporting strategies (positioning, product, go-to-market, pricing, brand …) that each deserve their own board; a focused ask does not. Recommend a chain ONLY when the decomposition genuinely adds insight.\n` +
+          `\nReturn ONLY JSON: {"header":"<board title, <=8 words>","description":"<1-2 sentence board intro>","keyView":{"layout":"<id>","axes":{"x":["<left>","<right>"],"y":["<bottom>","<top>"]},"note":"<why this layout, one line>"},"sections":[{"key":"keyview|breakdown|insights|summary|drivers","on":true,"note":"<one line on what goes here>"}],"breakdownStyle":"table|cards","attributes":["..."],"visuals":{"wanted":false,"kinds":["palette","typography","image"],"note":"<one line>"},"chain":{"recommended":false,"why":"<one line>","parts":[{"title":"<short name>","task":"<the sub-strategy ask, one sentence>","focus":"<what this part must nail>"}]}}. Include ALL five section keys (set "on" false for ones this strategy does not need); chain.parts only when recommended (2-4 parts). No prose.` }],
+          { model: node.model, maxTokens: 2200 });
         const pp = _drExtractObj(pText);
         if (!pp || !pp.keyView || !Array.isArray(pp.sections)) throw new Error("Could not form the presentation plan - try again.");
         const KEYS = ["keyview", "breakdown", "insights", "summary", "drivers"];
         const secByKey = {};
         for (const s of pp.sections) if (s && KEYS.includes(s.key)) secByKey[s.key] = s;
-        updateNode(nodeId, {
-          runStatus: null,
-          presPlan: {
-            forTask: task, done: false, custom: "",
-            header: String(pp.header || task.slice(0, 60)),
-            description: String(pp.description || ""),
-            keyView: {
-              layout: STRATEGY_LAYOUTS[pp.keyView.layout] ? pp.keyView.layout : "statement",
-              axes: pp.keyView.axes || null,
-              note: String(pp.keyView.note || ""),
-            },
-            sections: KEYS.map(k => ({
-              key: k,
-              on: secByKey[k] ? secByKey[k].on !== false : (k !== "drivers"),
-              note: String((secByKey[k] || {}).note || ""),
-            })),
-            breakdownStyle: pp.breakdownStyle === "cards" ? "cards" : "table",
-            attributes: (Array.isArray(pp.attributes) ? pp.attributes : []).slice(0, 8).map(String).filter(Boolean),
-            visuals: {
-              wanted: !!(pp.visuals && pp.visuals.wanted),
-              kinds: (pp.visuals && Array.isArray(pp.visuals.kinds) ? pp.visuals.kinds : ["palette", "typography", "image"]).map(String),
-              note: String((pp.visuals || {}).note || ""),
-            },
+        const fresh = {
+          forTask: task, done: false, custom: "",
+          header: String(pp.header || task.slice(0, 60)),
+          description: String(pp.description || ""),
+          keyView: {
+            layout: STRATEGY_LAYOUTS[pp.keyView.layout] ? pp.keyView.layout : "statement",
+            axes: pp.keyView.axes || null,
+            note: String(pp.keyView.note || ""),
           },
-        });
-        setRun({ status: "await", phase: "plan ready - review it on the node", error: null });
-        return;
+          sections: KEYS.map(k => ({
+            key: k,
+            on: secByKey[k] ? secByKey[k].on !== false : (k !== "drivers"),
+            note: String((secByKey[k] || {}).note || ""),
+          })),
+          breakdownStyle: pp.breakdownStyle === "cards" ? "cards" : "table",
+          attributes: (Array.isArray(pp.attributes) ? pp.attributes : []).slice(0, 8).map(String).filter(Boolean),
+          visuals: {
+            wanted: !!(pp.visuals && pp.visuals.wanted) && !auto,
+            kinds: (pp.visuals && Array.isArray(pp.visuals.kinds) ? pp.visuals.kinds : ["palette", "typography", "image"]).map(String),
+            note: String((pp.visuals || {}).note || ""),
+          },
+          chain: (!auto && pp.chain && pp.chain.recommended && Array.isArray(pp.chain.parts) && pp.chain.parts.length >= 2)
+            ? { recommended: true, why: String(pp.chain.why || ""),
+                parts: pp.chain.parts.slice(0, 4).map(p2 => ({
+                  title: String((p2 && p2.title) || "").slice(0, 60),
+                  task: String((p2 && p2.task) || ""),
+                  focus: String((p2 && p2.focus) || "") })) }
+            : null,
+        };
+        if (auto) {
+          plan = { ...fresh, done: true };
+          updateNode(nodeId, { presPlan: plan });
+        } else {
+          updateNode(nodeId, { runStatus: null, presPlan: fresh });
+          setRun({ status: "await", phase: "plan ready - review it on the node", error: null });
+          return null;
+        }
       }
-      if (!plan.done) { setRun({ status: "await", phase: "review the presentation plan" }); return; }
+      if (!plan.done) { setRun({ status: "await", phase: "review the presentation plan" }); return null; }
 
       // ── Build phase ──
       const enabled = (k) => { const s = (plan.sections || []).find(x => x.key === k); return !s || s.on !== false; };
@@ -46027,9 +46099,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         const headers = ["Point", ...attributes, "Validation", "Sources", "Insights", "Visual"];
         const colWidths = [240, ...attributes.map(() => 240), 240, 300, 140, 300];
         const rows = sk.points.map(p => [p.point, ...attributes.map(() => ""), "", "", "", ""]);
+        // The board section lands at node.x + w + 460 with the layout's final
+        // width - park the table PAST that edge so they never overlap (the
+        // section grows tall, the table grows wide; side by side is the only
+        // arrangement that survives both).
+        const dims = _strategyLayoutDims(layoutId, sk);
         tableId = workflowBuildResultTable({
           title: "Breakdown: " + header.slice(0, 32), headers, rows,
-          x: Math.round(node.x + (node.w || 460) + 460), y: Math.round(node.y + 720), colWidths,
+          x: Math.round(node.x + (node.w || 460) + 460 + dims.SECW + 80), y: Math.round(node.y), colWidths,
         });
         updateNode(nodeId, { tableId });
         updateNode(tableId, { runStatus: "running" });
@@ -46193,13 +46270,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               name: header.slice(0, 24),
               swatches: pal.map(s => ({ name: String(s.name || "--color"), value: String(s.value).startsWith("#") ? String(s.value) : "#" + String(s.value) })),
             });
-            if (body) { nodes.push({ id, ...body, x: vx, y: yy }); visNodeIds.push(id); yy += (body.h || 360) + 40; }
+            if (body) { nodes.push({ id, ...body, x: xx, y: vy }); visNodeIds.push(id); xx += (body.w || 360) + 40; }
           }
           for (const f of ((fin.visual || {}).fonts || []).slice(0, 2)) {
             if (!f || !f.family) continue;
             const id = workflowNewNodeId();
             const body = workflowMakeNodeOfKind("typography", { name: String(f.family), fontFamily: String(f.family) });
-            if (body) { nodes.push({ id, ...body, x: vx, y: yy }); visNodeIds.push(id); yy += (body.h || 360) + 40; }
+            if (body) { nodes.push({ id, ...body, x: xx, y: vy }); visNodeIds.push(id); xx += (body.w || 360) + 40; }
           }
           return { ...d, nodes };
         });
@@ -46215,11 +46292,298 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       updateNode(nodeId, { runStatus: "done" });
       if (tableId) updateNode(tableId, { runStatus: "done" });
       setRun({ status: "done", phase: "done", ranAt: Date.now() });
+      return { summary, header, statement: sk.statement || "" };
+    } catch (e) {
+      updateNode(nodeId, { runStatus: "error" });
+      setRun({ status: "error", error: String(e?.message || e) });
+      return null;
+    }
+  }, [data, setData, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellNode, workflowAppendCellBox, workflowSetCellText, workflowAddCellMarker, _assistantDropTable]);
+  // Latest-instance ref: the chain orchestrator scaffolds sub-nodes with
+  // setData and must then invoke setupStrategy AFTER React re-renders (the
+  // closure captured by the CURRENT instance predates the new nodes). The
+  // ref always points at the freshest instance.
+  const setupStrategyRef = useRef(null);
+  setupStrategyRef.current = setupStrategy;
+
+  // ── Strategy "insist" loop ─────────────────────────────────────────────
+  // The strategy validated against PAST evidence and marked a point weak.
+  // The user insists the vision is reachable anyway: generate candidate
+  // approaches for that point, run each through a simulated persona panel
+  // for an honest sentiment read, keep the best, and iterate on the panel's
+  // objections until sentiment clears the bar (or rounds run out). The
+  // winner is settled into the KEY CHANGE that bridges the evidence gap,
+  // written back as a side board + into the float panel.
+  const exploreStrategyPoint = useCallback(async (nodeId, pointId) => {
+    const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
+    const node = (data.nodes || []).find(n => n.id === nodeId);
+    if (!node || !node.result || node.result.kind !== "strategy") return;
+    const res = JSON.parse(JSON.stringify(node.result));
+    const point = (res.points || []).find(p => String(p.id) === String(pointId));
+    if (!point) return;
+    const task = (node.task || "").trim();
+    const MAXR = 3, TARGET = 75;
+    const writeExplore = (patch) => {
+      res.explore = res.explore || {};
+      res.explore[pointId] = { ...(res.explore[pointId] || {}), ...patch };
+      updateNode(nodeId, { result: JSON.parse(JSON.stringify(res)) });
+    };
+    updateNode(nodeId, { runStatus: "running" });
+    try {
+      let rounds = [], bestOverall = null, feedback = "";
+      writeExplore({ status: "running", target: TARGET, rounds: [] });
+      for (let r = 1; r <= MAXR; r++) {
+        setRun({ status: "loading", phase: `insist ${r}/${MAXR}: generating approaches` });
+        const iText = await assistantLlm([{ role: "user", content:
+          `A strategy point failed validation against PAST evidence, but the user INSISTS the goal is reachable - your job is to find the change that makes it true, not to relitigate the past.\n\nSTRATEGY TASK:\n${task}\n\nSTATEMENT:\n${res.statement || ""}\n\nWEAK POINT (stance: ${point.stance || "unverified"}):\n${point.point}\n` +
+          (res.summary ? `\nBOARD SUMMARY:\n${res.summary}\n` : "") +
+          (feedback ? `\nLAST ROUND'S BEST IDEA + THE PANEL'S OBJECTIONS (fix these, keep what worked):\n${feedback}\n` : "") +
+          `\nGenerate 4 DISTINCT bold approaches that could make this point work despite the thin evidence - different mechanisms, not rewordings (e.g. change the offer, the audience, the channel, the business model, the sequencing).\n\nReturn ONLY JSON: [{"idea":"<the approach in 1-2 sentences>","rationale":"<why it could bridge the gap, one line>"}]. No prose.` }],
+          { model: node.model, maxTokens: 1400 });
+        let ideas = _assistantExtractJson(iText);
+        if (!Array.isArray(ideas) || !ideas.length) throw new Error("Could not generate approaches - try again.");
+        ideas = ideas.slice(0, 4).map(x => ({ idea: String(x.idea || ""), rationale: String(x.rationale || "") }));
+        let landed = 0;
+        setRun({ status: "loading", phase: `insist ${r}/${MAXR}: 0/${ideas.length} panel reads` });
+        await _assistantPool(ideas, 4, async (idea) => {
+          try {
+            const sText = await assistantLlm([{ role: "user", content:
+              `Simulate a PANEL OF 5 DISTINCT PERSONAS from this strategy's real audience/stakeholders (buyers, users, sceptics, an operator, an investor - whatever fits). Each reacts HONESTLY to the proposed approach; do not be polite.\n\nSTRATEGY:\n${res.statement || task}\n\nPOINT IT MUST FIX:\n${point.point}\n\nPROPOSED APPROACH:\n${idea.idea}\nRationale: ${idea.rationale}\n\nReturn ONLY JSON: {"sentiment":<0-100 panel average, 100 = they would act on it today>,"verdict":"<one line panel read>","praise":"<the strongest thing said for it>","objection":"<the strongest thing said against it>"}. No prose.` }],
+              { model: node.model, maxTokens: 600 });
+            const s = _drExtractObj(sText) || {};
+            idea.sentiment = Math.max(0, Math.min(100, Math.round(Number(s.sentiment) || 0)));
+            idea.verdict = String(s.verdict || "");
+            idea.praise = String(s.praise || "");
+            idea.objection = String(s.objection || "");
+          } catch (e) {
+            idea.sentiment = 0; idea.verdict = "(panel failed)";
+          }
+          landed++;
+          setRun({ status: "loading", phase: `insist ${r}/${MAXR}: ${landed}/${ideas.length} panel reads` });
+        });
+        ideas.sort((a, b2) => (b2.sentiment || 0) - (a.sentiment || 0));
+        const best = ideas[0];
+        rounds.push({ n: r, ideas });
+        if (!bestOverall || (best.sentiment || 0) > (bestOverall.sentiment || 0)) bestOverall = best;
+        writeExplore({ rounds: JSON.parse(JSON.stringify(rounds)) });
+        if ((best.sentiment || 0) >= TARGET) break;
+        feedback = `IDEA: ${best.idea}\nPANEL SENTIMENT: ${best.sentiment}/100\nPRAISE: ${best.praise}\nOBJECTIONS: ${best.objection}`;
+      }
+      // Settle the winner into the key change that drives the goal.
+      setRun({ status: "loading", phase: "insist: settling the key change" });
+      const kText = await assistantLlm([{ role: "user", content:
+        `The insist loop is over. Settle the result for the strategy board.\n\nWEAK POINT:\n${point.point}\n\nWINNING APPROACH (panel sentiment ${bestOverall.sentiment}/100):\n${bestOverall.idea}\nPanel verdict: ${bestOverall.verdict}\nPraise: ${bestOverall.praise}\nRemaining objection: ${bestOverall.objection}\n\nReturn ONLY JSON: {"keyChange":"<the single change that makes the goal reachable, 1-2 sentences>","firstMove":"<the concrete first step to start proving it, one sentence>","note":"<one honest line on the remaining risk>"}. No prose.` }],
+        { model: node.model, maxTokens: 700 });
+      const fin2 = _drExtractObj(kText) || {};
+      const keyChange = String(fin2.keyChange || bestOverall.idea);
+      writeExplore({
+        status: "done", rounds: JSON.parse(JSON.stringify(rounds)),
+        winner: { idea: bestOverall.idea, sentiment: bestOverall.sentiment, verdict: bestOverall.verdict },
+        keyChange, firstMove: String(fin2.firstMove || ""), note: String(fin2.note || ""),
+      });
+
+      // Side board: idea cards coloured by sentiment + the key-change box.
+      // Placed right of the breakdown table; one row per explored point.
+      setData(d => {
+        const nd = (d.nodes || []).find(n2 => n2.id === nodeId);
+        if (!nd) return d;
+        const prevExp = (nd.expIds && nd.expIds[pointId]) || null;
+        const oldIds = new Set((prevExp && prevExp.wbIds) || []);
+        const keptWb = (Array.isArray(d.wb) ? d.wb : []).filter(it =>
+          !oldIds.has(it.id) && !(prevExp && it.sec && it.sec.sectionId === prevExp.sectionId));
+        let nodes = (d.nodes || []).filter(n2 => !(prevExp && n2.id === prevExp.sectionId));
+        const tbl = nodes.find(n2 => n2.id === nd.tableId);
+        const baseX = tbl ? (tbl.x || 0) + (tbl.w || 800) + 80
+                          : (nd.x || 0) + (nd.w || 460) + 460;
+        const slot = Object.keys(nd.expIds || {}).filter(k => k !== String(pointId)).length;
+        const SECW2 = 560, PAD2 = 20;
+        const bx = Math.round(baseX), by = Math.round((nd.y || 0) + slot * 900);
+        const secId = workflowNewNodeId();
+        const items = [], wbIds = [];
+        const bind = (it, x, yy) => {
+          it.x = x; it.y = yy;
+          it.sec = { sectionId: secId, ox: Math.round(x - bx), oy: Math.round(yy - by) };
+          it._dr = nodeId;
+          items.push(it); wbIds.push(it.id);
+          return it;
+        };
+        const IN2 = SECW2 - PAD2 * 2;
+        let yy = by + PAD2 + 8;
+        const title = "Insist: " + String(point.point || "").slice(0, 46);
+        bind(wbMakeItem("text", { text: title, w: IN2, fontSize: "lg", bold: true, align: "left", color: "ink" }), bx + PAD2, yy);
+        yy += _measureWrappedTextHeight(title, IN2, WB_FONT_SIZES.lg) + 14;
+        rounds.forEach(rd => {
+          bind(wbMakeItem("text", { text: "Round " + rd.n, w: IN2, fontSize: "sm", bold: true, align: "left", color: "gray" }), bx + PAD2, yy);
+          yy += 26;
+          rd.ideas.forEach(idea => {
+            const col = (idea.sentiment || 0) >= TARGET ? "green" : (idea.sentiment || 0) >= 50 ? "yellow" : "pink";
+            const txt = `${idea.sentiment}/100 - ${idea.idea}` + (idea.verdict ? `\nPanel: ${idea.verdict}` : "");
+            const hh = Math.max(70, _measureWrappedTextHeight(txt, IN2 - 14, WB_FONT_SIZES.sm) + 24);
+            bind(wbMakeItem("textbox", { text: txt, w: IN2, h: hh, color: col, align: "left", fontSize: "sm" }), bx + PAD2, yy);
+            yy += hh + 10;
+          });
+          yy += 6;
+        });
+        const kcTxt = "KEY CHANGE: " + keyChange
+          + (fin2.firstMove ? "\nFIRST MOVE: " + fin2.firstMove : "")
+          + (fin2.note ? "\nRISK: " + fin2.note : "");
+        const kcH = Math.max(90, _measureWrappedTextHeight(kcTxt, IN2 - 14, WB_FONT_SIZES.sm) + 28);
+        bind(wbMakeItem("textbox", { text: kcTxt, w: IN2, h: kcH, color: "green", align: "left", fontSize: "sm", bold: true }), bx + PAD2, yy);
+        yy += kcH + PAD2;
+        const secBody = workflowMakeNodeOfKind("section", { title: "Insist " + pointId });
+        nodes = nodes
+          .map(n2 => n2.id === nodeId
+            ? { ...n2, expIds: { ...(n2.expIds || {}), [pointId]: { sectionId: secId, wbIds } } }
+            : n2)
+          .concat([{ id: secId, ...secBody, x: bx, y: by, w: SECW2, h: Math.max(300, yy - by) }]);
+        return { ...d, nodes, wb: [...keptWb, ...items] };
+      });
+      updateNode(nodeId, { runStatus: "done" });
+      setRun({ status: "done", phase: "insist done", ranAt: Date.now() });
+    } catch (e) {
+      writeExplore({ status: "error", error: String(e?.message || e) });
+      updateNode(nodeId, { runStatus: "error" });
+      setRun({ status: "error", error: String(e?.message || e) });
+    }
+  }, [data, setData, updateNode, assistantLlm]);
+
+  // ── Assistant 6: Strategy chain orchestrator ──────────────────────────
+  // For asks too broad for one board (a whole business strategy): plans a
+  // chain of supporting strategies, gates the chain on the user (parts are
+  // editable rows), scaffolds one strategy assistant per part, then AUTO-
+  // DRIVES them in order - each part runs with both gates skipped and the
+  // previous parts' summaries as grounding - and settles a chain summary.
+  const setupStrategyChain = useCallback(async (nodeId, gateArg) => {
+    const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
+    const node = (data.nodes || []).find(n => n.id === nodeId);
+    if (!node) return;
+    const task = (node.task || "").trim();
+    if (!task) { setRun({ status: "error", error: "Describe the overall strategy ask first." }); return; }
+    try {
+      // Phase A: the chain plan gate.
+      const plan = (gateArg && gateArg.replan) ? null : ((gateArg && gateArg.chainPlan) || node.chainPlan);
+      if (!plan || plan.forTask !== task) {
+        setRun({ status: "loading", phase: "planning the chain", error: null });
+        updateNode(nodeId, { runStatus: "running" });
+        const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
+        const ctx = _assistantCollectText(ups);
+        const cText = await assistantLlm([{ role: "user", content:
+          `You LEAD a strategy engagement that is too broad for one board. Decompose it into a CHAIN of 2-5 supporting strategies (e.g. a business strategy chains positioning -> product -> go-to-market -> pricing), ordered so each part builds on the ones before it.\n\nOVERALL ASK:\n${task}\n` +
+          (ctx ? `\nLINKED MATERIAL (excerpt):\n${ctx.slice(0, 1200)}\n` : "") +
+          `\nReturn ONLY JSON: {"why":"<one line on the decomposition logic>","parts":[{"title":"<short name>","task":"<the sub-strategy ask, one sentence>","focus":"<what this part must nail for the chain, one line>"}]}. No prose.` }],
+          { model: node.model, maxTokens: 1400 });
+        const cp = _drExtractObj(cText);
+        if (!cp || !Array.isArray(cp.parts) || cp.parts.length < 2) throw new Error("Could not plan the chain - try again.");
+        updateNode(nodeId, {
+          runStatus: null,
+          chainPlan: { forTask: task, done: false, why: String(cp.why || ""),
+            parts: cp.parts.slice(0, 5).map(p => ({
+              title: String(p.title || "").slice(0, 60),
+              task: String(p.task || ""),
+              focus: String(p.focus || "") })) },
+        });
+        setRun({ status: "await", phase: "chain plan ready - review it on the node", error: null });
+        return;
+      }
+      if (!plan.done) { setRun({ status: "await", phase: "review the chain plan" }); return; }
+      const parts = (plan.parts || []).filter(p => p && (p.task || "").trim()).slice(0, 5);
+      if (parts.length < 2) throw new Error("The chain needs at least 2 parts.");
+      updateNode(nodeId, { runStatus: "running" });
+
+      // Phase B: scaffold one strategy assistant per part (reused on re-run).
+      let ids = (node.partIds && node.partIds.forTask === task) ? node.partIds.ids.slice(0, parts.length) : null;
+      if (!ids || ids.length < parts.length) {
+        ids = [];
+        setData(d => {
+          const nodes = [...(d.nodes || [])], edges = [...(d.edges || [])];
+          parts.forEach((p, i) => {
+            const id = workflowNewNodeId();
+            ids.push(id);
+            const body = workflowMakeNodeOfKind("assistant-strategy", {
+              task: p.task, model: node.model, searchVia: node.searchVia || "",
+            });
+            // Each part gets a tall row of its own - its board (right of the
+            // node) and breakdown table (right of that) both need the space.
+            nodes.push({ id, ...body, x: node.x, y: node.y + (node.h || 560) + 120 + i * 2600 });
+            edges.push({ from: nodeId + ".out", to: id + ".in" });
+            if (i > 0) edges.push({ from: ids[i - 1] + ".out", to: id + ".in" });
+          });
+          return { ...d, nodes, edges };
+        });
+        updateNode(nodeId, { partIds: { forTask: task, ids } });
+      }
+
+      // Phase C: auto-drive the parts in order, feeding summaries forward.
+      const partStates = parts.map(p => ({ title: p.title || p.task.slice(0, 40), status: "pending", summary: "" }));
+      const writeResult = (summary) => updateNode(nodeId, { result: {
+        kind: "strategy-chain", task, builtAt: Date.now(), why: plan.why || "",
+        parts: JSON.parse(JSON.stringify(partStates)), summary: summary || "",
+      } });
+      writeResult("");
+      const summaries = [];
+      for (let i = 0; i < parts.length; i++) {
+        partStates[i].status = "running";
+        writeResult("");
+        setRun({ status: "loading", phase: `part ${i + 1}/${parts.length}: ${partStates[i].title}` });
+        // Let React commit the scaffold / previous part's writes so the
+        // freshest setupStrategy instance sees the sub-node.
+        await new Promise(r => setTimeout(r, 120));
+        let r2 = null;
+        try {
+          r2 = await (setupStrategyRef.current && setupStrategyRef.current(ids[i], {
+            auto: { direction: (parts[i].focus || "") + (plan.why ? "\nChain logic: " + plan.why : ""), priorSummaries: summaries.slice() },
+          }));
+        } catch (e) { r2 = null; }
+        if (r2 && (r2.summary || r2.statement)) {
+          summaries.push((parts[i].title ? parts[i].title + ": " : "") + (r2.summary || r2.statement));
+          partStates[i].status = "done";
+          partStates[i].summary = r2.summary || r2.statement || "";
+        } else {
+          partStates[i].status = "error";
+        }
+        writeResult("");
+      }
+      // Chain summary across the parts that landed.
+      setRun({ status: "loading", phase: "settling the chain summary" });
+      let chainSummary = "";
+      if (summaries.length) {
+        const sText = await assistantLlm([{ role: "user", content:
+          `You LEAD this strategy chain. Compose the OVERALL strategy from the parts' summaries - how they lock together, the sequence, and the single thread that makes it one strategy.\n\nOVERALL ASK:\n${task}\n\nPART SUMMARIES:\n${summaries.map((s, i) => (i + 1) + ". " + s).join("\n")}\n\nReturn ONLY JSON: {"summary":"<5-8 sentence overall strategy summary>"}. No prose.` }],
+          { model: node.model, maxTokens: 1500 });
+        chainSummary = String((_drExtractObj(sText) || {}).summary || "");
+      }
+      writeResult(chainSummary);
+      const anyError = partStates.some(p => p.status === "error");
+      updateNode(nodeId, { runStatus: anyError ? "error" : "done" });
+      setRun(anyError
+        ? { status: "error", error: "Some parts failed - re-run to retry them." }
+        : { status: "done", phase: "chain done", ranAt: Date.now() });
     } catch (e) {
       updateNode(nodeId, { runStatus: "error" });
       setRun({ status: "error", error: String(e?.message || e) });
     }
-  }, [data, setData, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellNode, workflowAppendCellBox, workflowSetCellText, workflowAddCellMarker, _assistantDropTable]);
+  }, [data, setData, updateNode, assistantLlm]);
+
+  // Spawn a chain orchestrator from a strategy node's plan-gate suggestion,
+  // pre-seeded with the plan's proposed parts (still gated - the user
+  // reviews the chain before anything runs).
+  const spawnStrategyChain = useCallback((nodeId) => {
+    const node = (data.nodes || []).find(n => n.id === nodeId);
+    if (!node) return;
+    const chain = node.presPlan && node.presPlan.chain;
+    const id = workflowNewNodeId();
+    setData(d => {
+      const body = workflowMakeNodeOfKind("assistant-strategy-orchestrator", {
+        task: node.task || "", model: node.model, searchVia: node.searchVia || "",
+        chainPlan: chain && chain.parts ? {
+          forTask: (node.task || "").trim(), done: false, why: chain.why || "",
+          parts: chain.parts.map(p => ({ title: p.title, task: p.task, focus: p.focus })),
+        } : null,
+      });
+      return { ...d, nodes: [...(d.nodes || []), { id, ...body, x: (node.x || 0) + (node.w || 460) + 60, y: node.y || 0 }] };
+    });
+    setTimeout(() => window.dispatchEvent(new CustomEvent("th:focus-node", { detail: { nodeId: id } })), 60);
+  }, [data, setData]);
 
   // first (so a chain like `prompt → gen-image → rembg → asset` works when
   // you click Run on either skill - the runner figures out the dependency
@@ -51018,6 +51382,26 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
                 onSetup=${setupStrategy}
+                onExplore=${exploreStrategyPoint}
+                onSpawnChain=${spawnStrategyChain}
+              />
+            `)}
+            ${(data.nodes || []).filter(n => n.kind === "assistant-strategy-orchestrator").map(n => html`
+              <${WorkflowStrategyChainNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                runState=${runStates[n.id]}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onSetup=${setupStrategyChain}
               />
             `)}
             ${(data.nodes || []).filter(n => n.kind === "skill").map(n => html`
@@ -53437,6 +53821,17 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph"><${Icon.Flow}/></span>
             <span className="workflow-library-item-label">Strategy assistant</span>
             <span className="workflow-library-item-id">plan-gated strategy board</span>
+          </div>
+          <div className="workflow-library-item"
+               draggable=${true}
+               onDragStart=${(e) => {
+                 e.dataTransfer.effectAllowed = "copy";
+                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-strategy-orchestrator" }));
+               }}
+               title="Drag onto canvas - for asks too broad for one board (a whole business strategy): decomposes into a chain of supporting strategies you approve, scaffolds one strategy assistant per part, and auto-drives them in order, feeding each part the previous parts' summaries.">
+            <span className="workflow-library-item-glyph"><${Icon.Tree}/></span>
+            <span className="workflow-library-item-label">Strategy chain orchestrator</span>
+            <span className="workflow-library-item-id">auto-drives strategy assistants</span>
           </div>
           <div className="workflow-library-item"
                draggable=${true}
@@ -79349,7 +79744,7 @@ function _assistFmtElapsed(ms) {
   return Math.floor(s / 60) + "m " + Math.round(s % 60) + "s";
 }
 
-function WorkflowAssistantResultPanel({ node }) {
+function WorkflowAssistantResultPanel({ node, onExplore, exploreBusy }) {
   const res = node.result;
   if (!res) return null;
   // Stop canvas pan/drag/zoom from eating panel scroll + clicks.
@@ -79514,12 +79909,42 @@ function WorkflowAssistantResultPanel({ node }) {
         </div>
         <div className="wap-section-label">Key points</div>
         <div className="wap-list">
-          ${pts.map((p, i) => html`
-            <div key=${i} className="wap-probe">
-              <span className=${"wap-dot wap-dot-" + (p.stance ? stanceTone(p.stance) : "warn")}/>
-              <span className="wap-probe-text">${p.point}</span>
-              <span className=${"wap-pill wap-pill-" + (p.stance ? stanceTone(p.stance) : "warn")}>${p.stance ? p.stance.toUpperCase() : "…"}</span>
-            </div>`)}
+          ${pts.map((p, i) => {
+            const weak = p.stance && p.stance !== "support";
+            const exp = (res.explore || {})[p.id];
+            return html`
+              <div key=${i} className="wap-probe-block">
+                <div className="wap-probe">
+                  <span className=${"wap-dot wap-dot-" + (p.stance ? stanceTone(p.stance) : "warn")}/>
+                  <span className="wap-probe-text">${p.point}</span>
+                  <span className=${"wap-pill wap-pill-" + (p.stance ? stanceTone(p.stance) : "warn")}>${p.stance ? p.stance.toUpperCase() : "…"}</span>
+                </div>
+                ${weak && onExplore && !exp && html`
+                  <button className="wap-insist-btn" disabled=${exploreBusy}
+                    title="You insist this goal is reachable: generate bold approaches, run each through a simulated persona panel, and loop on the objections until sentiment improves. The winner becomes the key change on the board."
+                    onClick=${() => onExplore(p.id)}>Insist - explore ideas</button>`}
+                ${exp && html`
+                  <div className="wap-insist">
+                    <div className="wap-insist-rounds">
+                      ${(exp.rounds || []).map((rd, ri) => {
+                        const bs = Math.max(...(rd.ideas || []).map(x => x.sentiment || 0), 0);
+                        return html`<span key=${ri} className="wap-insist-round" data-good=${bs >= (exp.target || 75) ? "true" : "false"}>R${rd.n}: ${bs}</span>`;
+                      })}
+                      ${exp.status === "running" && html`<span className="wap-insist-round">…</span>`}
+                    </div>
+                    ${exp.status === "done" && exp.keyChange && html`
+                      <div className="wap-insist-keychange">
+                        <span className="wap-why-label">Key change (panel ${exp.winner ? exp.winner.sentiment : "?"}/100)</span>
+                        ${exp.keyChange}${exp.firstMove ? " First move: " + exp.firstMove : ""}
+                      </div>`}
+                    ${exp.status === "error" && html`<div className="wap-insist-keychange">Insist failed: ${exp.error || "unknown"}</div>`}
+                    ${exp.status === "done" && onExplore && html`
+                      <button className="wap-insist-btn" disabled=${exploreBusy}
+                        title="Run the insist loop again from the current best idea."
+                        onClick=${() => onExplore(p.id)}>Re-explore</button>`}
+                  </div>`}
+              </div>`;
+          })}
           ${!pts.length && html`<div className="wap-empty">Forming the skeleton…</div>`}
         </div>
         ${ins.length > 0 && html`
@@ -79533,6 +79958,36 @@ function WorkflowAssistantResultPanel({ node }) {
           </div>`}
         ${res.summary && html`
           <div className="wap-section-label">Summary</div>
+          <div className="wap-conclusion">${res.summary}</div>`}
+      </div>`;
+  }
+
+  if (res.kind === "strategy-chain") {
+    const parts = res.parts || [];
+    const doneN = parts.filter(p => p.status === "done").length;
+    const tone = (st) => st === "done" ? "pass" : st === "error" ? "fail" : "warn";
+    return html`
+      <div className="workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-research" ...${swallow}>
+        <div className="wap-head">
+          <span className="wap-kicker">Strategy chain</span>
+          <span className="wap-count">${doneN}/${parts.length} parts</span>
+        </div>
+        ${res.why && html`<div className="wap-sub">${res.why}</div>`}
+        <div className="wap-section-label">Parts</div>
+        <div className="wap-list">
+          ${parts.map((p, i) => html`
+            <div key=${i} className="wap-probe-block">
+              <div className="wap-probe">
+                <span className=${"wap-dot wap-dot-" + tone(p.status)}/>
+                <span className="wap-probe-text">${(i + 1) + ". " + p.title}</span>
+                <span className=${"wap-pill wap-pill-" + tone(p.status)}>${(p.status || "pending").toUpperCase()}</span>
+              </div>
+              ${p.summary && html`<div className="wap-insist-keychange">${p.summary}</div>`}
+            </div>`)}
+          ${!parts.length && html`<div className="wap-empty">Planning the chain…</div>`}
+        </div>
+        ${res.summary && html`
+          <div className="wap-section-label">Overall strategy</div>
           <div className="wap-conclusion">${res.summary}</div>`}
       </div>`;
   }
@@ -79940,7 +80395,7 @@ function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onRe
 // (section toggles + key-view layout select + editable notes + custom
 // requirement) → run. Both gates re-invoke onSetup with the fresh answered
 // copy (the closure's node snapshot is stale - same rule as deep research).
-function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
+function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, onExplore, onSpawnChain, runState }) {
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const w = Math.max(400, node.w || 460), h = Math.max(500, node.h || 560);
@@ -80019,6 +80474,17 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
           </div>` : planActive ? html`
           <div className="workflow-node-dr-questions workflow-node-strategy-plan">
             <span className="workflow-node-iter-field-label">Presentation plan - toggle sections, adjust, then build</span>
+            ${plan.chain && plan.chain.recommended && html`
+              <div className="workflow-node-strategy-chainhint">
+                <div className="workflow-node-strategy-note">
+                  This ask looks like a CHAIN of ${(plan.chain.parts || []).length} strategies${plan.chain.why ? ": " + plan.chain.why : "."}
+                </div>
+                <button className="workflow-node-refiner-pushadd"
+                  title=${"Spawn a Strategy chain orchestrator pre-seeded with: " + (plan.chain.parts || []).map(p => p.title).join(" -> ")}
+                  onClick=${(e) => { e.stopPropagation(); onSpawnChain && onSpawnChain(node.id); }}>
+                  Use a strategy chain instead
+                </button>
+              </div>`}
             <div className="workflow-node-strategy-keyview">
               <span className="workflow-node-iter-field-label">Key view</span>
               <select value=${plan.keyView && plan.keyView.layout}
@@ -80122,8 +80588,130 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
-      ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
+      ${detached && html`<${WorkflowAssistantResultPanel} node=${node}
+        onExplore=${onExplore ? ((pid) => onExplore(node.id, pid)) : null}
+        exploreBusy=${busy} />`}
       <${WorkflowQuietFace} glyph=${html`<${Icon.Flow}/>`} name=${"Strategy assistant"} sub=${task || null} />
+    </div>
+  `;
+}
+
+// Strategy chain orchestrator node. Body modes: config → chain-plan gate
+// (editable part rows: rename, reword the ask, drop, add) → auto-drive with
+// a live per-part status list. The gate button passes the fresh plan copy
+// (stale-closure rule, same as every assistant gate).
+function WorkflowStrategyChainNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  const w = Math.max(400, node.w || 460), h = Math.max(440, node.h || 520);
+  const busy = runState?.status === "loading";
+  const task = (node.task || "").trim();
+  const plan = node.chainPlan;
+  const planActive = !!(plan && !plan.done && plan.forTask === task && (plan.parts || []).length);
+  const planDone = !!(plan && plan.done && plan.forTask === task);
+  const hasResult = !!(node.result && (node.result.parts || []).length);
+  const detached = selected && hasResult;
+  const panelR = detached ? 438 : 0;
+  const patchPlan = (patch) => onChange({ chainPlan: { ...plan, ...patch } });
+  const patchPart = (i, patch) => patchPlan({ parts: (plan.parts || []).map((p, j) => j === i ? { ...p, ...patch } : p) });
+  const runChain = () => {
+    const done = { ...plan, done: true };
+    onChange({ chainPlan: done });
+    onSetup && onSetup(node.id, { chainPlan: done });
+  };
+  return html`
+    <div className="workflow-node workflow-node-iter workflow-node-assistant"
+         data-quiet="face"
+         data-selected=${selected ? "true" : "false"}
+         data-detached=${detached ? "true" : "false"}
+         onMouseDownCapture=${() => onSelect && onSelect()}
+         data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined, "--node-panel-r": panelR + "px" }}>
+      <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-iter-glyph"><${Icon.Tree}/></span>
+        <span className="workflow-node-iter-title">Strategy chain orchestrator</span>
+        <span className="workflow-node-bar-spacer"/>
+        <${HoverTip} className="workflow-node-close" tip="Remove this strategy chain orchestrator (its part assistants stay)."
+          ariaLabel="Remove strategy chain orchestrator"
+          onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×<//>
+      </div>
+      <div className="workflow-node-iter-body workflow-node-refiner-body" onMouseDown=${(e) => e.stopPropagation()}>
+        ${planActive ? html`
+          <div className="workflow-node-dr-questions workflow-node-strategy-plan">
+            <span className="workflow-node-iter-field-label">Chain plan - each part becomes its own strategy assistant, run in order</span>
+            ${plan.why && html`<div className="workflow-node-strategy-note">${plan.why}</div>`}
+            ${(plan.parts || []).map((p, i) => html`
+              <div key=${i} className="workflow-node-strategy-part">
+                <div className="workflow-node-strategy-partrow">
+                  <span className="workflow-node-strategy-partnum">${i + 1}</span>
+                  <input className="workflow-node-strategy-noteinput" placeholder="part name"
+                    value=${p.title || ""} onInput=${(e) => patchPart(i, { title: e.target.value })}/>
+                  <button className="workflow-node-strategy-partdrop" title="Drop this part"
+                    onClick=${(e) => { e.stopPropagation(); patchPlan({ parts: plan.parts.filter((_, j) => j !== i) }); }}>×</button>
+                </div>
+                <textarea rows=${2} className="workflow-node-strategy-parttask" placeholder="what this part must figure out…"
+                  value=${p.task || ""} onInput=${(e) => patchPart(i, { task: e.target.value })}/>
+              </div>`)}
+            <button className="workflow-node-refiner-pushadd" disabled=${busy || (plan.parts || []).length >= 5}
+              onClick=${(e) => { e.stopPropagation(); patchPlan({ parts: [...(plan.parts || []), { title: "New part", task: "", focus: "" }] }); }}>
+              + Add part</button>
+            <div className="workflow-node-iter-actions">
+              <button className="workflow-node-skill-run" disabled=${busy || (plan.parts || []).filter(p => (p.task || "").trim()).length < 2}
+                title="Scaffold one strategy assistant per part and auto-drive them in order (gates skipped, summaries fed forward)."
+                onClick=${(e) => { e.stopPropagation(); runChain(); }}>
+                <${Icon.Play}/> Run the chain
+              </button>
+              <button className="workflow-node-refiner-pushadd" disabled=${busy}
+                title="Throw this decomposition away and plan a fresh chain."
+                onClick=${(e) => { e.stopPropagation(); onChange({ chainPlan: null }); onSetup && onSetup(node.id, { replan: true }); }}>Re-plan</button>
+            </div>
+          </div>` : html`
+          <label className="workflow-node-iter-field">
+            <span className="workflow-node-iter-field-label">The overall strategy ask (broad is fine - it gets decomposed)</span>
+            <textarea rows=${3} placeholder="e.g. A full business strategy for my playtest-recruiting service"
+              value=${node.task || ""} onInput=${(e) => onChange({ task: e.target.value })}/>
+          </label>
+          <div className="workflow-node-assistant-row">
+            <label className="workflow-node-iter-field workflow-node-assistant-cat">
+              <span className="workflow-node-iter-field-label">Search via</span>
+              <select value=${SEARCH_PROVIDERS.includes(node.searchVia) ? node.searchVia : ""}
+                title="Web-search backend the part assistants inherit."
+                onChange=${(e) => onChange({ searchVia: e.target.value })}>
+                <option value="">Default (${resolveSearchVia("") === "exa" ? "Exa" : "Agent"})</option>
+                <option value="agent">Agent (web)</option>
+                <option value="exa">Exa</option>
+              </select>
+            </label>
+          </div>
+          <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}
+            title="Model the chain planner and every part assistant run on."/>
+          <div className="workflow-node-iter-actions">
+            <button className="workflow-node-skill-run" disabled=${busy}
+              title=${planDone
+                ? "Re-run the whole chain with the saved plan (existing part assistants are reused)."
+                : "First proposes the chain decomposition for your review; nothing runs until you approve it."}
+              onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
+              ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>`
+                     : html`<${React.Fragment}><${Icon.Spark}/> ${planDone ? "Run the chain" : "Plan the chain"}<//>`}
+            </button>
+            ${planDone && !busy && html`
+              <button className="workflow-node-refiner-pushadd"
+                title="Clear the saved chain plan and decompose fresh on the next run."
+                onClick=${(e) => { e.stopPropagation(); onChange({ chainPlan: null }); }}>Re-plan</button>`}
+            ${runState?.status === "done" && html`<span className="workflow-node-iter-done">chain done</span>`}
+            ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+          </div>`}
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
+           title="Context: prompt / asset / folder / section." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
+        <div className="workflow-port-dot"/>
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
+           title="The chain: wired to each part strategy assistant." onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
+        <div className="workflow-port-dot"/>
+      </div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+      ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Tree}/>`} name=${"Strategy chain orchestrator"} sub=${task || null} />
     </div>
   `;
 }
