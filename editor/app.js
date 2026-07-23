@@ -26120,6 +26120,7 @@ const _LEGACY_EDITABLE_FIELDS = {
   "assistant-research":  ["goal", "criteria", "model", "searchVia", "numResults", "category"],
   "assistant-testing":   ["task", "model", "personaTypes", "testersPerType", "maxTesters"],
   "assistant-deepresearch": ["task", "model", "searchVia", "maxAgents", "rounds"],
+  "assistant-strategy": ["task", "model", "searchVia", "maxAgents"],
   "iterator-remix":   ["variants"],
   "design-system":    ["spec"],
 };
@@ -27057,6 +27058,7 @@ function WorkflowCanvas() {
             const assistantStuck = (n.kind === "assistant-research"
                                  || n.kind === "assistant-testing"
                                  || n.kind === "assistant-deepresearch"
+                                 || n.kind === "assistant-strategy"
                                  || n.kind === "table")
                                  && n.runStatus === "running";
             if (n.runStatus !== "pending" && n.runStatus !== "paused" && !dsStuck && !assistantStuck) return n;
@@ -27964,14 +27966,16 @@ function workflowPortPosition(node, side, ctx) {
   // per-kind minimums - mirror BOTH here or the wire endpoint lands below /
   // beside the drawn diamond (the old bodyTop-offset math missed by 16px on
   // every assistant edge).
-  if (node.kind === "assistant-interview" || node.kind === "assistant-research" || node.kind === "assistant-testing" || node.kind === "assistant-deepresearch") {
+  if (node.kind === "assistant-interview" || node.kind === "assistant-research" || node.kind === "assistant-testing" || node.kind === "assistant-deepresearch" || node.kind === "assistant-strategy") {
     const cw = node.kind === "assistant-interview" ? Math.max(360, node.w || 440)
              : node.kind === "assistant-testing"   ? Math.max(380, node.w || 440)
              : node.kind === "assistant-deepresearch" ? Math.max(380, node.w || 440)
+             : node.kind === "assistant-strategy"  ? Math.max(400, node.w || 460)
              :                                       Math.max(360, node.w || 420);
     const ch = node.kind === "assistant-interview" ? Math.max(420, node.h || 480)
              : node.kind === "assistant-testing"   ? Math.max(460, node.h || 500)
              : node.kind === "assistant-deepresearch" ? Math.max(480, node.h || 540)
+             : node.kind === "assistant-strategy"  ? Math.max(500, node.h || 560)
              :                                       Math.max(440, node.h || 460);
     if (side === "in")  return { x: node.x,      y: node.y + ch / 2 };
     if (side === "out") return { x: node.x + cw, y: node.y + ch / 2 };
@@ -28167,6 +28171,471 @@ function _drConsensus(s) {
   if (/contest|mixed|challenge/.test(k)) return { key: "contested", color: "orange", tone: "warn", label: "CONTESTED" };
   if (/unverif|unknown|open/.test(k)) return { key: "unverified", color: "gray", tone: "warn", label: "UNVERIFIED" };
   return { key: "open", color: "yellow", tone: "warn", label: "OPEN" };
+}
+
+// ── Strategy assistant: key-view layout registry ──────────────────────────
+// Every template the presentation-plan gate can pick. `fields` is the extra
+// per-point JSON the skeleton prompt asks the lead for (placement data the
+// board builder needs); `hint` feeds both the plan prompt's catalog and the
+// plan-gate select labels. Extending the assistant to a new presentation
+// shape = one entry here + a branch in the key-view builder switch.
+const STRATEGY_LAYOUTS = {
+  "statement":   { label: "Key statement",      fields: ``, hint: "one guiding statement with supporting points (strategy brief, positioning statement, narrative frame)" },
+  "metrics":     { label: "Metrics",            fields: `"value":"<metric value>","unit":"<unit or empty>"`, hint: "KPI tiles with supporting points (dashboard, north-star metric)" },
+  "affinity":    { label: "Affinity map",       fields: `"cluster":"<theme name>"`, hint: "points clustered by theme (insight wall, trend board, symbol map)" },
+  "positioning": { label: "Positioning 2x2",    fields: `"px":<0..1>,"py":<0..1>`, hint: "a 2x2 plot; px/py place each point on the axes (positioning map, competitive landscape)" },
+  "timeline":    { label: "Timeline",           fields: `"order":<1..n>,"when":"<time label>"`, hint: "ordered events along an axis (roadmap, launch plan, editorial calendar)" },
+  "flow":        { label: "Flow",               fields: `"step":<1..n>,"shape":"rect|diamond"`, hint: "sequential steps, diamond = decision (funnel, job map, service flow)" },
+  "loop":        { label: "Loop",               fields: `"step":<1..n>`, hint: "a circular loop of stages (growth loop)" },
+  "matrix":      { label: "Matrix",             fields: `"row":"<row label>","col":"<column label>"`, hint: "a comparison grid (competitive matrix, message matrix, tier table)" },
+  "canvas":      { label: "Zone canvas",        fields: `"zone":"<zone name>"`, hint: "named zones holding points (Business Model Canvas, Value Proposition Canvas)" },
+  "journey":     { label: "Journey map",        fields: `"stage":"<stage>","lane":"<lane>","mood":<-1..1>`, hint: "stages x lanes with an emotion curve (journey map, experience map, service blueprint)" },
+  "cards":       { label: "Cards",              fields: ``, hint: "one card per point (persona sheets, insight cards)" },
+  "pillars":     { label: "Pillars",            fields: `"pillar":"<pillar name>"`, hint: "columns of supporting points under pillar headings (message pillars, principles)" },
+  "keyvisual":   { label: "Key visual",         fields: `"imagePrompt":"<what a mood image should depict>"`, hint: "a visual direction board: generated imagery + palette + typography (mood board, design north-star)" },
+  "composite":   { label: "Composite",          fields: `"cluster":"<group name>"`, hint: "anything else: grouped blocks composed freely" },
+};
+// Driving-factor role → wb colour token.
+function _strategyFactorColor(role) {
+  const k = String(role || "").toLowerCase();
+  if (/driver|enable|accel|strength|tailwind/.test(k)) return "green";
+  if (/barrier|block|risk|threat|headwind/.test(k)) return "pink";
+  return "gray";
+}
+
+// ── Strategy board builder ────────────────────────────────────────────────
+// One atomic setData pass that lays the whole strategy board into a fresh
+// section: header / description, the key view (per STRATEGY_LAYOUTS
+// template), collated insights (numbered writeups the marker items link
+// to), driving factors, and the summary. Sweeps the previous run's board
+// by tracked ids + section binding + the durable `_dr` owner tag (same
+// discipline as the deep-research builder - see its comment for why the
+// tag exists). Built ONCE per run, after all content is final, so insight
+// marker targets can never go stale. Returns { insightIdByN, right, top }
+// for the table-marker + visual-node placement that follows.
+function _strategyBuildBoard({ setData, node, nodeId, layoutId, plan, sk, gathered, insights, summary, images, header, desc, enabled }) {
+  const PAD = 24, STK = 200, GAP = 16;
+  const SM = WB_FONT_SIZES.sm;
+  const mh = (text, w, fs) => _measureWrappedTextHeight(String(text == null ? "" : text), w, fs || SM);
+  const CLUSTER_COLORS = ["yellow", "blue", "green", "pink", "purple", "orange"];
+  const pts = sk.points || [];
+  const stanceColor = (p) => {
+    const g = gathered[p.id];
+    return g && g.stance ? _drStanceColor(g.stance) : "yellow";
+  };
+
+  // Section width per layout (content-driven; the tall dimension flows).
+  const uniq = (vals) => { const out = []; for (const v of vals) { const s = String(v || "").trim() || "Other"; if (!out.includes(s)) out.push(s); } return out; };
+  const clusters = uniq(pts.map(p => p.cluster || p.pillar));
+  const mCols = uniq(pts.map(p => p.col)), mRows = uniq(pts.map(p => p.row));
+  const stages = (Array.isArray(sk.stages) && sk.stages.length ? sk.stages.map(String) : uniq(pts.map(p => p.stage)));
+  const lanes = (Array.isArray(sk.lanes) && sk.lanes.length ? sk.lanes.map(String) : uniq(pts.map(p => p.lane)));
+  const SECW =
+    layoutId === "affinity" || layoutId === "composite" || layoutId === "pillars"
+      ? Math.min(1240, Math.max(760, PAD * 2 + Math.min(4, Math.max(1, clusters.length)) * (STK + 32 + GAP)))
+    : layoutId === "timeline" ? Math.max(900, PAD * 2 + pts.length * 240)
+    : layoutId === "flow"     ? Math.max(760, PAD * 2 + Math.min(4, pts.length) * 250)
+    : layoutId === "matrix"   ? Math.max(760, PAD * 2 + 160 + Math.max(1, mCols.length) * 216)
+    : layoutId === "canvas"   ? 980
+    : layoutId === "journey"  ? Math.max(900, PAD * 2 + 140 + Math.max(1, stages.length) * 220)
+    : layoutId === "loop"     ? 820
+    : 760;
+  const INNER = SECW - PAD * 2;
+
+  const out = { insightIdByN: {}, right: 0, top: 0 };
+  setData(d => {
+    const prevSecId = node.sectionId || null;
+    const prev = (d.nodes || []).find(n => n.id === prevSecId);
+    const bx = prev ? prev.x : Math.round(node.x + (node.w || 460) + 460);
+    const by = prev ? prev.y : Math.round(node.y);
+    const oldWb = new Set((node.drIds && node.drIds.wbIds) || []);
+    const keptWb = (Array.isArray(d.wb) ? d.wb : []).filter(it =>
+      !oldWb.has(it.id)
+      && !(it.sec && it.sec.sectionId === prevSecId)
+      && it._dr !== nodeId);
+    let nodes = (d.nodes || []).filter(n => n.id !== prevSecId);
+    const secId = workflowNewNodeId();
+    const items = [], wbIds = [];
+    const bind = (it, x, y) => {
+      it.x = x; it.y = y;
+      it.sec = { sectionId: secId, ox: Math.round(x - bx), oy: Math.round(y - by) };
+      it._dr = nodeId;
+      items.push(it); wbIds.push(it.id);
+      return it;
+    };
+
+    // Collated-insight writeup items are CREATED first (ids fixed, so the
+    // key view's markers can link to them) but BOUND later, when the flow
+    // cursor reaches the insights block.
+    const insightItems = (enabled("insights") ? insights : []).map(ins => {
+      const title = wbMakeItem("text", { text: ins.n + ". " + ins.title, w: INNER - 14, fontSize: "sm", bold: true, align: "left", color: "ink" });
+      const body = wbMakeItem("textbox", { text: ins.text, w: INNER, h: mh(ins.text, INNER - 14) + 40, color: "gray", align: "left", fontSize: "sm" });
+      out.insightIdByN[ins.n] = body.id;
+      return { ins, title, body };
+    });
+    const insightNsByPoint = {};
+    for (const { ins } of insightItems) (insightNsByPoint[ins.pointId] = insightNsByPoint[ins.pointId] || []).push(ins.n);
+    // Markers for one placed point element: a row of numbered circles pinned
+    // to its top-right corner.
+    const placeMarkers = (p, x, y, w) => {
+      const ns = insightNsByPoint[p.id] || [];
+      ns.forEach((n2, k) => {
+        bind(wbMakeItem("marker", { n: n2, targetWb: out.insightIdByN[n2] || null, w: 28, h: 28 }),
+          x + w - 22 - k * 32, y - 12);
+      });
+    };
+
+    let y = by + PAD + 8;
+    bind(wbMakeItem("text", { text: header, w: INNER, fontSize: "xl", bold: true, align: "left", color: "ink" }), bx + PAD, y);
+    y += mh(header, INNER, WB_FONT_SIZES.xl) + 18;
+    if (desc) {
+      bind(wbMakeItem("text", { text: desc, w: INNER, fontSize: "sm", align: "left", color: "gray" }), bx + PAD, y);
+      y += mh(desc, INNER) + 20;
+    }
+
+    // ── Key view ──
+    if (enabled("keyview")) {
+      const statement = String(sk.statement || "");
+      const placeStatement = () => {
+        if (!statement) return;
+        const sh = mh(statement, INNER - 14, WB_FONT_SIZES.md) + 30;
+        bind(wbMakeItem("textbox", { text: statement, w: INNER, h: sh, color: "ink", fill: "none", align: "left", fontSize: "md", bold: layoutId === "statement" }), bx + PAD, y);
+        y += sh + GAP + 8;
+      };
+      // Sticky grid shared by the simple layouts.
+      const stickyGrid = (list, perRow, w) => {
+        for (let r0 = 0; r0 * perRow < list.length; r0++) {
+          const row = list.slice(r0 * perRow, r0 * perRow + perRow);
+          const heights = row.map(p => Math.max(120, mh(p.point, w - 20) + 30));
+          row.forEach((p, ci) => {
+            const x = bx + PAD + ci * (w + GAP);
+            bind(wbMakeItem("sticky", { text: p.point, w, h: heights[ci], color: stanceColor(p), fontSize: "sm", align: "left" }), x, y);
+            placeMarkers(p, x, y, w);
+          });
+          y += Math.max(...heights) + GAP + 8;
+        }
+      };
+      if (layoutId === "statement") {
+        placeStatement();
+        stickyGrid(pts, 3, STK);
+      } else if (layoutId === "metrics") {
+        placeStatement();
+        for (let r0 = 0; r0 * 4 < pts.length; r0++) {
+          const row = pts.slice(r0 * 4, r0 * 4 + 4);
+          const noteHeights = row.map(p => mh(p.point, 156));
+          row.forEach((p, ci) => {
+            const x = bx + PAD + ci * (170 + GAP);
+            const val = String(p.value || "-") + (p.unit ? " " + p.unit : "");
+            bind(wbMakeItem("textbox", { text: val, w: 170, h: 84, color: "blue", align: "center", fontSize: "lg", bold: true }), x, y);
+            bind(wbMakeItem("text", { text: p.point, w: 170, fontSize: "sm", align: "left", color: "ink" }), x + 7, y + 92);
+            placeMarkers(p, x, y, 170);
+          });
+          y += 84 + 8 + Math.max(...noteHeights, 20) + GAP + 8;
+        }
+      } else if (layoutId === "affinity" || layoutId === "composite" || layoutId === "pillars") {
+        placeStatement();
+        const perRow = Math.max(1, Math.min(4, Math.floor(INNER / (STK + 32 + GAP))));
+        const blockW = STK + 32;
+        for (let r0 = 0; r0 * perRow < clusters.length; r0++) {
+          const rowClusters = clusters.slice(r0 * perRow, r0 * perRow + perRow);
+          let rowBottom = y;
+          rowClusters.forEach((cl, ci) => {
+            const x = bx + PAD + ci * (blockW + GAP);
+            const color = CLUSTER_COLORS[(r0 * perRow + ci) % CLUSTER_COLORS.length];
+            let cy = y;
+            if (layoutId === "pillars") {
+              bind(wbMakeItem("textbox", { text: cl, w: blockW, h: 44, color, align: "center", fontSize: "md", bold: true }), x, cy);
+              cy += 52;
+            } else {
+              bind(wbMakeItem("text", { text: cl, w: blockW, fontSize: "md", bold: true, align: "left", color: "ink" }), x, cy);
+              cy += mh(cl, blockW, WB_FONT_SIZES.md) + 10;
+            }
+            for (const p of pts.filter(pp => (String(pp.cluster || pp.pillar || "").trim() || "Other") === cl)) {
+              const hh = Math.max(100, mh(p.point, STK - 4) + 30);
+              bind(wbMakeItem("sticky", { text: p.point, w: STK + 16, h: hh, color: layoutId === "pillars" ? stanceColor(p) : color, fontSize: "sm", align: "left" }), x, cy);
+              placeMarkers(p, x, cy, STK + 16);
+              cy += hh + 10;
+            }
+            rowBottom = Math.max(rowBottom, cy);
+          });
+          y = rowBottom + GAP + 8;
+        }
+      } else if (layoutId === "positioning") {
+        placeStatement();
+        const PLOT = Math.min(560, INNER);
+        const px0 = bx + Math.round((SECW - PLOT) / 2), py0 = y + 26;
+        const axes = (plan.keyView && plan.keyView.axes) || sk.axes || {};
+        const ax = Array.isArray(axes.x) ? axes.x : ["low", "high"];
+        const ay = Array.isArray(axes.y) ? axes.y : ["low", "high"];
+        bind(wbMakeItem("shape", { w: PLOT, h: PLOT, color: "gray", fill: "none", radius: 8 }), px0, py0);
+        bind(wbMakeItem("arrow", { x1: px0, y1: py0 + PLOT / 2, x2: px0 + PLOT, y2: py0 + PLOT / 2, color: "gray", size: 2, arrowStart: true }), 0, 0);
+        bind(wbMakeItem("arrow", { x1: px0 + PLOT / 2, y1: py0 + PLOT, x2: px0 + PLOT / 2, y2: py0, color: "gray", size: 2, arrowStart: true }), 0, 0);
+        bind(wbMakeItem("text", { text: String(ax[0]), w: 120, fontSize: "sm", color: "gray", align: "left" }), px0 - 4, py0 + PLOT / 2 - 24);
+        bind(wbMakeItem("text", { text: String(ax[1]), w: 120, fontSize: "sm", color: "gray", align: "right" }), px0 + PLOT - 116, py0 + PLOT / 2 - 24);
+        bind(wbMakeItem("text", { text: String(ay[1]), w: 140, fontSize: "sm", color: "gray", align: "left" }), px0 + PLOT / 2 + 8, py0 - 22);
+        bind(wbMakeItem("text", { text: String(ay[0]), w: 140, fontSize: "sm", color: "gray", align: "left" }), px0 + PLOT / 2 + 8, py0 + PLOT + 6);
+        const PW = 150;
+        pts.forEach(p => {
+          const fx = Math.max(0, Math.min(1, Number(p.px) || 0.5));
+          const fy = Math.max(0, Math.min(1, Number(p.py) || 0.5));
+          const hh = Math.max(64, mh(p.point, PW - 20) + 26);
+          const x = px0 + 6 + fx * (PLOT - PW - 12);
+          const yy = py0 + 6 + (1 - fy) * (PLOT - hh - 12);
+          bind(wbMakeItem("sticky", { text: p.point, w: PW, h: hh, color: stanceColor(p), fontSize: "sm", align: "left" }), x, yy);
+          placeMarkers(p, x, yy, PW);
+        });
+        y = py0 + PLOT + 30;
+      } else if (layoutId === "timeline") {
+        placeStatement();
+        const ordered = pts.slice().sort((a, b2) => (Number(a.order) || 0) - (Number(b2.order) || 0));
+        const CARD = 210;
+        const above = ordered.filter((_, i) => i % 2 === 0);
+        const hAbove = Math.max(120, ...above.map(p => mh(p.point, CARD - 20) + 46));
+        const yAxis = y + hAbove + 34;
+        bind(wbMakeItem("arrow", { x1: bx + PAD, y1: yAxis, x2: bx + SECW - PAD, y2: yAxis, color: "ink", size: 3 }), 0, 0);
+        let maxBelow = 60;
+        ordered.forEach((p, i) => {
+          const x = bx + PAD + i * 240;
+          const hh = Math.max(100, mh(p.point, CARD - 20) + 30);
+          const isAbove = i % 2 === 0;
+          const yy = isAbove ? yAxis - 18 - hh - 22 : yAxis + 40;
+          if (!isAbove) maxBelow = Math.max(maxBelow, 40 + hh + 22);
+          bind(wbMakeItem("text", { text: String(p.when || ("#" + (i + 1))), w: CARD, fontSize: "sm", bold: true, align: "left", color: "ink" }), x, isAbove ? yAxis - 34 : yAxis + 14);
+          bind(wbMakeItem("sticky", { text: p.point, w: CARD, h: hh, color: stanceColor(p), fontSize: "sm", align: "left" }), x, yy);
+          placeMarkers(p, x, yy, CARD);
+        });
+        y = yAxis + maxBelow + 20;
+      } else if (layoutId === "flow" || layoutId === "loop") {
+        placeStatement();
+        const ordered = pts.slice().sort((a, b2) => (Number(a.step) || 0) - (Number(b2.step) || 0));
+        if (layoutId === "loop" && ordered.length > 2) {
+          const R = 250, cx = bx + SECW / 2, cy0 = y + R + 60;
+          const BW = 190;
+          const placed = [];
+          ordered.forEach((p, i) => {
+            const ang = -Math.PI / 2 + (i * 2 * Math.PI) / ordered.length;
+            const hh = Math.max(70, mh(p.point, BW - 20) + 26);
+            const x = Math.round(cx + Math.cos(ang) * R - BW / 2);
+            const yy = Math.round(cy0 + Math.sin(ang) * R - hh / 2);
+            bind(wbMakeItem("textbox", { text: p.point, w: BW, h: hh, color: "blue", align: "center", fontSize: "sm" }), x, yy);
+            placeMarkers(p, x, yy, BW);
+            placed.push({ cx: x + BW / 2, cy: yy + hh / 2 });
+          });
+          placed.forEach((a, i) => {
+            const b2 = placed[(i + 1) % placed.length];
+            // Trim endpoints toward each box so heads land near edges.
+            const dx = b2.cx - a.cx, dy = b2.cy - a.cy, len = Math.max(1, Math.hypot(dx, dy));
+            const t1 = 110 / len, t2 = 110 / len;
+            bind(wbMakeItem("arrow", {
+              x1: a.cx + dx * t1, y1: a.cy + dy * t1,
+              x2: b2.cx - dx * t2, y2: b2.cy - dy * t2,
+              color: "gray", size: 2,
+            }), 0, 0);
+          });
+          y = cy0 + R + 90;
+        } else {
+          const BW = 220, perRow = Math.max(1, Math.floor(INNER / (BW + 40)));
+          let prevPt = null;
+          for (let i = 0; i < ordered.length; i++) {
+            const p = ordered[i];
+            const ci = i % perRow, r0 = Math.floor(i / perRow);
+            const hh = Math.max(76, mh(p.point, BW - 20) + 26);
+            const x = bx + PAD + ci * (BW + 40);
+            const yy = y + r0 * 150;
+            bind(wbMakeItem("textbox", { text: p.point, w: BW, h: hh, color: String(p.shape) === "diamond" ? "orange" : "blue", align: "center", fontSize: "sm" }), x, yy);
+            placeMarkers(p, x, yy, BW);
+            if (prevPt) {
+              bind(wbMakeItem("arrow", {
+                x1: prevPt.x + (prevPt.sameRow ? BW : BW / 2),
+                y1: prevPt.sameRow ? prevPt.y + prevPt.h / 2 : prevPt.y + prevPt.h,
+                x2: prevPt.sameRow ? x : x + BW / 2,
+                y2: prevPt.sameRow ? yy + hh / 2 : yy - 6,
+                color: "gray", size: 2,
+              }), 0, 0);
+            }
+            prevPt = { x, y: yy, h: hh, sameRow: (i + 1) % perRow !== 0 };
+          }
+          y += Math.ceil(ordered.length / perRow) * 150 + 10;
+        }
+      } else if (layoutId === "matrix" || layoutId === "journey") {
+        placeStatement();
+        const colLabels = layoutId === "matrix" ? mCols : stages;
+        const rowLabels = layoutId === "matrix" ? mRows : lanes;
+        const cellFor = (p) => layoutId === "matrix"
+          ? [String(p.row || "").trim() || "Other", String(p.col || "").trim() || "Other"]
+          : [String(p.lane || "").trim() || "Other", String(p.stage || "").trim() || "Other"];
+        const LBL = layoutId === "matrix" ? 160 : 140, CW = layoutId === "matrix" ? 200 : 204;
+        colLabels.forEach((cl, ci) => {
+          bind(wbMakeItem("text", { text: cl, w: CW, fontSize: "sm", bold: true, align: "center", color: "ink" }),
+            bx + PAD + LBL + ci * (CW + GAP), y);
+        });
+        y += 30;
+        rowLabels.forEach((rl) => {
+          const rowPts = colLabels.map(cl => pts.filter(p => { const [r2, c2] = cellFor(p); return r2 === rl && c2 === cl; }));
+          const cellH = Math.max(90, ...rowPts.map(list => list.reduce((acc, p) => acc + Math.max(60, mh(p.point, CW - 20) + 22) + 8, 8)));
+          bind(wbMakeItem("text", { text: rl, w: LBL - 10, fontSize: "sm", bold: true, align: "left", color: "ink" }), bx + PAD, y + 8);
+          colLabels.forEach((cl, ci) => {
+            const x = bx + PAD + LBL + ci * (CW + GAP);
+            bind(wbMakeItem("shape", { w: CW, h: cellH, color: "gray", fill: "none", radius: 6, size: 1 }), x, y);
+            let cy = y + 8;
+            for (const p of rowPts[ci]) {
+              const hh = Math.max(60, mh(p.point, CW - 20) + 22);
+              bind(wbMakeItem("textbox", { text: p.point, w: CW - 16, h: hh, color: stanceColor(p), align: "left", fontSize: "sm" }), x + 8, cy);
+              placeMarkers(p, x + 8, cy, CW - 16);
+              cy += hh + 8;
+            }
+          });
+          y += cellH + GAP;
+        });
+        // Journey emotion curve: one curved arrow through per-stage mood.
+        if (layoutId === "journey" && pts.some(p => p.mood != null)) {
+          const bandH = 90;
+          bind(wbMakeItem("text", { text: "Emotion", w: LBL - 10, fontSize: "sm", bold: true, align: "left", color: "ink" }), bx + PAD, y + 8);
+          const moodAt = stages.map(st => {
+            const list = pts.filter(p => (String(p.stage || "").trim() || "Other") === st && p.mood != null);
+            if (!list.length) return 0;
+            return list.reduce((a2, p) => a2 + Math.max(-1, Math.min(1, Number(p.mood) || 0)), 0) / list.length;
+          });
+          const yFor = (m) => y + 10 + (1 - (m + 1) / 2) * (bandH - 20);
+          const xFor = (i) => bx + PAD + LBL + i * (CW + GAP) + CW / 2;
+          const mids = [];
+          for (let i = 1; i < stages.length - 1; i++) { mids.push(xFor(i), yFor(moodAt[i])); }
+          if (stages.length >= 2) {
+            bind(wbMakeItem("arrow", {
+              x1: xFor(0), y1: yFor(moodAt[0]),
+              x2: xFor(stages.length - 1), y2: yFor(moodAt[stages.length - 1]),
+              color: "blue", size: 3, route: "curve", mids, arrowEnd: false,
+            }), 0, 0);
+          }
+          y += bandH + GAP;
+        }
+      } else if (layoutId === "canvas") {
+        placeStatement();
+        const zones = (Array.isArray(sk.zones) && sk.zones.length ? sk.zones.map(String) : uniq(pts.map(p => p.zone)));
+        const perRow = 3, ZW = Math.floor((INNER - (perRow - 1) * GAP) / perRow);
+        for (let r0 = 0; r0 * perRow < zones.length; r0++) {
+          const rowZones = zones.slice(r0 * perRow, r0 * perRow + perRow);
+          const zoneHeights = rowZones.map(zn => {
+            const zPts = pts.filter(p => (String(p.zone || "").trim() || "Other") === zn);
+            return 46 + zPts.reduce((acc, p) => acc + Math.max(60, mh(p.point, ZW - 36) + 22) + 8, 8) + 8;
+          });
+          const rowH = Math.max(140, ...zoneHeights);
+          rowZones.forEach((zn, ci) => {
+            const x = bx + PAD + ci * (ZW + GAP);
+            bind(wbMakeItem("shape", { w: ZW, h: rowH, color: "gray", fill: "none", radius: 8 }), x, y);
+            bind(wbMakeItem("text", { text: zn, w: ZW - 24, fontSize: "md", bold: true, align: "left", color: "ink" }), x + 12, y + 10);
+            let cy = y + 46;
+            for (const p of pts.filter(pp => (String(pp.zone || "").trim() || "Other") === zn)) {
+              const hh = Math.max(60, mh(p.point, ZW - 36) + 22);
+              bind(wbMakeItem("textbox", { text: p.point, w: ZW - 24, h: hh, color: stanceColor(p), align: "left", fontSize: "sm" }), x + 12, cy);
+              placeMarkers(p, x + 12, cy, ZW - 24);
+              cy += hh + 8;
+            }
+          });
+          y += rowH + GAP;
+        }
+      } else if (layoutId === "cards") {
+        placeStatement();
+        const CW = Math.floor((INNER - 2 * GAP) / 3);
+        for (let r0 = 0; r0 * 3 < pts.length; r0++) {
+          const row = pts.slice(r0 * 3, r0 * 3 + 3);
+          const heights = row.map(p => {
+            const g = gathered[p.id] || {};
+            const attrLines = Object.entries(g.attrs || {}).slice(0, 4)
+              .map(([k, v]) => k + ": " + v).join("\n");
+            return Math.max(140, mh(p.point, CW - 28, WB_FONT_SIZES.sm) + (attrLines ? mh(attrLines, CW - 28) : 0) + 56);
+          });
+          row.forEach((p, ci) => {
+            const g = gathered[p.id] || {};
+            const attrLines = Object.entries(g.attrs || {}).slice(0, 4)
+              .map(([k, v]) => k + ": " + v).join("\n");
+            const x = bx + PAD + ci * (CW + GAP);
+            bind(wbMakeItem("textbox", { text: p.point + (attrLines ? "\n\n" + attrLines : ""), w: CW, h: heights[ci], color: stanceColor(p), align: "left", fontSize: "sm" }), x, y);
+            placeMarkers(p, x, y, CW);
+          });
+          y += Math.max(...heights) + GAP;
+        }
+      } else if (layoutId === "keyvisual") {
+        placeStatement();
+        if (images.length) {
+          const IW = Math.floor((INNER - GAP) / 2), IH = Math.round(IW * 2 / 3);
+          for (let i = 0; i < images.length; i++) {
+            const ci = i % 2, r0 = Math.floor(i / 2);
+            const x = bx + PAD + ci * (IW + GAP);
+            const yy = y + r0 * (IH + 54);
+            bind(wbMakeItem("image", { path: images[i].path, w: IW, h: IH }), x, yy);
+            bind(wbMakeItem("text", { text: images[i].prompt, w: IW, fontSize: "sm", align: "left", color: "gray" }), x, yy + IH + 6);
+            const p = pts[i];
+            if (p) placeMarkers(p, x, yy, IW);
+          }
+          y += Math.ceil(images.length / 2) * (Math.round((Math.floor((INNER - GAP) / 2)) * 2 / 3) + 54) + 10;
+        }
+        // Mood-word tiles from the points themselves (also the no-image fallback).
+        stickyGrid(pts, 3, STK);
+      } else {
+        placeStatement();
+        stickyGrid(pts, 3, STK);
+      }
+      y += 10;
+    }
+
+    // ── Collated insights ──
+    if (insightItems.length) {
+      bind(wbMakeItem("text", { text: "Collated insights", w: INNER, fontSize: "md", bold: true, align: "left", color: "ink" }), bx + PAD, y);
+      y += 34;
+      for (const { ins, title, body } of insightItems) {
+        bind(title, bx + PAD, y);
+        y += mh(ins.n + ". " + ins.title, INNER - 14) + 8;
+        bind(body, bx + PAD, y);
+        y += (body.h || 60) + 14;
+      }
+      y += 6;
+    }
+
+    // ── Key driving factors ──
+    if (enabled("drivers") && sk.drivers && (sk.drivers.current || sk.drivers.target || (sk.drivers.factors || []).length)) {
+      const dr = sk.drivers;
+      bind(wbMakeItem("text", { text: "Key driving factors", w: INNER, fontSize: "md", bold: true, align: "left", color: "ink" }), bx + PAD, y);
+      y += 34;
+      const halfW = Math.floor((INNER - 120) / 2);
+      const ch = Math.max(84, mh(dr.current, halfW - 14) + 30, mh(dr.target, halfW - 14) + 30);
+      bind(wbMakeItem("textbox", { text: "NOW: " + String(dr.current || ""), w: halfW, h: ch, color: "gray", align: "left", fontSize: "sm" }), bx + PAD, y);
+      bind(wbMakeItem("textbox", { text: "TARGET: " + String(dr.target || ""), w: halfW, h: ch, color: "green", align: "left", fontSize: "sm" }), bx + PAD + halfW + 120, y);
+      bind(wbMakeItem("arrow", { x1: bx + PAD + halfW + 14, y1: y + ch / 2, x2: bx + PAD + halfW + 106, y2: y + ch / 2, color: "ink", size: 3 }), 0, 0);
+      y += ch + GAP;
+      const factors = (dr.factors || []).slice(0, 8);
+      for (let r0 = 0; r0 * 3 < factors.length; r0++) {
+        const row = factors.slice(r0 * 3, r0 * 3 + 3);
+        const heights = row.map(f => Math.max(90, mh(String(f.factor || "") + (f.note ? "\n" + f.note : ""), STK - 20) + 26));
+        row.forEach((f, ci) => {
+          bind(wbMakeItem("sticky", {
+            text: String(f.factor || "") + (f.note ? "\n" + f.note : ""),
+            w: STK, h: heights[ci], color: _strategyFactorColor(f.role), fontSize: "sm", align: "left",
+          }), bx + PAD + ci * (STK + GAP), y);
+        });
+        y += Math.max(...heights) + GAP;
+      }
+      y += 6;
+    }
+
+    // ── Summary ──
+    if (enabled("summary") && summary) {
+      bind(wbMakeItem("text", { text: "Summary", w: INNER, fontSize: "md", bold: true, align: "left", color: "ink" }), bx + PAD, y);
+      y += 34;
+      const shh = mh(summary, INNER - 14) + 28;
+      bind(wbMakeItem("textbox", { text: summary, w: INNER, h: shh, color: "gray", align: "left", fontSize: "sm" }), bx + PAD, y);
+      y += shh + PAD;
+    }
+
+    const secBody = workflowMakeNodeOfKind("section", { title: header });
+    nodes = nodes
+      .map(n => n.id === nodeId ? { ...n, sectionId: secId, drIds: { wbIds } } : n)
+      .concat([{ id: secId, ...secBody, x: bx, y: by, w: SECW, h: Math.max(360, y - by) }]);
+    out.right = bx + SECW;
+    out.top = by;
+    return { ...d, nodes, wb: [...keptWb, ...items] };
+  });
+  return out;
 }
 
 // Collect folder scopes from upstream entries.
@@ -28671,6 +29140,14 @@ const WORKFLOW_WB_FACTORY = {
     type: "sticker", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 72, h: p.h ?? 72,
     emoji: p.emoji || "⭐", rotation: p.rotation ?? 0,
   }),
+  // Numbered insight marker. A small numbered circle pinned next to the thing
+  // it annotates (a sticky, an image, a table cell); clicking it pans the
+  // canvas to `targetWb` - the full insight writeup item - via th:focus-wb.
+  // targetWb = null renders an inert badge (still draggable / deletable).
+  "marker": (p = {}) => ({
+    type: "marker", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 28, h: p.h ?? 28,
+    n: p.n ?? 1, color: p.color || "ink", targetWb: p.targetWb || null,
+  }),
   "shape": (p = {}) => ({
     type: "shape", shape: p.shape === "diamond" ? "diamond" : "rect",
     x: p.x ?? 0, y: p.y ?? 0,
@@ -28919,11 +29396,12 @@ function workflowTableCellNodes(table, nodes, r, c) {
     return cx >= rect.x && cx <= rect.x + rect.w && cy >= rect.y && cy <= rect.y + rect.h;
   });
 }
-// Same membership rule for whiteboard text carriers (text / textbox / sticky).
+// Same membership rule for whiteboard text carriers (text / textbox / sticky)
+// plus insight markers (cell-pinned annotation badges).
 function workflowTableCellWbItems(table, wbItems, r, c) {
   const rect = wbTableCellRect(table, r, c);
   return (wbItems || []).filter(it => {
-    if (!it || (it.type !== "text" && it.type !== "textbox" && it.type !== "sticky")) return false;
+    if (!it || (it.type !== "text" && it.type !== "textbox" && it.type !== "sticky" && it.type !== "marker")) return false;
     if (it.cell && it.cell.tableId === table.id) {
       return it.cell.r >= rect.ar && it.cell.r < rect.ar + rect.rs
           && it.cell.c >= rect.ac && it.cell.c < rect.ac + rect.cs;
@@ -29512,6 +29990,26 @@ const WORKFLOW_NODE_FACTORY = {
     sectionId: p.sectionId || null, // board section (for re-run cleanup)
     drIds: p.drIds || null,         // { wbIds: [...] } board wb items (for re-run cleanup)
   }),
+  // Strategy assistant: asks directing questions, then proposes a PRESENTATION
+  // PLAN (key-view layout from the strategy layout registry + which sections to
+  // build) the user trims / extends before the build. Per-point agents gather /
+  // validate the plan's attributes; the board renders key view + breakdown +
+  // numbered-marker collated insights + summary (+ driving factors when the
+  // strategy is change-oriented; + palette / typography / image nodes when the
+  // user opts into visual direction on the plan gate).
+  "assistant-strategy": (p) => ({
+    kind: "assistant-strategy", w: 460, h: 560,
+    task:  p.task  || "",   // the strategy ask
+    model: p.model || "claude-opus-4-8",
+    searchVia: p.searchVia || "",   // "" (inherit cascade) | "agent" | "exa"
+    maxAgents: p.maxAgents || 4,    // per-point gather pool cap (2-6)
+    clarify: p.clarify || null,     // { forTask, questions:[{q,options[]}], answers:{}, done }
+    presPlan: p.presPlan || null,   // { forTask, header, description, keyView, sections[], attributes[], visuals, custom, done }
+    tableId: p.tableId || null,     // breakdown table (for re-run cleanup)
+    sectionId: p.sectionId || null, // board section (for re-run cleanup)
+    drIds: p.drIds || null,         // { wbIds: [...] } board wb items (for re-run cleanup)
+    visIds: p.visIds || null,       // { nodeIds: [...] } emitted palette/typography/asset nodes (for re-run cleanup)
+  }),
   "composer": (p) => ({
     kind: "composer", w: 900, h: 600,
     canvasW: p.canvasW || 1600,
@@ -29863,6 +30361,12 @@ const WORKFLOW_CONNECT_DEFS = {
   "assistant-deepresearch": {
     label: "Deep research assistant",
     provides: { out: { label: "Research board (section + evidence table)", tags: ["section"] } },
+    accepts:  { in:  { label: "Context (prompt / asset / folder / section)",
+                       tags: ["text", "text-gen", "asset", "section", "folder"] } },
+  },
+  "assistant-strategy": {
+    label: "Strategy assistant",
+    provides: { out: { label: "Strategy board (key view + breakdown + insights)", tags: ["section"] } },
     accepts:  { in:  { label: "Context (prompt / asset / folder / section)",
                        tags: ["text", "text-gen", "asset", "section", "folder"] } },
   },
@@ -35946,6 +36450,27 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     window.addEventListener("th:focus-node", onFocus);
     return () => window.removeEventListener("th:focus-node", onFocus);
   }, [data.nodes, wrapRef, setPan, zoom]);
+  // Insight-marker click → pan to the linked WHITEBOARD item (the collated
+  // insight writeup) and select it. Sibling of th:focus-node for the wb layer.
+  useEffect(() => {
+    const onFocusWb = (ev) => {
+      const wbId = ev && ev.detail && ev.detail.wbId;
+      if (!wbId) return;
+      const it = (data.wb || []).find(i => i && i.id === wbId);
+      if (!it) return;
+      const wrap = wrapRef && wrapRef.current;
+      if (!wrap) return;
+      const r = wrap.getBoundingClientRect();
+      const bb = wbItemBBox(it);
+      setPan({
+        x: r.width / 2 - (bb.x + bb.w / 2) * zoom,
+        y: r.height / 2 - (bb.y + bb.h / 2) * zoom,
+      });
+      setTimeout(() => { setSelectedNodeIds(new Set()); setSelectedWbIds(new Set([wbId])); }, 0);
+    };
+    window.addEventListener("th:focus-wb", onFocusWb);
+    return () => window.removeEventListener("th:focus-wb", onFocusWb);
+  }, [data.wb, wrapRef, setPan, zoom, setSelectedNodeIds, setSelectedWbIds]);
 
   // ── Asset-mode "AI edit" → spawn an ai-image-editor wired to the asset ──
   // The AI-edit button on an image asset's control panel dispatches
@@ -38166,6 +38691,38 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const nodes = nt === t ? (d.nodes || []) : (d.nodes || []).map(n => n.id === tableId ? nt : n);
       return { ...d, wb: [...(Array.isArray(d.wb) ? d.wb : []), it], nodes };
     });
+  }, [setData]);
+
+  // Pin a numbered insight marker into a cell. Markers stack horizontally
+  // along the cell's top edge (one insight badge per call); each links to a
+  // collated-insight wb item via targetWb. Returns the marker's id.
+  const workflowAddCellMarker = useCallback((tableId, r, c, n, targetWb) => {
+    const sz = 26;
+    let newId = null;
+    setData(d => {
+      const t = (d.nodes || []).find(nd => nd.id === tableId && nd.kind === "table");
+      if (!t) return d;
+      const list = Array.isArray(d.wb) ? d.wb : [];
+      // Next free slot in this cell's marker row.
+      let count = 0;
+      for (const it of list) {
+        if (it && it.type === "marker" && it.cell && it.cell.tableId === tableId
+            && it.cell.r === r && it.cell.c === c) count++;
+      }
+      const ox = 6 + count * (sz + 6), oy = 6;
+      const cols = wbTableCols(t).slice(), rows = wbTableRows(t).slice();
+      let grew = false;
+      if ((cols[c] || 0) < ox + sz + 6) { cols[c] = ox + sz + 6; grew = true; }
+      if ((rows[r] || 0) < oy + sz + 6) { rows[r] = oy + sz + 6; grew = true; }
+      const nt = grew ? wbTableSync({ ...t, cols, rows }) : t;
+      const rect = wbTableCellRect(nt, r, c);
+      const it = wbMakeItem("marker", { n, targetWb: targetWb || null, x: rect.x + ox, y: rect.y + oy, w: sz, h: sz });
+      it.cell = { tableId, r, c, ox, oy };
+      newId = it.id;
+      const nodes = nt === t ? (d.nodes || []) : (d.nodes || []).map(nd => nd.id === tableId ? nt : nd);
+      return { ...d, wb: [...list, it], nodes };
+    });
+    return newId;
   }, [setData]);
 
   // Strip every cell-bound item/node from a table (for re-run). The table node
@@ -45198,6 +45755,372 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }
   }, [data, setData, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellNode, workflowAppendCellBox, workflowSetCellText, _assistantDropTable]);
 
+  // ── Assistant 5: Strategy assistant (clarify → presentation plan → board) ──
+  // Two user gates BEFORE any research spend: Phase 0 asks up to 3 directing
+  // questions (same await-gate mechanics as deep research), then Phase 1
+  // proposes a PRESENTATION PLAN - a key-view layout picked from
+  // STRATEGY_LAYOUTS plus per-section toggles (key view / breakdown /
+  // collated insights / summary / driving factors), proposed per-point
+  // attributes, and a visual-direction opt-in (the image-generation cost
+  // consent) - which the node body renders as editable rows. Only after the
+  // user approves the plan does the build run: skeleton, per-point gather
+  // agents (parallel pool through the searchVia cascade), summary, then ONE
+  // board build at the end. The board builds once (unlike deep research's
+  // mid-run rebuild) so numbered insight-marker targets never go stale; the
+  // floating result panel is the live progress view during the run.
+  const setupStrategy = useCallback(async (nodeId, gateArg) => {
+    const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
+    const node = (data.nodes || []).find(n => n.id === nodeId);
+    if (!node) return;
+    const task = (node.task || "").trim();
+    if (!task) { setRun({ status: "error", error: "Describe the strategy ask first." }); return; }
+    const t0 = Date.now();
+    try {
+      const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
+      let ctx = _assistantCollectText(ups);
+      const protoText = await assistantFetchPrototypeText(node, data.nodes, data.edges);
+      if (protoText) ctx = ctx ? (ctx + "\n\n" + protoText) : protoText;
+
+      // Phase 0: directing questions (gateArg beats the stale node snapshot).
+      const clar = (gateArg && gateArg.clarify) || node.clarify;
+      if (!clar || clar.forTask !== task) {
+        setRun({ status: "loading", phase: "forming questions", error: null });
+        updateNode(nodeId, { runStatus: "running" });
+        const qText = await assistantLlm([{ role: "user", content:
+          `You are planning a STRATEGY deliverable (business / product / brand / positioning / design / content / growth - whatever the task implies). The user's answers will direct both the strategy's angle and how it is PRESENTED.\n\nTASK:\n${task}\n` +
+          (ctx ? "\nLINKED MATERIAL (excerpt):\n" + ctx.slice(0, 800) : "") +
+          `\n\nAsk up to 3 SHORT questions whose answers would change the strategy's direction or presentation (e.g. audience of the strategy, current state vs future target, scope, what "winning" means, how visual the output should be). Each question gets 2-4 short answer OPTIONS.\n\nReturn ONLY JSON: [{"q":"...","options":["...","..."]}]. No prose.` }],
+          { model: node.model, maxTokens: 800 });
+        const qs = _assistantExtractJson(qText);
+        if (!Array.isArray(qs) || !qs.length) throw new Error("Could not form directing questions - try again.");
+        updateNode(nodeId, {
+          runStatus: null,
+          clarify: { forTask: task, done: false, answers: {},
+            questions: qs.slice(0, 3).map(x => ({ q: String(x.q || ""), options: (Array.isArray(x.options) ? x.options : []).slice(0, 4).map(String) })) },
+        });
+        setRun({ status: "await", phase: "questions ready", error: null });
+        return;
+      }
+      if (!clar.done) { setRun({ status: "await", phase: "answer the questions" }); return; }
+      const answers = (clar.questions || [])
+        .map((qq, i) => (clar.answers && String(clar.answers[i] || "").trim()) ? `Q: ${qq.q}\nA: ${clar.answers[i]}` : "")
+        .filter(Boolean).join("\n");
+
+      // Phase 1: the presentation plan gate. gateArg.replan forces a fresh
+      // proposal (the Re-plan button clears node.presPlan, but this closure's
+      // node snapshot may still carry the stale copy).
+      const plan = (gateArg && gateArg.replan) ? null : ((gateArg && gateArg.presPlan) || node.presPlan);
+      if (!plan || plan.forTask !== task) {
+        setRun({ status: "loading", phase: "planning the presentation", error: null });
+        updateNode(nodeId, { runStatus: "running" });
+        const catalog = Object.entries(STRATEGY_LAYOUTS)
+          .map(([id, t]) => `- "${id}": ${t.hint}`).join("\n");
+        const pText = await assistantLlm([{ role: "user", content:
+          `You LEAD a strategy engagement. Before researching, propose HOW the strategy should be presented on a whiteboard - the user will trim / extend this plan.\n\nTASK:\n${task}\n` +
+          (answers ? `\nUSER'S DIRECTION (clarifying Q&A):\n${answers}\n` : "") +
+          (ctx ? `\nLINKED MATERIAL (excerpt):\n${ctx.slice(0, 1200)}\n` : "") +
+          `\nKEY-VIEW LAYOUTS available:\n${catalog}\n` +
+          `\nDecide:\n1. The key-view layout that best fits this strategy.\n2. Which sections to build: "keyview" (the main view), "breakdown" (a per-point table of gathered + validated attributes), "insights" (collated numbered insights the board's markers link to), "summary", "drivers" (current state -> future target + key driving factors; ONLY when the strategy involves change over time or a target).\n3. 3-8 per-point ATTRIBUTES to research, named for THIS task (e.g. "Audience need", "Evidence", "Competitor take", "Risk").\n4. Whether VISUAL DIRECTION belongs in the output (palette / typography / generated imagery - design, brand, mood, narrative strategies). Default false; it costs image generation.\n` +
+          `\nReturn ONLY JSON: {"header":"<board title, <=8 words>","description":"<1-2 sentence board intro>","keyView":{"layout":"<id>","axes":{"x":["<left>","<right>"],"y":["<bottom>","<top>"]},"note":"<why this layout, one line>"},"sections":[{"key":"keyview|breakdown|insights|summary|drivers","on":true,"note":"<one line on what goes here>"}],"breakdownStyle":"table|cards","attributes":["..."],"visuals":{"wanted":false,"kinds":["palette","typography","image"],"note":"<one line>"}}. Include ALL five section keys (set "on" false for ones this strategy does not need). No prose.` }],
+          { model: node.model, maxTokens: 1800 });
+        const pp = _drExtractObj(pText);
+        if (!pp || !pp.keyView || !Array.isArray(pp.sections)) throw new Error("Could not form the presentation plan - try again.");
+        const KEYS = ["keyview", "breakdown", "insights", "summary", "drivers"];
+        const secByKey = {};
+        for (const s of pp.sections) if (s && KEYS.includes(s.key)) secByKey[s.key] = s;
+        updateNode(nodeId, {
+          runStatus: null,
+          presPlan: {
+            forTask: task, done: false, custom: "",
+            header: String(pp.header || task.slice(0, 60)),
+            description: String(pp.description || ""),
+            keyView: {
+              layout: STRATEGY_LAYOUTS[pp.keyView.layout] ? pp.keyView.layout : "statement",
+              axes: pp.keyView.axes || null,
+              note: String(pp.keyView.note || ""),
+            },
+            sections: KEYS.map(k => ({
+              key: k,
+              on: secByKey[k] ? secByKey[k].on !== false : (k !== "drivers"),
+              note: String((secByKey[k] || {}).note || ""),
+            })),
+            breakdownStyle: pp.breakdownStyle === "cards" ? "cards" : "table",
+            attributes: (Array.isArray(pp.attributes) ? pp.attributes : []).slice(0, 8).map(String).filter(Boolean),
+            visuals: {
+              wanted: !!(pp.visuals && pp.visuals.wanted),
+              kinds: (pp.visuals && Array.isArray(pp.visuals.kinds) ? pp.visuals.kinds : ["palette", "typography", "image"]).map(String),
+              note: String((pp.visuals || {}).note || ""),
+            },
+          },
+        });
+        setRun({ status: "await", phase: "plan ready - review it on the node", error: null });
+        return;
+      }
+      if (!plan.done) { setRun({ status: "await", phase: "review the presentation plan" }); return; }
+
+      // ── Build phase ──
+      const enabled = (k) => { const s = (plan.sections || []).find(x => x.key === k); return !s || s.on !== false; };
+      const layoutId = STRATEGY_LAYOUTS[plan.keyView && plan.keyView.layout] ? plan.keyView.layout : "statement";
+      const lay = STRATEGY_LAYOUTS[layoutId];
+      const attributes = (plan.attributes && plan.attributes.length ? plan.attributes : ["Evidence", "Implication"]).slice(0, 8);
+      const wantVisuals = !!(plan.visuals && plan.visuals.wanted);
+      const customNote = String(plan.custom || "").trim();
+      setRun({ status: "loading", phase: "forming the strategy skeleton", error: null });
+      updateNode(nodeId, { runStatus: "running" });
+
+      // Sweep the previous run's visual nodes (palette / typography / assets).
+      const oldVis = (node.visIds && node.visIds.nodeIds) || [];
+      if (oldVis.length) {
+        setData(d => ({
+          ...d,
+          nodes: (d.nodes || []).filter(n => !oldVis.includes(n.id)),
+          edges: (d.edges || []).filter(e => {
+            const f = workflowParseEdgeRef(e.from || ""), t = workflowParseEdgeRef(e.to || "");
+            return !(f && oldVis.includes(f.node)) && !(t && oldVis.includes(t.node));
+          }),
+        }));
+      }
+
+      // Phase 2: skeleton - key points carrying the layout's placement fields.
+      const layoutFields = lay.fields ? ("," + lay.fields) : "";
+      const extraShape =
+        (layoutId === "positioning" ? `,"axes":{"x":["<left end>","<right end>"],"y":["<bottom end>","<top end>"]}` : "") +
+        (layoutId === "canvas" ? `,"zones":["<zone name in display order>", "..."]` : "") +
+        (layoutId === "journey" ? `,"stages":["<stage in order>"],"lanes":["<lane in order>"]` : "");
+      const skText = await assistantLlm([{ role: "user", content:
+        `You LEAD the strategy work. Form the strategy skeleton for the board.\n\nTASK:\n${task}\n` +
+        (answers ? `\nUSER'S DIRECTION:\n${answers}\n` : "") +
+        (ctx ? `\nLINKED MATERIAL (excerpt):\n${ctx.slice(0, 2000)}\n` : "") +
+        (customNote ? `\nCUSTOM PRESENTATION REQUIREMENT from the user (obey it):\n${customNote}\n` : "") +
+        `\nKEY VIEW: "${layoutId}" (${lay.hint}). Plan note: ${plan.keyView.note || "-"}.\n` +
+        `\n1. Write the STRATEGY STATEMENT: the core strategic claim / direction in 1-2 sentences.` +
+        `\n2. Define 3-8 KEY POINTS - the strategy's load-bearing elements, shaped for the key view.` +
+        (enabled("drivers") ? `\n3. Since this strategy involves change: state the CURRENT state, the TARGET state, and 3-6 driving factors (role: driver / barrier / uncertain).` : "") +
+        `\n\nReturn ONLY JSON: {"statement":"...","points":[{"id":<1..n>,"point":"<one sentence>"${layoutFields}}]${extraShape}` +
+        (enabled("drivers") ? `,"drivers":{"current":"<current state, one sentence>","target":"<target state, one sentence>","factors":[{"factor":"...","role":"driver|barrier|uncertain","note":"<one line>"}]}` : "") +
+        `}. No prose.` }],
+        { model: node.model, maxTokens: 2500 });
+      const sk = _drExtractObj(skText);
+      if (!sk || !Array.isArray(sk.points) || !sk.points.length) throw new Error("Could not form the strategy skeleton.");
+      sk.points = sk.points.slice(0, 8).map((p, i) => ({ ...p, id: p.id || (i + 1), point: String(p.point || "") }));
+      const header = plan.header || task.slice(0, 60);
+      const desc = plan.description || "";
+
+      // Skeleton result NOW so the float panel lives during the gather.
+      const writeResult = (extra) => updateNode(nodeId, { result: {
+        kind: "strategy", task, builtAt: Date.now(),
+        header, description: desc, statement: sk.statement || "", layout: layoutId,
+        sections: (plan.sections || []).filter(s => s.on !== false).map(s => s.key),
+        counters: { points: sk.points.length, insights: 0, attributes: attributes.length, elapsedMs: Date.now() - t0 },
+        points: sk.points.map(p => ({ id: p.id, point: p.point, stance: "" })),
+        insights: [], summary: "",
+        ...(extra || {}),
+      } });
+      writeResult();
+
+      // Phase 3: breakdown table early (fills live as gather agents land).
+      if (node.tableId) _assistantDropTable(node.tableId);
+      let tableId = null;
+      const INS_COL = 1 + attributes.length + 2;   // Point, ...attrs, Validation, Sources, Insights, Visual
+      const VIS_COL = INS_COL + 1;
+      if (enabled("breakdown")) {
+        const headers = ["Point", ...attributes, "Validation", "Sources", "Insights", "Visual"];
+        const colWidths = [240, ...attributes.map(() => 240), 240, 300, 140, 300];
+        const rows = sk.points.map(p => [p.point, ...attributes.map(() => ""), "", "", "", ""]);
+        tableId = workflowBuildResultTable({
+          title: "Breakdown: " + header.slice(0, 32), headers, rows,
+          x: Math.round(node.x + (node.w || 460) + 460), y: Math.round(node.y + 720), colWidths,
+        });
+        updateNode(nodeId, { tableId });
+        updateNode(tableId, { runStatus: "running" });
+      }
+
+      // Per-point gather agents, in parallel through the searchVia cascade.
+      const via = resolveSearchVia(node.searchVia);
+      const gathered = {};   // pointId -> { attrs, stance, note, url, snippet, image, insights[] }
+      const gatherPrompt = (p) =>
+        `STRATEGY STATEMENT:\n${sk.statement}\n\nKEY POINT you own:\n"${p.point}"\n` +
+        (ctx ? `\nGROUNDING MATERIAL - judge THIS, but validate against external sources where you can:\n${ctx.slice(0, 2500)}\n` : "") +
+        `\nGather each attribute for THIS point, validate the point itself, and surface 1-3 non-obvious INSIGHTS (things worth a full write-up).\nATTRIBUTES to fill: ${attributes.map(a => `"${a}"`).join(", ")}.\n` +
+        `\nReturn ONLY JSON: {"attrs":{${attributes.map(a => `"${a}":"<finding, 1-3 sentences>"`).join(",")}},"stance":"support|oppose|challenge|unverified","note":"<validation verdict in one line>","url":"<source url or empty>","snippet":"<short verbatim quote or empty>","image":"<direct image url that shows it, else empty>","insights":[{"title":"<short insight title>","text":"<the full insight, 2-4 sentences>"}]}. No prose.`;
+      const runGather = async (p) => {
+        const system = `You research ONE key point of a strategy. Be concrete and honest; mark what you could not validate. Output strictly JSON, no prose.`;
+        if (via === "exa") {
+          let srcText = "";
+          try {
+            const er = await fetch(apiUrl("/__exa/search"), {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ query: (p.point + " - " + (sk.statement || task)).slice(0, 400), numResults: 5, type: "auto" }),
+            });
+            const ej = await er.json().catch(() => ({}));
+            if (er.ok && ej.ok && (ej.results || []).length) {
+              srcText = "\n\nWEB SOURCES (Exa - use + cite these):\n" + JSON.stringify((ej.results || []).map(s => ({
+                title: s.title, url: s.url, summary: s.summary || (s.highlights || [])[0] || "", text: (s.text || "").slice(0, 400), image: s.image || "" })));
+            }
+          } catch { /* knowledge-only fallback */ }
+          const t = await assistantLlm([
+            { role: "system", content: system },
+            { role: "user", content: gatherPrompt(p) + srcText },
+          ], { model: node.model, maxTokens: 1800 });
+          return _drExtractObj(t);
+        }
+        try {
+          const r = await fetch(apiUrl("/__assistant/research"), {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: node.model, system: system + " Use your web tools to verify what matters.", prompt: gatherPrompt(p) }),
+          });
+          const j = await r.json().catch(() => ({}));
+          if (r.ok && j.ok) return _drExtractObj(j.text);
+        } catch { /* fall through */ }
+        // Web agent unavailable: reason from knowledge, honestly unverified.
+        const t = await assistantLlm([
+          { role: "system", content: system + " You have NO web access - reason from the material and your knowledge; use stance \"unverified\" where you cannot validate." },
+          { role: "user", content: gatherPrompt(p) },
+        ], { model: node.model, maxTokens: 1800 });
+        return _drExtractObj(t);
+      };
+      {
+        let landed = 0;
+        const POOL = Math.max(2, Math.min(6, node.maxAgents || 4));
+        setRun({ status: "loading", phase: `0/${sk.points.length} points gathered (parallel)` });
+        await _assistantPool(sk.points, POOL, async (p, i) => {
+          let g = null;
+          try { g = await runGather(p); } catch (e) { g = null; }
+          g = g || {};
+          g.attrs = g.attrs || {};
+          g.insights = (Array.isArray(g.insights) ? g.insights : []).slice(0, 3)
+            .map(x => ({ title: String((x && x.title) || "").slice(0, 80), text: String((x && x.text) || "") }))
+            .filter(x => x.title || x.text);
+          gathered[p.id] = g;
+          if (tableId) {
+            const r = i + 1;
+            attributes.forEach((a, ai) => workflowSetCellText(tableId, r, 1 + ai, String(g.attrs[a] || "")));
+            const sw = _drStanceWord(g.stance);
+            workflowAppendCellBox(tableId, r, 1 + attributes.length, sw.toUpperCase() + (g.note ? ": " + g.note : ""), _drStanceColor(sw));
+            if (g.url || g.snippet) {
+              workflowAppendCellBox(tableId, r, 2 + attributes.length,
+                (g.snippet ? "“" + g.snippet + "”\n" : "") + (g.url || ""), "blue");
+            }
+            if (g.image && /^https?:/i.test(g.image)) {
+              workflowAddCellNode(tableId, r, VIS_COL, "browser", { url: g.image, cellW: 280, cellH: 190 });
+            }
+          }
+          landed++;
+          setRun({ status: "loading", phase: `${landed}/${sk.points.length} points gathered (parallel)` });
+        });
+      }
+
+      // Phase 4: number the collated insights globally (board-wide 1..N).
+      const insights = [];
+      if (enabled("insights")) {
+        for (const p of sk.points) {
+          for (const ins of ((gathered[p.id] || {}).insights || [])) {
+            if (insights.length >= 12) break;
+            insights.push({ n: insights.length + 1, pointId: p.id, title: ins.title || ("Insight " + (insights.length + 1)), text: ins.text || "" });
+          }
+        }
+      }
+
+      // Phase 5: the lead settles the summary (+ visual direction when wanted).
+      setRun({ status: "loading", phase: "writing the summary" });
+      const sumText = await assistantLlm([{ role: "user", content:
+        `You LEAD the strategy work. The research is in - settle the board.\n\nSTATEMENT:\n${sk.statement}\n\nPOINTS + FINDINGS (JSON):\n` +
+        JSON.stringify(sk.points.map(p => ({ id: p.id, point: p.point, ...(gathered[p.id] || {}) }))) +
+        (customNote ? `\n\nCUSTOM PRESENTATION REQUIREMENT (obey): ${customNote}` : "") +
+        `\n\nReturn ONLY JSON: {"summary":"<4-6 sentence summary for the user: the strategy, why it holds, what to do next>"` +
+        (wantVisuals ? `,"visual":{"palette":[{"name":"--<token>","value":"#<hex>"}],"fonts":[{"family":"<font family>","role":"heading|body"}],"imagePrompts":["<mood image prompt>"]}` : "") +
+        `}. Palette max 6 swatches, fonts max 2, imagePrompts max 4. No prose.` }],
+        { model: node.model, maxTokens: 2200 });
+      const fin = _drExtractObj(sumText) || {};
+      const summary = String(fin.summary || "");
+
+      // Phase 5.5: generated imagery (only with the user's plan-gate consent).
+      // Failures degrade to a text-only board - never fail the run over images.
+      const genImages = [];
+      const keyVisualPrompts = layoutId === "keyvisual"
+        ? sk.points.map(p => p.imagePrompt).filter(Boolean)
+        : [];
+      const imagePrompts = wantVisuals
+        ? [...keyVisualPrompts, ...(((fin.visual || {}).imagePrompts) || [])].slice(0, 4)
+        : [];
+      if (imagePrompts.length) {
+        const slug = activePrototypeSlug();
+        let done = 0;
+        setRun({ status: "loading", phase: `generating imagery 0/${imagePrompts.length}` });
+        await _assistantPool(imagePrompts, 2, async (prompt, i) => {
+          const outPath = `source/${slug}/strategy/${nodeId}-${i + 1}.png`;
+          try {
+            const r = await fetch(apiUrl("/__asset_generate"), {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ skill: "generate-image", output: outPath, prompt: String(prompt), aspect: "3:2" }),
+            });
+            if (r.ok) genImages[i] = { path: outPath, prompt: String(prompt) };
+          } catch { /* skip this image */ }
+          done++;
+          setRun({ status: "loading", phase: `generating imagery ${done}/${imagePrompts.length}` });
+        });
+      }
+      const images = genImages.filter(Boolean);
+
+      // Phase 6: build the board (once - see the header comment).
+      setRun({ status: "loading", phase: "building board" });
+      const built = _strategyBuildBoard({
+        setData, node, nodeId, layoutId, plan, sk, gathered, insights, summary, images,
+        header, desc, enabled,
+      });
+
+      // Insight markers into the breakdown table, linked to the writeups.
+      if (tableId && enabled("insights")) {
+        for (const ins of insights) {
+          const ri = sk.points.findIndex(p => String(p.id) === String(ins.pointId));
+          if (ri < 0) continue;
+          workflowAddCellMarker(tableId, ri + 1, INS_COL, ins.n, built.insightIdByN[ins.n] || null);
+        }
+      }
+
+      // Visual-direction nodes beside the board (tracked for the next sweep).
+      const visNodeIds = [];
+      if (wantVisuals) {
+        const vx = built.right + 60, vy = built.top;
+        setData(d => {
+          const nodes = [...(d.nodes || [])];
+          let yy = vy;
+          const pal = ((fin.visual || {}).palette || []).slice(0, 6)
+            .filter(s => s && /^#?[0-9a-fA-F]{3,8}$/.test(String(s.value || "").replace("#", "")));
+          if (pal.length) {
+            const id = workflowNewNodeId();
+            const body = workflowMakeNodeOfKind("color-palette", {
+              name: header.slice(0, 24),
+              swatches: pal.map(s => ({ name: String(s.name || "--color"), value: String(s.value).startsWith("#") ? String(s.value) : "#" + String(s.value) })),
+            });
+            if (body) { nodes.push({ id, ...body, x: vx, y: yy }); visNodeIds.push(id); yy += (body.h || 360) + 40; }
+          }
+          for (const f of ((fin.visual || {}).fonts || []).slice(0, 2)) {
+            if (!f || !f.family) continue;
+            const id = workflowNewNodeId();
+            const body = workflowMakeNodeOfKind("typography", { name: String(f.family), fontFamily: String(f.family) });
+            if (body) { nodes.push({ id, ...body, x: vx, y: yy }); visNodeIds.push(id); yy += (body.h || 360) + 40; }
+          }
+          return { ...d, nodes };
+        });
+      }
+      updateNode(nodeId, { visIds: visNodeIds.length ? { nodeIds: visNodeIds } : null });
+
+      writeResult({
+        counters: { points: sk.points.length, insights: insights.length, attributes: attributes.length, elapsedMs: Date.now() - t0 },
+        points: sk.points.map(p => ({ id: p.id, point: p.point, stance: _drStanceWord((gathered[p.id] || {}).stance) })),
+        insights: insights.map(i => ({ n: i.n, title: i.title })),
+        summary,
+      });
+      updateNode(nodeId, { runStatus: "done" });
+      if (tableId) updateNode(tableId, { runStatus: "done" });
+      setRun({ status: "done", phase: "done", ranAt: Date.now() });
+    } catch (e) {
+      updateNode(nodeId, { runStatus: "error" });
+      setRun({ status: "error", error: String(e?.message || e) });
+    }
+  }, [data, setData, updateNode, assistantLlm, workflowBuildResultTable, workflowAddCellNode, workflowAppendCellBox, workflowSetCellText, workflowAddCellMarker, _assistantDropTable]);
+
   // first (so a chain like `prompt → gen-image → rembg → asset` works when
   // you click Run on either skill - the runner figures out the dependency
   // order and runs each one). Between two chained skills, the upstream
@@ -49979,6 +50902,24 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onSetup=${setupDeepResearch}
               />
             `)}
+            ${(data.nodes || []).filter(n => n.kind === "assistant-strategy").map(n => html`
+              <${WorkflowStrategyNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${selectedNodeIds.has(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                runState=${runStates[n.id]}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => setNodeDragging(true)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onSetup=${setupStrategy}
+              />
+            `)}
             ${(data.nodes || []).filter(n => n.kind === "skill").map(n => html`
               <${WorkflowSkillNode}
                 key=${n.id}
@@ -52370,6 +53311,17 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph"><${Icon.Brain}/></span>
             <span className="workflow-library-item-label">Deep research assistant</span>
             <span className="workflow-library-item-id">viewpoint agents debate</span>
+          </div>
+          <div className="workflow-library-item"
+               draggable=${true}
+               onDragStart=${(e) => {
+                 e.dataTransfer.effectAllowed = "copy";
+                 e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-strategy" }));
+               }}
+               title="Drag onto canvas - asks directing questions, proposes a presentation plan you can trim or extend (key view as statement / metrics / affinity map / 2x2 / timeline / flow / canvas / journey / mood board and more), then researches each key point and builds the board: key view + per-point breakdown + numbered insight markers + summary + driving factors.">
+            <span className="workflow-library-item-glyph"><${Icon.Flow}/></span>
+            <span className="workflow-library-item-label">Strategy assistant</span>
+            <span className="workflow-library-item-id">plan-gated strategy board</span>
           </div>
           <div className="workflow-library-item"
                draggable=${true}
@@ -78423,6 +79375,52 @@ function WorkflowAssistantResultPanel({ node }) {
           <div className="wap-conclusion">${res.conclusion}</div>`}
       </div>`;
   }
+
+  if (res.kind === "strategy") {
+    const pts = res.points || [];
+    const ins = res.insights || [];
+    const c = res.counters || {};
+    const lay = STRATEGY_LAYOUTS[res.layout];
+    const stanceTone = (s) => s === "support" ? "pass" : s === "oppose" ? "fail" : "warn";
+    return html`
+      <div className="workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-research" ...${swallow}>
+        <div className="wap-head">
+          <span className="wap-kicker">Strategy</span>
+          <span className="wap-count">${lay ? lay.label : (res.layout || "")}</span>
+        </div>
+        ${res.header && html`<div className="wap-sub">${res.header}</div>`}
+        ${res.statement && html`<div className="wap-why"><span className="wap-why-label">Statement</span>${res.statement}</div>`}
+        <div className="wap-section-label">Live counters</div>
+        <div className="wap-counters">
+          <div className="wap-counter"><div className="wap-counter-num">${c.points ?? 0}</div><div className="wap-counter-lbl">Key points</div></div>
+          <div className="wap-counter"><div className="wap-counter-num">${c.insights ?? 0}</div><div className="wap-counter-lbl">Insights</div></div>
+          <div className="wap-counter"><div className="wap-counter-num">${c.attributes ?? 0}</div><div className="wap-counter-lbl">Attributes</div></div>
+          <div className="wap-counter"><div className="wap-counter-num">${_assistFmtElapsed(c.elapsedMs)}</div><div className="wap-counter-lbl">Elapsed</div></div>
+        </div>
+        <div className="wap-section-label">Key points</div>
+        <div className="wap-list">
+          ${pts.map((p, i) => html`
+            <div key=${i} className="wap-probe">
+              <span className=${"wap-dot wap-dot-" + (p.stance ? stanceTone(p.stance) : "warn")}/>
+              <span className="wap-probe-text">${p.point}</span>
+              <span className=${"wap-pill wap-pill-" + (p.stance ? stanceTone(p.stance) : "warn")}>${p.stance ? p.stance.toUpperCase() : "…"}</span>
+            </div>`)}
+          ${!pts.length && html`<div className="wap-empty">Forming the skeleton…</div>`}
+        </div>
+        ${ins.length > 0 && html`
+          <div className="wap-section-label">Collated insights</div>
+          <div className="wap-list">
+            ${ins.map((it, i) => html`
+              <div key=${i} className="wap-probe">
+                <span className="wap-dot" style=${{ background: _assistDotColor(i) }}/>
+                <span className="wap-probe-text">${it.n}. ${it.title}</span>
+              </div>`)}
+          </div>`}
+        ${res.summary && html`
+          <div className="wap-section-label">Summary</div>
+          <div className="wap-conclusion">${res.summary}</div>`}
+      </div>`;
+  }
   return null;
 }
 
@@ -78818,6 +79816,199 @@ function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onRe
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
       ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
       <${WorkflowQuietFace} glyph=${html`<${Icon.Brain}/>`} name=${"Deep research assistant"} sub=${task || null} />
+    </div>
+  `;
+}
+
+// Strategy assistant node. Three body modes in order: config fields → clarify
+// question chips (deep-research pattern) → the PRESENTATION-PLAN review gate
+// (section toggles + key-view layout select + editable notes + custom
+// requirement) → run. Both gates re-invoke onSetup with the fresh answered
+// copy (the closure's node snapshot is stale - same rule as deep research).
+function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
+  const w = Math.max(400, node.w || 460), h = Math.max(500, node.h || 560);
+  const busy = runState?.status === "loading";
+  const task = (node.task || "").trim();
+  const clar = node.clarify;
+  const clarActive = !!(clar && !clar.done && clar.forTask === task && (clar.questions || []).length);
+  const clarDone = !!(clar && clar.done && clar.forTask === task);
+  const plan = node.presPlan;
+  const planActive = !!(clarDone && plan && !plan.done && plan.forTask === task);
+  const planDone = !!(plan && plan.done && plan.forTask === task);
+  const hasResult = !!(node.result && ((node.result.points || []).length || node.result.statement));
+  const detached = selected && hasResult;
+  const panelR = detached ? 438 : 0;
+  const SECTION_LABELS = {
+    keyview: "Key view", breakdown: "Breakdown of points", insights: "Collated insights",
+    summary: "Summary", drivers: "Key driving factors",
+  };
+  const setAnswer = (i, v) => onChange({ clarify: { ...clar, answers: { ...(clar.answers || {}), [i]: v } } });
+  const startClar = (answersKept) => {
+    const done = { ...clar, done: true, answers: answersKept ? (clar.answers || {}) : {} };
+    onChange({ clarify: done });
+    onSetup && onSetup(node.id, { clarify: done });
+  };
+  const patchPlan = (patch) => onChange({ presPlan: { ...plan, ...patch } });
+  const patchSection = (key, patch) => patchPlan({
+    sections: (plan.sections || []).map(s => s.key === key ? { ...s, ...patch } : s),
+  });
+  const buildStrategy = () => {
+    const done = { ...plan, done: true };
+    onChange({ presPlan: done });
+    onSetup && onSetup(node.id, { presPlan: done });
+  };
+  return html`
+    <div className="workflow-node workflow-node-iter workflow-node-assistant"
+         data-quiet="face"
+         data-selected=${selected ? "true" : "false"}
+         data-detached=${detached ? "true" : "false"}
+         onMouseDownCapture=${() => onSelect && onSelect()}
+         data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px", overflow: detached ? "visible" : undefined, "--node-panel-r": panelR + "px" }}>
+      <div className="workflow-node-bar workflow-node-iter-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-iter-glyph"><${Icon.Flow}/></span>
+        <span className="workflow-node-iter-title">Strategy assistant</span>
+        <span className="workflow-node-bar-spacer"/>
+        <${HoverTip} className="workflow-node-close" tip="Remove this strategy assistant."
+          ariaLabel="Remove strategy assistant"
+          onClick=${(e) => { e.stopPropagation(); onRemove(); }} onMouseDown=${(e) => e.stopPropagation()}>×<//>
+      </div>
+      <div className="workflow-node-iter-body workflow-node-refiner-body" onMouseDown=${(e) => e.stopPropagation()}>
+        ${clarActive ? html`
+          <div className="workflow-node-dr-questions">
+            <span className="workflow-node-iter-field-label">Direct the strategy - your answers steer angle + presentation</span>
+            ${(clar.questions || []).map((qq, i) => html`
+              <div key=${i} className="workflow-node-dr-q">
+                <div className="workflow-node-dr-qtext">${qq.q}</div>
+                <div className="workflow-node-dr-opts">
+                  ${(qq.options || []).map(op => html`
+                    <button key=${op} className="workflow-node-dr-opt"
+                      data-picked=${(clar.answers || {})[i] === op ? "true" : "false"}
+                      onClick=${() => setAnswer(i, op)}>${op}</button>`)}
+                </div>
+                <input className="workflow-node-dr-other" placeholder="or type your own…"
+                  value=${(() => { const a = (clar.answers || {})[i]; return (a && !(qq.options || []).includes(a)) ? a : ""; })()}
+                  onInput=${(e) => setAnswer(i, e.target.value)}/>
+              </div>`)}
+            <div className="workflow-node-iter-actions">
+              <button className="workflow-node-skill-run" disabled=${busy}
+                title="Next: the lead proposes a presentation plan you can trim or extend."
+                onClick=${(e) => { e.stopPropagation(); startClar(true); }}>
+                <${Icon.Play}/> Plan the presentation
+              </button>
+              <button className="workflow-node-refiner-pushadd" disabled=${busy}
+                title="Skip the questions - the lead picks the angle itself."
+                onClick=${(e) => { e.stopPropagation(); startClar(false); }}>Skip questions</button>
+            </div>
+          </div>` : planActive ? html`
+          <div className="workflow-node-dr-questions workflow-node-strategy-plan">
+            <span className="workflow-node-iter-field-label">Presentation plan - toggle sections, adjust, then build</span>
+            <div className="workflow-node-strategy-keyview">
+              <span className="workflow-node-iter-field-label">Key view</span>
+              <select value=${plan.keyView && plan.keyView.layout}
+                title=${(plan.keyView && plan.keyView.note) || "The main visual the board leads with."}
+                onChange=${(e) => patchPlan({ keyView: { ...(plan.keyView || {}), layout: e.target.value } })}>
+                ${Object.entries(STRATEGY_LAYOUTS).map(([id, t]) => html`
+                  <option key=${id} value=${id}>${t.label}</option>`)}
+              </select>
+              ${plan.keyView && plan.keyView.note && html`<div className="workflow-node-strategy-note">${plan.keyView.note}</div>`}
+            </div>
+            ${(plan.sections || []).map(s => html`
+              <div key=${s.key} className="workflow-node-strategy-row" data-off=${s.on === false ? "true" : "false"}>
+                <label className="workflow-node-strategy-toggle">
+                  <input type="checkbox" checked=${s.on !== false}
+                    onChange=${(e) => patchSection(s.key, { on: e.target.checked })}/>
+                  <span>${SECTION_LABELS[s.key] || s.key}</span>
+                </label>
+                <input className="workflow-node-strategy-noteinput" placeholder="notes…"
+                  value=${s.note || ""} disabled=${s.on === false}
+                  onInput=${(e) => patchSection(s.key, { note: e.target.value })}/>
+              </div>`)}
+            <label className="workflow-node-iter-field">
+              <span className="workflow-node-iter-field-label">Attributes gathered per key point</span>
+              <input value=${(plan.attributes || []).join(", ")}
+                placeholder="e.g. Audience need, Evidence, Risk"
+                onInput=${(e) => patchPlan({ attributes: e.target.value.split(",").map(s => s.trim()).filter(Boolean).slice(0, 8) })}/>
+            </label>
+            <div className="workflow-node-strategy-row">
+              <label className="workflow-node-strategy-toggle"
+                title=${"Palette / typography / generated imagery beside the board. " + ((plan.visuals || {}).note || "") + " Image generation costs credits."}>
+                <input type="checkbox" checked=${!!(plan.visuals && plan.visuals.wanted)}
+                  onChange=${(e) => patchPlan({ visuals: { ...(plan.visuals || {}), wanted: e.target.checked } })}/>
+                <span>Visual direction (palette · type · imagery)</span>
+              </label>
+            </div>
+            <label className="workflow-node-iter-field">
+              <span className="workflow-node-iter-field-label">Custom presentation requirement (optional)</span>
+              <textarea rows=${2} placeholder="anything else the board must include or obey…"
+                value=${plan.custom || ""} onInput=${(e) => patchPlan({ custom: e.target.value })}/>
+            </label>
+            <div className="workflow-node-iter-actions">
+              <button className="workflow-node-skill-run" disabled=${busy}
+                title="Research each key point and build the strategy board per this plan."
+                onClick=${(e) => { e.stopPropagation(); buildStrategy(); }}>
+                <${Icon.Play}/> Build strategy
+              </button>
+              <button className="workflow-node-refiner-pushadd" disabled=${busy}
+                title="Throw this plan away and have the lead propose a fresh one."
+                onClick=${(e) => { e.stopPropagation(); onChange({ presPlan: null }); onSetup && onSetup(node.id, { replan: true }); }}>Re-plan</button>
+            </div>
+          </div>` : html`
+          <label className="workflow-node-iter-field">
+            <span className="workflow-node-iter-field-label">What strategy do you need?</span>
+            <textarea rows=${3} placeholder="e.g. Positioning strategy for an indie playtest-recruiting service"
+              value=${node.task || ""} onInput=${(e) => onChange({ task: e.target.value })}/>
+          </label>
+          <div className="workflow-node-assistant-row">
+            <label className="workflow-node-iter-field workflow-node-assistant-num">
+              <span className="workflow-node-iter-field-label">Agents</span>
+              <input type="number" min="2" max="6" value=${node.maxAgents || 4}
+                onInput=${(e) => onChange({ maxAgents: Math.max(2, Math.min(6, parseInt(e.target.value, 10) || 4)) })}/>
+            </label>
+            <label className="workflow-node-iter-field workflow-node-assistant-cat">
+              <span className="workflow-node-iter-field-label">Search via</span>
+              <select value=${SEARCH_PROVIDERS.includes(node.searchVia) ? node.searchVia : ""}
+                title="Web-search backend for the gather agents, or inherit the app default (Settings → Web search)."
+                onChange=${(e) => onChange({ searchVia: e.target.value })}>
+                <option value="">Default (${resolveSearchVia("") === "exa" ? "Exa" : "Agent"})</option>
+                <option value="agent">Agent (web)</option>
+                <option value="exa">Exa</option>
+              </select>
+            </label>
+          </div>
+          <${AssistantModelSelect} value=${node.model} onChange=${(m) => onChange({ model: m })}
+            title="Model the lead and every gather agent run on."/>
+          <div className="workflow-node-iter-actions">
+            <button className="workflow-node-skill-run" disabled=${busy}
+              title=${planDone
+                ? "Re-run the research and rebuild the strategy board with the saved plan."
+                : clarDone
+                  ? "Next: the lead proposes the presentation plan for your review."
+                  : "First asks a few directing questions, then proposes a presentation plan."}
+              onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
+              ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>`
+                     : html`<${React.Fragment}><${Icon.Spark}/> ${planDone ? "Run strategy" : clarDone ? "Plan the presentation" : "Start (asks questions first)"}<//>`}
+            </button>
+            ${(clarDone || planDone) && !busy && html`
+              <button className="workflow-node-refiner-pushadd"
+                title="Clear the saved answers + plan and start the gates fresh on the next run."
+                onClick=${(e) => { e.stopPropagation(); onChange({ clarify: null, presPlan: null }); }}>Re-ask</button>`}
+            ${runState?.status === "done" && html`<span className="workflow-node-iter-done">board built</span>`}
+            ${runState?.error && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+          </div>`}
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
+           title="Context: prompt / asset / folder / section." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
+        <div className="workflow-port-dot"/>
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
+           title="The strategy board: key view + breakdown table + collated insights." onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
+        <div className="workflow-port-dot"/>
+      </div>
+      <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
+      ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
+      <${WorkflowQuietFace} glyph=${html`<${Icon.Flow}/>`} name=${"Strategy assistant"} sub=${task || null} />
     </div>
   `;
 }
@@ -83399,6 +84590,9 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onComm
   // Mounted only while `editing`; commits on blur. isEditingTarget already
   // covers contentEditable so global canvas shortcuts auto-suppress.
   const editableRef = useRef(null);
+  // marker only: mousedown point, so a drag-then-release doesn't count as a
+  // navigate click (declared unconditionally - hooks can't live in a branch).
+  const markerDownPt = useRef(null);
   useEffect(() => {
     if (!editing || !editableRef.current) return;
     const el = editableRef.current;
@@ -83513,6 +84707,27 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onComm
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: sz + "px", lineHeight: 1, userSelect: "none", ...rotStyle,
         }}>${item.emoji || "⭐"}</div>`;
+  }
+  if (item.type === "marker") {
+    // Click navigates to the linked insight writeup; a drag must NOT navigate,
+    // so the click only fires when the pointer barely moved since mousedown.
+    return html`
+      <div className="workflow-wb-item workflow-wb-marker" data-wb-id=${item.id} data-selected=${sel}
+        title=${item.targetWb ? `Go to insight ${item.n ?? ""}` : `Insight ${item.n ?? ""}`}
+        style=${{
+          left: item.x + "px", top: item.y + "px",
+          width: (item.w || 28) + "px", height: (item.h || 28) + "px", zIndex: z,
+          "--wb-c": c,
+        }}
+        onMouseDown=${(e) => { markerDownPt.current = { x: e.clientX, y: e.clientY }; }}
+        onClick=${(e) => {
+          const d0 = markerDownPt.current;
+          markerDownPt.current = null;
+          if (d0 && Math.hypot(e.clientX - d0.x, e.clientY - d0.y) > 4) return;
+          if (!item.targetWb) return;
+          e.stopPropagation();
+          window.dispatchEvent(new CustomEvent("th:focus-wb", { detail: { wbId: item.targetWb } }));
+        }}>${item.n ?? ""}</div>`;
   }
   if (item.type === "ink") {
     return html`

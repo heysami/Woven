@@ -6507,7 +6507,7 @@ def _figma_pid(qs) -> str:
 # NOT node kinds, so they skip the kind registry / runStatus / reconciler
 # machinery entirely). Shared by the editor's POST /__workflow save and
 # the agent-facing POST /__workflow/wb ops endpoint.
-_WB_ITEM_TYPES = ("text", "textbox", "sticky", "sticker", "ink", "shape", "arrow", "image", "table")
+_WB_ITEM_TYPES = ("text", "textbox", "sticky", "sticker", "marker", "ink", "shape", "arrow", "image", "table")
 
 def _sanitize_wb_items(items):
     """Permissive structural sanitize, mirroring the node sanitize in
@@ -13188,7 +13188,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         # (same kind list as the app.js load sanitizer).
                         _no_owner_kinds = ("design-system", "assistant-research",
                                            "assistant-testing", "assistant-deepresearch",
-                                           "table")
+                                           "assistant-strategy", "table")
                         if disk_status == "running" and disk_n.get("kind") not in _no_owner_kinds:
                             n["runStatus"] = "running"
                             disk_error = disk_n.get("runError")
@@ -13216,7 +13216,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                             "assistant-testing":   ("task", "model", "personaTypes", "testersPerType", "maxTesters"),
                             # deliberately NOT "clarify": posting null is how the
                             # editor clears saved answers ("Re-ask questions").
+                            # searchVia is deliberately NOT guarded: "" (inherit)
+                            # is a valid user choice the stomp guard would treat
+                            # as empty-echo and refuse to let the user clear back.
                             "assistant-deepresearch": ("task", "model", "maxAgents", "rounds"),
+                            # clarify + presPlan deliberately NOT guarded: posting
+                            # null is how the editor clears them (Re-ask / Re-plan).
+                            "assistant-strategy": ("task", "model", "maxAgents"),
                             "iterator-remix":   ("variants",),
                             "design-system":    ("spec",),
                         }.get(nkind, ())
@@ -14681,12 +14687,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             # before the user clicks Run; the client drivers read these at
             # click-time. Text fields, then numbers, then the pushPast array.
             akind = node.get("kind")
-            if akind in ("assistant-interview", "assistant-research", "assistant-testing", "assistant-deepresearch"):
+            if akind in ("assistant-interview", "assistant-research", "assistant-testing", "assistant-deepresearch", "assistant-strategy"):
                 _str_fields = {
                     "assistant-interview": ("goal", "focus", "model"),
                     "assistant-research":  ("goal", "criteria", "model", "searchVia", "category"),
                     "assistant-testing":   ("task", "model"),
-                    "assistant-deepresearch": ("task", "model"),
+                    "assistant-deepresearch": ("task", "model", "searchVia"),
+                    "assistant-strategy": ("task", "model", "searchVia"),
                 }.get(akind, ())
                 for f in _str_fields:
                     if f in body and isinstance(body[f], str) and body[f].strip():
@@ -14696,6 +14703,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "assistant-research":  (("numResults", 1, 25),),
                     "assistant-testing":   (("personaTypes", 1, 8), ("testersPerType", 1, 8), ("maxTesters", 1, 40)),
                     "assistant-deepresearch": (("maxAgents", 2, 5), ("rounds", 1, 3)),
+                    "assistant-strategy": (("maxAgents", 2, 6),),
                 }.get(akind, ())
                 for (f, lo, hi) in _num_fields:
                     if f in body:

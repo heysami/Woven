@@ -15207,6 +15207,29 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: 3px; padding: 4px 6px; outline: none;
 }
 .workflow-node-dr-other:focus { border-color: var(--accent); }
+/* Strategy assistant: presentation-plan review gate. Section toggle rows +
+   key-view layout select + custom requirement, rendered in the node body. */
+.workflow-node-strategy-plan { gap: 8px; }
+.workflow-node-strategy-keyview { display: flex; flex-direction: column; gap: 4px; }
+.workflow-node-strategy-keyview select {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  font: inherit; font-size: 11.5px; border-radius: 3px; padding: 4px 6px; outline: none;
+}
+.workflow-node-strategy-note { font-size: 10.5px; line-height: 1.35; color: var(--text-muted); }
+.workflow-node-strategy-row { display: flex; align-items: center; gap: 8px; }
+.workflow-node-strategy-row[data-off="true"] { opacity: 0.55; }
+.workflow-node-strategy-toggle {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  font-size: 11.5px; font-weight: 600; color: var(--text); white-space: nowrap;
+}
+.workflow-node-strategy-toggle input { accent-color: var(--accent); margin: 0; }
+.workflow-node-strategy-noteinput {
+  flex: 1; min-width: 0;
+  border: 1px solid var(--border); background: var(--surface);
+  font: inherit; font-size: 11px; color: var(--text-muted);
+  border-radius: 3px; padding: 3px 6px; outline: none;
+}
+.workflow-node-strategy-noteinput:focus { border-color: var(--accent); color: var(--text); }
 .workflow-node-assistant-chat {
   display: flex; flex-direction: column; gap: 6px;
   max-height: 280px; overflow-y: auto; padding: 4px 2px;
@@ -15320,6 +15343,30 @@ a.ds-badge:hover, button.ds-badge:hover {
 
 /* Whiteboard emoji sticker (FigJam-style stamp) + the tool's emoji palette. */
 .workflow-wb-sticker { cursor: default; pointer-events: auto; }
+/* Numbered insight marker: small filled circle, white number, hover ring.
+   Clicking navigates to its linked collated-insight writeup (th:focus-wb). */
+.workflow-wb-marker {
+  pointer-events: auto;
+  cursor: pointer;
+  border-radius: 50%;
+  background: var(--wb-c, var(--text));
+  color: oklch(99% 0.004 95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 13px var(--font-mono);
+  line-height: 1;
+  user-select: none;
+  box-shadow: 0 1px 3px oklch(0% 0 0 / 0.18);
+  transition: box-shadow 0.12s ease, transform 0.12s ease;
+}
+.workflow-wb-marker:hover {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--wb-c, var(--text)) 30%, transparent), 0 1px 3px oklch(0% 0 0 / 0.18);
+  transform: scale(1.08);
+}
+.workflow-wb-marker[data-selected="true"] {
+  box-shadow: 0 0 0 2px var(--accent), 0 1px 3px oklch(0% 0 0 / 0.18);
+}
 .workflow-wb-emoji-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
 .workflow-wb-emoji-btn {
   border: 1px solid transparent; background: var(--surface-2, rgba(0,0,0,0.04));

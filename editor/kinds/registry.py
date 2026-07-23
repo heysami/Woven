@@ -1333,6 +1333,33 @@ KINDS = {
         "notes": "Forms a structured research statement, asks the user up to 3 clarifying questions that pick the agent panel, then runs 2-5 viewpoint agents (champion / skeptic / official-web / community-web / linked-material) - web agents via /__assistant/research, material agents as plain LLM calls. Findings merge into one point matrix that the agents DEBATE over N rounds (each round appends colour-coded stance boxes to the evidence table). Output: a canvas section with header + description + one sticky per merged point + conclusion, plus a per-agent evidence table (links, snippets, snapshots) beside it. The lead reviews the final matrix and recolours/rewords the stickies by consensus.",
     },
 
+    # ── assistant-strategy (plan-gated strategy board) ─────────────────────
+    "assistant-strategy": {
+        "title":        "Strategy assistant (plan-gated strategy board)",
+        "category":     "assistant",
+        "inputs": {
+            "task":      {"type": "markdown", "userEditable": True},
+            "model":     {"type": "text",     "default": "claude-opus-4-8", "userEditable": True},
+            "searchVia": {"type": "text",     "default": "", "userEditable": True},
+            "maxAgents": {"type": "number",   "default": 4, "userEditable": True},
+            "clarify":   {"type": "object",   "userEditable": False},
+            "presPlan":  {"type": "object",   "userEditable": False},
+            "tableId":   {"type": "text",     "userEditable": False},
+            "sectionId": {"type": "text",     "userEditable": False},
+            "drIds":     {"type": "object",   "userEditable": False},
+            "visIds":    {"type": "object",   "userEditable": False},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "client-iterator",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "runStatusFlow": ["queued", "running", "done", "error"],
+        "pauseAfter":   False,
+        "notes": "Two user gates before any research spend: (1) up to 3 clarifying questions, (2) a PRESENTATION PLAN - key-view layout picked from the strategy layout registry (statement / metrics / affinity / positioning 2x2 / timeline / flow / loop / matrix / canvas / journey / cards / pillars / keyvisual / composite) plus per-section toggles (key view, breakdown of points, collated insights, summary, key driving factors) and a free-text custom requirement - which the user edits on the node before the build. Per-key-point agents then gather + validate the plan's attributes (web via /__assistant/research or Exa per the searchVia cascade; context-only from wired material). Output: a canvas section (key view laid out per template + collated insights with numbered marker wb items that click-navigate to the writeups + summary + optional driving factors), a per-point breakdown table, and - when the user enables visual direction on the plan - palette / typography / generated-image nodes beside the board.",
+    },
+
     # ── iterator-remix ────────────────────────────────────────────────────
     "iterator-remix": {
         "title":        "Iterator - remix (N parallel HTML variants)",
@@ -3728,6 +3755,10 @@ KIND_IO = {
     "assistant-testing": {
         "provides": [{"port": "out", "label": "Tester feedback table", "tags": ["section"]}],
         "accepts":  [{"port": "in", "label": "What to test", "tags": ["text", "text-gen", "asset", "section", "folder"], "ingest": "context"}],
+    },
+    "assistant-strategy": {
+        "provides": [{"port": "out", "label": "Strategy board", "tags": ["section"]}],
+        "accepts":  [{"port": "in", "label": "Context", "tags": ["text", "text-gen", "asset", "section", "folder"], "ingest": "context"}],
     },
     "composer": {
         "provides": [{"port": "out", "label": "Baked HTML", "tags": ["asset", "blendable"],
