@@ -3604,6 +3604,14 @@ _DR_PAYLOAD_CONTRACT = (
     ' "conclusion": {"headline": "<ONE punchy sentence>", "support": "<=2 sentences", "bullets": ["<one line each, 3-6>"]}}')
 
 
+_AGENT_TURN_DISCIPLINE = (
+    "\n\nTURN DISCIPLINE (CRITICAL): deliver the payload IN THIS SAME TURN. Run your "
+    "subagents to completion and READ their results before continuing - NEVER dispatch "
+    "background work and end your turn 'waiting for responses': a turn that ends waiting "
+    "is a DEAD run (nothing re-invokes you) and the entire spend is lost. If a subagent "
+    "stalls, proceed with what you have and mark the gaps honestly as unverified.")
+
+
 # ── Local font library ───────────────────────────────────────────────────
 # Uploaded fonts are collected under design-systems/<dsId>/fonts/ - one file
 # per face plus an auto-generated _fontface.css sibling and a fonts.json
@@ -13760,7 +13768,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # failure - caller passes error_dict to self._reply.
     def _spawn_node_agent(self, *, project_root, project_id, branch,
                           node_id, system_prompt, prompt_text, title,
-                          chain_rest=None, agent_id=None, bare=False):
+                          chain_rest=None, agent_id=None, bare=False, model=None):
         # The build fan-out follows the user's selected AGENT runtime unless the
         # caller passes an explicit one, so codex/opencode drawers run their own
         # CLI (with GPT/model overrides) instead of always spawning Claude.
@@ -13816,7 +13824,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         # + opencode-skip are identical everywhere - nothing hardcodes a model.
         try:
             _want_prov = _provider_for_agent(agent_id)
-            _omodel = (_subagent_override_model_for_node(node_id, title, prompt_text, want_provider=_want_prov)
+            # explicit caller model (the assistant node's model select) wins.
+            _omodel = (model
+                       or _subagent_override_model_for_node(node_id, title, prompt_text, want_provider=_want_prov)
                        or _orch_override_model_for_node(node_id, title, want_provider=_want_prov))
             _model_args = _agent_model_spawn_args(agent_id, defs, _omodel) if _omodel else []
             if not _model_args:
@@ -14386,7 +14396,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         "\"$TH_DAEMON_URL/__workflow/node/" + str(node_id) + "/status?project=$TH_PROJECT_ID\" "
                         "(temp file + --data-binary @file). Then one-line summary and STOP.\n\n"
                         "HARD RULES: never edit project files; cite only urls you actually opened; if the "
-                        "POST fails retry once, then report.")
+                        "POST fails retry once, then report." + _AGENT_TURN_DISCIPLINE)
                     kick = ("Research this.\n\nGOAL:\n" + goal + "\n\nQUALITY CRITERIA a result MUST meet:\n" + criteria)
                     prompt_text = kick + (("\n\n<context>\n" + upstream_text + "\n</context>") if upstream_text else "")
                     project_id = (qs.get("project") or ["default"])[0] if hasattr(qs, "get") else "default"
@@ -14394,7 +14404,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     run_id, err_reply = self._spawn_node_agent(
                         project_root=project_root, project_id=project_id, branch=branch2,
                         node_id=node_id, system_prompt=system_prompt, prompt_text=prompt_text,
-                        title="Research: " + goal[:48], chain_rest=chain_rest, bare=True)
+                        title="Research: " + goal[:48], chain_rest=chain_rest, bare=True, model=node.get("model"))
                     if err_reply:
                         raise RuntimeError(err_reply[1].get("error") or "spawn failed")
                     node["runStatus"] = "running"; node["runId"] = run_id; node["runRunId"] = run_id
@@ -14435,7 +14445,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         "\"$TH_DAEMON_URL/__workflow/node/" + str(node_id) + "/status?project=$TH_PROJECT_ID\" "
                         "(temp file + --data-binary @file). Then one-line summary and STOP.\n\n"
                         "HARD RULES: never edit project files; honest persona reactions, not politeness; "
-                        "if the POST fails retry once, then report.")
+                        "if the POST fails retry once, then report." + _AGENT_TURN_DISCIPLINE)
                     kick = "Run the simulated test.\n\nTASK / GOAL:\n" + ttask
                     prompt_text = kick + (("\n\n<context>\n" + upstream_text + "\n</context>") if upstream_text else "")
                     project_id = (qs.get("project") or ["default"])[0] if hasattr(qs, "get") else "default"
@@ -14443,7 +14453,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     run_id, err_reply = self._spawn_node_agent(
                         project_root=project_root, project_id=project_id, branch=branch2,
                         node_id=node_id, system_prompt=system_prompt, prompt_text=prompt_text,
-                        title="Testing: " + ttask[:48], chain_rest=chain_rest, bare=True)
+                        title="Testing: " + ttask[:48], chain_rest=chain_rest, bare=True, model=node.get("model"))
                     if err_reply:
                         raise RuntimeError(err_reply[1].get("error") or "spawn failed")
                     node["runStatus"] = "running"; node["runId"] = run_id; node["runRunId"] = run_id
@@ -14488,7 +14498,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         "\"$TH_DAEMON_URL/__workflow/node/" + str(node_id) + "/status?project=$TH_PROJECT_ID\" "
                         "(temp file + --data-binary @file). Then one-line summary and STOP.\n\n"
                         "HARD RULES: never edit project files; cite only urls actually opened; honest "
-                        "stances (unverified when not validated); if the POST fails retry once, then report.")
+                        "stances (unverified when not validated); if the POST fails retry once, then report." + _AGENT_TURN_DISCIPLINE)
                     kick = ("Run the deep research.\n\nTASK:\n" + dtask +
                             (("\n\nUSER'S DIRECTION (their answers to the directing questions):\n" + answers) if answers else ""))
                     prompt_text = kick + (("\n\n<context>\n" + upstream_text + "\n</context>") if upstream_text else "")
@@ -14497,7 +14507,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     run_id, err_reply = self._spawn_node_agent(
                         project_root=project_root, project_id=project_id, branch=branch2,
                         node_id=node_id, system_prompt=system_prompt, prompt_text=prompt_text,
-                        title="Deep research: " + dtask[:48], chain_rest=chain_rest, bare=True)
+                        title="Deep research: " + dtask[:48], chain_rest=chain_rest, bare=True, model=node.get("model"))
                     if err_reply:
                         raise RuntimeError(err_reply[1].get("error") or "spawn failed")
                     node["runStatus"] = "running"; node["runId"] = run_id; node["runRunId"] = run_id
@@ -14550,7 +14560,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         "(write the JSON to a temp file and use --data-binary @file; heredocs mangle big "
                         "JSON). Then print a one-line summary and STOP.\n\n"
                         "HARD RULES: never edit workflow.json or any project file directly; if the POST "
-                        "fails retry once, then report the failure.")
+                        "fails retry once, then report the failure." + _AGENT_TURN_DISCIPLINE)
                     kick = ("Deliver this strategy board.\n\nASK:\n" + str(node.get("task") or "") +
                             (("\n\nUSER DIRECTION (their answers to your questions):\n" + answers) if answers else "") +
                             "\n\nAPPROVED BOARD PLAN (JSON):\n" + json.dumps(plan)[:4000])
@@ -14560,7 +14570,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         project_root=project_root, project_id=project_id, branch=branch2,
                         node_id=node_id, system_prompt=system_prompt, prompt_text=prompt_text,
                         title="Strategy board: " + str(node.get("task") or "")[:48],
-                        chain_rest=chain_rest, bare=True)
+                        chain_rest=chain_rest, bare=True, model=node.get("model"))
                     if err_reply:
                         raise RuntimeError(err_reply[1].get("error") or "spawn failed")
                     node["runStatus"] = "running"
@@ -14646,7 +14656,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         "{\\\"headline\\\":..., \\\"support\\\":..., \\\"bullets\\\":[...]} - the overall strategy across the parts>\"}. "
                         "Then print a one-line completion summary and STOP.\n\n"
                         "HARD RULES: never edit workflow.json or any project file directly; if a POST "
-                        "fails retry once, then report the failure and continue.")
+                        "fails retry once, then report the failure and continue." + _AGENT_TURN_DISCIPLINE)
                     kick = ("Plan and drive this strategy chain.\n\nOVERALL ASK:\n" + str(node.get("task") or "") +
                             ("\n\nSEED DECOMPOSITION (user-approved direction):\n" + "\n".join(
                                 "%d. %s: %s%s" % (i + 1, p.get("title") or "part", p.get("task"),
@@ -14661,7 +14671,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         project_root=project_root, project_id=project_id, branch=branch2,
                         node_id=node_id, system_prompt=system_prompt, prompt_text=prompt_text,
                         title="Strategy chain: " + str(node.get("task") or "")[:48],
-                        chain_rest=chain_rest, bare=True)
+                        chain_rest=chain_rest, bare=True, model=node.get("model"))
                     if err_reply:
                         raise RuntimeError(err_reply[1].get("error") or "spawn failed")
                     node["runStatus"] = "running"

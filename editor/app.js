@@ -46728,6 +46728,28 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     }
   }, [data.nodes, materializeStrategyRun, materializeResearchRun, materializeTestingRun, materializeDeepresearchRun]);
 
+  // Delivery watchdog: an agent run that ENDS without ever posting its
+  // payload (killed, crashed, or - the false-handoff trap - ended its turn
+  // "waiting" on background subagents) used to leave the node green with
+  // zero output. Surface it as the error it is, so the spend is never
+  // silently swallowed.
+  useEffect(() => {
+    const PAYLOAD_FIELD = {
+      "assistant-strategy": "strategyRun", "assistant-research": "researchRun",
+      "assistant-testing": "testingRun", "assistant-deepresearch": "deepresearchRun",
+    };
+    for (const n of (data.nodes || [])) {
+      const pf = n && PAYLOAD_FIELD[n.kind];
+      if (!pf) continue;
+      if (n.runStatus === "done" && n.runId && !n[pf] && !(n.result && n.result.builtAt)) {
+        updateNode(n.id, {
+          runStatus: "error",
+          runError: "the agent run ended without delivering its output - open Chat to see where it stopped, then Run again",
+        });
+      }
+    }
+  }, [data.nodes, updateNode]);
+
   // Chain settle: derive the orchestrator's float-panel result live from its
   // part nodes (payload pending = running, board landed = done) and fold in
   // the agent's final chain summary (posted to the node's `output`).
@@ -80568,7 +80590,7 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
             <button className="workflow-node-refiner-pushadd"
               title="Watch the agent run: live transcript, its subagents, stop / resume."
               onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}><${Icon.CommentDots}/> Chat</button>`}
-          ${runState?.error && !running && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+          ${(runState?.error || node.runError) && !running && html`<span className="workflow-node-skill-error" title=${runState?.error || node.runError}>${runState?.error || node.runError}</span>`}
         </div>
       </div>
       ${chatOpen && html`<${WorkflowAgentChatDialog}
@@ -80680,7 +80702,7 @@ function WorkflowTestingNode({ node, zoom, selected, onSelect, onMove, onResize,
             <button className="workflow-node-refiner-pushadd"
               title="Watch the agent run: live transcript, its subagents, stop / resume."
               onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}><${Icon.CommentDots}/> Chat</button>`}
-          ${runState?.error && !running && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+          ${(runState?.error || node.runError) && !running && html`<span className="workflow-node-skill-error" title=${runState?.error || node.runError}>${runState?.error || node.runError}</span>`}
         </div>
       </div>
       ${chatOpen && html`<${WorkflowAgentChatDialog}
@@ -80847,7 +80869,7 @@ function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onRe
             <button className="workflow-node-refiner-pushadd"
               title="Watch the agent run: live transcript, its subagents, stop / resume."
               onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}><${Icon.CommentDots}/> Chat</button>`}
-          ${runState?.error && !running && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+          ${(runState?.error || node.runError) && !running && html`<span className="workflow-node-skill-error" title=${runState?.error || node.runError}>${runState?.error || node.runError}</span>`}
           </div>`}
       </div>
       ${chatOpen && html`<${WorkflowAgentChatDialog}
@@ -81124,7 +81146,7 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
                 title="Watch the board agent: live transcript, its subagents, stop / resume."
                 onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}><${Icon.CommentDots}/> Chat</button>`}
             ${runState?.status === "done" && !running && html`<span className="workflow-node-iter-done">board built</span>`}
-            ${runState?.error && !running && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+            ${(runState?.error || node.runError) && !running && html`<span className="workflow-node-skill-error" title=${runState?.error || node.runError}>${runState?.error || node.runError}</span>`}
           </div>`}
       </div>
       ${chatOpen && html`<${WorkflowAgentChatDialog}
@@ -81245,7 +81267,7 @@ function WorkflowStrategyChainNode({ node, zoom, selected, onSelect, onMove, onR
               title="Watch the chain-driver agent: live transcript, its subagents, stop / resume."
               onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}><${Icon.CommentDots}/> Chat</button>`}
           ${runState?.status === "done" && !running && html`<span className="workflow-node-iter-done">chain done</span>`}
-          ${runState?.error && !running && html`<span className="workflow-node-skill-error" title=${runState.error}>${runState.error}</span>`}
+          ${(runState?.error || node.runError) && !running && html`<span className="workflow-node-skill-error" title=${runState?.error || node.runError}>${runState?.error || node.runError}</span>`}
         </div>
       </div>
       ${chatOpen && html`<${WorkflowAgentChatDialog}
