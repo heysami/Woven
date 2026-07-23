@@ -28101,6 +28101,17 @@ function _assistantCollectText(entries) {
     for (const e of (arr || [])) {
       if (!e) continue;
       if (typeof e.text === "string" && e.text.trim()) out.push(e.text.trim());
+      // Visual-direction nodes contribute their VALUES as text, so a wired
+      // palette / type scale grounds the assistant like any other material.
+      if (e.type === "palette" && Array.isArray(e.swatches) && e.swatches.length) {
+        out.push("COLOR PALETTE" + (e.label ? ` "${e.label}"` : "") + ": " +
+          e.swatches.map(s => [s && s.name, s && s.value].filter(Boolean).join(" ")).filter(Boolean).join(", "));
+      }
+      if (e.type === "typography" && (e.fontFamily || (e.levels || []).length)) {
+        const lv = (e.levels || []).map(l => l && [l.name, l.size && l.size + "px", l.weight].filter(Boolean).join(" ")).filter(Boolean).join("; ");
+        out.push("TYPOGRAPHY" + (e.label ? ` "${e.label}"` : "") + ": " +
+          [e.fontFamily, e.monoFamily ? "mono " + e.monoFamily : "", lv].filter(Boolean).join(" · "));
+      }
       if (Array.isArray(e.children)) walk(e.children);
     }
   };
@@ -28123,6 +28134,89 @@ function _assistantCollectAssets(entries) {
   walk(entries);
   return out;
 }
+// Digest wired FOLDER nodes (local source material - "validate beside the
+// web") through the daemon's bounded folder walker. Multiple folders join
+// as labelled blocks; failures skip silently (grounding, not the truth).
+async function assistantFetchFolderText(entries) {
+  const folders = (entries || []).filter(e => e && e.type === "folder" && e.path);
+  const blobs = [];
+  for (const f of folders.slice(0, 4)) {
+    try {
+      const proj = activeProjectId();
+      const r = await fetch(apiUrl(`/__assistant/folder_text?project=${encodeURIComponent(proj || "")}&path=${encodeURIComponent(f.path)}`));
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok && (j.text || "").trim()) {
+        blobs.push(`LOCAL SOURCE FOLDER "${f.label || f.path}" (user-provided material - weigh it beside web evidence):\n${j.text.trim()}`);
+      }
+    } catch { /* skip this folder */ }
+  }
+  return blobs.join("\n\n");
+}
+
+// Fetch wired Web-browser pages' readable text server-side, so a browser
+// node actually contributes its page content (not just a URL).
+async function assistantFetchWebText(entries) {
+  const webs = (entries || []).filter(e => e && e.type === "web" && e.url);
+  const blobs = [];
+  for (const w of webs.slice(0, 4)) {
+    try {
+      const r = await fetch(apiUrl(`/__assistant/web_text?url=${encodeURIComponent(w.url)}`));
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok && (j.text || "").trim()) blobs.push(`WEB PAGE ${w.url}:\n${j.text.trim()}`);
+    } catch { /* skip this page */ }
+  }
+  return blobs.join("\n\n");
+}
+
+// "Digest as image": ONE material-analyst browser subagent opens every
+// wired visual thing - image assets, prototypes (served index.html, fully
+// interactive), web pages - screenshots each, clicks through the
+// interactive ones, and returns a compact digest of what it SAW (content,
+// structure, visual style, UX). Real eyes over the material, reused from
+// the testing assistant's browser-subagent runner. Returns "" when nothing
+// visual is wired, so callers can gate the (slow, ~1 subagent) cost on it.
+async function assistantFetchVisualDigest({ node, nodes, edges, entries, model }) {
+  const items = [];
+  for (const a of _assistantCollectAssets(entries)) {
+    const u = a.url || (a.path ? apiUrl("/" + String(a.path).replace(/^\/+/, "")) : "");
+    if (u) items.push({ url: u, label: a.label || "asset", what: a.assetKind || "file" });
+  }
+  for (const e of (entries || [])) {
+    if (e && e.type === "web" && e.url) items.push({ url: e.url, label: e.label || "web page", what: "web page" });
+  }
+  for (const e2 of (edges || [])) {
+    const t = workflowParseEdgeRef(e2.to || "");
+    if (!t || t.node !== node.id) continue;
+    const f = workflowParseEdgeRef(e2.from || "");
+    const up = f && (nodes || []).find(n => n.id === f.node);
+    if (up && up.kind === "prototype") {
+      const slug = prototypeSlugForNode(up);
+      if (slug) items.push({ url: apiUrl("/source/" + slug + "/index.html"), label: "prototype " + slug, what: "interactive prototype" });
+    }
+  }
+  const abs = items
+    .map(it => { try { return { ...it, url: new URL(it.url, location.href).href }; } catch (e) { return it; } })
+    .filter(it => /^https?:/i.test(it.url))
+    .slice(0, 6);
+  if (!abs.length) return "";
+  const prompt =
+    `Open each of these in the browser IN ORDER and JUDGE IT WITH YOUR OWN EYES (screenshot FIRST, every time):\n` +
+    abs.map((it, i) => `${i + 1}. [${it.what}] ${it.label}: ${it.url}`).join("\n") +
+    `\n\nFor interactive pages / prototypes: scroll the whole page and click through 2-3 key interactions to feel how it behaves. For images: just look closely.\n\nThen return a MATERIAL DIGEST - for EACH item, <=200 words:\n- what it is and its key content\n- visual style: palette (name rough hexes), typography feel, layout, mood\n- how it behaves (if interactive) and anything strategically notable\n\nPlain text, numbered per item. No preamble.`;
+  try {
+    const r = await fetch(apiUrl("/__assistant/tester"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model, useBrowser: true, timeout: 900, prompt,
+        system: "You are a material analyst. You describe what you actually SEE and experience in the browser - concrete, visual, honest. Never invent content you did not open.",
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok && (j.text || "").trim()) return j.text.trim();
+  } catch { /* degrade to text-only grounding */ }
+  return "";
+}
+
 // Build the interviewer system prompt for the Interviewing assistant from its
 // node fields + any wired seed text. Used as the wiredSystem for the agent chat.
 function _interviewerSystemPrompt(node, seedText) {
@@ -30452,32 +30546,32 @@ const WORKFLOW_CONNECT_DEFS = {
     label: "Comparative research assistant",
     // Out is the generated result table (a "section" contents bundle).
     provides: { out: { label: "Comparison table", tags: ["section"] } },
-    accepts:  { in:  { label: "Context (prompt / asset / folder / section)",
-                       tags: ["text", "text-gen", "asset", "section", "folder"] } },
+    accepts:  { in:  { label: "Context (prompt / asset / folder / web / palette / type / section)",
+                       tags: ["text", "text-gen", "asset", "section", "folder", "palette", "typography"] } },
   },
   "assistant-testing": {
     label: "Simulated testing assistant",
     provides: { out: { label: "Tester feedback table", tags: ["section"] } },
-    accepts:  { in:  { label: "What to test (prompt / asset / folder / section)",
-                       tags: ["text", "text-gen", "asset", "section", "folder"] } },
+    accepts:  { in:  { label: "What to test (prompt / asset / folder / web / section)",
+                       tags: ["text", "text-gen", "asset", "section", "folder", "palette", "typography"] } },
   },
   "assistant-deepresearch": {
     label: "Deep research assistant",
     provides: { out: { label: "Research board (section + evidence table)", tags: ["section"] } },
-    accepts:  { in:  { label: "Context (prompt / asset / folder / section)",
-                       tags: ["text", "text-gen", "asset", "section", "folder"] } },
+    accepts:  { in:  { label: "Context (prompt / asset / folder / web / palette / type / section)",
+                       tags: ["text", "text-gen", "asset", "section", "folder", "palette", "typography"] } },
   },
   "assistant-strategy": {
     label: "Strategy assistant",
     provides: { out: { label: "Strategy board (key view + breakdown + insights)", tags: ["section"] } },
-    accepts:  { in:  { label: "Context (prompt / asset / folder / section)",
-                       tags: ["text", "text-gen", "asset", "section", "folder"] } },
+    accepts:  { in:  { label: "Context (prompt / asset / folder / web / palette / type / section)",
+                       tags: ["text", "text-gen", "asset", "section", "folder", "palette", "typography"] } },
   },
   "assistant-strategy-orchestrator": {
     label: "Strategy chain orchestrator",
     provides: { out: { label: "Strategy chain (drives the part assistants)", tags: ["section"] } },
-    accepts:  { in:  { label: "Context (prompt / asset / folder / section)",
-                       tags: ["text", "text-gen", "asset", "section", "folder"] } },
+    accepts:  { in:  { label: "Context (prompt / asset / folder / web / palette / type / section)",
+                       tags: ["text", "text-gen", "asset", "section", "folder", "palette", "typography"] } },
   },
   "composer": {
     label: "Composer",
@@ -45203,7 +45297,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     updateNode(nodeId, { runStatus: "running" });
     try {
       const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
-      const ctx = _assistantCollectText(ups);
+      let ctx = _assistantCollectText(ups);
+      // Local folders + wired web pages ground the search (they resolve to
+      // real content now, not just references).
+      const rFolderText = await assistantFetchFolderText(ups);
+      if (rFolderText) ctx = ctx ? (ctx + "\n\n" + rFolderText) : rFolderText;
+      const rWebText = await assistantFetchWebText(ups);
+      if (rWebText) ctx = ctx ? (ctx + "\n\n" + rWebText) : rWebText;
       const folders = _assistantCollectFolders(ups);
       const criteria = (node.criteria || "").trim() || "relevant, specific, and trustworthy";
       const via = resolveSearchVia(node.searchVia);
@@ -45612,6 +45712,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // against EXTERNAL sources - they just now know WHAT they are judging.
       const protoText = await assistantFetchPrototypeText(node, data.nodes, data.edges);
       if (protoText) ctx = ctx ? (ctx + "\n\n" + protoText) : protoText;
+      // Wired folders are LOCAL SOURCE MATERIAL (validate beside the web);
+      // wired browser nodes contribute their page text.
+      const drFolderText = await assistantFetchFolderText(ups);
+      if (drFolderText) ctx = ctx ? (ctx + "\n\n" + drFolderText) : drFolderText;
+      const drWebText = await assistantFetchWebText(ups);
+      if (drWebText) ctx = ctx ? (ctx + "\n\n" + drWebText) : drWebText;
       const hasMaterial = !!ctx;
 
       // Phase 0: clarifying questions. Generated once per task text; the node
@@ -45638,9 +45744,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
       if (!clar.done) { setRun({ status: "await", phase: "answer the questions" }); return; }
 
+      // Wired visual material (images / prototypes / web pages) digested BY
+      // SIGHT once per run - after the question gate so that click stays
+      // snappy. A browser subagent opens + screenshots + interacts, and its
+      // report joins the grounding material.
+      updateNode(nodeId, { runStatus: "running" });
+      setRun({ status: "loading", phase: "reading wired material (browser)", error: null });
+      try {
+        const vis = await assistantFetchVisualDigest({ node, nodes: data.nodes, edges: data.edges, entries: ups, model: node.model });
+        if (vis) ctx = (ctx ? ctx + "\n\n" : "") + "VISUAL MATERIAL DIGEST (a browser agent opened + saw the wired material):\n" + vis;
+      } catch { /* text grounding only */ }
+
       // Phase 1: structured statement + agent panel.
       setRun({ status: "loading", phase: "planning agents", error: null });
-      updateNode(nodeId, { runStatus: "running" });
       const answers = (clar.questions || [])
         .map((qq, i) => (clar.answers && String(clar.answers[i] || "").trim()) ? `Q: ${qq.q}\nA: ${clar.answers[i]}` : "")
         .filter(Boolean).join("\n");
@@ -46006,6 +46122,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       let ctx = _assistantCollectText(ups);
       const protoText = await assistantFetchPrototypeText(node, data.nodes, data.edges);
       if (protoText) ctx = ctx ? (ctx + "\n\n" + protoText) : protoText;
+      const folderText = await assistantFetchFolderText(ups);
+      if (folderText) ctx = ctx ? (ctx + "\n\n" + folderText) : folderText;
+      const webText = await assistantFetchWebText(ups);
+      if (webText) ctx = ctx ? (ctx + "\n\n" + webText) : webText;
+      if (auto && auto.sharedContext) {
+        ctx = (ctx ? ctx + "\n\n" : "") +
+          "MATERIAL WIRED INTO THE CHAIN ORCHESTRATOR (shared by every part):\n" + auto.sharedContext;
+      }
       if (auto && Array.isArray(auto.priorSummaries) && auto.priorSummaries.length) {
         ctx = (ctx ? ctx + "\n\n" : "") +
           "EARLIER PARTS OF THIS STRATEGY CHAIN (build on these, do not repeat them):\n" +
@@ -46111,8 +46235,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const attributes = (plan.attributes && plan.attributes.length ? plan.attributes : ["Evidence", "Implication"]).slice(0, 8);
       const wantVisuals = !!(plan.visuals && plan.visuals.wanted);
       const customNote = String(plan.custom || "").trim();
-      setRun({ status: "loading", phase: "forming the strategy skeleton", error: null });
       updateNode(nodeId, { runStatus: "running" });
+
+      // Wired visual material (images / prototypes / web pages) gets DIGESTED
+      // BY SIGHT once per build: a browser subagent opens each, screenshots,
+      // interacts, and reports what it saw. Runs after the gates (keeps the
+      // question / plan clicks snappy) and degrades to text-only grounding.
+      setRun({ status: "loading", phase: "reading wired material (browser)", error: null });
+      try {
+        const vis = await assistantFetchVisualDigest({ node, nodes: data.nodes, edges: data.edges, entries: ups, model: node.model });
+        if (vis) ctx = (ctx ? ctx + "\n\n" : "") + "VISUAL MATERIAL DIGEST (a browser agent opened + saw the wired material):\n" + vis;
+      } catch { /* text grounding only */ }
+      setRun({ status: "loading", phase: "forming the strategy skeleton", error: null });
 
       // Sweep the previous run's visual nodes (palette / typography / assets).
       const oldVis = (node.visIds && node.visIds.nodeIds) || [];
@@ -46589,6 +46723,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
 
       // Phase C: auto-drive the parts in order, feeding summaries forward.
+      // Material wired into the orchestrator (prompts / folders / web pages /
+      // section bundles) is SHARED grounding for every part - the parts have
+      // no user gates of their own to attach material at.
+      const upsC = resolveUpstreamInputs(node, data.nodes, data.edges);
+      let sharedCtx = _assistantCollectText(upsC);
+      const cFolder = await assistantFetchFolderText(upsC);
+      if (cFolder) sharedCtx = sharedCtx ? (sharedCtx + "\n\n" + cFolder) : cFolder;
+      const cWeb = await assistantFetchWebText(upsC);
+      if (cWeb) sharedCtx = sharedCtx ? (sharedCtx + "\n\n" + cWeb) : cWeb;
       const partStates = parts.map(p => ({ title: p.title || p.task.slice(0, 40), status: "pending", summary: "" }));
       const writeResult = (summary) => updateNode(nodeId, { result: {
         kind: "strategy-chain", task, builtAt: Date.now(), why: plan.why || "",
@@ -46606,7 +46749,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         let r2 = null;
         try {
           r2 = await (setupStrategyRef.current && setupStrategyRef.current(ids[i], {
-            auto: { direction: (parts[i].focus || "") + (plan.why ? "\nChain logic: " + plan.why : ""), priorSummaries: summaries.slice() },
+            auto: { direction: (parts[i].focus || "") + (plan.why ? "\nChain logic: " + plan.why : ""),
+                    priorSummaries: summaries.slice(), sharedContext: sharedCtx },
           }));
         } catch (e) { r2 = null; }
         if (r2 && (r2.summary || r2.statement)) {
@@ -68738,6 +68882,15 @@ function resolveUpstreamInputs(node, allNodes, allEdges, opts) {
       if (u) out.push({ ...base, type: "web", label: "web page", url: u });
       continue;
     }
+    // Folder nodes resolve to their PATH; consumers that want the contents
+    // digest it via the daemon (GET /__assistant/folder_text). The prototype
+    // source-read port also carries the "folder" tag but has no resolve and
+    // no up.path - it stays on the assistantFetchPrototypeText path.
+    if (resolve === "folder" || up.kind === "folder") {
+      const p = (up.path || "").trim();
+      if (p) out.push({ ...base, type: "folder", label, path: p });
+      continue;
+    }
     if (resolve === "sectionBundle" || up.kind === "section") {
       const depth = opts._depth || 0;
       // A table's per-cell out port ("cellout:r:c") narrows the bundle to that
@@ -80263,7 +80416,7 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
         </div>
       </div>
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
-           title="Context: prompt / asset / folder / section." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
+           title="Context: prompt / asset / folder / web page / palette / typography / section - wire as many as you like." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
@@ -80468,7 +80621,7 @@ function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onRe
           </div>`}
       </div>
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
-           title="Context: prompt / asset / folder / section." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
+           title="Context: prompt / asset / folder / web page / palette / typography / section - wire as many as you like." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
@@ -80672,7 +80825,7 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
           </div>`}
       </div>
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
-           title="Context: prompt / asset / folder / section." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
+           title="Context: prompt / asset / folder / web page / palette / typography / section - wire as many as you like." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"
@@ -80794,7 +80947,7 @@ function WorkflowStrategyChainNode({ node, zoom, selected, onSelect, onMove, onR
           </div>`}
       </div>
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
-           title="Context: prompt / asset / folder / section." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
+           title="Context: prompt / asset / folder / web page / palette / typography / section - wire as many as you like." onMouseDown=${(e) => onStartEdge && onStartEdge("in", e)}>
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-port-zone workflow-port-zone-out" data-port-node=${node.id} data-port-side="out"

@@ -3773,19 +3773,19 @@ KIND_IO = {
     },
     "assistant-research": {
         "provides": [{"port": "out", "label": "Research table", "tags": ["section"]}],
-        "accepts":  [{"port": "in", "label": "Context", "tags": ["text", "text-gen", "asset", "section", "folder"], "ingest": "context"}],
+        "accepts":  [{"port": "in", "label": "Context", "tags": ["text", "text-gen", "asset", "section", "folder", "palette", "typography"], "ingest": "context"}],
     },
     "assistant-testing": {
         "provides": [{"port": "out", "label": "Tester feedback table", "tags": ["section"]}],
-        "accepts":  [{"port": "in", "label": "What to test", "tags": ["text", "text-gen", "asset", "section", "folder"], "ingest": "context"}],
+        "accepts":  [{"port": "in", "label": "What to test", "tags": ["text", "text-gen", "asset", "section", "folder", "palette", "typography"], "ingest": "context"}],
     },
     "assistant-strategy": {
         "provides": [{"port": "out", "label": "Strategy board", "tags": ["section"]}],
-        "accepts":  [{"port": "in", "label": "Context", "tags": ["text", "text-gen", "asset", "section", "folder"], "ingest": "context"}],
+        "accepts":  [{"port": "in", "label": "Context", "tags": ["text", "text-gen", "asset", "section", "folder", "palette", "typography"], "ingest": "context"}],
     },
     "assistant-strategy-orchestrator": {
         "provides": [{"port": "out", "label": "Strategy chain", "tags": ["section"]}],
-        "accepts":  [{"port": "in", "label": "Context", "tags": ["text", "text-gen", "asset", "section", "folder"], "ingest": "context"}],
+        "accepts":  [{"port": "in", "label": "Context", "tags": ["text", "text-gen", "asset", "section", "folder", "palette", "typography"], "ingest": "context"}],
     },
     "composer": {
         "provides": [{"port": "out", "label": "Baked HTML", "tags": ["asset", "blendable"],

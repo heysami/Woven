@@ -12132,6 +12132,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._kinds_reconcile(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__capabilities":
             return self._capabilities(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__assistant/prototype_text":
+            return self._assistant_prototype_text(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__assistant/folder_text":
+            return self._assistant_folder_text(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__assistant/web_text":
+            return self._assistant_web_text(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__logic_guide":
             return self._logic_guide(urllib.parse.parse_qs(parsed.query))
         # Orchestration pipeline ledger - the locked flow + a computed complete
@@ -17891,6 +17897,73 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._reply(502, {"ok": False, "error": f"{type(e).__name__}: {e}"})
         return self._reply(200, {"ok": True, "text": text})
+
+    def _assistant_prototype_text(self, qs):
+        """GET /__assistant/prototype_text?project=&slug=
+        Digest a wired prototype's SOURCE into a bounded plain-text material
+        blob the assistant nodes ground on (Deep research linked material,
+        testing clarification context). Read-only; agents still validate the
+        claim against external sources, this is not the whole truth."""
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        slug = (_qs_get(qs, "slug") or "").strip()
+        if not slug or ".." in slug or not re.match(r"^[A-Za-z0-9][A-Za-z0-9_.\-/]*$", slug):
+            return self._reply(400, {"error": "invalid or missing slug"})
+        try:
+            src_dir = _safe_join(os.path.join(project_root, "source"), slug)
+        except Exception:
+            return self._reply(400, {"error": "invalid slug path"})
+        if not os.path.isdir(src_dir):
+            return self._reply(404, {"ok": False, "error": f"no such prototype source: {slug}"})
+        try:
+            text = _prototype_source_digest(src_dir)
+        except Exception as e:
+            return self._reply(500, {"ok": False, "error": f"{type(e).__name__}: {e}"})
+        return self._reply(200, {"ok": True, "slug": slug, "text": text})
+
+    def _assistant_folder_text(self, qs):
+        """GET /__assistant/folder_text?project=&path=
+        Digest a wired FOLDER node's directory into bounded plain-text
+        material (same walker as the prototype digest) so local sources
+        ground the assistants alongside web validation. `path` is
+        project-relative or absolute; read-only."""
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        raw = (_qs_get(qs, "path") or "").strip()
+        if not raw:
+            return self._reply(400, {"error": "missing path"})
+        folder = raw if os.path.isabs(raw) else os.path.normpath(os.path.join(project_root, raw))
+        folder = os.path.expanduser(folder)
+        if not os.path.isdir(folder):
+            return self._reply(404, {"ok": False, "error": f"no such folder: {raw}"})
+        try:
+            text = _prototype_source_digest(folder, cap=12000)
+        except Exception as e:
+            return self._reply(500, {"ok": False, "error": f"{type(e).__name__}: {e}"})
+        return self._reply(200, {"ok": True, "path": raw, "text": text})
+
+    def _assistant_web_text(self, qs):
+        """GET /__assistant/web_text?url=
+        Fetch ONE http(s) page server-side and return its readable text
+        (tags/style/script stripped, bounded) so a wired Web browser node
+        actually contributes its page content to assistant context."""
+        url = (_qs_get(qs, "url") or "").strip()
+        if not re.match(r"^https?://", url):
+            return self._reply(400, {"error": "url must be http(s)"})
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh) Woven-assistant-reader"})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw = resp.read(500000).decode("utf-8", errors="replace")
+        except Exception as e:
+            return self._reply(502, {"ok": False, "error": f"fetch failed: {type(e).__name__}: {e}"})
+        no_style = re.sub(r"(?is)<(style|script)[^>]*>.*?</\1>", " ", raw)
+        text = re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", " ", no_style)).strip()[:12000]
+        return self._reply(200, {"ok": True, "url": url, "text": text})
 
     def _asset_generate(self, qs):
         """Phase 4b dispatcher. Body shape:
