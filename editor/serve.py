@@ -128,6 +128,8 @@ PORT = _pick_port()
 # Back-compat: with no TH_WORKSPACE_DIR set, the daemon behaves identically
 # to the pre-Phase-6 single-repo install (INSTALL_ROOT == project root).
 INSTALL_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# Served-build fingerprint cache for /__healthz (app.js mtime at first probe).
+_HEALTHZ_BUILD = None
 EDITOR_DIR   = os.path.join(INSTALL_ROOT, "editor")
 
 # Sync-format compatibility version. Recorded in each project repo's
@@ -25528,10 +25530,21 @@ class H(http.server.SimpleHTTPRequestHandler):
         regardless of load. The frontend uses this as its canonical
         "daemon up" signal so application-traffic slowness no longer
         false-positives as "daemon down"."""
+        # `build` = the served app.js mtime, cached per-process. The editor
+        # compares it to the value it booted with and offers a one-click
+        # refresh when a newer build lands (no more guessing which layer
+        # changed). Reads one stat on first call only - stays lock-free/fast.
+        global _HEALTHZ_BUILD
+        try:
+            if _HEALTHZ_BUILD is None:
+                _HEALTHZ_BUILD = str(int(os.path.getmtime(os.path.join(_EDITOR_DIR, "app.js"))))
+        except Exception:
+            _HEALTHZ_BUILD = ""
         return self._reply(200, {
-            "ok":   True,
-            "ts":   time.time(),
-            "pid":  os.getpid(),
+            "ok":    True,
+            "ts":    time.time(),
+            "pid":   os.getpid(),
+            "build": _HEALTHZ_BUILD,
         })
 
     # ── /__kinds/registry - D3 source of truth ────────────────────────────

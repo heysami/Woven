@@ -26144,6 +26144,56 @@ function _modelWasDeprecated(raw) {
 // list ONLY if the registry hasn't loaded yet (defensive - the canvas can
 // boot before /__kinds/registry returns). Adding a new editable field
 // requires editing editor/kinds/registry.py - single source of truth.
+// Fields the DAEMON/AGENT writes onto nodes mid-run (payload seams, run
+// ids, the chain driver's announce). The live reload-merge pulls these with
+// the same causal dirty-check as editable fields, so an open tab sees
+// agent deliveries without a reload. Keep in lockstep with the payload
+// whitelist in serve.py's status endpoint.
+const _AGENT_POSTED_FIELDS = {
+  "assistant-strategy":     ["strategyRun", "runId", "runRunId"],
+  "assistant-research":     ["researchRun", "runId", "runRunId"],
+  "assistant-testing":      ["testingRun", "runId", "runRunId"],
+  "assistant-deepresearch": ["deepresearchRun", "runId", "runRunId"],
+  "assistant-strategy-orchestrator": ["chainPlan", "partIds", "output", "runId", "runRunId"],
+};
+
+// ── Build-refresh watch ──────────────────────────────────────────────────
+// Polls /__healthz (60s + on tab-visible) and compares the served app.js
+// build fingerprint to the one this tab booted with. When a newer build
+// lands: a hidden tab reloads itself; a visible tab gets a small banner
+// with a Refresh button. Ends the "which layer changed - do I restart or
+// reload?" guessing game after updates.
+(function _buildRefreshWatch() {
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  let booted = null, shown = false;
+  const check = async () => {
+    try {
+      const r = await fetch(apiUrl("/__healthz"), { cache: "no-store" });
+      const j = await r.json();
+      const b = j && j.build;
+      if (!b) return;
+      if (booted == null) { booted = b; return; }
+      if (b === booted || shown) return;
+      if (document.hidden) { location.reload(); return; }
+      shown = true;
+      const bar = document.createElement("div");
+      bar.className = "th-build-refresh";
+      const label = document.createElement("span");
+      label.textContent = "A new editor build is live.";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "Refresh";
+      btn.onclick = () => location.reload();
+      bar.appendChild(label);
+      bar.appendChild(btn);
+      document.body.appendChild(bar);
+    } catch { /* daemon briefly away - try next tick */ }
+  };
+  setTimeout(check, 3000);
+  setInterval(check, 60000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
+})();
+
 const _LEGACY_EDITABLE_FIELDS = {
   "assistant-interview": ["goal", "focus", "pushPast", "model"],
   "assistant-research":  ["goal", "criteria", "model", "searchVia", "numResults", "category"],
@@ -27639,6 +27689,14 @@ function WorkflowCanvas() {
               savedSnapshotRef.current.set(disk.id + "|" + key, _stableClone(disk[key]));
             };
             for (const f of editableFields) pullField(f);
+            // AGENT-POSTED fields: payload seams, run ids, and the chain
+            // driver's announce - written by the daemon/agent MID-RUN, never
+            // typed by the user. Same causal pull, so a live session sees
+            // deliveries without a tab reload. Without this, "done" flowed
+            // in but the payload did not: boards never rendered live, and
+            // the delivery watchdog wrongly flagged delivered runs as
+            // failures (the west / lest bug).
+            for (const f of (_AGENT_POSTED_FIELDS[disk.kind] || [])) pullField(f);
             // Live Session - pull a collaborator's node MOVE (x/y) and RESIZE
             // (w/h) live. Same dirty-check: only when local matches the
             // last-saved snapshot (you're not mid-drag / mid-resize on this
