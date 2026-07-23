@@ -27665,6 +27665,7 @@ function WorkflowCanvas() {
             mergedWb.push(disk);                            // clean + disk changed → take disk
             savedSnapshotRef.current.set("wb:" + local.id, _stableClone(disk));
             wbChanged = true;
+            _wfxPendingWbIds.add(local.id);                 // agent write-back → completion wave
           }
           if (!addedNodes.length && !addedEdges.length && !statusChanged && !wbChanged) return prev;
           // Drop edges that referenced a collaborator-deleted node so they
@@ -36316,6 +36317,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     { x: data.pan?.x ?? 0, y: data.pan?.y ?? 0, z: data.zoom ?? 1 },
     { letSelectedScroll: true, disableEmptyDragPan: true },
   );
+  // Micro-fx overlays (drag trails / connector sparks / completion waves).
+  // Purely decorative: pointer-events none, observes state, adds no listeners.
+  const { underRef: fxUnderRef, overRef: fxOverRef } = useWorkflowFx(wrapRef);
   // Human label for the project - shown as the top-bar title.
   const projectLabel = useActiveProjectLabel();
   // Files the live agent run is touching - tethers the worker badge onto the
@@ -36452,9 +36456,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       wb: (Array.isArray(d.wb) ? d.wb : []).map(it => set.has(it.id) ? { ...it, ...patch } : it),
     }));
   }, [setData]);
-  const removeWbItems = useCallback((ids) => {
-    const set = ids instanceof Set ? ids : new Set(ids);
-    if (set.size === 0) return;
+  // Ids mid exit-animation (nodes AND wb items). UI deletes add the .wf-exit
+  // class, wait ~170ms, then commit the actual state removal; the guard stops
+  // a double-Delete from committing twice. Remote/merge removals never come
+  // through here and stay instant.
+  const exitingIdsRef = useRef(new Set());
+  const commitRemoveWbItems = useCallback((set) => {
     setData(d => ({
       ...d,
       wb: (Array.isArray(d.wb) ? d.wb : []).filter(it => !set.has(it.id)),
@@ -36468,6 +36475,23 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return next;
     });
   }, [setData, deletedWbIdsRef]);
+  const removeWbItems = useCallback((ids) => {
+    const set = new Set(ids instanceof Set ? ids : ids);
+    for (const id of Array.from(set)) if (exitingIdsRef.current.has(id)) set.delete(id);
+    if (set.size === 0) return;
+    if (_wfxReduce.matches) { commitRemoveWbItems(set); return; }
+    let any = false;
+    for (const id of set) {
+      const el = document.querySelector('.workflow-wb-layer [data-wb-id="' + id + '"]');
+      if (el) { el.classList.add("wf-exit"); any = true; }
+    }
+    if (!any) { commitRemoveWbItems(set); return; }
+    for (const id of set) exitingIdsRef.current.add(id);
+    setTimeout(() => {
+      for (const id of set) exitingIdsRef.current.delete(id);
+      commitRemoveWbItems(set);
+    }, 170);
+  }, [commitRemoveWbItems]);
   // Group move - arrows shift endpoints, everything else shifts x/y.
   const shiftWbItems = useCallback((ids, dx, dy) => {
     const set = ids instanceof Set ? ids : new Set(ids);
@@ -39690,7 +39714,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // exposedAssets list so the next Expose doesn't double-spawn it. Edges
   // referencing any newly-dead node id get dropped at the same time so the
   // edges layer never renders dangling lines into nothing.
-  const removeNode = useCallback((nid) => {
+  const commitRemoveNode = useCallback((nid) => {
     setData(d => {
       const allNodes = d.nodes || [];
       const target = allNodes.find(n => n.id === nid);
@@ -39776,6 +39800,23 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return { ...d, nodes, edges, wb, ...extra };
     });
   }, [setData]);
+  // UI-facing remove: play the exit micro-animation on the grabbed node, then
+  // commit. Every caller is a user gesture (close X, Delete key, context
+  // menu), so animating here covers them all; cascade members (table cells,
+  // section contents, bound assets) go with the commit itself.
+  const removeNode = useCallback((nid) => {
+    if (exitingIdsRef.current.has(nid)) return;
+    if (!_wfxReduce.matches) {
+      const el = document.querySelector('.workflow-canvas [data-node-id="' + nid + '"]');
+      if (el) {
+        exitingIdsRef.current.add(nid);
+        el.classList.add("wf-exit");
+        setTimeout(() => { exitingIdsRef.current.delete(nid); commitRemoveNode(nid); }, 170);
+        return;
+      }
+    }
+    commitRemoveNode(nid);
+  }, [commitRemoveNode]);
 
   // Bulk delete for the canvas selection. Wired into the Delete /
   // Backspace key handler below and the right-click context menu.
@@ -39792,6 +39833,39 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // runStates is keyed by skill node id; each entry holds { status, error, ranAt }.
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [runStates, setRunStates] = useState({});
+  // Micro-fx: one-shot completion shockwave. If the finished thing is inside
+  // the viewport, an expanding ring hugs its rect; if it finished OFF-screen,
+  // the engine sends a pulse traveling to the nearest viewport edge instead
+  // (wfx "shockwave" decides which - see spawnWave). Deduped per id so a run
+  // that flips both runStates and runStatus fires once. Declared HERE, above
+  // every effect that lists it as a dep (deps evaluate at render time - a
+  // later const would be a temporal-dead-zone crash).
+  const lastWaveAtRef = useRef(new Map());
+  const fxCompletionWave = useCallback((nodeId) => {
+    const now = Date.now();
+    const last = lastWaveAtRef.current.get(nodeId) || 0;
+    if (now - last < 400) return;
+    lastWaveAtRef.current.set(nodeId, now);
+    const n = (dataNodesRef.current || []).find(x => x && x.id === nodeId);
+    if (!n || typeof n.x !== "number") return;
+    const el = document.querySelector('.workflow-canvas [data-node-id="' + nodeId + '"]');
+    const w = (el && el.offsetWidth) || n.w || 220;
+    const h = (el && el.offsetHeight) || n.h || 120;
+    wfx("shockwave", { x: n.x, y: n.y, w, h, r: 10 });
+  }, []);
+  // Micro-fx path 2: skill-run bookkeeping flipping to done (some runs only
+  // touch runStates, never node.runStatus). Same dedupe as path 1.
+  const prevRunStatesRef = useRef(null);
+  useEffect(() => {
+    const prev = prevRunStatesRef.current;
+    prevRunStatesRef.current = runStates;
+    if (!prev) return;
+    for (const id of Object.keys(runStates || {})) {
+      const st = runStates[id] && runStates[id].status;
+      const was = prev[id] && prev[id].status;
+      if (st === "done" && was && was !== "done") fxCompletionWave(id);
+    }
+  }, [runStates, fxCompletionWave]);
 
   // In-session clipboard for canvas node copy/paste. Lives in a ref
   // (not state) because we never want it to trigger a re-render - paste
@@ -40693,6 +40767,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // recent pick within the active node's iframe: { nodeId, path, outerHTML }.
   const [pickModeNodeId, setPickModeNodeId] = useState(null);
   const [pickedElement, setPickedElement] = useState(null);
+  // Micro-fx presence twin for the inspector dock's exit slide-fade.
+  const [pickedShownElement, pickedClosing] = usePanelPresence(pickedElement);
   // Broadcast pick-mode changes so the select badges can update their
   // `is-active` style without prop drilling.
   //
@@ -48168,6 +48244,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const fromDtype = workflowPortDtype(fromNode, fromPort, fromIsSource0 ? "provides" : "accepts");
     setPendingEdge({ fromNodeId, fromPort, fromX: p.x, fromY: p.y, toX: p.x, toY: p.y, snapped: false,
                      fromDtype: fromDtype || null, fromIsSource: fromIsSource0 });
+    // Micro-fx: electric sparks at the port the wire is being pulled from,
+    // for the whole life of the gesture. Purely decorative (wfx no-ops under
+    // reduced motion / when the canvas is not mounted).
+    wfx("sparkle-start", { id: "edge", x: p.x, y: p.y });
+    // One zap per FRESH snap target - re-entering the same port after leaving
+    // it zaps again, but hovering steady does not machine-gun.
+    let lastSnapKey = null;
 
     const fromIsSource = fromIsSource0;
     // Gather drop-zone candidates at a point: the top document's hits PLUS any
@@ -48221,16 +48304,22 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         if (targetNode) {
           const tp = workflowPortPosition(targetNode, hit.port, portCtx);
           setPendingEdge(pe => pe ? { ...pe, toX: tp.x, toY: tp.y, snapped: true, snapTarget: hit } : null);
+          const snapKey = hit.node + "." + hit.port;
+          if (snapKey !== lastSnapKey) { lastSnapKey = snapKey; wfx("zap", { x: tp.x, y: tp.y }); }
+          wfx("sparkle-move", { id: "edge", x: p.x, y: p.y, boost: true });
           return;
         }
       }
       // No snap - endpoint follows the cursor freely.
+      lastSnapKey = null;
+      wfx("sparkle-move", { id: "edge", x: p.x, y: p.y, boost: false });
       const { x, y } = screenToWorld(ev.clientX, ev.clientY);
       setPendingEdge(pe => pe ? { ...pe, toX: x, toY: y, snapped: false, snapTarget: null } : null);
     };
     const onUp = (ev) => {
       setNodeDragging(false);
       setCanvasDraggingSync(false);
+      wfx("sparkle-stop", { id: "edge" });
       const target = findCompatiblePort(ev.clientX, ev.clientY);
       if (target) {
         // Normalize so `from` is always the source (right-side / output) and
@@ -48277,6 +48366,111 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (hit.cell) return { kind: "cell", tableId: hit.cell.tableId, r: hit.cell.r, c: hit.cell.c };
     return { kind: "sec", sectionId: hit.sec.sectionId };
   }, [wbDragging, nodeDragging, pendingEdge, data.nodes, data.wb, selectedNodeIds, selectedWbIds]);
+
+  // Micro-fx: motion trail behind dragged nodes / wb items - a fading "shadow"
+  // matching each dragged thing's own size. OBSERVES the existing drag latches
+  // only: no new listeners, no changes to any drag/resize handler, and the fx
+  // canvases are pointer-events:none, so the drag machinery (iframe latches,
+  // inner-content scrolling, snapping) is untouched. Resize gestures share the
+  // nodeDragging latch, but the engine only emits a ghost when a rect's x/y
+  // moved while its w/h stayed constant, so resizing leaves no trail. The
+  // dragged set is read generously (gesture node + full mixed selection);
+  // stationary members never move, so they never produce ghosts either.
+  useEffect(() => {
+    if (!((nodeDragging || wbDragging) && !pendingEdge)) return;
+    const sizeCache = new Map(); // node id -> {w,h}, measured ONCE per gesture
+    const nodeSize = (n) => {
+      let s = sizeCache.get(n.id);
+      if (!s) {
+        const el = document.querySelector('.workflow-canvas [data-node-id="' + n.id + '"]');
+        s = (el && el.offsetWidth) ? { w: el.offsetWidth, h: el.offsetHeight } : { w: n.w || 220, h: n.h || 120 };
+        sizeCache.set(n.id, s);
+      }
+      return s;
+    };
+    const getRects = () => {
+      const out = [];
+      const nodeIds = new Set(selectedNodeIdsRef.current);
+      if (lastDragNodeIdRef.current) nodeIds.add(lastDragNodeIdRef.current);
+      for (const n of (dataNodesRef.current || [])) {
+        if (!n || !nodeIds.has(n.id) || typeof n.x !== "number" || typeof n.y !== "number") continue;
+        const s = nodeSize(n);
+        out.push({ id: n.id, x: n.x, y: n.y, w: s.w, h: s.h, rad: 10 });
+      }
+      const wbSel = selectedWbIdsRef.current;
+      if (wbSel && wbSel.size) {
+        for (const it of (wbItemsRef.current || [])) {
+          if (!it || !wbSel.has(it.id) || it.type === "arrow" || it.type === "ink") continue;
+          const bb = wbItemBBox(it);
+          out.push({ id: "wb:" + it.id, x: bb.x, y: bb.y, w: bb.w, h: bb.h, rad: 8 });
+        }
+      }
+      return out;
+    };
+    wfx("trail-start", { id: "drag", getRects });
+    return () => wfx("trail-stop", { id: "drag" });
+  }, [nodeDragging, wbDragging, pendingEdge]);
+
+  // Micro-fx: enter animation for freshly-created nodes / wb items. Diffs ids
+  // against the previous render, so it covers every creation path with one
+  // hook: palette / library drops, spawn menus, paste, AND agent or daemon
+  // written nodes arriving through the SSE merge. Guards: the first run only
+  // records a baseline, and a bulk arrival (initial load, project switch,
+  // giant paste) stays silent. Layout effect so the class lands BEFORE first
+  // paint - no full-size flash. The imperative class survives re-renders
+  // (React never rewrites an unchanged className prop).
+  const prevCanvasIdsRef = useRef(null);
+  useLayoutEffect(() => {
+    const ids = new Set();
+    for (const n of (data.nodes || [])) if (n && n.id) ids.add("n:" + n.id);
+    for (const it of (data.wb || [])) if (it && it.id) ids.add("w:" + it.id);
+    const prev = prevCanvasIdsRef.current;
+    prevCanvasIdsRef.current = ids;
+    if (!prev || prev.size === 0 || _wfxReduce.matches) return;
+    const fresh = [];
+    for (const key of ids) if (!prev.has(key)) fresh.push(key);
+    if (!fresh.length || fresh.length > 12) return;
+    for (const key of fresh) {
+      const id = key.slice(2);
+      if (exitingIdsRef.current.has(id)) continue;
+      const el = document.querySelector(key[0] === "n"
+        ? '.workflow-canvas [data-node-id="' + id + '"]'
+        : '.workflow-wb-layer [data-wb-id="' + id + '"]');
+      if (!el) continue;
+      el.classList.add("wf-enter");
+      const done = () => el.classList.remove("wf-enter");
+      el.addEventListener("animationend", done, { once: true });
+      setTimeout(done, 450);
+    }
+  }, [data.nodes, data.wb]);
+
+  // Path 1: node.runStatus leaving "pending" for done (or the null-after-
+  // success clear). Covers the daemon merge AND every client updateNode site.
+  const prevRunStatusRef = useRef(null);
+  useEffect(() => {
+    const cur = new Map();
+    for (const n of (data.nodes || [])) if (n && n.id) cur.set(n.id, n.runStatus || null);
+    const prev = prevRunStatusRef.current;
+    prevRunStatusRef.current = cur;
+    if (!prev) return;
+    for (const [id, st] of cur) {
+      const was = prev.get(id);
+      if (was === "pending" && (st === null || st === "done")) fxCompletionWave(id);
+    }
+  }, [data.nodes, fxCompletionWave]);
+  // Path 3: agent write-back replaced a wb item's content (parked by the
+  // daemon merge in _wfxPendingWbIds - different component scope).
+  useEffect(() => {
+    if (!_wfxPendingWbIds.size) return;
+    const ids = Array.from(_wfxPendingWbIds);
+    _wfxPendingWbIds.clear();
+    for (const id of ids) {
+      const it = (wbItemsRef.current || []).find(x => x && x.id === id);
+      if (!it || it.type === "ink") continue;
+      const bb = wbItemBBox(it);
+      wfx("shockwave", { x: bb.x, y: bb.y, w: bb.w, h: bb.h, r: 8 });
+    }
+  }, [data.wb]);
 
   // Each prototype reports its iframe's current URL state up here so we can
   // compute orphan status centrally and dim bound asset nodes accordingly.
@@ -48872,6 +49066,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // (HTML / SVG / JSON / CSS / JS / text) show one body; prototypes
   // surface every text file under source/<slug>/ as a tab strip.
   const [codePanelNodeId, setCodePanelNodeId] = useState(null);
+  // Micro-fx: hold the last open panel briefly after close so it can play
+  // its slide-fade exit (renders keep using the SHOWN id, not the live one).
+  const [codePanelShownId, codePanelClosing] = usePanelPresence(codePanelNodeId);
   // Programmatic focus for the code panel: { token, nodeId, path, needle }.
   // Set alongside codePanelNodeId by the double-click-on-data-text feature so
   // the panel switches to the right file tab and scrolls/selects the match.
@@ -48985,6 +49182,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // the node's LEFT edge (code panel + picked-element inspector own the
   // right). See WorkflowCommentsPanel.
   const [commentsPanelNodeId, setCommentsPanelNodeId] = useState(null);
+  const [commentsPanelShownId, commentsPanelClosing] = usePanelPresence(commentsPanelNodeId);
   // WS4 - which prototype node has its User Testing panel open. Mirrors
   // commentsPanelNodeId exactly: docks to the node's LEFT edge, toggled by
   // the node's User-testing top-action, floats via WorkflowUserTestingPanel.
@@ -50425,6 +50623,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           data-wb-dragging=${wbDragging ? "true" : "false"}
           data-marquee=${marquee ? "true" : "false"}
         >
+          <canvas className="workflow-fx-under" ref=${fxUnderRef} aria-hidden="true"/>
           <div
             className="workflow-canvas"
           >
@@ -50770,10 +50969,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 runStates=${runStates}
               />
             `)}
-            ${codePanelNodeId && (() => {
+            ${codePanelShownId && (() => {
               // Resolve the host node fresh from data - re-renders pick up
               // moves/resizes so the panel tracks the node's right edge.
-              const host = (data.nodes || []).find(n => n.id === codePanelNodeId);
+              // (Shown id = live id, or the just-closed one lingering for
+              // the exit slide-fade.)
+              const host = (data.nodes || []).find(n => n.id === codePanelShownId);
               if (!host) return null;
               // Mermaid uses its own panel (textarea + diagram-type
               // dropdown writing inline node state); asset/prototype use
@@ -50783,6 +50984,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   key=${"mermaidcodepanel-" + host.id}
                   node=${host}
                   zoom=${zoom}
+                  closing=${codePanelClosing}
                   onChange=${(patch) => updateNode(host.id, patch)}
                   onClose=${() => setCodePanelNodeId(null)}
                 />`;
@@ -50791,37 +50993,40 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${"codepanel-" + host.id}
                 node=${host}
                 zoom=${zoom}
+                closing=${codePanelClosing}
                 focus=${codePanelFocus && codePanelFocus.nodeId === host.id ? codePanelFocus : null}
                 onClose=${() => { setCodePanelNodeId(null); setCodePanelFocus(null); }}
               />`;
             })()}
-            ${commentsPanelNodeId && (() => {
+            ${commentsPanelShownId && (() => {
               // Share mode - comments dock. Resolve the host fresh from
               // data (same pattern as the code panel) so the panel tracks
               // node moves/resizes.
-              const host = (data.nodes || []).find(n => n.id === commentsPanelNodeId);
+              const host = (data.nodes || []).find(n => n.id === commentsPanelShownId);
               if (!host) return null;
               return html`<${WorkflowCommentsPanel}
                 key=${"commentspanel-" + host.id}
                 node=${host}
                 zoom=${zoom}
+                closing=${commentsPanelClosing}
                 onStartChatWithPrompt=${onStartChatWithPrompt}
                 onClose=${() => setCommentsPanelNodeId(null)}
               />`;
             })()}
-            ${pickedElement && pickedElement.nodeId && (() => {
+            ${pickedShownElement && pickedShownElement.nodeId && (() => {
               // Property inspector dock. Mounts when an element
               // is picked inside any prototype / asset iframe. Sits to
               // the right of that owning node - same docking pattern as
               // the code panel. Reuses zoom-mode's PickedInspectorBody
               // so future updates land in both places.
-              const host = (data.nodes || []).find(n => n.id === pickedElement.nodeId);
+              const host = (data.nodes || []).find(n => n.id === pickedShownElement.nodeId);
               if (!host) return null;
               return html`<${WorkflowPickedInspectorDock}
                 key=${"inspector-" + host.id}
                 node=${host}
                 zoom=${zoom}
-                pickedElement=${pickedElement}
+                closing=${pickedClosing}
+                pickedElement=${pickedShownElement}
                 pickerIframeRef=${pickerIframeRef}
                 pickedDomRef=${pickedDomRef}
                 onSaveIframeHtml=${_saveIframeHtml}
@@ -51908,6 +52113,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 }}/>
             `}
           </div>
+          <canvas className="workflow-fx-over" ref=${fxOverRef} aria-hidden="true"/>
           ${empty && !chatActive && !chatExists && leftPanel !== "chat" && !wbMode && html`
             <${WorkflowEmptyComposer}
               onStartChatWithPrompt=${onStartChatWithPrompt}
@@ -60224,7 +60430,7 @@ function flowAtValue(at, flows) {
 
    Clicking a comment also flash-highlights its element inside the node's
    live iframe when the iframe is currently showing that page. */
-function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
+function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt, closing }) {
   const slug = nodePrototype(node);
   const projectId = useMemo(() => {
     try { return new URL(window.location.href).searchParams.get("project") || ""; }
@@ -60454,7 +60660,7 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
 
   return html`
     <div
-      className="workflow-comments-panel"
+      className=${"workflow-comments-panel" + (closing ? " is-closing" : "")}
       data-host-node-id=${node.id}
       data-scroll-internally="true"
       style=${{ left: left + "px", top: top + "px", width: panelW + "px", height: height + "px" }}
@@ -60640,7 +60846,7 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt }) {
   `;
 }
 
-function WorkflowCodePanel({ node, onClose, zoom, focus }) {
+function WorkflowCodePanel({ node, onClose, zoom, focus, closing }) {
   const [files, setFiles] = useState([]);          // [{ path, label }]
   const [activeIdx, setActiveIdx] = useState(0);
   const [focusFlash, setFocusFlash] = useState(false); // brief pulse on programmatic focus
@@ -60927,7 +61133,7 @@ function WorkflowCodePanel({ node, onClose, zoom, focus }) {
 
   return html`
     <div
-      className=${"workflow-code-panel" + (focusFlash ? " is-focusing" : "")}
+      className=${"workflow-code-panel" + (focusFlash ? " is-focusing" : "") + (closing ? " is-closing" : "")}
       data-host-node-id=${node.id}
       data-scroll-internally="true"
       style=${{ left: left + "px", top: top + "px", width: panelW + "px", height: height + "px" }}
@@ -61063,7 +61269,7 @@ function WorkflowPickedInspectorDock({
   node, zoom, pickedElement,
   pickerIframeRef, pickedDomRef,
   onSaveIframeHtml, onStageInspectorEdit, onMoveElement,
-  onClose,
+  onClose, closing,
 }) {
   // Refresh tick - bumps whenever we mutate styles so the inspector
   // re-reads the current state from the live element.
@@ -61422,7 +61628,7 @@ function WorkflowPickedInspectorDock({
 
   return html`
     <div
-      className="workflow-inspector-panel"
+      className=${"workflow-inspector-panel" + (closing ? " is-closing" : "")}
       data-host-node-id=${node.id}
       data-scroll-internally="true"
       style=${{ left: left + "px", top: top + "px", width: panelW + "px", height: height + "px" }}
@@ -79573,7 +79779,7 @@ function WorkflowMermaidNode({ node, zoom, selected, onSelect, onMove, onResize,
    bound to node.code (inline state) instead of a file, and the toolbar
    adds a diagram-type dropdown that pre-seeds the textarea with a
    ready-to-render template when the type changes. */
-function WorkflowMermaidCodePanel({ node, onChange, onClose, zoom }) {
+function WorkflowMermaidCodePanel({ node, onChange, onClose, zoom, closing }) {
   const [panelW, setPanelW] = useState(480);
   const [draft, setDraft] = useState(node.code || "");
   const [saveFlash, setSaveFlash] = useState(null);
@@ -79652,7 +79858,7 @@ function WorkflowMermaidCodePanel({ node, onChange, onClose, zoom }) {
 
   return html`
     <div
-      className="workflow-code-panel workflow-code-panel-mermaid"
+      className=${"workflow-code-panel workflow-code-panel-mermaid" + (closing ? " is-closing" : "")}
       data-host-node-id=${node.id}
       style=${{ left: left + "px", top: top + "px", width: panelW + "px", height: height + "px" }}
       onMouseDown=${(e) => e.stopPropagation()}
@@ -80180,7 +80386,7 @@ function WapSummary({ sum }) {
     </div>`;
 }
 
-function WorkflowAssistantResultPanel({ node, onExplore, exploreBusy }) {
+function WorkflowAssistantResultPanel({ node, onExplore, exploreBusy, closing }) {
   const res = node.result;
   if (!res) return null;
   // Stop canvas pan/drag/zoom from eating panel scroll + clicks.
@@ -80189,7 +80395,7 @@ function WorkflowAssistantResultPanel({ node, onExplore, exploreBusy }) {
   if (res.kind === "research") {
     const items = res.items || [];
     return html`
-      <div className="workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-research" ...${swallow}>
+      <div className=${"workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-research" + (closing ? " is-closing" : "")} ...${swallow}>
         <div className="wap-head">
           <span className="wap-kicker">Research findings</span>
           <span className="wap-count">${items.length} result${items.length === 1 ? "" : "s"}</span>
@@ -80220,7 +80426,7 @@ function WorkflowAssistantResultPanel({ node, onExplore, exploreBusy }) {
     const agents = res.agents || [];
     const rate = res.passRate || 0;
     return html`
-      <div className="workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-testing" ...${swallow}>
+      <div className=${"workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-testing" + (closing ? " is-closing" : "")} ...${swallow}>
         <div className="wap-head"><span className="wap-kicker">Simulation report</span></div>
         <div className="wap-section-label">Live counters</div>
         <div className="wap-counters">
@@ -80266,7 +80472,7 @@ function WorkflowAssistantResultPanel({ node, onExplore, exploreBusy }) {
     const pts = res.points || [];
     const c = res.counters || {};
     return html`
-      <div className="workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-research" ...${swallow}>
+      <div className=${"workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-research" + (closing ? " is-closing" : "")} ...${swallow}>
         <div className="wap-head">
           <span className="wap-kicker">Deep research</span>
           <span className="wap-count">${pts.length} point${pts.length === 1 ? "" : "s"}</span>
@@ -80329,7 +80535,7 @@ function WorkflowAssistantResultPanel({ node, onExplore, exploreBusy }) {
     const lay = STRATEGY_LAYOUTS[res.layout];
     const stanceTone = (s) => s === "support" ? "pass" : s === "oppose" ? "fail" : "warn";
     return html`
-      <div className="workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-research" ...${swallow}>
+      <div className=${"workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-research" + (closing ? " is-closing" : "")} ...${swallow}>
         <div className="wap-head">
           <span className="wap-kicker">Strategy</span>
           <span className="wap-count">${lay ? lay.label : (res.layout || "")}</span>
@@ -80403,7 +80609,7 @@ function WorkflowAssistantResultPanel({ node, onExplore, exploreBusy }) {
     const doneN = parts.filter(p => p.status === "done").length;
     const tone = (st) => st === "done" ? "pass" : st === "error" ? "fail" : "warn";
     return html`
-      <div className="workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-research" ...${swallow}>
+      <div className=${"workflow-node-float-panel workflow-assistant-panel workflow-assistant-panel-research" + (closing ? " is-closing" : "")} ...${swallow}>
         <div className="wap-head">
           <span className="wap-kicker">Strategy chain</span>
           <span className="wap-count">${doneN}/${parts.length} parts</span>
@@ -80539,6 +80745,9 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
   const busy = runState?.status === "loading";
   const hasResult = !!(node.result && (node.result.items || []).length);
   const detached = selected && hasResult;
+  // Micro-fx: keep the float panel mounted briefly after deselect so it can
+  // play its slide-fade exit.
+  const [panelShown, panelClosing] = usePanelPresence(detached);
   const panelR = detached ? 438 : 0;
   return html`
     <div className="workflow-node workflow-node-iter workflow-node-assistant"
@@ -80615,7 +80824,7 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
-      ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
+      ${panelShown && html`<${WorkflowAssistantResultPanel} node=${node} closing=${panelClosing} />`}
       <${WorkflowQuietFace} glyph=${html`<${Icon.Search}/>`} name=${"Comparative research assistant"} sub=${(node.goal || "").trim() || null} />
     </div>
   `;
@@ -80630,6 +80839,9 @@ function WorkflowTestingNode({ node, zoom, selected, onSelect, onMove, onResize,
   const total = Math.min(node.maxTesters || 12, (node.personaTypes || 3) * (node.testersPerType || 2));
   const hasResult = !!(node.result && ((node.result.testers || []).length || node.result.total));
   const detached = selected && hasResult;
+  // Micro-fx: keep the float panel mounted briefly after deselect so it can
+  // play its slide-fade exit.
+  const [panelShown, panelClosing] = usePanelPresence(detached);
   const panelR = detached ? 378 : 0;
   return html`
     <div className="workflow-node workflow-node-iter workflow-node-assistant"
@@ -80690,7 +80902,7 @@ function WorkflowTestingNode({ node, zoom, selected, onSelect, onMove, onResize,
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
-      ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
+      ${panelShown && html`<${WorkflowAssistantResultPanel} node=${node} closing=${panelClosing} />`}
       <${WorkflowQuietFace} glyph=${html`<${Icon.Users || Icon.User || Icon.Spark}/>`} name=${"Simulated testing assistant"} sub=${(node.task || "").trim() || null} />
     </div>
   `;
@@ -80715,6 +80927,9 @@ function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onRe
   // detaches the panel - mirrors the testing assistant's live report.
   const hasResult = !!(node.result && ((node.result.points || []).length || (node.result.agents || []).length));
   const detached = selected && hasResult;
+  // Micro-fx: keep the float panel mounted briefly after deselect so it can
+  // play its slide-fade exit.
+  const [panelShown, panelClosing] = usePanelPresence(detached);
   const panelR = detached ? 438 : 0;
   const setAnswer = (i, v) => onChange({ clarify: { ...clar, answers: { ...(clar.answers || {}), [i]: v } } });
   const start = (answersKept) => {
@@ -80820,7 +81035,7 @@ function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onRe
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
-      ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
+      ${panelShown && html`<${WorkflowAssistantResultPanel} node=${node} closing=${panelClosing} />`}
       <${WorkflowQuietFace} glyph=${html`<${Icon.Brain}/>`} name=${"Deep research assistant"} sub=${task || null} />
     </div>
   `;
@@ -80845,6 +81060,9 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
   const planDone = !!(plan && plan.done && plan.forTask === task);
   const hasResult = !!(node.result && ((node.result.points || []).length || node.result.statement));
   const detached = selected && hasResult;
+  // Micro-fx: keep the float panel mounted briefly after deselect so it can
+  // play its slide-fade exit.
+  const [panelShown, panelClosing] = usePanelPresence(detached);
   const panelR = detached ? 438 : 0;
   const SECTION_LABELS = {
     keyview: "Key view", breakdown: "Breakdown of points", insights: "Collated insights",
@@ -81058,7 +81276,8 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
-      ${detached && html`<${WorkflowAssistantResultPanel} node=${node}
+      ${panelShown && html`<${WorkflowAssistantResultPanel} node=${node}
+        closing=${panelClosing}
         onExplore=${onExplore ? ((pid) => onExplore(node.id, pid)) : null}
         exploreBusy=${busy} />`}
       <${WorkflowQuietFace} glyph=${html`<${Icon.Flow}/>`} name=${"Strategy assistant"} sub=${task || null} />
@@ -81092,6 +81311,9 @@ function WorkflowStrategyChainNode({ node, zoom, selected, onSelect, onMove, onR
   const running = node.runStatus === "running";
   const hasResult = !!(node.result && (node.result.parts || []).length);
   const detached = selected && hasResult;
+  // Micro-fx: keep the float panel mounted briefly after deselect so it can
+  // play its slide-fade exit.
+  const [panelShown, panelClosing] = usePanelPresence(detached);
   const panelR = detached ? 438 : 0;
   return html`
     <div className="workflow-node workflow-node-iter workflow-node-assistant"
@@ -81175,7 +81397,7 @@ function WorkflowStrategyChainNode({ node, zoom, selected, onSelect, onMove, onR
         <div className="workflow-port-dot"/>
       </div>
       <div className="workflow-node-resize-corner" onMouseDown=${onResizeDown}/>
-      ${detached && html`<${WorkflowAssistantResultPanel} node=${node} />`}
+      ${panelShown && html`<${WorkflowAssistantResultPanel} node=${node} closing=${panelClosing} />`}
       <${WorkflowQuietFace} glyph=${html`<${Icon.Tree}/>`} name=${"Strategy chain orchestrator"} sub=${task || null} />
     </div>
   `;
@@ -84993,6 +85215,293 @@ function useWorkflowWorkingPaths() {
     return () => { cancelled = true; clearInterval(id); };
   }, []);
   return paths;
+}
+
+// ---------------------------------------------------------------------------
+// Workflow canvas micro-fx layer. One pair of screen-space <canvas> overlays,
+// both direct siblings of .workflow-canvas inside .workflow-canvas-wrap:
+//   .workflow-fx-under - painted BELOW the world layer (drag trails)
+//   .workflow-fx-over  - painted ABOVE it (sparks, zaps, shockwaves)
+// Effects are fire-and-forget via wfx(type, payload) in WORLD coordinates.
+// The rAF loop re-derives pan/zoom EVERY frame by parsing the world layer's
+// inline style.transform STRING - the imperative wheel path (useEndlessCanvas)
+// writes that ahead of React state, and a string property read never flushes
+// layout - so drawings stay glued to the canvas mid-gesture. The loop only
+// runs while effects are alive and NEVER reads layout (wrap size cached via
+// ResizeObserver, same contract as the aab worker below).
+// wfx() is a no-op when no canvas surface is mounted (user is not looking at
+// the canvas) or under prefers-reduced-motion.
+const _wfxReduce = (() => {
+  try { return window.matchMedia("(prefers-reduced-motion: reduce)"); }
+  catch { return { matches: false }; }
+})();
+let _wfxHandle = null;
+// wb item ids whose content an agent write-back just replaced (the daemon
+// merge's clean-local-takes-disk branch). The merge runs inside a setData
+// updater in a different component scope, so it parks ids here and the
+// canvas surface's data.wb effect drains them into completion shockwaves.
+// A Set dedupes the updater's possible double-invoke for free.
+const _wfxPendingWbIds = new Set();
+function wfx(type, payload) {
+  if (!_wfxHandle || _wfxReduce.matches) return;
+  try { _wfxHandle(type, payload || {}); } catch { /* fx must never break interactions */ }
+}
+
+function useWorkflowFx(wrapRef) {
+  const underRef = useRef(null);
+  const overRef = useRef(null);
+  useEffect(() => {
+    const wrap = wrapRef.current, under = underRef.current, over = overRef.current;
+    if (!wrap || !under || !over) return;
+    const uctx = under.getContext("2d"), octx = over.getContext("2d");
+    if (!uctx || !octx) return;
+
+    // --- cached viewport geometry (ResizeObserver only, never in the loop) --
+    let vw = 0, vh = 0, dpr = 1;
+    const resize = () => {
+      vw = wrap.clientWidth; vh = wrap.clientHeight;
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      for (const c of [under, over]) {
+        c.width = Math.max(1, Math.round(vw * dpr));
+        c.height = Math.max(1, Math.round(vh * dpr));
+      }
+    };
+    resize();
+    let ro = null;
+    try { ro = new ResizeObserver(resize); ro.observe(wrap); } catch {}
+
+    // --- pan/zoom straight from the world layer's inline transform ---------
+    let worldEl = wrap.querySelector(":scope > .workflow-canvas");
+    const XFORM_RE = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)\s*scale\(([\d.]+)/;
+    const parseXform = () => {
+      if (!worldEl || !worldEl.isConnected) worldEl = wrap.querySelector(":scope > .workflow-canvas");
+      const m = XFORM_RE.exec((worldEl && worldEl.style.transform) || "");
+      return m ? { px: +m[1], py: +m[2], z: Math.max(+m[3] || 1, 0.05) } : { px: 0, py: 0, z: 1 };
+    };
+
+    // --- accent colors (re-read each time the loop wakes from idle, so a
+    //     light/dark theme flip is picked up without observing anything) ----
+    let hot = "#e0a82e", hotStrong = "#d99a1f";
+    const readColors = () => {
+      try {
+        const cs = getComputedStyle(document.documentElement);
+        hot = (cs.getPropertyValue("--hot") || "").trim() || hot;
+        hotStrong = (cs.getPropertyValue("--hot-strong") || "").trim() || hotStrong;
+      } catch {}
+    };
+
+    // --- effect stores -----------------------------------------------------
+    const emitters = new Map(); // id -> {x,y,boost} persistent spark source
+    const sparks = [];          // {x,y,x1,y1,mx,my,t0,life} transient bolt segments
+    const trails = new Map();   // id -> {getRects, prev:Map, snaps:[], stopped}
+    const waves = [];           // ring / travel / ping one-shots
+    const rnd = Math.random;
+    const easeOut = (p) => 1 - Math.pow(1 - p, 3);
+    const easeInOut = (p) => p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+
+    const spawnSpark = (x, y, now, len) => {
+      if (sparks.length > 140) return;
+      const a = rnd() * Math.PI * 2, L = len * (0.6 + rnd() * 0.8);
+      const x1 = x + Math.cos(a) * L, y1 = y + Math.sin(a) * L;
+      // jittered midpoint = the "electric" kink
+      const mx = (x + x1) / 2 + (rnd() - 0.5) * L * 0.8;
+      const my = (y + y1) / 2 + (rnd() - 0.5) * L * 0.8;
+      sparks.push({ x, y, x1, y1, mx, my, t0: now, life: 160 + rnd() * 180 });
+    };
+    const spawnZap = (x, y, now) => {
+      for (let i = 0; i < 9; i++) spawnSpark(x, y, now, 14);
+      waves.push({ kind: "ping", cx: x, cy: y, t0: now, dur: 260, r0: 3, r1: 13 });
+    };
+    const spawnWave = (p, now) => {
+      const { px, py, z } = parseXform();
+      const wx0 = -px / z, wy0 = -py / z, wx1 = (vw - px) / z, wy1 = (vh - py) / z;
+      const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+      const visible = p.x < wx1 && p.x + p.w > wx0 && p.y < wy1 && p.y + p.h > wy0;
+      if (visible) {
+        waves.push({ kind: "ring", x: p.x, y: p.y, w: p.w, h: p.h, r: p.r || 10, t0: now, dur: 520 });
+        return;
+      }
+      // Off-viewport: a pulse travels from the node to the nearest point just
+      // inside the viewport edge, then lands as a compact ripple ping there -
+      // "something finished, over that way".
+      const m = 28 / z;
+      const tx = Math.min(Math.max(cx, wx0 + m), wx1 - m);
+      const ty = Math.min(Math.max(cy, wy0 + m), wy1 - m);
+      const dist = Math.hypot(tx - cx, ty - cy) * z; // screen px
+      const dur = Math.min(600, Math.max(350, dist * 0.25));
+      waves.push({ kind: "travel", x0: cx, y0: cy, x1: tx, y1: ty, t0: now, dur });
+    };
+
+    // Trail sampling: a ghost is emitted ONLY when a rect's x/y moved while
+    // its w/h stayed constant - node RESIZE shares the drag latch (the
+    // per-kind onResizeDown handlers call the same onDragStart) and must not
+    // leave a trail. Stationary drags emit nothing either.
+    const sampleTrail = (t, now) => {
+      if (t.stopped) return;
+      let rects; try { rects = t.getRects() || []; } catch { rects = []; }
+      for (const r of rects) {
+        const pv = t.prev.get(r.id);
+        if (pv && pv.w === r.w && pv.h === r.h && (pv.x !== r.x || pv.y !== r.y)) {
+          const moved = Math.hypot(r.x - pv.sx, r.y - pv.sy);
+          if (moved >= 3 && t.snaps.length < 64) {
+            t.snaps.push({ x: pv.x, y: pv.y, w: pv.w, h: pv.h, rad: r.rad || 10, t0: now });
+            pv.sx = r.x; pv.sy = r.y;
+          }
+          pv.x = r.x; pv.y = r.y;
+        } else if (!pv) {
+          t.prev.set(r.id, { x: r.x, y: r.y, w: r.w, h: r.h, sx: r.x, sy: r.y });
+        } else {
+          pv.x = r.x; pv.y = r.y; pv.w = r.w; pv.h = r.h;
+        }
+      }
+    };
+
+    const TRAIL_LIFE = 340;
+    let rafId = 0;
+    const loop = (now) => {
+      rafId = 0;
+      const { px, py, z } = parseXform();
+      const setWorld = (ctx) => {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * px, dpr * py);
+      };
+      setWorld(uctx); setWorld(octx);
+
+      // -- trails (under) --
+      let alive = false;
+      for (const [id, t] of trails) {
+        sampleTrail(t, now);
+        for (let i = t.snaps.length - 1; i >= 0; i--) {
+          const s = t.snaps[i], p = (now - s.t0) / TRAIL_LIFE;
+          if (p >= 1) { t.snaps.splice(i, 1); continue; }
+          const sh = p * 0.10; // subtle shrink toward center as it fades
+          uctx.globalAlpha = Math.pow(1 - p, 2) * 0.13;
+          uctx.fillStyle = hot;
+          uctx.beginPath();
+          const gx = s.x + s.w * sh / 2, gy = s.y + s.h * sh / 2;
+          const gw = s.w * (1 - sh), gh = s.h * (1 - sh);
+          if (uctx.roundRect) uctx.roundRect(gx, gy, gw, gh, s.rad);
+          else uctx.rect(gx, gy, gw, gh);
+          uctx.fill();
+        }
+        if (t.stopped && !t.snaps.length) trails.delete(id);
+        else alive = true;
+      }
+
+      // -- persistent spark emitters (over) --
+      for (const e of emitters.values()) {
+        const n = e.boost ? 3 : 1 + (rnd() < 0.5 ? 1 : 0);
+        for (let i = 0; i < n; i++) spawnSpark(e.x + (rnd() - 0.5) * 6, e.y + (rnd() - 0.5) * 6, now, e.boost ? 11 : 8);
+        alive = true;
+      }
+
+      // -- spark segments (over) --
+      octx.lineCap = "round";
+      for (let i = sparks.length - 1; i >= 0; i--) {
+        const s = sparks[i], p = (now - s.t0) / s.life;
+        if (p >= 1) { sparks.splice(i, 1); continue; }
+        octx.globalAlpha = (1 - p) * 0.9;
+        octx.strokeStyle = p < 0.35 ? hotStrong : hot;
+        octx.lineWidth = 1.4 / z;
+        octx.beginPath();
+        octx.moveTo(s.x, s.y);
+        octx.lineTo(s.mx, s.my);
+        octx.lineTo(s.x1, s.y1);
+        octx.stroke();
+        alive = true;
+      }
+
+      // -- waves: shockwave rings, travel pulses, edge pings (over) --
+      for (let i = waves.length - 1; i >= 0; i--) {
+        const w = waves[i], p = (now - w.t0) / w.dur;
+        if (p >= 1) {
+          if (w.kind === "travel") waves.push({ kind: "ping", cx: w.x1, cy: w.y1, t0: now, dur: 420, r0: 5, r1: 24 });
+          waves.splice(i, 1);
+          alive = true;
+          continue;
+        }
+        alive = true;
+        if (w.kind === "ring") {
+          const grow = easeOut(p) * 30;
+          octx.globalAlpha = (1 - p) * 0.85;
+          octx.strokeStyle = hotStrong;
+          octx.lineWidth = 2 / z;
+          octx.beginPath();
+          if (octx.roundRect) octx.roundRect(w.x - grow, w.y - grow, w.w + grow * 2, w.h + grow * 2, w.r + grow);
+          else octx.rect(w.x - grow, w.y - grow, w.w + grow * 2, w.h + grow * 2);
+          octx.stroke();
+        } else if (w.kind === "travel") {
+          const q = easeInOut(p);
+          const x = w.x0 + (w.x1 - w.x0) * q, y = w.y0 + (w.y1 - w.y0) * q;
+          const qt = easeInOut(Math.max(0, p - 0.10));
+          octx.globalAlpha = 0.75;
+          octx.strokeStyle = hot;
+          octx.lineWidth = 2.5 / z;
+          octx.beginPath();
+          octx.moveTo(w.x0 + (w.x1 - w.x0) * qt, w.y0 + (w.y1 - w.y0) * qt);
+          octx.lineTo(x, y);
+          octx.stroke();
+          octx.globalAlpha = 0.95;
+          octx.fillStyle = hotStrong;
+          octx.beginPath();
+          octx.arc(x, y, 3.5 / z, 0, Math.PI * 2);
+          octx.fill();
+        } else { // ping
+          octx.globalAlpha = (1 - p) * 0.9;
+          octx.strokeStyle = hotStrong;
+          octx.lineWidth = 2 / z;
+          octx.beginPath();
+          octx.arc(w.cx, w.cy, (w.r0 + (w.r1 - w.r0) * easeOut(p)) / z, 0, Math.PI * 2);
+          octx.stroke();
+        }
+      }
+
+      uctx.globalAlpha = 1; octx.globalAlpha = 1;
+      if (alive) rafId = requestAnimationFrame(loop);
+      else { // idle: leave both canvases clean
+        uctx.setTransform(1, 0, 0, 1, 0, 0); uctx.clearRect(0, 0, under.width, under.height);
+        octx.setTransform(1, 0, 0, 1, 0, 0); octx.clearRect(0, 0, over.width, over.height);
+      }
+    };
+    const wake = () => { if (!rafId) { readColors(); rafId = requestAnimationFrame(loop); } };
+
+    const dispatch = (type, p) => {
+      const now = performance.now();
+      if (type === "sparkle-start") emitters.set(p.id, { x: p.x, y: p.y, boost: 0 });
+      else if (type === "sparkle-move") { const e = emitters.get(p.id); if (e) { e.x = p.x; e.y = p.y; e.boost = p.boost ? 1 : 0; } }
+      else if (type === "sparkle-stop") emitters.delete(p.id);
+      else if (type === "zap") spawnZap(p.x, p.y, now);
+      else if (type === "trail-start") { if (!trails.has(p.id)) trails.set(p.id, { getRects: p.getRects, prev: new Map(), snaps: [], stopped: false }); }
+      else if (type === "trail-stop") { const t = trails.get(p.id); if (t) t.stopped = true; }
+      else if (type === "shockwave") spawnWave(p, now);
+      wake();
+    };
+
+    _wfxHandle = dispatch;
+    return () => {
+      if (_wfxHandle === dispatch) _wfxHandle = null;
+      if (rafId) cancelAnimationFrame(rafId);
+      if (ro) try { ro.disconnect(); } catch {}
+    };
+  }, [wrapRef]);
+  return { underRef, overRef };
+}
+
+// Presence helper for conditionally-mounted panels: keeps the last truthy
+// value rendered for `ms` after it flips falsy so the panel can play its
+// exit animation (.is-closing). Truthy-to-truthy swaps (e.g. the code panel
+// jumping to another node) pass through instantly; reduced motion skips the
+// linger entirely. Returns [shownValue, closing].
+function usePanelPresence(value, ms = 150) {
+  const [shown, setShown] = useState(value || null);
+  useEffect(() => {
+    if (value) { setShown(value); return; }
+    if (_wfxReduce.matches) { setShown(null); return; }
+    const t = setTimeout(() => setShown(null), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return [value || shown, !value && !!shown];
 }
 
 // the abstract geometric "worker". A FRAME of two CSS squares (a

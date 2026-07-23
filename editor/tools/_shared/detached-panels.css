@@ -101,6 +101,26 @@ body.detached-panels [data-float-panel="bottom"] {
   left: var(--panel-l, 0px) !important; right: var(--panel-r, 0px) !important;
 }
 
+/* Enter micro-animation - matches the editor's node-panel slide-fades
+   (styles.css workflowPanelIn*). Panels are display:none until the node is
+   selected, so gaining boxes restarts the animation on every select. A panel
+   drifts in from slightly beyond its resting spot toward the node. Uses the
+   individual `translate` property so tool transforms are never clobbered.
+   Exit is instant by design: deselect drops body.detached-panels and the
+   host shrinks the iframe in the same frame - a lingering panel would paint
+   outside the collapsed node rect. */
+@keyframes wvPanelInL { from { opacity: 0; translate: -6px 0; } to { opacity: 1; translate: 0 0; } }
+@keyframes wvPanelInR { from { opacity: 0; translate:  6px 0; } to { opacity: 1; translate: 0 0; } }
+@keyframes wvPanelInT { from { opacity: 0; translate: 0 -6px; } to { opacity: 1; translate: 0 0; } }
+@keyframes wvPanelInB { from { opacity: 0; translate: 0  6px; } to { opacity: 1; translate: 0 0; } }
+body.detached-panels [data-float-panel="left"]   { animation: wvPanelInL 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+body.detached-panels [data-float-panel="right"]  { animation: wvPanelInR 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+body.detached-panels [data-float-panel="top"]    { animation: wvPanelInT 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+body.detached-panels [data-float-panel="bottom"] { animation: wvPanelInB 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  body.detached-panels [data-float-panel] { animation: none; }
+}
+
 /* Layer rows expose connector hit-targets to the host (which peeks into the
    same-origin contentDocument during an edge drag). Give a wired/hovered row a
    subtle accent edge so the drop is discoverable. */
