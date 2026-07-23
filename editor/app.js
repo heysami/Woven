@@ -46186,7 +46186,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // is generated then accepted immediately - no gate.
       let plan = (gateArg && gateArg.replan) ? null : (auto ? null : ((gateArg && gateArg.presPlan) || node.presPlan));
       if (!plan || plan.forTask !== task) {
-        setRun({ status: "loading", phase: "planning the presentation", error: null });
+        setRun({ status: "loading", phase: "planning the board", error: null });
         updateNode(nodeId, { runStatus: "running" });
         const catalog = Object.entries(STRATEGY_LAYOUTS)
           .map(([id, t]) => `- "${id}": ${t.hint}`).join("\n");
@@ -46199,7 +46199,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           `\nReturn ONLY JSON: {"header":"<board title, <=8 words>","description":"<1-2 sentence board intro>","keyView":{"layout":"<id>","axes":{"x":["<left>","<right>"],"y":["<bottom>","<top>"]},"note":"<why this layout, one line>"},"sections":[{"key":"keyview|breakdown|insights|summary|drivers","on":true,"note":"<one line on what goes here>"}],"breakdownStyle":"table|cards","attributes":["..."],"visuals":{"wanted":false,"kinds":["palette","typography","image"],"note":"<one line>"},"chain":{"recommended":false,"why":"<one line>","parts":[{"title":"<short name>","task":"<the sub-strategy ask, one sentence>","focus":"<what this part must nail>"}]}}. Include ALL five section keys (set "on" false for ones this strategy does not need); chain.parts only when recommended (2-4 parts). No prose.` }],
           { model: node.model, maxTokens: 2200 });
         const pp = _drExtractObj(pText);
-        if (!pp || !pp.keyView || !Array.isArray(pp.sections)) throw new Error("Could not form the presentation plan - try again.");
+        if (!pp || !pp.keyView || !Array.isArray(pp.sections)) throw new Error("Could not form the board plan - try again.");
         const KEYS = ["keyview", "breakdown", "insights", "summary", "drivers"];
         const secByKey = {};
         for (const s of pp.sections) if (s && KEYS.includes(s.key)) secByKey[s.key] = s;
@@ -46241,7 +46241,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           return null;
         }
       }
-      if (!plan.done) { setRun({ status: "await", phase: "review the presentation plan" }); return null; }
+      if (!plan.done) { setRun({ status: "await", phase: "review the board plan" }); return null; }
 
       // ── Build phase ──
       const enabled = (k) => { const s = (plan.sections || []).find(x => x.key === k); return !s || s.on !== false; };
@@ -54228,7 +54228,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
                  e.dataTransfer.effectAllowed = "copy";
                  e.dataTransfer.setData("application/x-th-workflow", JSON.stringify({ kind: "assistant-strategy" }));
                }}
-               title="Drag onto canvas - asks directing questions, proposes a presentation plan you can trim or extend (key view as statement / metrics / affinity map / 2x2 / timeline / flow / canvas / journey / mood board and more), then researches each key point and builds the board: key view + per-point breakdown + numbered insight markers + summary + driving factors.">
+               title="Drag onto canvas - asks directing questions, proposes a board plan you can trim or extend (key view as statement / metrics / affinity map / 2x2 / timeline / flow / canvas / journey / mood board and more), then researches each key point and builds the board: key view + per-point breakdown + numbered insight markers + summary + driving factors.">
             <span className="workflow-library-item-glyph"><${Icon.Flow}/></span>
             <span className="workflow-library-item-label">Strategy assistant</span>
             <span className="workflow-library-item-id">plan-gated strategy board</span>
@@ -80910,7 +80910,7 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
       <div className="workflow-node-iter-body workflow-node-refiner-body" onMouseDown=${(e) => e.stopPropagation()}>
         ${clarActive ? html`
           <div className="workflow-node-dr-questions">
-            <span className="workflow-node-iter-field-label">Direct the strategy - your answers steer angle + presentation</span>
+            <span className="workflow-node-iter-field-label">Direct the strategy - your answers steer its angle and board shape</span>
             ${(clar.questions || []).map((qq, i) => html`
               <div key=${i} className="workflow-node-dr-q">
                 <div className="workflow-node-dr-qtext">${qq.q}</div>
@@ -80926,9 +80926,9 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
               </div>`)}
             <div className="workflow-node-iter-actions">
               <button className="workflow-node-skill-run" disabled=${busy}
-                title="Next: the lead proposes a presentation plan you can trim or extend."
+                title="Next: the lead proposes the board plan - which key view, which sections - for you to trim or extend."
                 onClick=${(e) => { e.stopPropagation(); startClar(true); }}>
-                <${Icon.Play}/> Plan the presentation
+                <${Icon.Play}/> Plan the board
               </button>
               <button className="workflow-node-refiner-pushadd" disabled=${busy}
                 title="Skip the questions - the lead picks the angle itself."
@@ -80936,7 +80936,7 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
             </div>
           </div>` : planActive ? html`
           <div className="workflow-node-dr-questions workflow-node-strategy-plan">
-            <span className="workflow-node-iter-field-label">Presentation plan - toggle sections, adjust, then build</span>
+            <span className="workflow-node-iter-field-label">Board plan - toggle sections, adjust, then build</span>
             ${plan.chain && plan.chain.recommended && html`
               <div className="workflow-node-strategy-chainhint">
                 <div className="workflow-node-strategy-note">
@@ -80980,7 +80980,7 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
               </label>
             </div>
             <label className="workflow-node-iter-field">
-              <span className="workflow-node-iter-field-label">Custom presentation requirement (optional)</span>
+              <span className="workflow-node-iter-field-label">Custom board requirement (optional)</span>
               <textarea rows=${2} placeholder="anything else the board must include or obey…"
                 value=${plan.custom || ""} onInput=${(e) => patchPlan({ custom: e.target.value })}/>
             </label>
@@ -81044,11 +81044,11 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
               title=${planDone
                 ? "Re-run the research and rebuild the strategy board with the saved plan."
                 : clarDone
-                  ? "Next: the lead proposes the presentation plan for your review."
-                  : "First asks a few directing questions, then proposes a presentation plan."}
+                  ? "Next: the lead proposes the board plan for your review."
+                  : "First asks a few directing questions, then proposes a board plan."}
               onClick=${(e) => { e.stopPropagation(); onSetup && onSetup(node.id); }}>
               ${busy ? html`<${React.Fragment}><span className="workflow-node-skill-spinner"/>${runState?.phase || "running…"}<//>`
-                     : html`<${React.Fragment}><${Icon.Spark}/> ${planDone ? "Run strategy" : clarDone ? "Plan the presentation" : "Start (asks questions first)"}<//>`}
+                     : html`<${React.Fragment}><${Icon.Spark}/> ${planDone ? "Run strategy" : clarDone ? "Plan the board" : "Start (asks questions first)"}<//>`}
             </button>
             ${(clarDone || planDone) && !busy && html`
               <button className="workflow-node-refiner-pushadd"
