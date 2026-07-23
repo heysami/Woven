@@ -28386,7 +28386,7 @@ function _strategyLayoutDims(layoutId, sk) {
 // tag exists). Built ONCE per run, after all content is final, so insight
 // marker targets can never go stale. Returns { insightIdByN, right, top }
 // for the table-marker + visual-node placement that follows.
-function _strategyBuildBoard({ setData, node, nodeId, layoutId, plan, sk, gathered, insights, summary, images, header, desc, enabled }) {
+function _strategyBuildBoard({ setData, node, nodeId, layoutId, plan, sk, gathered, insights, summary, images, header, desc, enabled, tableId }) {
   const PAD = 24, STK = 200, GAP = 16;
   const SM = WB_FONT_SIZES.sm;
   const mh = (text, w, fs) => _measureWrappedTextHeight(String(text == null ? "" : text), w, fs || SM);
@@ -28809,11 +28809,24 @@ function _strategyBuildBoard({ setData, node, nodeId, layoutId, plan, sk, gather
     }
 
     const secBody = workflowMakeNodeOfKind("section", { title: header });
-    const secH = Math.max(360, y - by);
+    let secW = SECW, secH = Math.max(360, y - by);
+    // Fold the breakdown TABLE into this master section - every component of
+    // the strategy output lives in ONE frame. The table parks right of the
+    // board column; containment makes it (and its cell-bound items, via the
+    // cell reconcile) ride section drags. The table is fully sized by build
+    // time (the board builds LAST), so the section can wrap it exactly.
+    const tbl = tableId ? nodes.find(n2 => n2.id === tableId && n2.kind === "table") : null;
+    if (tbl) {
+      const tx = bx + SECW + 60, ty2 = by + PAD + 36;
+      nodes = nodes.map(n2 => n2.id === tableId ? { ...n2, x: tx, y: ty2 } : n2);
+      secW = SECW + 60 + Math.round(tbl.w || 800) + PAD;
+      secH = Math.max(secH, (ty2 - by) + Math.round(tbl.h || 400) + PAD);
+    }
     nodes = nodes
       .map(n => n.id === nodeId ? { ...n, sectionId: secId, drIds: { wbIds } } : n)
-      .concat([{ id: secId, ...secBody, x: bx, y: by, w: SECW, h: secH }]);
-    out.right = bx + SECW;
+      .concat([{ id: secId, ...secBody, x: bx, y: by, w: secW, h: secH }]);
+    out.sectionId = secId;
+    out.right = bx + secW;
     out.left = bx;
     out.top = by;
     out.bottom = by + secH;
@@ -45296,7 +45309,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // Float the working badge (orange diamond) on this node while it runs.
     updateNode(nodeId, { runStatus: "running" });
     try {
-      const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
+      const ups = resolveUpstreamInputs(node, data.nodes, data.edges, { wb: data.wb });
       let ctx = _assistantCollectText(ups);
       // Local folders + wired web pages ground the search (they resolve to
       // real content now, not just references).
@@ -45458,7 +45471,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setRun({ status: "loading", phase: "personas", error: null });
     updateNode(nodeId, { runStatus: "running" });   // float the working badge
     try {
-      const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
+      const ups = resolveUpstreamInputs(node, data.nodes, data.edges, { wb: data.wb });
       const ctx = _assistantCollectText(ups);
       const assets = _assistantCollectAssets(ups);
       // A wired prototype's real SOURCE, for the clarification-answer step ONLY
@@ -45705,7 +45718,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (!task) { setRun({ status: "error", error: "Describe what to research first." }); return; }
     const t0 = Date.now();
     try {
-      const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
+      const ups = resolveUpstreamInputs(node, data.nodes, data.edges, { wb: data.wb });
       let ctx = _assistantCollectText(ups);
       // A wired prototype resolves to no text upstream, so pull its real source
       // in as GROUNDING material. The viewpoint agents still research + validate
@@ -46118,7 +46131,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const auto = (gateArg && gateArg.auto) || null;
     const t0 = Date.now();
     try {
-      const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
+      const ups = resolveUpstreamInputs(node, data.nodes, data.edges, { wb: data.wb });
       let ctx = _assistantCollectText(ups);
       const protoText = await assistantFetchPrototypeText(node, data.nodes, data.edges);
       if (protoText) ctx = ctx ? (ctx + "\n\n" + protoText) : protoText;
@@ -46451,7 +46464,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       setRun({ status: "loading", phase: "building board" });
       const built = _strategyBuildBoard({
         setData, node, nodeId, layoutId, plan, sk, gathered, insights, summary, images,
-        header, desc, enabled,
+        header, desc, enabled, tableId: tableId || node.tableId || null,
       });
 
       // Insight markers into the breakdown table, linked to the writeups.
@@ -46466,11 +46479,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // Visual-direction nodes beside the board (tracked for the next sweep).
       const visNodeIds = [];
       if (wantVisuals) {
-        // Below the section (the space right of it belongs to the table).
+        // A visual-direction strip INSIDE the master section: nodes go just
+        // below the current content and the section grows to wrap them, so
+        // every component of the output stays in the one frame.
         setData(d => {
-          const nodes = [...(d.nodes || [])];
-          let xx = built.left;
-          const vy = built.bottom + 80;
+          let nodes = [...(d.nodes || [])];
+          let xx = built.left + 24;
+          const vy = built.bottom + 20;
+          let maxH = 0;
           const pal = ((fin.visual || {}).palette || []).slice(0, 6)
             .filter(s => s && /^#?[0-9a-fA-F]{3,8}$/.test(String(s.value || "").replace("#", "")));
           if (pal.length) {
@@ -46479,13 +46495,17 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               name: header.slice(0, 24),
               swatches: pal.map(s => ({ name: String(s.name || "--color"), value: String(s.value).startsWith("#") ? String(s.value) : "#" + String(s.value) })),
             });
-            if (body) { nodes.push({ id, ...body, x: xx, y: vy }); visNodeIds.push(id); xx += (body.w || 360) + 40; }
+            if (body) { nodes.push({ id, ...body, x: xx, y: vy }); visNodeIds.push(id); xx += (body.w || 360) + 40; maxH = Math.max(maxH, body.h || 360); }
           }
           for (const f of ((fin.visual || {}).fonts || []).slice(0, 2)) {
             if (!f || !f.family) continue;
             const id = workflowNewNodeId();
             const body = workflowMakeNodeOfKind("typography", { name: String(f.family), fontFamily: String(f.family) });
-            if (body) { nodes.push({ id, ...body, x: xx, y: vy }); visNodeIds.push(id); xx += (body.w || 360) + 40; }
+            if (body) { nodes.push({ id, ...body, x: xx, y: vy }); visNodeIds.push(id); xx += (body.w || 360) + 40; maxH = Math.max(maxH, body.h || 360); }
+          }
+          if (maxH && built.sectionId) {
+            const needH = (vy + maxH + 24) - built.top;
+            nodes = nodes.map(n2 => n2.id === built.sectionId && (n2.h || 0) < needH ? { ...n2, h: needH } : n2);
           }
           return { ...d, nodes };
         });
@@ -46591,27 +46611,39 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         keyChange, firstMove: String(fin2.firstMove || ""), note: String(fin2.note || ""),
       });
 
-      // Side board: idea cards coloured by sentiment + the key-change box.
-      // Placed right of the breakdown table; one row per explored point.
+      // Side SECTION of REAL, reusable machinery - the same graph a human
+      // would build by hand: one PROMPT node per explored idea (panel
+      // sentiment in its title), the winning prompt + settled key change
+      // wired into a real simulated-testing assistant (configured, NOT
+      // auto-run - running the deep test is the user's call), all framed in
+      // one section so the whole exploration can wire onward into another
+      // assistant or agent. One row per explored point, right of the board.
       setData(d => {
         const nd = (d.nodes || []).find(n2 => n2.id === nodeId);
         if (!nd) return d;
         const prevExp = (nd.expIds && nd.expIds[pointId]) || null;
-        const oldIds = new Set((prevExp && prevExp.wbIds) || []);
+        const oldWbIds = new Set((prevExp && prevExp.wbIds) || []);
+        const oldNodeIds = new Set((prevExp && prevExp.nodeIds) || []);
         const keptWb = (Array.isArray(d.wb) ? d.wb : []).filter(it =>
-          !oldIds.has(it.id) && !(prevExp && it.sec && it.sec.sectionId === prevExp.sectionId));
-        let nodes = (d.nodes || []).filter(n2 => !(prevExp && n2.id === prevExp.sectionId));
-        const tbl = nodes.find(n2 => n2.id === nd.tableId);
-        const baseX = tbl ? (tbl.x || 0) + (tbl.w || 800) + 80
-                          : (nd.x || 0) + (nd.w || 460) + 460;
+          !oldWbIds.has(it.id) && !(prevExp && it.sec && it.sec.sectionId === prevExp.sectionId));
+        let nodes = (d.nodes || []).filter(n2 =>
+          !(prevExp && n2.id === prevExp.sectionId) && !oldNodeIds.has(n2.id));
+        let edges = (d.edges || []).filter(e2 => {
+          const f = workflowParseEdgeRef(e2.from || ""), t2 = workflowParseEdgeRef(e2.to || "");
+          return !(f && oldNodeIds.has(f.node)) && !(t2 && oldNodeIds.has(t2.node));
+        });
+        const sec0 = nodes.find(n2 => n2.id === nd.sectionId);
+        const baseX = sec0 ? (sec0.x || 0) + (sec0.w || 800) + 80
+                           : (nd.x || 0) + (nd.w || 460) + 460;
         const slot = Object.keys(nd.expIds || {}).filter(k => k !== String(pointId)).length;
-        const SECW2 = 560, PAD2 = 20;
-        const bx = Math.round(baseX), by = Math.round((nd.y || 0) + slot * 900);
+        const PAD2 = 24, PW = 300, GAP2 = 20, PH = 210;
+        const SECW2 = PAD2 * 2 + PW * 2 + GAP2;
+        const bx = Math.round(baseX), by = Math.round((nd.y || 0) + slot * 2600);
         const secId = workflowNewNodeId();
-        const items = [], wbIds = [];
-        const bind = (it, x, yy) => {
-          it.x = x; it.y = yy;
-          it.sec = { sectionId: secId, ox: Math.round(x - bx), oy: Math.round(yy - by) };
+        const items = [], wbIds = [], newNodeIds = [];
+        const bind = (it, x, yy2) => {
+          it.x = x; it.y = yy2;
+          it.sec = { sectionId: secId, ox: Math.round(x - bx), oy: Math.round(yy2 - by) };
           it._dr = nodeId;
           items.push(it); wbIds.push(it.id);
           return it;
@@ -46620,32 +46652,60 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         let yy = by + PAD2 + 8;
         const title = "Insist: " + String(point.point || "").slice(0, 46);
         bind(wbMakeItem("text", { text: title, w: IN2, fontSize: "lg", bold: true, align: "left", color: "ink" }), bx + PAD2, yy);
-        yy += _measureWrappedTextHeight(title, IN2, WB_FONT_SIZES.lg) + 14;
+        yy += _measureWrappedTextHeight(title, IN2, WB_FONT_SIZES.lg) + 16;
+        let winnerPromptId = null;
         rounds.forEach(rd => {
-          bind(wbMakeItem("text", { text: "Round " + rd.n, w: IN2, fontSize: "sm", bold: true, align: "left", color: "gray" }), bx + PAD2, yy);
-          yy += 26;
-          rd.ideas.forEach(idea => {
-            const col = (idea.sentiment || 0) >= TARGET ? "green" : (idea.sentiment || 0) >= 50 ? "yellow" : "pink";
-            const txt = `${idea.sentiment}/100 - ${idea.idea}` + (idea.verdict ? `\nPanel: ${idea.verdict}` : "");
-            const hh = Math.max(70, _measureWrappedTextHeight(txt, IN2 - 14, WB_FONT_SIZES.sm) + 24);
-            bind(wbMakeItem("textbox", { text: txt, w: IN2, h: hh, color: col, align: "left", fontSize: "sm" }), bx + PAD2, yy);
-            yy += hh + 10;
+          const bestS = Math.max(...rd.ideas.map(x => x.sentiment || 0), 0);
+          bind(wbMakeItem("text", { text: `Round ${rd.n} - best ${bestS}/100`, w: IN2, fontSize: "sm", bold: true, align: "left", color: "gray" }), bx + PAD2, yy);
+          yy += 28;
+          rd.ideas.forEach((idea, k) => {
+            const id2 = workflowNewNodeId();
+            const body = workflowMakeNodeOfKind("prompt", {
+              title: `R${rd.n} idea ${k + 1} - ${idea.sentiment ?? "?"}/100`,
+              text: String(idea.idea || "")
+                + (idea.rationale ? "\n\nWhy it could work: " + idea.rationale : "")
+                + (idea.verdict ? "\n\nPanel: " + idea.verdict : "")
+                + (idea.objection ? "\nStrongest objection: " + idea.objection : ""),
+            });
+            const x = bx + PAD2 + (k % 2) * (PW + GAP2);
+            const yRow = yy + Math.floor(k / 2) * (PH + GAP2);
+            nodes.push({ id: id2, ...body, w: PW, h: PH, x, y: yRow });
+            newNodeIds.push(id2);
+            if (bestOverall && idea.idea === bestOverall.idea && !winnerPromptId) winnerPromptId = id2;
           });
-          yy += 6;
+          yy += Math.ceil(rd.ideas.length / 2) * (PH + GAP2) + 12;
         });
-        const kcTxt = "KEY CHANGE: " + keyChange
-          + (fin2.firstMove ? "\nFIRST MOVE: " + fin2.firstMove : "")
-          + (fin2.note ? "\nRISK: " + fin2.note : "");
-        const kcH = Math.max(90, _measureWrappedTextHeight(kcTxt, IN2 - 14, WB_FONT_SIZES.sm) + 28);
-        bind(wbMakeItem("textbox", { text: kcTxt, w: IN2, h: kcH, color: "green", align: "left", fontSize: "sm", bold: true }), bx + PAD2, yy);
-        yy += kcH + PAD2;
-        const secBody = workflowMakeNodeOfKind("section", { title: "Insist " + pointId });
+        // The settled key change as a PROMPT node - a first-class, wireable
+        // output (feed it to another strategy assistant, an agent, a build).
+        const kcId = workflowNewNodeId();
+        const kcBody = workflowMakeNodeOfKind("prompt", {
+          title: `KEY CHANGE - panel ${bestOverall && bestOverall.sentiment != null ? bestOverall.sentiment : "?"}/100`,
+          text: keyChange
+            + (fin2.firstMove ? "\n\nFIRST MOVE: " + fin2.firstMove : "")
+            + (fin2.note ? "\nREMAINING RISK: " + fin2.note : ""),
+        });
+        nodes.push({ id: kcId, ...kcBody, w: PW * 2 + GAP2, h: 190, x: bx + PAD2, y: yy });
+        newNodeIds.push(kcId);
+        yy += 190 + GAP2;
+        // A real simulated-testing assistant, wired from the winner + the key
+        // change, ready for the user to Run for a deep persona test.
+        const testId = workflowNewNodeId();
+        const testBody = workflowMakeNodeOfKind("assistant-testing", {
+          task: `React honestly to this candidate approach for "${String(point.point || "").slice(0, 120)}": would it actually change your behaviour? What would make you say yes?`,
+          model: nd.model,
+        });
+        nodes.push({ id: testId, ...testBody, x: bx + PAD2, y: yy });
+        newNodeIds.push(testId);
+        if (winnerPromptId) edges.push({ from: winnerPromptId + ".out", to: testId + ".in" });
+        edges.push({ from: kcId + ".out", to: testId + ".in" });
+        yy += (testBody.h || 500) + PAD2;
+        const secBody = workflowMakeNodeOfKind("section", { title: "Insist: " + String(point.point || "").slice(0, 40) });
         nodes = nodes
           .map(n2 => n2.id === nodeId
-            ? { ...n2, expIds: { ...(n2.expIds || {}), [pointId]: { sectionId: secId, wbIds } } }
+            ? { ...n2, expIds: { ...(n2.expIds || {}), [pointId]: { sectionId: secId, wbIds, nodeIds: newNodeIds } } }
             : n2)
-          .concat([{ id: secId, ...secBody, x: bx, y: by, w: SECW2, h: Math.max(300, yy - by) }]);
-        return { ...d, nodes, wb: [...keptWb, ...items] };
+          .concat([{ id: secId, ...secBody, x: bx, y: by, w: SECW2, h: Math.max(420, yy - by) }]);
+        return { ...d, nodes, edges, wb: [...keptWb, ...items] };
       });
       updateNode(nodeId, { runStatus: "done" });
       setRun({ status: "done", phase: "insist done", ranAt: Date.now() });
@@ -46674,7 +46734,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!plan || plan.forTask !== task) {
         setRun({ status: "loading", phase: "planning the chain", error: null });
         updateNode(nodeId, { runStatus: "running" });
-        const ups = resolveUpstreamInputs(node, data.nodes, data.edges);
+        const ups = resolveUpstreamInputs(node, data.nodes, data.edges, { wb: data.wb });
         const ctx = _assistantCollectText(ups);
         const cText = await assistantLlm([{ role: "user", content:
           `You LEAD a strategy engagement that is too broad for one board. Decompose it into a CHAIN of 2-5 supporting strategies (e.g. a business strategy chains positioning -> product -> go-to-market -> pricing), ordered so each part builds on the ones before it.\n\nOVERALL ASK:\n${task}\n` +
@@ -46726,7 +46786,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // Material wired into the orchestrator (prompts / folders / web pages /
       // section bundles) is SHARED grounding for every part - the parts have
       // no user gates of their own to attach material at.
-      const upsC = resolveUpstreamInputs(node, data.nodes, data.edges);
+      const upsC = resolveUpstreamInputs(node, data.nodes, data.edges, { wb: data.wb });
       let sharedCtx = _assistantCollectText(upsC);
       const cFolder = await assistantFetchFolderText(upsC);
       if (cFolder) sharedCtx = sharedCtx ? (sharedCtx + "\n\n" + cFolder) : cFolder;
@@ -51520,7 +51580,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 selected=${selectedNodeIds.has(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
-                seedText=${_assistantCollectText(resolveUpstreamInputs(n, data.nodes, data.edges))}
+                seedText=${_assistantCollectText(resolveUpstreamInputs(n, data.nodes, data.edges, { wb: data.wb }))}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
                 onRemove=${() => removeNode(n.id)}
@@ -68891,7 +68951,10 @@ function resolveUpstreamInputs(node, allNodes, allEdges, opts) {
       if (p) out.push({ ...base, type: "folder", label, path: p });
       continue;
     }
-    if (resolve === "sectionBundle" || up.kind === "section") {
+    // `up.kind === "table"` is checked alongside the resolve so a table wired
+    // out resolves even before the kind registry has loaded (sections already
+    // behave that way via their own kind check).
+    if (resolve === "sectionBundle" || up.kind === "section" || up.kind === "table") {
       const depth = opts._depth || 0;
       // A table's per-cell out port ("cellout:r:c") narrows the bundle to that
       // one cell's contents; the plain "out" port keeps whole-grid semantics.
@@ -68903,8 +68966,37 @@ function resolveUpstreamInputs(node, allNodes, allEdges, opts) {
           ? workflowTableCellNodes(up, allNodes || [], cp.r, cp.c)
           : workflowSectionContainedNodes(up, allNodes || []);
         const synth = inside.map(cn => ({ from: cn.id + "." + _firstProvidePort(cn.kind), to: "__sec__." + (opts.toPort || "in") }));
-        children = resolveUpstreamInputs({ id: "__sec__" }, [{ id: "__sec__" }, ...inside], synth, { _depth: depth + 1, toPort: opts.toPort })
+        children = resolveUpstreamInputs({ id: "__sec__" }, [{ id: "__sec__" }, ...inside], synth, { _depth: depth + 1, toPort: opts.toPort, wb: opts.wb })
           .map(c => ({ ...c, label: cellLabel + " · " + c.label }));
+      }
+      // WHITEBOARD content joins the bundle as plain text when the caller
+      // passes opts.wb (the assistants do). Boards are MADE of wb items -
+      // stickies, insight writeups, table cell text - and wiring a board
+      // section into another assistant must carry that content, not just
+      // the contained nodes. Reading order: top-to-bottom, left-to-right.
+      if (Array.isArray(opts.wb) && opts.wb.length) {
+        const rect = { x: up.x || 0, y: up.y || 0, w: up.w || 0, h: up.h || 0 };
+        const texts = [];
+        for (const it of opts.wb) {
+          if (!it || (it.type !== "text" && it.type !== "textbox" && it.type !== "sticky")) continue;
+          if (typeof it.text !== "string" || !it.text.trim()) continue;
+          let inside = false;
+          if (up.kind === "table") {
+            inside = !!(it.cell && it.cell.tableId === up.id
+              && (!cp || (it.cell.r === cp.r && it.cell.c === cp.c)));
+          } else {
+            inside = !!(it.sec && it.sec.sectionId === up.id);
+            if (!inside) {
+              const bb = wbItemBBox(it);
+              const cx2 = bb.x + bb.w / 2, cy2 = bb.y + bb.h / 2;
+              inside = cx2 >= rect.x && cx2 <= rect.x + rect.w && cy2 >= rect.y && cy2 <= rect.y + rect.h;
+            }
+          }
+          if (inside) texts.push(it);
+        }
+        texts.sort((a2, b2) => ((a2.y || 0) - (b2.y || 0)) || ((a2.x || 0) - (b2.x || 0)));
+        children = children.concat(texts.slice(0, 200).map(it =>
+          ({ type: "text", label: cellLabel + " · note", text: it.text.trim() })));
       }
       out.push({ ...base, type: "section", label: cellLabel, children });
       continue;
