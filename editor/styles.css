@@ -4429,20 +4429,12 @@ select.sysadd-input {
 .cli-indicator-needs-login .cli-state-icon {
   color: var(--warn, #b45309);
 }
-/* Inline .tab-tip chips fly LEFT of the anchor here - the default
-   below-the-anchor chip would clip at the viewport bottom. */
-.th-right-rail-status .tab-tip {
-  top: 50%;
-  left: auto;
-  right: calc(100% + 10px);
-  transform: translateY(-50%);
-}
-.th-right-rail-status .tab-tip::before {
-  top: 50%;
-  left: auto;
-  right: -3px;
-  transform: translateY(-50%) rotate(45deg);
-}
+/* The status chips' hover tips are body-portaled .th-portal-tip bubbles
+   (useStatusChipTip in app.js, left placement) - an inline .tab-tip here
+   is trapped inside .workflow-root's stacking context (position:fixed =
+   its own stacking context in Chromium) and painted UNDER the body-level
+   dock / rail panels docked beside the rail. Same portal idiom as the
+   HistoryClockButton's HoverTip in this cluster. */
 /* CLI usage popover: body-portaled with inline fixed coordinates (see
    CliIndicator in app.js) - rail-status chips fly it LEFT + UP beside the
    rail. It is no longer a descendant of the rail, so it can paint above

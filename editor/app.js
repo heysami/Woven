@@ -9632,6 +9632,44 @@ function DaemonDownDialog({ onClose }) {
    when it doesn't. Mounted next to <CliIndicator/> on every top-level surface
    (project gallery, editor toolbar, workflow toolbar) so the user can tell at
    a glance whether their writes will land. */
+/* Body-portaled hover tip for the status chips (daemon / CLI). Their inline
+   .tab-tip chip is trapped inside the host surface's stacking context - in
+   the workflow view the right rail lives inside .workflow-root
+   (position:fixed = its own stacking context in Chromium), so the tip could
+   never paint above the body-level dock (z 60) / rail panels (z 63) docked
+   beside the rail and rendered underneath them. Mirrors HoverTip's portal
+   idiom (the HistoryClockButton in the same cluster already uses it):
+   .th-portal-tip on document.body at z 11000. Compact (rail) chips fly the
+   tip LEFT of the anchor; top-bar chips drop it below-center, matching the
+   inline chip they replace. Returns { hostProps, hide, render } - spread
+   hostProps onto the chip, call render(text) alongside it. */
+function useStatusChipTip(compact) {
+  const [pos, setPos] = useState(null);
+  const show = useCallback((e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setPos(compact
+      ? { right: window.innerWidth - r.left + 10, top: r.top + r.height / 2, placement: "left" }
+      : { left: r.left + r.width / 2, top: r.bottom + 8, placement: "below" });
+  }, [compact]);
+  const hide = useCallback(() => setPos(null), []);
+  const render = (text) => (pos && text) ? createPortal(html`
+    <div
+      className=${"th-portal-tip th-portal-tip-" + pos.placement}
+      style=${{
+        position: "fixed",
+        top: pos.top + "px",
+        ...(pos.placement === "left" ? { right: pos.right + "px" } : { left: pos.left + "px" }),
+        transform: pos.placement === "left" ? "translate(0, -50%)" : "translate(-50%, 0)",
+      }}
+    >${text}</div>
+  `, document.body) : null;
+  return {
+    hostProps: { onMouseEnter: show, onMouseLeave: hide, onFocus: show, onBlur: hide },
+    hide,
+    render,
+  };
+}
+
 function DaemonIndicator({ compact }) {
   const { status, lastOk } = useDaemonStatus();
   // When the daemon is down, clicking the chip opens the
@@ -9644,6 +9682,7 @@ function DaemonIndicator({ compact }) {
   useEffect(() => {
     if (status === "up" && dialogOpen) setDialogOpen(false);
   }, [status, dialogOpen]);
+  const chipTip = useStatusChipTip(compact);
   const loading = status === "checking";
   const ok = status === "up";
   const cls = loading
@@ -9676,18 +9715,19 @@ function DaemonIndicator({ compact }) {
     "data-tip-host": "true",
     "data-state": ok ? "ok" : (loading ? "loading" : "down"),
     "aria-live": "polite",
+    ...chipTip.hostProps,
   };
   const body = html`<${React.Fragment}>
     ${compact
       ? html`<span className="cli-state-icon"><${Icon.Server}/></span><span className="cli-presence" aria-hidden="true"/>`
       : html`<span className="cli-dot"/>`}
     ${!compact && html`<span className="cli-label">${label}</span>`}
-    <span className="tab-tip">${tipShort}</span>
   <//>`;
   return html`<${React.Fragment}>
     ${interactive
-      ? html`<button type="button" ...${common} onClick=${() => setDialogOpen(true)} aria-label="Daemon down - open restart instructions">${body}</button>`
+      ? html`<button type="button" ...${common} onClick=${() => { chipTip.hide(); setDialogOpen(true); }} aria-label="Daemon down - open restart instructions">${body}</button>`
       : html`<span ...${common}>${body}</span>`}
+    ${chipTip.render(tipShort)}
     ${dialogOpen && html`<${DaemonDownDialog} onClose=${() => setDialogOpen(false)}/>`}
   <//>`;
 }
@@ -9736,14 +9776,17 @@ function CliIndicator({ compact }) {
     window.addEventListener("resize", on);
     return () => window.removeEventListener("resize", on);
   }, [usageOpen]);
+  const chipTip = useStatusChipTip(compact);
   if (!loaded) {
-    return html`<span className="cli-indicator cli-indicator-loading" title="Checking CLI…" data-tip-host="true">
-      ${compact
-        ? html`<span className="cli-state-icon"><${Icon.Brain}/></span><span className="cli-presence" aria-hidden="true"/>`
-        : html`<span className="cli-dot"/>`}
-      ${!compact && html`<span className="cli-label">CLI…</span>`}
-      <span className="tab-tip">Checking CLI…</span>
-    </span>`;
+    return html`<${React.Fragment}>
+      <span className="cli-indicator cli-indicator-loading" title="Checking CLI…" data-tip-host="true" ...${chipTip.hostProps}>
+        ${compact
+          ? html`<span className="cli-state-icon"><${Icon.Brain}/></span><span className="cli-presence" aria-hidden="true"/>`
+          : html`<span className="cli-dot"/>`}
+        ${!compact && html`<span className="cli-label">CLI…</span>`}
+      </span>
+      ${chipTip.render("Checking CLI…")}
+    <//>`;
   }
   const claude = (agents || []).find(a => a.id === "claude");
   const codex  = (agents || []).find(a => a.id === "codex");
@@ -9820,15 +9863,16 @@ function CliIndicator({ compact }) {
       data-cli=${preferred}
       role="button"
       tabIndex=${0}
-      onClick=${() => setUsageOpen(o => !o)}
-      onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setUsageOpen(o => !o); } }}
+      ...${chipTip.hostProps}
+      onClick=${() => { chipTip.hide(); setUsageOpen(o => !o); }}
+      onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); chipTip.hide(); setUsageOpen(o => !o); } }}
     >
       ${compact
         ? html`<span className="cli-state-icon"><${Icon.Brain}/></span><span className="cli-presence" aria-hidden="true"/>`
         : html`<span className="cli-dot"/>`}
       ${!compact && html`<span className="cli-label">${labelText}</span>`}
-      <span className="tab-tip">${tipShort}</span>
     </span>
+    ${chipTip.render(tipShort)}
     ${usageOpen && (() => {
       // Body-portal the popover with fixed coordinates computed from the
       // chip. Rendering it nested (the old way) trapped it in the host
