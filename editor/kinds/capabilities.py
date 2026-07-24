@@ -1975,11 +1975,27 @@ presence, and presence is mechanical, not tonal:
    regardless of easing. The committed register must move THROUGH space at beat boundaries:
    depth layers parting at different rates, the camera entering the next scene, a threshold
    crossed - at least for the majority of beats.
-4. **Research commits the mechanics as deliverables.** The research step names the piece's
-   `presenceMechanics` per beat (which of 1-3 carries each) and writes them into
-   `deliverables.json` (format: `interactive-input` / `presence`) so the final gate audits
-   them mechanically - a probe drags the pointer and diffs frames, greps the reveal layer's
-   listeners, screenshots a beat twice at rest. Prose ambition is not a mechanic.
+4. **Freedom moments - the visitor MOVES, not only the world.** Point 1 is the world
+   answering; it is NOT embodiment, and cursor-parallax sold as exploration is fake
+   embodiment (the screen leans while the visitor stands still - a fail when it is the
+   piece's only agency). An immersive piece must contain authored FREEDOM MOMENTS: spine
+   beats where control is released and the visitor explores the environment themselves -
+   chooses where to go, what to approach, how long to linger - and the story WAITS,
+   resuming on the visitor's own signal (crossing a threshold, turning away, moving on),
+   never on a timer and never dragged out mid-exploration by the scroll. The shape is
+   paradigm-relative: `3d-environment` = walkable / orbitable zones per HARD CHECK D with
+   dwell permission; `2d-illustrative` = a scene wider than the frame the visitor pans /
+   approaches / uncovers in their own order; `iconographic-anim` = the visitor chooses
+   which presence to attend and in what order. At least SOME spine moments must be free -
+   a piece whose every second is on rails is a tour, not an inhabitation.
+5. **Research commits the mechanics as deliverables.** The research step names the piece's
+   `presenceMechanics` per beat (which of 1-4 carries each) AND declares which beats are
+   the freedom moments (their bounds + the resume signal), writing all of it into
+   `deliverables.json` (format: `interactive-input` / `presence` / `embodiment`) so the
+   final gate audits mechanically - a probe drags the pointer and diffs frames, greps the
+   reveal layer's listeners, screenshots a beat twice at rest, and in a freedom moment
+   verifies the visitor's input actually displaces the view/body AND that the story does
+   not advance uninvited while they explore. Prose ambition is not a mechanic.
 
 Tier note: `standard` tier (no dedicated reveals drawer) FOLDS these duties into the scene
 and runtime builders - a tier choice slims the node count, never the presence bar. If the
