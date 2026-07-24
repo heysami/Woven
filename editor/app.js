@@ -33577,9 +33577,14 @@ async function assetFetchDaemonParams(nodeId) {
     const r = await fetch(url);
     if (!r.ok) return [];
     const j = await r.json();
+    // `p.default` is the daemon's baseline-sidecar value: the literal the
+    // AUTHOR shipped (captured on the first user tune, or explicitly saved
+    // via "set default"). Without it, default = current would rebase on
+    // every knob write and Reset became a no-op seconds after an edit.
     return (j.params || []).map((p) => ({
       key: p.id, name: p.name, label: p.label, group: p.group, type: p.type,
-      value: p.value, default: p.value, min: p.min, max: p.max, step: p.step,
+      value: p.value, default: (p.default != null ? p.default : p.value),
+      min: p.min, max: p.max, step: p.step,
       options: p.options, file: p.file, __daemon: true,
     }));
   } catch (e) { return []; }
@@ -33843,6 +33848,24 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
     setVals(next);
     if (schema.some((e) => !e.__daemon)) onChange && onChange({ controls: next });
   };
+  // "Set default" (daemon-scanned assets only): rebaseline every param's
+  // authored default to its CURRENT value, so Reset returns here from now
+  // on. Persisted in the daemon's baseline sidecar; the local schema
+  // rebases immediately so the knobs' double-click targets match.
+  const [defaultsSavedAt, setDefaultsSavedAt] = useState(0);
+  const saveDefaults = async () => {
+    try {
+      const pid = (typeof window !== "undefined" && window.__TH_PROJECT) || "";
+      const r = await fetch(apiUrl("/__asset_param_set?project=" + encodeURIComponent(pid)), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ saveDefaults: true, node: nodeId }),
+      });
+      if (!r.ok) return;   // older daemon build / error - don't lie locally
+      setSchema((s) => s.map((e) => (e.__daemon ? { ...e, default: valsRef.current[e.key] } : e)));
+      setDefaultsSavedAt(Date.now());
+      setTimeout(() => setDefaultsSavedAt(0), 1500);
+    } catch (e) {}
+  };
 
   // Native per-asset actions (the originally-requested move: surface the
   // transparent-bg / crop affordances inside this panel) for the raster kinds
@@ -33978,7 +34001,8 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
       ${busy ? html`<span className="wac-busy" title="Updating the asset…">updating…</span>` : null}
       ${(!busy && source === "fallback") ? html`<span className="wac-source" title="Inferred from CSS variables">auto</span>` : null}
       ${(!busy && source === "daemon") ? html`<span className="wac-source" title="Read from the asset source">source</span>` : null}
-      <button className="wac-mini" title="Reset all" onClick=${resetAll}>reset</button>
+      ${source === "daemon" ? html`<button className="wac-mini" title="Save the current values as this asset's defaults - Reset (and knob double-click) returns here from now on." onClick=${saveDefaults}>${defaultsSavedAt ? "saved" : "set default"}</button>` : null}
+      <button className="wac-mini" title="Reset every knob to its default (the authored value, or the last 'set default')." onClick=${resetAll}>reset</button>
       <button className="wac-mini wac-collapse" title=${collapsed ? "Expand" : "Collapse"} onClick=${() => setCollapsed((c) => !c)}>${collapsed ? "+" : "–"}</button>
     </div>
     ${collapsed ? null : html`<div className="wac-body">

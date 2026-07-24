@@ -27872,6 +27872,48 @@ class H(http.server.SimpleHTTPRequestHandler):
             out.append(r)
         return out
 
+    # ── Asset-param BASELINES ─────────────────────────────────────────────
+    # The controls panel's Reset needs a stable "default" to return to, but
+    # the source scan can only report the CURRENT literal - and every knob
+    # drag rewrites that literal, so "default = current" made Reset a no-op
+    # within a second of the first edit (the panel refetches on the write's
+    # own asset-changed event and silently rebased). The sidecar records,
+    # per (file, name): the AUTHORED value captured on the first user tune
+    # (`baseline`) and the last value the tuner wrote (`lastSet`). GET
+    # returns baseline as `default` while current == lastSet; if the
+    # current literal diverges from lastSet, someone OTHER than the tuner
+    # rewrote the file (agent re-run, manual edit) - the authored value
+    # moved, so the entry is dropped and the default rebases to it.
+    def _asset_param_baseline_path(self, project_root):
+        return os.path.join(project_root, "workflow", "asset-param-baselines.json")
+
+    def _asset_param_baselines_load(self, project_root):
+        try:
+            with open(self._asset_param_baseline_path(project_root), encoding="utf-8") as f:
+                d = json.load(f)
+            return d if isinstance(d, dict) else {}
+        except Exception:
+            return {}
+
+    def _asset_param_baselines_save(self, project_root, store):
+        try:
+            _write_json_atomic(self._asset_param_baseline_path(project_root), store)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _asset_param_values_equal(a, b):
+        # Numbers compare with float tolerance (the rewrite reformats floats);
+        # colors compare case-insensitively with the leading '#' normalised.
+        try:
+            fa, fb = float(a), float(b)
+            return abs(fa - fb) <= 1e-9 * max(1.0, abs(fa), abs(fb))
+        except (TypeError, ValueError):
+            pass
+        sa = str(a if a is not None else "").strip().lower().lstrip("#")
+        sb = str(b if b is not None else "").strip().lower().lstrip("#")
+        return sa == sb
+
     def _asset_params(self, qs):
         try:
             project_root = resolve_project_root(qs)
@@ -27909,6 +27951,25 @@ class H(http.server.SimpleHTTPRequestHandler):
             params = ap.scan_files(pairs)
         except Exception as e:
             return self._reply(500, {"error": "scan failed: %s" % e})
+        # Attach authored defaults from the baseline sidecar (see above).
+        # Applies to every scanned asset kind - shader / motion / 3D scene /
+        # sim / game containers - anything with tunable source literals.
+        store = self._asset_param_baselines_load(project_root)
+        dirty = False
+        for p in params:
+            key = "%s|%s" % (p.get("file", ""), p.get("name", ""))
+            ent = store.get(key)
+            if not isinstance(ent, dict):
+                continue
+            if self._asset_param_values_equal(p.get("value"), ent.get("lastSet")):
+                p["default"] = ent.get("baseline")
+            else:
+                # The literal moved without a tuner write - authored value
+                # changed (agent re-run / manual edit). Rebase to it.
+                store.pop(key, None)
+                dirty = True
+        if dirty:
+            self._asset_param_baselines_save(project_root, store)
         return self._reply(200, {"params": params, "files": [p[0] for p in pairs]})
 
     def _asset_param_set(self, qs):
@@ -27921,6 +27982,44 @@ class H(http.server.SimpleHTTPRequestHandler):
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
         from kinds import asset_params as ap
+        # "Save as default" action: rebaseline every scanned param of the
+        # node's (or explicit path's) source files to its CURRENT value, so
+        # Reset returns HERE from now on. Kind-agnostic - same file
+        # resolution as GET /__asset_params.
+        if body.get("saveDefaults"):
+            node_id = (body.get("node") or "").strip()
+            explicit = (body.get("path") or "").strip()
+            if explicit:
+                rels = [explicit]
+            elif node_id:
+                wf = _live_read_workflow(project_root) or {}
+                node = next((n for n in (wf.get("nodes") or []) if n.get("id") == node_id), None)
+                if not node:
+                    return self._reply(404, {"error": "node not found"})
+                rels = self._asset_param_files(node, project_root)
+            else:
+                return self._reply(400, {"error": "saveDefaults needs node or path"})
+            store = self._asset_param_baselines_load(project_root)
+            saved = 0
+            for rel2 in rels:
+                if not re.search(r"\.(js|mjs|html)$", rel2):
+                    continue
+                try:
+                    ab2 = _safe_join(project_root, rel2)
+                    with open(ab2, encoding="utf-8") as f:
+                        text2 = f.read()
+                except Exception:
+                    continue
+                try:
+                    for p in ap.scan_source(text2, ""):
+                        store["%s|%s" % (rel2, p["name"])] = {
+                            "baseline": p["value"], "lastSet": p["value"],
+                        }
+                        saved += 1
+                except Exception:
+                    continue
+            self._asset_param_baselines_save(project_root, store)
+            return self._reply(200, {"ok": True, "savedDefaults": saved})
         rel = (body.get("file") or "").strip()
         name = (body.get("name") or "").strip()
         value = body.get("value")
@@ -27950,6 +28049,21 @@ class H(http.server.SimpleHTTPRequestHandler):
                     f.write(new_text)
         except OSError as e:
             return self._reply(500, {"error": "write failed: %s" % e})
+        # Baseline bookkeeping (see _asset_param_baselines_load). First tune
+        # of a param - or a tune after the file moved under us - captures the
+        # PRE-WRITE value as the authored default Reset returns to.
+        try:
+            store = self._asset_param_baselines_load(project_root)
+            key = "%s|%s" % (rel, name)
+            ent = store.get(key)
+            if (not isinstance(ent, dict)
+                    or not self._asset_param_values_equal(target.get("value"), ent.get("lastSet"))):
+                ent = {"baseline": target.get("value")}
+            ent["lastSet"] = value
+            store[key] = ent
+            self._asset_param_baselines_save(project_root, store)
+        except Exception:
+            pass
         return self._reply(200, {"ok": True, "name": name, "value": value, "type": target["type"]})
 
     # ── Agent daemon routes (Phase 1) ─────────────────────────────────────
