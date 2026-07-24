@@ -16941,29 +16941,223 @@ const INLINE_SVG_RE_G       = /<svg\b[\s\S]*?<\/svg>/gi;
 const INLINE_HTML_RE_G      = /(?:<!doctype html\b|<html\b)[\s\S]*?<\/html>/gi;
 const FENCE_RE_G            = /```[\s\S]*?```/g;
 
+/* ────────── Tolerant gate-body parsing helpers ──────────
+   Gate cards are free-typed by LLM agents, and every observed incident
+   (vicelife + arena-battle 2026-07-15, rollercoastertycoon 2026-07-24) is a
+   NEW markup drift shape slipping through the previous nets. Degrading a
+   gate to raw text leaves the user staring at XML with no way to answer -
+   a bad-faith parse. These helpers are the single shared vocabulary both
+   the <decision-request> and <direction-options> branches use, so every
+   fallback automatically covers both card kinds. */
+
+// Tolerant attribute getter. Accepts double / single / smart quotes,
+// one level of JSON-string escaping around the quotes (value=\"1\" - the
+// rollercoastertycoon envelope), and bare unquoted tokens (value=1).
+function gateAttr(name, src) {
+  if (!src) return null;
+  const qm = new RegExp(
+    name + "\\s*=\\s*\\\\?[\"'\\u201C\\u201D\\u2018\\u2019]" +
+    "([^\"'\\u201C\\u201D\\u2018\\u2019\\\\]*)" +
+    "\\\\?[\"'\\u201C\\u201D\\u2018\\u2019]", "i").exec(src);
+  if (qm && qm[1]) return qm[1];
+  const bm = new RegExp(name + "\\s*=\\s*([^\\s\"'\\\\>/]+)", "i").exec(src);
+  return bm ? bm[1] : null;
+}
+
+// Slug used to synthesize a missing option value / gate id from a label.
+// Deterministic so the answered-state match ([decision:<id>] user messages)
+// stays stable across re-renders.
+function gateSlug(s) {
+  return String(s || "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+}
+
+// Bare `checked` / checked="true" / `recommended` pre-ticks an option.
+// Tokenises the attr string so the literal word "checked" inside another
+// attribute's quoted value can't false-match.
+function gateChecked(oattrs) {
+  const src = oattrs || "";
+  if (/\brecommended\b/i.test(src)) return true;
+  const attrTokRe = /([a-zA-Z][\w-]*)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?/g;
+  let at;
+  while ((at = attrTokRe.exec(src)) !== null) {
+    if (at[1].toLowerCase() !== "checked") continue;
+    const v = at[2] ? at[2].replace(/^["']|["']$/g, "").toLowerCase() : "";
+    return v === "" || v === "true" || v === "checked" || v === "1";
+  }
+  return false;
+}
+
+// Undo ONE level of JSON-string escaping in a single pass (order-safe:
+// a naive sequential .replace chain corrupts \\n into a real newline).
+function unescapeJsonStringy(s) {
+  return String(s).replace(/\\(u[0-9a-fA-F]{4}|["'\\\/bfnrt])/g, (m, g) => {
+    if (g[0] === "u") return String.fromCharCode(parseInt(g.slice(1), 16));
+    return { '"': '"', "'": "'", "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t" }[g];
+  });
+}
+
+// Minimal HTML-entity decode for markup the agent entity-escaped whole.
+function decodeEntitiesLite(s) {
+  return String(s)
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+// String-aware balanced-JSON extractor: returns the parsed object found at
+// the first "{" of `s`, tolerating trailing commas and a TRUNCATED tail
+// (missing closing quote / braces are appended). Truncation is a real
+// production shape: the outer gate regex can cut an escaped envelope short
+// (rollercoastertycoon), and token limits can cut a message short.
+function tolerantJsonParse(s) {
+  if (!s) return null;
+  const start = s.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0, inStr = false, esc = false, end = -1;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "{" || ch === "[") depth++;
+    else if (ch === "}" || ch === "]") { depth--; if (depth === 0) { end = i + 1; break; } }
+  }
+  let cand = end !== -1 ? s.slice(start, end) : s.slice(start);
+  if (end === -1) {
+    // truncated: close the dangling string, then the dangling containers
+    if (inStr) cand += '"';
+    let str2 = false, esc2 = false;
+    const closers = [];
+    for (let i = 0; i < cand.length; i++) {
+      const ch = cand[i];
+      if (str2) {
+        if (esc2) esc2 = false;
+        else if (ch === "\\") esc2 = true;
+        else if (ch === '"') str2 = false;
+        continue;
+      }
+      if (ch === '"') str2 = true;
+      else if (ch === "{") closers.push("}");
+      else if (ch === "[") closers.push("]");
+      else if (ch === "}" || ch === "]") closers.pop();
+    }
+    cand = cand.replace(/,\s*$/, "") + closers.reverse().join("");
+  }
+  cand = cand.replace(/,\s*([}\]])/g, "$1");
+  try { return JSON.parse(cand); } catch (e) { return null; }
+}
+
+// Recover a parseable markup body from a drifted gate payload, or null when
+// no recovery signal applies. Returns { body, attrs } where `attrs` is the
+// attribute string of an inner wrapper tag when the recovered markup carries
+// its own <direction-options ...> / <decision-request ...> wrapper (the id /
+// prompt may live there instead of on the outer tag).
+function recoverGateMarkup(body) {
+  if (!body) return null;
+  let out = null;
+  // 1. JSON envelope with the real markup escaped inside a "raw" string
+  //    field (rollercoastertycoon 2026-07-24: {"questions": [], "raw":
+  //    "<direction-options ...>"}). The envelope is usually TRUNCATED - the
+  //    escaped close tag inside the string ends the outer regex match early -
+  //    so the raw field is pulled by regex, never JSON.parse.
+  const rawM = /"raw"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(body);
+  if (rawM && rawM[1] && rawM[1].indexOf("<") !== -1) {
+    out = unescapeJsonStringy(rawM[1]);
+  } else if (/<(opt|option)\b[^>]*\\"/.test(body)) {
+    // 2. the whole body sits one level of JSON-string escaping deep
+    out = unescapeJsonStringy(body);
+  } else if (/&lt;(opt|option|label)\b/i.test(body)) {
+    // 3. HTML-entity-escaped markup (&lt;opt value="1"&gt;...)
+    out = decodeEntitiesLite(body);
+  }
+  if (!out) return null;
+  const w = /<(?:direction-options|decision-request|question-form)\b([^>]*)>([\s\S]*)/i.exec(out);
+  if (w) {
+    const rest = w[2] || "";
+    const innerClose = rest.search(/<\/(?:direction-options|decision-request|question-form)>/i);
+    return { attrs: w[1] || "", body: innerClose === -1 ? rest : rest.slice(0, innerClose) };
+  }
+  return { attrs: "", body: out };
+}
+
+// Flat-option parser shared by <decision-request> bodies and the flat
+// fallback inside <direction-options>. Stage 1: canonical
+// <option value="...">Label</option>. Stage 2: the rich
+// <opt value><label>..</label><why>..</why></opt> shape blended in by
+// drifting agents (vicelife 2026-07-15). Both stages synthesize a missing /
+// unparseable value attr from the label instead of dropping the option.
+function parseDecisionOptions(body) {
+  const opts = [];
+  const seen = new Set();
+  const uniq = (v) => { let x = String(v); while (seen.has(x)) x += "-2"; seen.add(x); return x; };
+  const optRe = /<option\b([^>]*)>([\s\S]*?)<\/option>/gi;
+  let om;
+  while ((om = optRe.exec(body)) !== null) {
+    const oattrs = om[1] || "";
+    const lbl = (om[2] || "").replace(/\s+/g, " ").trim();
+    if (!lbl) continue;
+    const value = uniq(gateAttr("value", oattrs) || gateSlug(lbl) || `option-${opts.length + 1}`);
+    opts.push({
+      value,
+      label:   lbl,
+      preview: gateAttr("preview", oattrs),
+      group:   gateAttr("group", oattrs),
+      checked: gateChecked(oattrs),
+      // "steer" options open a freeform textarea on click so the user types
+      // WHAT to steer before sending.
+      needsInput: value.toLowerCase() === "steer" || /\binput\b/i.test(oattrs) || /^steer\b/i.test(lbl),
+    });
+  }
+  if (opts.length > 0) return opts;
+  const shortOptRe = /<opt\b([^>]*)>([\s\S]*?)<\/opt>/gi;
+  while ((om = shortOptRe.exec(body)) !== null) {
+    const oattrs = om[1] || "";
+    const obody  = om[2] || "";
+    const pickTag = (tag) => {
+      const r = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`, "i").exec(obody);
+      return r ? r[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "";
+    };
+    const lblTag = pickTag("label");
+    const why    = pickTag("why");
+    const flat   = obody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const lbl    = lblTag ? (why ? `${lblTag} - ${why}` : lblTag) : flat;
+    if (!lbl) continue;
+    const value = uniq(gateAttr("value", oattrs) || gateSlug(lblTag || lbl) || `option-${opts.length + 1}`);
+    opts.push({
+      value,
+      label:   lbl,
+      preview: gateAttr("preview", oattrs),
+      group:   gateAttr("group", oattrs),
+      checked: gateChecked(oattrs),
+      needsInput: value.toLowerCase() === "steer" || /\binput\b/i.test(oattrs) || /^steer\b/i.test(lbl),
+    });
+  }
+  return opts;
+}
+
 // Last-resort gate-body parser: agents occasionally emit a JSON payload
 // (usually Claude Code's native AskUserQuestion schema - {questions:[{question,
 // multiSelect, options:[{label, description}]}]}) inside a <decision-request>
 // or <direction-options> tag instead of the XML option children (arena-battle's
 // art-director plate gate, 2026-07-15: the direct plate-gen path has no
 // returned gateBlock to paste, so the model improvised its native ask shape).
-// Degrading to raw text leaves the gate unanswerable - a bad-faith parse.
-// Accepts the AskUserQuestion shape (first question) and a flat
+// Accepts the AskUserQuestion shape (first non-empty question) and a flat
 // {prompt|question, multiSelect, options:[...]} shape; options may be strings
 // or {label, description, value, checked, recommended}. Returns
 // { prompt, multiSelect, options:[{value,label,checked,needsInput}] } or null.
 function parseGateJsonBody(body) {
   if (!body || body.indexOf("{") === -1) return null;
-  let j;
-  try {
-    j = JSON.parse(body.slice(body.indexOf("{"), body.lastIndexOf("}") + 1));
-  } catch (e) { return null; }
+  const j = tolerantJsonParse(body);
   if (!j || typeof j !== "object") return null;
-  const q = Array.isArray(j.questions) && j.questions.length ? j.questions[0] : j;
+  const qs = Array.isArray(j.questions) ? j.questions.filter(q => q && Array.isArray(q.options) && q.options.length) : [];
+  const q = qs.length ? qs[0] : j;
   const rawOpts = Array.isArray(q.options) ? q.options : null;
   if (!rawOpts || rawOpts.length === 0) return null;
-  const slug = (s) => String(s).toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "option";
   const seen = new Set();
   const options = [];
   for (const entry of rawOpts) {
@@ -16971,7 +17165,7 @@ function parseGateJsonBody(body) {
     const lbl0 = (o.label || o.title || "").toString().replace(/\s+/g, " ").trim();
     if (!lbl0) continue;
     const desc = (o.description || o.why || "").toString().replace(/\s+/g, " ").trim();
-    let value = (o.value || slug(lbl0)).toString();
+    let value = (o.value || gateSlug(lbl0) || "option").toString();
     while (seen.has(value)) value += "-2";
     seen.add(value);
     options.push({
@@ -16991,6 +17185,165 @@ function parseGateJsonBody(body) {
     multiSelect: q.multiSelect === true,
     options,
   };
+}
+
+// Bare AskUserQuestion JSON with NO gate tag around it at all - the model
+// dumped its native ask schema straight into the message. Locate the
+// enclosing object around a "questions" key with a string-aware balanced
+// scan, validate the shape strictly (first question must carry a non-empty
+// question string + options), and hand it to QuestionFormCard, whose
+// renderer already accepts string options and {label, description} objects.
+// Strict validation keeps prose that merely mentions "questions" inert.
+function parseBareAskJson(text, fenceCheck) {
+  if (!text) return null;
+  const qi = text.indexOf('"questions"');
+  if (qi === -1 || (fenceCheck && fenceCheck(qi))) return null;
+  const start = text.lastIndexOf("{", qi);
+  if (start === -1) return null;
+  let depth = 0, inStr = false, esc = false, end = -1;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") { depth--; if (depth === 0) { end = i + 1; break; } }
+  }
+  if (end === -1) return null;
+  let j = null;
+  try { j = JSON.parse(text.slice(start, end)); } catch (e) { return null; }
+  const qs = j && Array.isArray(j.questions) ? j.questions : null;
+  if (!qs || !qs.length) return null;
+  const q0 = qs[0] || {};
+  if (typeof q0.question !== "string" || !q0.question.trim()) return null;
+  if (!Array.isArray(q0.options) || !q0.options.length) return null;
+  const idSlug = gateSlug(q0.question) || "ask";
+  return {
+    index: start,
+    length: end - start,
+    form: { id: `ask-${idSlug}`, ...j },
+  };
+}
+
+// Segment builder around parseBareAskJson - shared by the two "nothing else
+// matched" exits of parseQuestionForms.
+function bareAskSegments(text) {
+  if (!text || text.indexOf('"questions"') === -1) return null;
+  const fenceRanges = [];
+  FENCE_RE_G.lastIndex = 0;
+  let fm;
+  while ((fm = FENCE_RE_G.exec(text)) !== null) {
+    fenceRanges.push([fm.index, fm.index + fm[0].length]);
+    if (fm.index === FENCE_RE_G.lastIndex) FENCE_RE_G.lastIndex++;
+  }
+  const inFence = (idx) => fenceRanges.some(([a, b]) => idx >= a && idx < b);
+  const bare = parseBareAskJson(text, inFence);
+  if (!bare) return null;
+  const segs = [];
+  if (bare.index > 0) segs.push({ kind: "text", text: text.slice(0, bare.index) });
+  segs.push({ kind: "form", form: bare.form, raw: text.slice(bare.index, bare.index + bare.length) });
+  if (bare.index + bare.length < text.length) {
+    segs.push({ kind: "text", text: text.slice(bare.index + bare.length) });
+  }
+  return segs;
+}
+
+// After a recovered-envelope match, the leftover text often carries the
+// envelope's junk tail plus a SECOND close tag (rollercoastertycoon:
+// `"} </direction-options>` trailing the early-terminated match). Swallow
+// it so it doesn't render as stray prose. Only whitespace / quote / brace /
+// bracket junk may sit between the match end and the close tag.
+function swallowStrayClose(text, from, tagName) {
+  const m = new RegExp(`^[\\s"'\\u201C\\u201D}\\]]*</${tagName}>`, "i").exec(text.slice(from));
+  return m ? m[0].length : 0;
+}
+
+// Rich-option parser for <direction-options> bodies. Each <opt> carries
+// structured children: <label>, <axes>, <vibe>, <why>, <palette>,
+// <display font="..">, <body font="..">, <image src axis/>, <badge>.
+// Missing value attrs are synthesized from the label (deterministic, so
+// answered-state correlation survives re-renders). Falls back to flat
+// <option> children mapped into label-only rich opts when an agent blends
+// the two card vocabularies.
+function parseDirectionOpts(body) {
+  const opts = [];
+  const seen = new Set();
+  const uniq = (v) => { let x = String(v); while (seen.has(x)) x += "-2"; seen.add(x); return x; };
+  const optRe = /<opt\b([^>]*)>([\s\S]*?)<\/opt>/gi;
+  let om;
+  while ((om = optRe.exec(body)) !== null) {
+    const oattrs = om[1] || "";
+    const obody  = om[2] || "";
+    const pull = (tag) => {
+      // case-insensitive, allow attributes, take inner content
+      const r = new RegExp(`<${tag}\\b([^>]*)>([\\s\\S]*?)</${tag}>`, "i").exec(obody);
+      if (!r) return null;
+      return { attrs: r[1] || "", inner: (r[2] || "").trim() };
+    };
+    const label = pull("label")?.inner || "";
+    if (!label) continue;
+    const axes    = pull("axes")?.inner    || "";
+    const vibe    = pull("vibe")?.inner    || "";
+    const why     = pull("why")?.inner     || "";
+    const palRaw  = pull("palette")?.inner || "";
+    const palette = palRaw.split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+    const typeOf = (tag) => {
+      const t = pull(tag);
+      if (!t) return null;
+      return {
+        font:     gateAttr("font",     t.attrs),
+        weight:   gateAttr("weight",   t.attrs),
+        case:     gateAttr("case",     t.attrs),  // "upper" / "lower" / "title" / null
+        tracking: gateAttr("tracking", t.attrs),  // CSS letter-spacing, e.g. "-0.04em"
+        text:     t.inner,
+      };
+    };
+    const display = typeOf("display");
+    const bodyTxt = typeOf("body");
+    // Per-axis images. Each <opt> may carry one <image axis="..."> per
+    // committed axis (shell / style / aesthetic). All are collected into
+    // `images`; `image` (singular) stays populated from the first entry for
+    // back-compat with prior single-image emissions. Self-closing, paired,
+    // bare-open, and <img> spellings are all accepted.
+    const images = [];
+    const imgRe = /<(?:image|img)\b([^>]*?)(?:\/>|>(?:<\/(?:image|img)>)?)/gi;
+    let imgM;
+    while ((imgM = imgRe.exec(obody)) !== null) {
+      const ia  = imgM[1] || "";
+      const src = gateAttr("src", ia);
+      if (!src) continue;
+      images.push({
+        src,
+        alt:  gateAttr("alt",  ia) || "",
+        axis: gateAttr("axis", ia) || null,  // "shell" / "style" / "aesthetic" / null (legacy)
+      });
+    }
+    const image = images.length ? images[0] : null;
+    const badge = pull("badge")?.inner || "";
+    const recommended = gateChecked(oattrs);
+    const value = uniq(gateAttr("value", oattrs) || gateSlug(label) || String(opts.length + 1));
+    // "steer" (or any <opt … input>) opens a freeform input instead of
+    // submitting on click - so the user types WHAT to steer before sending,
+    // rather than firing a bare "steer" that makes the agent ask back.
+    const needsInput = value.toLowerCase() === "steer" || /\binput\b/i.test(oattrs) || /^steer\b/i.test(label);
+    opts.push({
+      value, recommended, needsInput,
+      label, axes, vibe, why, palette,
+      display, body: bodyTxt, image, images, badge,
+    });
+  }
+  if (opts.length > 0) return opts;
+  // Flat <option value>Label</option> children inside a direction wrapper:
+  // render label-only rich opts (no palette / type / image chrome to pull).
+  return parseDecisionOptions(body).map((o) => ({
+    value: o.value, recommended: o.checked, needsInput: o.needsInput,
+    label: o.label, axes: "", vibe: "", why: "", palette: [],
+    display: null, body: null, image: null, images: [], badge: "",
+  }));
 }
 
 function parseQuestionForms(text) {
@@ -17025,6 +17378,11 @@ function parseQuestionForms(text) {
   const hasSvg       = !looksLikeDiff && /<svg\b/i.test(text);
   const hasHtml      = !looksLikeDiff && /<(?:html\b|!doctype html\b)/i.test(text);
   if (!hasForm && !hasDecision && !hasDirection && !hasInit && !hasHandoff && !hasSvg && !hasHtml) {
+    // No gate tag at all - but the model may have dumped its native
+    // AskUserQuestion JSON straight into the message (strict shape check
+    // inside; prose that merely mentions "questions" stays inert).
+    const bareSegs = bareAskSegments(text);
+    if (bareSegs) return { segments: bareSegs };
     return { segments: [{ kind: "text", text }] };
   }
 
@@ -17056,6 +17414,50 @@ function parseQuestionForms(text) {
   if (hasSvg)       collect(INLINE_SVG_RE_G,        "svg");
   if (hasHtml)      collect(INLINE_HTML_RE_G,       "html");
 
+  // Fenced gate cards: an agent sometimes wraps its card in a ```xml fence.
+  // The in-fence guard above hides it (fences must stay code), so when a
+  // fence body is EXACTLY one gate element, promote the whole fence
+  // (backticks included) to a card match. Anything less exact stays code,
+  // and a promoted card that still fails option-parsing degrades to the
+  // original fence text unchanged.
+  for (const [fa, fb] of fenceRanges) {
+    const inner = text.slice(fa, fb).replace(/^```[^\n]*\n?/, "").replace(/\n?```\s*$/, "");
+    const gm = /^\s*<(direction-options|decision-request|question-form)\b([^>]*)>([\s\S]*?)<\/\1>\s*$/i.exec(inner);
+    if (!gm) continue;
+    const tag = gm[1].toLowerCase();
+    const kind = tag === "direction-options" ? "direction"
+               : tag === "decision-request"  ? "decision" : "form";
+    found.push({ kind, m: { index: fa, 0: text.slice(fa, fb), 1: gm[2], 2: gm[3] } });
+  }
+
+  // Unclosed-tag recovery: a truncated message (token cap mid-card) or a
+  // forgotten close tag leaves an open gate tag the paired regex can't
+  // match. If a kind was flagged but produced no match, the open tag sits
+  // outside fences and inline `code`, the remainder actually parses into
+  // options, and no other match follows it (so nothing gets swallowed),
+  // treat open-tag..EOF as the element.
+  const synthUnclosed = (tagName, kind) => {
+    if (found.some(f => f.kind === kind)) return;
+    const oM = new RegExp(`<${tagName}\\b([^>]*)>`, "i").exec(text);
+    if (!oM || inFence(oM.index)) return;
+    if (oM.index > 0 && text[oM.index - 1] === "`") return;
+    const body = text.slice(oM.index + oM[0].length);
+    // Probe the full fallback chain, not just XML options - a truncated
+    // card can carry any of the drift payloads (escaped markup, JSON ask).
+    const parseOpts = (b) => (kind === "direction" ? parseDirectionOpts(b) : parseDecisionOptions(b));
+    let ok = parseOpts(body).length > 0;
+    if (!ok) {
+      const rec = recoverGateMarkup(body);
+      if (rec) ok = parseOpts(rec.body).length > 0;
+    }
+    if (!ok) ok = !!parseGateJsonBody(body);
+    if (!ok) return;
+    if (found.some(f => f.m.index > oM.index)) return;
+    found.push({ kind, m: { index: oM.index, 0: text.slice(oM.index), 1: oM[1] || "", 2: body } });
+  };
+  if (hasDecision)  synthUnclosed("decision-request",  "decision");
+  if (hasDirection) synthUnclosed("direction-options", "direction");
+
   // Sort by start, drop overlapping matches (earlier-start wins).
   found.sort((a, b) => a.m.index - b.m.index);
   const nonOverlap = [];
@@ -17067,6 +17469,8 @@ function parseQuestionForms(text) {
     }
   }
   if (nonOverlap.length === 0) {
+    const bareSegs = bareAskSegments(text);
+    if (bareSegs) return { segments: bareSegs };
     return { segments: [{ kind: "text", text }] };
   }
 
@@ -17078,11 +17482,20 @@ function parseQuestionForms(text) {
     }
     if (c.kind === "form") {
       const attrs = c.m[1] || "";
-      const idMatch = /id\s*=\s*"([^"]+)"/.exec(attrs);
-      const id = idMatch ? idMatch[1] : null;
-      const body = (c.m[2] || "").trim();
+      const id = gateAttr("id", attrs);
+      // Body is the AskUserQuestion-style JSON payload. Tolerate the
+      // observed drift shapes: the JSON wrapped in its own ```json fence
+      // inside the tag, trailing commas / truncation (tolerantJsonParse),
+      // and a single bare {question, options} object not wrapped in a
+      // questions[] array.
+      let body = (c.m[2] || "").trim();
+      body = body.replace(/^```[^\n]*\n?/, "").replace(/\n?```\s*$/, "").trim();
       let form = null;
-      try { form = JSON.parse(body); } catch { /* leave as text */ }
+      try { form = JSON.parse(body); } catch { form = tolerantJsonParse(body); }
+      if (form && !Array.isArray(form.questions) &&
+          typeof form.question === "string" && Array.isArray(form.options)) {
+        form = { questions: [form] };
+      }
       if (form && Array.isArray(form.questions)) {
         segments.push({ kind: "form", form: { id, ...form }, raw: c.m[0] });
       } else {
@@ -17091,118 +17504,48 @@ function parseQuestionForms(text) {
     } else if (c.kind === "decision") {
       // Parse <decision-request id="..."> body containing
       //   <option value="...">Label</option>
-      // entries. The id is the checkpoint identifier the orchestrator uses
-      // to correlate the response. Optional `prompt` attribute supplies a
-      // header sentence shown above the buttons.
-      // Accept both double- and single-quoted attribute values - LLMs aren't
-      // always consistent and falling back to a text segment because of a
-      // stray quote-style is a bad-faith parse.
+      // entries (plus the drift fallbacks: parseDecisionOptions accepts the
+      // blended <opt><label><why> shape, recoverGateMarkup un-escapes
+      // JSON-string / entity-coded / "raw"-envelope markup, and
+      // parseGateJsonBody accepts an AskUserQuestion-style JSON payload).
+      // The id is the checkpoint identifier the orchestrator uses to
+      // correlate the response; when a drifted card omits it, a
+      // deterministic slug of the prompt is synthesized so the gate stays
+      // answerable. Optional `prompt` attribute supplies a header sentence
+      // shown above the buttons. gateAttr accepts double / single / smart
+      // quotes, escaped quotes, and bare tokens - a stray quote-style must
+      // never degrade a card to text.
       const attrs = c.m[1] || "";
-      const attr  = (name) => {
-        const m = new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`, "i").exec(attrs);
-        return m ? m[1] : null;
-      };
-      const id      = attr("id");
-      const prompt  = attr("prompt");
+      let id     = gateAttr("id", attrs);
+      let prompt = gateAttr("prompt", attrs);
       // multi-select + grouped multi-pick attrs. multiSelect="true"
       // turns radio buttons into checkboxes. groupBy="<key>" + per-option
       // group="<value>" partitions options into rows (e.g. one row per page
       // in the F-stage remix grid). picksPerGroup enforces exactly N picks
       // per row (default 1 when groupBy is set).
-      const multiSelect   = (attr("multiSelect")   || "").toLowerCase() === "true";
-      const groupBy       = attr("groupBy") || null;
-      const picksPerGroup = parseInt(attr("picksPerGroup") || (groupBy ? "1" : ""), 10) || (groupBy ? 1 : null);
-      const minPicks      = parseInt(attr("minPicks") || (multiSelect ? "1" : "1"), 10) || 1;
-      const maxPicks      = parseInt(attr("maxPicks") || (multiSelect ? "" : "1"), 10) || (multiSelect ? null : 1);
+      const multiSelect   = (gateAttr("multiSelect", attrs) || "").toLowerCase() === "true";
+      const groupBy       = gateAttr("groupBy", attrs) || null;
+      const picksPerGroup = parseInt(gateAttr("picksPerGroup", attrs) || (groupBy ? "1" : ""), 10) || (groupBy ? 1 : null);
+      const minPicks      = parseInt(gateAttr("minPicks", attrs) || "1", 10) || 1;
+      const maxPicks      = parseInt(gateAttr("maxPicks", attrs) || (multiSelect ? "" : "1"), 10) || (multiSelect ? null : 1);
       const body = c.m[2] || "";
-      const opts = [];
-      // Allow option content to be HTML; capture lazily to handle nested tags.
-      const optRe = /<option\b([^>]*)>([\s\S]*?)<\/option>/gi;
-      let om;
-      while ((om = optRe.exec(body)) !== null) {
-        const oattrs = om[1] || "";
-        const ovM   = new RegExp(`value\\s*=\\s*["']([^"']+)["']`, "i").exec(oattrs);
-        if (!ovM) continue;
-        const pM   = new RegExp(`preview\\s*=\\s*["']([^"']+)["']`, "i").exec(oattrs);
-        const gM   = new RegExp(`group\\s*=\\s*["']([^"']+)["']`, "i").exec(oattrs);
-        // `checked` (bare or ="true") pre-ticks the option in
-        // multi-select mode, so the agent can emit a recommended-by-default
-        // proposal (e.g. the orchestrator-plan gate) the user edits + Sends.
-        // Tokenise the attr string (name or name="value") so the literal word
-        // "checked" inside another attribute's quoted value can't false-match.
-        let checked = false;
-        const attrTokRe = /([a-zA-Z][\w-]*)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?/g;
-        let at;
-        while ((at = attrTokRe.exec(oattrs)) !== null) {
-          if (at[1].toLowerCase() !== "checked") continue;
-          const v = at[2] ? at[2].replace(/^["']|["']$/g, "").toLowerCase() : "";
-          checked = v === "" || v === "true" || v === "checked" || v === "1";
-          break;
-        }
-        const lbl  = (om[2] || "").replace(/\s+/g, " ").trim();
-        if (!lbl) continue;
-        // A "steer" option (or any <option … input>) opens a freeform input on
-        // click instead of submitting immediately - so the user types WHAT to
-        // steer before sending, rather than firing a bare "steer" that makes
-        // the agent ask back. Mirrors the <direction-options> steer behaviour.
-        const needsInput = ovM[1].toLowerCase() === "steer" || /\binput\b/i.test(oattrs);
-        opts.push({
-          value:   ovM[1],
-          label:   lbl,
-          preview: pM ? pM[1] : null,  // optional: path or inline HTML
-          group:   gM ? gM[1] : null,  // optional: required when groupBy is set
-          checked,                     // optional: pre-ticked in multi-select
-          needsInput,                  // optional: opens a steer textarea on click
-        });
-      }
-      // Fallback: agents sometimes blend in the <direction-options> option
-      // shape - <opt value="..."><label>…</label><why>…</why></opt> - instead
-      // of the flat <option value>Label</option> form (vicelife's
-      // orchestrator-plan + surface-reconciliation gates: the setup agent
-      // sliced the Phase A.5 doc with sed, never saw the exemplar, and
-      // improvised the shape from the direction card it had just emitted).
-      // Degrading to a raw-text segment leaves the user staring at XML with
-      // no way to answer the gate - a bad-faith parse. Accept the rich shape:
-      // label becomes "<label> - <why>" (matching the canonical flat-form
-      // copy) and `recommended` counts as checked.
-      if (opts.length === 0) {
-        const shortOptRe = /<opt\b([^>]*)>([\s\S]*?)<\/opt>/gi;
-        while ((om = shortOptRe.exec(body)) !== null) {
-          const oattrs = om[1] || "";
-          const ovM = new RegExp(`value\\s*=\\s*["']([^"']+)["']`, "i").exec(oattrs);
-          if (!ovM) continue;
-          const pM = new RegExp(`preview\\s*=\\s*["']([^"']+)["']`, "i").exec(oattrs);
-          const gM = new RegExp(`group\\s*=\\s*["']([^"']+)["']`, "i").exec(oattrs);
-          let checked = /\brecommended\b/i.test(oattrs);
-          const attrTokRe = /([a-zA-Z][\w-]*)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?/g;
-          let at;
-          while (!checked && (at = attrTokRe.exec(oattrs)) !== null) {
-            if (at[1].toLowerCase() !== "checked") continue;
-            const v = at[2] ? at[2].replace(/^["']|["']$/g, "").toLowerCase() : "";
-            checked = v === "" || v === "true" || v === "checked" || v === "1";
-            break;
-          }
-          const obody = om[2] || "";
-          const pickTag = (tag) => {
-            const r = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`, "i").exec(obody);
-            return r ? r[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "";
-          };
-          const lblTag = pickTag("label");
-          const why    = pickTag("why");
-          const flat   = obody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-          const lbl    = lblTag ? (why ? `${lblTag} - ${why}` : lblTag) : flat;
-          if (!lbl) continue;
-          const needsInput = ovM[1].toLowerCase() === "steer" || /\binput\b/i.test(oattrs);
-          opts.push({
-            value:   ovM[1],
-            label:   lbl,
-            preview: pM ? pM[1] : null,
-            group:   gM ? gM[1] : null,
-            checked,
-            needsInput,
-          });
+      // Drift recovery FIRST when its signals fire (escaped / entity-coded /
+      // "raw"-envelope markup): the tolerant attr getter can read straight
+      // through escaped quotes, so a direct parse of an escaped body would
+      // "succeed" with \n noise inside every text field and leave the
+      // envelope's stray close tag unswallowed. recoverGateMarkup returns
+      // null instantly on canonical bodies, so this costs nothing.
+      let opts = [];
+      const rec = recoverGateMarkup(body);
+      if (rec) {
+        opts = parseDecisionOptions(rec.body);
+        if (opts.length > 0) {
+          if (!id)     id     = gateAttr("id", rec.attrs);
+          if (!prompt) prompt = gateAttr("prompt", rec.attrs);
+          c.m.extra = swallowStrayClose(text, c.m.index + c.m[0].length, "decision-request");
         }
       }
+      if (opts.length === 0) opts = parseDecisionOptions(body);
       // Final fallback: a JSON payload (AskUserQuestion-shaped) instead of
       // XML children. See parseGateJsonBody.
       let jsonMulti = null;
@@ -17215,6 +17558,7 @@ function parseQuestionForms(text) {
           if (!promptOut && jg.prompt) promptOut = jg.prompt;
         }
       }
+      if (opts.length > 0 && !id) id = gateSlug(promptOut || "") || "decision";
       if (id && opts.length > 0) {
         segments.push({ kind: "decision", decision: {
           id, prompt: promptOut, options: opts,
@@ -17231,98 +17575,35 @@ function parseQuestionForms(text) {
       // <body font="...">, <image src="..." alt="..."/>, <badge>. The card
       // renders palette chips + Google-font-loaded type samples + image
       // natively. Submit semantics mirror <decision-request>: single-pick,
-      // POSTs `[decision:<id>] <value> - <label>`.
+      // POSTs `[decision:<id>] <value> - <label>`. Parsing is delegated to
+      // parseDirectionOpts (rich shape + flat-<option> fallback + value
+      // synthesis); recoverGateMarkup handles escaped / entity-coded /
+      // "raw"-envelope drift (rollercoastertycoon 2026-07-24 shipped the
+      // whole card as an escaped string inside a JSON envelope's "raw"
+      // field, which also truncated the outer match - the stray second
+      // close tag is swallowed after recovery).
       const dirAttrs = c.m[1] || "";
-      const attr = (name, src) => {
-        const m = new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`, "i").exec(src);
-        return m ? m[1] : null;
-      };
-      const id     = attr("id",     dirAttrs);
-      const prompt = attr("prompt", dirAttrs);
-      const body   = c.m[2] || "";
-      const opts   = [];
-      const optRe  = /<opt\b([^>]*)>([\s\S]*?)<\/opt>/gi;
-      let om;
-      while ((om = optRe.exec(body)) !== null) {
-        const oattrs = om[1] || "";
-        const value  = attr("value", oattrs);
-        if (!value) continue;
-        const recommended = /\brecommended\b/i.test(oattrs);
-        const obody = om[2] || "";
-        const pull = (tag) => {
-          // case-insensitive, allow attributes, take inner content
-          const r = new RegExp(`<${tag}\\b([^>]*)>([\\s\\S]*?)</${tag}>`, "i").exec(obody);
-          if (!r) return null;
-          return { attrs: r[1] || "", inner: (r[2] || "").trim() };
-        };
-        const pullSelf = (tag) => {
-          // self-closing <image src="..." alt="..."/>
-          const r = new RegExp(`<${tag}\\b([^>]*)/>`, "i").exec(obody)
-                 || new RegExp(`<${tag}\\b([^>]*)></${tag}>`, "i").exec(obody);
-          if (!r) return null;
-          return { attrs: r[1] || "", inner: "" };
-        };
-        const label   = pull("label")?.inner   || "";
-        const axes    = pull("axes")?.inner    || "";
-        const vibe    = pull("vibe")?.inner    || "";
-        const why     = pull("why")?.inner     || "";
-        const palRaw  = pull("palette")?.inner || "";
-        const palette = palRaw.split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
-        const dispT   = pull("display");
-        const display = dispT
-          ? {
-              font:     attr("font",     dispT.attrs),
-              weight:   attr("weight",   dispT.attrs),
-              case:     attr("case",     dispT.attrs),  // "upper" / "lower" / "title" / null
-              tracking: attr("tracking", dispT.attrs),  // CSS letter-spacing, e.g. "-0.04em"
-              text:     dispT.inner,
-            }
-          : null;
-        const bodyT   = pull("body");
-        const bodyTxt = bodyT
-          ? {
-              font:     attr("font",     bodyT.attrs),
-              weight:   attr("weight",   bodyT.attrs),
-              case:     attr("case",     bodyT.attrs),
-              tracking: attr("tracking", bodyT.attrs),
-              text:     bodyT.inner,
-            }
-          : null;
-        // Per-axis images. Each <opt> may carry one <image axis="..."> per
-        // committed axis (shell / style / aesthetic). We collect ALL of them
-        // into `images`; `image` (singular) stays populated from the first
-        // entry for back-compat with prior single-image emissions. Self-
-        // closing AND paired <image></image> forms are both accepted, same
-        // as `pullSelf` above.
-        const images = [];
-        const imgRe = /<image\b([^>]*)(?:\/>|><\/image>)/gi;
-        let imgM;
-        while ((imgM = imgRe.exec(obody)) !== null) {
-          const ia = imgM[1] || "";
-          const src = attr("src", ia);
-          if (!src) continue;
-          images.push({
-            src,
-            alt:  attr("alt",  ia) || "",
-            axis: attr("axis", ia) || null,  // "shell" / "style" / "aesthetic" / null (legacy)
-          });
+      let id     = gateAttr("id", dirAttrs);
+      let prompt = gateAttr("prompt", dirAttrs);
+      const body = c.m[2] || "";
+      // Recovery first when its signals fire - same rationale as the
+      // decision branch: an escaped body must be unescaped before parsing,
+      // not read through, and its stray close tag must be swallowed.
+      let opts = [];
+      const rec = recoverGateMarkup(body);
+      if (rec) {
+        opts = parseDirectionOpts(rec.body);
+        if (opts.length > 0) {
+          if (!id)     id     = gateAttr("id", rec.attrs);
+          if (!prompt) prompt = gateAttr("prompt", rec.attrs);
+          c.m.extra = swallowStrayClose(text, c.m.index + c.m[0].length, "direction-options");
         }
-        const image = images.length ? images[0] : null;
-        const badge   = pull("badge")?.inner   || "";
-        if (!label) continue;
-        // "steer" (or any <opt … input>) opens a freeform input instead of
-        // submitting on click - so the user types WHAT to steer before sending,
-        // rather than firing a bare "steer" that makes the agent ask back.
-        const needsInput = value.toLowerCase() === "steer" || /\binput\b/i.test(oattrs);
-        opts.push({
-          value, recommended, needsInput,
-          label, axes, vibe, why, palette,
-          display, body: bodyTxt, image, images, badge,
-        });
       }
-      if (id && opts.length > 0) {
+      if (opts.length === 0) opts = parseDirectionOpts(body);
+      if (opts.length > 0) {
+        if (!id) id = gateSlug(prompt || "") || "direction";
         segments.push({ kind: "direction", direction: { id, prompt, options: opts }, raw: c.m[0] });
-      } else if (id) {
+      } else {
         // Fallback: no <opt> children parsed - the body may be a JSON payload
         // (AskUserQuestion-shaped; arena-battle's art-director plate gate).
         // Render it as a plain decision card: same [decision:<id>] submit
@@ -17330,15 +17611,14 @@ function parseQuestionForms(text) {
         const jg = parseGateJsonBody(body);
         if (jg) {
           segments.push({ kind: "decision", decision: {
-            id, prompt: prompt || jg.prompt, options: jg.options,
+            id: id || gateSlug(prompt || jg.prompt || "") || "direction",
+            prompt: prompt || jg.prompt, options: jg.options,
             multiSelect: jg.multiSelect, groupBy: null, picksPerGroup: null,
             minPicks: 1, maxPicks: jg.multiSelect ? null : 1,
           }, raw: c.m[0] });
         } else {
           segments.push({ kind: "text", text: c.m[0] });
         }
-      } else {
-        segments.push({ kind: "text", text: c.m[0] });
       }
     } else if (c.kind === "init" || c.kind === "handoff") {
       // Thread-phase markers. Both carry an optional prototype="<slug>" attr and
@@ -17354,7 +17634,9 @@ function parseQuestionForms(text) {
     } else if (c.kind === "html") {
       segments.push({ kind: "preview", lang: "html", content: c.m[0] });
     }
-    cursor = c.m.index + c.m[0].length;
+    // c.m.extra covers a swallowed stray close tag after an envelope
+    // recovery (see swallowStrayClose) - the junk tail must not render.
+    cursor = c.m.index + c.m[0].length + (c.m.extra || 0);
   }
   if (cursor < text.length) {
     segments.push({ kind: "text", text: text.slice(cursor) });
