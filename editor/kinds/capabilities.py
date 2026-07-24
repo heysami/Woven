@@ -745,6 +745,30 @@ If NONE apply -> iterate in place, do not go fetch routing. If ANY apply -> STOP
 returns the authoritative setup-path routing blocks. Treat what it returns as binding. (For a genuinely new prototype, tell the user it is a fresh build, and name its `source/<slug>/` after the user's word for it - if unnamed, use the next free `prototype<N>` slug (`prototype2`, `prototype3`, ...), never `main`.)""" + ds_index
 
 
+def _ds_guard_stub(project_root: Optional[str] = None,
+                   prototype: Optional[str] = None) -> str:
+    """The mandatory DS-drift gate for DS-bound prototypes. Empty string when
+    no design system resolves - no-DS projects get no gate, no noise.
+
+    Two clauses: the RULE that closes the drift loophole the ds_line leaves
+    open (redefining an EXISTING DS class in a page <style> is technically
+    "not inventing a name", so agents did it freely - suss-cal's form pages
+    shadowed .input/.kv-grid/.field__hint with bespoke chrome and every page
+    drifted apart), and the mandatory POST-EDIT dispatch of a throwaway
+    subagent that runs the deterministic linter (editor/tools/qa/ds_lint.py),
+    autofixes, and returns a one-line verdict - same delegation shape as
+    VISUAL_DELEGATION_DISCIPLINE, so the main thread's context stays clean."""
+    ds = _resolve_ds_binding(project_root, prototype)
+    if not ds:
+        return ""
+    slug = prototype or "<slug>"
+    return f"""
+
+### DS GUARD - mandatory drift gate (this project is bound to design system `{ds['id']}`)
+- NEVER redefine a class the DS defines inside a page `<style>` block - not as a "small tweak", not with extra context selectors that change its skin. Vary a component ONLY via its custom-property knobs (e.g. `style="--kv-cols:2"` - the DS rule + `DESIGN.md` name them), or a NEW page-namespaced class composed alongside (`class="kv-grid fa-kv"` + `.fa-kv{{...}}`) carrying a layout/placement delta only. If the DS genuinely lacks a pattern, extend the DS itself (`styles.css` + `gallery.html` + `DESIGN.md`, all three in sync) - never fork it locally in a page.
+- AFTER any edit that touches the markup or CSS of a page under `source/{slug}/`, and BEFORE you tell the user the change is done: dispatch ONE general-purpose `Task` subagent with this self-contained brief (it does not see this preamble): "Read $TH_PROTOCOL_ROOT/docs/agents/ds-guardian.md and execute it. Project root: <absolute cwd>. Prototype: {slug}. Pages: <the exact page files you touched>." It runs the deterministic DS-drift linter, AUTOFIXES violations (the DS wins over local forks), re-lints until clean, render-checks the pages, and returns a compact `DS-GUARD` verdict. Relay that verdict line to the user; if it reports FAILED, or that it dropped a divergence the page needed, surface that instead of claiming done. This dispatch is unconditional for style/markup edits on DS-bound pages - your own screenshots do NOT substitute (drift is invisible in a single-page screenshot; the linter sees it deterministically). Batch one dispatch per reply, covering every page that reply touched, not one per file."""
+
+
 def _normal_general_stub() -> str:
     """The NORMAL path: the project's everyday thread, and BOTH sides of a build
     - the DECIDE phase (before the plan is locked) and the BUILD phase (the
@@ -2482,7 +2506,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE
+        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + _ds_guard_stub(project_root, prototype) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE
     # NORMAL path: the project's everyday chat, the untargeted default. Same
     # routing strip as scoped (routing is fetched on demand only when the user
     # asks for a genuine new build), but NOT bound to one prototype - a general
@@ -2490,7 +2514,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "normal":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _normal_general_stub() + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE
+        return _preamble + _normal_general_stub() + _ds_guard_stub(project_root, prototype) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE
     # SETUP path (default): a new prototype build. Keeps the full routing
     # catalog. Append manifest-carried hard rules for orchestrators added
     # after ship time (not covered by the static prose above). Appended AFTER
