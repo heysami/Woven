@@ -28025,6 +28025,28 @@ function WorkflowCanvas() {
           const addedEdges = (fresh.edges || []).filter(e =>
             !memEdgeKeys.has(`${e.from}→${e.to}`) && !edgeRefersToDeleted(e)
           );
+          // Seed dirty-tracking snapshots for daemon-ADDED nodes (mirror of
+          // the addedWb seeding below, and of the initial-load seeding).
+          // Without this, a node scaffolded server-side (orchestrator
+          // /commit addNodes - e.g. visual-orchestrator's asset trios) has
+          // NO snapshot entries, so every field it was born with is judged
+          // permanently DIRTY (local ≠ undefined) and the merge skips every
+          // subsequent daemon flip on it - runStatus stuck at "queued",
+          // agent-posted text/output never pulled - until some debounced
+          // save happens to flush and re-baseline. In live sessions the
+          // echo-save guard suppresses exactly that save, making the freeze
+          // permanent until a manual refresh. Snapshots at add-time = the
+          // node is born CLEAN, so daemon updates pull like any other.
+          for (const n of addedNodes) {
+            if (!n || typeof n.id !== "string") continue;
+            for (const f of Object.keys(n)) {
+              savedSnapshotRef.current.set(n.id + "|" + f, _stableClone(n[f]));
+            }
+            savedSnapshotRef.current.set(n.id + "|runStatus", _stableClone(n.runStatus));
+            savedSnapshotRef.current.set(n.id + "|runError",  _stableClone(n.runError));
+            savedSnapshotRef.current.set(n.id + "|x", _stableClone(n.x));
+            savedSnapshotRef.current.set(n.id + "|y", _stableClone(n.y));
+          }
           // also merge daemon-owned status fields onto EXISTING nodes
           // so an orchestrator run's runStatus / runError / runRunId flips
           // appear live on the canvas. We only touch fields the daemon writes:
@@ -62312,20 +62334,63 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
   // finishes (regardless of pass/fail/cleanup state), the iframe goes
   // stable. Users who want a fresh load can use the devtools toggle
   // (bumps nonce explicitly) or remove + re-add the node.
+  //
+  // BUT "running" alone is not enough of a wake signal. Per the kinds
+  // registry, container runStatusFlow is ["queued", "done"] - the drawers
+  // (sim_runtime_* etc.) carry "running", the container itself usually
+  // never does. The coaster-tycoon build surfaced the consequence: the
+  // chain finished, runtime.html landed, asset-changed fired (the
+  // prototype node reloaded), but this iframe - mounted while the file
+  // was still a 404 - ignored the event and sat on "not found" until a
+  // manual page refresh. Fix: track whether runtime.html has EVER been
+  // confirmed present (HEAD probe at mount); while absent, a scoped
+  // asset-changed re-probes and remounts the moment the file exists.
+  // Once present and not running, the iframe stays stable as before.
   const _isActivelyBuilding = node.runStatus === "running";
+  const runtimeSeenRef = useRef(false);
   useEffect(() => {
-    if (!_isActivelyBuilding) return;   // stable iframe in every non-running state
+    runtimeSeenRef.current = false;
+    let cancelled = false;
+    fetch(apiUrl(runtimePath), { method: "HEAD" })
+      .then(r => { if (!cancelled && r.ok) runtimeSeenRef.current = true; })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [runtimePath]);
+  useEffect(() => {
     const handler = (e) => {
       const paths = (e && e.detail && e.detail.paths) || [];
       if (paths.length === 0) return;
       const scope = `source/${branch}/${folder}/${assetId}/`;
-      if (paths.some(p => p && p.startsWith(scope))) {
+      if (!paths.some(p => p && p.startsWith(scope))) return;
+      if (_isActivelyBuilding) {
+        // Build in progress - live progress view, remount on every commit.
+        runtimeSeenRef.current = true;
         setNonce(n => n + 1);
+        return;
       }
+      if (runtimeSeenRef.current) return;  // built + stable - never yank a live runtime
+      // Iframe mounted before runtime.html existed (404 body). Probe;
+      // if the file just landed, one remount swaps 404 → live runtime.
+      fetch(apiUrl(runtimePath), { method: "HEAD" })
+        .then(r => {
+          if (r.ok) { runtimeSeenRef.current = true; setNonce(n => n + 1); }
+        })
+        .catch(() => {});
     };
     window.addEventListener("th:asset-refresh", handler);
     return () => window.removeEventListener("th:asset-refresh", handler);
-  }, [branch, folder, assetId, _isActivelyBuilding]);
+  }, [branch, folder, assetId, _isActivelyBuilding, runtimePath]);
+  // Completion freshness: the runStatus running→done flip (workflow-changed,
+  // immediate) usually beats the final file writes' asset-changed (file
+  // watcher, ~1.25s poll+debounce). Once "done" merges in, the gated path
+  // above goes stable and would skip that last event - showing the
+  // second-to-last commit forever. One remount on the running→not-running
+  // transition guarantees the final bytes render.
+  const _wasBuildingRef = useRef(_isActivelyBuilding);
+  useEffect(() => {
+    if (_wasBuildingRef.current && !_isActivelyBuilding) setNonce(n => n + 1);
+    _wasBuildingRef.current = _isActivelyBuilding;
+  }, [_isActivelyBuilding]);
 
   // Title-bar lens-verdict badge: pass / fail / running / queued.
   const lensVerdict = node.outputs?.lensVerdict;
