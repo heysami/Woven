@@ -11343,6 +11343,19 @@ def _ensure_harness_settings() -> "str | None":
             ]
         }
     }
+    # Visual-delegation enforcement: deny main-thread screenshots / image
+    # Reads, allow them inside Task subagents (the hook discriminates on the
+    # payload's agent_type field). Prose alone (VISUAL_DELEGATION_DISCIPLINE)
+    # demonstrably decayed over long threads - suss-cal's FA thread took 64
+    # inline screenshots with the rule in its preamble. Optional: registered
+    # only when the script exists, so an older mirror keeps working.
+    visual_hook = os.path.join(INSTALL_ROOT, ".claude", "hooks",
+                               "require-visual-delegation.py")
+    if os.path.isfile(visual_hook):
+        settings["hooks"]["PreToolUse"].append({
+            "matcher": "Read|mcp__claude_preview__preview_screenshot",
+            "hooks":   [{"type": "command", "command": visual_hook}],
+        })
     # Short-circuit if the file already matches - avoid disk churn at every
     # spawn (a typical session triggers many spawns).
     try:
