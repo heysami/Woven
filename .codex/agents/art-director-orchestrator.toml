@@ -267,12 +267,33 @@ The contract has two halves and the split is load-bearing:
     // ... one per approvedOwnsSurface entry
   },
 
+  "formatCommitments": [
+    // FORMAT is not vibe. When the brief, the locked decisions, or an approvedOwnsSurface
+    // entry promises the user a MEDIUM - real 3d moments, video heroes, camera input,
+    // handlettered headlines, generative shader backgrounds, playable physics - record it
+    // here as a boolean deliverable. These are the promises the user can check with one
+    // look ("is it actually 3d or not"), so they are the ones that must never silently
+    // downgrade. Derive them from what was actually promised (brief wording, the
+    // prototype-direction pick, the orchestrator-plan roster) - do NOT invent format
+    // ambitions the user never asked for.
+    {
+      "id": "immersive-3d-moments",
+      "promise": "<one line, in the user's terms: what medium was promised, where>",
+      "format": "3d",            // 3d | 2d-plate | raster | vector | video | motion | audio
+                                 // | shader | particle | interactive-input | handlettering
+      "appliesTo": "<surface / slot / 'per downstream research route table'>",
+      "source": "brief"          // brief | decision:<id> | plate | approvedOwnsSurface
+    }
+    // [] ONLY when the brief + decisions genuinely promise no specific medium anywhere.
+  ],
+
   "bindingRules": {
     "inheritFromPlate": ["colour ratios", "value structure", "composition logic", "material logic", "type rhythm", "motion character"],
     "doNotReplicate": ["the plate's literal subject", "its exact layout / coordinates", "its specific copy", "any single-screen framing - the app has many screens"],
     "principleNotPixels": "The build inherits the plate's design DNA. If a build step is reproducing the plate's content rather than its principles, it is wrong.",
     "plateIsNotAnAsset": "The plate + its crops (_artdir/, _artdir_refs/, workflow/artdirection/) are planning artefacts and i2i references - shipped HTML/CSS/JS must never load them (img src, background-image, poster). A shell/title screen that needs keyart commissions a dedicated asset i2i-conditioned on the plate, inheriting the DNA without the baked chrome.",
-    "buildRegister": "buildRegister obeys aesthetic-authority - translate the committed vibe into a register, never default to a generic 'creative' voice."
+    "buildRegister": "buildRegister obeys aesthetic-authority - translate the committed vibe into a register, never default to a generic 'creative' voice.",
+    "formatCommitmentsAreHard": "Every formatCommitments entry is a boolean deliverable, not direction. Downstream research MUST copy each applicable entry into its slot's deliverables.json (capabilities.py, 'The deliverables ledger'); the runtime/composer marks delivery; the final qa_gate audits it and cannot commit with an unresolved item. Downgrading a committed format (2d standing in for 3d, a still standing in for video) is allowed ONLY through a user-accepted decision-request recorded in the ledger - never through a graceful fallback, a code comment, or a lens pass."
   }
 }
 ```
@@ -452,7 +473,7 @@ There are TWO hand-off shapes, one per mode.
     "/prototype skill (step-tokens/layout/optical/components/content/motion): read art-direction-contract.json when present; it outranks the recipe template. step-tokens binds the display/body font from authored.typography.familyResolution (the construction-matched variant), not the abstract family name",
     "illustration/photography/visual/material orchestrators: read crossSurfaceContract.sharedPaletteHexes + imageryRegister + materialDirective when the contract exists",
     "illustration/photography enrichers + visual-orchestrator: when itemReferences[] is non-empty, set each matched slot's refImagePath to the item's refPath - this rides the EXISTING v3.6 reference/input_path channel (raster-foreground already POSTs input_path to the i2i edit endpoint), so no new gen plumbing is required",
-    "owns-surface orchestrators (game/sim/motion-studio/interactive-media/narrative/scrapbook/scene-3d): their research step reads surfaceContracts[<theirContainerId>] (falling back to crossSurfaceContract) and commits a register that is a TRANSLATION of it, never an independent pick",
+    "owns-surface orchestrators (game/sim/motion-studio/interactive-media/narrative/scrapbook/scene-3d): their research step reads surfaceContracts[<theirContainerId>] (falling back to crossSurfaceContract) and commits a register that is a TRANSLATION of it, never an independent pick - AND seeds its slot's deliverables.json from formatCommitments: every applicable entry becomes a ledger item (status=owed) alongside the routes research itself commits, so the final qa_gate audits the art contract's format promises with the same mechanical check as research's own (bindingRules.formatCommitmentsAreHard)",
     "aesthetic-lens: when a contract exists, score cross-register coherence (chrome vs imagery vs owns-surface) against it, not only per-slot conformance"
   ]
 }

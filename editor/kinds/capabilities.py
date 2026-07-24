@@ -1504,17 +1504,30 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
 
    ```
    FOR outer_iter IN 1..3:
-     # PROMISED? contract-fulfillment diff - BEFORE judging quality, verify the build shipped
-     # what research committed. Re-read research.md FROM DISK; for each committed mechanism
-     # (chromeStrategy, spriteStrategy + its inventory/cycles, paradigm, inputs[], audio, any
-     # "commit"-register field) verify the shipped artefacts EMBODY it - grep the runtime/
-     # overlay for the committed mechanism, ls the committed assets, count committed frames.
-     # A commitment that shipped as something else (slice9 committed, CSS shipped) or silently
-     # vanished (walk cycles committed, stills shipped) is a gate FAILURE routed to the
-     # responsible drawer exactly like a lens fail - even when the result "looks fine": the
-     # lenses judge quality, THIS step judges obedience, and every silent downgrade tonight
-     # (farming's cycles, pocketmonster's chrome) passed the lenses. A deviation is acceptable
-     # ONLY if research.md itself was amended to commit it.
+     # PROMISED? deliverables audit - BEFORE judging quality, verify the build shipped what
+     # was committed. This is MECHANICAL, not a read-through (see 'The deliverables ledger'
+     # below): load source/<branch>/<family>/<slotId>/deliverables.json, run each item's
+     # `check` against the assembled artefacts (grep the runtime for the committed mechanism,
+     # ls the committed assets, count committed frames, eval the committed registry - e.g. a
+     # 3d item checks the module registry is non-empty for that station, not that a canvas
+     # exists), and WRITE the results to DELIVERABLES_AUDIT.json next to QUALITY_REPORT.json:
+     #   {{ items: [{{ id, status: delivered|substituted|missing, evidence }}], unresolved: N }}
+     # unresolved = count(status != delivered AND no user-approved amendment recorded).
+     # HARD RULES:
+     #   - unresolved > 0  =>  the gate CANNOT commit, regardless of lens verdicts. Route each
+     #     unresolved item like a lens fail (asset path or solution-proposer path per its kind).
+     #   - a ledger that is MISSING on a new build is a research/composer contract violation:
+     #     reconstruct the item list from research.md's "commit"-register fields (chromeStrategy,
+     #     spriteStrategy + inventory/cycles, paradigm, per-station routes, inputs[], audio),
+     #     still write DELIVERABLES_AUDIT.json, and still enforce unresolved == 0.
+     #   - a substitution (3d committed, 2d shipped; slice9 committed, CSS shipped; cycles
+     #     committed, stills shipped) is NEVER self-approved - even when it "looks fine" and
+     #     even when the runtime degrades gracefully (graceful fallback HIDES broken promises;
+     #     arty shipped 2d-with-posters for three committed host-3d stations and two lenses
+     #     passed it). Substitution resolves ONLY via a <decision-request> the user accepts
+     #     (record it in the ledger as status=amended + the decision id) or via re-dispatch
+     #     that delivers the committed format. The lenses judge quality; THIS step judges
+     #     obedience; they are not exchangeable.
      qa  = GET $TH_DAEMON_URL/__qa/run?node=<containerNode>&mode=interactive   # WORKS? loads/renders/no-blank/no console errors
      # PLANNED TEST CASES run FIRST, inside that same call: when research wrote test-cases.json
      # next to research.md (mandatory for new interactive builds), /__qa/run auto-detects it and
@@ -1528,7 +1541,12 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
      # GOOD? the lens trio, ONE set, on the assembled runtime (componentKind=runtime, componentId=<slotId>)
      addNodes [craft_lens_<slotId>_<iter>, aesthetic_lens_<slotId>_<iter>, concept_lens_<slotId>_<iter>]
      POST /run each in parallel ; poll all ; read verdicts from QUALITY_REPORT.json
-     IF qa.verdict == pass AND count(lens verdict == pass) >= 2:
+     # ALL THREE verdicts must EXIST in QUALITY_REPORT.json for this iteration. A lens whose
+     # node errored or whose verdict was never appended is a DISPATCH failure - fix and re-run
+     # that lens; it is never counted as a pass and the gate never commits around it. (arty
+     # committed on two verdicts; the third simply never ran and nothing noticed.) An explicit
+     # skip verdict (verdict=pass + skipped=true per that lens's skip rules) counts as present.
+     IF audit.unresolved == 0 AND qa.verdict == pass AND count(lens verdicts present) == 3 AND count(lens verdict == pass) >= 2:
        POST /__workflow/node/<containerNode>/commit   outputs.lensVerdict=pass runStatus=done   ; BREAK
      # else (FAIL) - PROPOSE the fix before you re-dispatch (do NOT hand the drawer a bare diagnosis):
      #   1. CLASSIFY the failures. Any failure whose remedy is (re)GENERATING an asset - a raster /
@@ -1580,6 +1598,34 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
    **Top-level owns-surface deliverable - surface it on SUCCESS, not only on failure.** When the committed runtime IS what the user asked for (a standalone `owns-surface` dispatch, not a subsystem a parent orchestrator co-dispatched), do NOT silently mark it `done` after the gate passes: emit `<decision-request id="cp_<family>_final_<slotId>">` Approve / Tweak / Regenerate, then commit on approval - so a from-scratch build gets one human checkpoint instead of shipping unseen. (Running as the qa_gate node: put the block in your final message for the chat to relay, per contract 2.) A nested co-dispatch (the parent runs its own final gate on the composed surface the user actually sees) skips this. Honour the delegation carve-out: "just build, no questions" → commit without the checkpoint.
 
    This single gate **replaces both** the old per-drawer lens loop (`3 lenses × ~5 drawers × ≤5 iters` = up to ~75 lens runs/slot, judging fragments out of context) **and** the old bolted-on Step-8 QA. They are now ONE pass on the assembled result (~3-9 lens runs/slot, judged in context) - deep AND in-place. The old failure mode it kills: *per-drawer lens scores passing while the assembled iframe is broken or ugly.* Write `workflow/<family>-plan.json` with `qa: {{ checked: [...], blocked: [...], ranAt: '...' }}`; relay any `qa.blocked[]` to the user verbatim.
+
+### The deliverables ledger - format promises are boolean and cannot be silently downgraded
+
+A promise about FORMAT - this station is real host-driven 3D, this hero is video, this input is camera-tracked, this headline is a raster handlettering piece - is not "visual and tonal" guidance; it is a boolean deliverable the user was told to expect. The register/vibe axis lives in `art-direction-contract.json`; the format axis lives HERE, and it is enforced, because prose promises have repeatedly shipped as silent downgrades that every lens passed (farming's walk cycles, pocketmonster's chrome, arty's three committed host-3d stations shipped as 2d plates - concept-lens even credited them as "3d-threshold moments delivered as promised").
+
+`source/<branch>/<family>/<slotId>/deliverables.json`, written by RESEARCH in the same turn as `research.md`:
+
+```
+{{ "version": 1, "items": [
+   {{ "id": "station-2-3d",                       // stable slug
+      "promise": "Early Kingdoms split-gate is a genuine host-driven 3d scene",
+      "format": "3d",                             // 3d | 2d-plate | raster | vector | video |
+                                                  // motion | audio | shader | particle |
+                                                  // interactive-input | handlettering | ...
+      "where": "station 2",                       // human anchor
+      "artefact": "scene3d/<sceneId>/runtime.html", // what must exist / mount
+      "check": "eval window.__scene registry lists station 2 with a live 3d module (not poster fallback)",
+      "source": "research.md station-route table", // or art-direction-contract formatCommitments / user brief
+      "status": "owed" }} ] }}
+```
+
+Duties, in order:
+
+1. **Research writes it** - one item per user-perceivable format commitment: every route-table row, every committed input modality, audio, sprite inventory, plus every applicable `formatCommitments` entry inherited from `art-direction-contract.json` and the slot's `surfaceContracts` entry. Orchestrators MUST carry this duty verbatim into the research envelope they bake - a research step that commits a route table without a ledger has not finished research.
+2. **The runtime/composer updates it** - flips each item to `delivered` (with the artefact path) as it wires the thing in. A composer that cannot deliver an item does NOT quietly note it in a code comment (arty's composer wrote "three is NEVER fetched" in an HTML comment nobody reads): it leaves the item `owed` or marks it `substituted` with a note, which the gate will refuse.
+3. **The gate enforces it** - contract 3's audit step: mechanical check per item, `DELIVERABLES_AUDIT.json` written, `unresolved == 0` required to commit. Substitution is resolved only by a user-accepted `<decision-request>` (recorded as `status=amended` + the decision id) or by delivering the committed format. There is no "close enough" path and no gracefully-degrading fallback that waives an item - fallbacks are for resilience at runtime, not for absolving the build.
+
+The point of the ledger is WHERE it lives: promises must sit where the machinery looks. A commitment that exists only as prose in research.md or as wording in the art contract is a wish; the same commitment as a ledger item is a gate condition.
 
 ### Build tier - not every slot needs the full decomposition
 

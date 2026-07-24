@@ -402,6 +402,11 @@ KINDS = {
                     "container-less families like scrapbook commit the gate node ITSELF with "
                     "outputs.lensVerdict) OR a <decision-request> emitted in the final "
                     "message at the iteration cap",
+                    "files: DELIVERABLES_AUDIT.json exists with unresolved == 0 (every "
+                    "ledger item delivered, or amended via a recorded user decision - "
+                    "a missing ledger is reconstructed from research.md, never waived)",
+                    "QUALITY_REPORT.json carries a verdict entry from ALL THREE lenses "
+                    "for the committed iteration (explicit skip counts; absent does not)",
                 ]},
                 "notes": (
                     "THE final QA+lens gate as a chained leaf node - one per container, "
@@ -411,7 +416,9 @@ KINDS = {
                     "build-driver includes it as the LAST auto-chain link, so the gate "
                     "runs at fresh leaf context instead of the chat's accumulated one. "
                     "Playbook = capabilities.py 'Three contracts' contract 3, verbatim: "
-                    "/__qa/run on the container, promised-vs-shipped diff vs research.md, "
+                    "the deliverables-ledger audit (deliverables.json -> mechanical checks "
+                    "-> DELIVERABLES_AUDIT.json, unresolved==0 or no commit), "
+                    "/__qa/run on the container, "
                     "the lens trio AS NODES (craft/aesthetic/concept_lens_<slotId>_<iter> "
                     "via addNodes + POST /run - NEVER Task), solution-proposer for code "
                     "fixes, re-dispatch of responsible builders, then the container "
