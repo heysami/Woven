@@ -84429,7 +84429,14 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
   return html`
     <div ref=${rootRef} className="workflow-node workflow-node-table" data-node-id=${node.id}
       data-selected=${selected ? "true" : "false"}
-      style=${{ left: node.x + "px", top: node.y + "px", width: totalW + "px", height: totalH + "px" }}
+      style=${{ left: node.x + "px", top: node.y + "px", width: totalW + "px", height: totalH + "px",
+        /* The section-style title tab and the +row/+col buttons counter-scale
+           by 1/zoom, so their LOCAL footprint grows as the canvas zooms out -
+           past ~35% zoom they poke beyond the base 110px overflow-clip-margin
+           (styles.css .workflow-node-table) and the title renders chopped.
+           Sections never clip their tab; match that by growing the margin
+           with the counter-scaled chrome (40 screen-px of headroom). */
+        overflowClipMargin: Math.max(110, Math.ceil(40 / Math.max(zoom || 1, 0.1))) + "px" }}
       onMouseDown=${(e) => { onSelect && onSelect(); }}
       onMouseMove=${onRootMouseMove}
       onMouseLeave=${() => setHoverCell(null)}
