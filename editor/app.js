@@ -33752,6 +33752,11 @@ function Knob({ value, min = 0, max = 1, step = 0.01, onInput, label, display, d
   `;
 }
 
+// Panel-body scroll positions, keyed by node id. Module-level so the scroll
+// survives full panel REMOUNTS (deselect/reselect, a rect flicker, chrome
+// hide/show), not just re-renders - "every tweak resets my scroll" report.
+const _wacScrollMemo = new Map();
+
 function WorkflowAssetControlsPanel({ node, selected, onChange }) {
   const nodeId = node.id;
   const rect = useTrackedNodeRect(nodeId, selected);
@@ -33765,6 +33770,13 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
   const controlsRef = useRef(node.controls); controlsRef.current = node.controls;
   const persistRef = useRef(0);
   const srcRef = useRef(0);   // debounce for daemon source-rewrite POSTs
+  // key → timestamp of the user's last tune. A refetch that lands while a
+  // tune is still in flight (350ms debounce + write + watcher round-trip)
+  // must NOT clobber the knob back to the on-disk value - that's the
+  // "I moved the dial and the number snapped back" report. Recently-tuned
+  // keys keep the user's value on re-seed; the pending write catches disk up.
+  const tunedAtRef = useRef({});
+  const schemaFilesRef = useRef([]);   // source files backing the daemon schema
 
   // Query the asset for its schema once selected. The iframe may still be
   // loading, so retry a handful of times until it reports knobs (or gives up).
@@ -33774,7 +33786,16 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
     const seedFrom = (sch, src) => {
       const persisted = controlsRef.current || {};
       const seed = {};
-      for (const e of sch) seed[e.key] = (e.key in persisted) ? persisted[e.key] : e.value;
+      const now = Date.now();
+      for (const e of sch) {
+        const tunedAt = tunedAtRef.current[e.key] || 0;
+        if (now - tunedAt < 3000 && e.key in valsRef.current) {
+          seed[e.key] = valsRef.current[e.key];   // in-flight user edit wins
+        } else {
+          seed[e.key] = (e.key in persisted) ? persisted[e.key] : e.value;
+        }
+      }
+      schemaFilesRef.current = sch.map((e) => e.file).filter(Boolean);
       setSource(src); setSchema(sch); setVals(seed);
     };
     // The daemon source-scan is the PRIMARY auto-expose path (works on any asset,
@@ -33796,7 +33817,18 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
       if (tries++ < 10) timer = setTimeout(poll, 250);
     };
     poll();
-    const onRefresh = (ev) => { const d = ev && ev.detail; if (!d || !d.nodeId || d.nodeId === nodeId) { tries = 0; daemonTried = false; poll(); } };
+    const onRefresh = (ev) => {
+      const d = ev && ev.detail;
+      if (d && d.nodeId && d.nodeId !== nodeId) return;
+      // Path-scoped: once a schema is loaded, ignore file events that don't
+      // touch THIS panel's source files. Without this, every write anywhere
+      // in the project (an active build committing files every few seconds)
+      // re-fetched + re-seeded the panel - constant churn while tuning.
+      if (d && !d.nodeId && Array.isArray(d.paths) && d.paths.length && schemaFilesRef.current.length) {
+        if (!d.paths.some((p) => p && schemaFilesRef.current.includes(p))) return;
+      }
+      tries = 0; daemonTried = false; poll();
+    };
     window.addEventListener("th:asset-refresh", onRefresh);
     return () => { alive = false; clearTimeout(timer); window.removeEventListener("th:asset-refresh", onRefresh); };
   }, [nodeId, selected]);
@@ -33815,17 +33847,21 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
   };
 
   const onKnob = (entry, value) => {
+    tunedAtRef.current[entry.key] = Date.now();
     setVals((v) => ({ ...v, [entry.key]: value }));
     if (entry.__daemon) {
       // Source is the durable state for daemon params: apply live for a smooth
       // drag where bindable, and debounce-write the source (reloading the iframe
       // only when the value couldn't be bound live - that path freezes the panel).
+      // The reload path debounces LONGER: a baked literal only takes effect via
+      // an iframe reload, and reloading on every 350ms pause mid-twiddle made
+      // the node blink constantly. 700ms = one reload per settled value.
       const liveOk = applyDaemonControlLive(nodeId, entry, value);
       clearTimeout(srcRef.current);
       srcRef.current = setTimeout(() => {
         if (liveOk) writeDaemonControlSource(nodeId, entry, value, false);
         else runSlowUpdate(entry, value);
-      }, 350);
+      }, liveOk ? 350 : 700);
       return;
     }
     applyAssetControl(nodeId, entry, value);
@@ -34005,7 +34041,16 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
       <button className="wac-mini" title="Reset every knob to its default (the authored value, or the last 'set default')." onClick=${resetAll}>reset</button>
       <button className="wac-mini wac-collapse" title=${collapsed ? "Expand" : "Collapse"} onClick=${() => setCollapsed((c) => !c)}>${collapsed ? "+" : "–"}</button>
     </div>
-    ${collapsed ? null : html`<div className="wac-body">
+    ${collapsed ? null : html`<div className="wac-body"
+      ref=${(el) => {
+        // Restore the remembered scroll on (re)mount; track it on scroll.
+        // Module-level memo (per node) so remounts don't reset the position.
+        if (el && _wacScrollMemo.has(nodeId) && el.scrollTop === 0) {
+          const t = _wacScrollMemo.get(nodeId);
+          if (t > 0) el.scrollTop = t;
+        }
+      }}
+      onScroll=${(e) => { try { _wacScrollMemo.set(nodeId, e.currentTarget.scrollTop); } catch (err) {} }}>
       ${native.length ? renderGroup("Asset", native, renderNative, "__native") : null}
       ${akind === "image" ? renderSlice9() : null}
       ${groups.map((g) => renderGroup(g.name, g.items, renderKnob, g.name))}
