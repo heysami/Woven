@@ -10768,11 +10768,15 @@ function RightRailDock({ mode }) {
   // reopens it on the previous thread (chatRun stays seeded by the mount
   // attach). Only once the chat is already open does the icon (now a list
   // glyph) open the runs popover. A visible popover always toggles closed.
+  // No-thread case: the open panel already shows the runs list INLINE (the
+  // chatRun-null fallback), so the popover would be a duplicate list stacked
+  // on top - toggle the panel closed instead.
   const onChatIconClick = useCallback(() => {
     if (runsOverlay) { setRunsOverlay(false); return; }
     if (!leftChatOpen) { setLeftChatOpen(true); return; }
+    if (!chatRun) { setLeftChatOpen(false); return; }
     setRunsOverlay(true);
-  }, [runsOverlay, leftChatOpen]);
+  }, [runsOverlay, leftChatOpen, chatRun]);
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--dock-col-split", dockColSplit + "%");
@@ -11006,9 +11010,9 @@ function RightRailDock({ mode }) {
       <${HoverTip}
         placement="right"
         className=${"th-right-rail-btn left-runs-toggle" + (runsOverlay || leftChatOpen ? " is-active" : "")}
-        ariaLabel=${leftChatOpen ? "Agent runs" : "Chat"}
+        ariaLabel=${leftChatOpen ? (chatRun ? "Agent runs" : "Close the runs list") : "Chat"}
         tip=${leftChatOpen
-          ? "Agent runs - pick a thread or start a new chat"
+          ? (chatRun ? "Agent runs - pick a thread or start a new chat" : "Close the runs list")
           : "Chat - back to your conversation"}
         onClick=${onChatIconClick}
       >
@@ -38123,8 +38127,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     try { window.dispatchEvent(new CustomEvent("th:chat-claim", { detail: { owner: "main" } })); } catch {}
     if (runsOverlay) { setRunsOverlay(false); return; }
     if (wbMode || leftPanel !== "chat") { toggleWbMode(false); setLeftPanel("chat"); return; }
+    // No thread yet: the chat column is already showing the runs list
+    // inline (the !chatExists fallback), so the popover would duplicate
+    // it - collapse the panel instead.
+    if (!chatExists) { setLeftPanel(null); return; }
     setRunsOverlay(true);
-  }, [runsOverlay, wbMode, leftPanel, toggleWbMode]);
+  }, [runsOverlay, wbMode, leftPanel, toggleWbMode, chatExists]);
   // The thread's own close (ChatDrawer ×) collapses the whole panel - the
   // WorkflowCanvas onClose dispatches this after clearing chatRun.
   useEffect(() => {
@@ -50633,9 +50641,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           <${HoverTip}
             placement="right"
             className=${"workflow-nav-rail-btn workflow-nav-rail-btn-chat left-runs-toggle" + (runsOverlay || (!wbMode && leftPanel === "chat") ? " is-active" : "") + (chatBusy ? " is-busy" : "")}
-            ariaLabel=${!wbMode && leftPanel === "chat" ? "Agent runs" : "Chat"}
+            ariaLabel=${!wbMode && leftPanel === "chat" ? (chatExists ? "Agent runs" : "Close the runs list") : "Chat"}
             tip=${!wbMode && leftPanel === "chat"
-              ? "Agent runs - pick a thread or start a new chat"
+              ? (chatExists ? "Agent runs - pick a thread or start a new chat" : "Close the runs list")
               : "Chat - back to your conversation"}
             onClick=${onChatIconClick}
           >${!wbMode && leftPanel === "chat" ? html`<${Icon.List}/>` : html`<${Icon.Comment}/>`}<//>
@@ -91965,7 +91973,7 @@ const EDITOR_TOOL_TABS = [
    (tab-tip-right) since the rail hugs the left edge. Views that carry their own
    left panel (User flow's .flow-nav, IA's .ia-sitemap-wrap) render inside the
    `view` grid cell, to the right of this rail - no overlap. */
-function EditorLeftRail({ view, setView, chatOpen, onToggleChat }) {
+function EditorLeftRail({ view, setView, chatOpen, chatHasThread, onToggleChat }) {
   return html`
     <div className="editor-left-rail">
       ${onToggleChat && html`
@@ -91974,10 +91982,10 @@ function EditorLeftRail({ view, setView, chatOpen, onToggleChat }) {
             className="tab tab-icon left-runs-toggle"
             data-active=${!!chatOpen}
             onClick=${onToggleChat}
-            aria-label=${chatOpen ? "Agent runs" : "Chat"}
-            title=${chatOpen ? "Agent runs" : "Chat"}
+            aria-label=${chatOpen ? (chatHasThread ? "Agent runs" : "Close the runs list") : "Chat"}
+            title=${chatOpen ? (chatHasThread ? "Agent runs" : "Close the runs list") : "Chat"}
           >${chatOpen ? html`<${Icon.List}/>` : html`<${Icon.Comment}/>`}<span className="tab-tip tab-tip-right">${chatOpen
-            ? "Agent runs - pick a thread or start a new chat"
+            ? (chatHasThread ? "Agent runs - pick a thread or start a new chat" : "Close the runs list")
             : "Chat - back to your conversation"}</span></button>
         </div>
       `}
@@ -93000,11 +93008,15 @@ function App() {
   // reopens it on the previous thread (chatRun stays seeded via lastRunId).
   // Only once the chat is already open does the icon (now a list glyph) open
   // the runs popover. A visible popover always toggles closed.
+  // No-thread case: the open panel already shows the runs list INLINE (the
+  // chatRun-null fallback), so the popover would be a duplicate list stacked
+  // on top - toggle the panel closed instead.
   const onChatIconClick = useCallback(() => {
     if (runsOverlay) { setRunsOverlay(false); return; }
     if (!leftChatOpen) { setLeftChatOpen(true); return; }
+    if (!chatRun) { setLeftChatOpen(false); return; }
     setRunsOverlay(true);
-  }, [runsOverlay, leftChatOpen]);
+  }, [runsOverlay, leftChatOpen, chatRun]);
 
   // Publish dock geometry as CSS custom properties for the .app grid + dock.
   // Embed mode pins the dock track to 0: RightDock never renders there, so a
@@ -93697,6 +93709,7 @@ function App() {
       ${!embedMode && html`<${EditorLeftRail}
         view=${view} setView=${setView}
         chatOpen=${leftChatOpen}
+        chatHasThread=${!!chatRun}
         onToggleChat=${onChatIconClick}
       />`}
       ${!embedMode && leftChatOpen && html`
