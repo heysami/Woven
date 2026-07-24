@@ -7766,6 +7766,7 @@ function loadChatQueue(runId) {
         text: e.text,
         attachments: Array.isArray(e.attachments) ? e.attachments : [],
         uploads: Array.isArray(e.uploads) ? e.uploads : [],
+        fileRefs: Array.isArray(e.fileRefs) ? e.fileRefs : [],
       }));
   } catch { return []; }
 }
@@ -14630,10 +14631,19 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   //     Posted multipart to /__upload (5c), land in source/uploads/.
   //     The pre-amble tells the agent the files exist; the agent decides
   //     whether to Read them, pass them to `--image`, etc.
+  //
+  //   • fileRefs - BY-REFERENCE files picked in the OS file browser via
+  //     /__native_file_picker. Nothing is copied: the chip carries the
+  //     absolute path and the pre-amble tells the agent to Read it in
+  //     place (the Claude-Code-style "point at a file" flow). Works for
+  //     any file anywhere on disk - chat agents run with bypass
+  //     permissions, so out-of-project reads are auto-approved.
   const [attachments, setAttachments] = useState([]);   // [{ path, mime, size }]
   const [uploads,     setUploads]     = useState([]);   // [{ name, path, mime, bytes }]
+  const [fileRefs,    setFileRefs]    = useState([]);   // [{ path, name, size, rel }]
   const [attachBusy, setAttachBusy] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
+  const [pickBusy,   setPickBusy]   = useState(false);
   // Claude-Code-style send queue. While `disabled` (agent mid-turn), Send
   // enqueues instead of posting; the drain effect dispatches the head when
   // the turn ends. Each envelope snapshots text + attachments + uploads at
@@ -14743,6 +14753,29 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     }
   }, []);
 
+  // By-reference file pick - opens the OS-native file browser via the
+  // daemon and stages the chosen absolute paths as chips. No bytes move;
+  // the agent Reads the files where they live.
+  const pickLocalFiles = useCallback(async () => {
+    setPickBusy(true); setError(null);
+    try {
+      const resp = await fetch(apiUrl("/__native_file_picker"), { method: "POST" });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(j.error || `HTTP ${resp.status}`);
+      if (j.cancelled) return;
+      if (Array.isArray(j.files) && j.files.length) {
+        setFileRefs(prev => {
+          const seen = new Set(prev.map(r => r.path));
+          return [...prev, ...j.files.filter(f => f && f.path && !seen.has(f.path))];
+        });
+      }
+    } catch (e) {
+      setError("File pick failed: " + (e.message || e));
+    } finally {
+      setPickBusy(false);
+    }
+  }, []);
+
   const onPaste = useCallback((e) => {
     const items = e.clipboardData?.items || [];
     for (const it of items) {
@@ -14773,8 +14806,8 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // as args (rather than reading state) so a queued envelope can re-use
   // exactly the files the user staged at enqueue time, even if the live
   // composer state has since changed.
-  const composeWithAttachments = (body, atts = attachments, ups = uploads) => {
-    if (!atts.length && !ups.length) return body;
+  const composeWithAttachments = (body, atts = attachments, ups = uploads, refs = fileRefs) => {
+    if (!atts.length && !ups.length && !refs.length) return body;
     const lines = [];
     if (atts.length) {
       lines.push("User attached " + atts.length + " image" + (atts.length === 1 ? "" : "s") + " for vision:");
@@ -14782,10 +14815,16 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       lines.push("Use the Read tool on the path(s) above to inspect them before responding.");
     }
     if (ups.length) {
-      if (atts.length) lines.push("");
+      if (lines.length) lines.push("");
       lines.push("User uploaded " + ups.length + " project file" + (ups.length === 1 ? "" : "s") + " (long-lived assets under source/uploads/):");
       for (const u of ups) lines.push("  • " + u.path + " (" + (u.mime || "binary") + ", " + u.bytes + " bytes)");
       lines.push("These are project-scoped. Reference them by path in skill recipes (e.g. `--image " + ups[0].path + "` for img2img) or Read them if you need their contents.");
+    }
+    if (refs.length) {
+      if (lines.length) lines.push("");
+      lines.push("User referenced " + refs.length + " local file" + (refs.length === 1 ? "" : "s") + " by absolute path (picked in the OS file browser; NOT copied into the project):");
+      for (const r of refs) lines.push("  • " + r.path + (r.size ? " (" + r.size + " bytes)" : ""));
+      lines.push("Read them in place with the Read tool at those exact absolute paths. They live outside the project tree; only copy one into the project if the task itself needs a project-local copy.");
     }
     lines.push("");
     return lines.join("\n") + body;
@@ -14861,7 +14900,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // is still active and the click ENQUEUES the message into the local
   // `queue` (Claude-Code-style). `wouldQueue` is the disambiguator used by
   // the button label / tooltip.
-  const canSend = (!!text.trim() || attachments.length > 0) && !busy
+  const canSend = (!!text.trim() || attachments.length > 0 || fileRefs.length > 0) && !busy
                   && (isNew ? !!onStartNewChat : !!runId);
   // isNew always has disabled=false (parent gates `disabled` on
   // `!isNew && (streaming || connecting)`), so queueing only ever applies
@@ -14876,7 +14915,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // decides whether to requeue).
   const dispatch = async (envelope) => {
     if (!runId) return false;
-    const body = composeWithAttachments(envelope.text, envelope.attachments, envelope.uploads);
+    const body = composeWithAttachments(envelope.text, envelope.attachments, envelope.uploads, envelope.fileRefs || []);
     setBusy(true); setError(null);
     try {
       // Two endpoints, each with its own "wrong endpoint" failure mode. We try
@@ -14983,9 +15022,10 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         text: text.trim(),
         attachments: attachments.slice(),
         uploads: uploads.slice(),
+        fileRefs: fileRefs.slice(),
       };
       setQueue(prev => [...prev, env]);
-      setText(""); setAttachments([]); setUploads([]);
+      setText(""); setAttachments([]); setUploads([]); setFileRefs([]);
       return;
     }
     // isNew shell - spawn a brand-new run via the parent. Never queued
@@ -14995,7 +15035,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       setBusy(true); setError(null);
       try {
         await onStartNewChat(body);
-        setText(""); setAttachments([]); setUploads([]);
+        setText(""); setAttachments([]); setUploads([]); setFileRefs([]);
         if (onSent) onSent(body);
       } catch (e) {
         setError(e.message || String(e));
@@ -15010,9 +15050,10 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       text: text.trim(),
       attachments: attachments.slice(),
       uploads: uploads.slice(),
+      fileRefs: fileRefs.slice(),
     };
     const ok = await dispatch(env);
-    if (ok) { setText(""); setAttachments([]); setUploads([]); }
+    if (ok) { setText(""); setAttachments([]); setUploads([]); setFileRefs([]); }
   };
 
   // External programmatic send - a Refine / Fork / regen action targeting the
@@ -15025,7 +15066,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     const onInject = (e) => {
       const t = (((e && e.detail) || {}).text || "").trim();
       if (!t || isNew || !runId) return;
-      const env = { id: ++queueIdRef.current, text: t, attachments: [], uploads: [] };
+      const env = { id: ++queueIdRef.current, text: t, attachments: [], uploads: [], fileRefs: [] };
       if (disabled) { setQueue(prev => [...prev, env]); return; }
       dispatchRef.current(env);
     };
@@ -15069,6 +15110,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     setText(prev => prev ? (prev + (prev.endsWith("\n") ? "" : "\n") + env.text) : env.text);
     setAttachments(prev => [...prev, ...env.attachments]);
     setUploads(prev => [...prev, ...env.uploads]);
+    setFileRefs(prev => [...prev, ...(env.fileRefs || [])]);
     if (taRef.current) {
       try { taRef.current.focus(); } catch { /* fine */ }
     }
@@ -15288,13 +15330,15 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       ${queue.length > 0 && html`
         <div className="chat-composer-queue" role="list" aria-label=${`${queue.length} queued message${queue.length === 1 ? "" : "s"}`}>
           ${queue.map((q, i) => {
-            const preview = (q.text || "").trim().replace(/\s+/g, " ").slice(0, 80) || (q.attachments.length || q.uploads.length ? "(attachments only)" : "(empty)");
+            const qRefs = q.fileRefs || [];
+            const preview = (q.text || "").trim().replace(/\s+/g, " ").slice(0, 80) || (q.attachments.length || q.uploads.length || qRefs.length ? "(attachments only)" : "(empty)");
             const titleParts = [
               `Queued message #${i + 1} - click to edit, × to drop`,
               q.text || "(no text)",
             ];
             if (q.attachments.length) titleParts.push("Attachments:\n" + q.attachments.map(a => "  " + a.path).join("\n"));
             if (q.uploads.length)     titleParts.push("Uploads:\n"     + q.uploads.map(u => "  " + u.path).join("\n"));
+            if (qRefs.length)         titleParts.push("File references:\n" + qRefs.map(r => "  " + r.path).join("\n"));
             return html`
               <span
                 key=${"q" + q.id}
@@ -15320,7 +15364,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                   className="chat-composer-queue-body"
                   title=${titleParts.join("\n\n")}
                   onClick=${() => pullQueuedIntoComposer(q.id)}
-                ><span className="chat-composer-queue-preview">${preview}</span>${q.attachments.length ? html`<span className="chat-composer-queue-meta"><${Icon.Clip}/>${q.attachments.length}</span>` : null}${q.uploads.length ? html`<span className="chat-composer-queue-meta"><${Icon.Folder}/>${q.uploads.length}</span>` : null}</button>
+                ><span className="chat-composer-queue-preview">${preview}</span>${q.attachments.length ? html`<span className="chat-composer-queue-meta"><${Icon.Image}/>${q.attachments.length}</span>` : null}${q.uploads.length ? html`<span className="chat-composer-queue-meta"><${Icon.Folder}/>${q.uploads.length}</span>` : null}${qRefs.length ? html`<span className="chat-composer-queue-meta"><${Icon.Clip}/>${qRefs.length}</span>` : null}</button>
                 <button
                   type="button"
                   className="chat-composer-queue-rm"
@@ -15332,7 +15376,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           })}
         </div>
       `}
-      ${(attachments.length > 0 || uploads.length > 0) && html`
+      ${(attachments.length > 0 || uploads.length > 0 || fileRefs.length > 0) && html`
         <div className="chat-composer-attachments">
           ${attachments.map((a, i) => html`
             <span key=${"a"+i} className="chat-composer-attachment" title=${a.path}>
@@ -15356,6 +15400,13 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                 }}
                 title="Remove and delete from uploads/"
               >×</button>
+            </span>
+          `)}
+          ${fileRefs.map((r, i) => html`
+            <span key=${"r"+i} className="chat-composer-attachment chat-composer-fileref" title=${r.path + " · read in place, not copied"}>
+              <span className="chat-composer-attachment-icon"><${Icon.Clip}/></span>
+              <span className="chat-composer-attachment-name">${r.name || r.path.split("/").pop()}</span>
+              <button className="chat-composer-attachment-rm" onClick=${() => setFileRefs(prev => prev.filter((_, j) => j !== i))} title="Remove reference (file stays on disk)">×</button>
             </span>
           `)}
         </div>
@@ -15498,7 +15549,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                     : (isNew
                         ? "Start new chat  ⌘/Ctrl+Enter"
                         : (isResuming ? "Resume conversation  ⌘/Ctrl+Enter" : "Send  ⌘/Ctrl+Enter")))
-                : "Type something first or attach an image";
+                : "Type something first or attach an image or file";
               // selection context only attaches on a new chat's first
               // turn (spawnWorkflowChat path). Subsequent turns reuse the
               // existing run, so the badge would be misleading.
@@ -15522,7 +15573,15 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           disabled=${attachBusy || busy}
           title="Attach image for vision (drag, paste, or click) - single turn"
           aria-label="Attach image"
-        >${attachBusy ? "…" : html`<${Icon.Clip}/>`}</button>
+        >${attachBusy ? "…" : html`<${Icon.Image}/>`}</button>
+        <button
+          className="chat-composer-attach chat-composer-fileref-btn"
+          type="button"
+          onClick=${pickLocalFiles}
+          disabled=${pickBusy || busy}
+          title="Attach files by reference - pick any file in the OS file browser; the agent reads it in place, nothing is copied"
+          aria-label="Attach files by reference"
+        >${pickBusy ? "…" : html`<${Icon.Clip}/>`}</button>
         <button
           className="chat-composer-attach chat-composer-upload-btn"
           type="button"
@@ -36397,8 +36456,10 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
   // the spawned chat sees attachments exactly as it would from the drawer.
   const [attachments, setAttachments] = useState([]);   // [{ path, mime, size }]
   const [uploads,     setUploads]     = useState([]);   // [{ name, path, mime, bytes }]
+  const [fileRefs,    setFileRefs]    = useState([]);   // [{ path, name, size, rel }] - by-reference, never copied
   const [attachBusy, setAttachBusy] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
+  const [pickBusy,   setPickBusy]   = useState(false);
   const [error, setError] = useState(null);
   const taRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -36458,10 +36519,32 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
     }
   }, []);
 
+  // Mirrors ChatComposer.pickLocalFiles: OS-native picker, stages absolute
+  // paths as by-reference chips - nothing is copied into the project.
+  const pickLocalFiles = useCallback(async () => {
+    setPickBusy(true); setError(null);
+    try {
+      const resp = await fetch(apiUrl("/__native_file_picker"), { method: "POST" });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(j.error || `HTTP ${resp.status}`);
+      if (j.cancelled) return;
+      if (Array.isArray(j.files) && j.files.length) {
+        setFileRefs(prev => {
+          const seen = new Set(prev.map(r => r.path));
+          return [...prev, ...j.files.filter(f => f && f.path && !seen.has(f.path))];
+        });
+      }
+    } catch (e) {
+      setError("File pick failed: " + (e.message || e));
+    } finally {
+      setPickBusy(false);
+    }
+  }, []);
+
   // Mirrors ChatComposer.composeWithAttachments: file references are
   // prepended to the prompt so the agent sees them as part of its turn.
   const composeWithAttachments = (body) => {
-    if (!attachments.length && !uploads.length) return body;
+    if (!attachments.length && !uploads.length && !fileRefs.length) return body;
     const lines = [];
     if (attachments.length) {
       lines.push("User attached " + attachments.length + " image" + (attachments.length === 1 ? "" : "s") + " for vision:");
@@ -36469,10 +36552,16 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
       lines.push("Use the Read tool on the path(s) above to inspect them before responding.");
     }
     if (uploads.length) {
-      if (attachments.length) lines.push("");
+      if (lines.length) lines.push("");
       lines.push("User uploaded " + uploads.length + " project file" + (uploads.length === 1 ? "" : "s") + " (long-lived assets under source/uploads/):");
       for (const u of uploads) lines.push("  • " + u.path + " (" + (u.mime || "binary") + ", " + u.bytes + " bytes)");
       lines.push("These are project-scoped. Reference them by path in skill recipes (e.g. `--image " + uploads[0].path + "` for img2img) or Read them if you need their contents.");
+    }
+    if (fileRefs.length) {
+      if (lines.length) lines.push("");
+      lines.push("User referenced " + fileRefs.length + " local file" + (fileRefs.length === 1 ? "" : "s") + " by absolute path (picked in the OS file browser; NOT copied into the project):");
+      for (const r of fileRefs) lines.push("  • " + r.path + (r.size ? " (" + r.size + " bytes)" : ""));
+      lines.push("Read them in place with the Read tool at those exact absolute paths. They live outside the project tree; only copy one into the project if the task itself needs a project-local copy.");
     }
     lines.push("");
     return lines.join("\n") + body;
@@ -36503,7 +36592,7 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
 
   const send = async () => {
     const v = (text || "").trim();
-    if ((!v && attachments.length === 0 && uploads.length === 0) || busy) return;
+    if ((!v && attachments.length === 0 && uploads.length === 0 && fileRefs.length === 0) || busy) return;
     setBusy(true);
     try {
       const body = composeWithAttachments(v);
@@ -36521,7 +36610,7 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
       send();
     }
   };
-  const canSend = ((text || "").trim().length > 0 || attachments.length > 0 || uploads.length > 0) && !busy;
+  const canSend = ((text || "").trim().length > 0 || attachments.length > 0 || uploads.length > 0 || fileRefs.length > 0) && !busy;
   return html`
     <div
       className="workflow-empty-composer"
@@ -36534,7 +36623,7 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
       <div className="workflow-empty-composer-sub">
         Type what you want to build, drop in reference images or files - or drag a block from the Library to assemble it manually.
       </div>
-      ${(attachments.length > 0 || uploads.length > 0) && html`
+      ${(attachments.length > 0 || uploads.length > 0 || fileRefs.length > 0) && html`
         <div className="workflow-empty-composer-attachments">
           ${attachments.map((a, i) => html`
             <span key=${"a"+i} className="workflow-empty-composer-attachment" title=${a.path}>
@@ -36560,6 +36649,17 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
                   } catch { /* best-effort */ }
                 }}
                 title="Remove and delete from uploads/"
+              >×</button>
+            </span>
+          `)}
+          ${fileRefs.map((r, i) => html`
+            <span key=${"r"+i} className="workflow-empty-composer-attachment is-fileref" title=${r.path + " · read in place, not copied"}>
+              <span className="workflow-empty-composer-attachment-icon"><${Icon.Clip}/></span>
+              <span className="workflow-empty-composer-attachment-name">${r.name || r.path.split("/").pop()}</span>
+              <button
+                className="workflow-empty-composer-attachment-rm"
+                onClick=${() => setFileRefs(prev => prev.filter((_, j) => j !== i))}
+                title="Remove reference (file stays on disk)"
               >×</button>
             </span>
           `)}
@@ -36608,7 +36708,14 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
             disabled=${attachBusy || busy}
             onClick=${() => fileInputRef.current && fileInputRef.current.click()}
             title="Attach images for vision (drag, paste, or click) - bound to this turn"
-          >${attachBusy ? "…" : html`<${Icon.Clip}/>`}</button>
+          >${attachBusy ? "…" : html`<${Icon.Image}/>`}</button>
+          <button
+            className="workflow-empty-composer-attach"
+            type="button"
+            disabled=${pickBusy || busy}
+            onClick=${pickLocalFiles}
+            title="Attach files by reference - pick any file in the OS file browser; the agent reads it in place, nothing is copied"
+          >${pickBusy ? "…" : html`<${Icon.Clip}/>`}</button>
           <button
             className="workflow-empty-composer-attach"
             type="button"

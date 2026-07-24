@@ -129,8 +129,7 @@
         "/Users/sami/Documents/Woven"
       ],
       "cwd": ".",
-      "port": 4741,
-      "url": "/editor/index.html"
+      "port": 4741
     },
     {
       "name": "testds-static",

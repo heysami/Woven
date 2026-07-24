@@ -11909,6 +11909,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._rewrite_element_for_kind(qs)
             if parsed.path == "/__native_folder_picker":
                 return self._native_folder_picker()
+            if parsed.path == "/__native_file_picker":
+                return self._native_file_picker()
             if parsed.path == "/__export_config":
                 return self._export_config_set(qs)
             if parsed.path == "/__export_asset":
@@ -20667,6 +20669,76 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception:
             rel = None
         return self._reply(200, {"ok": True, "path": path, "rel": rel})
+
+    # POST /__native_file_picker[?project=<id>]
+    # Sibling of _native_folder_picker for FILES: opens the OS-native file
+    # picker (macOS via osascript, multi-select allowed) and returns the
+    # chosen absolute paths. Nothing is copied - the chat composer stages
+    # these as by-reference attachments the agent Reads in place (the
+    # Claude-Code-style "point at a file" flow, vs /__attachment which
+    # copies bytes into the project). Per file: name, size, and a
+    # project-relative `rel` when the pick landed inside the active
+    # project's root (caller may prefer the rel form for portability).
+    def _native_file_picker(self):
+        if sys.platform != "darwin":
+            return self._reply(501, {"error": f"native file picker not implemented on {sys.platform}"})
+        # osascript returns an AppleScript list for multi-select; join to
+        # one POSIX path per line inside the script so we don't have to
+        # parse AppleScript literal syntax here.
+        script = (
+            'set fs to choose file with prompt "Attach files for the agent to read" with multiple selections allowed\n'
+            'set out to ""\n'
+            'repeat with f in fs\n'
+            'set out to out & POSIX path of f & linefeed\n'
+            'end repeat\n'
+            'return out'
+        )
+        try:
+            r = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True, timeout=180, check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return self._reply(504, {"error": "file picker timed out"})
+        except FileNotFoundError:
+            return self._reply(501, {"error": "osascript not on PATH"})
+        if r.returncode != 0:
+            # User hit Cancel (osascript error -128) - not an error.
+            return self._reply(200, {"ok": True, "cancelled": True})
+        paths = [p.strip() for p in r.stdout.decode("utf-8", "replace").splitlines() if p.strip()]
+        if not paths:
+            return self._reply(200, {"ok": True, "cancelled": True})
+        project_root = None
+        try:
+            parsed = urllib.parse.urlparse(self.path)
+            qs = urllib.parse.parse_qs(parsed.query)
+            project_root = resolve_project_root(qs)
+        except Exception:
+            project_root = None
+        files = []
+        for path in paths:
+            if path.endswith("/") and len(path) > 1:
+                path = path[:-1]
+            try:
+                size = os.path.getsize(path)
+            except OSError:
+                size = 0
+            rel = None
+            try:
+                if project_root:
+                    pr = os.path.realpath(project_root)
+                    pp = os.path.realpath(path)
+                    if pp == pr or pp.startswith(pr + os.sep):
+                        rel = os.path.relpath(pp, pr).replace(os.sep, "/")
+            except Exception:
+                rel = None
+            files.append({
+                "path": path,
+                "name": os.path.basename(path),
+                "size": size,
+                "rel": rel,
+            })
+        return self._reply(200, {"ok": True, "files": files})
 
     # GET /__export_config[?project=<id>]
     # POST /__export_config?project=<id>  body {path:string|null}
