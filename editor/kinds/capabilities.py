@@ -1986,6 +1986,41 @@ and runtime builders - a tier choice slims the node count, never the presence ba
 brief genuinely wants paged stillness (an editorial longread), that is a website build, not
 this family - say so instead of shipping a slideshow at experience-family cost.
 
+### HARD CHECK F - story is METERED: one beat, one breath (block on concept and aesthetic)
+
+The companion of HARD CHECK E. E makes the place inhabited; F makes the story TOLD. The
+observed failure: every station delivers its copy as a finished paragraph - title, kicker,
+body all on stage at once, senses firing together - polished, and pure noise. A narrative
+piece is a conversation that lays down one thing at a time and lets the visitor hold it;
+a wall of text on a pretty plate is a novel page, not a told story. Enforced:
+
+1. **One story beat on stage at a time.** Two beats' copy never compete for attention
+   simultaneously - not across stations, and not within one (a lockup whose title, subtitle,
+   and body are all "the point" is three beats flooding as one). If a moment carries more
+   than one idea, it is more than one moment - split it.
+2. **A beat's copy fits one breath.** The on-stage text of a moment is a line or two the
+   visitor can absorb without re-reading (~15-25 words), not a paragraph. Longer material
+   becomes SUB-BEATS revealed sequentially - each earned by scroll-dwell, time, or attention
+   - never delivered pre-assembled.
+3. **Channels enter in authored order, with rests.** Within a beat: the scene settles, THEN
+   the line arrives, THEN the detail or the sound shifts - a sequence the spine authored,
+   with pauses sized for absorbing, not animation-stagger cosmetics (100ms cascade of five
+   elements is simultaneous arrival wearing easing). Authored REST is content: the spine
+   must contain moments that ask nothing - held silence between beats is what makes the
+   next beat land.
+4. **Overwhelm is an authored exception, never the default.** A beat MAY flood every sense
+   at once - when the dramaturgy demands it (the crescendo, the rupture) and the spine NAMES
+   it as such. Unnamed overwhelm is just dosage failure.
+5. **Research/spine commit it; the gate probes it.** The spine's keyframe table carries a
+   per-beat `copyDosage` (what is on stage, in what order, what the rest before the next
+   beat is; crescendo beats named). Ledger items (format `pacing`) make it auditable: the
+   gate walks the runtime beat by beat, screenshots each dwell, counts distinct copy
+   clusters visible at once (>1 unnamed = fail), counts on-stage words against the dosage,
+   and diffs two in-beat frames to verify staged entry actually stages.
+
+Same reroute rule as E: if the content is genuinely a body of text the user should READ at
+their own pace, that is an editorial page, not a narrative experience - say so.
+
 ### The other vocabulary the user might use (same answer - dispatch)
 
 If the brief is about LOOKING AT or MOVING THROUGH something stateful, positioned, or alive, this is the right orchestrator - no matter what vocabulary the user used. Some shapes:
