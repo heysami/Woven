@@ -1953,6 +1953,39 @@ Anti-patterns that earn block-severity findings from the lens trio:
 
 The scene drawer's craft-lens preview check runs these as automated probes (synthetic pointer-drag, synthetic WASD, light-position screenshot diffs). 3D scenes are now built by the SHARED `scene-3d-orchestrator` (per-subsystem fan-out, each subsystem rendering standalone, drivable output) - linked by simulation / narrative / game / interactive-media for their `3d-environment` paradigm with `mode: host-driven`. This "3D must feel 3D" contract is enforced by scene-3d's lens gates (`scene-3d-orchestrator.md` + `s3d-runtime-composer.md`); `sim-3d-scene-builder` / `im-output-3d` are deprecated redirects to it.
 
+### HARD CHECK E - immersive must feel INHABITED, not paged (block on aesthetic and concept)
+
+The 2D sibling of HARD CHECK D, and the check that stops the narrative family's structural
+failure mode: a scroll spine + full-bleed plates + cross-dissolves + text lockups + a
+room-tone passes every enforced contract and IS a premium slideshow (arty: the user asked
+for immersive, chose immersive at every gate, and named the result "a slide show with sound
+effects" - correctly). When a brief promises IMMERSION (the narrative family's premise, and
+any owns-surface piece whose direction says immersive), the piece must give the visitor
+presence, and presence is mechanical, not tonal:
+
+1. **The world answers the visitor between beats.** At least one non-scroll input channel
+   changes what they see or hear: pointer-tracked parallax/light (the space leans with your
+   hand), dwell/hover reveals that a first-time visitor actually FINDS (per beat, not one
+   easter egg per piece), held moments that open under attention. Scroll position alone is
+   paging, not presence.
+2. **No station is a still.** Every beat has ambient life at rest - drift, mist, light
+   breathing, a surface that never fully settles. A frame that is a static painting until
+   the next scroll tick is a slide.
+3. **Transitions travel, they do not swap.** Crossfade-only sequencing reads as slides
+   regardless of easing. The committed register must move THROUGH space at beat boundaries:
+   depth layers parting at different rates, the camera entering the next scene, a threshold
+   crossed - at least for the majority of beats.
+4. **Research commits the mechanics as deliverables.** The research step names the piece's
+   `presenceMechanics` per beat (which of 1-3 carries each) and writes them into
+   `deliverables.json` (format: `interactive-input` / `presence`) so the final gate audits
+   them mechanically - a probe drags the pointer and diffs frames, greps the reveal layer's
+   listeners, screenshots a beat twice at rest. Prose ambition is not a mechanic.
+
+Tier note: `standard` tier (no dedicated reveals drawer) FOLDS these duties into the scene
+and runtime builders - a tier choice slims the node count, never the presence bar. If the
+brief genuinely wants paged stillness (an editorial longread), that is a website build, not
+this family - say so instead of shipping a slideshow at experience-family cost.
+
 ### The other vocabulary the user might use (same answer - dispatch)
 
 If the brief is about LOOKING AT or MOVING THROUGH something stateful, positioned, or alive, this is the right orchestrator - no matter what vocabulary the user used. Some shapes:
