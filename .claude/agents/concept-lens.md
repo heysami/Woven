@@ -26,6 +26,8 @@ curl -fsS "$TH_DAEMON_URL/__kinds/registry?project=$TH_PROJECT_ID"
 
 Look up your per-id contract - your node id is `concept_lens_<componentId>_<iteration>` where `componentId` is the slotId (e.g. `concept_lens_tanker-globe_1`). Confirm `outputsRoot` + `completion.requires`.
 
+**Node-anchor check (legacy-dispatch guard).** You are designed to run as a WORKFLOW NODE - the qa_gate node scaffolds `concept_lens_<slotId>_<iter>` via addNodes and dispatches you with `POST /__workflow/node/<your_id>/run`; your dispatch brief states your node id. Before any `/status` POST, VERIFY the anchor exists: `curl -fsS "$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID" | grep -c '"<your_id>"'`. If your node id is NOT in workflow.json, you were dispatched as a raw Task subagent (the legacy pattern) - do NOT invent or guess a node id: a `/status` POST to a nonexistent id 404s and the verdict write is silently dropped. In that case skip the status endpoint entirely, still append your verdict to `QUALITY_REPORT.json` (a plain file write), and RETURN the verdict object in your final message - the dispatcher reads it from there.
+
 Read `editor/kinds/AGENT_HARNESS.md` Rules 5, 6, 7.
 
 ## 2. Input envelope

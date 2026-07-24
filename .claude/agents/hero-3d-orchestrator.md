@@ -19,7 +19,7 @@ You are **hero-3d-orchestrator** - now a THIN ALIAS over `scene-3d-orchestrator`
    - `integration`, `concept`, `materialCastHint` → `subsystemHints` + `materialCastHint`, `styleCue`, `successFeel`, `creativeBrief`, `dsRef` - passed through verbatim.
    - A single-object glass/chrome hero decomposes to ONE `lead` subsystem (degenerate fan-out - identical cost to the old single-scene path). A richer hero (e.g. a woven thread-graph + an indigo glow + ambient dust) decomposes to several.
 4. **Co-dispatch** `scene-3d-orchestrator` with that brief (workflow-node dispatch pattern; `Task` may be unavailable - use `POST $TH_DAEMON_URL/__workflow/node/<id>/run` and poll).
-5. **Return** scene-3d's hand-off envelope unchanged to the caller, so the build driver dispatches `s3d_*` drawers, runs the lens trios, and releases the `scene-3d` container exactly as scene-3d specifies.
+5. **Return** scene-3d's hand-off envelope unchanged to the caller, so the build driver dispatches `s3d_*` drawers and the chained `qa_gate_<sceneId>` node runs the final QA+lens gate and releases the `scene-3d` container exactly as scene-3d specifies.
 
 ## Back-compat notes
 

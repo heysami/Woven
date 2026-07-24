@@ -1446,16 +1446,29 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
    ```
    tier = handoff.buildTier                          # simple | standard | full (research committed it)
    builders = handoff.builderNodes                   # dependency order; tier decides the set (see Build tier)
+   gate = handoff.gateNode                           # qa_gate_<slotId> - scaffolded by the orchestrator
    # AUTO-CHAIN (v3.15): dispatch ONLY the first builder, passing the REST as
    # &chain=. The daemon advances the chain itself as each builder finishes -
    # NO chat turn between builders, so the inter-builder gap (a full ~36K-preamble
    # chat turn, ~3-4 min and growing) collapses to ~0. Do NOT loop a POST per builder.
-   first = builders[0] ; rest = builders[1:]
+   first = builders[0] ; rest = builders[1:] + [gate]   # the GATE is the last chain link
    POST $TH_DAEMON_URL/__workflow/node/<first>/run?chain=<comma-joined rest>    # NO per-drawer lens
-   poll the builderNodes until the LAST one is `done` (if any builder hits `error`
-     the chain HALTED there daemon-side - surface that node's error, don't silently retry)
-   # the runtime/composer builder is LAST - it assembles the pieces into runtime.html
-   run_final_gate(handoff.containerNode)             # contract 3
+   poll until <gate> is `done` / `error` (if any builder hits `error` the chain
+     HALTED there daemon-side - surface that node's error, don't silently retry)
+   # the runtime/composer builder assembles runtime.html; the qa_gate node then runs
+   # the final QA+lens gate (contract 3) AS ITS OWN LEAF RUN - fresh ~40k context,
+   # not your ballooning thread - and commits the container itself.
+   # Your job when the gate lands:
+   #   done  -> read the gate node's output; if it carries a <decision-request> block
+   #            (iteration cap, or the success checkpoint), RELAY that block VERBATIM
+   #            in your reply - a node run cannot render a chat gate card, only you
+   #            can (same contract as Task-subagent gateBlocks). Then honour the pick:
+   #            Accept -> POST the container commit with accept-override;
+   #            Push deeper / Replace / Tweak -> re-dispatch <gate> with the pick in
+   #            the run body prompt (it re-enters the loop with that steer).
+   #            No decision block -> relay the gate's pass summary and you're done.
+   #   error -> surface the gate node's runError. ONLY in this case may you run
+   #            contract 3 inline in this thread as the legacy fallback - and say so.
    ```
 
    **The node chain above IS the dispatch mechanism - do NOT dispatch scaffolded builders with
@@ -1483,7 +1496,11 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
    §10). Builders: the same rule applies to you - research.md read from DISK at spawn wins over
    any paraphrase in your dispatch prompt.
 
-3. **Final QA+lens gate - judged ONCE on the assembled runtime, not per drawer.** Quality is decided on the thing the user actually sees. After the builders assemble `runtime.html`:
+3. **Final QA+lens gate - judged ONCE on the assembled runtime, not per drawer.** Quality is decided on the thing the user actually sees. **The gate runs INSIDE the chained `qa_gate_<slotId>` NODE** (the orchestrator scaffolds it right after the container; contract 2's chain dispatches it last), NOT in the build-driver chat: a gate loop is hundreds of tool calls, and in-thread it runs at the chat's full accumulated context (observed: half a build's entire spend). The loop below is the GATE NODE's playbook; the chat only relays its result. (Chat-inline execution of this loop is the legacy FALLBACK, permitted only when dispatching the gate node itself errors.)
+
+   **The lens trio runs as WORKFLOW NODES - never as Agent/Task subagents.** Same rule, same reasons as the builders in contract 2: `addNodes [craft_lens_<slotId>_<iter>, aesthetic_lens_<slotId>_<iter>, concept_lens_<slotId>_<iter>]` then `POST /run` each in parallel. A Task-dispatched lens has no node anchor: the canvas shows nothing, the per-lens re-run affordance is orphaned, and when the lens playbook posts status to its contract node id the POST 404s and the verdict write is silently dropped (observed on coaster-tycoon: `craft_lens_park_1` 404). Audit 2026-07-24: across 31 projects and thousands of lens dispatches, zero lens nodes were ever scaffolded - every driver reached for Task. Do not continue that pattern.
+
+   After the builders assemble `runtime.html`:
 
    ```
    FOR outer_iter IN 1..3:
@@ -1528,7 +1545,9 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
      #      AND its solution-proposer fixPlan entry threaded into the brief; re-run the composer to
      #      re-assemble; loop. (If solution-proposer errors, fall back to re-dispatching the drawer
      #      with the raw failures[] - the pre-proposer behaviour.)
-   IF not committed after 3: emit <decision-request id="cp_<family>_gate_<slotId>">  Accept / Push deeper / Replace  ; honour the pick.
+   IF not committed after 3: put <decision-request id="cp_<family>_gate_<slotId>">  Accept / Push deeper / Replace
+     in your FINAL MESSAGE (gate node runs cannot render chat cards - the build-driver chat
+     relays the block verbatim and routes the pick back; see contract 2).
    ```
 
    **The HOST SHELL is inside the gate when the surface owns the whole app.** When the
@@ -1558,7 +1577,7 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
    must return ZERO hits; any hit FAILS the gate as a code fix routed to the shell (swap the src for
    a commissioned asset, never just delete the image).
 
-   **Top-level owns-surface deliverable - surface it on SUCCESS, not only on failure.** When the committed runtime IS what the user asked for (a standalone `owns-surface` dispatch, not a subsystem a parent orchestrator co-dispatched), do NOT silently mark it `done` after the gate passes: emit `<decision-request id="cp_<family>_final_<slotId>">` Approve / Tweak / Regenerate, then commit on approval - so a from-scratch build gets one human checkpoint instead of shipping unseen. A nested co-dispatch (the parent runs its own final gate on the composed surface the user actually sees) skips this. Honour the delegation carve-out: "just build, no questions" → commit without the checkpoint.
+   **Top-level owns-surface deliverable - surface it on SUCCESS, not only on failure.** When the committed runtime IS what the user asked for (a standalone `owns-surface` dispatch, not a subsystem a parent orchestrator co-dispatched), do NOT silently mark it `done` after the gate passes: emit `<decision-request id="cp_<family>_final_<slotId>">` Approve / Tweak / Regenerate, then commit on approval - so a from-scratch build gets one human checkpoint instead of shipping unseen. (Running as the qa_gate node: put the block in your final message for the chat to relay, per contract 2.) A nested co-dispatch (the parent runs its own final gate on the composed surface the user actually sees) skips this. Honour the delegation carve-out: "just build, no questions" → commit without the checkpoint.
 
    This single gate **replaces both** the old per-drawer lens loop (`3 lenses × ~5 drawers × ≤5 iters` = up to ~75 lens runs/slot, judging fragments out of context) **and** the old bolted-on Step-8 QA. They are now ONE pass on the assembled result (~3-9 lens runs/slot, judged in context) - deep AND in-place. The old failure mode it kills: *per-drawer lens scores passing while the assembled iframe is broken or ugly.* Write `workflow/<family>-plan.json` with `qa: {{ checked: [...], blocked: [...], ranAt: '...' }}`; relay any `qa.blocked[]` to the user verbatim.
 

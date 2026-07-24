@@ -394,6 +394,36 @@ KINDS = {
                 ),
             },
 
+            # ── The chained final-gate node (family-agnostic) ─────────────────
+            "qa_gate_": {
+                "outputsRoot": "source/{prototype}/QUALITY_REPORT.json",
+                "completion": {"requires": [
+                    "container node committed (outputs.lensVerdict='pass' + runStatus done; "
+                    "container-less families like scrapbook commit the gate node ITSELF with "
+                    "outputs.lensVerdict) OR a <decision-request> emitted in the final "
+                    "message at the iteration cap",
+                ]},
+                "notes": (
+                    "THE final QA+lens gate as a chained leaf node - one per container, "
+                    "family-agnostic (qa_gate_<slotId>; slotId = simId / imId / nxId / "
+                    "gameId / sbId / polishId / msId / sceneId). Every experience "
+                    "orchestrator scaffolds it right AFTER the container and the "
+                    "build-driver includes it as the LAST auto-chain link, so the gate "
+                    "runs at fresh leaf context instead of the chat's accumulated one. "
+                    "Playbook = capabilities.py 'Three contracts' contract 3, verbatim: "
+                    "/__qa/run on the container, promised-vs-shipped diff vs research.md, "
+                    "the lens trio AS NODES (craft/aesthetic/concept_lens_<slotId>_<iter> "
+                    "via addNodes + POST /run - NEVER Task), solution-proposer for code "
+                    "fixes, re-dispatch of responsible builders, then the container "
+                    "commit. At the iteration cap (or the owns-surface success "
+                    "checkpoint) it puts the cp_<family>_gate_ / cp_<family>_final_ "
+                    "<decision-request> in its FINAL MESSAGE for the chat to relay - "
+                    "node runs cannot render chat gate cards. Supersedes the "
+                    "chat-inline gate loop (legacy fallback only when this node's "
+                    "dispatch errors)."
+                ),
+            },
+
             # ── Multi-draft pick checkpoints (mirror cp_remix_pick) ───────────
 
             # ── Family release gates (mirror cp_coherence_gate) ───────────────

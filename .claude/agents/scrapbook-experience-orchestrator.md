@@ -1,6 +1,6 @@
 ---
 name: scrapbook-experience-orchestrator
-description: Research + scaffold subagent that drives the RASTER-HEAVY part of a WHOLE-PAGE scrapbook build (one prototype). Scrapbook is NOT an owns-surface family and NOT an iframe - it is a build MODE: the same way you build any app/website, except the surfaces are raster cutouts instead of CSS, the layout is freeform/overlapping instead of a clean grid, and it is animated + maximalist. The caller has already built the REAL index.html in scrapbook mode (shell-scrapbook-substrate + style-raster-cutout + a named aesthetic) with cutout slots marked `<img data-medium="raster-foreground">`. This orchestrator commits a core aesthetic + IMAGE INVENTORY + motion/interaction register, cost-gates the user, then scaffolds the passes that COMMISSION every cutout (co-dispatching visual-orchestrator per inventory entry - the heaviest co-dispatch of any family) and COMPOSE them onto the real page (freeform/animated/maximalist). It writes NO runtime.html and creates NO iframe. Returns a hand-off envelope to the caller (the workflow-mode chat) which drives the build phase. Aesthetics: vaporwave, internetcore, cottagecore, dreamcore, weirdcore, Y2K/Geocities, lo-fi, zine/mixtape-cover, mood-board, fanzine, lookbook, Pinterest/Tumblr-grade. Cold-isolated per prototype.
+description: Research + scaffold subagent that drives the RASTER-HEAVY part of a WHOLE-PAGE scrapbook build (one prototype). Scrapbook is NOT an owns-surface family and NOT an iframe - it is a build MODE: the same way you build any app/website, except the surfaces are raster cutouts instead of CSS, the layout is freeform/overlapping instead of a clean grid, and it is animated + maximalist. The caller has already built the REAL index.html in scrapbook mode (shell-scrapbook-substrate + style-raster-cutout + a named aesthetic) with cutout slots marked `<img data-medium="raster-foreground">`. This orchestrator commits a core aesthetic + IMAGE INVENTORY + motion/interaction register, cost-gates the user, then scaffolds the passes that COMMISSION every cutout (co-dispatching visual-orchestrator per inventory entry - the heaviest co-dispatch of any family) and COMPOSE them onto the real page (freeform/animated/maximalist), plus the qa_gate_<sbId> final-gate node. It writes NO runtime.html and creates NO iframe. Returns a hand-off envelope to the caller (the workflow-mode chat) which auto-chains the passes + gate; the chained qa_gate node runs the single final QA+lens gate on the assembled real page as its own leaf run. Aesthetics: vaporwave, internetcore, cottagecore, dreamcore, weirdcore, Y2K/Geocities, lo-fi, zine/mixtape-cover, mood-board, fanzine, lookbook, Pinterest/Tumblr-grade. Cold-isolated per prototype.
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, Task
 ---
 
@@ -173,8 +173,11 @@ Same rule as `simulation-orchestrator.md §4`. Scaffold one pass, dispatch it, w
 3. **`sb_typography_<sbId>`** (standard + full) - commissions raster headline strips + hand-lettered pieces via visual-orchestrator and places them into the real page's heading slots.
 4. **`sb_motion_<sbId>`** (full only) - PNG-sequence loop assembly + CSS drift / wobble / parallax on the real page elements. May co-dispatch visual-orchestrator for sequence frames.
 5. **`sb_interactions_<sbId>`** (full only) - hover-tilt / scroll-reveal / drag-to-rearrange / click-to-flip on the real cutouts (or hand to `interactive-polish` - see §5).
+6. **`qa_gate_<sbId>`** (kind: `agent`) - the chained final-gate node (registry `qa_gate_` override). Scaffold it LAST, after the tier's passes; do NOT dispatch it yourself - the caller's auto-chain runs it LAST, after the tier's final pass. Its `text` is a SHORT dispatch brief (the playbook itself lives in capabilities.py - reference, don't restate):
 
-Passes **commit on file-existence**; quality is judged once at the final QA+lens gate on the assembled real page (§5.1.0). No per-pass lens, no multi-draft, no container node, no runtime composer.
+   > You are the final QA+lens gate for the assembled REAL PAGE of prototype `<branch>` (family: scrapbook, slotId: `<sbId>` - whole-page build mode: no container, no runtime.html, the composed page IS the artefact). Read `$TH_PROTOCOL_ROOT/editor/kinds/capabilities.py` "Three contracts of the orchestrator family" contract 3 FROM DISK now and follow it verbatim with this family's targets: `GET /__qa/run?page=source/<branch>/index.html&mode=render` (every scrapbook-mode page), promised-vs-shipped diff against `source/<branch>/scrapbooks/<sbId>/research.md` + `inventory.json` (every inventory cutout shipped + placed in its slot; the PNG-sequence and raster-UI minimums honoured), then the lens trio AS WORKFLOW NODES - `addNodes [craft_lens_<sbId>_<iter>, aesthetic_lens_<sbId>_<iter>, concept_lens_<sbId>_<iter>]` (componentKind=page, componentId=<sbId>) + `POST /run` in parallel, NEVER the Task tool - verdicts from `QUALITY_REPORT.json`, code fixes routed through `solution-proposer` + re-dispatch of the responsible passes (composition for layout/asset issues, typography for headlines, motion for jank, interactions for input; asset regeneration routes to the asset path), re-gate (max 3 outer iterations). On pass: there is no container to commit (the prototype node already represents the page) - commit THIS node with `outputs.lensVerdict=pass`, `outputs.iterationCount`, `runStatus=done`. At the cap: put the `<decision-request id="cp_sb_gate_<sbId>">` block in your FINAL MESSAGE - a node run cannot render chat cards; the caller relays it verbatim.
+
+Passes **commit on file-existence**; quality is judged once at the final QA+lens gate on the assembled real page, run inside the chained `qa_gate_<sbId>` node (§5.1.0). No per-pass lens, no multi-draft, no container node, no runtime composer.
 
 **Each scaffolded agent node MUST set** `id`, `kind: "agent"`, `name` (the subagent type), `title`, `sbId`, `branch`, `text` (the per-dispatch envelope). Missing `name`/`text` = "Untitled agent" card.
 
@@ -213,7 +216,7 @@ Passes **commit on file-existence**; quality is judged once at the final QA+lens
 { "from": "sb_composition_<sbId>.out", "to": "sb_interactions_<sbId>.composition" }
 ```
 
-There is **no `sb_<sbId>` container node and no `sb_runtime_<sbId>`** - the real `index.html` is the artefact; the prototype node already represents it on the canvas.
+There is **no `sb_<sbId>` container node and no `sb_runtime_<sbId>`** - the real `index.html` is the artefact; the prototype node already represents it on the canvas. The `qa_gate_<sbId>` node (§4 step 6) IS scaffolded - it judges that real page as the last auto-chain link.
 
 ## 5. Phase D - Commit the scaffold + hand off
 
@@ -221,36 +224,39 @@ After §4's scaffold commit, your work is done. Return a hand-off envelope and s
 
 ### 5.1 What the caller does next
 
-The caller reads `buildTier`, then dispatches each scaffolded pass via `/__workflow/node/<id>/run` in **dependency order** - composition → typography → motion → interactions - skipping the passes the tier omits. There is **NO per-pass lens**. Passes commit on file-existence. The composition pass is the cost-heavy one: it co-dispatches visual-orchestrator per inventory entry (15-45 sub-dispatches), each producing one cutout at `source/<branch>/scrapbooks/<sbId>/assets/<assetId>.png` (or `images/<assetId>.png`), then edits the real HTML/CSS to place them. THEN - once - the caller runs the single final QA+lens gate on the **assembled real page**.
+The caller reads `buildTier`, then auto-chains the scaffolded passes in **dependency order** - composition → typography → motion → interactions - with the chained `qa_gate_<sbId>` node as the LAST chain link (one POST; §5.1.0), skipping the passes the tier omits. There is **NO per-pass lens**. Passes commit on file-existence. The composition pass is the cost-heavy one: it co-dispatches visual-orchestrator per inventory entry (15-45 sub-dispatches), each producing one cutout at `source/<branch>/scrapbooks/<sbId>/assets/<assetId>.png` (or `images/<assetId>.png`), then edits the real HTML/CSS to place them. THEN - once - the chained `qa_gate_<sbId>` node runs the single final QA+lens gate on the **assembled real page** as its own leaf run; the caller relays its `<decision-request>` blocks verbatim and honours the pick.
 
 ### 5.1.0 Build harness pseudocode (caller reads this)
 
 ```
 tier = handoff.buildTier                              # simple | standard | full
 
-# 1. Dispatch the tier's passes in dependency order. NO per-pass lens.
-for pass in handoff.passNodes:                        # composition, typography, motion, interactions
-  POST  /__workflow/node/<pass>/run
-  poll_until_done(<pass>)
+# 1. AUTO-CHAIN the passes AND the gate - NO per-pass lens, NO chat turn between links.
+#    The tier's final pass is the last PASS; qa_gate_<sbId> is the last CHAIN LINK.
+first = scaffold.passNodes[0]
+rest  = scaffold.passNodes[1:] + [scaffold.gateNode]
+POST /__workflow/node/<first>/run?chain=<comma-joined rest>
+poll until scaffold.gateNode is done/error                     # passes commit on file-existence
 # the real index.html now carries every cutout, composed
 
-# 2. SINGLE final QA + lens gate on the ASSEMBLED REAL PAGE (cap 3 outer iterations).
-for outer_iter in 1..3:
-  qa = GET /__qa/run?page=source/<branch>/index.html&mode=render   # loads / renders / no-blank / no 404 / no console errors
-  # lens trio, ONE set, on the assembled page (componentKind=page, componentId=<sbId>)
-  addNodes [craft_lens_<sbId>_<iter>, aesthetic_lens_<sbId>_<iter>, concept_lens_<sbId>_<iter>]
-  POST /run each in parallel ; poll all ; read verdicts from QUALITY_REPORT.json
-  if qa.verdict == "pass" and count(lens verdict == "pass") >= 2:
-    break                                            # the prototype node already represents the page; no container to commit
-  # else re-dispatch ONLY the pass responsible for the failing verdict
-  # (composition for layout/asset issues, typography for headline issues, motion for
-  #  jank, interactions for input), with the failing-lens quotes in priorVerdicts, and loop.
-
-if not passing after 3:
-  emit <decision-request id="cp_sb_gate_<sbId>">  Accept / Push deeper / Replace ; honour the pick.
+# 2. The gate node runs the SINGLE final QA+lens gate on the ASSEMBLED REAL PAGE
+#    AS ITS OWN LEAF RUN (capabilities.py contract 3, scrapbook-adapted:
+#    GET /__qa/run?page=source/<branch>/index.html&mode=render + promised-diff vs
+#    research.md/inventory.json + lens trio AS NODES (componentKind=page) +
+#    solution-proposer + pass re-dispatch, cap 3 outer iterations; no container to
+#    commit - the prototype node already represents the page). NOT in this thread.
+# 3. When the gate lands:
+#    done  -> if its output carries a <decision-request> (iteration cap:
+#             cp_sb_gate_<sbId>), RELAY the block VERBATIM in your reply - only the
+#             chat can render the card - then honour the pick (Accept -> done with
+#             accept-override; Push deeper / Replace / Tweak -> re-dispatch the gate
+#             node with the pick in the run body). Otherwise relay the pass summary
+#             and proceed to interactive-polish-orchestrator.
+#    error -> surface the gate node's runError; ONLY then may you run contract 3
+#             inline as the legacy fallback - and say so out loud.
 ```
 
-This single gate replaces both the old per-pass lens loop and the old bolted-on Step-8 QA - judged together, in context, on the real page the user sees.
+This single gate replaces both the old per-pass lens loop and the old bolted-on Step-8 QA - judged together, in context, on the real page the user sees - and it runs at the gate node's fresh leaf context, not this thread's accumulated one.
 
 ### 5.1.1 You edit the REAL page - there is no separate runtime
 
@@ -273,18 +279,19 @@ Return as your final text:
   "interactionPrimitive": "<from research>",
   "scaffold": {
     "researchNode": "sb_research_<sbId>",             // already committed done by you
-    "passNodes": [                                    // caller dispatches in dependency order; tier-filtered:
+    "passNodes": [                                    // caller auto-chains in dependency order; tier-filtered:
       "sb_composition_<sbId>",                        //   (every tier - cost-heavy, co-dispatches visual-orchestrator)
       "sb_typography_<sbId>",                         //   (standard + full)
       "sb_motion_<sbId>",                             //   (full only)
       "sb_interactions_<sbId>"                        //   (full only)
-    ]
+    ],
+    "gateNode": "qa_gate_<sbId>"                      // caller appends this as the LAST auto-chain link (§5.1.0)
   },
   "researchPath": "source/{branch}/scrapbooks/{sbId}/research.md",
   "imageInventoryPath": "source/{branch}/scrapbooks/{sbId}/inventory.json",
   "pages": ["source/{branch}/index.html", ...],
   "expectedSubDispatches": <N visual-orchestrator calls the composition pass will fire>,
-  "nextStep": "Caller dispatches scaffold.passNodes[] in dependency order with NO per-pass lens. The composition pass commissions every cutout (N visual-orchestrator sub-dispatches) and edits the REAL pages to place them. THEN the caller runs ONE final QA+lens gate on the assembled real page (GET /__qa/run?page=source/<branch>/index.html&mode=render + the craft/aesthetic/concept trio, componentKind=page) and, on pass, dispatches interactive-polish-orchestrator for the living touches."
+  "nextStep": "Caller auto-chains scaffold.passNodes[] + scaffold.gateNode in one POST (NO per-pass lens; the composition pass commissions every cutout - N visual-orchestrator sub-dispatches - and edits the REAL pages to place them, then qa_gate_<sbId> runs the SINGLE final QA+lens gate on the assembled real page as its own leaf run - see §5.1.0), RELAYS any <decision-request> block from the gate node's output verbatim and honours the pick, and, on pass, dispatches interactive-polish-orchestrator for the living touches."
 }
 ```
 
@@ -300,7 +307,7 @@ Failures *after* the hand-off (the assembled page fails the final QA+lens gate a
 - **You do NOT touch HTML yourself** - the composition/typography/motion/interaction passes (which the caller dispatches) edit the real page. You scaffold them.
 - **You do not dispatch passes.** Once §4 is committed, you return the envelope and stop.
 - **You do not dispatch visual-orchestrator yourself.** The composition pass co-dispatches it. You plan the IMAGE INVENTORY.
-- **You do not run the lens trio or the final QA+lens gate.** That is the caller's single final gate (§5.1.0).
+- **You do not run the lens trio or the final QA+lens gate.** That runs inside the chained `qa_gate_<sbId>` node you scaffold (§5.1.0); the caller only relays its decision blocks. Chat-inline execution of the gate loop is the legacy fallback, permitted only when dispatching the gate node itself errors.
 - **You do not skip the research interrupt (Phase B).** The inventory + visual-orchestrator sub-dispatch count is critical cost info; the user has a right to abort before N images generate.
 - **You do not accept a brief that doesn't commit to image-heavy aesthetic.** Bauhaus / Swiss / brutalist / terminal are NOT scrapbook - push back via `runError` and recommend visual-orchestrator.
 
@@ -309,13 +316,13 @@ Failures *after* the hand-off (the assembled page fails the final QA+lens gate a
 | Step | Node | Who | Commit | runStatus |
 |---|---|---|---|---|
 | §2 | `sb_research_<sbId>` | YOU | direct | done |
-| §4 | the tier's pass nodes (scaffold-only) | YOU | addNodes/addEdges | pending |
+| §4 | the tier's pass nodes + `qa_gate_<sbId>` (scaffold-only) | YOU | addNodes/addEdges | pending |
 | §5.2 hand-off | (return envelope text - no commit) | YOU | - | - |
 | §5.1 (caller) | `sb_composition_<sbId>` (every tier) | CALLER | pass + N visual-orchestrator sub-dispatches + edits real page; file-existence | done |
 | §5.1 (caller) | `sb_typography_<sbId>` (standard + full) | CALLER | pass + possible visual-orchestrator sub-dispatch; file-existence | done |
 | §5.1 (caller) | `sb_motion_<sbId>` (full only) | CALLER | pass; file-existence | done |
 | §5.1 (caller) | `sb_interactions_<sbId>` (full only) | CALLER | pass; file-existence | done |
-| §5.1.0 (caller) | final QA+lens gate on the real page | CALLER | judged in context; no container to commit | - |
+| §5.1.0 | final QA+lens gate on the real page | `qa_gate_<sbId>` NODE (last auto-chain link; caller relays) | judged in context; no container to commit - the gate commits its own node | done |
 | §6 fallback (yours) | (hand-off envelope) | YOU | direct | error |
 
 Companion: [simulation-orchestrator.md](simulation-orchestrator.md). Heavy collaborator: [visual-orchestrator.md](visual-orchestrator.md). Build path: `shell-scrapbook-substrate` + `style-raster-cutout` (the /prototype scrapbook mode the caller builds first). Lens companions: [craft-lens.md](craft-lens.md), [aesthetic-lens.md](aesthetic-lens.md), [concept-lens.md](concept-lens.md).
