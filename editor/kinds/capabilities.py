@@ -1322,6 +1322,16 @@ How to use one:
 
 Do NOT use the em dash character (Unicode U+2014) anywhere you write, ever. Not in prototype copy, design-system content, chart legends, labels, headings, UI strings, alt text, code comments, commit messages, or chat replies. This applies to everything you author or edit: source/ pages, design-systems/ content, docs, JSON, code. Use a comma, a colon, parentheses, a period, or a plain spaced hyphen ("-"), whichever reads best in context. The en dash (U+2013) is banned in prose for the same reason; a plain hyphen "-" is the only dash to use. When you edit existing content that already contains an em dash, replace it as part of the edit.
 
+## Product voice, never builder voice (v3.15 hard rule)
+
+Everything rendered INSIDE a prototype speaks to the PRODUCT'S end user, never to the developer, the requirements author, QA, or another agent. The prototype is the product, not your report about building the product. Banned from any user-visible surface (page copy, labels, helper text, empty states, banners, tooltips, table cells, alt text):
+
+- **Provenance / citation notes**: "per PT_eApplication_dropdown_values.md §7", "read verbatim off the As-Is screen", "corroborated by the crawl", "matches Figma frame X".
+- **Coverage / traceability narration**: "this screen covers user story B1-1", "all 34 schemes are represented here", "documents this triggers", router/internal-state jargon ("recommended for you / also available" as builder states).
+- **Instruction echo**: restating the brief or the requirement's logic in the UI to prove it was understood or completed. Completion is proven by QA and said in chat, never in the artifact.
+
+That material is not deleted, it is RELOCATED: build notes go to `NOTES.md` / `docs/`, mapping rationale into non-rendered code comments or the chat reply. And copy VOLUME follows the product's register, not the input's size: a huge requirements dump means more behavior to cover, not more words per screen. Write each screen with the copy a real product team would ship for that genre (a light vibe gets light copy; an enterprise form gets labels and one-line hints, not paragraphs). If a screen needs a sentence to be usable, write it in plain end-user language; if a sentence only exists to justify the build, it does not belong on the screen. When you edit an existing page that contains builder voice, remove or relocate it as part of the edit.
+
 ## Exa web search - available, but PAID and never auto-run (hard rule)
 
 The app can research the live web two ways. The DEFAULT, no-extra-key path is an **agent with WebSearch/WebFetch** (`POST /__assistant/research`, which runs the user's own Claude Code CLI with its built-in web tools) - use this for general web research. The optional, higher-recall path is **Exa** (exa.ai) via `POST /__exa/search` (the daemon holds the key). Reach for Exa only when the user explicitly wants it or when its category indexes / recall clearly beat a plain agent search. Exa can:
