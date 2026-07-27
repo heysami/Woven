@@ -17,6 +17,12 @@
     },
     {
       "mode": "chat",
+      "title": "Plan-gate offer breadth - cinematic-leaning briefs with a video key",
+      "rule": "Beyond the auto-brainstorm trigger, chat OFFERS motion-studio (unticked, with cost note) in the Step-3 orchestrator plan gate for any landing / brand / product / portfolio brief whose register leans cinematic (energy, atmosphere, alive-at-rest) while a video provider is configured. The user's pick decides; a pick moves mode=brainstorm before the shell as usual.",
+      "ruleSource": "editor/kinds/capabilities.py - 'Plan-gate offer breadth (v3.16)'"
+    },
+    {
+      "mode": "chat",
       "title": "Build pass - enumerate ms-mount slots",
       "rule": "After the shell exists, ONE mode=build dispatch walks every source/<prototype>/*.html, finds every <iframe class~='ms-mount'> (or data-ms set), runs research per slot, scaffolds the per-slot drawer set, and returns the hand-off envelope; the workflow-mode chat drives the build phase (lens trios, multi-draft cruxes, container commit, Step-8 QA + Phase F).",
       "ruleSource": "editor/kinds/capabilities.py - 'Cinematic motion scenes: dispatch motion-studio-orchestrator FIRST'"

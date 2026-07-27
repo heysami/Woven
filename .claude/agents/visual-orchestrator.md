@@ -212,7 +212,7 @@ The key rule: **the vibe is a constraint on every visual choice**, not just on t
 
 ## Steps (do all of these MECHANICALLY, no creative deliberation)
 
-1. **Enumerate** every visual slot in source HTML/CSS/JS via grep - `<img>` tags, `background-image` rules, `<canvas>`, inline `<svg>`, **`<video>` tags + `.mp4` / `.webm` / `.mov` file references**, declared shader / particle / lottie / 3d / video / motion paths, AND every emoji-bearing element from Step 1 above. ONE grep pass per file type, not a per-slot read.
+1. **Enumerate** every visual slot in source HTML/CSS/JS via grep - `<img>` tags, `background-image` rules, `<canvas>`, inline `<svg>`, **`<video>` tags + `.mp4` / `.webm` / `.mov` file references**, **`motion-placeholder` / `data-motion` / `data-medium="video"` marked elements** (the step-4 shell authors time-based slots this way), declared shader / particle / lottie / 3d / video / motion paths, AND every emoji-bearing element from Step 1 above. ONE grep pass per file type, not a per-slot read.
 2. **Classify** each slot's medium per the table (raster-foreground / raster-photo / vector-icon / vector-mark / shader / particle-2d / particle-gl / lottie / 3d / video / motion / or `none`). Use the classifier table + the **time-based-medium decision rule** below - don't second-guess.
 3. **Extract intent (one line)** from the slot itself. Priority order:
     - `data-intent="…"` attribute on the slot element
@@ -384,7 +384,7 @@ For any slot that needs MOTION (i.e. wouldn't be served by a still image), pick 
 | **Decorative ambient motion** - drifting particles, snowfall, sparkles, low-density falling shapes | `particle-2d` |
 | **High-density GPU motion** - fluid sims, dense particle fields, shader-driven generative motion | `particle-gl` or `shader` |
 
-Default for a `<video>` HTML tag with no existing source file: **`video`** if the brief implies photographic/filmic realism, else **`motion`**. When in doubt, pick `motion` - it never blocks on an API key, plays in-browser, and can be rendered to a real video later via Hyperframes.
+Default for a `<video>` HTML tag with no existing source file: **`video`** if the brief implies photographic/filmic realism, else **`motion`**. Tie-break on the key, not on caution: **when a video provider shows `✓ KEY` in your preamble's live-availability block, prefer `video` for anything camera-native** - real materials, light, atmosphere, weather, filmic texture, product-in-the-world shots - and keep `motion` for authored graphics (typography, UI-narrative, vector scenes). Only when NO video provider is wired does `motion` become the doubt-default (it never blocks on an API key, plays in-browser, and can be rendered to a real video later via Hyperframes). Habitually resolving every hero to `motion` with a key wired is the bias that kept the video lane at zero use - the generation cost gate already ran at the orchestrator plan gate, so don't re-litigate it per slot.
 
 The **structural rule** from the protocol doc: replace "what visuals did you notice?" with "enumerate this objective grep-derivable set, then classify every member with a medium and a reason." Your output is NOT "here are the visuals I found" - it is "here are the N candidate slots I enumerated; here's the medium + pipeline decision per slot; here's the rejection log for slots that resolved to `none`."
 
