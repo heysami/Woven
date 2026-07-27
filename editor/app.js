@@ -17226,10 +17226,12 @@ function recoverGateMarkup(body) {
   let out = null;
   // 1. JSON envelope with the real markup escaped inside a "raw" string
   //    field (rollercoastertycoon 2026-07-24: {"questions": [], "raw":
-  //    "<direction-options ...>"}). The envelope is usually TRUNCATED - the
-  //    escaped close tag inside the string ends the outer regex match early -
-  //    so the raw field is pulled by regex, never JSON.parse.
-  const rawM = /"raw"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(body);
+  //    "<direction-options ...>"}), or inside the orchestrator hand-off's
+  //    "gateBlock" field pasted verbatim into chat (cameraexp / monitoring
+  //    2026-07-27). The envelope is often TRUNCATED - the escaped close tag
+  //    inside the string ends the outer regex match early - so the field is
+  //    pulled by regex, never JSON.parse.
+  const rawM = /"(?:raw|gateBlock)"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(body);
   if (rawM && rawM[1] && rawM[1].indexOf("<") !== -1) {
     out = unescapeJsonStringy(rawM[1]);
   } else if (/<(opt|option)\b[^>]*\\"/.test(body)) {
@@ -17240,13 +17242,13 @@ function recoverGateMarkup(body) {
     out = decodeEntitiesLite(body);
   }
   if (!out) return null;
-  const w = /<(?:direction-options|decision-request|question-form)\b([^>]*)>([\s\S]*)/i.exec(out);
+  const w = /<(direction-options|decision-request|question-form)\b([^>]*)>([\s\S]*)/i.exec(out);
   if (w) {
-    const rest = w[2] || "";
+    const rest = w[3] || "";
     const innerClose = rest.search(/<\/(?:direction-options|decision-request|question-form)>/i);
-    return { attrs: w[1] || "", body: innerClose === -1 ? rest : rest.slice(0, innerClose) };
+    return { tag: w[1].toLowerCase(), attrs: w[2] || "", body: innerClose === -1 ? rest : rest.slice(0, innerClose) };
   }
-  return { attrs: "", body: out };
+  return { tag: null, attrs: "", body: out };
 }
 
 // Flat-option parser shared by <decision-request> bodies and the flat
@@ -17317,6 +17319,30 @@ function parseProseDecisionOptions(body) {
     { value: "approve", label: "Approve", preview: null, group: null, checked: false, needsInput: false },
     { value: "steer",   label: "Steer",   preview: null, group: null, checked: false, needsInput: true  },
     { value: "reject",  label: "Reject",  preview: null, group: null, checked: false, needsInput: false },
+  ];
+}
+
+// Last-ditch answerability net: every fallback failed, so the card WOULD
+// degrade to raw tag soup with nothing to click - an unanswerable gate that
+// stalls the build until a human reads chat.jsonl (the failure mode this
+// whole suite exists to prevent). Instead render the body as prose with the
+// wrapper tags stripped, plus a minimal one-option Reply card on the same
+// [decision:<id>] submit protocol (needsInput opens the typed-reply panel,
+// so the user can still answer "approve" / steer in their own words - the
+// resuming agent reads it like any other gate answer). Never returns null:
+// this is the floor under every parser above it.
+function lastDitchGateSegments(rawText, id, prompt) {
+  const prose = String(rawText || "")
+    .replace(/<\/?(?:decision-request|direction-options|question-form)\b[^>]*>/gi, "")
+    .trim();
+  return [
+    { kind: "text", text: prose },
+    { kind: "decision", decision: {
+      id: id || gateSlug(prompt || "") || "gate-reply",
+      prompt: prompt || "This gate card did not parse into buttons. Reply to answer it (e.g. \"approve\").",
+      options: [{ value: "reply", label: "Reply", preview: null, group: null, checked: false, needsInput: true }],
+      multiSelect: false, groupBy: null, picksPerGroup: null, minPicks: 1, maxPicks: 1,
+    }, raw: rawText },
   ];
 }
 
@@ -17603,7 +17629,22 @@ function parseQuestionForms(text) {
   for (const [fa, fb] of fenceRanges) {
     const inner = text.slice(fa, fb).replace(/^```[^\n]*\n?/, "").replace(/\n?```\s*$/, "");
     const gm = /^\s*<(direction-options|decision-request|question-form)\b([^>]*)>([\s\S]*?)<\/\1>\s*$/i.exec(inner);
-    if (!gm) continue;
+    if (!gm) {
+      // Fenced ENVELOPE recovery: the agent pasted the orchestrator's whole
+      // JSON hand-off into a ```json fence - the card sits escaped inside
+      // its "gateBlock" string field (cameraexp / monitoring 2026-07-27).
+      // recoverGateMarkup unescapes it; promote the fence only when the
+      // recovered markup actually parses into options.
+      const rec = recoverGateMarkup(inner);
+      if (rec && rec.tag && rec.tag !== "question-form") {
+        const rkind = rec.tag === "direction-options" ? "direction" : "decision";
+        const ropts = rkind === "direction" ? parseDirectionOpts(rec.body) : parseDecisionOptions(rec.body);
+        if (ropts.length > 0) {
+          found.push({ kind: rkind, m: { index: fa, 0: text.slice(fa, fb), 1: rec.attrs, 2: rec.body } });
+        }
+      }
+      continue;
+    }
     const tag = gm[1].toLowerCase();
     const kind = tag === "direction-options" ? "direction"
                : tag === "decision-request"  ? "decision" : "form";
@@ -17680,7 +17721,7 @@ function parseQuestionForms(text) {
       if (form && Array.isArray(form.questions)) {
         segments.push({ kind: "form", form: { id, ...form }, raw: c.m[0] });
       } else {
-        segments.push({ kind: "text", text: c.m[0] });
+        segments.push(...lastDitchGateSegments(c.m[0], id, null));
       }
     } else if (c.kind === "decision") {
       // Parse <decision-request id="..."> body containing
@@ -17749,7 +17790,7 @@ function parseQuestionForms(text) {
           groupBy, picksPerGroup, minPicks, maxPicks,
         }, raw: c.m[0] });
       } else {
-        segments.push({ kind: "text", text: c.m[0] });
+        segments.push(...lastDitchGateSegments(c.m[0], id, promptOut));
       }
     } else if (c.kind === "direction") {
       // <direction-options id="..." prompt="..."> ... </direction-options>
@@ -17800,7 +17841,7 @@ function parseQuestionForms(text) {
             minPicks: 1, maxPicks: jg.multiSelect ? null : 1,
           }, raw: c.m[0] });
         } else {
-          segments.push({ kind: "text", text: c.m[0] });
+          segments.push(...lastDitchGateSegments(c.m[0], id, prompt));
         }
       }
     } else if (c.kind === "init" || c.kind === "handoff") {
