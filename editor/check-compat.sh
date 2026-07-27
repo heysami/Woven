@@ -27,7 +27,7 @@ echo "checking editor/ against Python $VER ($PY)"
 # 2) import every daemon module - catches RUNTIME 3.10 features (annotation
 #    evaluation of PEP 604 unions is the recurring one). __main__ guard means
 #    importing serve does NOT start the server.
-( cd "$DIR" && for m in prompts exports shares live git_ops serve; do
+( cd "$DIR" && for m in prompts exports shares live git_ops voicekit serve; do
     "$PY" -c "import $m" || { echo "FAIL: 'import $m' breaks on $VER"; exit 1; }
   done )
 

@@ -171,6 +171,16 @@ async function serveApi(request, env, token, sub) {
   if (request.method === "POST" && sub === "/api/comments") {
     return queueComment(request, env, token);
   }
+  // Runtime voice needs the owner's daemon (their ElevenLabs key lives there,
+  // never here). The prototype's own helper falls back to the browser's speech
+  // synthesis on any non-200, so this is a quiet degrade, not a breakage.
+  if (sub.startsWith("/api/voice/")) {
+    return json(503, {
+      error: "Voice is unavailable right now - the share owner is offline.",
+      voiceOffline: true,
+      fallback: "speechSynthesis",
+    });
+  }
   return json(503, {
     error: "This action is unavailable right now - the share owner is offline. The prototype itself keeps working.",
   });

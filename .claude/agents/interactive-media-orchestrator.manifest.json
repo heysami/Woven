@@ -38,7 +38,9 @@
       "concept-lens"
     ]
   },
-  "skills": [],
+  "skills": [
+    "audio-gen"
+  ],
   "nodeKinds": {
     "container": [
       "interactive-media"

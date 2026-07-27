@@ -1,0 +1,432 @@
+{
+  "version": "2.0",
+  "library": "sound",
+  "sourceDir": "design-library/",
+  "totalEntries": 12,
+  "decisionTree": {
+    "aesthetic-pixel-arcade": {
+      "default": "arcade-juice",
+      "alternatives": [
+        "retro-console-chip"
+      ]
+    },
+    "aesthetic-rgb-gamer": {
+      "default": "arcade-juice",
+      "alternatives": []
+    },
+    "aesthetic-y2k-memphis-loud": {
+      "default": "arcade-juice",
+      "alternatives": []
+    },
+    "aesthetic-persona-5-heist-pop": {
+      "default": "arcade-juice",
+      "alternatives": []
+    },
+    "aesthetic-luxury-cinematic-dark": {
+      "default": "cinematic-trailer",
+      "alternatives": []
+    },
+    "recipe-ai-foundry-dark": {
+      "default": "cinematic-trailer",
+      "alternatives": []
+    },
+    "aesthetic-cosmic-horizon": {
+      "default": "cinematic-trailer",
+      "alternatives": [
+        "tension-horror"
+      ]
+    },
+    "aesthetic-honkai-star-rail-polished-sf": {
+      "default": "cinematic-trailer",
+      "alternatives": []
+    },
+    "aesthetic-cyberpunk": {
+      "default": "cinematic-trailer",
+      "alternatives": []
+    },
+    "recipe-bento-marketing": {
+      "default": "corporate-clean",
+      "alternatives": []
+    },
+    "recipe-scientific-infra-marketing": {
+      "default": "corporate-clean",
+      "alternatives": []
+    },
+    "style-glassmorphism": {
+      "default": "corporate-clean",
+      "alternatives": []
+    },
+    "recipe-material-3": {
+      "default": "corporate-clean",
+      "alternatives": []
+    },
+    "recipe-linear-product-ui": {
+      "default": "corporate-clean",
+      "alternatives": [
+        "ui-minimal-feedback"
+      ]
+    },
+    "aesthetic-cottagecore": {
+      "default": "cozy-ambient",
+      "alternatives": [
+        "natural-field-recording"
+      ]
+    },
+    "recipe-warm-restraint": {
+      "default": "cozy-ambient",
+      "alternatives": []
+    },
+    "aesthetic-pixel-modern-cozy": {
+      "default": "cozy-ambient",
+      "alternatives": [
+        "playful-cartoon"
+      ]
+    },
+    "aesthetic-pastoral-serene": {
+      "default": "cozy-ambient",
+      "alternatives": []
+    },
+    "recipe-newspaper-of-record": {
+      "default": "documentary-narration",
+      "alternatives": []
+    },
+    "style-serif-warm-paper": {
+      "default": "documentary-narration",
+      "alternatives": []
+    },
+    "recipe-editorial-magazine": {
+      "default": "documentary-narration",
+      "alternatives": [
+        "museum-hush"
+      ]
+    },
+    "aesthetic-monochrome-tech-editorial": {
+      "default": "documentary-narration",
+      "alternatives": [
+        "ui-minimal-feedback"
+      ]
+    },
+    "aesthetic-vaporwave": {
+      "default": "lofi-focus",
+      "alternatives": []
+    },
+    "aesthetic-pc-98": {
+      "default": "lofi-focus",
+      "alternatives": []
+    },
+    "aesthetic-cassette-futurism": {
+      "default": "lofi-focus",
+      "alternatives": []
+    },
+    "aesthetic-y2k-myspace": {
+      "default": "lofi-focus",
+      "alternatives": []
+    },
+    "aesthetic-y2k-futurism": {
+      "default": "lofi-focus",
+      "alternatives": []
+    },
+    "aesthetic-sculptural-minimal": {
+      "default": "museum-hush",
+      "alternatives": []
+    },
+    "style-cream-humanist": {
+      "default": "museum-hush",
+      "alternatives": []
+    },
+    "aesthetic-dark-academia": {
+      "default": "museum-hush",
+      "alternatives": []
+    },
+    "recipe-neo-grotesque-portfolio": {
+      "default": "museum-hush",
+      "alternatives": []
+    },
+    "aesthetic-solarpunk": {
+      "default": "natural-field-recording",
+      "alternatives": []
+    },
+    "aesthetic-frutiger-eco": {
+      "default": "natural-field-recording",
+      "alternatives": []
+    },
+    "aesthetic-organic-overgrowth": {
+      "default": "natural-field-recording",
+      "alternatives": []
+    },
+    "aesthetic-bioluminescent-deep": {
+      "default": "natural-field-recording",
+      "alternatives": []
+    },
+    "aesthetic-positivity-kawaii": {
+      "default": "playful-cartoon",
+      "alternatives": []
+    },
+    "aesthetic-corporate-memphis": {
+      "default": "playful-cartoon",
+      "alternatives": []
+    },
+    "aesthetic-curly-girly": {
+      "default": "playful-cartoon",
+      "alternatives": []
+    },
+    "aesthetic-wacky-pomo": {
+      "default": "playful-cartoon",
+      "alternatives": []
+    },
+    "aesthetic-8-bit-generic": {
+      "default": "retro-console-chip",
+      "alternatives": []
+    },
+    "aesthetic-pixel-nes-mario": {
+      "default": "retro-console-chip",
+      "alternatives": []
+    },
+    "aesthetic-pixel-game-boy-mono": {
+      "default": "retro-console-chip",
+      "alternatives": []
+    },
+    "aesthetic-pixel-snes-jrpg": {
+      "default": "retro-console-chip",
+      "alternatives": []
+    },
+    "aesthetic-weirdcore": {
+      "default": "tension-horror",
+      "alternatives": []
+    },
+    "aesthetic-dreamcore": {
+      "default": "tension-horror",
+      "alternatives": []
+    },
+    "aesthetic-cottagegoth": {
+      "default": "tension-horror",
+      "alternatives": []
+    },
+    "style-restrained-hairline": {
+      "default": "ui-minimal-feedback",
+      "alternatives": []
+    },
+    "recipe-devtools-marketing": {
+      "default": "ui-minimal-feedback",
+      "alternatives": []
+    },
+    "aesthetic-swiss-modernist": {
+      "default": "ui-minimal-feedback",
+      "alternatives": []
+    }
+  },
+  "entries": {
+    "arcade-juice": {
+      "name": "Arcade juice",
+      "category": "game-juice",
+      "role": "feedback",
+      "roleAffinity": [
+        "feedback"
+      ],
+      "oneLine": "Loud, bright, escalating feedback where every action is rewarded and combos climb in pitch.",
+      "notForUseWhen": "Productivity tools, editorial reading, anything a visitor uses for more than a few minutes at a time.",
+      "pairsPrototypes": [
+        "aesthetic-pixel-arcade",
+        "aesthetic-rgb-gamer",
+        "aesthetic-y2k-memphis-loud",
+        "aesthetic-persona-5-heist-pop"
+      ],
+      "sourceFile": "design-library/sound-arcade-juice.md"
+    },
+    "cinematic-trailer": {
+      "name": "Cinematic trailer",
+      "category": "cinematic",
+      "role": "score",
+      "roleAffinity": [
+        "score"
+      ],
+      "oneLine": "Wide, slow, enormous. Sub-bass impacts, reverse swells and a voice that states the stakes.",
+      "notForUseWhen": "Dense working tools, long reading surfaces, anything a visitor revisits daily.",
+      "pairsPrototypes": [
+        "aesthetic-luxury-cinematic-dark",
+        "recipe-ai-foundry-dark",
+        "aesthetic-cosmic-horizon",
+        "aesthetic-honkai-star-rail-polished-sf",
+        "aesthetic-cyberpunk"
+      ],
+      "sourceFile": "design-library/sound-cinematic-trailer.md"
+    },
+    "corporate-clean": {
+      "name": "Corporate clean",
+      "category": "interface",
+      "role": "feedback",
+      "roleAffinity": [
+        "feedback"
+      ],
+      "oneLine": "Polished, tuned, optimistic. Glass and soft synth, all in one key, nothing rough.",
+      "notForUseWhen": "Anything with grit, irony, or a handmade register.",
+      "pairsPrototypes": [
+        "recipe-bento-marketing",
+        "recipe-scientific-infra-marketing",
+        "style-glassmorphism",
+        "recipe-material-3",
+        "recipe-linear-product-ui"
+      ],
+      "sourceFile": "design-library/sound-corporate-clean.md"
+    },
+    "cozy-ambient": {
+      "name": "Cozy ambient",
+      "category": "ambient",
+      "role": "ambient",
+      "roleAffinity": [
+        "ambient"
+      ],
+      "oneLine": "A warm indoor room with something quietly happening in it: rain on glass, a kettle settling, wool on wood.",
+      "notForUseWhen": "Urgency, competition, anything with a timer or a score.",
+      "pairsPrototypes": [
+        "aesthetic-cottagecore",
+        "recipe-warm-restraint",
+        "aesthetic-pixel-modern-cozy",
+        "aesthetic-pastoral-serene"
+      ],
+      "sourceFile": "design-library/sound-cozy-ambient.md"
+    },
+    "documentary-narration": {
+      "name": "Documentary narration",
+      "category": "spoken",
+      "role": "narration",
+      "roleAffinity": [
+        "narration"
+      ],
+      "oneLine": "A credible human explaining something they understand, over almost nothing.",
+      "notForUseWhen": "Games, playful brands, anything where the voice would be a character rather than a witness.",
+      "pairsPrototypes": [
+        "recipe-newspaper-of-record",
+        "style-serif-warm-paper",
+        "recipe-editorial-magazine",
+        "aesthetic-monochrome-tech-editorial"
+      ],
+      "sourceFile": "design-library/sound-documentary-narration.md"
+    },
+    "lofi-focus": {
+      "name": "Lo-fi focus",
+      "category": "ambient",
+      "role": "score",
+      "roleAffinity": [
+        "score"
+      ],
+      "oneLine": "A dusty looped beat with tape wobble, sitting far enough back that you can work over it.",
+      "notForUseWhen": "Serious editorial, memorials, anything where a beat would trivialise the subject.",
+      "pairsPrototypes": [
+        "aesthetic-vaporwave",
+        "aesthetic-pc-98",
+        "aesthetic-cassette-futurism",
+        "aesthetic-y2k-myspace",
+        "aesthetic-y2k-futurism"
+      ],
+      "sourceFile": "design-library/sound-lofi-focus.md"
+    },
+    "museum-hush": {
+      "name": "Museum hush",
+      "category": "ambient",
+      "role": "narration",
+      "roleAffinity": [
+        "narration"
+      ],
+      "oneLine": "The sound of a large quiet room with stone floors, and one measured voice standing in it.",
+      "notForUseWhen": "Anything commercial, urgent, or competing for attention.",
+      "pairsPrototypes": [
+        "aesthetic-sculptural-minimal",
+        "style-cream-humanist",
+        "aesthetic-dark-academia",
+        "recipe-neo-grotesque-portfolio",
+        "recipe-editorial-magazine"
+      ],
+      "sourceFile": "design-library/sound-museum-hush.md"
+    },
+    "natural-field-recording": {
+      "name": "Natural field recording",
+      "category": "ambient",
+      "role": "ambient",
+      "roleAffinity": [
+        "ambient"
+      ],
+      "oneLine": "An outdoor place captured honestly, with distance and weather in it, and no music at all.",
+      "notForUseWhen": "Interfaces that need clear discrete feedback, dense tools, anything indoors and urban.",
+      "pairsPrototypes": [
+        "aesthetic-solarpunk",
+        "aesthetic-frutiger-eco",
+        "aesthetic-organic-overgrowth",
+        "aesthetic-bioluminescent-deep",
+        "aesthetic-cottagecore"
+      ],
+      "sourceFile": "design-library/sound-natural-field-recording.md"
+    },
+    "playful-cartoon": {
+      "name": "Playful cartoon",
+      "category": "game-juice",
+      "role": "stinger",
+      "roleAffinity": [
+        "stinger"
+      ],
+      "oneLine": "Boings, pops and slide whistles. Every motion is exaggerated and every object is bouncy.",
+      "notForUseWhen": "Serious subjects, financial or medical surfaces, anything where a joke would undercut trust.",
+      "pairsPrototypes": [
+        "aesthetic-positivity-kawaii",
+        "aesthetic-corporate-memphis",
+        "aesthetic-curly-girly",
+        "aesthetic-wacky-pomo",
+        "aesthetic-pixel-modern-cozy"
+      ],
+      "sourceFile": "design-library/sound-playful-cartoon.md"
+    },
+    "retro-console-chip": {
+      "name": "Retro console chip",
+      "category": "game-juice",
+      "role": "feedback",
+      "roleAffinity": [
+        "feedback"
+      ],
+      "oneLine": "Square waves, triangle bass and one noise channel, with the voice limits of the hardware left intact.",
+      "notForUseWhen": "Modern product surfaces, anything where the retro reference would read as accidental rather than chosen.",
+      "pairsPrototypes": [
+        "aesthetic-8-bit-generic",
+        "aesthetic-pixel-nes-mario",
+        "aesthetic-pixel-game-boy-mono",
+        "aesthetic-pixel-snes-jrpg",
+        "aesthetic-pixel-arcade"
+      ],
+      "sourceFile": "design-library/sound-retro-console-chip.md"
+    },
+    "tension-horror": {
+      "name": "Tension horror",
+      "category": "cinematic",
+      "role": "ambient",
+      "roleAffinity": [
+        "ambient"
+      ],
+      "oneLine": "A room that is slightly wrong, held for too long, with almost nothing in it.",
+      "notForUseWhen": "Anything for a general audience without warning, onboarding, or a surface a visitor cannot leave quickly.",
+      "pairsPrototypes": [
+        "aesthetic-weirdcore",
+        "aesthetic-dreamcore",
+        "aesthetic-cottagegoth",
+        "aesthetic-cosmic-horizon"
+      ],
+      "sourceFile": "design-library/sound-tension-horror.md"
+    },
+    "ui-minimal-feedback": {
+      "name": "Minimal interface feedback",
+      "category": "interface",
+      "role": "feedback",
+      "roleAffinity": [
+        "feedback"
+      ],
+      "oneLine": "Short, dry, close-miked confirmations that tell you an action landed and then get out of the way.",
+      "notForUseWhen": "Games, marketing hype pages, anything that wants atmosphere or a bed.",
+      "pairsPrototypes": [
+        "style-restrained-hairline",
+        "recipe-linear-product-ui",
+        "recipe-devtools-marketing",
+        "aesthetic-swiss-modernist",
+        "aesthetic-monochrome-tech-editorial"
+      ],
+      "sourceFile": "design-library/sound-ui-minimal-feedback.md"
+    }
+  }
+}

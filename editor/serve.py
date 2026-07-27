@@ -96,6 +96,7 @@ import usertesting as _ut          # user testing mode - session recording regis
 import usertesting_gate as _ut_gate  # user testing gate delegate (/t/ testee, /r/ reviewer)
 import git_ops as _gitops    # git/GitHub backbone - deliberate commit/publish + fork/PR
 import providers as _providers  # host-side connect store for backend/db providers (Supabase, ...)
+import voicekit as _voicekit  # runtime voice core (dynamic TTS/STT) - daemon + share gate
 
 
 def _pick_port() -> int:
@@ -12211,6 +12212,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._usertesting_process(qs)
             if parsed.path == "/__transcribe":
                 return self._transcribe_op(qs)
+            if parsed.path == "/__voice/tts":
+                return self._voice_tts(qs)
+            if parsed.path == "/__voice/stt":
+                return self._voice_stt(qs)
             if parsed.path == "/__user_testing_config":
                 return self._user_testing_config_post()
             if parsed.path == "/__tasks/archive":
@@ -12557,6 +12562,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             return _live.host_events_stream(self, _qs_get(urllib.parse.parse_qs(parsed.query), "project") or "")
         if url_path == "/__live_cursors.js":
             return self._serve_live_cursors_js()
+        if url_path == "/__voice/status":
+            return self._reply(200, _voicekit.status())
+        if url_path == "/__voice/voices":
+            return self._reply(200, {"ok": True, "voices": _voicekit.curated_voices()})
+        if url_path == "/__woven-voice.js":
+            return self._serve_woven_voice_js()
         if url_path == "/__live_status":
             pid = _qs_get(urllib.parse.parse_qs(parsed.query), "project") or ""
             return self._reply(200, {"live": _live.project_has_live_session(pid)})
@@ -21842,6 +21853,88 @@ class H(http.server.SimpleHTTPRequestHandler):
         with contextlib.suppress(Exception):
             self.wfile.write(data)
 
+    # ── Runtime voice (dynamic TTS / STT for running prototypes) ────────────
+    # The runtime sibling of the baked audio-gen skill: whole-utterance mp3
+    # bytes straight back to the caller, no disk writes, no ?project=. The
+    # share-gate twin of these routes lives in shares.py (_voice_route) and
+    # both call the same editor/voicekit.py core.
+
+    def _voice_tts(self, qs):
+        try:
+            body = self._read_json_body(max_bytes=16 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        text = body.get("text") if isinstance(body, dict) else None
+        if not isinstance(text, str) or not text.strip():
+            return self._reply(400, {"error": "body must be {text, voice_id?, model_id?, voice_settings?}"})
+        text = text.strip()
+        cap = _voicekit.max_text_chars("local")
+        if len(text) > cap:
+            return self._reply(413, {"error": "text too long (max %d chars)" % cap})
+        ok, retry, reason = _voicekit.check_rate(
+            "local", self.client_address[0], time.time(),
+            _dt.date.today().isoformat(), chars=len(text))
+        if not ok:
+            return self._reply(429, {"error": reason, "retryAfterSeconds": retry})
+        try:
+            data, hit = _voicekit.tts_bytes(
+                text,
+                voice_id=body.get("voice_id"),
+                model_id=body.get("model_id"),
+                voice_settings=body.get("voice_settings"),
+            )
+        except _voicekit.VoiceKeyError:
+            return self._reply(503, {"error": "no ElevenLabs key configured - open Settings and paste your key",
+                                     "fallback": "speechSynthesis"})
+        except urllib.error.HTTPError as e:
+            detail = ""
+            with contextlib.suppress(Exception):
+                detail = e.read().decode("utf-8", "replace")[:2000]
+            return self._reply(502, {"error": "ElevenLabs error %s" % e.code, "detail": detail})
+        except Exception as e:
+            return self._reply(502, {"error": str(e)})
+        self.send_response(200)
+        self.send_header("Content-Type", "audio/mpeg")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("X-Voice-Cache", "hit" if hit else "miss")
+        self.end_headers()
+        with contextlib.suppress(Exception):
+            self.wfile.write(data)
+
+    def _voice_stt(self, qs):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if length <= 0:
+            return self._reply(411, {"error": "missing audio body (POST the recorded blob raw)"})
+        cap = _voicekit.max_stt_bytes("local")
+        if length > cap:
+            return self._reply(413, {"error": "audio too large (max %d bytes)" % cap})
+        ok, retry, reason = _voicekit.check_rate(
+            "local", self.client_address[0], time.time(),
+            _dt.date.today().isoformat(), kind="stt")
+        if not ok:
+            return self._reply(429, {"error": reason, "retryAfterSeconds": retry})
+        data = self.rfile.read(length)
+        return self._reply(200, _voicekit.stt_text(data, self.headers.get("Content-Type")))
+
+    def _serve_woven_voice_js(self):
+        # The runtime voice helper. Prototypes normally carry their own BAKED
+        # copy (source/<slug>/woven-voice.js, so hosted snapshots keep it);
+        # this route serves the canonical file for editor-side use + copying.
+        try:
+            with open(os.path.join(INSTALL_ROOT, "editor", "woven-voice.js"), "rb") as f:
+                data = f.read()
+        except OSError:
+            return self._reply(404, {"error": "not found"})
+        self.send_response(200)
+        self.send_header("Content-Type", "application/javascript; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        with contextlib.suppress(Exception):
+            self.wfile.write(data)
+
     # GET /__logic_guide - the Logic graph authoring guide. MODULAR: with no
     # query it returns the SHORT index (the map + section list); with
     # ?section=<name> it returns that focused module (dataflow / catalogue /
@@ -23162,6 +23255,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             patch = {}
             if isinstance(body, dict) and "emailGate" in body:
                 patch["emailGate"] = bool(body.get("emailGate"))
+            # Runtime voice opt-in: lets share viewers spend the owner's
+            # ElevenLabs credits through the gate's /api/voice/* routes
+            # (rate-capped in voicekit). Off by default.
+            if isinstance(body, dict) and "voiceEnabled" in body:
+                patch["voiceEnabled"] = bool(body.get("voiceEnabled"))
             if isinstance(body, dict) and isinstance(body.get("label"), str) and body["label"].strip():
                 patch["label"] = body["label"].strip()[:120]
             if patch:
@@ -30600,6 +30698,13 @@ if __name__ == "__main__":
                 flush=True,
             )
     _install_shutdown_hooks()
+    # Runtime voice core - wired before share boot so the daemon's /__voice/*
+    # routes work even when share mode fails to start.
+    _voicekit.init(
+        _resolve_provider_key, _elevenlabs_generate_audio,
+        _ut_whisper_local, _ut_whisper_cloud,
+        _whisper_find_bin, _whisper_status,
+    )
     # ── Share mode boot (see editor/shares.py) ──────────────────────────
     # The gate is a SECOND listener on the first free port after PORT; it
     # serves only /s/<token>/* routes. Cloudflare quick tunnels point at it
@@ -30629,6 +30734,9 @@ if __name__ == "__main__":
         )
         _ut_gate.register_on_finalize(_ut_transcribe_async)
         _shares.register_usertesting(_ut_gate.GATE)
+        # Runtime voice - the gate's /api/voice/* routes call the same
+        # voicekit core the daemon's /__voice/* routes use.
+        _shares.register_voice(_voicekit)
         threading.Thread(target=_shares.restore_active_tunnels, daemon=True,
                          name="share-tunnel-restore").start()
         # Backfill preview thumbnails for any existing shares that lack one

@@ -2781,6 +2781,101 @@ KINDS = {
         ),
     },
 
+    # ── sound-design (container) ─────────────────────────────────────────
+    # The AUDIO sibling of the art-direction pre-passes, and the only one that
+    # both DIRECTS and COMMISSIONS: it writes pe_sound_<surfaceId> enrichment
+    # nodes AND generates the real .mp3 assets through p_snd_/s_snd_/a_snd_
+    # trios on the audio-gen skill. See `sound-orchestrator.md §5`.
+    "sound-design": {
+        "title":        "Sound design",
+        "category":     "container",
+        "inputs": {
+            "projectId":     {"type": "text",   "userEditable": False, "required": True},
+            "registerId":    {"type": "text",   "userEditable": False,
+                               "doc": "Library register committed for the project (design-library/sound-<registerId>.md)."},
+            "totalSurfaces": {"type": "number", "userEditable": False,
+                               "doc": "Sound-bearing surfaces enriched (one pe_sound_<surfaceId> node each)."},
+            "assetCount":    {"type": "number", "userEditable": False,
+                               "doc": "Generated .mp3 assets committed under source/<branch>/audio/."},
+            "planOnly":      {"type": "boolean", "userEditable": False,
+                               "doc": "True when the user approved direction but declined generation at the cost gate."},
+            "boundTo":       {"type": "object", "userEditable": False,
+                               "doc": "{documentSetId: <branch>}."},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": (
+            "pe_sound_<surfaceId> enrichments + p_snd_/s_snd_/a_snd_ asset trios "
+            "+ snd_compose_<projectId> (the soundscape glue drawer)"
+        ),
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.enrichmentNodes non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "Soundscape container. Commissioned audio lands in "
+            "source/<branch>/audio/ and the glue that plays it in a plain "
+            "prototype is soundscape.js (one script tag per page). "
+            "game-feedback-author, the narrative-experience ambient drawer and "
+            "im-output-audio read pe_sound_<surfaceId> by id pattern; no edges "
+            "connect them. Degrade-gracefully: when this container is absent "
+            "those drawers fall back to their own WebAudio synth paths. "
+            "planOnly runs commit direction with null assetPaths so the synth "
+            "fallbacks still get a coherent register at zero spend."
+        ),
+    },
+
+    # ── voice-interaction (container) ────────────────────────────────────
+    # RUNTIME voice, not baked assets: the prototype speaks text computed at
+    # run time and can listen to the user, through the daemon's /__voice/*
+    # routes (share-scoped twins at /s/<token>/api/voice/*). Distinct from
+    # sound-design, which bakes .mp3 files ahead of time.
+    # See `voice-interaction-orchestrator.md §5`.
+    "voice-interaction": {
+        "title":        "Voice interaction",
+        "category":     "container",
+        "inputs": {
+            "projectId":   {"type": "text",   "userEditable": False, "required": True},
+            "voiceId":     {"type": "text",   "userEditable": False,
+                             "doc": "ElevenLabs voice cast for the prototype's persona."},
+            "surfaces":    {"type": "number", "userEditable": False,
+                             "doc": "Voice-worthy surfaces wired (speak triggers + mic entry points)."},
+            "fallbackOnly":{"type": "boolean", "userEditable": False,
+                             "doc": "True when no ElevenLabs key was wired and the layer ships on browser speech alone."},
+            "boundTo":     {"type": "object", "userEditable": False,
+                             "doc": "{documentSetId: <branch>}."},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": True,
+        "graphExtensionScope": "vx_voice_<slug> build nodes (the voice UX layer per prototype page set)",
+        "runStatusFlow": ["queued", "done"],
+        "completion":   {"requires": [
+            "outputs.files non-empty",
+        ]},
+        "pauseAfter":   False,
+        "notes": (
+            "Runtime voice container. The layer ships as two baked files next "
+            "to the prototype HTML: woven-voice.js (the helper, copied from "
+            "editor/woven-voice.js so hosted snapshots keep it) and "
+            "voice-layer.js (this project's triggers + persona). Speaking on a "
+            "SHARED prototype spends the owner's ElevenLabs credits, so it is "
+            "off per share until the owner flips Voice on, and rate-capped "
+            "either way. No key wired means fallbackOnly: the same layer runs "
+            "on the browser's built-in speech synthesis."
+        ),
+    },
+
     # ── creative-visual-promotion (container) ────────────────────────────
     # Post-pass container - flat <img> slots promoted into creative
     # compositions (text-as-mask, asset-bleed, clip-path, drop-cap, bullets,

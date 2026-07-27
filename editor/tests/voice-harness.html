@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>woven-voice harness</title>
+<style>
+  body { font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; margin: 24px; max-width: 720px; }
+  button { font: inherit; padding: 6px 12px; margin-right: 8px; }
+  pre { background: #f4f4f5; padding: 12px; overflow-x: auto; }
+</style>
+</head>
+<body>
+<h1>woven-voice harness</h1>
+<p>
+  Manual + automated fixture for <code>editor/woven-voice.js</code>. Serve the repo root
+  statically (the <code>repo-root-static</code> preview config) and open
+  <code>/editor/tests/voice-harness.html</code>. With no daemon behind it, every capability
+  probe fails and the helper must fall back to browser speech rather than break. With the
+  daemon running, the same page exercises the real <code>/__voice/*</code> routes.
+  Results accumulate on <code>window.__results</code> for headless assertions.
+</p>
+
+<button id="speak">Speak</button>
+<button id="listen">Listen</button>
+<button id="mute">Toggle mute</button>
+<pre id="log"></pre>
+
+<script src="../woven-voice.js"></script>
+<script>
+(function () {
+  var R = window.__results = { events: [] };
+  var out = document.getElementById("log");
+  function log(m) { out.textContent += m + "\n"; }
+
+  R.helperLoaded = !!window.WovenVoice;
+  if (!R.helperLoaded) { log("FAIL: helper did not load"); return; }
+  R.version = window.WovenVoice.version;
+  R.base = window.WovenVoice.base;
+  log("helper v" + R.version + " base=" + R.base);
+
+  ["speakstart", "speakend", "fallback", "error", "listenstart", "listenend"].forEach(function (e) {
+    window.WovenVoice.on(e, function (d) {
+      R.events.push(e + ":" + (d.engine || d.to || ""));
+      log("event " + e + " " + JSON.stringify(d));
+    });
+  });
+
+  // Capability probe. No daemon -> both tiers degrade to whatever the browser has.
+  window.WovenVoice.probe().then(function (p) {
+    R.probe = p;
+    log("probe " + JSON.stringify(p));
+  });
+
+  // Speaking BEFORE any gesture must park in the queue: no throw, no playback.
+  window.WovenVoice.speak("parked utterance").then(function (r) {
+    R.preGestureResult = r;
+    log("pre-gesture utterance resolved " + JSON.stringify(r));
+  });
+  setTimeout(function () {
+    R.stillParkedAfter400ms = (R.preGestureResult === undefined);
+    log("still parked after 400ms: " + R.stillParkedAfter400ms);
+  }, 400);
+
+  document.getElementById("speak").addEventListener("click", function () {
+    window.WovenVoice.speak("hello from the harness").then(function (r) {
+      R.gestureSpeak = r;
+      log("gesture speak resolved " + JSON.stringify(r));
+    });
+  });
+  document.getElementById("listen").addEventListener("click", function () {
+    window.WovenVoice.listen({ maxMs: 4000 }).then(function (r) {
+      R.listen = r;
+      log("listen resolved " + JSON.stringify(r));
+    });
+  });
+  document.getElementById("mute").addEventListener("click", function () {
+    window.WovenVoice.setMuted(!window.WovenVoice.isMuted());
+    R.muted = window.WovenVoice.isMuted();
+    log("muted " + R.muted);
+  });
+
+  log("harness ready");
+})();
+</script>
+</body>
+</html>

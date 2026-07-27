@@ -1,0 +1,59 @@
+{
+  "id": "sound-orchestrator",
+  "label": "Sound",
+  "tagline": "Plans the soundscape, commissions sound effects / narration / music, and wires it in",
+  "version": "v1.0",
+  "defaultEnabled": true,
+  "directionImpact": "fills-slots",
+  "subagentName": "sound-orchestrator",
+  "playbookPath": ".claude/agents/sound-orchestrator.md",
+  "description": "The AUDIO sibling of the art-direction pre-passes, and the only one that both DIRECTS and COMMISSIONS. Surveys the build for sound-bearing surfaces (UI feedback events, ambient beds, narration passages, music moments), commits one register + voice cast from docs/research/sound-library.index.json (ui-minimal-feedback / arcade-juice / cozy-ambient / cinematic-trailer / documentary-narration / museum-hush / retro-console-chip / natural-field-recording / lofi-focus / corporate-clean / tension-horror / playful-cartoon), authors the narration scripts itself, STOPS at a mandatory cost gate (cp_snd_gate) before any ElevenLabs spend, then generates the real .mp3 assets through p_snd_/s_snd_/a_snd_ trios on the audio-gen skill into source/<branch>/audio/. Commits pe_sound_<surfaceId> enrichment nodes that game-feedback-author, the narrative-experience ambient drawer and im-output-audio read by id pattern, and hands back one soundscape-composer drawer that wires the audio into a plain prototype with a single script tag per page. Supports a plan-only mode that commits direction at zero spend so synth fallbacks stay coherent. Fails closed when no ElevenLabs key is wired. Cold-isolated per project.",
+  "hardRule": {
+    "header": "Soundscape: dispatch sound-orchestrator AFTER the source scaffold, BEFORE the experience families",
+    "body": "The audio sibling of the photography / illustration art-direction rules, with one difference: it does not only direct, it GENERATES. Sound is what makes a game feel built rather than sketched, an immersive narration feel inhabited, a simulation feel physical. Treat it as polish that is load-bearing, not decoration.\n\n- **Gate A - an ElevenLabs key is wired.** `GET /__capabilities` must show elevenlabs in the wired providers. Without it the orchestrator fails closed and the experience families use their own WebAudio synth paths. Do not dispatch it just to watch it abort; tell the user their key is missing instead.\n- **Gate B - a sound-bearing surface exists.** Any approved game-experience / simulation / narrative-experience / interactive-media / motion-studio surface AUTO-RECOMMENDS it (pre-tick it at the orchestrator-plan gate). On any other project type, dispatch it when the user asks for sound, narration, voiceover or music, when they name a register, or when the brief's sensoryTargets.audio commits to a felt sound.\n\nWhen both gates pass:\n\n```\nTask(subagent_type: \"sound-orchestrator\",\n     description: \"Plan and commission the project soundscape\",\n     prompt: \"<envelope per sound-orchestrator.md §1 - projectId, branch, committedAesthetic, familiesPresent, explicitDirection, sensoryTargets, antiPatterns, artContract>\")\n```\n\nIt surveys the sound surfaces, commits a register + voice cast, STOPS at a `cp_snd_gate_<projectId>` decision-request so the user approves the spend (relay that card verbatim), generates the approved assets into `source/<branch>/audio/`, commits `pe_sound_<surfaceId>` enrichment nodes, and hands back a `snd_compose_<projectId>` builder plus a `qa_gate_snd_<projectId>` gate for you to chain-run.\n\n**Dispatch it BEFORE the game / narrative / interactive-media orchestrators** so their drawers find the enrichments; dispatching it after leaves those families inventing their own uncoordinated audio.\n\n- ❌ Hand-write `<audio>` tags or ad-hoc WebAudio in chat when the gates pass - the composer drawer owns the glue, one script tag per page.\n- ❌ Let each family drawer invent its own audio direction when `pe_sound_<surfaceId>` exists - they read it first.\n- ❌ Confuse it with voice-interaction-orchestrator: this bakes .mp3 files ahead of time, that one makes the prototype speak text computed at run time."
+  },
+  "triggers": [
+    {
+      "mode": "chat",
+      "title": "Soundscape pass (after the source scaffold, before the experience families)",
+      "rule": "After source is scaffolded and the orchestrator-plan roster is locked, dispatch sound-orchestrator IF an ElevenLabs key is wired (GET /__capabilities providerAvailability) AND (an approved game / simulation / narrative / interactive-media / motion-studio surface exists OR the user explicitly asked for sound, narration, voiceover or music OR the brief commits an audio sensory target). Games, simulations and immersive pieces auto-recommend it at the plan gate. It stops at a cost gate before spending; relay that decision card verbatim. Dispatch it BEFORE the experience families so their drawers read its pe_sound_<surfaceId> enrichments. If the gates fail it returns runStatus:error and the families fall back to their synth paths.",
+      "ruleSource": ".claude/agents/sound-orchestrator.manifest.json - hardRule 'Soundscape: dispatch sound-orchestrator AFTER the source scaffold, BEFORE the experience families'"
+    }
+  ],
+  "dispatches": {
+    "research": [],
+    "components": [
+      "soundscape-composer"
+    ],
+    "collaborators": [
+      "game-experience-orchestrator",
+      "narrative-experience-orchestrator",
+      "interactive-media-orchestrator"
+    ],
+    "lenses": []
+  },
+  "skills": [
+    "audio-gen"
+  ],
+  "nodeKinds": {
+    "container": [
+      "sound-design"
+    ],
+    "agent_overrides": [
+      "pe_sound_*",
+      "snd_*",
+      "cp_snd_*",
+      "qa_gate_snd_*"
+    ],
+    "trios_scaffolded": [
+      "p_snd_<assetId>",
+      "s_snd_<assetId>",
+      "a_snd_<assetId>"
+    ]
+  },
+  "documents": {
+    "designDoc": "docs/research/sound-library.md",
+    "policy": "docs/research/sound-library.index.json",
+    "calibration": null
+  }
+}

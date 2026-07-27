@@ -1,0 +1,49 @@
+{
+  "id": "voice-interaction-orchestrator",
+  "label": "Voice interaction",
+  "tagline": "Makes the prototype speak text computed at run time, and listen back",
+  "version": "v1.0",
+  "defaultEnabled": true,
+  "directionImpact": "fills-slots",
+  "subagentName": "voice-interaction-orchestrator",
+  "playbookPath": ".claude/agents/voice-interaction-orchestrator.md",
+  "description": "The RUNTIME sibling of sound-orchestrator. Where sound-orchestrator bakes .mp3 assets ahead of time, this orchestrator builds the voice UX layer of a running prototype: speaking text nobody knew at build time (what the user typed, what just changed, what the app computed) and listening to the user. Surveys the built prototype for voice-worthy surfaces and classifies each as speak-on-demand, speak-on-event or a conversational loop, commits a voice UX design (persona cast from the shared sound-library voice map, speak-trigger map with queue / interrupt / coalesce policy, mic flow with denial fallback, fallback copy), gates the design and its per-utterance cost with the user, then dispatches one voice-ux-author drawer that bakes woven-voice.js plus a project-specific voice-layer.js into the prototype and wires the affordances. Speech runs through the daemon's /__voice/tts and /__voice/stt (share-scoped twins at /s/<token>/api/voice/*), so keys never reach the browser. Degrades by design rather than aborting: no ElevenLabs key ships the same layer on the browser's speechSynthesis, no transcription engine hides the mic affordance. Runs LATE, after the core build and visual passes. Cold-isolated per prototype.",
+  "hardRule": {
+    "header": "Runtime voice: dispatch voice-interaction-orchestrator when the prototype itself should speak or listen",
+    "body": "Voice as STRUCTURE, not as an asset. The dividing line against sound-orchestrator is what the words are: a narrated intro that is identical every visit is a baked .mp3 and belongs to sound-orchestrator; anything the prototype has to say about what just happened belongs here. A brief can want both.\n\n- **Trigger A - explicit request.** \"make it talk\", \"read the results aloud\", \"add a voice assistant\", \"let me dictate\", \"voice control\", \"narrate what changes\".\n- **Trigger B - the brief commits to spoken interaction.** An assistant, a hands-free / eyes-busy context (driving, kitchen, workshop), a language tool, an accessibility-first surface. Dispatch even when the user did not use the word voice.\n- **Trigger C - the interesting output is dynamic text** where hearing it lands differently from reading it.\n\nThe key is a SOFT gate, not a hard one. `GET /__voice/status` reports tts and stt availability; with no ElevenLabs key the orchestrator builds the same layer on the browser's own speech synthesis and says so at its design gate. Never silently skip voice because a key is missing - tell the user what they would gain by wiring one.\n\n```\nTask(subagent_type: \"voice-interaction-orchestrator\",\n     description: \"Design and build the prototype's voice layer\",\n     prompt: \"<envelope per voice-interaction-orchestrator.md §1 - projectId, branch, prototypeSlug, committedAesthetic, explicitDirection, sensoryTargets, voiceStatus, soundRegister>\")\n```\n\nIt runs LATE (after the core build and the visual passes, alongside or after polish, before final QA), surveys the voice-worthy surfaces, stops at a `cp_vx_gate_<projectId>` decision-request covering the design AND the per-utterance cost (relay it verbatim), then hands back a `vx_voice_<slug>` builder plus a `qa_gate_vx_<projectId>` gate for you to chain-run.\n\nWhen it lands, tell the user both surprising truths: the first spoken line needs a click or keypress first (browsers block audio before a gesture), and a SHARED prototype speaks with real voices only after they switch Voice on for that share (it spends their ElevenLabs credits, so it is off by default and rate-capped when on).\n\n- ❌ Hand-wire `fetch('/__voice/tts')` in chat - the baked woven-voice.js already solves endpoint resolution, share paths, queueing, the gesture unlock and fallback tiering.\n- ❌ Bake .mp3 files for text that changes at run time - that is what this orchestrator exists to avoid.\n- ❌ Request the microphone at page load. The permission prompt belongs to a button the user pressed."
+  },
+  "triggers": [
+    {
+      "mode": "chat",
+      "title": "Runtime voice layer (LATE - after the core build and visual passes)",
+      "rule": "After the prototype is built and the visual passes are done, dispatch voice-interaction-orchestrator when the user asked for speech or voice control, when the brief commits to spoken interaction (assistant, hands-free context, language tool, accessibility-first surface), or when the prototype's interesting output is dynamic text worth hearing. The ElevenLabs key is a SOFT gate: without one it ships the same layer on the browser's speechSynthesis and says so at its design gate, so never skip it silently for a missing key. It stops at a design + cost decision card; relay that verbatim. Fixed narration / sound effects / music beds are sound-orchestrator's job, not this one's.",
+      "ruleSource": ".claude/agents/voice-interaction-orchestrator.manifest.json - hardRule 'Runtime voice: dispatch voice-interaction-orchestrator when the prototype itself should speak or listen'"
+    }
+  ],
+  "dispatches": {
+    "research": [],
+    "components": [
+      "voice-ux-author"
+    ],
+    "collaborators": [
+      "sound-orchestrator",
+      "interactive-polish-orchestrator"
+    ],
+    "lenses": []
+  },
+  "skills": [],
+  "nodeKinds": {
+    "container": [
+      "voice-interaction"
+    ],
+    "agent_overrides": [
+      "vx_*",
+      "cp_vx_*",
+      "qa_gate_vx_*"
+    ]
+  },
+  "documents": {
+    "designDoc": "docs/research/sound-library.md",
+    "calibration": null
+  }
+}

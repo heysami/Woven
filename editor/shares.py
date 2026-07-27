@@ -48,6 +48,7 @@ serve.py wiring (see "share mode" section there):
 from __future__ import annotations  # keep annotations 3.9-safe (daemon runs system py)
 
 import base64
+import datetime as _dt
 import hashlib
 import http.server
 import json
@@ -2677,6 +2678,23 @@ def register_usertesting(gate):
     global _UT
     _UT = gate
 
+# Runtime voice - late-bound like live/usertesting. serve.py calls
+# register_voice(voicekit) at boot; the gate's /s/<token>/api/voice/* routes
+# then reach the SAME TTS/STT core the daemon's /__voice/* routes use, so a
+# shared or hosted prototype can speak. None -> voice disabled at the gate
+# (viewers fall back to the browser's own speech synthesis).
+#
+# SPEND NOTE: gate requests carry no guest-key context, so the owner's
+# ElevenLabs key is what pays. That is deliberate and is why every voice
+# route is gated on the share's own voiceEnabled opt-in AND on voicekit's
+# "hosted" rate profile (per-request char cap, per-minute cap, per-share
+# daily character budget).
+_VOICE = None
+
+def register_voice(voicekit):
+    global _VOICE
+    _VOICE = voicekit
+
 
 def gate_serve_project_file(handler, project_root, prototype, sub):
     """Serve ONE whitelisted prototype / design-system file for `sub` shaped
@@ -2876,6 +2894,99 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         except Exception:
             pass
 
+    def _send_audio(self, body, *, cache_hit=False):
+        """Send in-memory mp3 bytes. Explicit Content-Length (never chunked) so
+        the utterance survives the tunnel + worker hop intact."""
+        self.send_response(200)
+        self.send_header("Content-Type", "audio/mpeg")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Voice-Cache", "hit" if cache_hit else "miss")
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except Exception:
+            pass
+
+    # ── runtime voice (share-scoped twin of the daemon's /__voice/*) ──────
+    def _voice_route(self, rec, sub):
+        """POST /s/<token>/api/voice/tts | /stt. Returns True once handled.
+
+        Three gates, in order: the module must be wired, the SHARE must have
+        voice switched on by its owner, and the request must fit voicekit's
+        hosted rate profile. Any miss replies JSON so the client helper can
+        drop to its browser-speech tier instead of breaking."""
+        if _VOICE is None:
+            self._send_json(503, {"error": "voice is not available on this install",
+                                  "fallback": "speechSynthesis"})
+            return True
+        if not rec.get("voiceEnabled"):
+            self._send_json(403, {"error": "voice is not enabled for this share",
+                                  "fallback": "speechSynthesis"})
+            return True
+        token = rec.get("token") or ""
+        ip = self.client_address[0] if self.client_address else "?"
+        today = _dt.date.today().isoformat()
+        if sub == "/api/voice/tts":
+            try:
+                body = self._read_json_body(max_bytes=8 * 1024)
+            except ValueError as e:
+                self._send_json(400, {"error": str(e)})
+                return True
+            text = body.get("text")
+            if not isinstance(text, str) or not text.strip():
+                self._send_json(400, {"error": "body must be {text, voice_id?}"})
+                return True
+            text = text.strip()
+            cap = _VOICE.max_text_chars("hosted")
+            if len(text) > cap:
+                self._send_json(413, {"error": "text too long (max %d chars)" % cap})
+                return True
+            ok, retry, reason = _VOICE.check_rate(
+                "hosted", token + "|" + ip, time.time(), today,
+                chars=len(text), budget_key=token)
+            if not ok:
+                self._send_json(429, {"error": reason, "retryAfterSeconds": retry})
+                return True
+            # A viewer may only pick from the curated voice list; anything
+            # else falls back to the default rather than letting a stranger
+            # aim the owner's key at an arbitrary (possibly costlier) voice.
+            vid = body.get("voice_id")
+            if not (isinstance(vid, str) and _VOICE.is_curated_voice(vid)):
+                vid = None
+            try:
+                data, hit = _VOICE.tts_bytes(text, voice_id=vid)
+            except _VOICE.VoiceKeyError:
+                self._send_json(503, {"error": "the share owner has no voice key configured",
+                                      "fallback": "speechSynthesis"})
+                return True
+            except Exception as e:
+                self._send_json(502, {"error": "voice generation failed", "detail": str(e)[:300]})
+                return True
+            self._send_audio(data, cache_hit=hit)
+            return True
+        if sub == "/api/voice/stt":
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                n = 0
+            cap = _VOICE.max_stt_bytes("hosted")
+            if n <= 0:
+                self._send_json(411, {"error": "missing audio body"})
+                return True
+            if n > cap:
+                self._send_json(413, {"error": "audio too large (max %d bytes)" % cap})
+                return True
+            ok, retry, reason = _VOICE.check_rate(
+                "hosted", token + "|" + ip, time.time(), today, kind="stt")
+            if not ok:
+                self._send_json(429, {"error": reason, "retryAfterSeconds": retry})
+                return True
+            raw = self.rfile.read(n)
+            self._send_json(200, _VOICE.stt_text(raw, self.headers.get("Content-Type")))
+            return True
+        return False
+
     def _read_json_body(self, max_bytes=64 * 1024):
         try:
             n = int(self.headers.get("Content-Length") or 0)
@@ -3032,6 +3143,19 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
             return self._send_json(200, {"links": _links_for_viewer(rec),
                                          "sync": sync_status_get(rec.get("project") or ""),
                                          "daemon": tree_version()})
+        # Runtime voice capability probe - the client helper reads this to
+        # decide between real voices and the browser's own speech synthesis.
+        if sub == "/api/voice/status":
+            if _VOICE is None or not rec.get("voiceEnabled"):
+                return self._send_json(200, {"ok": True, "tts": False, "stt": "none",
+                                             "enabled": False})
+            st = dict(_VOICE.status())
+            st["enabled"] = True
+            return self._send_json(200, st)
+        if sub == "/api/voice/voices":
+            if _VOICE is None or not rec.get("voiceEnabled"):
+                return self._send_json(200, {"ok": True, "voices": []})
+            return self._send_json(200, {"ok": True, "voices": _VOICE.curated_voices()})
         # Screen-flow data for the viewer's Flows view - the editor's frames/
         # arrows model + position sidecar, served verbatim as JS. 404 (not an
         # error) when the project has no editor data; the viewer just hides
@@ -3165,6 +3289,10 @@ class GateHandler(http.server.BaseHTTPRequestHandler):
         # Multiplayer transport share: only /live routes; no review surface.
         if rec.get("liveOnly"):
             return self._send_json(404, {"error": "not found"})
+        # Runtime voice - handled BEFORE the generic 64KB JSON read below
+        # (an STT body is a raw audio blob, and TTS owns its own error shapes).
+        if sub.startswith("/api/voice/") and self._voice_route(rec, sub):
+            return
         root = self._project_root(rec)
         if root is None:
             return self._send_json(500, {"error": "project unavailable"})

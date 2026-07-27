@@ -45,6 +45,7 @@ LIBS = [
     {"prefix": "material", "name": "material",     "id_key": "materialId", "out": "docs/research/material-library.index.json"},
     {"prefix": "motion",   "name": "motion-scene", "id_key": "techniqueId", "out": "docs/research/motion-scene-library.index.json"},
     {"prefix": "shader",   "name": "shader",       "id_key": "shaderId",    "out": "docs/research/shader-library.index.json"},
+    {"prefix": "sound",    "name": "sound",        "id_key": "registerId",  "out": "docs/research/sound-library.index.json"},
 ]
 
 

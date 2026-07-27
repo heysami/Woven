@@ -48,6 +48,17 @@ priorVerdicts:   []
 === END ENVELOPE ===
 ```
 
+## 2.5 Committed sound direction, when it exists
+
+If sound-orchestrator ran on this project it left a `pe_sound_<imId>` node in the workflow carrying the project's committed sonic register, its loudness plan, and (unless the run was plan-only) real generated clips.
+
+```bash
+curl -fsS "$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID" \\
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps([n for n in d.get('nodes',[]) if n.get('id')=='pe_sound_<imId>'], indent=2))"
+```
+
+You are still a SYNTH drawer - your job is live, parameter-driven sound, not clip playback. But when this node exists, shape that synth to the committed register rather than inventing a parallel one: take `outputs.loudness` as your gain budget verbatim, let `outputs.register` steer your timbre and envelope choices, and optionally decode a clip from `outputs.sfxPalette[].assetPath` as a sample source when a one-shot suits the mapping better than an oscillator. When the node is absent, proceed exactly as this playbook describes below.
+
 ## 3. Hard requirements
 
 ### 3.1 AudioContext creation gated behind user gesture (block: craft)

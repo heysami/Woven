@@ -24998,6 +24998,7 @@ function SharesLanding({ onCountChange }) {
                       : "Snapshot upload failed - " + (s.hostedError || "press Update to retry")}
                   >${s.hostedStatus === "uploading" ? "hosting…" : s.hostedStatus === "hosted" ? "hosted" : "hosting failed"}</span>`}
                   ${s.emailGate && html`<span className="shares-chip" title="Visitors must leave a name + email to comment">email gate</span>`}
+                  ${s.voiceEnabled && html`<span className="shares-chip" title="This prototype can speak with real voices for visitors - each utterance spends your ElevenLabs credits (rate-capped)">voice</span>`}
                 </div>
               </div>
               <div className="shares-row-comments" title=${`${cc.open || 0} open · ${cc.done || 0} done · ${cc.archived || 0} archived`}>
@@ -25018,6 +25019,12 @@ function SharesLanding({ onCountChange }) {
                   title=${s.emailGate ? "Switch to open commenting (name only)" : "Require name + email to comment"}
                   onClick=${() => op(s.id, "update", { emailGate: !s.emailGate })}
                 >${s.emailGate ? "Gate: email" : "Gate: open"}</button>
+                <button className="shares-btn" disabled=${isBusy}
+                  title=${s.voiceEnabled
+                    ? "Turn off real voices for visitors - the prototype falls back to the browser's built-in speech"
+                    : "Let this shared prototype speak with real voices. Each utterance spends your ElevenLabs credits, capped per visitor and per day."}
+                  onClick=${() => op(s.id, "update", { voiceEnabled: !s.voiceEnabled })}
+                >${s.voiceEnabled ? "Voice: on" : "Voice: off"}</button>
                 <button className="shares-btn shares-btn-danger" disabled=${isBusy}
                   title="Delete the share - kills the tunnel and revokes the link (comments are kept in the project)"
                   onClick=${async () => { if (await uiConfirm(`Delete share "${s.label}"? The link stops working immediately.`)) op(s.id, "delete"); }}
