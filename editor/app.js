@@ -26106,6 +26106,10 @@ function ProjectsLanding({ info, projects, onReload }) {
                   <input
                     className="landing-filter"
                     placeholder="Filter by id or label…"
+                    name="th-landing-filter"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck=${false}
                     value=${filter}
                     onInput=${e => setFilter(e.target.value)}
                   />
