@@ -6161,13 +6161,38 @@ def _mcp_servers_from_config() -> dict:
         return {}
 
 
+def _mcp_server_env(spec) -> dict:
+    """Env vars an MCP server subprocess needs: the harness TH_* pair plus the
+    server spec's own optional `env` map (string values only). Claude Code
+    passes its full parent env to MCP server processes, so claude gets these
+    for free; codex spawns MCP servers with a RESTRICTED env (only what the
+    config declares) and opencode's inheritance is version-dependent. Both
+    translations below forward this dict EXPLICITLY - without it the
+    claude_preview command string `${TH_PROTOCOL_ROOT:-$PWD}/editor/tools/...`
+    expands against the PROJECT cwd (wrong path, server never starts) and
+    preview_mcp.py can't resolve daemon paths via $TH_DAEMON_URL."""
+    env = {
+        "TH_DAEMON_URL": "http://127.0.0.1:%s" % PORT,
+        "TH_PROTOCOL_ROOT": INSTALL_ROOT,
+    }
+    spec_env = (spec or {}).get("env")
+    if isinstance(spec_env, dict):
+        for k, v in spec_env.items():
+            if (isinstance(k, str) and isinstance(v, str)
+                    and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", k)):
+                env[k] = v
+    return env
+
+
 def _codex_mcp_spawn_args() -> list:
     """codex has no `--mcp-config`; its MCP servers live in config.toml under
     `[mcp_servers.*]`. Translate AGENT_MCP_CONFIG into per-invocation
     `-c mcp_servers.<id>.…=<toml>` overrides so nothing is written into the
     user's (or the sanitised) CODEX_HOME. `-c` values parse as TOML;
     json.dumps quoting is TOML-compatible for plain strings and string
-    arrays, which is all mcp-config.json carries."""
+    arrays, which is all mcp-config.json carries. Each server also gets an
+    explicit `env` table (see _mcp_server_env) because codex does NOT hand
+    its own environment down to MCP server processes."""
     args = []
     for sid, spec in _mcp_servers_from_config().items():
         cmd = (spec or {}).get("command")
@@ -6179,6 +6204,8 @@ def _codex_mcp_spawn_args() -> list:
         sargs = [a for a in sargs if isinstance(a, str)]
         args += ["-c", "mcp_servers.%s.args=[%s]"
                  % (safe_id, ", ".join(json.dumps(a) for a in sargs))]
+        for k, v in sorted(_mcp_server_env(spec).items()):
+            args += ["-c", "mcp_servers.%s.env.%s=%s" % (safe_id, k, json.dumps(v))]
     return args
 
 
@@ -6210,7 +6237,11 @@ def _ensure_opencode_mcp_config():
         if not cmd or not isinstance(cmd, str) or sid in mcp:
             continue  # a user-defined server with the same id wins
         sargs = [a for a in ((spec or {}).get("args") or []) if isinstance(a, str)]
-        mcp[sid] = {"type": "local", "command": [cmd] + sargs, "enabled": True}
+        # Explicit environment per server (same rationale as the codex
+        # translation - see _mcp_server_env): don't rely on opencode
+        # inheriting the spawn env into MCP server subprocesses.
+        mcp[sid] = {"type": "local", "command": [cmd] + sargs, "enabled": True,
+                    "environment": _mcp_server_env(spec)}
     merged["mcp"] = mcp
     # Permission grant: the visual-QA engine (/__qa/run) writes its frame
     # screenshots to tempfile.mkdtemp(prefix="woven-qa-") - OUTSIDE the
@@ -6447,6 +6478,13 @@ def _codex_task_translation_note(project_id):
         "`planner-done`, do NOT re-dispatch - the planner keeps running; poll "
         "`GET /__dispatch_planner/result?project=<id>&runId=<runId>` until "
         "`done` is true and use its `output`.\n"
+        "Visual verification look-loops (screenshots, reading rendered frame "
+        "PNGs, judging generated images) follow the same pattern: dispatch "
+        "type \"visual-verifier\" with a self-contained brief instead of "
+        "looking yourself - images must stay OUT of this context. MCP tool "
+        "names on this runtime may be spelled differently than the "
+        "`mcp__<server>__<tool>` form specs use (e.g. the `claude_preview` "
+        "server's `preview_start`); use the names your own tool list shows.\n"
         "===== END RUNTIME NOTE =====\n"
     )
 
@@ -11138,7 +11176,22 @@ def _codex_chat_preamble(agent_id: str, project_root: str, project_id: str,
         "(poll it until `done` is true). The endpoint is "
         "reentrant - a planner that needs nested subagent dispatch "
         "will use the same curl pattern, and the daemon picks the "
-        "best runtime for each level."
+        "best runtime for each level.\n\n"
+        "Visual verification on this runtime: the delegation rule in "
+        "the capabilities preamble (never screenshot / Read an image "
+        "in THIS chat) is mandatory here too, and unlike Claude Code "
+        "there is no permission hook to catch a slip - you must "
+        "self-enforce it. For any look-loop, dispatch type "
+        "\"visual-verifier\" via the curl pattern above with a "
+        "self-contained brief (exact URLs or file paths, what must be "
+        "true visually, which interactions to try); it looks in its "
+        "own throwaway context and returns a text verdict. For quick "
+        "automated checks, `GET /__qa/run?...&judge=<expected>` keeps "
+        "the vision judgment daemon-side. Also note: MCP tool names "
+        "on this runtime may be spelled differently than the "
+        "`mcp__<server>__<tool>` form the docs use (e.g. the "
+        "`claude_preview` server's `preview_start`); use whatever "
+        "your own tool list shows."
     )
     bits.append(
         "\n## Chat output discipline\n\n"
@@ -18909,9 +18962,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         runtime can dispatch nested subagents that the daemon routes to
         another runtime, without any caller-side branching.
 
-        Runtime selection: Claude (preferred - native Task tool for
-        nested dispatch) → Codex (via translation note that substitutes
-        Task with curl POST back to this endpoint) → 502 if neither.
+        Runtime selection: the user's selected agent runtime when it is
+        installed (claude / codex / opencode), else whichever IS
+        installed (claude → codex → opencode) → 502 if none. codex and
+        opencode get a translation note that substitutes Claude's Task
+        tool with a curl POST back to this endpoint.
 
         SSE event types emitted:
           • planner-dispatched - first event; { runId, type, runtime }
@@ -18944,8 +18999,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(500, {"error": f"could not read planner: {e}"})
         planner_body = re.sub(r"^---\n.*?\n---\n", "", planner_md, count=1, flags=re.S).strip()
         # Pick runtime + build spawn shape.
-        claude_bin = detect_agent_bin("claude")
-        codex_bin  = detect_agent_bin("codex")
+        claude_bin   = detect_agent_bin("claude")
+        codex_bin    = detect_agent_bin("codex")
+        opencode_bin = detect_agent_bin("opencode")
         # Build the capabilities preamble once and inject it into BOTH
         # runtimes' planner spawn. Originally the planner subprocess got ONLY
         # the planner.md body as its system prompt, which meant the planner
@@ -18962,18 +19018,18 @@ class H(http.server.SimpleHTTPRequestHandler):
             caps_text = capabilities_preamble(project_root=project_root)
         except Exception:
             caps_text = ""
-        # Runtime: honor the user's selected AGENT when it can spawn here
-        # (claude/codex only - opencode has no planner spawn-shape yet) and is
-        # installed; else fall back to whichever IS installed so a build never
-        # dead-ends. This stops the old "always prefer claude" from overriding an
-        # explicit codex choice.
+        # Runtime: honor the user's selected AGENT when it can spawn here and
+        # is installed; else fall back to whichever IS installed so a build
+        # never dead-ends. This stops the old "always prefer claude" from
+        # overriding an explicit codex/opencode choice.
         want = _agent_default_runtime()
-        avail = {"claude": claude_bin, "codex": codex_bin}
-        chosen = want if avail.get(want) else ("claude" if claude_bin else ("codex" if codex_bin else None))
+        avail = {"claude": claude_bin, "codex": codex_bin, "opencode": opencode_bin}
+        chosen = want if avail.get(want) else next(
+            (a for a in ("claude", "codex", "opencode") if avail.get(a)), None)
         if chosen is None:
             return self._reply(502, {
-                "error": "no LLM runtime available - install Claude Code or Codex CLI",
-                "hint": "npm install -g @anthropic-ai/claude-code  OR  npm install -g @openai/codex",
+                "error": "no LLM runtime available - install Claude Code, Codex CLI, or opencode",
+                "hint": "npm install -g @anthropic-ai/claude-code  OR  npm install -g @openai/codex  OR  npm install -g opencode-ai",
             })
         agent_id, bin_path, defs = chosen, avail[chosen], AGENT_DEFS[chosen]
         # Per-orchestrator model override (keyed by planner_type) within the
@@ -19017,7 +19073,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             stdin_pipe = subprocess.PIPE
             prompt_stdin = _claude_user_frame(brief)
             prompt_argv = None
-        elif agent_id == "codex":
+        elif agent_id in ("codex", "opencode"):
+            # Shared argv-prompt shape: neither CLI has an
+            # --append-system-prompt flag, so the planner spec + translation
+            # note + capabilities ride in the prompt text itself.
             translation_note = _codex_task_translation_note(project_id)
             caps_block = ""
             if caps_text:
@@ -19037,18 +19096,25 @@ class H(http.server.SimpleHTTPRequestHandler):
             )
             if _mcp_servers_from_config():
                 full_prompt += "\n" + _mcp_routing_prompt()
-            # danger-full-access matches AGENT_DEFS["codex"]["args"] -
-            # required so the planner can curl back to /__dispatch_planner
-            # for nested subagent dispatch (workspace-write blocks network).
-            spawn_args = (["exec", "--sandbox", "danger-full-access"]
-                          + _codex_mcp_spawn_args() + _planner_model_args)
+            if agent_id == "codex":
+                # danger-full-access matches AGENT_DEFS["codex"]["args"] -
+                # required so the planner can curl back to /__dispatch_planner
+                # for nested subagent dispatch (workspace-write blocks network).
+                spawn_args = (["exec", "--sandbox", "danger-full-access"]
+                              + _codex_mcp_spawn_args() + _planner_model_args)
+            else:
+                # opencode run: MCP servers arrive via the managed
+                # OPENCODE_CONFIG env (_build_child_env), not argv; model
+                # stays on opencode's own default (model_flag is None so
+                # _planner_model_args is always []).
+                spawn_args = ["run", "--format", "json"] + _planner_model_args
             stdin_pipe = None
             prompt_stdin = None
             prompt_argv = full_prompt
         else:
             return self._reply(502, {
-                "error": "no LLM runtime available - install Claude Code or Codex CLI",
-                "hint": "npm install -g @anthropic-ai/claude-code  OR  npm install -g @openai/codex",
+                "error": "no LLM runtime available - install Claude Code, Codex CLI, or opencode",
+                "hint": "npm install -g @anthropic-ai/claude-code  OR  npm install -g @openai/codex  OR  npm install -g opencode-ai",
             })
         # Spawn the planner subprocess.
         run_id = uuid.uuid4().hex[:16]
