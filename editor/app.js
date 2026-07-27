@@ -32981,8 +32981,20 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '  }catch(_){}',
     '  applyAll();',
     '}',
-    'if(document.readyState==="complete")setTimeout(arm,100);',
-    'else window.addEventListener("load",function(){setTimeout(arm,100);});',
+    // Arm IMMEDIATELY, not at load+100ms. The script sits at end-of-body,
+    // so the initial applyAll runs during parse - static targets are
+    // patched before first paint. For JS-rendered targets (React pages,
+    // innerHTML-template pages) the MutationObserver callback is a
+    // MICROTASK: it runs after the script task that inserted the element
+    // but BEFORE the browser paints that frame, so a patch-deleted element
+    // never becomes visible. The old load+100ms delay guaranteed a visible
+    // render-then-remove flash on every load of a JS-rendered page (the
+    // suss-cal "flashing blue banner") - the delay bought nothing the
+    // observer doesn't already handle: if the target isn't rendered yet,
+    // the initial apply is a no-op and the observer catches it when it
+    // appears.
+    'if(document.body)arm();',
+    'else document.addEventListener("DOMContentLoaded",arm);',
     '})();',
     '</script>',
   ].join("");
