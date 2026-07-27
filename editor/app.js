@@ -94344,6 +94344,34 @@ function DialogHost() {
   return createPortal(html`<${DialogModal} key=${top.id} desc=${top}/>`, document.body);
 }
 
+/* Autofill guard - Chrome form autofill can dump saved form values into
+   unrelated unnamed fields (observed: a DS gallery URL landing in the
+   projects filter when the Settings modal mounted its input cluster). The
+   editor chrome never wants browser autofill anywhere, so stamp
+   autocomplete="off" (password fields get "new-password", which Chrome
+   respects where it ignores "off") on every input/textarea that doesn't
+   declare its own - including ones mounted later via modals, popovers, and
+   portals. DOM-attribute only; React doesn't manage autocomplete on these,
+   so controlled inputs are unaffected. */
+(() => {
+  const stamp = (el) => {
+    if (!el.hasAttribute("autocomplete")) {
+      el.setAttribute("autocomplete", el.type === "password" ? "new-password" : "off");
+    }
+  };
+  const sweep = (node) => {
+    if (!node || node.nodeType !== 1) return;
+    if (node.tagName === "INPUT" || node.tagName === "TEXTAREA") stamp(node);
+    if (node.querySelectorAll) {
+      for (const el of node.querySelectorAll("input, textarea")) stamp(el);
+    }
+  };
+  sweep(document.documentElement);
+  new MutationObserver((muts) => {
+    for (const m of muts) for (const n of m.addedNodes) sweep(n);
+  }).observe(document.documentElement, { childList: true, subtree: true });
+})();
+
 createRoot(document.getElementById("root")).render(html`<${React.Fragment}><${Root}/><${DialogHost}/><//>`);
 
 /* Drive the slider fill (--wv-fill) on every range input so the custom track
