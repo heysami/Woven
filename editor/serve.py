@@ -1321,6 +1321,52 @@ def _fal_request(api_key, model_path, body, timeout=300):
         return json.loads(resp.read())
 
 
+def _fal_queue_request(api_key, model_path, body, timeout=900, poll_interval=4):
+    """Async submit+poll via queue.fal.run. Video models routinely run for
+    minutes; the sync fal.run gateway just HOLDS the connection for the whole
+    render (live-probed July 2026: even a validation reply on fal-ai/veo3.1
+    doesn't come back inside 30s), which is exactly the shape that dies to a
+    client read timeout with the bytes lost server-side. The queue API returns
+    a request_id immediately and we poll until COMPLETED, then fetch the same
+    response JSON the sync endpoint would have returned.
+
+    Endpoint ids without the fal-ai/ prefix (alibaba/…, bytedance/…) work
+    verbatim, same as fal.run. The submit response carries absolute
+    status_url / response_url - use them rather than re-deriving paths (the
+    app-id/subpath split is fal's problem, not ours)."""
+    headers = {"Authorization": f"Key {api_key}", "Content-Type": "application/json"}
+
+    def _get_json(url, t=60):
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=t) as resp:
+            return json.loads(resp.read())
+
+    submit_req = urllib.request.Request(
+        f"https://queue.fal.run/{model_path}", method="POST",
+        headers=headers, data=json.dumps(body).encode("utf-8"),
+    )
+    with urllib.request.urlopen(submit_req, timeout=60) as resp:
+        submitted = json.loads(resp.read())
+    status_url   = submitted.get("status_url")
+    response_url = submitted.get("response_url")
+    if not (status_url and response_url):
+        # Unexpected queue reply (some private deployments answer sync-style).
+        if isinstance(submitted, dict) and ("video" in submitted or "videos" in submitted or "url" in submitted):
+            return submitted
+        raise RuntimeError(f"fal queue: no status_url in submit reply (keys: {list(submitted.keys()) if isinstance(submitted, dict) else '?'})")
+    deadline = time.time() + timeout
+    while True:
+        status = _get_json(status_url)
+        state = (status or {}).get("status")
+        if state == "COMPLETED":
+            return _get_json(response_url, t=120)
+        if state in ("FAILED", "CANCELLED", "ERROR"):
+            raise RuntimeError(f"fal queue: request {state}: {json.dumps(status)[:300]}")
+        if time.time() > deadline:
+            raise RuntimeError(f"fal queue: timed out after {timeout}s (last status: {state})")
+        time.sleep(poll_interval)
+
+
 def _fal_extract_image_url(payload):
     """Most fal endpoints return one of:
          { images: [{ url }] }
@@ -1895,18 +1941,65 @@ def _fal_generate_image(api_key, prompt, model, aspect, options):
     return _download_bytes(image_url)
 
 
+def _fal_video_i2v_variant(model):
+    """Map a t2v endpoint id to its image-to-video sibling, for when a start
+    frame is wired into a video-gen call whose picked model is text-only.
+    Ids that are already i2v pass through untouched."""
+    m = model or ""
+    if "image-to-video" in m:
+        return m
+    if m == "fal-ai/veo3.1":
+        return "fal-ai/veo3.1/fast/image-to-video"
+    if m == "fal-ai/luma-dream-machine/ray-2":
+        return "fal-ai/luma-dream-machine/ray-2/image-to-video"
+    if "text-to-video" in m:
+        return m.replace("text-to-video", "image-to-video")
+    return m
+
+
+def _fal_video_normalize_duration(model, dur):
+    """Coerce a caller-supplied duration into the vocabulary the model family
+    actually accepts (live-probed against fal's OpenAPI schemas, July 2026):
+      veo3.1*                 -> '4s' | '6s' | '8s'          (string, s-suffix)
+      luma ray-2              -> '5s' | '9s'
+      kling-video/v3          -> '3'..'15'                   (string integer)
+      kling-video/v2.x        -> '5' | '10'                  (string integer)
+      seedance-2.0            -> 'auto' | '4'..'15'          (string integer)
+      happy-horse             -> 3..15                       (plain integer)
+      pika / others           -> plain integer seconds
+    Agents pass plain integers (4/6/8 per the drawer doc); before this
+    normalization every kling call with duration 4 422'd with
+    "Input should be '5' or '10'" and every veo call 422'd wanting '4s'."""
+    m = model or ""
+    s = str(dur).strip().lower().rstrip("s")
+    try:
+        n = int(float(s))
+    except (ValueError, TypeError):
+        return None  # unparseable -> drop, let the model default apply
+    if "veo3" in m:
+        n = 4 if n <= 4 else (6 if n <= 6 else 8)
+        return f"{n}s"
+    if "luma-dream-machine" in m:
+        return "5s" if n <= 6 else "9s"
+    if "kling-video/v3" in m:
+        return str(min(15, max(3, n)))
+    if "kling-video" in m:
+        return "5" if n <= 7 else "10"
+    if "seedance" in m:
+        return str(min(15, max(4, n)))
+    if "happy-horse" in m:
+        return min(15, max(3, n))
+    return n
+
+
 def _fal_generate_video(api_key, prompt, model, aspect, options):
     """fal.ai text-to-video / image-to-video. Works for fal-ai/veo3.1,
-    fal-ai/luma-dream-machine/ray-2/text-to-video, fal-ai/kling-video/v2.5-turbo,
-    fal-ai/minimax/hailuo-2.3-fast, fal-ai/seedance-2.0, etc. Returns mp4
-    bytes downloaded from the response's video URL. Aspect ratios per
-    fal's vocabulary (16:9 / 9:16 / 1:1) - most models accept any of them.
-    NOTE: the bare `fal-ai/luma-dream-machine` endpoint was deprecated in
-    June 2026; use the ray-2 sub-paths instead."""
+    fal-ai/luma-dream-machine/ray-2, fal-ai/kling-video/*, hailuo, seedance,
+    happy-horse, pika. Returns mp4 bytes downloaded from the response's video
+    URL. Dispatches through queue.fal.run (submit+poll) - video renders run
+    for minutes and the sync gateway holds the connection the whole time,
+    which is exactly what read-timeouts kill."""
     body = {"prompt": prompt}
-    # fal's video models use different param names per family; pass a
-    # superset of common knobs and rely on the model to ignore the ones
-    # it doesn't understand. Per-model overrides land via skill node options.
     # 1:1 collapses to 16:9 because almost every video endpoint
     # rejects square (Luma Ray, Veo 3.1, Kling 2.5, Hailuo all return
     # `{"detail":[{"msg":"Input should be '16:9' or '9:16'"}]}` for 1:1).
@@ -1920,10 +2013,20 @@ def _fal_generate_video(api_key, prompt, model, aspect, options):
         "9:16": "9:16",
     }
     body["aspect_ratio"] = ASPECT_MAP_VIDEO.get(aspect, "16:9")
-    if isinstance(options, dict):
-        for k in ("duration", "fps", "seed", "loop", "guidance_scale", "negative_prompt", "image_url"):
-            if k in options and options[k] is not None: body[k] = options[k]
-    payload = _fal_request(api_key, model, body, timeout=300)
+    opts = options if isinstance(options, dict) else {}
+    for k in ("fps", "seed", "loop", "guidance_scale", "negative_prompt", "image_url", "resolution"):
+        if k in opts and opts[k] is not None: body[k] = opts[k]
+    if opts.get("duration") is not None:
+        dur = _fal_video_normalize_duration(model, opts["duration"])
+        if dur is not None:
+            body["duration"] = dur
+    # UI video ships `<video autoplay loop muted playsinline>` - audio is
+    # policy-off (1V-video.md) AND veo/kling3/seedance default generate_audio
+    # to TRUE server-side, billing audio nobody hears. Force it off unless the
+    # caller explicitly asked for audio.
+    if any(k in (model or "") for k in ("veo3", "kling-video/v3", "seedance")):
+        body["generate_audio"] = bool(opts.get("generate_audio", False))
+    payload = _fal_queue_request(api_key, model, body, timeout=900)
     video_url = _fal_extract_video_url(payload)
     return _download_bytes(video_url)
 
@@ -18789,13 +18892,17 @@ class H(http.server.SimpleHTTPRequestHandler):
             raw_uri = body.get("input_data_uri")
             in_path = (body.get("input_path") or "").strip()
             if raw_uri or in_path:
-                # Higgsfield DoP video + the video-chain skill are image-to-video:
-                # an input frame IS the (first clip's) start frame, so it's
-                # allowed here (resolved to a start-frame data URI in the
-                # dispatch branch below).
+                # Video skills are image-to-video capable: an input frame IS
+                # the (first clip's) start frame, so it's allowed here
+                # (resolved to a start-frame data URI in the dispatch branch
+                # below). This covers Higgsfield DoP AND the fal i2v models
+                # (veo3.1 i2v, kling i2v, luma i2v, seedance i2v, …) - before
+                # July 2026 the fal case fell through to the gpt-image 400
+                # below, which hard-blocked the entire fal image-to-video lane
+                # (including motion-studio's approved-plate i2v conditioning).
                 _hf_video = (
                     skill == "video-chain"
-                    or (provider == "higgsfield" and skill == "video-gen"))
+                    or (provider in ("higgsfield", "fal") and skill == "video-gen"))
                 if not _hf_video:
                     # i2i needs an OpenAI gpt-image model. If the caller omitted
                     # `model` (relying on the default), fill it from the CONFIGURED
@@ -18909,11 +19016,21 @@ class H(http.server.SimpleHTTPRequestHandler):
                     else:
                         bytes_ = _openai_generate_image(api_key, prompt, model, aspect, options)
                 elif provider == "fal" and skill == "video-gen":
-                    # Real video. Dispatches to fal's text-to-video
-                    # endpoint and downloads the mp4 bytes. Unlike image
-                    # generation, this can take 30s-5min depending on
-                    # the model, so we extend timeout to 300s.
-                    bytes_ = _fal_generate_video(api_key, prompt, model, aspect, options)
+                    # Real video via queue.fal.run (submit+poll - renders run
+                    # 30s-10min depending on the model). A wired input frame
+                    # (input_path / input_data_uri) becomes options.image_url
+                    # and, when the picked model is text-only, the model is
+                    # promoted to its image-to-video sibling so the frame
+                    # actually conditions the motion instead of erroring.
+                    fal_opts = dict(options or {})
+                    if not fal_opts.get("image_url"):
+                        if input_data_uri:
+                            fal_opts["image_url"] = input_data_uri
+                        elif input_abs:
+                            fal_opts["image_url"] = _file_to_data_uri(input_abs)
+                    if fal_opts.get("image_url"):
+                        model = _fal_video_i2v_variant(model)
+                    bytes_ = _fal_generate_video(api_key, prompt, model, aspect, fal_opts)
                 elif provider == "higgsfield" and skill == "video-gen":
                     # Higgsfield DoP image→video (async submit+poll). Resolve a
                     # wired start frame (input_path / input_data_uri) into the

@@ -276,7 +276,9 @@
     { id: "fal-ai/veo3.1",                                         provider: "fal", label: "veo-3.1",            hint: "fal · Google Veo 3.1 (t2v · native audio)",     caps: ["t2v"],         integrated: true, default: true },
     { id: "fal-ai/veo3.1/fast/image-to-video",                     provider: "fal", label: "veo-3.1-fast-i2v",   hint: "fal · Veo 3.1 Fast (image → video)",            caps: ["i2v"],         integrated: true },
     // Luma - Ray 2 family (the bare `luma-dream-machine` endpoint is deprecated).
-    { id: "fal-ai/luma-dream-machine/ray-2/text-to-video",         provider: "fal", label: "luma-ray-2",         hint: "fal · Luma Ray 2 (t2v)",                        caps: ["t2v"],         integrated: true },
+    // NOTE: t2v is the BARE `/ray-2` path - `/ray-2/text-to-video` 404s
+    // ("Path /ray-2/text-to-video not found", live-probed July 2026).
+    { id: "fal-ai/luma-dream-machine/ray-2",                       provider: "fal", label: "luma-ray-2",         hint: "fal · Luma Ray 2 (t2v)",                        caps: ["t2v"],         integrated: true },
     { id: "fal-ai/luma-dream-machine/ray-2/image-to-video",        provider: "fal", label: "luma-ray-2-i2v",     hint: "fal · Luma Ray 2 (image → video)",              caps: ["i2v"],         integrated: true },
     // Kling - 3.0 Pro is current (native 4K / 60fps / audio); 2.5/2.6 kept as
     // cheaper prior-gen fallbacks (their endpoints still work).
@@ -288,12 +290,16 @@
     // NOTE: endpoint id has no fal-ai/ prefix - fal.run/<id> takes it verbatim.
     { id: "alibaba/happy-horse/text-to-video",                     provider: "fal", label: "happyhorse-1.0",     hint: "fal · Alibaba HappyHorse 1.0 (t2v · native audio · top-ranked)", caps: ["t2v"], integrated: true },
     { id: "alibaba/happy-horse/image-to-video",                    provider: "fal", label: "happyhorse-1.0-i2v", hint: "fal · Alibaba HappyHorse 1.0 (image → video + audio)",           caps: ["i2v"], integrated: true },
-    // MiniMax Hailuo - 2.3 Fast is the current entry.
-    { id: "fal-ai/minimax/hailuo-2.3-fast/pro/text-to-video",      provider: "fal", label: "hailuo-2.3-fast",    hint: "fal · MiniMax Hailuo 2.3 Fast (1080p)",         caps: ["t2v"],         integrated: true },
+    // MiniMax Hailuo - 2.3 is current. The FAST tier is image-to-video ONLY
+    // (`hailuo-2.3-fast/pro/text-to-video` 404s, live-probed July 2026); t2v
+    // ships under the non-fast `hailuo-2.3` paths.
+    { id: "fal-ai/minimax/hailuo-2.3/pro/text-to-video",           provider: "fal", label: "hailuo-2.3-pro",     hint: "fal · MiniMax Hailuo 2.3 Pro (t2v · 1080p)",    caps: ["t2v"],         integrated: true },
     { id: "fal-ai/minimax/hailuo-2.3-fast/pro/image-to-video",     provider: "fal", label: "hailuo-2.3-fast-i2v", hint: "fal · Hailuo 2.3 Fast (image → video)",        caps: ["i2v"],         integrated: true },
-    // ByteDance Seedance 2.0 - launched April 2026. (Seedance 2.5 announced
-    // June 23 2026 but not yet live on fal as of mid-July - add when it ships.)
-    { id: "fal-ai/seedance-2.0",                                   provider: "fal", label: "seedance-2.0",       hint: "fal · ByteDance Seedance 2.0",                  caps: ["t2v", "i2v"], integrated: true },
+    // ByteDance Seedance 2.0 - launched April 2026. Endpoint ids carry the
+    // `bytedance/` prefix verbatim (no `fal-ai/`, same as happy-horse) and
+    // split per mode - the old single `fal-ai/seedance-2.0` id 404s.
+    { id: "bytedance/seedance-2.0/text-to-video",                  provider: "fal", label: "seedance-2.0",       hint: "fal · ByteDance Seedance 2.0 (t2v)",            caps: ["t2v"],         integrated: true },
+    { id: "bytedance/seedance-2.0/image-to-video",                 provider: "fal", label: "seedance-2.0-i2v",   hint: "fal · ByteDance Seedance 2.0 (image → video)",  caps: ["i2v"],         integrated: true },
     // Pika - v2 Turbo still current.
     { id: "fal-ai/pika/v2/turbo/text-to-video",                    provider: "fal", label: "pika-v2",            hint: "fal · Pika v2 (animated)",                      caps: ["t2v"],         integrated: true },
     // Higgsfield DoP (platform.higgsfield.ai) - image→video with an optional
