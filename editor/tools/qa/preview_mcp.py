@@ -359,6 +359,22 @@ def tool_preview_screenshot(args):
         SHOT_DIR, "%s-%d.jpg" % (tab.id, int(time.time() * 1000)))
     raw = tab.page.screenshot(path=path, type="jpeg", quality=70,
                               full_page=bool(args.get("fullPage")))
+    # TH_VISUAL_DENY=1 marks a long-lived MAIN CHAT on a runtime without a
+    # tool-permission hook (codex/opencode): pixels ingested there are
+    # re-sent on every later turn and bloat the thread's prompt cache, so
+    # the screenshot is SAVED but the image block is withheld. The daemon
+    # sets the flag per spawn (see serve.py _mcp_server_env); subagent
+    # spawns (visual-verifier, lenses, planners) never carry it.
+    if os.environ.get("TH_VISUAL_DENY") == "1":
+        return _text(
+            "screenshot saved to %s - pixels withheld in this chat by design "
+            "(main-thread image ingestion bloats the prompt cache on this "
+            "runtime). To judge it visually, dispatch a `visual-verifier` "
+            "subagent via the planner-dispatch bridge (POST "
+            "/__dispatch_planner, type \"visual-verifier\") with a "
+            "self-contained brief naming this file/URL and what must be "
+            "true, or use GET $TH_DAEMON_URL/__qa/run?...&judge=<expected> "
+            "for a daemon-side vision verdict." % path)
     return {"content": [
         {"type": "image", "data": base64.b64encode(raw).decode("ascii"),
          "mimeType": "image/jpeg"},
@@ -451,7 +467,9 @@ TOOLS = [
      tool_preview_snapshot),
     ("preview_screenshot",
      "Screenshot the tab (JPEG). Returns the image inline plus the saved "
-     "file path.",
+     "file path. In a main chat thread on a non-Claude runtime the image "
+     "is withheld and only the saved path returns (dispatch a "
+     "visual-verifier subagent, or /__qa/run with judge=, to look at it).",
      {"type": "object",
       "properties": {"fullPage": {"type": "boolean", "description": "capture full page height"},
                      "path": {"type": "string", "description": "save path (default temp dir)"},

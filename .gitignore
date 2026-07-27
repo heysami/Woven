@@ -18,7 +18,9 @@ __pycache__/
 
 # Daemon-managed opencode config (mcp-config.json translated to opencode's
 # shape, pointed at via OPENCODE_CONFIG on opencode spawns). Generated.
+# The -chat variant is the main-chat spawn's visual-deny copy.
 .opencode-config.json
+.opencode-config-chat.json
 
 # Vendored figma-cli (external MIT tool; install per editor/tools/figma-bridge/USING-FIGMA-CLI.md)
 editor/tools/figma-cli/

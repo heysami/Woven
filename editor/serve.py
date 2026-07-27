@@ -6161,7 +6161,7 @@ def _mcp_servers_from_config() -> dict:
         return {}
 
 
-def _mcp_server_env(spec) -> dict:
+def _mcp_server_env(spec, visual_deny=False) -> dict:
     """Env vars an MCP server subprocess needs: the harness TH_* pair plus the
     server spec's own optional `env` map (string values only). Claude Code
     passes its full parent env to MCP server processes, so claude gets these
@@ -6170,11 +6170,24 @@ def _mcp_server_env(spec) -> dict:
     translations below forward this dict EXPLICITLY - without it the
     claude_preview command string `${TH_PROTOCOL_ROOT:-$PWD}/editor/tools/...`
     expands against the PROJECT cwd (wrong path, server never starts) and
-    preview_mcp.py can't resolve daemon paths via $TH_DAEMON_URL."""
+    preview_mcp.py can't resolve daemon paths via $TH_DAEMON_URL.
+
+    visual_deny=True stamps TH_VISUAL_DENY=1: preview_mcp.py then withholds
+    screenshot PIXELS (returns the saved file path as text instead). This is
+    the codex/opencode equivalent of claude's require-visual-delegation
+    PreToolUse hook - those CLIs have no hook mechanism, so the enforcement
+    lives in the MCP server we own. Set ONLY for long-lived MAIN CHAT spawns
+    on codex/opencode; never for node/planner subagent spawns (those ARE the
+    throwaway contexts that must screenshot freely), and never for claude
+    (its Task subagents share the parent's MCP server instance, so an
+    env-level deny would blind the visual-verifier too - the hook already
+    discriminates per-agent there)."""
     env = {
         "TH_DAEMON_URL": "http://127.0.0.1:%s" % PORT,
         "TH_PROTOCOL_ROOT": INSTALL_ROOT,
     }
+    if visual_deny:
+        env["TH_VISUAL_DENY"] = "1"
     spec_env = (spec or {}).get("env")
     if isinstance(spec_env, dict):
         for k, v in spec_env.items():
@@ -6184,7 +6197,7 @@ def _mcp_server_env(spec) -> dict:
     return env
 
 
-def _codex_mcp_spawn_args() -> list:
+def _codex_mcp_spawn_args(visual_deny=False) -> list:
     """codex has no `--mcp-config`; its MCP servers live in config.toml under
     `[mcp_servers.*]`. Translate AGENT_MCP_CONFIG into per-invocation
     `-c mcp_servers.<id>.…=<toml>` overrides so nothing is written into the
@@ -6192,7 +6205,8 @@ def _codex_mcp_spawn_args() -> list:
     json.dumps quoting is TOML-compatible for plain strings and string
     arrays, which is all mcp-config.json carries. Each server also gets an
     explicit `env` table (see _mcp_server_env) because codex does NOT hand
-    its own environment down to MCP server processes."""
+    its own environment down to MCP server processes. visual_deny: pass True
+    for MAIN CHAT spawns only (see _mcp_server_env)."""
     args = []
     for sid, spec in _mcp_servers_from_config().items():
         cmd = (spec or {}).get("command")
@@ -6204,12 +6218,12 @@ def _codex_mcp_spawn_args() -> list:
         sargs = [a for a in sargs if isinstance(a, str)]
         args += ["-c", "mcp_servers.%s.args=[%s]"
                  % (safe_id, ", ".join(json.dumps(a) for a in sargs))]
-        for k, v in sorted(_mcp_server_env(spec).items()):
+        for k, v in sorted(_mcp_server_env(spec, visual_deny=visual_deny).items()):
             args += ["-c", "mcp_servers.%s.env.%s=%s" % (safe_id, k, json.dumps(v))]
     return args
 
 
-def _ensure_opencode_mcp_config():
+def _ensure_opencode_mcp_config(visual_deny=False):
     """Build the managed opencode config that carries AGENT_MCP_CONFIG's
     servers in opencode's `"mcp"` shape PLUS the harness permission grants,
     and return its absolute path (None when the write failed). Passed to
@@ -6218,7 +6232,12 @@ def _ensure_opencode_mcp_config():
     ourselves when it's plain JSON so a replace-not-merge opencode version
     loses nothing (a .jsonc global with comments is skipped - MCP entries
     only). Written even with no MCP servers wired: the permission block
-    below must reach every opencode spawn regardless."""
+    below must reach every opencode spawn regardless.
+
+    visual_deny=True (MAIN CHAT spawns - see _mcp_server_env) writes a
+    SEPARATE file (.opencode-config-chat.json) so a concurrent subagent
+    spawn using the permissive variant never races the chat's deny variant
+    on the same path."""
     servers = _mcp_servers_from_config()
     merged = {"$schema": "https://opencode.ai/config.json"}
     for cand in ("~/.config/opencode/opencode.json",
@@ -6241,7 +6260,7 @@ def _ensure_opencode_mcp_config():
         # translation - see _mcp_server_env): don't rely on opencode
         # inheriting the spawn env into MCP server subprocesses.
         mcp[sid] = {"type": "local", "command": [cmd] + sargs, "enabled": True,
-                    "environment": _mcp_server_env(spec)}
+                    "environment": _mcp_server_env(spec, visual_deny=visual_deny)}
     merged["mcp"] = mcp
     # Permission grant: the visual-QA engine (/__qa/run) writes its frame
     # screenshots to tempfile.mkdtemp(prefix="woven-qa-") - OUTSIDE the
@@ -6266,7 +6285,9 @@ def _ensure_opencode_mcp_config():
             merged["permission"] = perm
     except Exception:
         pass
-    path = os.path.join(INSTALL_ROOT, ".opencode-config.json")
+    path = os.path.join(INSTALL_ROOT,
+                        ".opencode-config-chat.json" if visual_deny
+                        else ".opencode-config.json")
     # Skip-if-same to avoid disk churn at every spawn (mirrors
     # _ensure_harness_settings).
     try:
@@ -11179,9 +11200,12 @@ def _codex_chat_preamble(agent_id: str, project_root: str, project_id: str,
         "best runtime for each level.\n\n"
         "Visual verification on this runtime: the delegation rule in "
         "the capabilities preamble (never screenshot / Read an image "
-        "in THIS chat) is mandatory here too, and unlike Claude Code "
-        "there is no permission hook to catch a slip - you must "
-        "self-enforce it. For any look-loop, dispatch type "
+        "in THIS chat) is mandatory here too. `preview_screenshot` "
+        "enforces it structurally in this chat: it saves the file and "
+        "returns its path WITHOUT the pixels - that is intentional, "
+        "not a bug; do not retry or work around it. Reading image "
+        "files directly has no such guard, so you must self-enforce "
+        "there. For any look-loop, dispatch type "
         "\"visual-verifier\" via the curl pattern above with a "
         "self-contained brief (exact URLs or file paths, what must be "
         "true visually, which interactions to try); it looks in its "
@@ -11527,7 +11551,13 @@ def _evict_base_url(upstream=None):
     return _EVICT_BASE_URL or None
 
 
-def _build_child_env(agent_id: str, run_id: str, project_root: str = None, project_id: str = None) -> dict:
+def _build_child_env(agent_id: str, run_id: str, project_root: str = None, project_id: str = None,
+                     main_thread: bool = False) -> dict:
+    # main_thread=True marks a long-lived CHAT spawn (initial or resume);
+    # node/planner subagent spawns leave it False. Only consulted for
+    # opencode today: it selects the visual-deny variant of the managed MCP
+    # config so preview screenshots return paths, not pixels, in the chat's
+    # own context (see _mcp_server_env).
     env = dict(os.environ)
     # MCP startup headroom. chrome-devtools-mcp (npx cold-resolve + a real Chrome
     # launch) can take many seconds to finish its initialize/tools-list handshake;
@@ -11542,7 +11572,7 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
     # opencode runs get the same chrome/figma servers claude gets. setdefault:
     # a user-exported OPENCODE_CONFIG wins.
     if agent_id == "opencode":
-        _oc_cfg = _ensure_opencode_mcp_config()
+        _oc_cfg = _ensure_opencode_mcp_config(visual_deny=main_thread)
         if _oc_cfg:
             env.setdefault("OPENCODE_CONFIG", _oc_cfg)
     preserve = (os.environ.get("TH_PRESERVE_CLAUDE_ENV") or "").strip()
@@ -29062,7 +29092,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             # so most versions just run without prompts; if a future error
             # shows codex blocking, add the right flag here based on the
             # empirical message.
-            spawn_args += _codex_mcp_spawn_args()
+            # visual_deny: this is the long-lived chat thread - screenshots
+            # taken HERE bloat every later turn, so preview_mcp withholds
+            # pixels (path-only) and the look-loop routes through
+            # visual-verifier / __qa/run instead.
+            spawn_args += _codex_mcp_spawn_args(visual_deny=True)
             spawn_args += _agent_model_spawn_args(agent_id, defs, agent_model)
         # Append the question-form protocol so disabling AskUserQuestion
         # doesn't lose the "ask the user" capability - see
@@ -29134,7 +29168,8 @@ class H(http.server.SimpleHTTPRequestHandler):
 
         run_id = uuid.uuid4().hex[:16]
         env = _build_child_env(agent_id, run_id,
-                               project_root=project_root, project_id=project_id)
+                               project_root=project_root, project_id=project_id,
+                               main_thread=True)
 
         try:
             proc = subprocess.Popen(
@@ -29720,11 +29755,18 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Spawn fresh codex with the combined prompt. Re-apply the chosen model
         # (codex resume is a fresh process; without this the 2nd message reverts
         # to the CLI default). The prompt stays the trailing positional argv.
+        # Re-apply the MCP -c overrides too (codex only - opencode gets MCP via
+        # OPENCODE_CONFIG below): the original spawn carried them, and without
+        # them every resumed codex chat silently lost its MCP servers.
+        # visual_deny/main_thread: a resume IS the long-lived chat thread.
+        _resume_mcp = _codex_mcp_spawn_args(visual_deny=True) if state.agent_id == "codex" else []
         spawn_args = (list(defs["args"])
+                      + _resume_mcp
                       + _agent_model_spawn_args(state.agent_id, defs, getattr(state, "model", None))
                       + [new_prompt])
         env = _build_child_env(state.agent_id, run_id,
-                               project_root=state.project_root, project_id=state.project_id)
+                               project_root=state.project_root, project_id=state.project_id,
+                               main_thread=True)
         try:
             proc = subprocess.Popen(
                 [bin_path, *spawn_args],
