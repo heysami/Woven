@@ -50809,7 +50809,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   ? "Files - browse the prototype's pages"
                   : "Files - reopen your last file"}
                 onClick=${onRailPreviewFiles}
-              >${protoViewerPath ? html`<${Icon.Tree}/>` : html`<${Icon.Folder}/>`}<//>
+              >${html`<${Icon.Folder}/>`}<//>
               <${HoverTip}
                 placement="right"
                 className=${"workflow-nav-rail-btn workflow-nav-rail-btn-preview" + (leftPanel === "pv-assets" ? " is-active" : "")}
