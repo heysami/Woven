@@ -15704,13 +15704,28 @@ function buildBlocks(events) {
   // chip per parent tool block (handled below).
   const isTaskProgressEv = (d) => !!d && (
     (d.type === "system" && d.subtype === "task_progress") ||
-    (d.type === "raw"    && d.subtype === "task_progress")
+    (d.type === "raw"    && d.subtype === "task_progress") ||
+    // tool_progress heartbeats (long-running tool call still in flight)
+    // buffered as raw envelopes before the daemon learned to normalise
+    // them - absorb into the same rolling chip on replay.
+    (d.type === "raw" && d.frame && d.frame.type === "tool_progress")
   );
   const taskProgressData = (d) => {
     if (!d) return null;
     if (d.type === "system") return d;
     if (d.type === "raw" && d.frame) {
       const f = d.frame;
+      if (f.type === "tool_progress") {
+        const s = Math.floor(f.elapsed_time_seconds || 0);
+        const el = s >= 60
+          ? `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`
+          : `${s}s`;
+        return {
+          description:   s > 0 ? `running · ${el}` : "running…",
+          subagent_type: f.tool_name,
+          toolUseId:     f.parent_tool_use_id || f.tool_use_id,
+        };
+      }
       return {
         description:   f.description,
         subagent_type: f.subagent_type,
@@ -15844,13 +15859,12 @@ function buildBlocks(events) {
       if (isTaskProgressEv(d) || isSystemNoise(d)) {
         continue;
       }
-      if (d.type === "raw") {
-        closeAll();
-        blocks.push({ kind: "raw", data: d, key: `r-${i}` });
-        continue;
-      }
-      closeAll();
-      blocks.push({ kind: "raw", data: d, key: `unk-${i}` });
+      // Raw envelopes (unknown upstream frame types the daemon passed
+      // through) and unknown normalised types NEVER render in chat - the
+      // full frame stays in the run log on disk for forensics. This is the
+      // future-proofing chokepoint: when the CLI grows a new stream event
+      // (tool_progress was the 2026-07 example), it stays invisible here
+      // until explicitly whitelisted above, instead of leaking as JSON.
       continue;
     }
     if (ev.event === "user_message" && d) {
@@ -17247,6 +17261,22 @@ function parseDecisionOptions(body) {
   return opts;
 }
 
+// Prose fallback for <decision-request> bodies with NO option markup at all:
+// the agent free-types the ask ("Approve to start the build, Steer to adjust
+// the stack, or Reject." - grow-flower 2026-07-27). Only the canonical
+// approve/steer/reject trio is recoverable from prose, and only when all
+// three verbs appear as words; anything else stays text. Runs LAST in the
+// fallback chain, after the structured and JSON parsers both came up empty.
+function parseProseDecisionOptions(body) {
+  const flat = String(body || "").replace(/<[^>]+>/g, " ");
+  if (!/\bapprove\b/i.test(flat) || !/\bsteer\b/i.test(flat) || !/\breject\b/i.test(flat)) return [];
+  return [
+    { value: "approve", label: "Approve", preview: null, group: null, checked: false, needsInput: false },
+    { value: "steer",   label: "Steer",   preview: null, group: null, checked: false, needsInput: true  },
+    { value: "reject",  label: "Reject",  preview: null, group: null, checked: false, needsInput: false },
+  ];
+}
+
 // Last-resort gate-body parser: agents occasionally emit a JSON payload
 // (usually Claude Code's native AskUserQuestion schema - {questions:[{question,
 // multiSelect, options:[{label, description}]}]}) inside a <decision-request>
@@ -17558,6 +17588,7 @@ function parseQuestionForms(text) {
       if (rec) ok = parseOpts(rec.body).length > 0;
     }
     if (!ok) ok = !!parseGateJsonBody(body);
+    if (!ok && kind === "decision") ok = parseProseDecisionOptions(body).length > 0;
     if (!ok) return;
     if (found.some(f => f.m.index > oM.index)) return;
     found.push({ kind, m: { index: oM.index, 0: text.slice(oM.index), 1: oM[1] || "", 2: body } });
@@ -17665,6 +17696,8 @@ function parseQuestionForms(text) {
           if (!promptOut && jg.prompt) promptOut = jg.prompt;
         }
       }
+      // Prose fallback LAST: free-typed approve/steer/reject with no markup.
+      if (opts.length === 0) opts = parseProseDecisionOptions(body);
       if (opts.length > 0 && !id) id = gateSlug(promptOut || "") || "decision";
       if (id && opts.length > 0) {
         segments.push({ kind: "decision", decision: {
@@ -18862,11 +18895,11 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
     case "end":
       return html`<div className="chat-row chat-end">finished${block.data.exitCode != null ? ` · exit ${block.data.exitCode}` : ""}</div>`;
     case "raw":
-    default: {
-      const d = block.data || {};
-      const txt = d.text || JSON.stringify(d.frame || d.part || d);
-      return html`<div className="chat-row chat-raw">${txt && txt.length > 200 ? txt.slice(0,200)+"…" : txt}</div>`;
-    }
+    default:
+      // No producer emits raw blocks anymore (buildBlocks drops unknown
+      // frames); render nothing so no future block kind can JSON-dump
+      // into chat.
+      return null;
   }
 }
 
@@ -18925,11 +18958,9 @@ function ChatEventRow({ ev, runId, answers, onAnswered }) {
     if (data.type === "error") {
       return html`<div className="chat-row chat-row-error">${data.message || "error"}</div>`;
     }
-    if (data.type === "raw") {
-      const txt = data.text || JSON.stringify(data.frame || data.part || data);
-      return html`<div className="chat-row chat-raw">${txt.length > 200 ? txt.slice(0,200)+"…" : txt}</div>`;
-    }
-    return html`<div className="chat-row chat-raw">${JSON.stringify(data)}</div>`;
+    // Raw envelopes / unknown event types: never render as JSON in chat
+    // (same policy as buildBlocks - the run log keeps the full frame).
+    return null;
   }
   if (ev.event === "user_message" && data) {
     return html`<div className="chat-row chat-user-msg"><span className="chat-row-tag">you</span> ${stripChatPreamble(data.text)}</div>`;
