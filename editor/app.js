@@ -15745,10 +15745,29 @@ function buildBlocks(events) {
        && !isThinkingTokensEv(d) && !isTaskProgressEv(d)
        && d.frame && d.frame.type === "system")
   );
+  // Unknown/raw frames (a new SDK stream event type not yet whitelisted)
+  // must not render as JSON - but they shouldn't vanish without a trace
+  // either. Track the newest one and surface it as a single minimal
+  // "working" chip (same rolling semantics as the thinking chip).
+  const KNOWN_EVENT_TYPES = new Set([
+    "text_delta", "thinking_delta", "tool_use", "tool_result",
+    "status", "usage", "error", "system",
+  ]);
+  const isUnknownEv = (d) => !!d
+    && !isThinkingTokensEv(d) && !isTaskProgressEv(d) && !isSystemNoise(d)
+    && (d.type === "raw" || !KNOWN_EVENT_TYPES.has(d.type));
+  const unknownLabel = (d) => {
+    const t = (d && d.type === "raw")
+      ? ((d.frame && d.frame.type) || (typeof d.subtype === "string" ? d.subtype : null))
+      : (d && d.type);
+    return (typeof t === "string" && t) ? t.replace(/[_-]+/g, " ") : "event";
+  };
   let latestThinkingTokens = null;
   let latestThinkingTokensIdx = -1;
   let latestTaskProgress = null;
   let latestTaskProgressIdx = -1;
+  let latestUnknownLabel = null;
+  let latestUnknownIdx = -1;
   // Walk newest → oldest until we hit the first non-system event of any
   // kind. Capture the most-recent thinking_tokens AND task_progress along
   // the way; both stop the moment any real event (text_delta, tool_use,
@@ -15771,6 +15790,15 @@ function buildBlocks(events) {
     }
     if (ev && ev.event === "agent" && ev.data && isSystemNoise(ev.data)) {
       // Skip silently - system chatter doesn't reset the in-flight state.
+      continue;
+    }
+    if (ev && ev.event === "agent" && isUnknownEv(ev.data)) {
+      // Unknown frame still the latest activity - capture for the
+      // minimal "working" chip; doesn't end the in-flight phase.
+      if (latestUnknownIdx < 0) {
+        latestUnknownLabel = unknownLabel(ev.data);
+        latestUnknownIdx = i;
+      }
       continue;
     }
     // Any later event of a real shape → both phases are over.
@@ -15860,11 +15888,12 @@ function buildBlocks(events) {
         continue;
       }
       // Raw envelopes (unknown upstream frame types the daemon passed
-      // through) and unknown normalised types NEVER render in chat - the
+      // through) and unknown normalised types NEVER render inline - the
       // full frame stays in the run log on disk for forensics. This is the
       // future-proofing chokepoint: when the CLI grows a new stream event
-      // (tool_progress was the 2026-07 example), it stays invisible here
-      // until explicitly whitelisted above, instead of leaking as JSON.
+      // (tool_progress was the 2026-07 example), it can't leak as JSON.
+      // The newest one still gets a minimal rolling "working" chip,
+      // appended at the end of buildBlocks (latestUnknownIdx).
       continue;
     }
     if (ev.event === "user_message" && d) {
@@ -15907,6 +15936,20 @@ function buildBlocks(events) {
       kind: "task_progress",
       data: latestTaskProgress,
       key: `tp-prog-${latestTaskProgressIdx}`,
+    });
+  }
+  // Unknown/raw frames (a new SDK event type not yet whitelisted in the
+  // normaliser) surface as ONE minimal rolling chip - "working ··· <type>" -
+  // never as raw JSON. Only when it's newer than the other chips; it
+  // auto-vanishes the moment a real event arrives (same semantics as the
+  // thinking chip).
+  if (latestUnknownIdx >= 0
+      && latestUnknownIdx > latestThinkingTokensIdx
+      && latestUnknownIdx > latestTaskProgressIdx) {
+    blocks.push({
+      kind: "task_progress",
+      data: { subagent_type: "working", description: latestUnknownLabel },
+      key: `unk-prog-${latestUnknownIdx}`,
     });
   }
   return blocks;
