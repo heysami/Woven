@@ -9747,7 +9747,36 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
         out.append({"type": "status", "label": " · ".join(bits)})
         return out
 
-    # Unknown - pass through so we can see it in the UI's "raw" tab.
+    if ftype == "tool_progress":
+        # tool_progress heartbeats (newer Claude Code SDKs) stream while a
+        # long-running tool call is in flight - TaskOutput waiting on a
+        # background task, slow MCP calls, etc. Shape:
+        #   { type:"tool_progress", tool_use_id:"<id>-heartbeat-3",
+        #     tool_name, parent_tool_use_id, elapsed_time_seconds, ... }
+        # Same family as system/task_progress: normalise into that shape so
+        # the frontend's rolling chip absorbs it and the raw frame never
+        # reaches chat.
+        secs = frame.get("elapsed_time_seconds")
+        desc = "running…"
+        if isinstance(secs, (int, float)) and secs >= 1:
+            s = int(secs)
+            if s >= 60:
+                desc = "running · %dm%02ds" % (s // 60, s % 60)
+            else:
+                desc = "running · %ds" % s
+        out.append({
+            "type":          "system",
+            "subtype":       "task_progress",
+            "description":   desc,
+            "subagent_type": frame.get("tool_name"),
+            "toolUseId":     frame.get("parent_tool_use_id") or frame.get("tool_use_id"),
+        })
+        return out
+
+    # Unknown frame type. Pass through as a raw envelope so the run log on
+    # disk keeps the full frame for forensics - but the frontend NEVER
+    # renders raw envelopes in chat (buildBlocks drops them). A future SDK
+    # event type must be whitelisted here to become user-visible.
     out.append({"type": "raw", "frame": frame})
     return out
 
