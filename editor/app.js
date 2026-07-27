@@ -28732,9 +28732,112 @@ const WORKFLOW_AGENT_RIGHT_SIDES = new Set(["folder-write", "output", "output-1"
 //   ctx.appLayout    { [nodeId]: {panelL,panelR,panelT,panelB} } - float extents
 // Absent ctx (or deselected / no geometry) → the layer port retracts to the
 // node's main in/out edge, so existing callers need no change.
+// Every node kind whose component FLOORS its drawn box, in ONE place.
+//   min{W,H}  the floor the renderer clamps to (a node stored smaller still
+//             DRAWS this big, so port geometry must measure the same way)
+//   def{W,H}  the size used when the record carries no w/h at all
+// Both the components and workflowPortPosition below read this table. When the
+// floor lived in two places it drifted: a skill node stored at h=160 drew 200
+// tall, so its wires ended 20px above the port diamonds and read as detached.
+// `pose-subject` is keyed separately - those are kind "skill" but render
+// through WorkflowPoseSetNode, which floors much larger.
+const WORKFLOW_NODE_FLOOR = {
+  "skill":                           { minW: 240, minH: 200, defW: 280, defH: 220 },
+  // No floor, but its no-size defaults differ from the generic fallback.
+  "agent":                           { minW:   0, minH:   0, defW: 320, defH: 240 },
+  "pose-subject":                    { minW: 320, minH: 360, defW: 360, defH: 430 },
+  "pose-viewer":                     { minW: 220, minH: 240, defW: 300, defH: 340 },
+  // The seven family kinds all render through WorkflowSimOrInteractiveNode -
+  // one shared floor, but its no-size default varies by family.
+  "simulation":                      { minW: 280, minH: 220, defW: 540, defH: 400 },
+  "game-experience":                 { minW: 280, minH: 220, defW: 540, defH: 400 },
+  "scrapbook-experience":            { minW: 280, minH: 220, defW: 540, defH: 400 },
+  "interactive-polish":              { minW: 280, minH: 220, defW: 540, defH: 400 },
+  "scene-3d":                        { minW: 280, minH: 220, defW: 540, defH: 400 },
+  "interactive-media":               { minW: 280, minH: 220, defW: 720, defH: 480 },
+  "narrative-experience":            { minW: 280, minH: 220, defW: 800, defH: 450 },
+  "frames":                          { minW: 320, minH: 220, defW: 800, defH: 540 },
+  "section":                         { minW: 280, minH: 180, defW: 880, defH: 560 },
+  "design-system":                   { minW: 320, minH: 640, defW: 340, defH: 720 },
+  "ds-brainstorm":                   { minW: 320, minH: 720, defW: 360, defH: 820 },
+  "iterator-repeater":               { minW: 300, minH: 380, defW: 360, defH: 380 },
+  "iterator-remix":                  { minW: 300, minH: 400, defW: 360, defH: 400 },
+  "iterator-blend":                  { minW: 340, minH: 420, defW: 380, defH: 420 },
+  "assistant-interview":             { minW: 360, minH: 420, defW: 440, defH: 480 },
+  "assistant-research":              { minW: 360, minH: 440, defW: 420, defH: 460 },
+  "assistant-testing":               { minW: 380, minH: 460, defW: 440, defH: 500 },
+  "assistant-deepresearch":          { minW: 380, minH: 480, defW: 440, defH: 540 },
+  "assistant-strategy":              { minW: 400, minH: 500, defW: 460, defH: 560 },
+  "assistant-strategy-orchestrator": { minW: 400, minH: 440, defW: 460, defH: 520 },
+};
+// Asset cards do not have a fixed floor - their drawn box is COMPUTED from
+// node.size (scale ladder x device class x natural aspect). Extracted from
+// WorkflowAssetNode so the port geometry can measure an asset exactly as it
+// paints; an asset with no stored w/h draws ~480x536 but used to be measured
+// at the 220x150 fallback, throwing its wires ~85px off.
+function workflowAssetDrawnSize(node) {
+  const _size = node.size || {};
+  const kind = node.assetKind || "image";
+  const _hasExplicitWH = (Number.isFinite(node.w) && node.w > 0)
+                      || (Number.isFinite(node.h) && node.h > 0);
+  const _isCustom = _size.scale === "custom"
+                 || (_size.scale === undefined && _hasExplicitWH);
+  if (_isCustom) return { w: node.w || 320, h: node.h || 240 };
+  const _scale = _size.scale || "fit-canvas";
+  // For an HTML asset we know the intended device class (set by the iframe
+  // onLoad probe), so bias the base width: desktop pages get the larger ~640
+  // thumbnail, mobile pages a narrower ~300 column (which with the 0.46 aspect
+  // gives the standard 375x667-ish tall card). Other kinds keep the original
+  // 320/480/720 ladder unchanged.
+  const _deviceClass = (kind === "html" || kind === "html-set")
+    ? (_size.deviceClass || null) : null;
+  let _baseW;
+  if (_deviceClass === "mobile") {
+    _baseW = _scale === "small" ? 240 : _scale === "large" ? 380 : 300;
+  } else if (_deviceClass === "desktop") {
+    _baseW = _scale === "small" ? 480 : _scale === "large" ? 800 : 640;
+  } else {
+    _baseW = _scale === "small" ? 320 : _scale === "large" ? 720 : 480;
+  }
+  const _minW = _size.minW || 280;
+  const _maxW = _size.maxW || (_deviceClass === "desktop" ? 800 : 720);
+  let _aspect = (Number.isFinite(_size.naturalAspect) && _size.naturalAspect > 0)
+                ? _size.naturalAspect : null;
+  if (!_aspect) {
+    if (kind === "html-set" || kind === "html") _aspect = 16/10;
+    else if (kind === "video")                  _aspect = 16/9;
+    else if (kind === "image" || kind === "svg") _aspect = 1;
+    else if (kind === "markdown" || kind === "text") _aspect = null;
+    else _aspect = 4/3;
+  }
+  const _CHROME = 56;  // title bar + footer
+  const w = Math.max(_minW, Math.min(_maxW, _baseW));
+  const h = _aspect ? Math.round(w / _aspect + _CHROME) : (node.h || 280);
+  return { w, h };
+}
+
+// Floor entry for a node, or null for kinds whose renderer does not clamp.
+function workflowNodeFloor(node) {
+  if (!node) return null;
+  if (node.kind === "skill" && node.skill === "pose-subject") return WORKFLOW_NODE_FLOOR["pose-subject"];
+  return WORKFLOW_NODE_FLOOR[node.kind] || null;
+}
+// The size a node actually DRAWS at - what every port must be measured from.
+function workflowNodeDrawnSize(node) {
+  if (node && node.kind === "asset") return workflowAssetDrawnSize(node);
+  const f = workflowNodeFloor(node);
+  if (!f) return { w: node.w || 220, h: node.h || 150 };
+  return {
+    w: Math.max(f.minW, node.w || f.defW),
+    h: Math.max(f.minH, node.h || f.defH),
+  };
+}
+
 function workflowPortPosition(node, side, ctx) {
-  const w = node.w || 220;
-  const h = node.h || 150;
+  // Drawn size, not stored size - see WORKFLOW_NODE_FLOOR. Every branch below
+  // (prototype / agent / iterator / logic / spec / default) inherits the floor
+  // from here, so no branch can measure a node smaller than it paints.
+  const { w, h } = workflowNodeDrawnSize(node);
   // Layer-anchored ports - resolved before everything else when geometry exists.
   const lp = workflowParseLayerPort(side);
   if (lp) {
@@ -28811,28 +28914,9 @@ function workflowPortPosition(node, side, ctx) {
     }
     if (side === "out") return { x: node.x + w, y: node.y + bodyTop + bodyH * 0.5 };
   }
-  // Assistant family (interview / research / testing): single LEFT `in`,
-  // single RIGHT `out`. Their dots are the DEFAULT full-height-centred port
-  // zones (no custom offset), and each component CLAMPS its rendered size to
-  // per-kind minimums - mirror BOTH here or the wire endpoint lands below /
-  // beside the drawn diamond (the old bodyTop-offset math missed by 16px on
-  // every assistant edge).
-  if (node.kind === "assistant-interview" || node.kind === "assistant-research" || node.kind === "assistant-testing" || node.kind === "assistant-deepresearch" || node.kind === "assistant-strategy" || node.kind === "assistant-strategy-orchestrator") {
-    const cw = node.kind === "assistant-interview" ? Math.max(360, node.w || 440)
-             : node.kind === "assistant-testing"   ? Math.max(380, node.w || 440)
-             : node.kind === "assistant-deepresearch" ? Math.max(380, node.w || 440)
-             : node.kind === "assistant-strategy"  ? Math.max(400, node.w || 460)
-             : node.kind === "assistant-strategy-orchestrator" ? Math.max(400, node.w || 460)
-             :                                       Math.max(360, node.w || 420);
-    const ch = node.kind === "assistant-interview" ? Math.max(420, node.h || 480)
-             : node.kind === "assistant-testing"   ? Math.max(460, node.h || 500)
-             : node.kind === "assistant-deepresearch" ? Math.max(480, node.h || 540)
-             : node.kind === "assistant-strategy"  ? Math.max(500, node.h || 560)
-             : node.kind === "assistant-strategy-orchestrator" ? Math.max(440, node.h || 520)
-             :                                       Math.max(440, node.h || 460);
-    if (side === "in")  return { x: node.x,      y: node.y + ch / 2 };
-    if (side === "out") return { x: node.x + cw, y: node.y + ch / 2 };
-  }
+  // (The assistant family used to re-derive its own floors here. That table now
+  // lives in WORKFLOW_NODE_FLOOR and is already applied to w/h above, so the
+  // default in/out branch at the bottom handles them - same centred result.)
   // Logic Graph (W1A): named provides (right edge) + accepts (left edge),
   // evenly spaced below the 30px spec-node bar. Same distribution the renderer
   // in WorkflowSpecNode uses, so dots + wire endpoints line up.
@@ -28887,14 +28971,8 @@ function workflowPortPosition(node, side, ctx) {
   const dlay = (ctx && ctx.selectedIds && ctx.selectedIds.has && ctx.selectedIds.has(node.id) && ctx.appLayout && ctx.appLayout[node.id]) || null;
   const offL = dlay ? (dlay.panelL || 0) : 0;
   const offR = dlay ? (dlay.panelR || 0) : 0;
-  // Skill nodes FLOOR their drawn box (WorkflowSkillNode: w>=240, h>=200) so a
-  // short scaffolded node still fits the Run button. Mirror that floor here or
-  // an undersized stored h puts the wire end above the drawn diamond and the
-  // edge reads as detached - the same trap the assistant family hit above.
-  const cw = node.kind === "skill" ? Math.max(240, w) : w;
-  const ch = node.kind === "skill" ? Math.max(200, h) : h;
-  const cy = node.y + ch / 2;
-  return side === "in" ? { x: node.x - offL, y: cy } : { x: node.x + cw + offR, y: cy };
+  const cy = node.y + h / 2;
+  return side === "in" ? { x: node.x - offL, y: cy } : { x: node.x + w + offR, y: cy };
 }
 
 // Edge refs in workflow.json take the form "nodeId.port". Split safely.
@@ -62768,11 +62846,10 @@ function WorkflowSimOrInteractiveNode({ node, family, zoom, orphaned, selected, 
                     : { w: 720, h: 540 };
   const vw = (typeof vp.w === "number" && vp.w > 0) ? vp.w : _defaultVp.w;
   const vh = (typeof vp.h === "number" && vp.h > 0) ? vp.h : _defaultVp.h;
-  const _defaultNode = family === "interactive" ? { w: 720, h: 480 }
-                      : family === "narrative"   ? { w: 800, h: 450 }
-                      : { w: 540, h: 400 };
-  const w = Math.max(280, node.w || _defaultNode.w);
-  const h = Math.max(220, node.h || _defaultNode.h);
+  // Floor + per-family default both come from WORKFLOW_NODE_FLOOR (keyed by
+  // node.kind, which maps 1:1 to `family`), so the port geometry measures this
+  // node exactly as it paints.
+  const { w, h } = workflowNodeDrawnSize(node);
   const titleH = 32;
   const permsH = (family === "interactive" && permissionGates.length) ? 22 : 0;
   const bodyW = Math.max(1, w);
@@ -63307,8 +63384,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     window.addEventListener("blur", onUp);
   }, [zoom, onResize, onDragStart, onDragEnd]);
 
-  const w = Math.max(320, node.w || 800);
-  const h = Math.max(220, node.h || 540);
+  const { w, h } = workflowNodeDrawnSize(node);
 
   return html`
     <div
@@ -66872,48 +66948,13 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // (drag-resize / picker explicit pick), w/h alone drive layout.
   const _size = node.size || {};
   const kind = node.assetKind || "image";
-  const _hasExplicitWH = (Number.isFinite(node.w) && node.w > 0)
-                      || (Number.isFinite(node.h) && node.h > 0);
+  const { w, h } = workflowAssetDrawnSize(node);
+  // Same predicate workflowAssetDrawnSize() branches on - the autosize button
+  // below is only meaningful for a card that is currently custom-sized.
   const _isCustom = _size.scale === "custom"
-                 || (_size.scale === undefined && _hasExplicitWH);
-  let w, h;
-  if (_isCustom) {
-    w = node.w || 320;
-    h = node.h || 240;
-  } else {
-    const _scale = _size.scale || "fit-canvas";
-    // For an HTML asset we know the intended device class (set by the
-    // iframe onLoad probe), bias the base width so desktop pages get the
-    // larger ~640 thumbnail and mobile pages get a narrower ~300 column
-    // (which combined with the 0.46 aspect produces the standard
-    // 375x667-ish tall card). Other kinds keep the original 320/480/720
-    // ladder unchanged.
-    const _deviceClass = (kind === "html" || kind === "html-set")
-      ? (_size.deviceClass || null) : null;
-    let _baseW;
-    if (_deviceClass === "mobile") {
-      _baseW = _scale === "small" ? 240 : _scale === "large" ? 380 : 300;
-    } else if (_deviceClass === "desktop") {
-      _baseW = _scale === "small" ? 480 : _scale === "large" ? 800 : 640;
-    } else {
-      _baseW = _scale === "small" ? 320 : _scale === "large" ? 720 : 480;
-    }
-    const _minW = _size.minW || 280;
-    const _maxW = _size.maxW || (_deviceClass === "desktop" ? 800 : 720);
-    let _aspect = (Number.isFinite(_size.naturalAspect) && _size.naturalAspect > 0)
-                  ? _size.naturalAspect : null;
-    if (!_aspect) {
-      if (kind === "html-set" || kind === "html") _aspect = 16/10;
-      else if (kind === "video")                  _aspect = 16/9;
-      else if (kind === "image" || kind === "svg") _aspect = 1;
-      else if (kind === "markdown" || kind === "text") _aspect = null;
-      else _aspect = 4/3;
-    }
-    const _CHROME = 56;  // title bar + footer
-    w = Math.max(_minW, Math.min(_maxW, _baseW));
-    h = _aspect ? Math.round(w / _aspect + _CHROME)
-                : (node.h || 280);
-  }
+                 || (_size.scale === undefined
+                     && ((Number.isFinite(node.w) && node.w > 0)
+                      || (Number.isFinite(node.h) && node.h > 0)));
   // ── HTML asset fit mode ────────────────────────────────────────────────
   // Two ways an HTML/WebGL asset fills its card:
   //   • "scale" (default) - render the iframe at a fixed device-class
@@ -80781,7 +80822,7 @@ function WorkflowRepeaterNode({ node, zoom, selected, onSelect, onMove, onResize
   // scroll line even if the node was scaffolded with a stale tiny height
   // or the user shrank it manually. Same belt-and-suspenders pattern the
   // skill-node renderer uses (see WorkflowSkillNode).
-  const w = Math.max(300, node.w || 360), h = Math.max(380, node.h || 380);
+  const { w, h } = workflowNodeDrawnSize(node);
   const running = runState?.status === "loading";
   const setN = (next) => {
     const v = Math.max(1, Math.min(8, parseInt(next, 10) || 1));
@@ -80901,7 +80942,7 @@ function WorkflowRemixNode({ node, zoom, selected, onSelect, onMove, onResize, o
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   // Floor h so the Run row stays visible regardless of stored/resized height.
-  const w = Math.max(300, node.w || 360), h = Math.max(400, node.h || 400);
+  const { w, h } = workflowNodeDrawnSize(node);
   const running = runState?.status === "loading";
   const setN = (next) => {
     const v = Math.max(1, Math.min(8, parseInt(next, 10) || 1));
@@ -81037,7 +81078,7 @@ function WorkflowBlendNode({ node, zoom, selected, onSelect, onMove, onResize, o
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   // Floor h so the Run row stays visible regardless of stored/resized height.
-  const w = Math.max(340, node.w || 380), h = Math.max(420, node.h || 420);
+  const { w, h } = workflowNodeDrawnSize(node);
   const running = runState?.status === "loading";
   const setN = (next) => {
     const v = Math.max(2, Math.min(6, parseInt(next, 10) || 2));
@@ -81478,7 +81519,7 @@ function WorkflowInterviewNode({ node, zoom, selected, onSelect, onMove, onResiz
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
   const [chatOpen, setChatOpen] = useState(false);
-  const w = Math.max(360, node.w || 440), h = Math.max(420, node.h || 480);
+  const { w, h } = workflowNodeDrawnSize(node);
   const busy = runState?.status === "loading";
   const pushPast = node.pushPast || [];
   const hasRun = !!(node.runId || node.lastRunId);
@@ -81573,7 +81614,7 @@ function WorkflowInterviewNode({ node, zoom, selected, onSelect, onMove, onResiz
 function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
-  const w = Math.max(360, node.w || 420), h = Math.max(440, node.h || 460);
+  const { w, h } = workflowNodeDrawnSize(node);
   const busy = runState?.status === "loading";
   const running = node.runStatus === "running" && !!node.runId;
   // Agent-run tracking: the standard chat dialog attaches by runId.
@@ -81700,7 +81741,7 @@ function WorkflowResearchNode({ node, zoom, selected, onSelect, onMove, onResize
 function WorkflowTestingNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
-  const w = Math.max(380, node.w || 440), h = Math.max(460, node.h || 500);
+  const { w, h } = workflowNodeDrawnSize(node);
   const busy = runState?.status === "loading";
   const running = node.runStatus === "running" && !!node.runId;
   // Agent-run tracking: the standard chat dialog attaches by runId.
@@ -81817,7 +81858,7 @@ function WorkflowTestingNode({ node, zoom, selected, onSelect, onMove, onResize,
 function WorkflowDeepResearchNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onSetup, runState }) {
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
-  const w = Math.max(380, node.w || 440), h = Math.max(480, node.h || 540);
+  const { w, h } = workflowNodeDrawnSize(node);
   const busy = runState?.status === "loading";
   const running = node.runStatus === "running" && !!node.runId;
   // Agent-run tracking: the standard chat dialog attaches by runId.
@@ -81995,7 +82036,7 @@ function WorkflowStrategyNode({ node, zoom, selected, onSelect, onMove, onResize
     window.addEventListener("th:chat-claim", onClaim);
     return () => window.removeEventListener("th:chat-claim", onClaim);
   }, [node.id]);
-  const w = Math.max(400, node.w || 460), h = Math.max(500, node.h || 560);
+  const { w, h } = workflowNodeDrawnSize(node);
   const busy = runState?.status === "loading";
   const running = node.runStatus === "running" && !!node.runId;
   const task = (node.task || "").trim();
@@ -82274,7 +82315,7 @@ function WorkflowStrategyChainNode({ node, zoom, selected, onSelect, onMove, onR
     window.addEventListener("th:chat-claim", onClaim);
     return () => window.removeEventListener("th:chat-claim", onClaim);
   }, [node.id]);
-  const w = Math.max(400, node.w || 460), h = Math.max(440, node.h || 520);
+  const { w, h } = workflowNodeDrawnSize(node);
   const busy = runState?.status === "loading";
   const task = (node.task || "").trim();
   const plan = node.chainPlan;
@@ -82428,8 +82469,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
   // user to scroll inside a node that didn't look scrollable. The floor
   // keeps existing canvases (pre-bump node.h values were stored at 380)
   // from rendering the old too-small layout.
-  const w = Math.max(320, node.w || 340);
-  const h = Math.max(640, node.h || 720);
+  const { w, h } = workflowNodeDrawnSize(node);
 
   // Poll /__design_system?id=<dsId> on mount + on th:ds-refresh. The endpoint
   // returns 404 when the DS folder doesn't exist yet (status stays "Draft"),
@@ -84497,8 +84537,7 @@ function WorkflowPoseSetNode({ node, zoom, dragging, onHandleDown, onResizeDown,
   const [err, setErr]     = useState("");
   const [draft, setDraft] = useState("");     // custom-pose text field
 
-  const w = Math.max(320, node.w || 360);
-  const h = Math.max(360, node.h || 430);
+  const { w, h } = workflowNodeDrawnSize(node);
   const model    = node.model || WORKFLOW_I2I_DEFAULT_MODEL;
   const provider = ((window.TH_MEDIA && window.TH_MEDIA.imageModels) || [])
     .find(m => m.id === model)?.provider || "openai";
@@ -84751,8 +84790,7 @@ function WorkflowPoseViewerNode({ node, zoom, selected, onSelect, onMove, onResi
   const [cropOpen, setCropOpen] = useState(false); // crop/orient modal for the active pose
   const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd), [zoom, onMove, onDragStart, onDragEnd]);
   const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd), [zoom, onResize, onDragStart, onDragEnd]);
-  const w = Math.max(220, node.w || 300);
-  const h = Math.max(240, node.h || 340);
+  const { w, h } = workflowNodeDrawnSize(node);
   const isImg = (p) => typeof p === "string" && /\.(png|jpe?g|webp|gif)$/i.test(p) && p.startsWith("source/");
 
   // Upstream pose-set generator wired into `in`.
@@ -85398,8 +85436,7 @@ function WorkflowSectionNode({ node, zoom, selected, dropHint, onSelect, onMove,
   const [editingTitle, setEditingTitle] = useState(false);
   const [saved, setSaved] = useState(false);
   const titleInputRef = useRef(null);
-  const w = Math.max(280, node.w || 880);
-  const h = Math.max(180, node.h || 560);
+  const { w, h } = workflowNodeDrawnSize(node);
   // Inverse-zoom scale so the title text reads at the same size at any
   // canvas zoom level. clamp so a wildly low/high zoom doesn't blow up.
   const invZoom = Math.max(0.25, Math.min(8, 1 / (zoom || 1)));
@@ -85707,14 +85744,13 @@ function WorkflowDSBrainstormNode({ node, zoom, selected, onSelect, onMove, onRe
   const [linkDraft, setLinkDraft] = useState("");
   const [attachError, setAttachError] = useState(null);
   const fileInputRef = useRef(null);
-  const w = Math.max(320, node.w || 360);
-  // Default + floor heights raised so the body's nine sections
-  // (Theme · Genre · Target audience · Emotion · Sample page · Imagery
-  // subjects · Reference folder · Individual attachments · Actions) all
-  // fit. The old default of 620 cut off "Individual attachments" and the
-  // action buttons, and the 280 floor let resized nodes render with the
-  // brief stub user reported as content-below-the-scroll-line.
-  const h = Math.max(720, node.h || 820);
+  // Height floor + default are deliberately large (see WORKFLOW_NODE_FLOOR):
+  // the body's nine sections (Theme · Genre · Target audience · Emotion ·
+  // Sample page · Imagery subjects · Reference folder · Individual attachments
+  // · Actions) all have to fit. The old default of 620 cut off "Individual
+  // attachments" and the action buttons, and the old 280 floor let resized
+  // nodes render with the brief stub reported as content-below-the-scroll-line.
+  const { w, h } = workflowNodeDrawnSize(node);
   const spec = node.spec || {};
   const mode = spec.mode || "any";
   const attachments = Array.isArray(spec.attachments) ? spec.attachments : [];
@@ -89726,8 +89762,7 @@ function WorkflowSkillNode({ node, zoom, selected, onSelect, onMove, onResize, o
   // the body's overflow:auto pushed it past the visible region. Floor
   // tall enough to fit the standard layout; manual resize can still go
   // bigger but not smaller than the content needs.
-  const w = Math.max(240, node.w || 280);
-  const h = Math.max(200, node.h || 220);
+  const { w, h } = workflowNodeDrawnSize(node);
   const status = (runState && runState.status) || "idle";
   const error  = runState && runState.error;
   const skillId = node.skill || "generate-image";
