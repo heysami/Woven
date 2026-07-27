@@ -10031,6 +10031,34 @@ function UsageMeter({ w }) {
   </div>`;
 }
 
+/* Which agent runtimes can take a mid-turn user message into an in-flight
+   turn (the queue-card bolt button). Daemon-authoritative via
+   /__media_config `steerable_agents` (driven off AGENT_DEFS["steerable"]
+   server-side - flips per runtime as server-surface drivers land, see
+   docs/features/runtime-steering.md). Defaults to claude-only so the UI
+   stays honest against an older daemon that predates the field. Fetched
+   once per page load and shared across composer mounts. */
+let __steerableAgentsPromise = null;
+function loadSteerableAgents() {
+  if (!__steerableAgentsPromise) {
+    __steerableAgentsPromise = fetch(apiUrl("/__media_config"))
+      .then(r => r.ok ? r.json() : null)
+      .then(j => (j && Array.isArray(j.steerable_agents) && j.steerable_agents.length)
+        ? j.steerable_agents : ["claude"])
+      .catch(() => ["claude"]);
+  }
+  return __steerableAgentsPromise;
+}
+function useSteerableAgents() {
+  const [list, setList] = useState(["claude"]);
+  useEffect(() => {
+    let on = true;
+    loadSteerableAgents().then(l => { if (on) setList(l); });
+    return () => { on = false; };
+  }, []);
+  return list;
+}
+
 /* Polls /__media_config once on mount so any surface can ask "is any model
    reachable from this editor at all?" - i.e. does the user have at least one
    provider API key configured OR a logged-in Claude CLI on PATH. Returns the
@@ -14467,6 +14495,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       <${ChatComposer}
         runId=${run?.runId}
         isNew=${isNew}
+        agentId=${run?.agentId}
         disabled=${!isNew && (status === "streaming" || status === "connecting")}
         locked=${processEnded || !!run?.historical}
         selectionCount=${selectionCount}
@@ -14643,7 +14672,7 @@ async function __loadSlashSkills() {
   return items;
 }
 
-function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar }) {
+function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -15165,6 +15194,14 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   };
   const removeQueued = (id) => setQueue(prev => prev.filter(q => q.id !== id));
 
+  // Whether THIS run's runtime can take a mid-turn message (bolt button
+  // while the agent is working). Daemon-authoritative list; agentId can be
+  // absent on older run objects - default to the daemon's default agent
+  // (claude). While the agent is IDLE the bolt is send-now and works for
+  // every runtime, so it renders regardless then.
+  const steerableAgents = useSteerableAgents();
+  const runSteerable = steerableAgents.includes(agentId || "claude");
+
   // Force-steer: fire a queued envelope at the daemon NOW, while the agent
   // is still mid-turn, instead of waiting for the turn to end. The daemon's
   // /user-message endpoint writes to the live process stdin regardless of
@@ -15401,7 +15438,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
             const qRefs = q.fileRefs || [];
             const preview = (q.text || "").trim().replace(/\s+/g, " ").slice(0, 80) || (q.attachments.length || q.uploads.length || qRefs.length ? "(attachments only)" : "(empty)");
             const titleParts = [
-              `Queued message #${i + 1} - click to edit, bolt to send now, × to drop`,
+              `Queued message #${i + 1} - click to edit, ${(!disabled || runSteerable) ? "bolt to send now, " : ""}× to drop`,
               q.text || "(no text)",
             ];
             if (q.attachments.length) titleParts.push("Attachments:\n" + q.attachments.map(a => "  " + a.path).join("\n"));
@@ -15433,7 +15470,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                   title=${titleParts.join("\n\n")}
                   onClick=${() => pullQueuedIntoComposer(q.id)}
                 ><span className="chat-composer-queue-preview">${preview}</span>${q.attachments.length ? html`<span className="chat-composer-queue-meta"><${Icon.Image}/>${q.attachments.length}</span>` : null}${q.uploads.length ? html`<span className="chat-composer-queue-meta"><${Icon.Folder}/>${q.uploads.length}</span>` : null}${qRefs.length ? html`<span className="chat-composer-queue-meta"><${Icon.Clip}/>${qRefs.length}</span>` : null}</button>
-                <button
+                ${(!disabled || runSteerable) && html`<button
                   type="button"
                   className="chat-composer-queue-steer"
                   onClick=${() => steerQueued(q.id)}
@@ -15442,7 +15479,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                     ? "Send now - steers the in-progress turn instead of waiting for it to finish"
                     : "Send now"}
                   aria-label=${`Send queued message ${i + 1} now`}
-                ><${Icon.Bolt}/></button>
+                ><${Icon.Bolt}/></button>`}
                 <button
                   type="button"
                   className="chat-composer-queue-rm"

@@ -143,21 +143,36 @@ path STAYS as the fallback until the new driver has survived real use; a config
 flag (`WOVEN_CODEX_DRIVER=exec|app-server`, default exec initially) picks per
 daemon boot, so one `-c`-style toggle rolls back.
 
-### Phase 0 - groundwork + honesty UI (no runtime change)
-- Add driver capability plumbing + `steerable` in run snapshots.
-- Composer: bolt hidden (or greyed with tooltip "this runtime can't take
-  mid-turn input") on non-steerable runs while mid-turn.
+### Phase 0 - groundwork + honesty UI (no runtime change) - DONE 2026-07-27
+- [x] Capability plumbing: `AGENT_DEFS[*]["steerable"]` (claude True,
+  codex/opencode False) surfaced as `steerable_agents` on GET /__media_config.
+  Client falls back to `["claude"]` when the key is absent (older daemon).
+- [x] Composer honesty: bolt on queue cards renders mid-turn ONLY for
+  steerable runtimes (`useSteerableAgents` + the run's `agentId`, passed
+  from the drawer). Idle bolt (= send now) still renders for every runtime.
+- [x] codex real resume: `_CodexStderrParser` captures the banner
+  `session id: <uuid>` (top-of-feed, strict-UUID, first-wins - survives the
+  fell-through-banner flow when pre-banner noise has continuation lines);
+  `_drain_stderr` copies it to `state.session_id` + persists a
+  `codex-session` status event (rehydrator: codex latest-wins);
+  `_run_resume_codex` spawns `codex exec resume <sid> <msg>` (with
+  `-c sandbox_mode="danger-full-access"` + MCP `-c` overrides + model) when
+  the CLI supports it (probed once via `--help`) AND the rollout file exists
+  in the child's CODEX_HOME - else transcript-rebuild fallback (opencode
+  always). Kill switch: env `WOVEN_CODEX_EXEC_RESUME=off`.
+  NOT yet live-verified end-to-end (the local codex login was expired at
+  build time - refresh_token_reused); parser + preconditions unit-tested
+  against a real captured stderr. First real codex chat after `codex login`
+  is the live test; on any misbehavior set the kill switch.
+- Schema snapshot + boot-time drift detection: MOVED to Phase 1 (it guards
+  the app-server driver; nothing consumes the schema until that exists).
+
+### Phase 1 - codex app-server driver, happy path
 - Snapshot the codex app-server schema (`generate-json-schema`) into
   `editor/tools/appserver-schema/<version>/` at first driver boot; on daemon
   start with a NEW codex version, diff method names/param shapes we depend on
   and surface "codex updated - protocol drifted" in the runs UI instead of
-  failing mid-conversation.
-- Cheap interim win, independent of app-server: switch codex fake-resume to
-  `codex exec resume <session-id>` where a session id is known (kills the
-  transcript-rebuild token balloon for codex without any protocol work).
-  Verify session persistence flags first.
-
-### Phase 1 - codex app-server driver, happy path
+  failing mid-conversation. (Moved from Phase 0.)
 - Spawn `codex app-server` per run (stdio JSON-RPC; one child per run keeps the
   blast radius identical to today's model).
 - initialize -> thread/start (cwd, sandbox=dangerFullAccess equivalent,

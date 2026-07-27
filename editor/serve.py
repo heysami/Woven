@@ -46,6 +46,7 @@ if _sys.version_info < (3, 9):
 import atexit
 import datetime as _dt
 import difflib
+import glob
 import hashlib
 import http.server
 import json
@@ -6223,6 +6224,47 @@ def _codex_mcp_spawn_args(visual_deny=False) -> list:
     return args
 
 
+# `codex exec resume <session-id>` support probe. Added to the CLI in 2026;
+# probed once per daemon lifetime with a --help call (no model traffic, no
+# auth needed) so older installed CLIs cleanly fall back to the
+# transcript-rebuild resume. See docs/features/runtime-steering.md Phase 0.
+_CODEX_EXEC_RESUME_PROBE = {"checked": False, "ok": False}
+
+
+def _codex_exec_resume_supported(bin_path) -> bool:
+    if _CODEX_EXEC_RESUME_PROBE["checked"]:
+        return _CODEX_EXEC_RESUME_PROBE["ok"]
+    ok = False
+    try:
+        r = subprocess.run([bin_path, "exec", "resume", "--help"],
+                           capture_output=True, timeout=10,
+                           stdin=subprocess.DEVNULL)
+        ok = r.returncode == 0
+    except Exception:
+        ok = False
+    _CODEX_EXEC_RESUME_PROBE["checked"] = True
+    _CODEX_EXEC_RESUME_PROBE["ok"] = ok
+    return ok
+
+
+def _codex_session_file_exists(session_id, env) -> bool:
+    """True when codex recorded a rollout file for this session id under the
+    CODEX_HOME the child would use (Live Session guests get a sandboxed
+    CODEX_HOME via _build_child_env - their sessions live there, not in
+    ~/.codex). Layout: <home>/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl.
+    The rollout file is exactly what `codex exec resume <id>` looks up, so
+    its absence means the resume WOULD fail - fall back to the transcript
+    rebuild instead of spawning a doomed child."""
+    if not session_id or not re.match(r"^[0-9a-fA-F-]{8,64}$", str(session_id)):
+        return False
+    home = (env or {}).get("CODEX_HOME") or os.path.expanduser("~/.codex")
+    pattern = os.path.join(home, "sessions", "*", "*", "*", "*%s.jsonl" % session_id)
+    try:
+        return bool(glob.glob(pattern))
+    except Exception:
+        return False
+
+
 def _ensure_opencode_mcp_config(visual_deny=False):
     """Build the managed opencode config that carries AGENT_MCP_CONFIG's
     servers in opencode's `"mcp"` shape PLUS the harness permission grants,
@@ -6333,6 +6375,14 @@ AGENT_DEFS = {
         "permission_default": AGENT_PERMISSION_MODE_DEFAULT,
         "prompt_via_stdin": True,
         "stdin_format": "stream-json",   # newline-delimited JSON frames
+        # Mid-turn steering: the live process accepts stream-json user frames
+        # on stdin while working, so /user-message can inject into an
+        # in-flight turn. Surfaced to the client via /__media_config
+        # steerable_agents; the chat composer's queue-card bolt button only
+        # renders mid-turn for steerable runtimes. See
+        # docs/features/runtime-steering.md - codex/opencode flip to True
+        # when their server-surface drivers land.
+        "steerable": True,
         # `model_flag` is the CLI's model-select flag. The chosen default model
         # (Settings > Default models per capability > Chat/agent) is passed as the
         # run's `model`; a blank/CLI-default-sentinel model omits the flag so the
@@ -6368,6 +6418,10 @@ AGENT_DEFS = {
         "permission_default": None,
         "prompt_via_stdin": False,
         "stdin_format": "argv",
+        # `codex exec` is one-shot with no mid-turn input channel (stdin is
+        # DEVNULL) - NOT steerable until the app-server driver lands (see
+        # docs/features/runtime-steering.md).
+        "steerable": False,
         # Codex takes `--model <id>`; the chosen model id is passed through verbatim.
         "model_flag": "--model",
     },
@@ -6396,6 +6450,11 @@ AGENT_DEFS = {
         "permission_default": None,
         "prompt_via_stdin": False,
         "stdin_format": "argv",
+        # `opencode run` is one-shot with no mid-turn input channel - NOT
+        # steerable until the `opencode serve` HTTP driver lands (and even
+        # then queue-not-steer until upstream ships steer semantics; see
+        # docs/features/runtime-steering.md).
+        "steerable": False,
         # opencode manages its own model in its own config (`opencode auth login`
         # + config file); model_flag None = we never pass --model, it stays on its
         # own configured default (skipped per the Settings picker too).
@@ -8423,8 +8482,13 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
         chain = None
         for rec in run_lines:
             data = rec.get("data") or {}
-            # Capture session_id from any agent frame that carries it
-            if isinstance(data, dict) and data.get("sessionId") and not session_id:
+            # Capture session_id from any agent frame that carries it.
+            # claude: first-wins (existing behavior). codex: LATEST-wins -
+            # every (re)spawn banner emits a `codex-session` status event,
+            # and only the newest recorded session holds the full context
+            # for `codex exec resume` (see _run_resume_codex).
+            if isinstance(data, dict) and data.get("sessionId") and (
+                    not session_id or agent_id == "codex"):
                 session_id = data["sessionId"]
             # Capture spawn parameters from the initial spawn event
             if isinstance(data, dict) and data.get("label") == "spawned":
@@ -10306,6 +10370,17 @@ def _drain_stderr(state: "RunState") -> None:
             for raw in state.proc.stderr:
                 line = raw.decode("utf-8", errors="replace").rstrip("\n")
                 events, raw_passthrough = parser.feed(line)
+                # Banner session id -> RunState + persisted event, so
+                # /resume can `codex exec resume <id>` (see
+                # _run_resume_codex). Latest-wins: each respawn (resume)
+                # prints its own banner and the NEWEST session is the one
+                # that holds the full context. The status event makes the
+                # id survive daemon restarts via chat.jsonl rehydration
+                # (the rehydrator scans any event data for `sessionId`).
+                if parser.session_id and parser.session_id != state.session_id:
+                    state.session_id = parser.session_id
+                    state.append("status", {"label": "codex-session",
+                                            "sessionId": parser.session_id})
                 for ev in events:
                     state.append("agent", ev)
                 for line_text in raw_passthrough:
@@ -10426,6 +10501,11 @@ class _CodexStderrParser:
         # The last status line we saw for the current tool (succeeded /
         # failed / exited). Folded into the tool_result content on flush.
         self._tool_status: str = ""
+        # Codex prints "session id: <uuid>" inside the banner. Captured so
+        # /resume can `codex exec resume <id>` (real session continuation)
+        # instead of the transcript-rebuild fallback. Banner-only capture -
+        # assistant text mentioning "session id:" can never overwrite it.
+        self.session_id = None
 
     def _flush_tool(self) -> dict:
         """Emit a tool_result event for the currently-open tool call, if any.
@@ -10454,11 +10534,31 @@ class _CodexStderrParser:
         self._tool_status = ""
         return ev
 
+    # The banner's "session id: <uuid>" line, matched as the WHOLE line with
+    # a strict full-UUID shape. Captured at the top of feed() (not inside the
+    # in_banner state) because pre-banner stderr noise with un-noise-matched
+    # continuation lines (e.g. a multi-line auth-error JSON body) trips the
+    # "no header" fall-through to post_banner, and the banner then streams
+    # through content states. First-wins per parser instance: the banner is
+    # always the first such line a codex process emits, so later assistant
+    # text echoing a session id can never overwrite the captured one.
+    _SESSION_ID_RX = re.compile(
+        r"^session id:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+        re.IGNORECASE)
+
     def feed(self, line: str):
         events: list = []
         raw: list = []
         if self._is_noise(line):
             return events, raw
+        if self.session_id is None:
+            m_sid = self._SESSION_ID_RX.match(line.strip())
+            if m_sid:
+                self.session_id = m_sid.group(1)
+                # Swallow the line - it's banner metadata, not content (and
+                # in the fell-through-banner flow it would otherwise leak
+                # into the chat as raw text).
+                return events, raw
         # Banner traversal - strip every line between the two `--------`
         # separators (inclusive of header + dashes), then switch to content.
         if self.state == "pre_banner":
@@ -18081,6 +18181,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             "claude_cli_available": claude_avail,
             "codex_cli_available":  codex_avail,
             "opencode_cli_available": opencode_avail,
+            # Which agent runtimes can take a mid-turn user message into an
+            # in-flight turn (chat composer bolt button). Driven off
+            # AGENT_DEFS["steerable"] so runtime-driver upgrades flip it in
+            # ONE place. The client falls back to ["claude"] when this key
+            # is absent (older daemon).
+            "steerable_agents": sorted(
+                aid for aid, d in AGENT_DEFS.items() if d.get("steerable")
+            ),
         })
 
     def _media_config_set(self):
@@ -29729,25 +29837,86 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {"ok": True, "agentId": "claude", "plannerFallback": True})
 
     def _run_resume_codex(self, state, run_id, text):
-        """Fake resume for the argv-prompt single-shot agents (codex AND
-        opencode): reconstruct prior conversation as a text transcript,
-        prepend it to the new user message, spawn a fresh run with the
-        combined prompt. Same run_id, same event log appended.
+        """Resume for the argv-prompt single-shot agents (codex AND opencode).
 
-        Why fake: both `codex exec` and `opencode run` are single-shot per
-        spawn - neither has Claude's stream-json `--resume <session-id>`
-        protocol we can drive here. The transcript approach loses things like
-        tool-call provenance from the model's perspective but gives the model
-        enough context to answer follow-up questions like "what happened?"
-        after the prior process exited. Agent-neutral: it reads the runtime off
-        `state.agent_id`, so the fresh spawn uses that agent's own AGENT_DEFS
-        args (e.g. `run --format json` for opencode) and routes back through
-        _drain_stdout, whose opencode branch re-parses the JSON event stream.
+        Two paths:
+
+        • codex REAL resume (preferred, 2026-07 - see
+          docs/features/runtime-steering.md Phase 0): when the prior spawn's
+          banner session id was captured AND the CLI supports `codex exec
+          resume <id>` AND the recorded rollout file exists in the child's
+          CODEX_HOME, spawn `codex exec resume <sid> <new message>`. The
+          recorded session already carries the harness preamble + the FULL
+          prior conversation (tool provenance included), so the prompt is
+          just the user's new message - no transcript rebuild, no token
+          balloon, no context loss.
+
+        • transcript-rebuild FALLBACK (opencode always; codex when any
+          precondition above fails): reconstruct prior conversation as a
+          text transcript, prepend it to the new user message, spawn a fresh
+          run with the combined prompt. Loses tool-call provenance from the
+          model's perspective but gives it enough context to answer
+          follow-up questions like "what happened?".
+
+        Same run_id, same event log appended, either way. Agent-neutral: it
+        reads the runtime off `state.agent_id`, so the fresh spawn uses that
+        agent's own AGENT_DEFS args (e.g. `run --format json` for opencode)
+        and routes back through _drain_stdout / _drain_stderr.
         """
         defs = AGENT_DEFS[state.agent_id]
         bin_path = state.bin_path or detect_agent_bin(state.agent_id)
         if not bin_path:
             return self._reply(500, {"error": f"{state.agent_id} binary not on PATH"})
+        env = _build_child_env(state.agent_id, run_id,
+                               project_root=state.project_root, project_id=state.project_id,
+                               main_thread=True)
+        resume_sid = None
+        if (state.agent_id == "codex"
+                and os.environ.get("WOVEN_CODEX_EXEC_RESUME", "").lower() not in ("0", "off", "false")
+                and getattr(state, "session_id", None)
+                and _codex_exec_resume_supported(bin_path)
+                and _codex_session_file_exists(state.session_id, env)):
+            resume_sid = state.session_id
+        if resume_sid:
+            # Real session continuation. `exec resume` has no --sandbox flag;
+            # the -c sandbox_mode override is the documented config
+            # equivalent of the original spawn's `--sandbox
+            # danger-full-access`. MCP -c overrides + model re-applied same
+            # as the fallback path (each spawn is a fresh process; without
+            # them the resumed chat silently loses its MCP servers / reverts
+            # to the CLI default model). Options before positionals:
+            # `codex exec resume [OPTIONS] [SESSION_ID] [PROMPT]`.
+            spawn_args = (["exec", "resume",
+                           "-c", 'sandbox_mode="danger-full-access"']
+                          + _codex_mcp_spawn_args(visual_deny=True)
+                          + _agent_model_spawn_args(state.agent_id, defs, getattr(state, "model", None))
+                          + [resume_sid, text])
+            try:
+                proc = subprocess.Popen(
+                    [bin_path, *spawn_args],
+                    cwd=state.project_root,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=env,
+                    bufsize=1,
+                    start_new_session=True,
+                )
+            except Exception as e:
+                return self._reply(500, {"error": f"codex resume spawn failed: {type(e).__name__}: {e}"})
+            state.proc = proc
+            state.done = False
+            state.exit_code = None
+            state.turn_done = False
+            state.append("status", {"label": "resumed", "agentId": "codex",
+                                    "resume": "session"})
+            state.append("user_message", {"text": text})
+            threading.Thread(target=_drain_stdout, args=(state,), daemon=True,
+                             name=f"run-{run_id}-stdout-resumed").start()
+            threading.Thread(target=_drain_stderr, args=(state,), daemon=True,
+                             name=f"run-{run_id}-stderr-resumed").start()
+            return self._reply(200, {"ok": True, "agentId": "codex",
+                                     "resume": "session"})
         transcript = _transcript_from_run_events(state)
         # Re-attach the harness preamble the original spawn carried - without
         # it the resumed agent loses the capabilities catalog, the dispatch
@@ -29793,9 +29962,6 @@ class H(http.server.SimpleHTTPRequestHandler):
                       + _resume_mcp
                       + _agent_model_spawn_args(state.agent_id, defs, getattr(state, "model", None))
                       + [new_prompt])
-        env = _build_child_env(state.agent_id, run_id,
-                               project_root=state.project_root, project_id=state.project_id,
-                               main_thread=True)
         try:
             proc = subprocess.Popen(
                 [bin_path, *spawn_args],
