@@ -15165,6 +15165,26 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   };
   const removeQueued = (id) => setQueue(prev => prev.filter(q => q.id !== id));
 
+  // Force-steer: fire a queued envelope at the daemon NOW, while the agent
+  // is still mid-turn, instead of waiting for the turn to end. The daemon's
+  // /user-message endpoint writes to the live process stdin regardless of
+  // turn state, and the CLI folds a mid-turn user frame in as steering. On
+  // failure the envelope goes back to the front of the queue so nothing is
+  // lost (same recovery contract as the drain effect).
+  const steerQueued = async (id) => {
+    if (busy || drainingRef.current) return;
+    const env = queue.find(q => q.id === id);
+    if (!env) return;
+    setQueue(prev => prev.filter(q => q.id !== id));
+    drainingRef.current = true;
+    try {
+      const ok = await dispatchRef.current(env);
+      if (!ok) setQueue(prev => [env, ...prev]);
+    } finally {
+      drainingRef.current = false;
+    }
+  };
+
   // Reorder the send-queue. The drain effect always fires queue[0], so the
   // order here IS the firing order - letting the user re-prioritise what the
   // agent picks up next turn. Two entry points: drag-and-drop (mouse) and
@@ -15381,7 +15401,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
             const qRefs = q.fileRefs || [];
             const preview = (q.text || "").trim().replace(/\s+/g, " ").slice(0, 80) || (q.attachments.length || q.uploads.length || qRefs.length ? "(attachments only)" : "(empty)");
             const titleParts = [
-              `Queued message #${i + 1} - click to edit, × to drop`,
+              `Queued message #${i + 1} - click to edit, bolt to send now, × to drop`,
               q.text || "(no text)",
             ];
             if (q.attachments.length) titleParts.push("Attachments:\n" + q.attachments.map(a => "  " + a.path).join("\n"));
@@ -15413,6 +15433,16 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                   title=${titleParts.join("\n\n")}
                   onClick=${() => pullQueuedIntoComposer(q.id)}
                 ><span className="chat-composer-queue-preview">${preview}</span>${q.attachments.length ? html`<span className="chat-composer-queue-meta"><${Icon.Image}/>${q.attachments.length}</span>` : null}${q.uploads.length ? html`<span className="chat-composer-queue-meta"><${Icon.Folder}/>${q.uploads.length}</span>` : null}${qRefs.length ? html`<span className="chat-composer-queue-meta"><${Icon.Clip}/>${qRefs.length}</span>` : null}</button>
+                <button
+                  type="button"
+                  className="chat-composer-queue-steer"
+                  onClick=${() => steerQueued(q.id)}
+                  disabled=${busy}
+                  title=${disabled
+                    ? "Send now - steers the in-progress turn instead of waiting for it to finish"
+                    : "Send now"}
+                  aria-label=${`Send queued message ${i + 1} now`}
+                ><${Icon.Bolt}/></button>
                 <button
                   type="button"
                   className="chat-composer-queue-rm"
