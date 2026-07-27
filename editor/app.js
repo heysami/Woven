@@ -28887,8 +28887,14 @@ function workflowPortPosition(node, side, ctx) {
   const dlay = (ctx && ctx.selectedIds && ctx.selectedIds.has && ctx.selectedIds.has(node.id) && ctx.appLayout && ctx.appLayout[node.id]) || null;
   const offL = dlay ? (dlay.panelL || 0) : 0;
   const offR = dlay ? (dlay.panelR || 0) : 0;
-  const cy = node.y + h / 2;
-  return side === "in" ? { x: node.x - offL, y: cy } : { x: node.x + w + offR, y: cy };
+  // Skill nodes FLOOR their drawn box (WorkflowSkillNode: w>=240, h>=200) so a
+  // short scaffolded node still fits the Run button. Mirror that floor here or
+  // an undersized stored h puts the wire end above the drawn diamond and the
+  // edge reads as detached - the same trap the assistant family hit above.
+  const cw = node.kind === "skill" ? Math.max(240, w) : w;
+  const ch = node.kind === "skill" ? Math.max(200, h) : h;
+  const cy = node.y + ch / 2;
+  return side === "in" ? { x: node.x - offL, y: cy } : { x: node.x + cw + offR, y: cy };
 }
 
 // Edge refs in workflow.json take the form "nodeId.port". Split safely.
@@ -30776,7 +30782,10 @@ const WORKFLOW_NODE_FACTORY = {
     url: p.url || "",
   }),
   "skill": (p) => {
-    const node = { kind: "skill", w: 280, h: 160, skill: p.skill || "generate-image" };
+    // 280x220 is the renderer's own default AND clears its w>=240 / h>=200
+    // floor. A stored size below that floor draws a node taller than its
+    // record, which lands the wire ends off the port diamonds.
+    const node = { kind: "skill", w: 280, h: 220, skill: p.skill || "generate-image" };
     if (p.model)    node.model    = p.model;
     if (p.provider) node.provider = p.provider;
     if (p.aspect)   node.aspect   = p.aspect;
