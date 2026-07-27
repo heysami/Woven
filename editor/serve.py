@@ -11994,6 +11994,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         # a hard reload (Cmd+Shift+R) busts the cache if an asset is recolored
         # or regenerated mid-session.
         path = (self.path or "").split("?", 1)[0].split("#", 1)[0].lower()
+        if path in ("/favicon.ico", "/favicon.svg"):
+            return True
         if not path.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif")):
             return False
         return (
@@ -12394,6 +12396,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                 m_ut.group(3) or "/"))
             self.end_headers()
             return
+        # Browsers auto-request /favicon.ico for every page this daemon serves
+        # (prototype runtimes, QA harness loads, baked pages) and nothing at
+        # the root provides one, so each page load logged a 404 that QA agents
+        # then burned tokens investigating. Answer with the editor's own icon.
+        if url_path in ("/favicon.ico", "/favicon.svg"):
+            return self._serve_root_favicon()
         # Daemon JSON endpoints first - they take precedence over static files.
         if url_path == "/__agents":
             return self._agents_list()
@@ -25841,6 +25849,25 @@ class H(http.server.SimpleHTTPRequestHandler):
         title, text = self._web_extract_text(page["body"])
         return self._reply(200, {"ok": True, "title": title, "text": text,
                                  "finalUrl": page["finalUrl"]})
+
+    def _serve_root_favicon(self):
+        """Serve the editor's favicon.svg for root-level /favicon.ico and
+        /favicon.svg requests. Chrome accepts an SVG body on the automatic
+        /favicon.ico probe as long as the Content-Type says image/svg+xml;
+        a missing icon file degrades to an empty 204 - still no 404 noise."""
+        icon = os.path.join(EDITOR_DIR, "favicon.svg")
+        try:
+            with open(icon, "rb") as f:
+                body = f.read()
+        except Exception:
+            self.send_response(204)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "image/svg+xml")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _healthz(self):
         """v2.50 - Dedicated daemon-liveness probe. Touches NO locks
