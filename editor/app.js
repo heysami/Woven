@@ -41397,14 +41397,31 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // resizeNode - accepts both width and height deltas; pass dw=0 (or null)
   // for height-only handles (skill node), dh=0 for width-only. Minimums
   // keep enough surface visible for the header + a usable port area.
+  //
+  // The delta applies to the size the node DRAWS at, never to raw n.w/n.h.
+  // A node that has never been resized carries no stored w/h at all - every
+  // agent-scaffolded node is like this (the addNodes templates omit w/h), as
+  // is any asset just after "↺ Auto size" - and it paints at the default from
+  // WORKFLOW_NODE_FLOOR / the asset scale ladder instead. Basing the drag on
+  // `n.w || 0` restarted it from zero, so the first mousemove snapped the box
+  // to the 200x80 minimum before growing: an art-direction plate jumped
+  // 480x536 -> 200x80, a family node 540x400 -> 280x220. Seeding from the
+  // drawn box makes the first pixel of drag continue from what's on screen.
   const resizeNode = useCallback((nid, dw, dh) => {
     setData(d => ({
       ...d,
       nodes: (d.nodes || []).map(n => {
         if (n.id !== nid) return n;
+        const drawn = workflowNodeDrawnSize(n);
+        // Clamp at the kind's own floor when it has one, so shrinking stops
+        // where the render stops - a generic 200/80 floor under a 320-wide
+        // floor would leave a dead zone where the drag moves nothing visible.
+        const f = workflowNodeFloor(n);
+        const minW = Math.max(f ? f.minW : 0, 200);
+        const minH = Math.max(f ? f.minH : 0, 80);
         const out = { ...n };
-        if (dw) out.w = Math.max(200, (n.w || 0) + dw);
-        if (dh) out.h = Math.max(80,  (n.h || 0) + dh);
+        if (dw) out.w = Math.max(minW, drawn.w + dw);
+        if (dh) out.h = Math.max(minH, drawn.h + dh);
         return out;
       }),
     }));
@@ -67040,6 +67057,11 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       setRefining(false);
     }
   }, [assetDsRef, assetStrictness, node.path, refining, onChange]);
+  // Live drawn box, refreshed on every render (assigned right after the
+  // workflowAssetDrawnSize() call below). The resize drag's mouseup reads it
+  // so the /size POST persists the size the card ENDED at - `node.w` inside
+  // that closure is still the value from mousedown.
+  const drawnBoxRef = useRef({ w: 0, h: 0 });
   const onResizeDown = useCallback((e) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -67050,8 +67072,19 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     // commit "custom" sizing once on drag-start so the adaptive
     // sizing logic respects the user's explicit pick. Subsequent moves
     // only update w/h.
+    // The flip must carry the CURRENT drawn box with it. "custom" switches
+    // workflowAssetDrawnSize from the adaptive ladder to node.w/node.h, and an
+    // agent-scaffolded asset (the art-direction plate, visual-orchestrator's
+    // a_<assetId> sink) has neither - so grabbing the handle alone used to
+    // snap the card from its ladder size to the 320x240 fallback, before a
+    // single pixel of movement. Seeding w/h here makes the flip a no-op
+    // visually.
     if (!node.size || node.size.scale !== "custom") {
-      onChange && onChange({ size: { ...(node.size || {}), scale: "custom" } });
+      const cur = workflowAssetDrawnSize(node);
+      onChange && onChange({
+        w: cur.w, h: cur.h,
+        size: { ...(node.size || {}), scale: "custom" },
+      });
     }
     const onMv = (ev) => {
       if (isReleasedDuringMove(ev)) { onUp(); return; }
@@ -67069,8 +67102,11 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       // commit final size to the dedicated /size endpoint on drag
       // release. Frontend's debounced /__workflow POST also persists w/h,
       // but going through /size emits a workflow-changed SSE so co-viewers
-      // see the new size immediately.
-      VersioningApi.setSize(node.id, { w: node.w, h: node.h }).catch(() => {});
+      // see the new size immediately. Read the box from the ref, not from
+      // `node` - this closure captured the pre-drag node, so posting node.w/h
+      // broadcast the size the card started at and snapped co-viewers back.
+      const end = drawnBoxRef.current;
+      VersioningApi.setSize(node.id, { w: end.w, h: end.h }).catch(() => {});
     };
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
@@ -67528,6 +67564,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   const _size = node.size || {};
   const kind = node.assetKind || "image";
   const { w, h } = workflowAssetDrawnSize(node);
+  drawnBoxRef.current = { w, h };   // read by the resize drag's mouseup
   // Same predicate workflowAssetDrawnSize() branches on - the autosize button
   // below is only meaningful for a card that is currently custom-sized.
   const _isCustom = _size.scale === "custom"
