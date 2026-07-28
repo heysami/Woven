@@ -8003,6 +8003,20 @@ input[type="color"]:not(.wac-color)::-webkit-color-swatch { border: 0; border-ra
 }
 .workflow-default-provider-select:focus { outline: none; border-color: var(--accent); }
 .workflow-default-provider-select[disabled] { opacity: 0.5; cursor: not-allowed; }
+/* Read-only counterpart of the select, for a capability the daemon resolves
+   on its own (speech to text). Same metrics so the rows line up, no control
+   affordance so it never reads as a broken dropdown. */
+.workflow-default-provider-readonly {
+  grid-column: 1 / -1;
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.workflow-default-provider-readonly[data-ok="true"] { color: var(--text); }
 
 /* Remix form inside the popover - compact row layout. */
 .workflow-asset-action-remix-form {

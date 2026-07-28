@@ -7851,16 +7851,33 @@ const CAPABILITY_LABELS = {
   agent:  "Chat / agent",
   image:  "Image generation",
   video:  "Video generation",
-  // ElevenLabs tts / sfx / music. The skill picks the MODE from intent, so this
-  // default is really "which provider + which mode when nothing else says".
   audio:  "Audio / voice generation",
   svg:    "Vector / SVG generation",
   "3d":   "3D generation",
   lottie: "Lottie animation",
 };
+/* Capabilities whose "model" is not a preference at all - it is decided by the
+   CONTENT being made. ElevenLabs tts / sfx / music are modes, not competing
+   models: narration needs tts, a card-flip needs sfx, a bed needs music, and a
+   project routinely uses all three. Pinning one would be actively wrong (the
+   spawn preamble prints USER DEFAULT: <provider> · <model>, so a pinned `sfx`
+   would tell agents to narrate with a sound-effect model). For these rows we
+   let the user choose the PROVIDER and never store a model. */
+const CAPABILITY_MODEL_PER_CONTENT = {
+  audio: "voiceover · sound effect · music",
+};
 function loadDefaultProviders() {
-  try { return JSON.parse(localStorage.getItem(DEFAULTS_KEY) || "{}"); }
+  let d;
+  try { d = JSON.parse(localStorage.getItem(DEFAULTS_KEY) || "{}"); }
   catch { return {}; }
+  if (!d || typeof d !== "object") return {};
+  // Migration: an earlier build let per-content capabilities pin a model.
+  // Drop it on read so a stale pin can never reach the spawn preamble as
+  // "USER DEFAULT: elevenlabs · elevenlabs/sfx".
+  for (const cap of Object.keys(CAPABILITY_MODEL_PER_CONTENT)) {
+    if (d[cap] && d[cap].model) d[cap] = { ...d[cap], model: "" };
+  }
+  return d;
 }
 function saveDefaultProviders(patch) {
   const cur = loadDefaultProviders();
@@ -88621,6 +88638,38 @@ function WorkflowDefaultProvidersSection({ mediaConfig }) {
           mediaConfig=${mediaConfig}
           onChange=${(v) => setCap(cap, v)}/>
       `)}
+      <${WorkflowSpeechToTextRow}/>
+    </div>
+  `;
+}
+
+/* Speech to text is NOT a generation capability and has no model catalog -
+   the daemon resolves it (local whisper.cpp, else OpenAI whisper-1, else
+   nothing) and there is nothing meaningful to pick. But "which one am I
+   getting" was invisible, so this read-only row answers it. Reads the same
+   /__voice/status the runtime helper probes. */
+function WorkflowSpeechToTextRow() {
+  const [engine, setEngine] = useState(null);
+  useEffect(() => {
+    let dead = false;
+    fetch(apiUrl("/__voice/status"))
+      .then(r => r.json())
+      .then(j => { if (!dead) setEngine((j && j.stt) || "none"); })
+      .catch(() => { if (!dead) setEngine("unknown"); });
+    return () => { dead = true; };
+  }, []);
+  const text = engine === null    ? "checking…"
+             : engine === "local" ? "Local whisper.cpp · free, offline"
+             : engine === "cloud" ? "OpenAI whisper-1 · uses your OpenAI key"
+             : engine === "none"  ? "Not available · enable User Testing to install whisper, or add an OpenAI key"
+                                  : "Unknown · daemon not reachable";
+  return html`
+    <div className="workflow-default-provider-row"
+         title="Chosen automatically: local whisper first, then the OpenAI fallback. Used by voice input in prototypes and by user-testing transcription.">
+      <div className="workflow-default-provider-label">Speech to text</div>
+      <div className="workflow-default-provider-controls">
+        <div className="workflow-default-provider-readonly" data-ok=${engine === "local" || engine === "cloud"}>${text}</div>
+      </div>
     </div>
   `;
 }
@@ -88784,6 +88833,10 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
   // Resolve what "Auto" would actually pick so we can show it as the
   // first-option label and not leave the user guessing.
   const auto = useMemo(() => _pickAutoForCapability(capability, models, mediaConfig), [capability, models, mediaConfig]);
+  // Audio-style capabilities: the MODE is chosen by what is being made, so we
+  // offer the provider only and never name a model (see
+  // CAPABILITY_MODEL_PER_CONTENT).
+  const perContent = CAPABILITY_MODEL_PER_CONTENT[capability] || "";
   const autoLabel = (() => {
     if (!auto) return "Auto (no provider available - see API keys tab)";
     const pc = providerCatalog[auto.provider] || {};
@@ -88799,6 +88852,9 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
     const tag = auto.source === "cli"            ? nativeCli
               : auto.source === "cli-substitute" ? `${substituteCli} (substitute)`
                                                   : "API";
+    // Naming a model here would imply the row pins one; for per-content
+    // capabilities it never does.
+    if (perContent) return `Auto · ${pc.label || auto.provider} (${tag})`;
     return `Auto · ${pc.label || auto.provider} · ${(m && m.label) || auto.model} (${tag})`;
   })();
   const renderProviderOption = (p) => {
@@ -88819,6 +88875,9 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
           onChange=${(e) => {
             const p = e.target.value;
             if (!p) { onChange(null); return; }
+            // Per-content capabilities pin the provider ONLY - storing a model
+            // would be read as "always use this mode" by the spawn preamble.
+            if (perContent) { onChange({ provider: p, model: "" }); return; }
             // Auto-pick a model from this provider - prefer the model whose
             // id matches what Auto would pick (so switching from Auto to
             // explicit is a smooth refinement), else the first available.
@@ -88835,14 +88894,21 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
         </select>
         <select
           className="workflow-default-provider-select"
-          value=${currentModel}
-          disabled=${!currentProvider}
+          value=${perContent ? "" : currentModel}
+          disabled=${perContent || !currentProvider}
+          title=${perContent ? `All of these are used - the right one is chosen per asset (${perContent})` : undefined}
           onChange=${(e) => onChange({ provider: currentProvider, model: e.target.value })}>
-          ${!currentProvider && html`<option value="">- Auto picks this for you -</option>`}
-          ${currentProvider && modelsForProvider.length === 0 && html`<option value="">(no integrated models for this provider)</option>`}
-          ${currentProvider && modelsForProvider.map(m => html`
-            <option key=${m.id || m.provider} value=${m.id}>${m.label || m.id || "(provider default)"}</option>
-          `)}
+          ${perContent
+            // Only the explanatory option: listing the modes here would imply
+            // one of them can be chosen, which is the whole misreading.
+            ? html`<option value="">All - chosen per asset (${perContent})</option>`
+            : html`
+              ${!currentProvider && html`<option value="">- Auto picks this for you -</option>`}
+              ${currentProvider && modelsForProvider.length === 0 && html`<option value="">(no integrated models for this provider)</option>`}
+              ${currentProvider && modelsForProvider.map(m => html`
+                <option key=${m.id || m.provider} value=${m.id}>${m.label || m.id || "(provider default)"}</option>
+              `)}
+            `}
         </select>
       </div>
     </div>

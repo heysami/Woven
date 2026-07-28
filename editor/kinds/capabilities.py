@@ -975,9 +975,19 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
                 "agent": "Chat / agent",
                 "image": "Image generation",
                 "video": "Video generation",
+                "audio": "Audio / voice generation",
                 "svg":   "Vector / SVG generation",
                 "3d":    "3D generation",
                 "lottie": "Lottie animation",
+            }
+            # Capabilities whose MODEL is decided by the content, not by a
+            # preference. ElevenLabs tts / sfx / music are modes: narration
+            # needs tts, a UI tick needs sfx, a bed needs music, and one
+            # project uses all three. The user can pin the PROVIDER; naming a
+            # model here would read as "always use this mode" and is wrong.
+            _CAP_MODEL_PER_CONTENT = {
+                "audio": "pick the MODE per asset: elevenlabs/tts for speech, "
+                         "elevenlabs/sfx for sound effects, elevenlabs/music for beds",
             }
             # When the user hasn't set an explicit IMAGE default, fall back to
             # the media-models.js `default: true` model rather than a vague
@@ -986,17 +996,23 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
             rows = []
             for cap_key, cap_label in _CAP_LABELS.items():
                 row = defaults.get(cap_key)
+                _per_content = _CAP_MODEL_PER_CONTENT.get(cap_key)
                 if not row:
                     if cap_key == "image" and _img_default.get("id"):
                         rows.append(f"  • {cap_label:24s}  DEFAULT: {_img_default['provider']} · {_img_default['id']} (media-models.js default; use THIS, do not guess)")
+                    elif _per_content:
+                        rows.append(f"  • {cap_label:24s}  (Auto - {_per_content})")
                     else:
                         rows.append(f"  • {cap_label:24s}  (Auto - pick any ✓ KEY provider that supports this skill)")
                     continue
                 pieces = []
                 if row.get("provider"): pieces.append(row["provider"])
-                if row.get("model"):    pieces.append(row["model"])
+                # Deliberately NOT row["model"] for per-content capabilities -
+                # the mode belongs to the asset, not to a setting.
+                if not _per_content and row.get("model"): pieces.append(row["model"])
                 if row.get("source"):   pieces.append(f"({row['source']})")
-                rows.append(f"  • {cap_label:24s}  USER DEFAULT: {' · '.join(pieces)}")
+                _tail = f" - {_per_content}" if _per_content else ""
+                rows.append(f"  • {cap_label:24s}  USER DEFAULT: {' · '.join(pieces)}{_tail}")
             defaults_block = "\n".join(rows)
     except Exception:
         pass
