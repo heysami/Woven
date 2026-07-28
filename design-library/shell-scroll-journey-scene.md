@@ -6,6 +6,13 @@ images:
     reason: Shell structure UI mockup.
   - src: shell-scroll-journey-scene-isolated.png
     reason: Signature structure, isolated.
+# Orchestrator hint for the plan gate. NOT a mandate: the gate still proposes
+# and the user still decides. It exists because this entry's defining quality
+# NEEDS a medium a CSS build cannot reach, and that intent was previously only
+# prose no gate could read.
+suggestsOrchestrator:
+  - motion-studio-orchestrator
+suggestsOrchestratorWhy: The shell IS a scrubbed full-bleed media stage: one continuous scene the scroll travels through, copy held in a quiet zone.
 ---
 # Scroll journey scene shell
 

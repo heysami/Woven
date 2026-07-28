@@ -6,6 +6,13 @@ images:
     reason: Aesthetic vocabulary in UI.
   - src: aesthetic-persona-5-heist-pop-isolated.png
     reason: Signature motif, isolated.
+# Orchestrator hint for the plan gate. NOT a mandate: the gate still proposes
+# and the user still decides. It exists because this entry's defining quality
+# NEEDS a medium a CSS build cannot reach, and that intent was previously only
+# prose no gate could read.
+suggestsOrchestrator:
+  - sound-orchestrator
+suggestsOrchestratorWhy: Animation pacing is sound-effect-synced: every UI motion lands on a click or paper-crinkle.
 ---
 # Persona 5 heist-pop UI (aesthetic)
 

@@ -6,6 +6,13 @@ images:
     reason: Aesthetic vocabulary in UI.
   - src: aesthetic-frutiger-dark-aero-isolated.png
     reason: Signature motif, isolated.
+# Orchestrator hint for the plan gate. NOT a mandate: the gate still proposes
+# and the user still decides. It exists because this entry's defining quality
+# NEEDS a medium a CSS build cannot reach, and that intent was previously only
+# prose no gate could read.
+suggestsOrchestrator:
+  - shader-orchestrator
+suggestsOrchestratorWhy: The ambient layer behind the glass is mandatory and must be a real raster or shader - pure CSS reads as dark Aurorism, not Aero.
 ---
 # Frutiger Dark Aero (aesthetic)
 

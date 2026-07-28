@@ -6,6 +6,14 @@ images:
     reason: Style surface UI mockup.
   - src: style-silk-chrome-flow-isolated.png
     reason: Signature surface, isolated.
+# Orchestrator hint for the plan gate. NOT a mandate: the gate still proposes
+# and the user still decides. It exists because this entry's defining quality
+# NEEDS a medium a CSS build cannot reach, and that intent was previously only
+# prose no gate could read.
+suggestsOrchestrator:
+  - scene-3d-orchestrator
+  - shader-orchestrator
+suggestsOrchestratorWhy: Flowing chrome is a rendered material, not a CSS gradient.
 ---
 # Silk / Chrome Flow (style)
 

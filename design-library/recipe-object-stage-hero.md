@@ -6,6 +6,14 @@ images:
     reason: Full recipe UI mockup.
   - src: recipe-object-stage-hero-isolated.png
     reason: Signature scene, isolated.
+# Orchestrator hint for the plan gate. NOT a mandate: the gate still proposes
+# and the user still decides. It exists because this entry's defining quality
+# NEEDS a medium a CSS build cannot reach, and that intent was previously only
+# prose no gate could read.
+suggestsOrchestrator:
+  - scene-3d-orchestrator
+  - motion-studio-orchestrator
+suggestsOrchestratorWhy: ONE studio-lit 3D object carries the brand, revealed against UI in the quiet zone.
 ---
 # Object stage hero (Spline-grade 3D scene + UI in the quiet zone)
 

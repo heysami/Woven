@@ -6,6 +6,13 @@ images:
     reason: Style surface UI mockup.
   - src: style-aurorism-isolated.png
     reason: Signature surface, isolated.
+# Orchestrator hint for the plan gate. NOT a mandate: the gate still proposes
+# and the user still decides. It exists because this entry's defining quality
+# NEEDS a medium a CSS build cannot reach, and that intent was previously only
+# prose no gate could read.
+suggestsOrchestrator:
+  - shader-orchestrator
+suggestsOrchestratorWhy: The mesh-gradient field is the whole atmosphere and is a shader source, not a stack of CSS layers.
 ---
 # Aurorism / Mesh-Gradient (style)
 

@@ -6,6 +6,14 @@ images:
     reason: Full recipe UI mockup.
   - src: recipe-brand-story-journey-isolated.png
     reason: Signature scene, isolated.
+# Orchestrator hint for the plan gate. NOT a mandate: the gate still proposes
+# and the user still decides. It exists because this entry's defining quality
+# NEEDS a medium a CSS build cannot reach, and that intent was previously only
+# prose no gate could read.
+suggestsOrchestrator:
+  - motion-studio-orchestrator
+  - sound-orchestrator
+suggestsOrchestratorWhy: Scene chapters are motion beats and the voice is short narration beats, so it wants both the scene family and real narration.
 ---
 # Brand story journey (identity explainer as scroll film)
 

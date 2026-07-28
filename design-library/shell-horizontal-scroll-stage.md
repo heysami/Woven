@@ -6,6 +6,13 @@ images:
     reason: Shell structure UI mockup.
   - src: shell-horizontal-scroll-stage-isolated.png
     reason: Signature structure, isolated.
+# Orchestrator hint for the plan gate. NOT a mandate: the gate still proposes
+# and the user still decides. It exists because this entry's defining quality
+# NEEDS a medium a CSS build cannot reach, and that intent was previously only
+# prose no gate could read.
+suggestsOrchestrator:
+  - motion-studio-orchestrator
+suggestsOrchestratorWhy: Full-bleed chaptered panels on a wheel-driven linear track - the same stage-plus-quiet-zone shape, on the X axis.
 ---
 # Horizontal scroll stage shell
 

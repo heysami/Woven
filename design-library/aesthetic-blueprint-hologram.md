@@ -6,6 +6,13 @@ images:
     reason: Aesthetic vocabulary in UI.
   - src: aesthetic-blueprint-hologram-isolated.png
     reason: Signature motif, isolated.
+# Orchestrator hint for the plan gate. NOT a mandate: the gate still proposes
+# and the user still decides. It exists because this entry's defining quality
+# NEEDS a medium a CSS build cannot reach, and that intent was previously only
+# prose no gate could read.
+suggestsOrchestrator:
+  - scene-3d-orchestrator
+suggestsOrchestratorWhy: The entry states Raster/3D required: CSS gradients cannot draw a wireframe mesh.
 ---
 # Blueprint Hologram (aesthetic)
 
