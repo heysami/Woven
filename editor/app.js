@@ -29775,9 +29775,24 @@ function workflowAssetDrawnSize(node) {
   const kind = node.assetKind || "image";
   const _hasExplicitWH = (Number.isFinite(node.w) && node.w > 0)
                       || (Number.isFinite(node.h) && node.h > 0);
-  const _isCustom = _size.scale === "custom"
-                 || (_size.scale === undefined && _hasExplicitWH);
-  if (_isCustom) return { w: node.w || 320, h: node.h || 240 };
+  // The MEASURED aspect - written by the <img>/<video> load handler (raster
+  // kinds) or the iframe device-class probe (html). Distinct from the
+  // per-kind guess below: only a measured value may override stored geometry.
+  const _measured = (Number.isFinite(_size.naturalAspect) && _size.naturalAspect > 0)
+                    ? _size.naturalAspect : null;
+  // scale === "custom": the user dragged this card (or the picker pinned it).
+  // Their geometry is authoritative, aspect mismatch included.
+  if (_size.scale === "custom") return { w: node.w || 320, h: node.h || 240 };
+  // Explicit w/h with NO scale - an agent-scaffolded guess (`"w": 320, "h": 220`
+  // is copy-pasted through most orchestrator specs, which is a ratio nobody
+  // renders at) or a legacy pre-"custom" drag. The stored WIDTH is honoured -
+  // it carries the author's intent about how big the card should read - but the
+  // height is re-derived from the measured aspect once we have one, so the card
+  // stops cover-cropping the asset's sides. No measurement yet → stored h.
+  if (_hasExplicitWH) {
+    const w = node.w || 320;
+    return { w, h: _measured ? Math.round(w / _measured) : (node.h || 240) };
+  }
   const _scale = _size.scale || "fit-canvas";
   // For an HTML asset we know the intended device class (set by the iframe
   // onLoad probe), so bias the base width: desktop pages get the larger ~640
@@ -29796,8 +29811,7 @@ function workflowAssetDrawnSize(node) {
   }
   const _minW = _size.minW || 280;
   const _maxW = _size.maxW || (_deviceClass === "desktop" ? 800 : 720);
-  let _aspect = (Number.isFinite(_size.naturalAspect) && _size.naturalAspect > 0)
-                ? _size.naturalAspect : null;
+  let _aspect = _measured;
   if (!_aspect) {
     if (kind === "html-set" || kind === "html") _aspect = 16/10;
     else if (kind === "video")                  _aspect = 16/9;
@@ -29805,9 +29819,13 @@ function workflowAssetDrawnSize(node) {
     else if (kind === "markdown" || kind === "text") _aspect = null;
     else _aspect = 4/3;
   }
-  const _CHROME = 56;  // title bar + footer
+  // No chrome allowance in the box. The v3.x layout floats the title bar
+  // (`bottom: 100%`) and the bottom strip stack OUTSIDE the node box, and the
+  // body is `inset: 0` over the whole of it - so every px added here is surplus
+  // HEIGHT the image has to fill, and `object-fit: cover` pays for it by
+  // cropping the WIDTH. The old `+ 56` dated from the grid-row chrome layout.
   const w = Math.max(_minW, Math.min(_maxW, _baseW));
-  const h = _aspect ? Math.round(w / _aspect + _CHROME) : (node.h || 280);
+  const h = _aspect ? Math.round(w / _aspect) : (node.h || 280);
   return { w, h };
 }
 
@@ -67562,6 +67580,21 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   // Reset on any source change so a re-Run re-detects from scratch.
   const [bgTransparent, setBgTransparent] = useState(false);
   useEffect(() => { setBgTransparent(false); }, [node.path, bust, node.src]);
+  // Natural-aspect capture for RASTER kinds. Until this existed, size.
+  // naturalAspect was written by exactly one place - the html device-class
+  // probe below - so an image card fell through to the per-kind guess in
+  // workflowAssetDrawnSize (`image → 1`) and drew a square box for a 16:9
+  // render, which `object-fit: cover` then cropped on the width. Fires from
+  // the <img> onLoad / <video> onLoadedMetadata; idempotent (a no-op write is
+  // skipped) so re-renders and cache-bust reloads don't thrash onChange.
+  const rememberNaturalAspect = useCallback((nw, nh) => {
+    if (!nw || !nh) return;
+    const aspect = nw / nh;
+    if (!Number.isFinite(aspect) || aspect <= 0) return;
+    const prev = (node.size && node.size.naturalAspect) || 0;
+    if (Math.abs(prev - aspect) < 0.005) return;
+    onChange && onChange({ size: { ...(node.size || {}), naturalAspect: aspect } });
+  }, [onChange, node.size]);
   // In-place crop overlay - opened from the asset bar's crop button (raster
   // images only). On apply it overwrites the SAME file path, so any prototype
   // or downstream node referencing that path picks up the cropped bytes on the
@@ -67973,16 +68006,19 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
   }, [zoom, onMove, onDragStart, onDragEnd]);
 
   // ── Adaptive sizing - asset-versioning.md §5 ──────────────────────
-  // Card size derives from node.size (naturalAspect + scale). Legacy nodes
-  // with explicit node.w/h but no size.scale are treated as "custom" so their
-  // saved geometry is preserved. Once size.scale === "custom" is written
-  // (drag-resize / picker explicit pick), w/h alone drive layout.
+  // Card size derives from node.size (naturalAspect + scale). Nodes with
+  // explicit node.w/h but no size.scale (agent-scaffolded guesses, legacy
+  // pre-"custom" drags) keep their stored WIDTH but take their height from the
+  // measured aspect. Once size.scale === "custom" is written (drag-resize /
+  // picker explicit pick), w/h alone drive layout.
   const _size = node.size || {};
   const kind = node.assetKind || "image";
   const { w, h } = workflowAssetDrawnSize(node);
   drawnBoxRef.current = { w, h };   // read by the resize drag's mouseup
-  // Same predicate workflowAssetDrawnSize() branches on - the autosize button
-  // below is only meaningful for a card that is currently custom-sized.
+  // Whether the card carries stored geometry at all - the autosize button
+  // below is only meaningful when there is stored w/h (or a custom scale) for
+  // it to clear. Broader than workflowAssetDrawnSize's "custom" branch on
+  // purpose: an agent-seeded width is still something auto-size can revert.
   const _isCustom = _size.scale === "custom"
                  || (_size.scale === undefined
                      && ((Number.isFinite(node.w) && node.w > 0)
@@ -68203,7 +68239,10 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         src=${node.src}
         alt=${basename}
         loading="lazy"
-        onLoad=${(e) => setBgTransparent(assetImageHasTransparentBg(e.target))}
+        onLoad=${(e) => {
+          setBgTransparent(assetImageHasTransparentBg(e.target));
+          rememberNaturalAspect(e.target.naturalWidth, e.target.naturalHeight);
+        }}
       />
     `;
   } else if (isStaleInline) {
@@ -68236,7 +68275,10 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         src=${fileSrc}
         alt=${basename}
         loading="lazy"
-        onLoad=${(e) => setBgTransparent(assetImageHasTransparentBg(e.target))}
+        onLoad=${(e) => {
+          setBgTransparent(assetImageHasTransparentBg(e.target));
+          rememberNaturalAspect(e.target.naturalWidth, e.target.naturalHeight);
+        }}
         onError=${() => setThumbState("missing")}
       />
     `;
@@ -68293,6 +68335,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         className="workflow-node-asset-thumb"
         src=${fileSrc}
         muted playsInline loop preload="auto"
+        onLoadedMetadata=${(e) => rememberNaturalAspect(e.target.videoWidth, e.target.videoHeight)}
         onError=${() => setThumbState("missing")}
       />
     `;
@@ -88248,8 +88291,11 @@ function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge
       if (n.kind !== "asset" || !n.boundTo?.node) continue;
       const p = nodeById[n.boundTo.node];
       if (!p) continue;
-      const aHalfW = (n.w || 220) / 2;
-      const aHalfH = (n.h || 150) / 2;
+      // Drawn size, not stored size - an asset card's height is derived from
+      // its measured aspect, so node.h is a stale seed for most of them.
+      const aDrawn = workflowNodeDrawnSize(n);
+      const aHalfW = aDrawn.w / 2;
+      const aHalfH = aDrawn.h / 2;
       const aCx = n.x + aHalfW;
       const aCy = n.y + aHalfH;
       const pHalfW = (p.w || 720) / 2;
