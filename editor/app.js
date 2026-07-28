@@ -7866,6 +7866,45 @@ const CAPABILITY_LABELS = {
 const CAPABILITY_MODEL_PER_CONTENT = {
   audio: "voiceover · sound effect · music",
 };
+/* The same problem in a milder form for video and 3D: half of each catalog is
+   an IMAGE-conditioned variant (i2v / i23d) that cannot run from a prompt
+   alone. Those are content-determined too - you use image-to-video when you
+   have a start frame, not because you prefer it - so they must not be
+   pinnable as a standing default. Pinning one today breaks every text-only
+   request (meshy raises "needs an input image"; fal video goes out with no
+   image_url).
+   Filtering them out is SAFE rather than limiting, because the daemon already
+   promotes in the one direction that matters: wire a start frame to a pinned
+   text model and _fal_video_i2v_variant / meshy's is_image check swap in the
+   image sibling automatically. So a text-capable pin covers both cases and an
+   image-only pin covers one. */
+const CAPABILITY_TEXT_CAPABLE_CAPS = {
+  video: "t2v",
+  "3d":  "t23d",
+};
+/* Raw catalog per capability, for looking a pinned model id up directly.
+   listModelsForCapability is NOT a substitute here: for 3d / svg / lottie it
+   synthesises PROVIDER rows (empty model ids) instead of returning the
+   catalog, so a real model id would not be found in it. */
+const CAPABILITY_RAW_CATALOG = {
+  video: "videoModels",
+  "3d":  "models3d",
+  audio: "audioModels",
+  image: "imageModels",
+};
+function _modelById(cap, id) {
+  const key = CAPABILITY_RAW_CATALOG[cap];
+  const list = (key && window.TH_MEDIA && window.TH_MEDIA[key]) || [];
+  return list.find(m => m.id === id) || null;
+}
+function modelPinnableAsDefault(cap, model) {
+  const need = CAPABILITY_TEXT_CAPABLE_CAPS[cap];
+  if (!need) return true;
+  const caps = (model && model.caps) || null;
+  // No caps declared = assume general-purpose rather than hide it.
+  if (!Array.isArray(caps) || caps.length === 0) return true;
+  return caps.includes(need);
+}
 function loadDefaultProviders() {
   let d;
   try { d = JSON.parse(localStorage.getItem(DEFAULTS_KEY) || "{}"); }
@@ -7876,6 +7915,15 @@ function loadDefaultProviders() {
   // "USER DEFAULT: elevenlabs · elevenlabs/sfx".
   for (const cap of Object.keys(CAPABILITY_MODEL_PER_CONTENT)) {
     if (d[cap] && d[cap].model) d[cap] = { ...d[cap], model: "" };
+  }
+  // Same for a video / 3D default pinned to an image-conditioned model before
+  // those were filtered out: keep the provider preference, drop the model so
+  // the request resolves to a text-capable sibling instead of failing.
+  for (const cap of Object.keys(CAPABILITY_TEXT_CAPABLE_CAPS)) {
+    const pinned = d[cap] && d[cap].model;
+    if (!pinned) continue;
+    const known = _modelById(cap, pinned);
+    if (known && !modelPinnableAsDefault(cap, known)) d[cap] = { ...d[cap], model: "" };
   }
   return d;
 }
@@ -88820,7 +88868,14 @@ function _pickAutoForCapability(cap, models, mediaConfig) {
 }
 
 function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }) {
-  const models = useMemo(() => listModelsForCapability(capability), [capability]);
+  // Only text-capable models are offerable as a standing default - an
+  // image-conditioned variant cannot serve a prompt-only request, and the
+  // daemon already promotes a text pin to its image sibling when a start frame
+  // is wired. See CAPABILITY_TEXT_CAPABLE_CAPS. Providers that offer ONLY
+  // image-conditioned models (Higgsfield DoP) drop out of the row with them.
+  const models = useMemo(
+    () => listModelsForCapability(capability).filter(m => modelPinnableAsDefault(capability, m)),
+    [capability]);
   const providersInUse = useMemo(() => {
     const set = new Set();
     for (const m of models) if (m.provider) set.add(m.provider);
