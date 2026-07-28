@@ -5198,6 +5198,22 @@ def _reconcile_choices(primary, multi, folded=None):
     return choices
 
 
+# Directory name a family's research doc lives under -> the family's name, for
+# the research list's label. Cosmetic only: an unknown directory falls back to
+# its own name, so a new family needs no registration here.
+_RESEARCH_FAMILY_LABEL = {
+    "games":        "game-experience",
+    "simulations":  "simulation",
+    "interactives": "interactive-media",
+    "narratives":   "narrative-experience",
+    "scrapbooks":   "scrapbook",
+    "motionscenes": "motion-studio",
+    "scene3d":      "scene-3d",
+    "hero3d":       "hero-3d",
+    "_polish":      "interactive-polish",
+}
+
+
 def _pipeline_new_id():
     """A fresh plan id. Time-ordered so a lexical sort is a chronological one."""
     return "plan-%d-%s" % (int(time.time()), uuid.uuid4().hex[:6])
@@ -13443,6 +13459,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Every plan this project has locked (current + forked-away archives).
         if url_path == "/__pipelines":
             return self._pipelines_list(urllib.parse.parse_qs(parsed.query))
+        # Every research.md the orchestrator families have written.
+        if url_path == "/__research":
+            return self._research_list(urllib.parse.parse_qs(parsed.query))
         # Visual-QA endpoints. Let an agent verify a node's interactive piece
         # by node-id (no hand-pasted URL): resolve the bakedPath to the same
         # runtime URL an iframe loads, then run editor/tools/qa/visual_qa.py.
@@ -16355,6 +16374,51 @@ class H(http.server.SimpleHTTPRequestHandler):
             plans.append(_pipeline_digest(current, current=True))
         plans.extend(archived)
         return self._reply(200, {"plans": plans})
+
+    # ── GET /__research - every research doc the build has written ───────
+    # The research step of every orchestrator family writes ONE canonical
+    # research.md - the document that commits the paradigm / stack / register
+    # the whole build then obeys - at
+    #   source/<branch>/<familyDir>/<slotId>/research.md
+    # and it was only reachable by knowing that path. Enumerate them so the
+    # plan panel can offer them the way it offers the art-direction contract.
+    # Discovery is by SHAPE, not by a family whitelist, so a new family's
+    # research doc appears here the day it is written; the family label is a
+    # cosmetic lookup that falls back to the directory name.
+    def _research_list(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        src = os.path.join(project_root, "source")
+        docs = []
+        if os.path.isdir(src):
+            for branch in sorted(os.listdir(src))[:40]:
+                bdir = os.path.join(src, branch)
+                if not os.path.isdir(bdir):
+                    continue
+                for fam in sorted(os.listdir(bdir))[:60]:
+                    fdir = os.path.join(bdir, fam)
+                    if not os.path.isdir(fdir):
+                        continue
+                    for slot in sorted(os.listdir(fdir))[:60]:
+                        p = os.path.join(fdir, slot, "research.md")
+                        if not os.path.isfile(p):
+                            continue
+                        try:
+                            st = os.stat(p)
+                        except OSError:
+                            continue
+                        docs.append({
+                            "path":   os.path.relpath(p, project_root),
+                            "branch": branch,
+                            "family": _RESEARCH_FAMILY_LABEL.get(fam, fam.lstrip("_")),
+                            "slotId": slot,
+                            "bytes":  st.st_size,
+                            "mtime":  int(st.st_mtime),
+                        })
+        docs.sort(key=lambda d: d["mtime"], reverse=True)
+        return self._reply(200, {"docs": docs})
 
     # ── POST /__workflow/node/<id>/status ────────────────────────
     # Body: { runStatus?, text?, runError?, output? }. Atomically updates a

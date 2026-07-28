@@ -11912,7 +11912,9 @@ function ArtDirectionContractModal({ contract, onClose }) {
                               <img className="ad-ref-img" src=${adAssetUrl(ref.refPath)} alt=${ref.itemId || "reference"}
                                    onError=${(e) => { e.target.style.display = "none"; }}/>`}
                             <div className="ad-ref-meta">
-                              <div className="ad-ref-id">${ref?.itemId || "reference"}${ref?.role ? html` <span className="ad-chip">${ref.role}</span>` : ""}</div>
+                              ${/* single-root template - a leading space would make htm return an
+                                    array and React would ask for keys on it. .ad-ref-id has a flex gap. */""}
+                              <div className="ad-ref-id">${ref?.itemId || "reference"}${ref?.role ? html`<span className="ad-chip">${ref.role}</span>` : ""}</div>
                               ${ref?.bboxNote && html`<div className="ad-sub">${ref.bboxNote}</div>`}
                               ${Array.isArray(ref?.matchesSlots) && ref.matchesSlots.length
                                 ? html`<div className="ad-chips">${ref.matchesSlots.map((s, j) => html`<span key=${j} className="ad-chip">${s}</span>`)}</div>`
@@ -11928,6 +11930,82 @@ function ArtDirectionContractModal({ contract, onClose }) {
                   <${AdValue} value=${Object.fromEntries(extras.map(k => [k, c[k]]))}/>
                 </section>` : ""}
             </div>`}
+        </div>
+        <div className="modal-foot">
+          <button className="tbtn tbtn-primary" onClick=${onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  `, document.body);
+}
+
+/* ── Research viewer ────────────────────────────────────────────────────────
+   Sibling of the art-direction contract viewer. Every orchestrator family's
+   research step writes ONE canonical research.md - the document that commits
+   the paradigm / stack / register the rest of the build obeys - and it was
+   only reachable by knowing its path under source/<branch>/<family>/<slot>/.
+   The daemon enumerates them (GET /__research); this reads the picked one as
+   plain text off the static route and renders it. Read-only. */
+function ResearchDocsModal({ docs, onClose }) {
+  const [picked, setPicked] = useState(0);
+  const [text, setText] = useState(undefined); // undefined = loading
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+  const doc = docs[picked] || docs[0];
+  useEffect(() => {
+    let cancelled = false;
+    setText(undefined); setErr(null);
+    if (!doc) return;
+    (async () => {
+      try {
+        const r = await fetch(apiUrl("/" + doc.path + "?t=" + Date.now()), { cache: "no-store" });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const t = await r.text();
+        if (!cancelled) setText(t);
+      } catch (e) {
+        if (!cancelled) { setText(""); setErr(e.message || String(e)); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [doc && doc.path]);
+
+  return createPortal(html`
+    <div className="modal-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal ad-modal" role="dialog" aria-modal="true" aria-label="Research">
+        <div className="modal-head">
+          <div>
+            <div className="modal-eyebrow">Committed research</div>
+            <div className="modal-title">${doc ? `${doc.family} · ${doc.slotId}` : "Research"}</div>
+          </div>
+          <button className="modal-x" onClick=${onClose}>×</button>
+        </div>
+        <div className="modal-body ad-body">
+          <div className="ad-note">
+            The research step commits what the piece IS - paradigm, stack, registers, budgets -
+            before any builder fires. Every drawer downstream reads this document, so it is the
+            answer to "why is the build doing it this way".
+          </div>
+          ${docs.length > 1 && html`
+            <div className="ad-toolbar">
+              ${docs.map((d, i) => html`
+                <button
+                  key=${d.path}
+                  type="button"
+                  className="tbtn"
+                  data-active=${i === picked}
+                  title=${d.path}
+                  onClick=${() => setPicked(i)}
+                >${d.family} · ${d.slotId}</button>`)}
+            </div>`}
+          <div className="ad-path">${doc ? doc.path : ""}</div>
+          ${text === undefined && html`<div className="runs-empty">Loading…</div>`}
+          ${err && html`<div className="th-plan-err">${err}</div>`}
+          ${text ? html`<div className="ad-research"><${Markdown} text=${text}/></div>` : ""}
+          ${text === "" && !err && html`<div className="runs-empty">This research doc is empty.</div>`}
         </div>
         <div className="modal-foot">
           <button className="tbtn tbtn-primary" onClick=${onClose}>Done</button>
@@ -11969,9 +12047,14 @@ function OrchestrationPlanView() {
   // one. Read-only view behind the summary's button.
   const [contract, setContract] = useState(null);
   const [contractOpen, setContractOpen] = useState(false);
+  // Every family's committed research.md, newest first. Same affordance as the
+  // contract: a button that only exists once there is something to read.
+  const [research, setResearch] = useState([]);
+  const [researchOpen, setResearchOpen] = useState(false);
 
-  // Plan roster + contract - slow poll; both appear mid-build (at the plan
-  // lock and at the art-direction gate) so they cannot be one-shot loads.
+  // Plan roster + contract + research - slow poll; all three appear mid-build
+  // (at the plan lock, the art-direction gate, and each family's research
+  // step) so none of them can be a one-shot load.
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -11987,6 +12070,13 @@ function OrchestrationPlanView() {
         const j = r.ok ? await r.json() : null;
         if (!cancelled) setContract(j && typeof j === "object" && !Array.isArray(j) ? j : null);
       } catch { if (!cancelled) setContract(null); }
+      try {
+        const r = await fetch(apiUrl("/__research"), { cache: "no-store" });
+        if (r.ok) {
+          const j = await r.json();
+          if (!cancelled) setResearch(Array.isArray(j.docs) ? j.docs : []);
+        }
+      } catch {}
     };
     load();
     const timer = setInterval(load, 10000);
@@ -12076,6 +12166,13 @@ function OrchestrationPlanView() {
             ${doneN}/${totalN} done${failN ? html` · <span className="th-plan-fail">${failN} blocked</span>` : ""}
             ${plan.orchestrators?.length ? html`<span className="th-plan-orchs"> · ${plan.orchestrators.length} orchestrators</span>` : ""}
           </div>
+          ${research.length > 0 && html`
+            <button
+              type="button"
+              className="th-plan-adbtn"
+              title=${`The research step's committed document${research.length > 1 ? "s" : ""} - what each piece IS, decided before any builder fired`}
+              onClick=${() => setResearchOpen(true)}
+            ><${Icon.NotesDoc}/> Research${research.length > 1 ? ` (${research.length})` : ""}</button>`}
           ${contract && html`
             <button
               type="button"
@@ -12086,6 +12183,8 @@ function OrchestrationPlanView() {
         </div>
       </div>
       ${contractOpen && html`<${ArtDirectionContractModal} contract=${contract} onClose=${() => setContractOpen(false)}/>`}
+      ${researchOpen && research.length > 0 && html`
+        <${ResearchDocsModal} docs=${research} onClose=${() => setResearchOpen(false)}/>`}
       ${rec && rec.required && html`
         <div className="th-plan-reconcile" role="alert">
           <div className="th-plan-reconcile-head">Archetype unresolved - build blocked</div>
