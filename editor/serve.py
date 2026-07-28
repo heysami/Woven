@@ -7867,6 +7867,11 @@ def _subagent_override_model_for_node(node_id, title, prompt_text="", want_provi
 RUNS: dict = {}
 RUNS_LOCK = threading.Lock()
 
+# Set by RunState.__init__ - the one chokepoint every spawn passes through.
+# The stall watchdog blocks on this whenever nothing is in flight, so an idle
+# daemon costs it exactly zero wakeups. See _stall_watch_loop.
+STALL_WAKE = threading.Event()
+
 # Runs the user has explicitly DELETED. A live run can keep draining stdout for
 # a beat after we terminate it (the final __finish line in particular), which
 # would otherwise re-append history we just purged - resurrecting the run as a
@@ -9831,6 +9836,12 @@ class RunState:
                  # completion hook in _drain_stdout can flip the canvas node to
                  # done/error. None for plain freeform / other run kinds.
                  "workflow_node_id",
+                 # runId of the chat/agent run that DISPATCHED this one, when
+                 # known (`?parent=` on /run, carried down an auto-chain). A
+                 # child that hangs is invisible to its parent - the parent
+                 # just polls "running" forever - so the stall watchdog needs
+                 # a way back up the tree to tell someone who can act.
+                 "parent_run_id",
                  # intentional-termination flag ("completed-orchestrator",
                  # "user-stop", or None for natural exit). Lets finish() report
                  # SIGTERM-after-success as exit 0 instead of "failed".
@@ -9940,6 +9951,13 @@ class RunState:
         # (asset / view / prototype - any kind). Same capture point + tool
         # whitelist as `modifying`.
         self.touched_paths: list = []
+        # Set by /__workflow/node/<id>/run?parent=<runId> (and carried down an
+        # auto-chain) so a stalled child can be reported UP to whoever is
+        # waiting on it. None for a run nobody dispatched.
+        self.parent_run_id = None
+        # Wake the stall watchdog - it sleeps on this while the daemon is idle
+        # rather than polling an empty registry forever.
+        STALL_WAKE.set()
 
     @property
     def is_live(self) -> bool:
@@ -11068,6 +11086,11 @@ def _maybe_advance_build_chain(state):
         q = {"project": pid}
         if remaining:
             q["chain"] = ",".join(remaining)
+        # Carry the ORIGINATING chat down the chain. Without this only the
+        # first builder is attributable, and a node that hangs three links
+        # deep has nobody to report to.
+        if getattr(state, "parent_run_id", None):
+            q["parent"] = state.parent_run_id
         url = (f"http://127.0.0.1:{PORT}/__workflow/node/"
                f"{urllib.parse.quote(nxt)}/run?{urllib.parse.urlencode(q)}")
         req = urllib.request.Request(url, method="POST", data=b"")
@@ -15330,6 +15353,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Tag for the auto-completion hook in _drain_stdout - when this
         # subprocess exits, the daemon flips the workflow node to done/error.
         state.workflow_node_id = node_id
+        # Who dispatched us (see RunState.parent_run_id). Read off the handler
+        # rather than threaded through six call sites; _workflow_node_run sets
+        # it per request, so it is never stale.
+        state.parent_run_id = getattr(self, "_parent_run_id", None)
         # remaining build-chain; the completion hook dispatches the next
         # one daemon-side (no chat turn) when this node finishes cleanly.
         state.chain_rest = list(chain_rest or [])
@@ -15570,6 +15597,21 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not _chain_raw and isinstance(body.get("chain"), (list, str)):
             _chain_raw = body["chain"] if isinstance(body["chain"], str) else ",".join(body["chain"])
         chain_rest = [c.strip() for c in _chain_raw.split(",") if c.strip()]
+
+        # `?parent=<runId>` - who dispatched this node. Agents pass their own
+        # $TH_RUN_ID; _maybe_advance_build_chain carries it down the chain.
+        # ALWAYS assigned (not just when present): handler instances are reused
+        # across keep-alive requests, so a parentless /run must clear the
+        # previous request's value instead of inheriting it.
+        _parent_raw = (qs.get("parent") or [""])[0] if hasattr(qs, "get") else ""
+        if not _parent_raw and isinstance(body.get("parent"), str):
+            _parent_raw = body["parent"]
+        _parent_raw = (_parent_raw or "").strip()
+        # Only accept a run we actually know - a bogus id would send the
+        # watchdog's nudge nowhere, silently.
+        with RUNS_LOCK:
+            _parent_ok = _parent_raw in RUNS
+        self._parent_run_id = _parent_raw if _parent_ok else None
 
         # Load workflow.json
         wf, nodes_by_id, wf_path, wf_err = _load_workflow_nodes(project_root)
@@ -32015,6 +32057,159 @@ class ReusableThreadingTCP(socketserver.ThreadingTCPServer):
         traceback.print_exc()
 
 
+# ── stall watchdog ──────────────────────────────────────────────────────────
+# A run whose upstream stream goes silent mid-turn is INVISIBLE to every
+# liveness signal we already have: the process is alive, its HTTPS socket is
+# still ESTABLISHED, and the node's runStatus is still "running". Found live
+# on indo-project - ms_research went quiet right after a mkdir and sat there
+# for 27 minutes while the parent chat cheerfully polled "STILL RUNNING"
+# forever. Nothing anywhere noticed, because nothing was technically wrong.
+#
+# So watch the one signal that only moves when work actually happens: the
+# run's event count. No model in the loop - poll, compare, say so once.
+#
+# It only ticks while something is actually in flight. With nothing running it
+# blocks on STALL_WAKE (which RunState.__init__ sets), so an idle daemon pays
+# nothing for it - no timer, no wakeup, no empty-registry scan.
+STALL_POLL_S = 300      # look every 5 min
+STALL_AFTER_S = 900     # no new events for 15 min = stalled
+
+
+def _stall_find_parent(child):
+    """The run to tell about `child` hanging, or None.
+
+    Explicit linkage first (`?parent=` / carried down an auto-chain). Failing
+    that, fall back to the sole live chat in the same project: agents drift
+    from documented curl recipes (they free-type them), so the explicit link
+    WILL sometimes be missing, and in practice one chat drives one build. Only
+    when there is exactly one candidate - guessing between two chats would
+    interrupt the wrong person's work."""
+    rid = getattr(child, "parent_run_id", None)
+    with RUNS_LOCK:
+        states = list(RUNS.values())
+    if rid:
+        for s in states:
+            if s.run_id == rid:
+                return s if s.is_live and not s.done else None
+        return None
+    if not child.workflow_node_id:
+        return None     # only a dispatched NODE has a parent worth guessing
+    cands = [s for s in states
+             if s.kind == "freeform" and s.project_id == child.project_id
+             and s.is_live and not s.done and s.run_id != child.run_id]
+    return cands[0] if len(cands) == 1 else None
+
+
+def _stall_tell_parent(child, mins) -> None:
+    """Tell the dispatching run that its child has gone silent. This is the
+    whole point of the watchdog: the child is beyond help (its stream is
+    dead), but the parent is alive, polling, and CAN act - stop the node and
+    re-dispatch, or move on without it. Left to itself it polls forever.
+
+    Written straight to the parent's stdin, the same channel /user-message
+    uses, so it lands mid-turn without waiting for the poll loop to exit."""
+    parent = None
+    try:
+        parent = _stall_find_parent(child)
+    except Exception:
+        pass
+    if parent is None:
+        return
+    node = child.workflow_node_id or child.run_id
+    text = (
+        f"[watchdog] The node you dispatched, `{node}` (run {child.run_id}), "
+        f"has produced no output for {mins} minutes. Its process is alive and "
+        f"its status is still \"running\", so polling will never resolve - the "
+        f"agent's stream is silent, not busy. Stop polling it. Either stop and "
+        f"re-dispatch that node, or continue without it and say plainly in "
+        f"chat that you did."
+    )
+    try:
+        parent.proc.stdin.write(_claude_user_frame(text))
+        parent.proc.stdin.flush()
+    except Exception as e:
+        print(f"[stall] could not reach parent {parent.run_id}: {e}", flush=True)
+        return
+    # Mirror /user-message: an injected frame puts the turn back in flight,
+    # and the echo keeps the nudge visible in the parent's transcript instead
+    # of it appearing to answer a question nobody asked.
+    parent.turn_done = False
+    try:
+        parent.append("user_message", {"text": text})
+    except Exception:
+        pass
+    print(f"[stall] told parent {parent.run_id} about {node}", flush=True)
+
+
+def _stall_watch_loop() -> None:
+    # runId -> [lastSeq, unchanged_since, warned]
+    seen = {}
+    while True:
+        # clear BEFORE the busy check, never after: a spawn landing between
+        # the two sets the flag again and our wait() returns immediately.
+        # Clearing after the check would swallow exactly that wakeup and park
+        # the watchdog forever while a run was live.
+        STALL_WAKE.clear()
+        try:
+            with RUNS_LOCK:
+                states = list(RUNS.values())
+            busy = any(not s.done and not s.turn_done and s.is_live
+                       for s in states)
+        except Exception:
+            busy = True     # can't tell - stay awake rather than go deaf
+        if not busy:
+            seen.clear()
+            STALL_WAKE.wait()   # parks until the next spawn; no timeout
+            continue
+        time.sleep(STALL_POLL_S)
+        try:
+            now = time.time()
+            with RUNS_LOCK:
+                states = list(RUNS.values())
+            alive = set()
+            for s in states:
+                # turn_done means it finished its turn and is waiting on the
+                # USER - that's idle by design, not a stall.
+                if s.done or s.turn_done or not s.is_live:
+                    continue
+                alive.add(s.run_id)
+                with s.lock:
+                    seq = s.events[-1]["seq"] if s.events else -1
+                row = seen.get(s.run_id)
+                if row is None or row[0] != seq:
+                    seen[s.run_id] = [seq, now, False]   # moving = healthy
+                    continue
+                idle = now - row[1]
+                if row[2] or idle < STALL_AFTER_S:
+                    continue
+                mins = int(idle // 60)
+                where = s.workflow_node_id or s.kind or "run"
+                print(f"[stall] {s.run_id} ({where}) - no new events for "
+                      f"{mins} min: {s.title}", flush=True)
+                # Renders as a plain chat row ("stalled - no new events for
+                # 15 min") in the run's own transcript, and lands in
+                # chat.jsonl so it survives a daemon restart.
+                try:
+                    s.append("status", {
+                        "label": "stalled",
+                        "promptPreview": f"no new events for {mins} min",
+                    })
+                except Exception:
+                    pass
+                _stall_tell_parent(s, mins)
+                # Re-read the seq AFTER our own append, or the warning we just
+                # wrote would read as fresh activity next round and we'd warn
+                # again every 15 min. One line per silent stretch; real work
+                # moving the seq resets the row and re-arms the check.
+                with s.lock:
+                    seq = s.events[-1]["seq"] if s.events else seq
+                seen[s.run_id] = [seq, now, True]
+            for rid in list(seen):
+                if rid not in alive:
+                    seen.pop(rid, None)
+        except Exception as e:
+            print(f"[stall] watchdog round failed: {e}", flush=True)
+
 
 if __name__ == "__main__":
     # ── Highlighted startup URL banner ──
@@ -32194,6 +32389,10 @@ if __name__ == "__main__":
                          name="peer-comments-sync").start()
     except Exception as e:
         print(f"[share] boot failed (share mode disabled): {e}", flush=True)
+    # Stall watchdog - outside the share try/except on purpose: it watches
+    # runs, not shares, and must come up even when share mode is disabled.
+    threading.Thread(target=_stall_watch_loop, daemon=True,
+                     name="stall-watch").start()
     # auto-replace any stale serve.py holding our port. Without this,
     # the user gets EADDRINUSE every time the previous daemon wasn't cleaned
     # up (common during development: editor reloads, separate launchers, my
