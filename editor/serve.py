@@ -6767,7 +6767,15 @@ def _codex_task_translation_note(project_id):
 # Which orchestrator owns a given family-token? Used to route a per-orchestrator
 # model override to EVERY drawer / lens / gate subagent the orchestrator fans
 # out, not just the orchestrator's own node. Keyed by the node-id family segment.
-_FAMILY_TO_ORCH = {
+#
+# These SHIPPED rows are the floor, not the whole map: _family_to_orch() below
+# merges in every family token derivable from the manifests' own
+# `nodeKinds.agent_overrides` patterns, so an orchestrator ADDED to the
+# workspace (via the Add-orchestrator flow) gets its drawers routed too. Before
+# that merge existed, a hand-maintained map meant any orchestrator not listed
+# here - sound, voice, polish, and every user-added one - silently lost the
+# user's per-orchestrator model override on every drawer it fanned out.
+_FAMILY_TO_ORCH_STATIC = {
     "sim":  "simulation-orchestrator",
     "im":   "interactive-media-orchestrator",
     "nx":   "narrative-experience-orchestrator",
@@ -6776,6 +6784,60 @@ _FAMILY_TO_ORCH = {
     "s3d":  "scene-3d-orchestrator",
     "sb":   "scrapbook-experience-orchestrator",
 }
+
+# Family tokens that are structural node-id prefixes, never a family name -
+# deriving a family from these would mis-route (e.g. every family's release
+# gate is `cp_<family>_gate_…`, handled explicitly in _orch_for_node).
+_FAMILY_TOKEN_STOPWORDS = {"cp", "pe", "qa", "p", "s", "a", "gate", "lens"}
+
+
+_FAMILY_TO_ORCH_CACHE = {}
+
+
+def _family_to_orch():
+    """Static rows + every family token the installed manifests declare.
+
+    A manifest's `nodeKinds.agent_overrides` lists the node-id patterns its
+    drawers use (`p_snd_*`, `ms_research_*`, `qa_gate_vx_*`). The leading
+    segment of each pattern is that orchestrator's family token, which is
+    exactly what _orch_for_node matches on. Static rows win on conflict so a
+    shipped mapping is never silently redefined by a new manifest."""
+    if _FAMILY_TO_ORCH_CACHE:
+        return _FAMILY_TO_ORCH_CACHE
+    out = {}
+    try:
+        import orchestrators as _pl
+        manifests = _pl._scan_manifests()
+    except Exception:
+        manifests = []
+    for m in manifests:
+        oid = m.get("id")
+        pats = ((m.get("nodeKinds") or {}).get("agent_overrides") or [])
+        if not oid or not isinstance(pats, list):
+            continue
+        for pat in pats:
+            if not isinstance(pat, str):
+                continue
+            tok = pat.strip().lower().lstrip("*_").split("_")[0].rstrip("*")
+            if not tok or tok in _FAMILY_TOKEN_STOPWORDS or not tok.isalnum():
+                continue
+            out.setdefault(tok, oid)
+    out.update(_FAMILY_TO_ORCH_STATIC)
+    _FAMILY_TO_ORCH_CACHE.update(out)
+    return out
+
+
+class _FamilyMap:
+    """Read-through shim so the existing `_FAMILY_TO_ORCH.get(tok)` call sites
+    keep working while the map is computed from manifests."""
+    def get(self, key, default=None):
+        return _family_to_orch().get(key, default)
+
+    def __contains__(self, key):
+        return key in _family_to_orch()
+
+
+_FAMILY_TO_ORCH = _FamilyMap()
 
 
 def _orch_for_node(node_id):
