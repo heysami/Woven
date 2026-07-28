@@ -9920,12 +9920,10 @@ function fmtUsageReset(ms) {
   return `resets in ${Math.floor(sec / 86400)}d`;
 }
 
-/* Polls the daemon's /__workspace endpoint on a short interval so any surface
-   can show whether `serve.py` is reachable. Uses AbortController + a 2s
-   timeout so a hung socket flips to "down" promptly (default fetch hangs the
-   whole poll cycle otherwise). The endpoint is the cheapest GET the daemon
-   exposes - returns a tiny JSON describing single/workspace mode - so this is
-   safe to run every few seconds across every mounted topbar. */
+/* Tracks whether `serve.py` is reachable, for every surface that shows the
+   daemon chip. Probes /__healthz (the cheapest GET the daemon exposes - it
+   touches no locks and reads no files, so it answers in <5ms under any load)
+   and folds the result into the evidence model described below. */
 // Daemon-status model: evidence-based, not silence-based.
 //
 // Do NOT infer "down" from silence ("is the LAST OK stamp older than
@@ -9945,6 +9943,22 @@ function fmtUsageReset(ms) {
 // failed fetch fired to update failAt." For that we run ONE low-rate active
 // /__healthz ping every 30s. Costs <5ms per ping. The wrapped fetch handles
 // the rest of the bookkeeping automatically.
+//
+// WHAT IS *NOT* EVIDENCE: a fetch that never completed. The wrapper used to
+// stamp failAt on ANY rejection, which conflated three very different things:
+//   1. the daemon is gone (TypeError "Failed to fetch")  - real evidence
+//   2. WE aborted the request (effect cleanup, SSE teardown, a client-side
+//      timeout)                                          - says nothing
+//   3. the request never got a socket, because long-lived same-origin
+//      requests had saturated the browser's ~6-per-origin HTTP/1.1 pool
+//                                                        - says nothing
+// (3) is not hypothetical: a provider with an exhausted balance parks
+// /__asset_generate calls in its queue for the daemon's full 900s timeout, so
+// a stalled build holds sockets for a quarter of an hour at a time while the
+// daemon itself answers instantly. Both (2) and (3) surface as an AbortError,
+// so aborts are ignored here; only a real transport failure counts. Timeouts
+// still reach the badge, but through useDaemonStatus's confirm step below, so
+// one starved ping can't latch the chip red.
 if (typeof window !== "undefined") {
   if (!window.__thLastDaemonOkAt)   window.__thLastDaemonOkAt   = 0;
   if (!window.__thLastDaemonFailAt) window.__thLastDaemonFailAt = 0;
@@ -9965,11 +9979,13 @@ if (typeof window !== "undefined") {
         // ANY response - even 4xx / 5xx - proves the daemon is reachable.
         // The badge is "is the daemon up", not "did this request succeed."
         try { window.__thLastDaemonOkAt = Date.now(); } catch {}
-      }).catch(() => {
-        // Transport failure: no response received. THIS is evidence of "down."
-        if (sameOrigin) {
-          try { window.__thLastDaemonFailAt = Date.now(); } catch {}
-        }
+      }).catch((err) => {
+        if (!sameOrigin) return;
+        // An abort is OUR doing (effect cleanup / client timeout) or a starved
+        // connection pool - never proof the daemon died. See the note above.
+        if (err && (err.name === "AbortError" || err.code === 20)) return;
+        // Genuine transport failure: no response received. Evidence of "down."
+        try { window.__thLastDaemonFailAt = Date.now(); } catch {}
       });
       return p;
     };
@@ -9982,32 +9998,67 @@ function useDaemonStatus() {
   const [lastOk, setLastOk] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    // Cheap health-check helper used by both the bootstrap and the idle
-    // poller. Uses the wrapped fetch so success/failure stamps the globals
-    // automatically.
-    const pingHealthz = async () => {
+    // Two abort budgets, not one. FAST is the routine probe - /__healthz is
+    // built lock-free to answer in <5ms, so 1.5s is generous. PATIENT is the
+    // confirmation probe: it has to survive a congested connection pool, where
+    // the request is queued behind long-lived same-origin fetches and hasn't
+    // even reached the network yet. A single FAST miss is not evidence.
+    const PING_FAST_MS    = 1500;
+    const PING_PATIENT_MS = 5000;
+    // Cheap health-check helper used by the bootstrap, the confirm step and
+    // the idle poller. Uses the wrapped fetch so a REACHED daemon stamps okAt
+    // automatically; failures are stamped by `probe` below, never here (a
+    // timeout aborts, and the wrapper deliberately ignores aborts).
+    //
+    // Returns true for ANY response, not just r.ok - same rule the wrapper
+    // uses, and for the same reason: the question is "is the daemon up", not
+    // "did this request succeed". A build predating /__healthz answers 404,
+    // which proves it is alive; treating that as death would condemn every
+    // older daemon on sight.
+    const pingHealthz = async (budgetMs) => {
       try {
         const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
-        const to = ctrl ? setTimeout(() => ctrl.abort(), 1500) : null;
+        const to = ctrl ? setTimeout(() => ctrl.abort(), budgetMs) : null;
         const r = await fetch(apiUrl("/__healthz"), { signal: ctrl ? ctrl.signal : undefined, cache: "no-store" });
         if (to) clearTimeout(to);
-        return !!(r && r.ok);
+        return !!r;
       } catch { return false; }
+    };
+    // Confirm before condemning. One missed ping buys a second, patient ping;
+    // only when BOTH come back empty do we stamp failAt and let the chip go
+    // red. Returns true (alive) / false (confirmed dead) / null (don't know -
+    // we unmounted mid-probe, so record nothing).
+    const probe = async () => {
+      if (await pingHealthz(PING_FAST_MS)) return true;
+      if (cancelled) return null;
+      if (await pingHealthz(PING_PATIENT_MS)) return true;
+      if (cancelled) return null;
+      try { window.__thLastDaemonFailAt = Date.now(); } catch {}
+      return false;
     };
     // Bootstrap: 3 tries × 400ms - pre-fix, a single missed ping during
     // daemon warm-up flashed "down" on every page load. The retries cover
-    // the JS racing first-route-registration.
+    // the JS racing first-route-registration. If all three miss, take the
+    // patient probe before showing the restart-the-daemon badge.
     (async () => {
       for (let i = 0; i < 3; i++) {
         if (cancelled) return;
-        if (await pingHealthz()) {
+        if (await pingHealthz(PING_FAST_MS)) {
           if (cancelled) return;
           setStatus("up"); setLastOk(Date.now());
           return;
         }
         await new Promise(res => setTimeout(res, 400));
       }
-      if (!cancelled) setStatus("down");
+      if (cancelled) return;
+      if (await pingHealthz(PING_PATIENT_MS)) {
+        if (!cancelled) { setStatus("up"); setLastOk(Date.now()); }
+        return;
+      }
+      if (!cancelled) {
+        try { window.__thLastDaemonFailAt = Date.now(); } catch {}
+        setStatus("down");
+      }
     })();
     // Recompute the badge every 4s from the stamps. NO time-staleness check -
     // we only flip state on evidence (a more-recent okAt or failAt). Silence
@@ -10026,17 +10077,28 @@ function useDaemonStatus() {
       });
     };
     const recomputeTimer = setInterval(recompute, 4000);
-    // Active /__healthz every 30s catches daemon-died-during-idle. The
-    // wrapped fetch handles the stamp; we just need to trigger one request
-    // periodically so the evidence model has fresh data to read.
-    const livenessTimer = setInterval(() => {
+    // Active liveness probe, self-scheduling rather than a fixed interval.
+    // Healthy: one probe every 30s, enough to catch daemon-died-during-idle.
+    // Condemned: every 5s, because "down" only clears on a SUCCESSFUL
+    // same-origin response and this probe is the only one guaranteed to run
+    // when the app is otherwise quiet. On the old fixed 30s interval a badge
+    // that flipped red on one starved ping stayed red for half a minute at a
+    // time, which read as permanent and sent people to the restart dialog.
+    const LIVE_POLL_OK_MS   = 30000;
+    const LIVE_POLL_DOWN_MS = 5000;
+    let liveTimer = null;
+    const tick = async () => {
       if (cancelled) return;
-      pingHealthz().then(() => recompute());
-    }, 30000);
+      const alive = await probe();
+      if (cancelled) return;
+      recompute();
+      liveTimer = setTimeout(tick, alive === false ? LIVE_POLL_DOWN_MS : LIVE_POLL_OK_MS);
+    };
+    liveTimer = setTimeout(tick, LIVE_POLL_OK_MS);
     return () => {
       cancelled = true;
       clearInterval(recomputeTimer);
-      clearInterval(livenessTimer);
+      if (liveTimer) clearTimeout(liveTimer);
     };
   }, []);
   return { status, lastOk };
@@ -14527,6 +14589,13 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   const [events, setEvents] = useState([]);
   const [status, setStatus] = useState("connecting");   // connecting | streaming | done | fail | error
   const [error, setError] = useState(null);
+  // First provider-out-of-credit signal seen in this thread, if any. Kept
+  // SEPARATE from `error` because the two have different lifetimes: the error
+  // banner is gated on status==="error", but a billing failure usually arrives
+  // as an errored tool_result inside a run that keeps going and ends "done" -
+  // so gating it on status would hide the one thing the user has to act on.
+  // Sticky for the thread; cleared only on a cold mount of another run.
+  const [billing, setBilling] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   // Fullscreen mode - drawer takes over the whole viewport. Useful when the
   // chat is doing heavy rendering (shader previews, three.js scenes) or a
@@ -14617,6 +14686,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       // Reset to empty state when we're showing the new-chat shell so the
       // drawer doesn't carry stale events from a previously-mounted run.
       setEvents([]); setStatus("connecting"); setError(null); setAnswers({});
+      setBilling(null);
       completedRef.current = false;
       lastIdRef.current = -1;
       prevRunIdRef.current = null;
@@ -14648,6 +14718,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         setEvents(cached.events);
         setAnswers(cached.answers || {});
         setError(null);
+        setBilling(cached.events.map(eventBillingReason).find(Boolean) || null);
         // If the cached run ended terminally, seed the status from the cache
         // so the drawer doesn't briefly show "connecting" before the run flags
         // get re-applied. A live SSE tail can still flip back to streaming.
@@ -14665,6 +14736,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         cacheHit = true;
       } else {
         setEvents([]); setStatus("connecting"); setError(null); setAnswers({});
+        setBilling(null);
         lastIdRef.current = -1;
         _seenSeqRef.current = new Set();
       }
@@ -14744,6 +14816,9 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           // historical chat still explains a context-overflow / errored turn.
           const histErr = [...evs].reverse().map(chatErrorReason).find(Boolean);
           if (histErr) setError(histErr);
+          // Billing is harvested FORWARD (first occurrence) and rendered
+          // regardless of status - see the `billing` state note.
+          setBilling(evs.map(eventBillingReason).find(Boolean) || null);
           setStatus("done");
         } catch (e) {
           if (cancelled || e?.name === "AbortError") return;
@@ -14814,6 +14889,8 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             // so a reason set after a recovered turn stays harmlessly hidden).
             const _histErr = [...evs].reverse().map(chatErrorReason).find(Boolean);
             if (_histErr) setError(_histErr);
+            const _histBill = evs.map(eventBillingReason).find(Boolean);
+            if (_histBill) setBilling(prev => prev || _histBill);
           }
         }
         }  // end of !cacheHit branch
@@ -14893,6 +14970,12 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             // reason instead of the generic "Stream error".
             const _reason = chatErrorReason(ev);
             if (_reason) setError(_reason);
+            // Out-of-credit is surfaced on its own banner, independent of
+            // status: it usually rides in on an errored tool_result while the
+            // run carries on and finishes "done", so the error banner (gated
+            // on status==="error") would never show it. First one wins.
+            const _bill = eventBillingReason(ev);
+            if (_bill) setBilling(prev => prev || _bill);
             // Status transitions - see chatStatusReducer above (shared with
             // the hydrate-from-history fold so live and replayed transcripts
             // land on identical statuses).
@@ -15333,6 +15416,14 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             </div>
           `}
           ${status === "error" && html`<div className="chat-error">${error || "Stream error"}</div>`}
+          ${billing && html`
+            <div className="chat-error chat-billing" role="status">
+              <strong>Out of provider credit</strong> - ${billing}.
+              Calls to this provider will keep failing (or hang until they time
+              out) until the balance is topped up. Nothing is wrong with the
+              daemon or your project.
+            </div>
+          `}
         </div>
       `}
       ${latestTool && html`
@@ -19703,13 +19794,78 @@ function contextLimitReason(usage) {
   return `Context limit reached - this conversation filled the model's ${window}-token window (~${fmtTokens(ctx)} tokens). Start a new chat to continue.`;
 }
 
+/* ── Provider out-of-credit detection ──────────────────────────────────────
+   A provider running out of money was the failure the app named worst. The
+   run dies or hangs, every asset call fails, and nothing on screen says
+   "billing" - so the loudest red thing in the window (historically the daemon
+   chip, which a starved connection pool had knocked over) got read as the
+   cause. These patterns are the wire text of the providers actually wired
+   into serve.py, so the real reason gets said out loud.
+
+   Deliberately narrow: rate limits are NOT billing (they clear on their own
+   and already have their own `rate_limit_event` row), and auth failures are
+   NOT billing. Only "you have no money left" matches. */
+const BILLING_SIGNALS = [
+  // Anthropic: "Your credit balance is too low to access the Anthropic API"
+  [/credit balance is too low|balance is too low/i, "the credit balance is too low"],
+  // fal: "User is locked. Reason: Exhausted balance."
+  [/exhausted balance|balance exhausted/i,          "the balance is exhausted"],
+  // OpenAI: insufficient_quota / "You exceeded your current quota"
+  [/insufficient[_ ]?(?:quota|credits?|balance|funds)/i, "there is no quota left"],
+  [/exceeded your current quota|quota[_ ]?exceeded/i,    "the quota is used up"],
+  [/billing[_ ]?hard[_ ]?limit|billing limit reached/i,  "a billing limit was hit"],
+  [/\bhttp[ _-]?402\b|402 payment required/i,            "the provider answered 402 Payment Required"],
+  // The signature that started all this: fal accepts a submission and never
+  // dispatches it once the balance is gone, so the call burns its whole 900s
+  // timeout looking like a network problem. Hedged, because a genuinely busy
+  // queue produces the same text.
+  [/queue: timed out after \d+s \(last status: IN_QUEUE\)/i,
+   "the provider accepted the job and never dispatched it (usually an exhausted balance)"],
+];
+// Provider names worth attributing. Only consulted on text that ALREADY
+// matched a billing signal, so a stray mention can't invent a diagnosis.
+const BILLING_PROVIDERS = /\b(openai|anthropic|elevenlabs|higgsfield|worldlabs|replicate|leonardo|meshy|fal)\b/i;
+
+/* Returns a short "who ran out, and how" line, or null. Caps the scan because
+   tool_result payloads can carry megabytes of base64. */
+function billingReason(text) {
+  if (typeof text !== "string" || !text) return null;
+  const s = text.length > 4000 ? text.slice(0, 4000) : text;
+  let what = null;
+  for (const [re, phrase] of BILLING_SIGNALS) {
+    if (re.test(s)) { what = phrase; break; }
+  }
+  if (!what) return null;
+  const who = (BILLING_PROVIDERS.exec(s) || [])[1];
+  return who ? `${who.toLowerCase()}: ${what}` : what;
+}
+
+/* Pull every text field a chat event could be hiding a billing failure in.
+   Asset generation fails as an errored tool_result, not as a run-level error
+   event, which is why the old error-only path never saw it. */
+function eventBillingReason(ev) {
+  if (!ev) return null;
+  const d = ev.data || {};
+  if (ev.event === "error")  return billingReason(d.message);
+  if (ev.event === "stderr") return billingReason(d.text);
+  if (ev.event !== "agent")  return null;
+  if (d.type === "error")    return billingReason(d.message);
+  if (d.type === "status" && d.label === "error") {
+    return billingReason(d.result) || billingReason(d.subtype);
+  }
+  if (d.type === "tool_result" && d.isError) return billingReason(d.content);
+  return null;
+}
+
 // Human reason for any error-bearing chat event, or null when it carries none.
 // Used to label the error banner / chip with WHY a turn failed instead of the
-// misleading generic "Stream error". Context-overflow takes priority over the
-// raw subtype because it's the actionable case.
+// misleading generic "Stream error". Billing beats context-overflow beats the
+// raw subtype - most actionable first.
 function chatErrorReason(ev) {
   if (!ev) return null;
   const d = ev.data || {};
+  const bill = eventBillingReason(ev);
+  if (bill) return `Out of provider credit - ${bill}`;
   if (ev.event === "error") return d.message || null;
   if (ev.event === "agent" && d.type === "status" && d.label === "error") {
     return contextLimitReason(d.usage) || d.subtype || null;
