@@ -1012,6 +1012,18 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
                 if not _per_content and row.get("model"): pieces.append(row["model"])
                 if row.get("source"):   pieces.append(f"({row['source']})")
                 _tail = f" - {_per_content}" if _per_content else ""
+                # An image-conditioned VIDEO default is legal (Higgsfield ships
+                # DoP image→video only, so pinning it is the only way to name
+                # Higgsfield at all). Say what it needs, so the agent wires a
+                # start frame instead of sending a bare prompt. Mirrors
+                # serve.py's _video_model_is_i2v_only - keep the two in step.
+                if (cap_key == "video"
+                        and (row.get("provider") == "higgsfield"
+                             or "image-to-video" in (row.get("model") or ""))):
+                    _tail = (" - IMAGE-TO-VIDEO: wire a start frame "
+                             "(input_path / input_data_uri) into every video call. "
+                             "A prompt-only call is auto-rendered on a text-capable "
+                             "model instead, which is NOT what the user pinned.")
                 rows.append(f"  • {cap_label:24s}  USER DEFAULT: {' · '.join(pieces)}{_tail}")
             defaults_block = "\n".join(rows)
     except Exception:

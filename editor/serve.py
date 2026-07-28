@@ -1958,6 +1958,78 @@ def _fal_video_i2v_variant(model):
     return m
 
 
+# ── Prompt-only video with an image-conditioned pick ────────────────────────
+# Settings lets the user pin ANY video model as their standing default,
+# including the image-conditioned ones (Higgsfield DoP is image→video only;
+# half the fal catalog is an i2v tier). That is the right affordance - you pin
+# the model you want your video work done with - but it means a request that
+# arrives with no start frame has to be resolved to something that can
+# actually run from a prompt. These three helpers are the daemon-side mirror of
+# the catalog's t2v / i2v caps (editor/prompts/media-models.js VIDEO_MODELS);
+# the reverse promotion (t2v pin + a wired frame -> the i2v sibling) is
+# _fal_video_i2v_variant above.
+
+def _video_model_is_i2v_only(provider, model):
+    """True when this pick CANNOT render from a prompt alone."""
+    if (provider or "") == "higgsfield":
+        return True                      # every DoP tier is image→video
+    return "image-to-video" in (model or "")
+
+
+def _fal_video_t2v_variant(model):
+    """An image-to-video endpoint id -> the text-to-video sibling of the same
+    family. Ids that are already text-capable pass through untouched. Two
+    families have no same-tier twin and map sideways instead (live-probed ids,
+    see VIDEO_MODELS): Kling 2.6 ships i2v only, so it falls back to the 2.5
+    Turbo t2v endpoint, and Hailuo's FAST tier is i2v only
+    (`hailuo-2.3-fast/pro/text-to-video` 404s), so it falls back to the plain
+    2.3 Pro t2v path."""
+    m = model or ""
+    if "image-to-video" not in m:
+        return m
+    if m.startswith("fal-ai/veo3.1"):
+        return "fal-ai/veo3.1"
+    if m.startswith("fal-ai/luma-dream-machine/ray-2"):
+        return "fal-ai/luma-dream-machine/ray-2"
+    if m.startswith("fal-ai/kling-video/v2.6"):
+        return "fal-ai/kling-video/v2.5-turbo/pro/text-to-video"
+    if "hailuo-2.3-fast" in m:
+        return "fal-ai/minimax/hailuo-2.3/pro/text-to-video"
+    return m.replace("image-to-video", "text-to-video")
+
+
+# Providers that can render from a prompt alone, best first, with the model to
+# use. Consulted ONLY when the picked provider itself has no text-capable
+# sibling (Higgsfield) - staying with the user's provider always wins.
+_VIDEO_T2V_PROVIDER_FALLBACK = (("fal", "fal-ai/veo3.1"),)
+
+
+def _video_resolve_prompt_only(provider, model):
+    """Resolve (provider, model) for a video request carrying NO start frame.
+    Returns (provider, model, note) where note is a human-readable description
+    of any substitution made (empty when nothing changed). When nothing can be
+    substituted - an i2v-only provider and no text-capable provider keyed - the
+    pick is returned untouched so the renderer raises its own precise error
+    ("higgsfield DoP needs a start frame ...") rather than a vague one here."""
+    if not _video_model_is_i2v_only(provider, model):
+        return provider, model, ""
+    if (provider or "") == "fal":
+        alt = _fal_video_t2v_variant(model)
+        if alt and alt != model:
+            return provider, alt, (
+                f"no start frame wired, so the image-to-video default {model} "
+                f"was rendered with its text-to-video sibling {alt}")
+    for pid, pmodel in _VIDEO_T2V_PROVIDER_FALLBACK:
+        if pid == (provider or ""):
+            continue
+        if _resolve_provider_key(pid):
+            return pid, pmodel, (
+                f"no start frame wired, and {provider or 'the default provider'} "
+                f"{model or ''} is image-to-video only, so it was rendered with "
+                f"{pid} {pmodel}")
+    return provider, model, ""
+
+
 def _fal_video_normalize_duration(model, dur):
     """Coerce a caller-supplied duration into the vocabulary the model family
     actually accepts (live-probed against fal's OpenAPI schemas, July 2026):
@@ -19071,6 +19143,25 @@ class H(http.server.SimpleHTTPRequestHandler):
                 provider = _ud["provider"]
             if not model and _ud.get("model"):
                 model = _ud["model"]
+        # An image-conditioned video pick (Higgsfield DoP, any fal i2v tier) is
+        # a legitimate standing default - but it cannot serve a request that
+        # arrives with no start frame. Resolve those to something runnable
+        # (same provider's t2v sibling first, then the first text-capable
+        # provider with a key) instead of submitting a call that is guaranteed
+        # to fail. Applies to `video-gen` only: `video-chain` is image→video by
+        # construction, every clip has a frame. See _video_resolve_prompt_only.
+        video_substitution = ""
+        if skill == "video-gen":
+            _has_frame = bool(
+                body.get("input_data_uri")
+                or (body.get("input_path") or "").strip()
+                or (isinstance(options, dict)
+                    and (options.get("image_url") or options.get("start_image_url")))
+            )
+            if not _has_frame:
+                provider, model, video_substitution = _video_resolve_prompt_only(provider, model)
+                if video_substitution:
+                    print(f"[asset-gen] video substitution: {video_substitution}", flush=True)
         # Append an audit entry so we can grep call sites later.
         # bounded rotation: when the file exceeds 1 MB, rename it to
         # .asset-gen-audit.jsonl.prev and start a fresh one. Two-file
@@ -19491,6 +19582,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             # pointer-scrub bindings should assert this is <= 12 rather than
             # trusting the request flag.
             "scrubGop": scrub_gop,
+            # Non-empty when the requested video provider/model could not run
+            # prompt-only and was resolved to a text-capable one. The `provider`
+            # / `model` fields above already report what actually rendered; this
+            # says why they differ from what was asked for.
+            "substitution": video_substitution,
             "snapshot": snapshot_info,
             "inline_replace": (
                 {"ok": True, "files": replaced_files} if replaced_files

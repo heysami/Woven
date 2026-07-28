@@ -8208,22 +8208,32 @@ const CAPABILITY_LABELS = {
 const CAPABILITY_MODEL_PER_CONTENT = {
   audio: "voiceover · sound effect · music",
 };
-/* The same problem in a milder form for video and 3D: half of each catalog is
-   an IMAGE-conditioned variant (i2v / i23d) that cannot run from a prompt
-   alone. Those are content-determined too - you use image-to-video when you
-   have a start frame, not because you prefer it - so they must not be
-   pinnable as a standing default. Pinning one today breaks every text-only
-   request (meshy raises "needs an input image"; fal video goes out with no
-   image_url).
-   Filtering them out is SAFE rather than limiting, because the daemon already
-   promotes in the one direction that matters: wire a start frame to a pinned
-   text model and _fal_video_i2v_variant / meshy's is_image check swap in the
-   image sibling automatically. So a text-capable pin covers both cases and an
-   image-only pin covers one. */
+/* A related problem for 3D: half the catalog is an IMAGE-conditioned variant
+   (i23d) that cannot run from a prompt alone, and meshy raises "needs an input
+   image" rather than degrading. Those stay unpinnable, because the daemon
+   already promotes in the one direction that works there: wire a start image
+   to a pinned text model and meshy's is_image check swaps in the image sibling
+   automatically.
+   VIDEO used to be filtered the same way, which had the effect of hiding whole
+   PROVIDERS from the row - Higgsfield ships DoP only, so with every i2v row
+   removed the provider itself disappeared and a user with a Higgsfield key
+   could not name it as their video default at all. Video is pinnable in full
+   now; the daemon resolves a prompt-only request against an image-conditioned
+   pin (_video_resolve_prompt_only in serve.py: same provider's t2v sibling
+   first, then the first text-capable provider with a key) instead of
+   submitting a call that cannot run. */
 const CAPABILITY_TEXT_CAPABLE_CAPS = {
-  video: "t2v",
   "3d":  "t23d",
 };
+/* Rows that CAN be pinned but only render from an input frame/image. Not a
+   filter - just a label, so the dropdown says what the pick needs rather than
+   letting it read as a plain model choice. */
+function defaultModelNeedsInput(cap, model) {
+  if (cap !== "video" || !model) return false;
+  const caps = model.caps;
+  if (!Array.isArray(caps) || caps.length === 0) return false;
+  return caps.includes("i2v") && !caps.includes("t2v");
+}
 /* Raw catalog per capability, for looking a pinned model id up directly.
    listModelsForCapability is NOT a substitute here: for svg / lottie it
    synthesises PROVIDER rows (empty model ids) instead of returning a catalog
@@ -89233,11 +89243,13 @@ function _pickAutoForCapability(cap, models, mediaConfig) {
 }
 
 function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }) {
-  // Only text-capable models are offerable as a standing default - an
-  // image-conditioned variant cannot serve a prompt-only request, and the
-  // daemon already promotes a text pin to its image sibling when a start frame
-  // is wired. See CAPABILITY_TEXT_CAPABLE_CAPS. Providers that offer ONLY
-  // image-conditioned models (Higgsfield DoP) drop out of the row with them.
+  // Every model in the capability's catalog is offerable, minus the mode
+  // variants that are decided by the asset rather than by preference (see
+  // modelPinnableAsDefault). Image-conditioned VIDEO models are pinnable and
+  // are labelled "needs a start frame" - so Higgsfield, whose whole catalog is
+  // DoP image→video, appears in the provider list like any other. A prompt-only
+  // request against such a pin is resolved daemon-side by
+  // _video_resolve_prompt_only.
   const models = useMemo(
     () => listModelsForCapability(capability).filter(m => modelPinnableAsDefault(capability, m)),
     [capability]);
@@ -89326,7 +89338,7 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
               ${!currentProvider && html`<option value="">- Auto picks this for you -</option>`}
               ${currentProvider && modelsForProvider.length === 0 && html`<option value="">(no integrated models for this provider)</option>`}
               ${currentProvider && modelsForProvider.map(m => html`
-                <option key=${m.id || m.provider} value=${m.id}>${m.label || m.id || "(provider default)"}</option>
+                <option key=${m.id || m.provider} value=${m.id}>${(m.label || m.id || "(provider default)") + (defaultModelNeedsInput(capability, m) ? " · needs a start frame" : "")}</option>
               `)}
             `}
         </select>
