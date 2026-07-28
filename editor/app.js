@@ -11754,36 +11754,301 @@ const TASKS_PANEL_RUN_CAP = 40;
    truth of what is still owed is HERE, not reconstructed from vanished context.
    Read-only over the statically-served project file; polls so status advances
    as the build progresses. */
+/* ── Art-direction contract viewer ──────────────────────────────────────────
+   Read-only view of workflow/art-direction-contract.json - the file the art
+   director writes from the plate the user picked, and the single source of
+   truth every downstream build step reads (tokens, layout, components, motion,
+   asset registers, the final coherence diff). It was only readable as raw JSON
+   before; this renders it. The parts with a real shape (the plate, the palette,
+   the crop references) render as themselves; everything else renders
+   generically off whatever keys are present, so a drifted or extended contract
+   still shows in full instead of silently dropping sections. */
+const AD_SECTIONS = [
+  ["extracted",          "Read off the plate"],
+  ["authored",           "Authored to match"],
+  ["crossSurfaceContract", "Cross-surface contract"],
+  ["voice",              "Copy voice"],
+  ["buildRegister",      "Build-brief register"],
+  ["surfaceContracts",   "Surface contracts"],
+  ["formatCommitments",  "Format commitments"],
+  ["itemReferences",     "Plate references"],
+  ["bindingRules",       "Binding rules"],
+];
+const AD_SKIP_TOP = new Set(["projectId", "contractVersion", "platePath", "candidatesConsidered"]);
+// camelCase / snake_case key -> a human label ("colorUsePrinciple" -> "Color use principle").
+const adLabel = (k) => String(k)
+  .replace(/[_-]+/g, " ")
+  .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+  .replace(/^./, c => c.toUpperCase());
+const AD_IMG_RE = /\.(png|jpe?g|webp|gif|avif)$/i;
+// Contract paths are project-relative; the daemon serves the project root.
+const adAssetUrl = (p) => apiUrl("/" + String(p).replace(/^\.?\//, ""));
+const adIsHex = (v) => typeof v === "string" && /^#[0-9a-f]{3,8}$/i.test(v.trim());
+
+function AdValue({ value, depth = 0 }) {
+  if (value === null || value === undefined || value === "") return html`<span className="ad-empty">not set</span>`;
+  if (typeof value === "boolean") return html`<span className="ad-bool">${value ? "yes" : "no"}</span>`;
+  if (typeof value === "number") return html`<span>${value}</span>`;
+  if (typeof value === "string") {
+    if (adIsHex(value)) return html`<span className="ad-hex"><i style=${{ background: value }}/>${value}</span>`;
+    return html`<span className="ad-text">${value}</span>`;
+  }
+  if (Array.isArray(value)) {
+    if (!value.length) return html`<span className="ad-empty">none</span>`;
+    if (value.every(v => typeof v === "string" || typeof v === "number")) {
+      return html`<div className="ad-chips">
+        ${value.map((v, i) => adIsHex(v)
+          ? html`<span key=${i} className="ad-hex"><i style=${{ background: v }}/>${v}</span>`
+          : html`<span key=${i} className="ad-chip">${v}</span>`)}
+      </div>`;
+    }
+    return html`<div className="ad-list">
+      ${value.map((v, i) => html`<div className="ad-list-item" key=${i}><${AdValue} value=${v} depth=${depth + 1}/></div>`)}
+    </div>`;
+  }
+  const keys = Object.keys(value);
+  if (!keys.length) return html`<span className="ad-empty">none</span>`;
+  return html`
+    <dl className=${"ad-dl" + (depth ? " ad-dl-nested" : "")}>
+      ${keys.map(k => html`
+        <div className="ad-row" key=${k}>
+          <dt>${adLabel(k)}</dt>
+          <dd><${AdValue} value=${value[k]} depth=${depth + 1}/></dd>
+        </div>`)}
+    </dl>`;
+}
+
+/* The palette is the one block worth its own layout: hex + role + usage + the
+   ratio that IS the colour-use contract. */
+function AdPalette({ palette }) {
+  const rows = (palette || []).filter(p => p && (p.hex || typeof p === "string"));
+  if (!rows.length) return null;
+  return html`
+    <div className="ad-palette">
+      ${rows.map((p, i) => {
+        const hex = typeof p === "string" ? p : p.hex;
+        const pct = typeof p === "object" && typeof p.ratio === "number" ? Math.round(p.ratio * 100) : null;
+        return html`
+          <div className="ad-swatch" key=${i}>
+            <div className="ad-swatch-chip" style=${{ background: hex }}/>
+            <div className="ad-swatch-meta">
+              <div className="ad-swatch-hex">${hex}</div>
+              <div className="ad-swatch-role">
+                ${typeof p === "object" ? [p.role, p.usage].filter(Boolean).join(" · ") : ""}
+                ${pct != null ? html`<span className="ad-swatch-ratio">${pct}%</span>` : ""}
+              </div>
+            </div>
+          </div>`;
+      })}
+    </div>`;
+}
+
+function ArtDirectionContractModal({ contract, onClose }) {
+  const [raw, setRaw] = useState(false);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+  const c = contract || {};
+  const palette = c.extracted?.palette;
+  // `extracted` minus the palette - the palette gets its own swatch strip above.
+  const extractedRest = (() => {
+    if (!c.extracted || typeof c.extracted !== "object") return null;
+    const { palette: _p, ...rest } = c.extracted;
+    return Object.keys(rest).length ? rest : null;
+  })();
+  const extras = Object.keys(c).filter(k => !AD_SKIP_TOP.has(k) && !AD_SECTIONS.some(([key]) => key === k));
+
+  return createPortal(html`
+    <div className="modal-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal ad-modal" role="dialog" aria-modal="true" aria-label="Art direction contract">
+        <div className="modal-head">
+          <div>
+            <div className="modal-eyebrow">Committed contract</div>
+            <div className="modal-title">Art direction</div>
+          </div>
+          <button className="modal-x" onClick=${onClose}>×</button>
+        </div>
+        <div className="modal-body ad-body">
+          <div className="ad-note">
+            workflow/art-direction-contract.json - authored from the plate you picked. Every build
+            step reads it: tokens, layout, components, motion, the asset registers, and the final
+            coherence check. The build inherits the plate's design DNA, not its literal content.
+          </div>
+          <div className="ad-toolbar">
+            <button type="button" className="tbtn" data-active=${!raw} onClick=${() => setRaw(false)}>Contract</button>
+            <button type="button" className="tbtn" data-active=${raw} onClick=${() => setRaw(true)}>Raw JSON</button>
+          </div>
+          ${raw ? html`<pre className="ad-raw">${JSON.stringify(c, null, 2)}</pre>` : html`
+            <div className="ad-sections">
+              ${c.platePath && html`
+                <section className="ad-section">
+                  <h4 className="ad-h">North-star plate</h4>
+                  <img className="ad-plate" src=${adAssetUrl(c.platePath)} alt="North-star plate"
+                       onError=${(e) => { e.target.style.display = "none"; }}/>
+                  <div className="ad-path">${c.platePath}</div>
+                  ${Array.isArray(c.candidatesConsidered) && c.candidatesConsidered.length > 1 && html`
+                    <div className="ad-sub">Chosen from ${c.candidatesConsidered.length} candidates</div>`}
+                </section>`}
+              ${palette && html`
+                <section className="ad-section">
+                  <h4 className="ad-h">Palette + ratios</h4>
+                  <${AdPalette} palette=${palette}/>
+                </section>`}
+              ${extractedRest && html`
+                <section className="ad-section">
+                  <h4 className="ad-h">Read off the plate</h4>
+                  <${AdValue} value=${extractedRest}/>
+                </section>`}
+              ${AD_SECTIONS.filter(([k]) => k !== "extracted" && c[k] !== undefined).map(([k, title]) => html`
+                <section className="ad-section" key=${k}>
+                  <h4 className="ad-h">${title}</h4>
+                  ${k === "itemReferences" && Array.isArray(c[k]) && c[k].length
+                    ? html`<div className="ad-refs">
+                        ${c[k].map((ref, i) => html`
+                          <div className="ad-ref" key=${ref?.itemId || i}>
+                            ${ref?.refPath && AD_IMG_RE.test(ref.refPath) && html`
+                              <img className="ad-ref-img" src=${adAssetUrl(ref.refPath)} alt=${ref.itemId || "reference"}
+                                   onError=${(e) => { e.target.style.display = "none"; }}/>`}
+                            <div className="ad-ref-meta">
+                              <div className="ad-ref-id">${ref?.itemId || "reference"}${ref?.role ? html` <span className="ad-chip">${ref.role}</span>` : ""}</div>
+                              ${ref?.bboxNote && html`<div className="ad-sub">${ref.bboxNote}</div>`}
+                              ${Array.isArray(ref?.matchesSlots) && ref.matchesSlots.length
+                                ? html`<div className="ad-chips">${ref.matchesSlots.map((s, j) => html`<span key=${j} className="ad-chip">${s}</span>`)}</div>`
+                                : ""}
+                            </div>
+                          </div>`)}
+                      </div>`
+                    : html`<${AdValue} value=${c[k]}/>`}
+                </section>`)}
+              ${extras.length ? html`
+                <section className="ad-section">
+                  <h4 className="ad-h">Also in the contract</h4>
+                  <${AdValue} value=${Object.fromEntries(extras.map(k => [k, c[k]]))}/>
+                </section>` : ""}
+            </div>`}
+        </div>
+        <div className="modal-foot">
+          <button className="tbtn tbtn-primary" onClick=${onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  `, document.body);
+}
+
 const PLAN_DOT = { done: "done", in_progress: "live", pending: "waiting", blocked: "waiting", fail: "fail" };
 const PLAN_KIND_LABEL = { build: "build", gate: "gate", qa: "QA", lens: "lens" };
+
+const PLAN_LABEL_DATE = (ts) => {
+  if (!ts) return "unknown date";
+  try { return new Date(ts * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
+  catch { return String(ts); }
+};
+/* One dropdown row's label: when it was locked, how far it got, and the first
+   words of the brief it was locked against (the only thing that tells two
+   plans apart at a glance). */
+function planOptionLabel(p, i) {
+  const when  = PLAN_LABEL_DATE(p.lockedAt);
+  const brief = (p.brief || "").replace(/\s+/g, " ").trim();
+  const head  = p.current ? "Latest" : `Plan ${i + 1}`;
+  return `${head} · ${when} · ${p.done}/${p.total}` + (brief ? ` · ${brief.slice(0, 60)}${brief.length > 60 ? "…" : ""}` : "");
+}
 
 function OrchestrationPlanView() {
   const [plan, setPlan] = useState(undefined); // undefined = loading, null = none
   const [err, setErr]   = useState(null);
+  // Every plan this project has locked, newest first, current one at [0]. A
+  // second thread that locks a DIFFERENT plan over one already in progress
+  // forks instead of merging (daemon side), so this list grows to >1 only
+  // when there really are separate builds. One plan renders exactly as before.
+  const [plans, setPlans] = useState([]);
+  // null = follow the current plan (live, polled). A planId pins an older one.
+  const [pickedId, setPickedId] = useState(null);
+  // The committed art-direction contract, when the art director has written
+  // one. Read-only view behind the summary's button.
+  const [contract, setContract] = useState(null);
+  const [contractOpen, setContractOpen] = useState(false);
+
+  // Plan roster + contract - slow poll; both appear mid-build (at the plan
+  // lock and at the art-direction gate) so they cannot be one-shot loads.
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const r = await fetch(apiUrl("/pipeline.json?t=" + Date.now()), { cache: "no-store" });
+        const r = await fetch(apiUrl("/__pipelines"), { cache: "no-store" });
+        if (r.ok) {
+          const j = await r.json();
+          if (!cancelled && Array.isArray(j.plans)) setPlans(j.plans);
+        }
+      } catch {}
+      try {
+        const r = await fetch(apiUrl("/workflow/art-direction-contract.json?t=" + Date.now()), { cache: "no-store" });
+        const j = r.ok ? await r.json() : null;
+        if (!cancelled) setContract(j && typeof j === "object" && !Array.isArray(j) ? j : null);
+      } catch { if (!cancelled) setContract(null); }
+    };
+    load();
+    const timer = setInterval(load, 10000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await fetch(
+          pickedId ? apiUrl("/__pipelines?id=" + encodeURIComponent(pickedId))
+                   : apiUrl("/pipeline.json?t=" + Date.now()),
+          { cache: "no-store" });
         if (r.status === 404) { if (!cancelled) { setPlan(null); setErr(null); } return; }
         if (!r.ok) throw new Error("HTTP " + r.status);
         const j = await r.json();
-        if (!cancelled) { setPlan(j && Array.isArray(j.phases) ? j : null); setErr(null); }
+        const m = pickedId ? j.manifest : j;
+        if (!cancelled) { setPlan(m && Array.isArray(m.phases) ? m : null); setErr(null); }
       } catch (e) {
         if (!cancelled) setErr(e.message || String(e));
       }
     };
     load();
+    // An archived plan is frozen on disk - only the live one is worth polling.
+    if (pickedId) return () => { cancelled = true; };
     const timer = setInterval(load, 4000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, []);
+  }, [pickedId]);
 
-  if (plan === undefined) return html`<div className="runs-empty">Loading…</div>`;
+  // A pin that no longer resolves (its archive was deleted off disk) falls
+  // back to the live plan rather than sticking on a plan nothing can load.
+  useEffect(() => {
+    if (pickedId && plans.length && !plans.some(p => p.planId === pickedId)) setPickedId(null);
+  }, [plans, pickedId]);
+
+  // The picker sits above everything the view renders (including the empty
+  // state) so a project whose CURRENT plan is gone can still reach its history.
+  const picker = plans.length > 1 && html`
+    <div className="th-plan-picker">
+      <select
+        className="th-plan-select"
+        aria-label="Which orchestration plan"
+        value=${pickedId || ""}
+        onChange=${(e) => setPickedId(e.target.value || null)}
+      >
+        ${plans.map((p, i) => html`
+          <option key=${p.planId || i} value=${p.current ? "" : (p.planId || "")}>${planOptionLabel(p, i)}</option>
+        `)}
+      </select>
+      ${pickedId && html`<span className="th-plan-pinned">archived</span>`}
+    </div>`;
+
+  if (plan === undefined) return html`<div className="th-plan">${picker}<div className="runs-empty">Loading…</div></div>`;
   if (!plan) return html`
-    <div className="runs-empty">
-      No orchestration plan yet. It is locked in when you pick the orchestrators
-      at the plan gate, then tracks every build step and gate as the run proceeds.
-      ${err && html`<div className="th-plan-err">${err}</div>`}
+    <div className="th-plan">
+      ${picker}
+      <div className="runs-empty">
+        No orchestration plan yet. It is locked in when you pick the orchestrators
+        at the plan gate, then tracks every build step and gate as the run proceeds.
+        ${err && html`<div className="th-plan-err">${err}</div>`}
+      </div>
     </div>`;
 
   const phases   = plan.phases || [];
@@ -11803,13 +12068,24 @@ function OrchestrationPlanView() {
 
   return html`
     <div className="th-plan">
+      ${picker}
       <div className="th-plan-summary">
         <div className="th-plan-bar"><div className="th-plan-bar-fill" style=${{ width: pct + "%" }}/></div>
-        <div className="th-plan-summary-text">
-          ${doneN}/${totalN} done${failN ? html` · <span className="th-plan-fail">${failN} blocked</span>` : ""}
-          ${plan.orchestrators?.length ? html`<span className="th-plan-orchs"> · ${plan.orchestrators.length} orchestrators</span>` : ""}
+        <div className="th-plan-summary-row">
+          <div className="th-plan-summary-text">
+            ${doneN}/${totalN} done${failN ? html` · <span className="th-plan-fail">${failN} blocked</span>` : ""}
+            ${plan.orchestrators?.length ? html`<span className="th-plan-orchs"> · ${plan.orchestrators.length} orchestrators</span>` : ""}
+          </div>
+          ${contract && html`
+            <button
+              type="button"
+              className="th-plan-adbtn"
+              title="The committed art-direction contract - the plate and the design DNA every build step reads"
+              onClick=${() => setContractOpen(true)}
+            ><${Icon.Palette}/> Art direction</button>`}
         </div>
       </div>
+      ${contractOpen && html`<${ArtDirectionContractModal} contract=${contract} onClose=${() => setContractOpen(false)}/>`}
       ${rec && rec.required && html`
         <div className="th-plan-reconcile" role="alert">
           <div className="th-plan-reconcile-head">Archetype unresolved - build blocked</div>

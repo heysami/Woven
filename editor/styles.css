@@ -4731,11 +4731,73 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   background: var(--accent, oklch(72% 0.16 50));
   transition: width 0.3s ease;
 }
-.th-plan-summary-text {
+.th-plan-summary-row {
   margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.th-plan-summary-text {
+  flex: 1;
+  min-width: 0;
   font-size: 11px;
   color: var(--text-muted);
   font-family: var(--font-mono);
+}
+/* Opens the committed art-direction contract. Only rendered once the art
+   director has written one. */
+.th-plan-adbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  appearance: none;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+.th-plan-adbtn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border-strong, var(--border));
+}
+/* Plan picker - only rendered when this project has locked more than one plan
+   (a second thread that forked its own build). Latest is the default. */
+.th-plan-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.th-plan-select {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.th-plan-select:hover { border-color: var(--border-strong, var(--border)); }
+.th-plan-pinned {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
 }
 .th-plan-fail { color: var(--danger); }
 .th-plan-orchs { color: var(--text-faint); }
@@ -4822,6 +4884,96 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-plan-arche-bound { color: var(--accent, oklch(72% 0.16 50)); border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 40%, var(--border)); }
 .th-plan-arche-deferred { color: var(--text-faint); }
 .th-plan-arche-whole { color: var(--text); border-color: var(--border-strong, var(--border)); }
+
+/* Art-direction contract viewer - read-only render of
+   workflow/art-direction-contract.json, opened from the plan summary. */
+.ad-modal { width: min(760px, 100%); }
+.ad-body { display: flex; flex-direction: column; gap: 10px; overflow: auto; }
+.ad-note {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  border-left: 2px solid var(--border-strong, var(--border));
+  padding-left: 8px;
+}
+.ad-toolbar { display: flex; gap: 4px; }
+.ad-toolbar .tbtn { padding: 3px 9px; font-size: 11.5px; border: 1px solid var(--border); border-radius: 999px; }
+.ad-sections { display: flex; flex-direction: column; gap: 14px; }
+.ad-section { display: flex; flex-direction: column; gap: 6px; }
+.ad-h {
+  margin: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  font-weight: 600;
+}
+/* Capped so a portrait plate cannot push the rest of the contract off-screen. */
+.ad-plate {
+  width: 100%;
+  max-height: 340px;
+  object-fit: contain;
+  background: var(--surface-2);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  display: block;
+}
+.ad-path, .ad-sub { font-size: 10.5px; color: var(--text-faint); font-family: var(--font-mono); }
+.ad-sub { font-family: inherit; line-height: 1.4; }
+.ad-palette { display: flex; flex-wrap: wrap; gap: 8px; }
+.ad-swatch { display: flex; align-items: center; gap: 6px; min-width: 150px; }
+.ad-swatch-chip {
+  width: 26px; height: 26px; flex: none;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+}
+.ad-swatch-meta { min-width: 0; }
+.ad-swatch-hex { font-family: var(--font-mono); font-size: 11px; color: var(--text); }
+.ad-swatch-role { font-size: 10.5px; color: var(--text-muted); }
+.ad-swatch-ratio { margin-left: 5px; color: var(--text-faint); font-family: var(--font-mono); }
+.ad-dl { margin: 0; display: flex; flex-direction: column; gap: 5px; }
+.ad-dl-nested {
+  border-left: 1px solid var(--border);
+  padding-left: 8px;
+  margin-top: 2px;
+}
+.ad-row { display: grid; grid-template-columns: 150px 1fr; gap: 10px; align-items: baseline; }
+.ad-row > dt { font-size: 11px; color: var(--text-faint); overflow-wrap: anywhere; }
+.ad-row > dd { margin: 0; font-size: 11.5px; color: var(--text); line-height: 1.45; min-width: 0; overflow-wrap: anywhere; }
+.ad-empty { color: var(--text-faint); font-style: italic; }
+.ad-bool { font-family: var(--font-mono); font-size: 11px; }
+.ad-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ad-chip {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.ad-hex { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 11px; }
+.ad-hex > i { width: 11px; height: 11px; border-radius: 3px; border: 1px solid var(--border); display: inline-block; }
+.ad-list { display: flex; flex-direction: column; gap: 6px; }
+.ad-list-item { border-left: 1px solid var(--border); padding-left: 8px; }
+.ad-refs { display: flex; flex-direction: column; gap: 8px; }
+.ad-ref { display: flex; gap: 8px; align-items: flex-start; }
+.ad-ref-img {
+  width: 64px; height: 64px; flex: none;
+  object-fit: contain;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.ad-ref-meta { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ad-ref-id { font-size: 11.5px; color: var(--text); display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.ad-raw {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 .th-tasks-group { display: flex; flex-direction: column; gap: 1px; margin-bottom: 8px; }
 .th-tasks-group-head {

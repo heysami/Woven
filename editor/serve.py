@@ -5039,6 +5039,56 @@ def _reconcile_choices(primary, multi, folded=None):
     return choices
 
 
+def _pipeline_new_id():
+    """A fresh plan id. Time-ordered so a lexical sort is a chronological one."""
+    return "plan-%d-%s" % (int(time.time()), uuid.uuid4().hex[:6])
+
+
+def _pipeline_has_progress(manifest):
+    """True once ANY step has moved off `pending` - i.e. the plan was actually
+    driven, not just locked. A plan with no progress is safe to overwrite."""
+    for ph in (manifest.get("phases") or []):
+        for s in (ph.get("steps") or []):
+            if (s.get("status") or "pending") != "pending":
+                return True
+    return False
+
+
+def _pipeline_is_fork(old, orchestrators, brief, run_id):
+    """Is this lock a NEW plan (another thread building something else) rather
+    than an edit of the current one? All four must hold: both threads known and
+    different, the current plan already has progress, and the plan is materially
+    different (roster or brief). Anything short of that keeps today's
+    merge-preserve behaviour - a mid-build re-pick must never fork."""
+    prior_run = (old.get("lockedByRun") or "").strip()
+    if not prior_run or not run_id or prior_run == run_id:
+        return False
+    if not _pipeline_has_progress(old):
+        return False
+    same_roster = [o for o in (old.get("orchestrators") or []) if isinstance(o, str)] == \
+                  [o for o in (orchestrators or []) if isinstance(o, str)]
+    new_brief = (brief or "").strip()
+    same_brief = (not new_brief) or new_brief == (old.get("brief") or "").strip()
+    return not (same_roster and same_brief)
+
+
+def _pipeline_digest(manifest, plan_id=None, current=False):
+    """The one-line shape the /__pipelines list (and the panel dropdown) needs:
+    identity, when, who locked it, roster, and how far it got."""
+    steps = [s for ph in (manifest.get("phases") or []) for s in (ph.get("steps") or [])]
+    return {
+        "planId":      plan_id or manifest.get("planId"),
+        "lockedAt":    manifest.get("lockedAt"),
+        "archivedAt":  manifest.get("archivedAt"),
+        "lockedByRun": manifest.get("lockedByRun"),
+        "brief":       (manifest.get("brief") or "")[:400],
+        "orchestrators": [o for o in (manifest.get("orchestrators") or []) if isinstance(o, str)],
+        "done":        sum(1 for s in steps if s.get("status") == "done"),
+        "total":       len(steps),
+        "current":     bool(current),
+    }
+
+
 def _pipeline_reconcile(picks, resolution=None):
     """Classify the roster's archetype coherence. Returns the `reconciliation`
     block stored on pipeline.json. `required` is True whenever an owns-surface
@@ -13231,6 +13281,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         # flag the build agent queries before it is allowed to report done.
         if url_path == "/__pipeline":
             return self._pipeline_get(urllib.parse.parse_qs(parsed.query))
+        # Every plan this project has locked (current + forked-away archives).
+        if url_path == "/__pipelines":
+            return self._pipelines_list(urllib.parse.parse_qs(parsed.query))
         # Visual-QA endpoints. Let an agent verify a node's interactive piece
         # by node-id (no hand-pasted URL): resolve the bakedPath to the same
         # runtime URL an iframe loads, then run editor/tools/qa/visual_qa.py.
@@ -15871,7 +15924,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 brief = (body.get("brief") or "").strip() if isinstance(body.get("brief"), str) else ""
                 if not brief:
                     brief = _run_first_user_prompt(project_root, body.get("runId")) or ""
-                self._pipeline_lock(project_root, values, brief=brief or None)
+                self._pipeline_lock(project_root, values, brief=brief or None,
+                                    run_id=body.get("runId"))
             except Exception:
                 pass
         # The surface-reconciliation pick resolves the archetype (whole / section
@@ -15891,7 +15945,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             with open(abs_path, "w", encoding="utf-8") as f:
                 json.dump(manifest, f, indent=2)
 
-    def _pipeline_lock(self, project_root, orchestrators, resolution=None, brief=None):
+    def _pipeline_lock(self, project_root, orchestrators, resolution=None, brief=None,
+                       run_id=None):
         """Freeze the picked orchestrators into <project>/pipeline.json. Called
         from the orchestrator-plan decision (roster) and the surface-reconciliation
         decision (archetype resolution). Idempotent: re-locking preserves any
@@ -15901,12 +15956,23 @@ class H(http.server.SimpleHTTPRequestHandler):
         the user already answered). `brief` is the user's original build request
         verbatim - persisted on the ledger as the intent authority the build
         thread sanity-checks the plan's shape against (a locked plan is a digest
-        of the brief, and digests drift); preserved across re-locks."""
+        of the brief, and digests drift); preserved across re-locks.
+
+        FORK: a SECOND thread locking a DIFFERENT plan (different roster or
+        different brief) over one that already has progress is not an edit of
+        that plan - it is a new build. Merging the two ledgers made the new
+        thread inherit the old thread's done rows and "redo" a plan nobody
+        picked. So in that one case the current ledger is archived under
+        `pipelines/` and pipeline.json restarts clean; the archived plans stay
+        readable (GET /__pipelines) and the panel offers them in a dropdown.
+        Requires BOTH run ids to be known - without them we cannot tell a new
+        thread from a mid-build re-pick, so the merge-preserve path stands."""
         rel = "pipeline.json"
         abs_path = _safe_join(project_root, rel)
         prior = {}
         prior_rec = None
         prior_brief = None
+        old = None
         if os.path.exists(abs_path):
             try:
                 with open(abs_path, encoding="utf-8") as f:
@@ -15917,7 +15983,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                 prior_rec = old.get("reconciliation")
                 prior_brief = old.get("brief")
             except Exception:
-                prior, prior_rec, prior_brief = {}, None, None
+                old, prior, prior_rec, prior_brief = None, {}, None, None
+        run_id = (run_id or "").strip() or None
+        superseded = None
+        if old and _pipeline_is_fork(old, orchestrators, brief, run_id):
+            superseded = self._pipeline_archive(project_root, old)
+            # A fork starts clean: no inherited step progress, no inherited
+            # archetype resolution, no inherited brief (the new thread owns its
+            # own intent - carrying the old one is what made plans drift).
+            prior, prior_rec, prior_brief = {}, None, None
         # Carry a previously-answered archetype resolution forward on a plain
         # roster re-lock (no explicit resolution passed), but only while the
         # owns-surface set is identical - changing which surface is in play
@@ -15938,16 +16012,47 @@ class H(http.server.SimpleHTTPRequestHandler):
                             s[k] = p[k]
         manifest = {
             "version": 1,
+            # A stable id per lock generation: preserved across a plain re-lock
+            # (same plan, edited roster) and minted fresh on a fork, so the
+            # panel's dropdown can key on it.
+            "planId": (old or {}).get("planId") if (old and not superseded) else _pipeline_new_id(),
             "lockedAt": int(time.time()),
             "orchestrators": [o for o in orchestrators if isinstance(o, str)],
             "reconciliation": rec,
             "phases": phases,
         }
+        if not manifest.get("planId"):
+            manifest["planId"] = _pipeline_new_id()
+        if run_id:
+            manifest["lockedByRun"] = run_id
+        elif old and not superseded and old.get("lockedByRun"):
+            manifest["lockedByRun"] = old["lockedByRun"]
+        if superseded:
+            manifest["supersedes"] = superseded
         kept_brief = (brief or "").strip() or (prior_brief or "").strip()
         if kept_brief:
             manifest["brief"] = kept_brief
         self._pipeline_write(project_root, rel, abs_path, manifest, "locked")
         return manifest
+
+    def _pipeline_archive(self, project_root, manifest):
+        """Snapshot a superseded ledger into <project>/pipelines/<planId>.json
+        and return its planId. Best-effort: an archive failure must never block
+        the new lock, it only costs the dropdown one entry."""
+        try:
+            plan_id = str(manifest.get("planId") or "").strip() or _pipeline_new_id()
+            plan_id = re.sub(r"[^A-Za-z0-9_.-]", "", plan_id)[:80] or _pipeline_new_id()
+            snapshot = dict(manifest)
+            snapshot["planId"] = plan_id
+            snapshot["archivedAt"] = int(time.time())
+            rel = f"pipelines/{plan_id}.json"
+            abs_path = _safe_join(project_root, rel)
+            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+            self._pipeline_write(project_root, rel, abs_path, snapshot, f"archived {plan_id}")
+            return plan_id
+        except Exception as e:
+            print(f"[pipeline] archive failed: {e}", flush=True)
+            return None
 
     def _pipeline_reconcile_resolve(self, project_root, resolution):
         """Re-lock the ledger with an archetype resolution (whole / section /
@@ -16083,6 +16188,55 @@ class H(http.server.SimpleHTTPRequestHandler):
                                  "outstanding": outstanding,
                                  "remediation": _pipeline_remediation(manifest),
                                  "manifest": manifest})
+
+    # ── GET /__pipelines - every plan this project has locked ────────────
+    # No `id`: a digest list, current plan first then archived, newest first.
+    # With `id=<planId>`: that plan's full manifest (the current one included),
+    # which is what the panel's plan dropdown loads when you pick an older
+    # build. Archives are written by _pipeline_archive on a fork.
+    def _pipelines_list(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        want = (_qs_get(qs, "id") or "").strip()
+        current = None
+        cur_path = _safe_join(project_root, "pipeline.json")
+        if os.path.exists(cur_path):
+            try:
+                with open(cur_path, encoding="utf-8") as f:
+                    current = json.load(f)
+            except Exception:
+                current = None
+        if want and current and str(current.get("planId") or "") == want:
+            return self._reply(200, {"manifest": current, "current": True})
+        arch_dir = _safe_join(project_root, "pipelines")
+        archived = []
+        if os.path.isdir(arch_dir):
+            for name in sorted(os.listdir(arch_dir)):
+                if not name.endswith(".json"):
+                    continue
+                try:
+                    with open(os.path.join(arch_dir, name), encoding="utf-8") as f:
+                        m = json.load(f)
+                except Exception:
+                    continue
+                if not isinstance(m, dict):
+                    continue
+                plan_id = str(m.get("planId") or name[:-5])
+                if want:
+                    if plan_id == want:
+                        return self._reply(200, {"manifest": m, "current": False})
+                    continue
+                archived.append(_pipeline_digest(m, plan_id=plan_id))
+        if want:
+            return self._reply(404, {"error": f"unknown plan: {want}"})
+        archived.sort(key=lambda d: d.get("archivedAt") or d.get("lockedAt") or 0, reverse=True)
+        plans = []
+        if current:
+            plans.append(_pipeline_digest(current, current=True))
+        plans.extend(archived)
+        return self._reply(200, {"plans": plans})
 
     # ── POST /__workflow/node/<id>/status ────────────────────────
     # Body: { runStatus?, text?, runError?, output? }. Atomically updates a
