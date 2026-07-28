@@ -230,6 +230,19 @@
     // VIDEO_MODELS, is the image→video half). Async, same job-set envelope.
     // options.custom_reference_id pins a Soul ID for character consistency.
     { id: "higgsfield/soul", provider: "higgsfield", label: "Higgsfield Soul", hint: "Higgsfield · text → image (async; options.custom_reference_id keeps a character consistent)", caps: ["t2i"], integrated: true },
+
+    // Leonardo - async, and its model ids are ACCOUNT-SPECIFIC UUIDs, so these
+    // rows carry readable aliases that serve.py resolves live against
+    // /platformModels by name. A raw UUID in the model field also works.
+    { id: "leonardo/phoenix",      provider: "leonardo", label: "Leonardo Phoenix",      hint: "Leonardo · Phoenix (flagship)",           caps: ["t2i"], integrated: true },
+    { id: "leonardo/lightning-xl", provider: "leonardo", label: "Leonardo Lightning XL", hint: "Leonardo · Lightning XL (fast)",          caps: ["t2i"], integrated: true },
+    { id: "leonardo/kino-xl",      provider: "leonardo", label: "Leonardo Kino XL",      hint: "Leonardo · Kino XL (cinematic)",          caps: ["t2i"], integrated: true },
+    { id: "leonardo/vision-xl",    provider: "leonardo", label: "Leonardo Vision XL",    hint: "Leonardo · Vision XL (photographic)",     caps: ["t2i"], integrated: true },
+
+    // ImageRouter is a PROXY - one key, dozens of backends behind namespaced
+    // ids. Any id it routes works in the model field; this row is just the
+    // documented example so the dropdown has an entry to start from.
+    { id: "openai/gpt-image-1", provider: "imagerouter", label: "ImageRouter (any model id)", hint: "ImageRouter proxy · type any namespaced id it routes, e.g. openai/gpt-image-1", caps: ["t2i"], integrated: true },
   ];
 
   // Text models for the LLM / describe skills. Both OpenAI + Anthropic share

@@ -101,7 +101,8 @@ def check(name, cond, detail=""):
 def test_dispatch_entries_exist():
     """The whole bug was a missing dispatch key, so pin the keys themselves."""
     print("dispatch table")
-    for provider in ("xai", "volcengine", "bfl", "nanobanana", "higgsfield"):
+    for provider in ("xai", "volcengine", "bfl", "nanobanana", "higgsfield",
+                     "leonardo", "imagerouter"):
         check(f"generate-image is wired for {provider}",
               ("generate-image", provider) in serve._GENERATE_DISPATCH)
 
@@ -236,6 +237,88 @@ def test_higgsfield_soul():
           CALLS[-1].get("download") == "https://hf/out.png" and out == PNG)
 
 
+def test_leonardo():
+    print("leonardo")
+    state = {"polls": 0}
+
+    def poll(req):
+        state["polls"] += 1
+        if state["polls"] < 2:
+            return {"generations_by_pk": {"status": "PENDING", "generated_images": []}}
+        return {"generations_by_pk": {"status": "COMPLETE", "generated_images": [
+            {"id": "i1", "url": "https://cdn.leonardo.ai/out.jpg", "nsfw": False}]}}
+
+    _reset({
+        # The alias is resolved by NAME against the live platform list - no
+        # UUID is ever hard-coded in the catalog.
+        "https://cloud.leonardo.ai/api/rest/v1/platformModels":
+            {"custom_models": [{"id": "uuid-lightning", "name": "Leonardo Lightning XL"},
+                               {"id": "uuid-phoenix",   "name": "Leonardo Phoenix 1.0"}]},
+        "https://cloud.leonardo.ai/api/rest/v1/generations/g1": poll,
+        "https://cloud.leonardo.ai/api/rest/v1/generations":
+            {"sdGenerationJob": {"generationId": "g1"}},
+    })
+    out = serve._leonardo_generate_image("k", "a cat", "leonardo/lightning-xl", "16:9", None)
+    check("resolves the alias against /platformModels first",
+          CALLS[0]["url"].endswith("/platformModels"), CALLS[0]["url"])
+    submit = CALLS[1]
+    check("submits the resolved UUID as modelId",
+          submit["body"]["modelId"] == "uuid-lightning", str(submit["body"].get("modelId")))
+    check("aspect maps to pixels that are multiples of 8",
+          (submit["body"]["width"], submit["body"]["height"]) == (1360, 768))
+    check("polls until COMPLETE, then downloads generated_images[0].url",
+          state["polls"] == 2 and CALLS[-1].get("download") == "https://cdn.leonardo.ai/out.jpg"
+          and out == PNG)
+    # A near-match name still resolves: "Leonardo Phoenix" vs "Leonardo Phoenix 1.0".
+    check("a versioned platform name still matches the alias",
+          serve._leonardo_find_model_id(
+              {"custom_models": [{"id": "uuid-phoenix", "name": "Leonardo Phoenix 1.0"}]},
+              "Leonardo Phoenix") == "uuid-phoenix")
+    # A UUID the user pasted must not trigger a lookup at all.
+    _reset({})
+    check("a raw UUID passes through without a lookup",
+          serve._leonardo_resolve_model("k", "b24e16ff-06e3-43eb-8d33-4416c2d75876")
+          == "b24e16ff-06e3-43eb-8d33-4416c2d75876" and not CALLS)
+
+
+def test_leonardo_failed_job_raises():
+    print("leonardo (failed)")
+    _reset({
+        "https://cloud.leonardo.ai/api/rest/v1/generations/g2":
+            {"generations_by_pk": {"status": "FAILED"}},
+        "https://cloud.leonardo.ai/api/rest/v1/generations":
+            {"sdGenerationJob": {"generationId": "g2"}},
+    })
+    try:
+        # A raw UUID, so no /platformModels lookup is needed here.
+        serve._leonardo_generate_image("k", "x", "b24e16ff-06e3-43eb-8d33-4416c2d75876", "1:1", None)
+        check("a FAILED job raises instead of hanging to the deadline", False)
+    except RuntimeError as e:
+        check("a FAILED job raises instead of hanging to the deadline",
+              "FAILED" in str(e), str(e))
+
+
+def test_imagerouter():
+    print("imagerouter")
+    _reset({"https://api.imagerouter.io/v1/openai/images/generations":
+            {"created": 1, "data": [{"url": "https://storage.imagerouter.io/x.png"}],
+             "latency": 100, "cost": 0.004}})
+    out = serve._imagerouter_generate_image("k", "a cat", "some-vendor/some-model", "1:1",
+                                            {"quality": "high"})
+    c = CALLS[0]
+    check("OpenAI-compatible proxy endpoint",
+          c["url"] == "https://api.imagerouter.io/v1/openai/images/generations", c["url"])
+    check("Bearer auth", c["headers"].get("Authorization") == "Bearer k")
+    # It is a proxy: an arbitrary namespaced id must reach it untouched.
+    check("any namespaced model id passes through",
+          c["body"]["model"] == "some-vendor/some-model")
+    # webp is the API default; the asset pipeline wants something universal.
+    check("asks for png, not the webp default", c["body"]["output_format"] == "png")
+    check("options override the defaults", c["body"]["quality"] == "high")
+    check("reads data[0].url",
+          CALLS[-1].get("download") == "https://storage.imagerouter.io/x.png" and out == PNG)
+
+
 def test_dop_extractor_still_works():
     """Soul shares the job-set URL extractor with DoP; DoP must not regress."""
     print("higgsfield dop (shared extractor)")
@@ -259,6 +342,9 @@ def main():
         test_bfl_moderation_raises,
         test_gemini_primary_and_fallback,
         test_higgsfield_soul,
+        test_leonardo,
+        test_leonardo_failed_job_raises,
+        test_imagerouter,
         test_dop_extractor_still_works,
     ]
     for t in tests:

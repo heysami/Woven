@@ -2157,6 +2157,158 @@ def _gemini_generate_image(api_key, prompt, model, aspect, options):
     return _gemini_extract_image_b64(payload)
 
 
+_LEONARDO_BASE = "https://cloud.leonardo.ai/api/rest/v1"
+
+# Leonardo addresses models by UUID, and those UUIDs are not ours to invent -
+# they change and they differ per account tier. So the catalog carries readable
+# aliases and the renderer resolves them LIVE against /platformModels, matching
+# on the model NAME. A raw UUID passes straight through, so a user who knows
+# theirs can paste it into the model field.
+_LEONARDO_MODEL_ALIASES = {
+    "leonardo/phoenix":      "Leonardo Phoenix",
+    "leonardo/lightning-xl": "Leonardo Lightning XL",
+    "leonardo/kino-xl":      "Leonardo Kino XL",
+    "leonardo/vision-xl":    "Leonardo Vision XL",
+    "leonardo/anime-xl":     "Leonardo Anime XL",
+}
+
+# Leonardo wants explicit pixels; the SDXL-family models want multiples of 8.
+_LEONARDO_IMAGE_SIZES = {
+    "1:1":  (1024, 1024),
+    "3:2":  (1536, 1024),
+    "16:9": (1360, 768),
+    "2:3":  (1024, 1536),
+    "9:16": (768, 1360),
+}
+
+
+def _leonardo_find_model_id(payload, want_name):
+    """Walk any {id, name} pairs in a /platformModels response and return the id
+    whose name matches. The response nests its list under a key we have no
+    stable documentation for, so recurse rather than hard-code one path."""
+    want = (want_name or "").strip().lower()
+    hits = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            mid, name = node.get("id"), node.get("name")
+            if isinstance(mid, str) and isinstance(name, str):
+                hits.append((name.strip().lower(), mid))
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(payload)
+    for name, mid in hits:
+        if name == want:
+            return mid
+    for name, mid in hits:          # tolerate "Leonardo Phoenix 1.0" vs "Leonardo Phoenix"
+        if want and (want in name or name in want):
+            return mid
+    return None
+
+
+def _leonardo_resolve_model(api_key, model):
+    """Catalog alias / model name -> the UUID Leonardo's API expects."""
+    m = (model or "").strip()
+    if re.fullmatch(r"[0-9a-fA-F-]{36}", m):
+        return m
+    want = _LEONARDO_MODEL_ALIASES.get(m, m) or "Leonardo Phoenix"
+    req = urllib.request.Request(
+        f"{_LEONARDO_BASE}/platformModels", method="GET",
+        headers={"Authorization": f"Bearer {api_key}", "accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        payload = json.loads(resp.read() or b"{}")
+    mid = _leonardo_find_model_id(payload, want)
+    if not mid:
+        raise RuntimeError(
+            f"leonardo: no platform model named {want!r}. Pass the model UUID "
+            f"directly, or pick another row from the catalog.")
+    return mid
+
+
+def _leonardo_generate_image(api_key, prompt, model, aspect, options):
+    """Leonardo.ai text-to-image.
+    DOCS: submit POST {base}/generations  Authorization: Bearer <key>
+            body { modelId, prompt, width, height, num_images }
+            -> { sdGenerationJob: { generationId } }
+          poll  GET  {base}/generations/{id}
+            -> { generations_by_pk: { status: PENDING|COMPLETE|FAILED,
+                                      generated_images: [{ id, url, nsfw }] } }"""
+    w, h = _LEONARDO_IMAGE_SIZES.get(aspect, (1024, 1024))
+    body = {
+        "modelId": _leonardo_resolve_model(api_key, model),
+        "prompt": prompt,
+        "width": w,
+        "height": h,
+        "num_images": 1,
+    }
+    if isinstance(options, dict):
+        for k in ("alchemy", "presetStyle", "photoReal", "negative_prompt",
+                  "seed", "guidance_scale", "num_inference_steps", "width", "height"):
+            if options.get(k) is not None:
+                body[k] = options[k]
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json",
+               "accept": "application/json"}
+    submit = _json_post(f"{_LEONARDO_BASE}/generations", headers, body, timeout=120)
+    gen_id = (((submit or {}).get("sdGenerationJob") or {}) or {}).get("generationId")
+    if not gen_id:
+        raise RuntimeError(f"leonardo: no generationId in submit response: "
+                           f"{json.dumps(submit)[:300]}")
+    deadline = time.time() + 300
+    last = {}
+    while time.time() < deadline:
+        time.sleep(2)
+        req = urllib.request.Request(f"{_LEONARDO_BASE}/generations/{gen_id}",
+                                     method="GET", headers=headers)
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            last = json.loads(resp.read() or b"{}")
+        gen = (last or {}).get("generations_by_pk") or {}
+        st = str(gen.get("status") or "").upper()
+        if st == "COMPLETE":
+            imgs = gen.get("generated_images") or []
+            for im in imgs:
+                if isinstance(im, dict) and isinstance(im.get("url"), str):
+                    return _download_bytes(im["url"], timeout=180)
+            raise RuntimeError(f"leonardo: COMPLETE with no image url: "
+                               f"{json.dumps(last)[:300]}")
+        if st == "FAILED":
+            raise RuntimeError(f"leonardo job FAILED: {json.dumps(last)[:300]}")
+    raise RuntimeError("leonardo: timed out waiting for the render")
+
+
+def _imagerouter_generate_image(api_key, prompt, model, aspect, options):
+    """ImageRouter - a proxy: one key, dozens of backends behind namespaced
+    model ids ("openai/gpt-image-1", "black-forest-labs/...").
+    DOCS (docs.imagerouter.io/api-reference/image-generation):
+      POST https://api.imagerouter.io/v1/openai/images/generations
+      Authorization: Bearer <key>
+      body { model (required), prompt, quality: auto|low|medium|high,
+             size: "auto"|"WxH", response_format: url|b64_json|b64_ephemeral,
+             output_format: webp|jpeg|png }
+      -> { created, data: [{ url }| { b64_json }], latency, cost }
+    Any id ImageRouter routes is valid here - that is the point of a proxy - so
+    the catalog carries one documented row and the model field is free-form."""
+    body = {"model": model or "openai/gpt-image-1", "prompt": prompt}
+    w_h = _ARK_IMAGE_SIZES.get(aspect)
+    if w_h:
+        body["size"] = w_h
+    # png over the webp default: the asset pipeline (rembg, compositing)
+    # expects a format every downstream tool reads.
+    body["output_format"] = "png"
+    if isinstance(options, dict):
+        for k in ("quality", "size", "response_format", "output_format", "n"):
+            if options.get(k) is not None:
+                body[k] = options[k]
+    payload = _json_post(
+        "https://api.imagerouter.io/v1/openai/images/generations",
+        {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        body, timeout=300)
+    return _image_bytes_from_openai_shape(payload, "imagerouter")
+
+
 def _fal_video_i2v_variant(model):
     """Map a t2v endpoint id to its image-to-video sibling, for when a start
     frame is wired into a video-gen call whose picked model is text-only.
@@ -3122,6 +3274,11 @@ _GENERATE_DISPATCH = {
     ("generate-image", "bfl"):        "bfl_image",
     ("generate-image", "nanobanana"): "gemini_image",
     ("generate-image", "higgsfield"): "higgsfield_image",
+    # Leonardo (async, UUID model ids resolved live) + ImageRouter (a proxy -
+    # any namespaced model id it routes is valid). Both had a Settings key slot
+    # and no renderer at all, so the key went nowhere.
+    ("generate-image", "leonardo"):    "leonardo_image",
+    ("generate-image", "imagerouter"): "imagerouter_image",
     # slice9-frame: ONE-SHOT ornate 9-slice frame. Prompt in -> the daemon
     # appends the geometry contract, generates, rembg's, and auto-slices, all
     # internally (_slice9_oneshot), so the user drives it from a single node.
@@ -19735,6 +19892,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                     bytes_ = _bfl_generate_image(api_key, prompt, model, aspect, options)
                 elif provider == "nanobanana":
                     bytes_ = _gemini_generate_image(api_key, prompt, model, aspect, options)
+                elif provider == "leonardo":
+                    bytes_ = _leonardo_generate_image(api_key, prompt, model, aspect, options)
+                elif provider == "imagerouter":
+                    bytes_ = _imagerouter_generate_image(api_key, prompt, model, aspect, options)
                 elif provider == "higgsfield" and skill == "generate-image":
                     # Soul (text→image). The DoP video branch above is keyed on
                     # skill == "video-gen", so the two share a key and nothing else.
