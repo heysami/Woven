@@ -3292,6 +3292,268 @@ function dsFontFamilyFromFilename(name) {
     .replace(/[-_ ]+(regular|italic|bold|light|medium|semibold|extrabold|extralight|thin|black|book|roman|normal|var|variable|vf)$/i, "")
     .replace(/[-_]+/g, " ").trim() || "Uploaded Font";
 }
+/* ────────── Font preview: one real page, set in the picked face ──────────
+   A family name and a 4-word sample tell you almost nothing about whether a
+   face can carry a page. This renders the template design system's LANDING
+   template (that one page only - not the gallery, not the whole DS) with the
+   face bound to --font / --font-heading, plus the same palette picker the DS
+   customiser uses, so the face can be judged against real headings, body
+   copy, buttons and nav rather than against "Aa Bb Cc".
+
+   Deliberately read-only: nothing here is saved. It answers "does this face
+   work?", which is the question the library exists to support. */
+const FONTPREV_LIB_PREFIX = "lib:";
+
+/* The preview opens on Onyx - near-monochrome, one red accent. A saturated
+   palette competes with the letterforms, and the question here is only ever
+   "how does the type read". Same reasoning as stripping the artwork. Any
+   palette is still one click away. */
+const FONTPREV_DEFAULT_PALETTE = "Onyx";
+
+/* Which catalog family the OTHER slot opens on, chosen by the library face's
+   letterform class. Pairing a serif display face against a geometric sans by
+   default makes every serif look like it clashes, when the real question is
+   whether the face works at all - so match the register and let the user
+   introduce contrast deliberately. Scripts pair with a serif by convention.
+   Falls back to the DS default for sans / condensed / mono / unset. */
+const FONTPREV_PARTNER_BY_CAT = {
+  "serif":           "fraunces",
+  "serif-condensed": "fraunces",
+  "script":          "fraunces",
+};
+const fontprevPartnerKey = (cat) =>
+  FONTPREV_PARTNER_BY_CAT[cat] || DS_DEFAULTS.fontKey;
+
+/* The landing template ships decorative artwork - a browser mockup in the
+   hero, spot illustrations in the tiles and CTA, 84px feature icons. All of
+   it competes with the only thing this preview is for: reading the type. So
+   the preview strips it and collapses the columns that held it, leaving the
+   text on a sane measure rather than a stretched full-bleed line. Scoped to
+   this preview only; the DS template itself is untouched. */
+const FONTPREV_NO_ART_CSS = `
+  .lp-hero__art, .lp-tile__art, .lp-feat__art, .lp-cta__art { display: none !important; }
+  .lp-hero, .lp-cta, .lp-bento { grid-template-columns: minmax(0, 1fr) !important; }
+  /* Cap the MEASURE, don't pin the column: a rem-width column would beat the
+     template's own narrow-viewport collapse and overflow the preview. */
+  .lp-hero > *, .lp-cta > * { max-width: 46rem; }
+  /* The bento sizes rows at 1fr (every row as tall as the tallest) and lets
+     the feature tile span two of them. That geometry exists to balance the
+     artwork; with the art gone it just reserves a card-and-a-half of empty
+     space under two lines of text. Let the rows size to their content. */
+  .lp-bento { grid-auto-rows: auto !important; }
+  .lp-bento__feature { grid-row: auto !important; }
+`;
+
+function DsFontPreviewModal({ font, library, onClose }) {
+  const iframeRef = useRef(null);
+  const [ready, setReady] = useState(false);
+  const [dark, setDark] = useState(false);
+  // {name, roles} | null = DS default. Seeded lazily so the lookup runs at
+  // render time, after DS_ROLE_PALETTES is initialised further down the file.
+  const [pal, setPal] = useState(() => {
+    const p = DS_ROLE_PALETTES.find(x => x.name === FONTPREV_DEFAULT_PALETTE);
+    return p ? { name: p.name, roles: { primary: p.primary, secondary: p.secondary,
+                                        tertiary: p.tertiary, neutral: p.neutral } } : null;
+  });
+  // Which slot(s) this library face fills - the design system's own
+  // one-font/two-font split (--font vs --font-heading). A display-only face
+  // physically cannot hold both, so default it to headings and let the
+  // partner field carry body copy; that pairing IS the question for a
+  // display face, and defaulting it to "both" would only ever show the
+  // failure case. `roles` already knows which faces those are.
+  const canSetText = (font.roles || (font.role ? [font.role] : [])).includes("text");
+  const [slot, setSlot] = useState(canSetText ? "both" : "heading");
+  // The other slot, using the customiser's own font field (Google catalog,
+  // typed family, or an upload).
+  const [pKey, setPKey] = useState(() => fontprevPartnerKey(font.cat));
+  const [pName, setPName] = useState("");
+  const [pFile, setPFile] = useState(null);
+  // Type scale. A face reads completely differently at a 1.2 ratio than at
+  // 1.618 - a display serif that looks overbearing on the default scale can
+  // come right once the ladder opens up - so the same two controls the
+  // customiser exposes belong here. null = the DS default, untouched.
+  // A display-only face opens on the GOLDEN RATIO: those faces are drawn for
+  // scale, and the DS's default 1.20 ladder keeps headings so close to body
+  // copy that the face never gets to do the one thing it is for. Faces that
+  // can set text open on the DS default, which is the honest baseline for
+  // them. Reset returns to whichever of the two this face opened on.
+  const openRatio = canSetText ? null : 1.618;
+  const [basePx, setBasePx] = useState(null);
+  const [ratio, setRatio] = useState(openRatio);
+  const typeTouched = basePx != null || ratio != null;
+
+  // Palette → the same token override CSS the customiser bakes. Passing only
+  // the colour roles means buildDsCustomization emits ONLY those ramps; every
+  // other dimension (type scale, spacing, radii) stays at the DS default.
+  const custom = useMemo(
+    () => buildDsCustomization({
+      ...(pal ? pal.roles : {}),
+      // typeTouched gates the whole ladder in the builder - without it the
+      // base/ratio values are ignored and the DS scale stands.
+      typeTouched, baseFontPx: basePx, typeRatio: ratio,
+    }),
+    [pal, typeTouched, basePx, ratio]);
+
+  const apply = useCallback(() => {
+    const ifr = iframeRef.current;
+    const doc = ifr && ifr.contentDocument;
+    if (!doc || !doc.head) return;
+    const link = (id, href) => {
+      let l = doc.getElementById(id);
+      if (!l) { l = doc.createElement("link"); l.id = id; l.rel = "stylesheet"; doc.head.appendChild(l); }
+      if (l.getAttribute("href") !== href) l.setAttribute("href", href);
+    };
+    link("__ds_all", apiUrl("/__default_ds/all.css"));
+    // The library's own @font-face sheet - the whole weight ladder, so the
+    // template's headings and body pick up real cuts instead of synthesising.
+    link("__fontlib", apiUrl(font.cssUrl));
+    const fam = `"${String(font.family).replace(/"/g, "")}"`;
+    // Keep a system fallback behind the face: a demo build with a thin glyph
+    // set should show fallback text rather than blank boxes.
+    const stack = `${fam},-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif`;
+    // Partner face for the slot this one does not fill. A "lib:" key is
+    // another face from THIS library - the most likely partner for a display
+    // face, and one dsResolveFontSlot cannot know about (it only speaks
+    // catalog key / typed Google family / upload), so resolve it here and
+    // leave the shared resolver alone.
+    const libPartner = slot !== "both" && pKey.startsWith(FONTPREV_LIB_PREFIX)
+      ? (library || []).find(x => x.slug + "@" + x.ds === pKey.slice(FONTPREV_LIB_PREFIX.length))
+      : null;
+    const partner = (slot === "both" || libPartner) ? null : dsResolveFontSlot(pKey, pName, pFile);
+    const pStack = libPartner
+      ? `"${String(libPartner.family).replace(/"/g, "")}",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif`
+      : ((partner && partner.familyCss) || DS_DEFAULTS.fontFamilyCss);
+    // A library partner may live in a DIFFERENT fonts dir (project ds vs
+    // workspace), so it needs its own stylesheet link, not just __fontlib.
+    if (libPartner && libPartner.cssUrl !== font.cssUrl) link("__fontprev_lib2", apiUrl(libPartner.cssUrl));
+    else { const l = doc.getElementById("__fontprev_lib2"); if (l) l.parentNode.removeChild(l); }
+    const gUrl = partner && partner.googleFontsUrl;
+    if (gUrl) link("__fontprev_partner", gUrl);
+    else { const l = doc.getElementById("__fontprev_partner"); if (l) l.parentNode.removeChild(l); }
+
+    let style = doc.getElementById("__fontprev");
+    if (!style) { style = doc.createElement("style"); style.id = "__fontprev"; }
+    let darkCss = custom.darkCss || "";
+    if (darkCss) darkCss = darkCss.replace('[data-theme="dark"]{', '[data-theme="dark"], :root.ds-scheme-dark{');
+    doc.documentElement.classList.toggle("ds-scheme-dark", !!dark);
+    const tokens = slot === "both"  ? `--font:${stack};--font-heading:${stack};`
+                 : slot === "heading" ? `--font:${pStack};--font-heading:${stack};`
+                 :                      `--font:${stack};--font-heading:${pStack};`;
+    style.textContent = (custom.overrideCss || "") + "\n" + darkCss
+      + "\n" + dsFontFaceCss(partner)          // "" unless the partner is an upload
+      + `\n:root{${tokens}}`
+      + FONTPREV_NO_ART_CSS;
+    doc.head.appendChild(style);   // re-append → stays last, wins the cascade
+  }, [font, library, custom, dark, slot, pKey, pName, pFile]);
+
+  useEffect(() => { if (ready) apply(); }, [ready, apply]);
+  // The partner list is filtered by role, so switching slots can drop the
+  // face that is currently selected. Fall back to the DS default rather than
+  // leave the <select> showing a value it no longer offers.
+  useEffect(() => {
+    if (slot !== "heading" || !pKey.startsWith(FONTPREV_LIB_PREFIX)) return;
+    const row = (library || []).find(x => x.slug + "@" + x.ds === pKey.slice(FONTPREV_LIB_PREFIX.length));
+    const ok = row && (row.roles || (row.role ? [row.role] : [])).includes("text");
+    if (!ok) setPKey(fontprevPartnerKey(font.cat));
+  }, [slot, pKey, library]);
+  useEffect(() => {
+    const esc = (e) => { if (e.key === "Escape") onClose && onClose(); };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onClose]);
+
+  const roles = font.roles || (font.role ? [font.role] : []);
+  return createPortal(html`
+    <div className="fontprev-overlay" onClick=${(e) => { if (e.target === e.currentTarget) onClose && onClose(); }}>
+      <div className="fontprev-card">
+        <header className="fontprev-head">
+          <div className="fontprev-titles">
+            <h2 style=${{ fontFamily: `"${font.family}", system-ui, sans-serif` }}>${font.family}</h2>
+            <p>
+              ${font.faceCount > 1 ? `${font.faceCount} faces` : "1 face"}
+              ${font.hasItalic ? " · italics" : ""}
+              ${roles.length ? " · " + roles.join(" + ") : ""}
+              ${" · landing template, nothing is saved"}
+            </p>
+          </div>
+          <div className="fontprev-tools">
+            <${DsPaletteDropdown} current=${pal && pal.name}
+              onApply=${(r, name) => setPal({ name, roles: r })}/>
+            <div className="dscz-scheme-switch" role="group" aria-label="Preview colour scheme">
+              <button type="button" className=${"dscz-scheme-opt" + (!dark ? " is-active" : "")}
+                onClick=${() => setDark(false)} title="Light preview" aria-label="Light preview"><${Icon.Sun}/></button>
+              <button type="button" className=${"dscz-scheme-opt" + (dark ? " is-active" : "")}
+                onClick=${() => setDark(true)} title="Dark preview" aria-label="Dark preview"><${Icon.Moon}/></button>
+            </div>
+            <button type="button" className="newproj-close" onClick=${onClose} aria-label="Close">×</button>
+          </div>
+        </header>
+        <div className="fontprev-slots">
+          <span className="fontprev-slots-label">Use ${font.family} for</span>
+          <div className="fontprev-seg" role="radiogroup" aria-label="Which text this face sets">
+            ${[["both", "both", "One face for headings and body"],
+               ["heading", "headings", "Headings only - body copy uses the second font"],
+               ["body", "body", "Body copy only - headings use the second font"]].map(([v, label, hint]) => html`
+              <button key=${v} type="button" role="radio" aria-checked=${slot === v}
+                className=${"fontprev-seg-opt" + (slot === v ? " is-active" : "")}
+                title=${hint}
+                onClick=${() => setSlot(v)}>${label}</button>
+            `)}
+          </div>
+          ${slot !== "both" && html`
+            <span className="fontprev-slots-label">
+              ${slot === "heading" ? "body copy" : "headings"}
+            </span>
+            <div className="fontprev-partner">
+              <${DsFontField}
+                fontKey=${pKey} customName=${pName} customFont=${pFile}
+                onFontKey=${setPKey} onCustomName=${setPName} onCustomFont=${setPFile}
+                extraGroup=${{
+                  label: "Your font library",
+                  options: (library || [])
+                    .filter(x => !(x.slug === font.slug && x.ds === font.ds))
+                    // Only faces that can hold the slot being filled: the
+                    // partner takes body copy when this face has headings.
+                    .filter(x => slot !== "heading"
+                      || (x.roles || (x.role ? [x.role] : [])).includes("text"))
+                    .map(x => ({ value: FONTPREV_LIB_PREFIX + x.slug + "@" + x.ds, label: x.family })),
+                }}/>
+            </div>
+          `}
+          <div className="fontprev-type">
+            <span className="fontprev-slots-label">scale</span>
+            <input className="dscz-range" type="range" min="12" max="20" step="1"
+              title="Base font size - the whole ladder is derived from it"
+              value=${basePx ?? DS_DEFAULTS.baseFontPx}
+              onInput=${(e) => setBasePx(+e.target.value)}/>
+            <b className="fontprev-type-val">${basePx ?? DS_DEFAULTS.baseFontPx}px</b>
+            <select className="dscz-select" value=${ratio ?? DS_DEFAULTS.typeRatio}
+              title="Modular scale ratio - how fast headings grow away from body copy"
+              onChange=${(e) => setRatio(+e.target.value)}>
+              ${DS_TYPE_RATIOS.map(r => html`<option key=${r.v} value=${r.v}>${r.label}</option>`)}
+            </select>
+            ${(basePx != null || ratio !== openRatio) && html`<button type="button" className="dscz-reset"
+              onClick=${() => { setBasePx(null); setRatio(openRatio); }}>reset</button>`}
+          </div>
+        </div>
+        ${!canSetText && slot !== "heading" && html`
+          <div className="fontprev-warn">
+            ${font.family} is not marked <strong>text</strong>, so it is not meant to set body copy. Judge it here - if it
+            holds up, give it the <strong>text</strong> role in the library; if not, set it to <strong>headings</strong>
+            and pair it with a body face.
+          </div>`}
+        ${font.note && html`<div className="fontprev-note">${font.note}</div>`}
+        <div className="fontprev-stage" style=${{ background: dark ? "#222428" : "#fff" }}>
+          <iframe ref=${iframeRef} className="fontprev-frame" title=${font.family + " preview"}
+            style=${{ opacity: ready ? 1 : 0 }}
+            src=${apiUrl("/__default_ds/templates/landing.html")}
+            onLoad=${() => { setReady(true); apply(); }}/>
+        </div>
+      </div>
+    </div>
+  `, document.body);
+}
+
 function DSFontsPanel({ scope }) {
   const isGlobal = scope === "global";
   const listUrl = "/__fonts" + (isGlobal ? "?scope=global" : "");
@@ -3325,6 +3587,9 @@ function DSFontsPanel({ scope }) {
     });
   }, []);
   useEffect(() => { if (fonts && fonts.length) injectCss(fonts, false); }, [fonts, injectCss]);
+  // Bumped after a note/role save so the in-place row mutation repaints.
+  const [metaTick, setMetaTick] = useState(0);
+  const [preview, setPreview] = useState(null);   // row being previewed
   const refresh = async (bust) => {
     const r = await fetch(apiUrl(listUrl)).then(x => x.json()).catch(() => ({}));
     const items = Array.isArray(r.items) ? r.items : [];
@@ -3374,6 +3639,10 @@ function DSFontsPanel({ scope }) {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
       Object.assign(f, patch);   // keep the row in sync without a refetch/reflow
+      // The row object is mutated in place, which preact cannot see - bump
+      // a tick so role chips repaint. The note input is uncontrolled and
+      // does not need it, but a stale chip would read as a failed save.
+      setMetaTick(t => t + 1);
     } catch (e) {
       uiAlert(`Could not save the font ${label}: ${e?.message || e}`);
     }
@@ -3383,12 +3652,43 @@ function DSFontsPanel({ scope }) {
     if (next === ((f.note || "").trim())) return;
     return saveFontMeta(f, { note: next }, "description");
   };
-  // Role decides where a face may be USED - a display face must never end up
-  // as body copy just because it is the local one.
-  const saveRole = (f, value) => {
-    const next = (value || "").trim();
-    if (next === ((f.role || "").trim())) return;
-    return saveFontMeta(f, { role: next }, "role");
+  // Roles decide where a face may be USED - a display face must never end up
+  // as body copy just because it is the local one. A SET, not one value:
+  // display-only and mono-only are real constraints, but a face that reads
+  // well small almost always headlines too, so text-only is not a state
+  // worth forcing anyone into.
+  const ROLE_OPTS = [
+    ["display", "display", "Headlines and large sizes"],
+    ["text",    "text",    "Body copy, readable at small sizes"],
+    ["mono",    "mono",    "Code and tabular figures - fixed advance width"],
+  ];
+  // Letterform class - what the face IS. Vocabulary mirrors the DS catalog's
+  // `cat` (DS_FONT_GROUPS) so a library face and a catalog family sit on the
+  // same axis and can be paired against each other; `script` is the one
+  // addition, for brush / calligraphic faces the UI-font catalog never has.
+  const CAT_OPTS = [
+    ["",                "class: unset"],
+    ["sans",            "sans-serif"],
+    ["serif",           "serif"],
+    ["mono",            "monospace"],
+    ["condensed",       "condensed sans"],
+    ["serif-condensed", "condensed serif"],
+    ["script",          "script / brush"],
+  ];
+  const saveCat = (f, value) => {
+    if ((value || "") === (f.cat || "")) return;
+    return saveFontMeta(f, { cat: value || "" }, "class");
+  };
+  const fontRoles = (f) => (f.roles || (f.role ? [f.role] : []));
+  const saveRoles = (f, next) => {
+    const norm = ROLE_OPTS.map(([v]) => v).filter(v => next.includes(v));
+    const cur = fontRoles(f);
+    if (norm.join(",") === cur.join(",")) return;
+    return saveFontMeta(f, { roles: norm }, "roles");
+  };
+  const toggleRole = (f, value) => {
+    const cur = fontRoles(f);
+    return saveRoles(f, cur.includes(value) ? cur.filter(v => v !== value) : [...cur, value]);
   };
   const removeFont = async (f) => {
     if (!await uiConfirm(`Remove '${f.family}' from the font library? Pages using it fall back to the next family in their stack.`)) return;
@@ -3429,26 +3729,66 @@ function DSFontsPanel({ scope }) {
       />
       <div className="ds-fonts-grid">
         ${(fonts || []).map(f => html`
-          <div className="ds-fonts-card" key=${f.ds + "/" + f.slug}>
+          <div className="ds-fonts-card" key=${f.ds + "/" + f.slug}
+            role="button" tabIndex=${0}
+            title=${"Preview " + f.family + " on a real landing page"}
+            onClick=${(e) => {
+              // The row is the preview trigger, but it also HOSTS the note
+              // field and the role chips - a click that lands on one of those
+              // is an edit, not a request to open the preview.
+              if (e.target.closest("input, button, select, textarea, a")) return;
+              setPreview(f);
+            }}
+            onKeyDown=${(e) => {
+              if (e.target !== e.currentTarget) return;
+              if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setPreview(f); }
+            }}>
             <div className="ds-fonts-sample" style=${{ fontFamily: `"${f.family}", system-ui, sans-serif` }}>Aa Bb Cc 123</div>
             <div className="ds-fonts-meta">
               <span className="ds-fonts-family" title=${f.fontPath}>${f.family}</span>
-              <span className="ds-fonts-detail">${f.format} · ${f.ds === "global" ? "workspace" : "ds=" + f.ds}</span>
+              <span className="ds-fonts-detail"
+                title=${(f.faces || []).map(x => `${x.weight}${x.style === "italic" ? " italic" : ""}${x.stretch && x.stretch !== "normal" && x.stretch !== "100%" ? " " + x.stretch : ""}`).join(", ")}>
+                ${f.format}
+                ${f.faceCount > 1 ? ` · ${f.faceCount} faces` : ""}
+                ${f.hasItalic ? " · italics" : ""}
+                ${" · " + (f.ds === "global" ? "workspace" : "ds=" + f.ds)}
+              </span>
               <input className="ds-fonts-note" type="text" defaultValue=${f.note || ""}
                 placeholder="describe how it reads - agents pick on this"
                 title=${"How this face reads (e.g. \"condensed grotesque, tight apertures, editorial\"). Agents propose typography from this description - a file name tells them nothing."}
                 onBlur=${(e) => saveNote(f, e.target.value)}
                 onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); }}/>
-              <select className="ds-fonts-role" value=${f.role || ""}
-                title="What this face may be USED for. Display faces are never set as body copy, however much the design leans on them."
-                onChange=${(e) => saveRole(f, e.target.value)}>
-                <option value="">role: unset</option>
-                <option value="display">display - headlines only</option>
-                <option value="text">text - body copy</option>
-                <option value="mono">mono - code</option>
+            </div>
+            <div className="ds-fonts-class">
+              <select className="ds-fonts-cat" value=${f.cat || ""} data-tick=${metaTick}
+                title="What the face IS - its letterform class. Same vocabulary as the design system's font catalog, so an agent can pair it (serif with serif, sans with sans) instead of guessing from the name."
+                onChange=${(e) => saveCat(f, e.target.value)}>
+                ${CAT_OPTS.map(([v, label]) => html`<option key=${v} value=${v}>${label}</option>`)}
               </select>
             </div>
-            <button className="ds-fonts-remove" title=${"Remove " + f.family + " from the library"} onClick=${() => removeFont(f)}>×</button>
+            <div className="ds-fonts-roles" data-tick=${metaTick}
+                title="What this face may be USED for - pick every job it can do. A face without 'text' is never set as body copy, however much the design leans on it.">
+                ${ROLE_OPTS.map(([value, label, hint]) => html`
+                  <button type="button" key=${value}
+                    className=${"ds-fonts-role" + (fontRoles(f).includes(value) ? " is-on" : "")}
+                    aria-pressed=${fontRoles(f).includes(value)}
+                    title=${hint}
+                    onClick=${() => toggleRole(f, value)}>${label}</button>
+                `)}
+                <button type="button"
+                  className=${"ds-fonts-role is-all" + (fontRoles(f).length === ROLE_OPTS.length ? " is-on" : "")}
+                  title="Usable anywhere - headlines, body copy and code"
+                  onClick=${() => saveRoles(f, fontRoles(f).length === ROLE_OPTS.length
+                    ? [] : ROLE_OPTS.map(([v]) => v))}>all</button>
+                ${!fontRoles(f).length && html`<span className="ds-fonts-role-unset">unset</span>`}
+            </div>
+            <button type="button" className="ds-fonts-preview"
+              title=${"Preview " + f.family + " on a real landing page"}
+              onClick=${() => setPreview(f)}>Preview</button>
+            <button className="ds-fonts-remove"
+              title=${"Remove " + f.family + " from the library"
+                + (f.faceCount > 1 ? ` - all ${f.faceCount} faces` : "")}
+              onClick=${() => removeFont(f)}>×</button>
           </div>
         `)}
         ${fonts !== null && !fonts.length && html`
@@ -3457,6 +3797,8 @@ function DSFontsPanel({ scope }) {
           </div>
         `}
       </div>
+      ${preview && html`<${DsFontPreviewModal} font=${preview} library=${fonts}
+        onClose=${() => setPreview(null)}/>`}
     </div>
   `;
 }
@@ -7898,9 +8240,16 @@ function _modelById(cap, id) {
   return list.find(m => m.id === id) || null;
 }
 function modelPinnableAsDefault(cap, model) {
+  if (!model) return true;
+  // A row that is a MODE VARIANT of another row is never a standing default,
+  // whatever the capability: the mode belongs to the asset, and the daemon
+  // promotes into it from options. Meshy's image / animated rows are the case
+  // in point - all four ids are one model (ai_model "meshy-5") plus two
+  // boolean flags, so pinning "text→animated" would rig every prop.
+  if (model.variantOf) return false;
   const need = CAPABILITY_TEXT_CAPABLE_CAPS[cap];
   if (!need) return true;
-  const caps = (model && model.caps) || null;
+  const caps = model.caps;
   // No caps declared = assume general-purpose rather than hide it.
   if (!Array.isArray(caps) || caps.length === 0) return true;
   return caps.includes(need);
@@ -21911,7 +22260,10 @@ function DefaultLibraryLanding() {
    (.woff2/.woff/.ttf/.otf). Fully controlled - the parent owns fontKey,
    customName and customFont (= {dataUrl,ext,format,name}) and supplies setters.
    Used for both the body and the (optional) heading font. */
-function DsFontField({ fontKey, customName, customFont, onFontKey, onCustomName, onCustomFont }) {
+/* `extraGroup` (optional) prepends one <optgroup> of caller-supplied options -
+   used by the font-library preview to offer the user's OWN installed faces as
+   a pairing partner. Callers that omit it get the catalog exactly as before. */
+function DsFontField({ fontKey, customName, customFont, onFontKey, onCustomName, onCustomFont, extraGroup }) {
   const fileRef = useRef(null);
   const [err, setErr] = useState(null);
   const readFont = (file) => {
@@ -21928,6 +22280,10 @@ function DsFontField({ fontKey, customName, customFont, onFontKey, onCustomName,
   };
   return html`
     <select className="dscz-select" value=${fontKey} onChange=${(e) => onFontKey(e.target.value)}>
+      ${extraGroup && extraGroup.options && extraGroup.options.length ? html`
+        <optgroup label=${extraGroup.label}>
+          ${extraGroup.options.map(o => html`<option key=${o.value} value=${o.value}>${o.label}</option>`)}
+        </optgroup>` : null}
       ${DS_FONT_GROUPS.map(g => html`
         <optgroup key=${g.cat} label=${g.label}>
           ${DS_FONT_CATALOG.filter(f => (f.cat || "sans") === g.cat).map(f => html`<option key=${f.key} value=${f.key}>${f.name}</option>`)}
@@ -23434,8 +23790,6 @@ function SystemLanding({ onSpawnSystemThread }) {
       hint: "Shells · styles · aesthetics · recipes · photography · illustration · materials · motion scenes · shaders - the design-library/ visual catalog" },
     { id: "orchestrators",   label: "Orchestrators",   count: orchestratorsData ? orchestratorsData.count : 3,
       hint: "Orchestrators that dispatch families of subagents" },
-    { id: "connections", label: "Connections", count: null,
-      hint: "Connected accounts publishing uses - GitHub, Supabase, Cloudflare - so publishing stays hands-off" },
     { id: "fonts",      label: "Custom fonts",   count: globalFonts ? globalFonts.count : 0,
       hint: "Your uploaded font collection - shared across every project; agents check these first when proposing typography" },
     { id: "skills",     label: "Skills",     count: skills.length,
@@ -23446,6 +23800,11 @@ function SystemLanding({ onSpawnSystemThread }) {
       hint: "Canvas node types - what each does + how to use it" },
     { id: "mcp",        label: "MCP servers", count: mcpCatalog ? (mcpCatalog.servers || []).length : 2,
       hint: "Optional MCP servers wired into spawned claude subprocesses - escalation paths beyond built-in WebFetch / WebSearch" },
+    // Last: everything above is a CATALOGUE of what the app can do. Connections
+    // is account plumbing you set up once, so it sits below the capabilities
+    // rather than interrupting them.
+    { id: "connections", label: "Connections", count: null,
+      hint: "Connected accounts publishing uses - GitHub, Supabase, Cloudflare - so publishing stays hands-off" },
   ];
 
   return html`

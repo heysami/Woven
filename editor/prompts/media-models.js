@@ -320,10 +320,19 @@
     // (preview→refine bakes PBR). The "-anim" rows add Meshy's rig+animate pass
     // (character/humanoid meshes; needs a plan tier that exposes rigging) - they
     // fall back to the static textured mesh if rigging isn't available.
+    // All four meshy rows are the SAME model (serve.py sends ai_model
+    // "meshy-5"); the id only encodes two boolean MODE flags the renderer
+    // parses - is_image ("image-to-3d" in the id OR options.image_url) and
+    // want_anim ("anim" in the id OR options.animate). Both promote from
+    // options, so `meshy/text-to-3d` reaches every combination and is the
+    // base row; the other three are variants of it. `variantOf` keeps them
+    // out of the "default model" picker (you choose static-vs-animated per
+    // asset, not once as a preference) while leaving them fully selectable
+    // on a node, where you are deciding for one specific asset.
     { id: "meshy/text-to-3d",      provider: "meshy", label: "Meshy 5 (text→3D)",        hint: "Meshy · prompt → textured .glb (preview+refine)", caps: ["t23d"],         integrated: true, default: true },
-    { id: "meshy/image-to-3d",     provider: "meshy", label: "Meshy 5 (image→3D)",       hint: "Meshy · image → textured .glb",                   caps: ["i23d"],         integrated: true },
-    { id: "meshy/text-to-3d-anim", provider: "meshy", label: "Meshy 5 (text→animated)",  hint: "Meshy · prompt → textured + rigged + animated .glb (character)", caps: ["t23d"], integrated: true },
-    { id: "meshy/image-to-3d-anim",provider: "meshy", label: "Meshy 5 (image→animated)", hint: "Meshy · image → textured + rigged + animated .glb (character)",  caps: ["i23d"], integrated: true },
+    { id: "meshy/image-to-3d",     provider: "meshy", label: "Meshy 5 (image→3D)",       hint: "Meshy · image → textured .glb",                   caps: ["i23d"],         integrated: true, variantOf: "meshy/text-to-3d" },
+    { id: "meshy/text-to-3d-anim", provider: "meshy", label: "Meshy 5 (text→animated)",  hint: "Meshy · prompt → textured + rigged + animated .glb (character)", caps: ["t23d"], integrated: true, variantOf: "meshy/text-to-3d" },
+    { id: "meshy/image-to-3d-anim",provider: "meshy", label: "Meshy 5 (image→animated)", hint: "Meshy · image → textured + rigged + animated .glb (character)",  caps: ["i23d"], integrated: true, variantOf: "meshy/text-to-3d" },
     // fal - sync 3D endpoints (already wired in serve.py).
     { id: "fal-ai/hyper3d/rodin", provider: "fal",   label: "Rodin (Hyper3D)",    hint: "fal · text/image → 3D (PBR)",                     caps: ["t23d", "i23d"], integrated: true },
     { id: "fal-ai/hunyuan3d-v2",  provider: "fal",   label: "Hunyuan3D v2",       hint: "fal · Tencent Hunyuan3D v2",                      caps: ["t23d", "i23d"], integrated: true },
