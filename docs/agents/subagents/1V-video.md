@@ -64,6 +64,8 @@ Plus a **mandatory loop-seam clause** if `loop: true`: *"First and last frame co
 
 **Image-to-video (start-frame conditioning):** when the slot has an approved reference still (an art-direction crop, a concept plate, an existing raster in `source/`), pass it as `input_path` in the `/__asset_generate` POST. The daemon converts it to the provider's `image_url` and auto-promotes a text-only model to its image-to-video sibling (e.g. `fal-ai/veo3.1` → `fal-ai/veo3.1/fast/image-to-video`). This is the strongest lever for keeping the generated motion on-brief - use it whenever a reference exists.
 
+**Scrubbed video (`currentTime` driven by scroll or pointer):** pass `options.scrub: true`. Generation providers return sparse-keyframe encodes (GOP ~64 measured), so seeks snap to the nearest keyframe seconds away; `scrub` re-encodes to dense keyframes (`-g 12`) daemon-side. The reply's `scrubGop` reports the measured result - assert ≤ 12. Don't set it for a plain autoplay loop: it costs quality and file size for a seek that never happens.
+
 **POST shape** - always include `?project=${TH_PROJECT_ID}`:
 
 ```

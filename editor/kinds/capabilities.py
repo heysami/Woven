@@ -1460,7 +1460,7 @@ The rule:
 | A real-world system needs to be made intuitive (functional, readable) | `simulation-orchestrator` |
 | The user's body/device DRIVES generative output (input → mapping → output, no objective) | `interactive-media-orchestrator` |
 | The user walks into a place and leaves changed (poetic, scripted, felt) | `narrative-experience-orchestrator` |
-| The payload is a cinematic PRESENTATION - full-bleed video/imagery + UI choreographed scene-by-scene, linear, no features (Apple-product-page / motionsites register) | `motion-studio-orchestrator` - **`mode=brainstorm` BEFORE writing any HTML** |
+| **ANY ONE section** is a cinematic PRESENTATION beat - full-bleed video/imagery + UI choreographed together, scrubbed or stepped, linear within itself (Apple-product-page / motionsites register). **Test this per SECTION, never against the whole brief** - the family claims individual surfaces and hands the rest back as `hygienicScope` (nav, footer, pricing, docs, forms), so "the app also has features" does NOT falsify it | `motion-studio-orchestrator` - **`mode=brainstorm` BEFORE writing any HTML** |
 | One or more images / icons / illustrations / ambient motion in an otherwise-CSS app | `visual-orchestrator` |
 
 A brief can pass MULTIPLE predicates - dispatch all matching families. A Studio-Ghibli care-game (Totoro feed) has BOTH an objective-loop (game) AND illustrated assets (visual) → dispatch BOTH game-experience-orchestrator AND visual-orchestrator. The game-experience-orchestrator builds the playable surface inside a `game-mount` iframe; visual-orchestrator fills the surrounding `<img>` slots.
@@ -1742,9 +1742,9 @@ Which orchestrator passes run is a taste + budget decision, and it belongs to th
 
 **How to compose the proposal:**
 
-1. Run the predicate table above against the brief - that yields the candidate roster.
+1. Run the predicate table above against the brief - that yields the candidate roster. **Run the SECTION-scoped predicates per section, not once against the whole brief.** `motion-studio-orchestrator` (and any owns-surface family that claims individual surfaces) qualifies when ONE section matches, even if the app is mostly features - the family hands the remainder back as hygienic scope. A whole-payload reading of a section-scoped predicate is the bug that kept motion-studio at zero dispatches since it shipped: every real brief has features, so a "no features" reading rejects it every time and the user never even sees the option.
 2. For each candidate write a one-line PLAN, not a category name: which pages / sections / slots it will fill, with what, and WHY it earns its place ("photography-orchestrator - hero + 3 testimonial portraits, golden-hour editorial register; the warm-restraint pick is photo-led"). Include rough volume where it drives cost ("8 narrative scenes ≈ 56 drawers"). The user must be able to veto from the label alone.
-3. Pre-tick the orchestrators you actually recommend with the bare `checked` attribute. Also list 1-3 plausible-but-not-recommended candidates UNchecked when they exist (with the plan line saying what opting in would add), so the user can opt in - N/A-by-default is a valid proposal shape. Always include a `none` option last.
+3. Pre-tick the orchestrators you actually recommend with the bare `checked` attribute. Also list 1-3 plausible-but-not-recommended candidates UNchecked when they exist (with the plan line saying what opting in would add), so the user can opt in - N/A-by-default is a valid proposal shape. Always include a `none` option last. **A family you judged "probably not" belongs on the card UNCHECKED, not omitted** - omission silently makes the taste call the gate exists to hand the user. Concretely: whenever a video provider shows `✓ KEY` and the brief has any hero / launch / brand / product / portfolio surface, `motion-studio-orchestrator` is at minimum an unchecked option with its cost line, even when you don't recommend it.
 4. Emit the card at the END of your turn and stop. Example (Totoro feed-the-forest brief):
 
 ```

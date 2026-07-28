@@ -2357,6 +2357,97 @@ def _ffmpeg_concat_videos(ffmpeg, clip_paths, out_abs):
         raise RuntimeError(f"ffmpeg concat failed: {err}")
 
 
+def _video_gop(video_abs):
+    """Average frames-per-keyframe of a clip, or None if ffprobe is missing.
+    Used to VERIFY a scrub re-encode actually landed (QA can call the same
+    math): count video frames, count I-frames, divide."""
+    probe = _ffprobe_bin()
+    if not (os.path.isfile(probe) or shutil.which("ffprobe")):
+        return None
+    try:
+        r = subprocess.run(
+            [probe, "-v", "error", "-select_streams", "v",
+             "-show_entries", "frame=pict_type", "-of", "csv=p=0", video_abs],
+            capture_output=True, text=True, timeout=120, check=False)
+        types = [ln.strip().rstrip(",") for ln in (r.stdout or "").splitlines() if ln.strip()]
+        keys = [t for t in types if t == "I"]
+        if not keys:
+            return None
+        return len(types) / float(len(keys))
+    except Exception:
+        return None
+
+
+def _ffmpeg_densify_keyframes(video_bytes, gop=12, drop_audio=True):
+    """Re-encode a clip so EVERY `gop` frames carries a keyframe, making
+    `video.currentTime = x` seeks land where they're asked to.
+
+    Why this exists: scroll-scrub / pointer-scrub techniques drive
+    `currentTime` directly, so seek granularity IS the interaction's
+    resolution. Generation providers return web-delivery encodes with sparse
+    keyframes - measured GOP 64 on real fal + Higgsfield output, i.e. seeks
+    snapping in ~2.7s jumps at 24fps - and NO prompt can change that, because
+    the encoder is the provider's, not the model's. motion-scene-library.md
+    §1.3 states the requirement (`-g 12` or lower); this is the step that
+    actually enforces it.
+
+    `-sc_threshold 0` + `keyint_min == g` forces a FIXED cadence (without it
+    x264 places keyframes on scene cuts and the interval drifts).
+    Audio is dropped by default - scrub targets are muted by policy and an
+    audio track only complicates seeking. Returns the original bytes
+    unchanged when ffmpeg is unavailable, so the caller never hard-fails."""
+    if not _ffmpeg_have():
+        return video_bytes, None
+    ff = _ffmpeg_bin()
+    tmpdir = tempfile.mkdtemp(prefix="woven-scrub-")
+    src = os.path.join(tmpdir, "in.mp4")
+    dst = os.path.join(tmpdir, "out.mp4")
+    try:
+        with open(src, "wb") as f:
+            f.write(video_bytes)
+        args = [ff, "-y", "-i", src,
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                "-g", str(gop), "-keyint_min", str(gop), "-sc_threshold", "0",
+                "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
+        args += ["-an"] if drop_audio else ["-c:a", "copy"]
+        args += [dst]
+        subprocess.run(args, capture_output=True, timeout=600, check=False)
+        if not (os.path.isfile(dst) and os.path.getsize(dst) > 0):
+            return video_bytes, None
+        with open(dst, "rb") as f:
+            out = f.read()
+        return out, _video_gop(dst)
+    except Exception:
+        return video_bytes, None
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _maybe_densify_for_scrub(video_bytes, options):
+    """Apply the scrub re-encode when the caller declared the clip is driven
+    by `currentTime` (scroll-scrub / pointer-scrub / sequence techniques).
+
+    Opt-in via `options.scrub: true` (or an explicit `options.gop`), because
+    a hero LOOP that is never seeked doesn't need the re-encode and shouldn't
+    pay the quality/CPU cost. The drawers that build scrub bindings are
+    required to pass it (ms-scene-composer, 1V-video.md).
+
+    Returns (bytes, measured_gop | None) - the measured value is echoed in the
+    /__asset_generate reply so a caller can VERIFY the clip is scrubbable
+    rather than trusting the flag."""
+    opts = options if isinstance(options, dict) else {}
+    want = bool(opts.get("scrub")) or opts.get("gop") is not None
+    if not want:
+        return video_bytes, None
+    try:
+        gop = int(opts.get("gop") or 12)
+    except (TypeError, ValueError):
+        gop = 12
+    gop = max(1, min(60, gop))
+    return _ffmpeg_densify_keyframes(video_bytes, gop=gop,
+                                     drop_audio=not opts.get("keep_audio"))
+
+
 def _chain_one_segment(api_key, provider, model, aspect, seg_prompt, options,
                        start_uri, end_uri=None):
     """Render ONE clip whose motion starts from `start_uri` (a data URI). When
@@ -18968,6 +19059,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._reply(404, {"error": f"input file not found: {input_path}"})
 
         # Dispatch.
+        scrub_gop = None   # set by the video branches when options.scrub is on
         try:
             if is_generate:
                 # Image-to-image branch: generate-image with an input image
@@ -19042,6 +19134,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     if fal_opts.get("image_url"):
                         model = _fal_video_i2v_variant(model)
                     bytes_ = _fal_generate_video(api_key, prompt, model, aspect, fal_opts)
+                    bytes_, scrub_gop = _maybe_densify_for_scrub(bytes_, options)
                 elif provider == "higgsfield" and skill == "video-gen":
                     # Higgsfield DoP image→video (async submit+poll). Resolve a
                     # wired start frame (input_path / input_data_uri) into the
@@ -19054,6 +19147,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         elif input_abs:
                             hf_opts["image_url"] = _file_to_data_uri(input_abs)
                     bytes_ = _higgsfield_generate_video(api_key, prompt, model, aspect, hf_opts)
+                    bytes_, scrub_gop = _maybe_densify_for_scrub(bytes_, options)
                 elif skill == "video-chain" and provider in ("higgsfield", "fal"):
                     # Two modes (see _video_chain_generate):
                     #  • 1 wired image  → auto-handoff: prompt lines drive clips,
@@ -19239,6 +19333,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             "ok": True, "path": output, "bytes": len(bytes_),
             "skill": skill, "provider": provider, "model": model,
             "medium": medium,
+            # Measured frames-per-keyframe after a scrub re-encode (None when
+            # not requested / ffmpeg absent). Callers building scroll- or
+            # pointer-scrub bindings should assert this is <= 12 rather than
+            # trusting the request flag.
+            "scrubGop": scrub_gop,
             "snapshot": snapshot_info,
             "inline_replace": (
                 {"ok": True, "files": replaced_files} if replaced_files
