@@ -17,7 +17,20 @@ Your envelope (in this node's `text`) carries: `msId`, `prototype`, `binding` hi
 
 ## 1. What you commit (the seven decisions)
 
-1. **Binding** - validate the hint. `self` (iframe owns wheel/swipe stepping; full-page pieces, motionsites register) vs `host-scroll` (host forwards scroll progress; sections inside a longer page, Apple register). If the slot is a section among siblings on a scrolling page, host-scroll is almost always right; a standalone full-page piece is self.
+1. **Binding (transport) + driveModel (what that input DOES to the media)** - two separate commitments. Conflating them is the family's known failure mode; read `bindingModel` in the index before you commit either.
+
+   **Binding** validates the hint: `self` (iframe owns wheel/swipe; full-page pieces, motionsites register) vs `host-scroll` (host forwards scroll progress; sections inside a longer page, Apple register). A section among siblings on a scrolling page is almost always host-scroll; a standalone full-page piece is self. **Binding is a TRANSPORT decision only** - it says where input arrives, never what the media does with it.
+
+   **driveModel** is `stepped` | `scrubbed` | `hybrid`, and it is committed against the PAYLOAD, not the transport:
+   - `scrubbed` - the media is paused and its `currentTime` is driven by a position variable. Commit this whenever the brief's payload is a continuous move through one thing (a camera travelling, an object rotating, a descent, a timeline, a journey, a reveal that unfolds).
+   - `stepped` - discrete scenes swap, each playing to a hold. Commit this when the scenes are genuinely different places or subjects with nothing continuous between them.
+   - `hybrid` - stepped between scenes, scrubbed within one.
+
+   **`binding=self` DOES have a progress source.** Its wheel accumulator produces one, two ways, both valid: map raw accumulated delta straight to progress, or - the usual choice for an authored linear film - have each discrete step set a waypoint target that a damped pursuit (`current += (target - current) * 0.06` per rAF) walks `currentTime` toward. **A stepped INPUT does not imply stepped MEDIA.** `driveModel: scrubbed` under `binding: self` is fully supported and is often the right answer for a whole-page piece.
+
+   **Hard rule - three rule-out reasons are INVALID and will fail the gate**, because each mistakes an adapter name for a requirement: *"requires scroll runway"*, *"no runway exists under binding=self"*, *"structurally unavailable"*. Never write them about a technique whose index `binding` is `scroll-progress` or `pointer-x`. A rule-out is only valid when you quote the technique's own `notForUseWhen`, or quote a binding art-direction-contract clause that actually reaches this input (a clause about POINTER reactivity does NOT reach a wheel-driven or scroll-driven scrub - different input), or show the asset cannot be made seekable per `bindingModel.seekability`. If every scrub technique in the index ends up ruled out, that is a signal to re-read `bindingModel`, not a finding to commit.
+
+   **If you commit `driveModel: stepped` on a piece whose brief reads as continuous** (the successFeel describes travelling, descending, one continuous move, or "the same place the whole time"), say so explicitly in research.md with the reason - do not let it pass as an unremarked default. Silently shipping a slideshow where the brief asked for a journey is the exact regression this decision exists to stop.
 2. **assetPolicy** - `video-first` requires a wired video-capable provider (a `✓ KEY` video row, e.g. fal). If none: commit `raster-first` and name the per-scene degradation (raster-sequence for scrub techniques, raster + CSS transform for ambient ones). Never commit video-first on hope. **Also commit `hyperframesEligible: yes|no`** - the Hyperframes `motion` piece (HTML/GSAP vector + type animation) is the LAST ladder rung and only enters when the committed aesthetic is vector-native (flat / typographic / editorial-loud / neubrutalist / diagrammatic / terminal / Memphis-Y2K-graphic). Immersive or photorealistic registers (cinematic product film, photographic hero, atmospheric environment) get `no` - vector animation breaks the spell there, and the degradation floor is a CSS-animated still instead.
 3. **Scene count** - 2-6. Presentation-first: one idea per scene. Respect `sceneCountHint` unless the brief clearly implies otherwise; say why if you deviate.
 4. **Per-scene technique candidates** - for each sketched scene, 1-3 candidate techniqueIds from the index. Use `decisionTree[<committed prototype slug>]` when the project has a committed genre; filter by `entries[id].role` (hero/product/background/transition/...), `category`, and `notForUseWhen`. EVERY scene also gets one composition technique (`quiet-zone-headline` or `subject-offset-ui-counterweight`) - composition is a layer, not an alternative.
@@ -34,7 +47,8 @@ Write `source/<prototype>/motionscenes/<msId>/research.md`:
 # Research - <msId>
 
 ## Committed shape
-binding: <self|host-scroll> - <one-line why>
+binding: <self|host-scroll> - <one-line why. TRANSPORT ONLY.>
+driveModel: <stepped|scrubbed|hybrid> - <one-line why, argued against the PAYLOAD and the successFeel, never against the transport. If `stepped` on a brief that reads as one continuous move, say that out loud here.>
 assetPolicy: <video-first|raster-first> - <provider evidence>
 hyperframesEligible: <yes|no> - <register rationale: vector-native vs immersive/photoreal>
 sceneCount: <N>
@@ -56,6 +70,9 @@ principleStance: <prose of what "real" means here, phrased for holistic lens jud
 ## Library citations
 <per picked candidate: entries[id].oneLine + sourceFile - proof the id exists>
 
+## Techniques ruled out
+<REQUIRED whenever any technique whose index `binding` is `scroll-progress` or `pointer-x` was considered and dropped. One row each: techniqueId | its index `binding` | the verbatim quote that rules it out (its own notForUseWhen, or a contract clause that actually reaches this input) | why that quote bites here. A row whose reason is transport-shaped ("needs runway", "we don't scroll", "structurally unavailable") is invalid per bindingModel.invalidRuleOuts and fails the gate. If the section would be empty because none were considered, say that instead of omitting it.>
+
 ## Multi-draft recommendation
 Storyboard crux? **No|Yes - <axis + why the ambiguity is real>**
 Concept crux? **No|Yes - layout axis ...**
@@ -63,14 +80,14 @@ Motion crux? **No|Yes - ...**
 Runtime crux? **No|Yes - ...**
 ```
 
-Self-check before commit: every techniqueId resolves in the index; binding/assetPolicy consistent with provider evidence; sceneCount within 2-6; every scene has a composition technique; multi-draft says No unless the ambiguity is argued.
+Self-check before commit: every techniqueId resolves in the index; binding/assetPolicy consistent with provider evidence; sceneCount within 2-6; every scene has a composition technique; multi-draft says No unless the ambiguity is argued. Plus, on the drive axis: `driveModel` committed and argued against the payload; the string "structurally unavailable" and the words "runway" / "does not scroll" appear nowhere as a rule-out reason for a `scroll-progress` or `pointer-x` technique; the **Techniques ruled out** section is present and every row quotes a valid reason; and if `driveModel: stepped` was committed while the successFeel describes one continuous move, that tension is named in the file rather than left silent.
 
 ## 3. Atomic commit
 
 ```bash
 curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/ms_research_<msId>/commit?project=$TH_PROJECT_ID" \
   -H "Content-Type: application/json" \
-  -d '{ "outputs": { "binding": "<...>", "assetPolicy": "<...>", "hyperframesEligible": <true|false>, "sceneCount": <N>,
+  -d '{ "outputs": { "binding": "<...>", "driveModel": "<stepped|scrubbed|hybrid>", "assetPolicy": "<...>", "hyperframesEligible": <true|false>, "sceneCount": <N>,
         "transitionRegister": "<...>", "multiDraftCruxes": [<node-id strings or empty>] },
       "files": [{ "relPath": "source/<prototype>/motionscenes/<msId>/research.md", "content": "<full content>" }],
       "runStatus": "done" }'
@@ -85,7 +102,7 @@ In the SAME pass as `research.md`, write `test-cases.json` NEXT TO it (`source/<
 Required contents:
 
 - `harness`: the piece's devtools global (`window.__ms` - the §12.3 harness ms-runtime-composer exposes).
-- `phases`: every state the piece can be in (per-scene, transitioning, holding). `intents`: every user action, using the EXACT intent kinds the input layer emits (next / prev / goto-scene navigation, pointer scrub, host-scroll progress).
+- `phases`: every state the piece can be in (per-scene, transitioning, holding). `intents`: every user action, using the EXACT intent kinds the input layer emits (next / prev / goto-scene navigation, pointer scrub, host-scroll progress, wheel-accumulator progress and waypoint-pursuit under `driveModel: scrubbed` with `binding: self`).
 - `phaseSetups`: steps that drive the piece INTO each phase (the matrix / abuse / soak reuse them). `phaseExpr`: the JS expression that reads the current phase.
 - `cases` (journeys): the full happy path start to finish, EVERY terminal outcome (not just the happy one), and restart-after-end. Journeys MUST walk the full scene sequence FORWARD AND BACKWARD, plus wheel-spam during a transition (mid-transition input is the classic crash site). Plus any state x input combination you already see being fragile.
 - `matrix: {"auto": true}`: the runner expands intents x phases. "Fine in one state, breaks when you interact in another" is exactly the crash class this catches.

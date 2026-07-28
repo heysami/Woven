@@ -48,6 +48,64 @@ LIBS = [
     {"prefix": "sound",    "name": "sound",        "id_key": "registerId",  "out": "docs/research/sound-library.index.json"},
 ]
 
+# Emitted into the motion-scene index only. The researcher reads the index and
+# nothing else in the dispatch hot path, so the distinction between a POSITION
+# VARIABLE and the TRANSPORT that produces it has to live here or it does not
+# exist for the agent that needs it.
+#
+# Bug history: a nine-scene museum film committed binding=self, then ruled out
+# all seven scroll-driven techniques with "require scroll runway - structurally
+# unavailable, not rejected on taste", and shipped a wheel-advanced slideshow of
+# nine separately-generated clips. Its own art-direction contract had asked for
+# "descent through darkness, NOT cutting" and "not a slideshow". The scrub was
+# both reachable and MORE compliant; the rule-out was an artefact of this
+# metadata being missing from the index.
+BINDING_MODEL = OrderedDict([
+    ("summary",
+     "`binding` names a technique's canonical input ADAPTER. It is not a "
+     "prerequisite. A scrub is video.pause() plus currentTime = f(progress) plus "
+     "a damped pursuit; it needs exactly one thing, a monotonic progress "
+     "variable. WHERE that variable comes from is an adapter detail. Any "
+     "transport listed in producesProgress can drive any technique whose binding "
+     "is scroll-progress or pointer-x."),
+    ("producesProgress", OrderedDict([
+        ("scroll-progress", "Host scroll offset over a pinned runway: progress = -rect.top / (rect.height - innerHeight)."),
+        ("wheel-step", "A wheel/swipe accumulator. TWO valid readings, both legitimate progress sources. (a) CONTINUOUS - map raw accumulated delta straight onto progress; no runway needed. (b) STEPPED-SCRUB - each discrete step sets a WAYPOINT target and a damped pursuit (current += (target-current)*0.06 per rAF) walks currentTime to it, so one flick reads as one authored move along a continuous timeline. Reading (b) is what a linear authored film wants, and scroll-scrub-journey already documents it when it says its waypoints 'become the page's section anchors'. A stepped input does NOT imply stepped media."),
+        ("pointer-x", "Pointer position normalised across the viewport."),
+        ("scroll-velocity", "Rate of change of scroll offset; drives playbackRate, not currentTime."),
+        ("user-gesture", "One-shot trigger. NOT a progress source - gates a play-once or an entrance only."),
+        ("hover", "Boolean. Not a progress source."),
+        ("none", "Autonomous or time-driven. Not a progress source."),
+    ])),
+    ("invalidRuleOuts", [
+        "\"requires scroll runway\" / \"no runway exists\" / \"structurally unavailable\" applied to a scroll-progress technique because the piece is binding=self. Under binding=self the wheel accumulator IS the progress source - see producesProgress['wheel-step'].",
+        "\"the id starts with scroll- so it needs scroll\". Ids name the canonical adapter, not a requirement.",
+        "\"category is scroll-driven and this piece does not scroll\". The same error one level up.",
+    ]),
+    ("validRuleOuts", [
+        "The technique's own notForUseWhen clause bites - quote it verbatim.",
+        "A binding art-direction contract clause forbids it - quote it verbatim. Note a clause about POINTER reactivity does not reach a wheel-driven or scroll-driven scrub; those are different inputs.",
+        "The asset cannot support seeking and cannot be re-encoded - see seekability.",
+    ]),
+    ("seekability",
+     "The one real engineering gate on any scrub, and it is ALREADY SOLVED - do "
+     "not hand-roll a parallel fix. Generated-video routes return web-delivery "
+     "encodes at GOP ~64, so a seek snaps to the nearest keyframe ~2.7s away and "
+     "the scrub reads as broken however good the generated motion is. Keyframe "
+     "density is a property of the provider's ENCODER and cannot be prompted "
+     "for. The sanctioned path: pass `options.scrub: true` in the "
+     "/__asset_generate request for every technique whose binding writes "
+     "currentTime, then VERIFY the `scrubGop` echoed in the reply is <= 12 "
+     "before composing the scene. A `scrubGop` of null means ffmpeg is missing - "
+     "say so and downgrade to a non-scrub sibling rather than shipping a "
+     "snapping scrub. See ms-scene-composer step 5b. For assets ALREADY on disk "
+     "from an earlier run, the same fix is a local `ffmpeg -g 12` re-encode - no "
+     "regeneration, no provider spend. Verify either with `ffprobe "
+     "-select_streams v:0 -show_entries frame=key_frame`. If it still judders, "
+     "the library's own named substitute is scroll-sequence-frames (preloaded "
+     "stills drawn to a canvas)."),
+])
+
 
 def parse_frontmatter(text):
     """Parse YAML frontmatter between leading --- ... --- markers. Returns dict."""
@@ -156,6 +214,14 @@ def build_index(lib):
             entry["era"] = fm["era"]
         if fm.get("subCategory"):
             entry["subCategory"] = fm["subCategory"]
+        # `binding` names a technique's canonical INPUT ADAPTER - never a
+        # prerequisite. It MUST reach the index: the researcher reads only the
+        # index in the dispatch hot path, so when this field is absent the
+        # `scroll-` id prefix becomes the de-facto binding declaration and every
+        # scrub technique gets ruled out as "structurally unreachable" the moment
+        # the piece is not scroll-bound. See BINDING_MODEL below.
+        if fm.get("binding"):
+            entry["binding"] = fm["binding"]
         if fm.get("role"):
             role_val = fm["role"]
             entry["role"] = role_val
@@ -195,6 +261,8 @@ def build_index(lib):
     out["library"] = lib["name"]
     out["sourceDir"] = "design-library/"
     out["totalEntries"] = len(entries)
+    if lib["prefix"] == "motion":
+        out["bindingModel"] = BINDING_MODEL
     out["decisionTree"] = decision_tree
     out["entries"] = entries
 

@@ -3,6 +3,29 @@
   "library": "motion-scene",
   "sourceDir": "design-library/",
   "totalEntries": 37,
+  "bindingModel": {
+    "summary": "`binding` names a technique's canonical input ADAPTER. It is not a prerequisite. A scrub is video.pause() plus currentTime = f(progress) plus a damped pursuit; it needs exactly one thing, a monotonic progress variable. WHERE that variable comes from is an adapter detail. Any transport listed in producesProgress can drive any technique whose binding is scroll-progress or pointer-x.",
+    "producesProgress": {
+      "scroll-progress": "Host scroll offset over a pinned runway: progress = -rect.top / (rect.height - innerHeight).",
+      "wheel-step": "A wheel/swipe accumulator. TWO valid readings, both legitimate progress sources. (a) CONTINUOUS - map raw accumulated delta straight onto progress; no runway needed. (b) STEPPED-SCRUB - each discrete step sets a WAYPOINT target and a damped pursuit (current += (target-current)*0.06 per rAF) walks currentTime to it, so one flick reads as one authored move along a continuous timeline. Reading (b) is what a linear authored film wants, and scroll-scrub-journey already documents it when it says its waypoints 'become the page's section anchors'. A stepped input does NOT imply stepped media.",
+      "pointer-x": "Pointer position normalised across the viewport.",
+      "scroll-velocity": "Rate of change of scroll offset; drives playbackRate, not currentTime.",
+      "user-gesture": "One-shot trigger. NOT a progress source - gates a play-once or an entrance only.",
+      "hover": "Boolean. Not a progress source.",
+      "none": "Autonomous or time-driven. Not a progress source."
+    },
+    "invalidRuleOuts": [
+      "\"requires scroll runway\" / \"no runway exists\" / \"structurally unavailable\" applied to a scroll-progress technique because the piece is binding=self. Under binding=self the wheel accumulator IS the progress source - see producesProgress['wheel-step'].",
+      "\"the id starts with scroll- so it needs scroll\". Ids name the canonical adapter, not a requirement.",
+      "\"category is scroll-driven and this piece does not scroll\". The same error one level up."
+    ],
+    "validRuleOuts": [
+      "The technique's own notForUseWhen clause bites - quote it verbatim.",
+      "A binding art-direction contract clause forbids it - quote it verbatim. Note a clause about POINTER reactivity does not reach a wheel-driven or scroll-driven scrub; those are different inputs.",
+      "The asset cannot support seeking and cannot be re-encoded - see seekability."
+    ],
+    "seekability": "The one real engineering gate on any scrub, and it is ALREADY SOLVED - do not hand-roll a parallel fix. Generated-video routes return web-delivery encodes at GOP ~64, so a seek snaps to the nearest keyframe ~2.7s away and the scrub reads as broken however good the generated motion is. Keyframe density is a property of the provider's ENCODER and cannot be prompted for. The sanctioned path: pass `options.scrub: true` in the /__asset_generate request for every technique whose binding writes currentTime, then VERIFY the `scrubGop` echoed in the reply is <= 12 before composing the scene. A `scrubGop` of null means ffmpeg is missing - say so and downgrade to a non-scrub sibling rather than shipping a snapping scrub. See ms-scene-composer step 5b. For assets ALREADY on disk from an earlier run, the same fix is a local `ffmpeg -g 12` re-encode - no regeneration, no provider spend. Verify either with `ffprobe -select_streams v:0 -show_entries frame=key_frame`. If it still judders, the library's own named substitute is scroll-sequence-frames (preloaded stills drawn to a canvas)."
+  },
   "decisionTree": {
     "recipe-aurora-marketing": {
       "default": "ambient-loop-atmosphere",
@@ -337,6 +360,7 @@
       "name": "Ambient loop atmosphere (the page breathes under the UI)",
       "category": "ambient",
       "subCategory": "video",
+      "binding": "none",
       "role": "background",
       "roleAffinity": [
         "background"
@@ -356,6 +380,7 @@
       "name": "Background swap, fixed UI (the world changes around the chrome)",
       "category": "scene-choreography",
       "subCategory": "video",
+      "binding": "wheel-step",
       "role": "background",
       "roleAffinity": [
         "background"
@@ -374,6 +399,7 @@
       "name": "Cinemagraph still (one thing moves, everything else is frozen)",
       "category": "ambient",
       "subCategory": "video",
+      "binding": "none",
       "role": "section",
       "roleAffinity": [
         "section"
@@ -392,6 +418,7 @@
       "name": "Cursor as character (velocity-deforming, identity-swapping pointer)",
       "category": "pointer-driven",
       "subCategory": "dom",
+      "binding": "pointer-xy",
       "role": "chrome",
       "roleAffinity": [
         "chrome"
@@ -411,6 +438,7 @@
       "name": "Depth-drift layers (ambient faux-3D, no pointer required)",
       "category": "ambient",
       "subCategory": "layered-raster",
+      "binding": "none",
       "role": "background",
       "roleAffinity": [
         "background"
@@ -430,6 +458,7 @@
       "name": "Drag physics cluster (grabbable floating object swarm)",
       "category": "pointer-driven",
       "subCategory": "webgl-physics",
+      "binding": "pointer-drag",
       "role": "hero",
       "roleAffinity": [
         "hero"
@@ -448,6 +477,7 @@
       "name": "Focus pull (rack-focus blur between sections / type planes)",
       "category": "scroll-driven",
       "subCategory": "dom",
+      "binding": "scroll-progress (or hover)",
       "role": "editorial | transition",
       "roleAffinity": [
         "editorial | transition"
@@ -466,6 +496,7 @@
       "name": "Frame-hold UI sync (pause the film, play the interface)",
       "category": "composition",
       "subCategory": "video",
+      "binding": "wheel-step",
       "role": "product",
       "roleAffinity": [
         "product"
@@ -484,6 +515,7 @@
       "name": "Hover-activate loop (still wakes into its living version)",
       "category": "pointer-driven",
       "subCategory": "video",
+      "binding": "hover",
       "role": "gallery",
       "roleAffinity": [
         "gallery"
@@ -502,6 +534,7 @@
       "name": "Idle character loop (the mascot is simply there)",
       "category": "ambient",
       "subCategory": "video",
+      "binding": "none",
       "role": "portrait",
       "roleAffinity": [
         "portrait"
@@ -520,6 +553,7 @@
       "name": "Lens magnifier reveal (pointer-tracked circle of clarity)",
       "category": "pointer-driven",
       "subCategory": "dom-or-canvas",
+      "binding": "pointer-xy",
       "role": "hero | editorial",
       "roleAffinity": [
         "hero | editorial"
@@ -539,6 +573,7 @@
       "name": "Letterbox stage (UI lives in the matte)",
       "category": "composition",
       "subCategory": "video",
+      "binding": "none",
       "role": "hero",
       "roleAffinity": [
         "hero"
@@ -558,6 +593,7 @@
       "name": "Living gradient video (the brand palette as weather)",
       "category": "ambient",
       "subCategory": "video",
+      "binding": "none",
       "role": "background",
       "roleAffinity": [
         "background"
@@ -577,6 +613,7 @@
       "name": "Match-cut morph (the cut you never see)",
       "category": "scene-choreography",
       "subCategory": "video",
+      "binding": "wheel-step",
       "role": "transition",
       "roleAffinity": [
         "transition"
@@ -595,6 +632,7 @@
       "name": "Mouse-scrub look (subject follows the cursor)",
       "category": "pointer-driven",
       "subCategory": "video",
+      "binding": "pointer-x",
       "role": "hero",
       "roleAffinity": [
         "hero"
@@ -614,6 +652,7 @@
       "name": "Mouse-scrub orbit (object turns on a turntable arc)",
       "category": "pointer-driven",
       "subCategory": "video",
+      "binding": "pointer-x",
       "role": "product",
       "roleAffinity": [
         "product"
@@ -632,6 +671,7 @@
       "name": "Pointer-magnetic subject (a lean, not a stare)",
       "category": "pointer-driven",
       "subCategory": "raster-sequence",
+      "binding": "pointer-xy",
       "role": "hero",
       "roleAffinity": [
         "hero"
@@ -649,6 +689,7 @@
       "name": "Pointer parallax layers (faux-3D depth from stacked rasters)",
       "category": "pointer-driven",
       "subCategory": "layered-raster",
+      "binding": "pointer-xy",
       "role": "hero",
       "roleAffinity": [
         "hero"
@@ -668,6 +709,7 @@
       "name": "Pointer spotlight video (cursor develops the living image)",
       "category": "pointer-driven",
       "subCategory": "video",
+      "binding": "pointer-xy",
       "role": "hero",
       "roleAffinity": [
         "hero"
@@ -686,6 +728,7 @@
       "name": "Quiet-zone headline (the asset makes room for the type)",
       "category": "composition",
       "subCategory": "video",
+      "binding": "none",
       "role": "hero",
       "roleAffinity": [
         "hero"
@@ -704,6 +747,7 @@
       "name": "Scene crossfade hold (worlds dissolve, each one breathes)",
       "category": "scene-choreography",
       "subCategory": "video",
+      "binding": "wheel-step",
       "role": "transition",
       "roleAffinity": [
         "transition"
@@ -722,6 +766,7 @@
       "name": "Scene stepper wipe (one notch, one scene)",
       "category": "scene-choreography",
       "subCategory": "hybrid",
+      "binding": "wheel-step",
       "role": "transition",
       "roleAffinity": [
         "transition"
@@ -741,6 +786,7 @@
       "name": "Scene zoom-through (dive into the detail)",
       "category": "scene-choreography",
       "subCategory": "hybrid",
+      "binding": "wheel-step",
       "role": "transition",
       "roleAffinity": [
         "transition"
@@ -760,6 +806,7 @@
       "name": "Scroll-entrance video (asset arrives, then holds)",
       "category": "scroll-driven",
       "subCategory": "video",
+      "binding": "scroll-trigger",
       "role": "product",
       "roleAffinity": [
         "product"
@@ -777,6 +824,7 @@
       "name": "Scroll-exit handoff (one scene's exit becomes the next scene's entrance)",
       "category": "scroll-driven",
       "subCategory": "video",
+      "binding": "scroll-trigger",
       "role": "transition",
       "roleAffinity": [
         "transition"
@@ -796,6 +844,7 @@
       "name": "Scroll-pinned transform (asset morphs while copy swaps)",
       "category": "scroll-driven",
       "subCategory": "hybrid",
+      "binding": "scroll-progress",
       "role": "product",
       "roleAffinity": [
         "product"
@@ -814,6 +863,7 @@
       "name": "Scroll-reveal mask (aperture opens onto full-bleed video)",
       "category": "scroll-driven",
       "subCategory": "video",
+      "binding": "scroll-progress",
       "role": "hero",
       "roleAffinity": [
         "hero"
@@ -833,6 +883,7 @@
       "name": "Scroll-scrub journey (camera travels as you scroll)",
       "category": "scroll-driven",
       "subCategory": "video",
+      "binding": "scroll-progress",
       "role": "hero",
       "roleAffinity": [
         "hero"
@@ -852,6 +903,7 @@
       "name": "Scroll-scrub rotation (product turns as you scroll)",
       "category": "scroll-driven",
       "subCategory": "video",
+      "binding": "scroll-progress",
       "role": "product",
       "roleAffinity": [
         "product"
@@ -870,6 +922,7 @@
       "name": "Scroll-sequence frames (canvas-scrubbed still sequence)",
       "category": "scroll-driven",
       "subCategory": "raster-sequence",
+      "binding": "scroll-progress",
       "role": "product",
       "roleAffinity": [
         "product"
@@ -888,6 +941,7 @@
       "name": "Scroll speed-ramp (ambient loop breathes with scroll velocity)",
       "category": "scroll-driven",
       "subCategory": "video",
+      "binding": "scroll-velocity",
       "role": "background",
       "roleAffinity": [
         "background"
@@ -907,6 +961,7 @@
       "name": "Slow push zoom (Ken-Burns gravity on an oversized still)",
       "category": "ambient",
       "subCategory": "raster",
+      "binding": "none",
       "role": "hero",
       "roleAffinity": [
         "hero"
@@ -926,6 +981,7 @@
       "name": "Stylize shader pass (live dither / halftone / ASCII over media)",
       "category": "shader-driven",
       "subCategory": "post-process",
+      "binding": "time + optional pointer-xy",
       "role": "hero | texture",
       "roleAffinity": [
         "hero | texture"
@@ -944,6 +1000,7 @@
       "name": "Subject offset, UI counterweight (thirds by generation)",
       "category": "composition",
       "subCategory": "raster",
+      "binding": "none",
       "role": "hero",
       "roleAffinity": [
         "hero"
@@ -963,6 +1020,7 @@
       "name": "SVG self-draw (hand-made marks draw themselves in on scroll)",
       "category": "scroll-driven",
       "subCategory": "dom",
+      "binding": "scroll-trigger",
       "role": "entrance | chrome",
       "roleAffinity": [
         "entrance | chrome"
@@ -981,6 +1039,7 @@
       "name": "Threshold ritual (entry gate as a designed moment)",
       "category": "scene-choreography",
       "subCategory": "dom-or-canvas",
+      "binding": "user-gesture",
       "role": "entrance",
       "roleAffinity": [
         "entrance"
@@ -1000,6 +1059,7 @@
       "name": "Video text mask (the world lives inside the glyphs)",
       "category": "composition",
       "subCategory": "video",
+      "binding": "none",
       "role": "hero",
       "roleAffinity": [
         "hero"
