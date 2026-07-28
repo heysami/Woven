@@ -26937,7 +26937,37 @@ class H(http.server.SimpleHTTPRequestHandler):
         if sid in cfg["mcpServers"] and not body.get("overwrite"):
             return self._reply(409, {"error": f"server '{sid}' is already wired",
                                       "hint": "pass overwrite:true to replace its runtime entry"})
-        cfg["mcpServers"][sid] = {"command": parts[0], "args": parts[1:]}
+        # Environment for the server process. Most third-party MCP servers
+        # (Linear, Notion, GitHub, Sentry, …) authenticate via an env var, so
+        # without this the UI could wire them but every call failed on auth -
+        # the three shipped servers (chrome / figma / claude_preview) need no
+        # env, which is why the gap went unnoticed. Accepts either a JSON
+        # object or `KEY=value` lines. Values commonly ARE credentials: they
+        # are written to the mcp-config file (same trust boundary the CLI
+        # already uses) and are never echoed back - GET /__mcp_catalog reports
+        # only server ids, and errors below name keys, never values.
+        raw_env = body.get("env")
+        env_map = {}
+        if isinstance(raw_env, dict):
+            env_map = {str(k).strip(): str(v) for k, v in raw_env.items() if str(k).strip()}
+        elif isinstance(raw_env, str):
+            for ln in raw_env.splitlines():
+                ln = ln.strip()
+                if not ln or ln.startswith("#"):
+                    continue
+                if "=" not in ln:
+                    return self._reply(400, {"error": f"env line is not KEY=value: {ln[:40]!r}"})
+                k, v = ln.split("=", 1)
+                if k.strip():
+                    env_map[k.strip()] = v.strip()
+        bad = [k for k in env_map if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", k)]
+        if bad:
+            return self._reply(400, {"error": f"invalid env var name(s): {', '.join(sorted(bad))}"})
+
+        entry_cfg = {"command": parts[0], "args": parts[1:]}
+        if env_map:
+            entry_cfg["env"] = env_map
+        cfg["mcpServers"][sid] = entry_cfg
         try:
             self._mcp_write_json(AGENT_MCP_CONFIG, cfg)
         except OSError as e:

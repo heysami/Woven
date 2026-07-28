@@ -24090,7 +24090,7 @@ function McpLanding() {
   // writes BOTH files (runtime config + display catalog, source:"user");
   // remove unwires + drops user-added catalog entries.
   const [addOpen, setAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState({ id: "", label: "", command: "", purpose: "", whenToUse: "", requires: "" });
+  const [addForm, setAddForm] = useState({ id: "", label: "", command: "", purpose: "", whenToUse: "", requires: "", env: "" });
   const [addBusy, setAddBusy] = useState(false);
   const [addErr, setAddErr] = useState(null);
   const refetch = useCallback(() => {
@@ -24112,7 +24112,7 @@ function McpLanding() {
       });
       const j = await res.json().catch(() => null);
       if (!res.ok) throw new Error((j && (j.error || j.hint)) || `HTTP ${res.status}`);
-      setAddForm({ id: "", label: "", command: "", purpose: "", whenToUse: "", requires: "" });
+      setAddForm({ id: "", label: "", command: "", purpose: "", whenToUse: "", requires: "", env: "" });
       setAddOpen(false);
       refetch();
     } catch (e) {
@@ -24185,6 +24185,12 @@ function McpLanding() {
                 <label className="mcp-add-field">
                   <span>requires (optional, one per line)</span>
                   <textarea rows="2" value=${addForm.requires} onInput=${setF("requires")} placeholder="Node.js / npx on PATH"></textarea>
+                </label>
+                <label className="mcp-add-field">
+                  <span>environment (optional, one <code>KEY=value</code> per line)</span>
+                  <textarea rows="2" value=${addForm.env} onInput=${setF("env")} spellcheck="false" autocomplete="off"
+                    placeholder=${"API_KEY=…\nWORKSPACE_ID=…"}></textarea>
+                  <span className="mcp-add-hint">Most third-party servers authenticate through an env var. Stored in <code>mcp-config.json</code> on this machine and passed to the server process; never shown again in this UI.</span>
                 </label>
                 ${addErr && html`<div className="mcp-add-error">${addErr}</div>`}
               </div>
