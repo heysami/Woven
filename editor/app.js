@@ -3173,6 +3173,13 @@ function DsReconcileDialog({ dsId, status, onClose, onResolved }) {
         scope: "system", section: "design-systems",
         title: "Merge DS " + dsId + " with global " + status.globalId,
         prompt, agentId: "claude", kind: "freeform", permissionMode: "bypassPermissions",
+        model: (() => {   // honour Settings > Chat/agent default (anthropic only - system threads are claude-only)
+          try {
+            const d = getDefaultForCapability("agent") || {};
+            if ((d.provider || "").toLowerCase() !== "anthropic") return undefined;
+            return (d.model && !/-default$/.test(d.model)) ? d.model : undefined;
+          } catch { return undefined; }
+        })(),
       }),
     });
     const dispatched = await res.json().catch(() => ({}));
@@ -25929,11 +25936,25 @@ function ProjectsLanding({ info, projects, onReload }) {
   // so the drawer opens on a LIVE run already streaming the agent's plan -
   // no isNew shell, no re-typing.
   const spawnSystemThread = useCallback(async ({ section, prompt, title }) => {
+    // Honour Settings > Default models per capability > Chat/agent, the same
+    // way triggerRun() does for project runs. Without this the system agent
+    // (Add orchestrator / Add library entry) silently ran on whatever the
+    // Claude CLI defaults to, ignoring the user's pick entirely.
+    // System threads are claude-only by daemon policy (the elevated spawn
+    // config is Claude-CLI-specific), so a non-anthropic default is dropped
+    // rather than passed through - handing a gpt id to the Claude CLI would
+    // just fail at spawn.
+    let sysModel;
+    try {
+      const d = getDefaultForCapability("agent") || {};
+      if ((d.provider || "").toLowerCase() === "anthropic") sysModel = d.model || undefined;
+    } catch {}
+    if (sysModel && /-default$/.test(sysModel)) sysModel = undefined;
     const res = await fetch("/__run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        scope: "system", section, prompt, title,
+        scope: "system", section, prompt, title, model: sysModel,
         agentId: "claude", kind: "freeform", permissionMode: systemPermMode,
       }),
     });

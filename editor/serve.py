@@ -29387,6 +29387,13 @@ class H(http.server.SimpleHTTPRequestHandler):
 
         defs = AGENT_DEFS["claude"]
         spawn_args = list(defs["args"])
+        # Default-model override (Settings > Default models per capability >
+        # Chat/agent), same contract as the project spawn path. Blank / a
+        # CLI-default sentinel appends no --model, so the CLI keeps its own
+        # default. Before this, the system agent - the one the landing page's
+        # "Add orchestrator" / "Add library entry" buttons spawn - ignored the
+        # user's model pick entirely and always ran on the CLI default.
+        spawn_args += _agent_model_spawn_args("claude", defs, (body.get("model") or "").strip())
         if permission_mode == "bypassPermissions":
             spawn_args += [
                 "--allow-dangerously-skip-permissions",
