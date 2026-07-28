@@ -9560,6 +9560,9 @@ def _scan_chat_jsonl_records(candidates: list) -> dict:
                             "tier":           rec.get("tier"),
                             "title":          rec.get("title") or "",
                             "startedAt":      rec.get("startedAt") or rec.get("ts") or 0,
+                            # last line seen for this run wins - the runs list
+                            # orders by updatedAt, not by when the run started.
+                            "updatedAt":      rec.get("ts") or rec.get("startedAt") or 0,
                             "done":           False,
                             "turnDone":       False,
                             "turnsCompleted": 0,
@@ -9571,6 +9574,9 @@ def _scan_chat_jsonl_records(candidates: list) -> dict:
                             "section":        rec.get("section"),
                         }
                         out[rid] = meta
+                    ts_v = rec.get("ts")
+                    if isinstance(ts_v, (int, float)) and ts_v > (meta.get("updatedAt") or 0):
+                        meta["updatedAt"] = ts_v
                     # Track lifecycle terminators
                     if rec.get("type") == "__finish":
                         meta["done"] = True
@@ -9652,6 +9658,9 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
         kind = first.get("kind") or "freeform"
         title = first.get("title") or ""
         started_at = first.get("startedAt") or first.get("ts") or 0
+        # last persisted line = last activity, so a rehydrated run keeps its
+        # place in the updatedAt-ordered runs list.
+        updated_at = max([r.get("ts") or 0 for r in run_lines] + [started_at])
         session_id = None
         exit_code = None
         done = False
@@ -9720,6 +9729,7 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
             )
         state.session_id = session_id
         state.started_at = started_at
+        state.updated_at = updated_at
         state.done = done
         state.exit_code = exit_code
         state.events = events
@@ -9826,6 +9836,11 @@ class RunState:
                  # ordinary project runs.
                  "scope", "section",
                  "started_at", "events", "lock", "waiters",
+                 # wall-clock of the LAST activity on this run (any appended
+                 # event, or finish()). The runs list orders by this, not by
+                 # started_at, so a thread you just replied to floats to the
+                 # top instead of sinking under newer-but-idle runs.
+                 "updated_at",
                  "done", "exit_code", "turn_done", "turns_completed",
                  # Phase 3 - undo/redo history snapshot bookkeeping. The
                  # before-snapshot is taken at spawn (id + path inventory),
@@ -9893,6 +9908,7 @@ class RunState:
         self.project_id = project_id
         self.project_root = project_root or DEFAULT_PROJECT_ROOT
         self.started_at = time.time()
+        self.updated_at = self.started_at
         self.events: list = []
         self.lock = threading.Lock()
         self.waiters: set = set()
@@ -9995,6 +10011,7 @@ class RunState:
         with self.lock:
             seq = len(self.events)
             self.events.append({"seq": seq, "type": ev_type, "data": data})
+            self.updated_at = time.time()
             waiters = list(self.waiters)
         # Phase 5a - also persist the event to the per-branch chat JSONL so the
         # conversation survives daemon restarts. Fire-and-forget; a write
@@ -10010,6 +10027,7 @@ class RunState:
         with self.lock:
             self.done = True
             self.exit_code = exit_code
+            self.updated_at = time.time()
             waiters = list(self.waiters)
             reason = self.stop_reason  # snapshot under lock
         # Mirror the lifecycle terminator so a re-hydrated JSONL knows the run
@@ -30091,6 +30109,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "tier": getattr(s, "tier", None),
                 "title": s.title,
                 "startedAt": s.started_at,
+                "updatedAt": getattr(s, "updated_at", None) or s.started_at,
                 "done": s.done,
                 "turnDone": s.turn_done,
                 "turnsCompleted": s.turns_completed,
@@ -30117,7 +30136,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             meta["done"] = True
             meta["project"] = project_id
             live.append(meta)
-        live.sort(key=lambda r: r.get("startedAt") or 0, reverse=True)
+        # Most-recently-ACTIVE first (last reply / last event), not
+        # most-recently-created - an old thread you just came back to belongs
+        # at the top. startedAt is the tiebreak for runs with no activity ts.
+        live.sort(key=lambda r: (r.get("updatedAt") or r.get("startedAt") or 0,
+                                 r.get("startedAt") or 0), reverse=True)
         return self._reply(200, {"runs": live})
 
     # GET /__chat?branch=<slug>[&runId=<id>][&project=<id>]
@@ -30657,6 +30680,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "tier": getattr(state, "tier", None),
             "title": state.title,
             "startedAt": state.started_at,
+            "updatedAt": getattr(state, "updated_at", None) or state.started_at,
             "done": state.done,
             "turnDone": state.turn_done,
             "turnsCompleted": state.turns_completed,
@@ -30816,6 +30840,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "kind": s.kind,
                 "title": s.title,
                 "startedAt": s.started_at,
+                "updatedAt": getattr(s, "updated_at", None) or s.started_at,
                 "done": s.done,
                 "turnDone": s.turn_done,
                 "turnsCompleted": s.turns_completed,
@@ -30832,7 +30857,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                 continue
             meta["done"] = True   # not in RUNS → process can't be alive
             live.append(meta)
-        live.sort(key=lambda r: r.get("startedAt") or 0, reverse=True)
+        # Same ordering rule as /__runs: last ACTIVITY on top.
+        live.sort(key=lambda r: (r.get("updatedAt") or r.get("startedAt") or 0,
+                                 r.get("startedAt") or 0), reverse=True)
         return self._reply(200, {"runs": live, "section": section})
 
     def _run_create(self, qs):

@@ -11166,7 +11166,7 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
             >
               <span className="runs-row-dot" data-status=${status}/>
               <span className="runs-row-title">${r.title || r.kind}</span>
-              <span className="runs-row-age">${formatRunAge(r.startedAt)}</span>
+              <span className="runs-row-age">${formatRunAge(r.updatedAt || r.startedAt)}</span>
             </button>
             <button
               className="runs-row-del"
@@ -11587,7 +11587,7 @@ function RightRailDock({ mode }) {
         const pick = (j.runs || [])
           .filter(rn => (!proj || !rn.project || rn.project === proj))
           .filter(rn => !rn.done && !rn.historical)
-          .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+          .sort((a, b) => (b.updatedAt || b.startedAt || 0) - (a.updatedAt || a.startedAt || 0))[0];
         if (cancelled) return;
         didAttachRef.current = true;
         if (pick && pick.runId) { setChatRun(pick); setChatRunFinished(!!pick.turnDone); }
@@ -12407,7 +12407,7 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagen
               title=${`Open this run\n${g.run.runId}`}
             >
               <span className="th-tasks-group-title">${g.run.title || g.run.kind}</span>
-              <span className="runs-row-age">${formatRunAge(g.run.startedAt)}</span>
+              <span className="runs-row-age">${formatRunAge(g.run.updatedAt || g.run.startedAt)}</span>
             </button>
             ${g.subagents.map(a => html`
               <div className="th-tasks-agent" key=${a.id}>
@@ -24281,7 +24281,7 @@ function SystemAgentThreadButton({ threads, onOpen }) {
               <span className=${"system-threads-dot is-" + systemThreadStatus(r)}></span>
               <span className="landing-threads-row-main">
                 <span className="landing-threads-row-title">${r.title || r.runId}</span>
-                <span className="landing-threads-row-meta">${r.section || "system"} · ${systemThreadStatus(r)} · ${fmtSystemThreadWhen(r.startedAt)}</span>
+                <span className="landing-threads-row-meta">${r.section || "system"} · ${systemThreadStatus(r)} · ${fmtSystemThreadWhen(r.updatedAt || r.startedAt)}</span>
               </span>
             </button>
           `)}
@@ -28451,12 +28451,12 @@ function WorkflowCanvas() {
         const j = await r.json();
         const proj = activeProjectId();
         // Filter: same project as the canvas, alive (process not exited),
-        // not an error state. Prefer the most-recent by startedAt.
+        // not an error state. Prefer the most-recently-ACTIVE (updatedAt).
         const candidates = (j.runs || [])
           .filter(rn => (!proj || !rn.project || rn.project === proj))
           .filter(rn => !rn.done && !rn.historical)
           .filter(rn => rn.branch === branch || !rn.branch)   // optional branch match
-          .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+          .sort((a, b) => (b.updatedAt || b.startedAt || 0) - (a.updatedAt || a.startedAt || 0));
         if (cancelled) return;
         const pick = candidates[0];
         if (pick && pick.runId) {
