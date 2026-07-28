@@ -12299,6 +12299,18 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   border: 0;
   display: block;
 }
+/* Bare-image URL in a browser node: fit the whole picture inside the node box
+   instead of letting the framed image render at native size and get cropped.
+   pointer-events off so canvas panning / marquee pass straight through it. */
+.workflow-browser-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background: var(--surface-2);
+  pointer-events: none;
+  user-select: none;
+}
 .workflow-browser-empty {
   display: flex;
   align-items: center;

@@ -26771,7 +26771,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._reply(200, {"ok": False, "embeddable": False, "error": str(e)})
         embeddable = (not page["xfo"]) and ("frame-ancestors" not in page["csp"].lower())
+        # contentType lets the browser node tell a PAGE from a bare image: an
+        # image URL is rendered as an <img> (fitted to the node) instead of an
+        # iframe (native size, cropped by the node box).
         return self._reply(200, {"ok": True, "embeddable": embeddable,
+                                 "contentType": (page.get("contentType") or "").split(";")[0].strip(),
                                  "finalUrl": page["finalUrl"]})
 
     def _web_proxy(self, qs):

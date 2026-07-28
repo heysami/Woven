@@ -68704,9 +68704,16 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
   const [nonce, setNonce] = useState(0);
   const [clipNote, setClipNote] = useState(null);
   const clipTimerRef = useRef(0);
+  // Bare-image URLs (research/deep-research drop them into browser nodes) get
+  // an <img> instead of an iframe: a framed image renders at its NATIVE size
+  // and gets cropped by the node box. contentType covers extension-less URLs.
+  const [ctype, setCtype] = useState("");
+  const [imgErr, setImgErr] = useState(false);
 
   const liveUrl = (node.url || "").trim();
   const hasUrl = /^https?:\/\//i.test(liveUrl);
+  const looksImage = hasUrl && /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg)(?:[?#]|$)/i.test(liveUrl);
+  const isImage = looksImage || /^image\//i.test(ctype);
 
   // Probe embeddability whenever the committed URL changes; sites that
   // refuse framing automatically fall back to the daemon proxy. Canvas LOD
@@ -68715,12 +68722,20 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
   // hit N external sites on mount.
   useEffect(() => {
     setUrlDraft(liveUrl);
+    setImgErr(false);
+    setCtype("");
     if (!hasUrl || !lodLive) { setMode(null); return; }
+    // An image extension is answer enough - no probe round trip needed.
+    if (looksImage) { setMode("direct"); return; }
     let dead = false;
     setMode("probing");
     fetch(apiUrl("/__web_probe?url=" + encodeURIComponent(liveUrl)))
       .then(r => r.json())
-      .then(j => { if (!dead) setMode(j && j.ok && j.embeddable ? "direct" : "proxy"); })
+      .then(j => {
+        if (dead) return;
+        setCtype((j && j.contentType) || "");
+        setMode(j && j.ok && j.embeddable ? "direct" : "proxy");
+      })
       .catch(() => { if (!dead) setMode("direct"); });
     return () => { dead = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -68822,12 +68837,12 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
           onInput=${(e) => setUrlDraft(e.target.value)}
           onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); commitUrl(); } e.stopPropagation(); }}
         />
-        ${mode === "proxy" && html`<span className="workflow-browser-mode" title="This site refuses direct embedding - re-served through the daemon proxy (same-origin, so the clip button can read your selection).">proxied</span>`}
+        ${mode === "proxy" && !isImage && html`<span className="workflow-browser-mode" title="This site refuses direct embedding - re-served through the daemon proxy (same-origin, so the clip button can read your selection).">proxied</span>`}
         <button className="workflow-node-action" title="Load / reload the page"
                 onMouseDown=${(e) => e.stopPropagation()}
                 onClick=${(e) => { e.stopPropagation(); commitUrl(); setNonce(n => n + 1); }}><${Icon.Refresh}/></button>
         <button className="workflow-node-action" title="Clip the page's current text selection into a prompt node wired from this browser"
-                disabled=${!hasUrl}
+                disabled=${!hasUrl || isImage}
                 onMouseDown=${(e) => e.stopPropagation()}
                 onClick=${(e) => { e.stopPropagation(); clipSelection(); }}><${Icon.Scissors}/></button>
         <button className="workflow-node-action" title="Open in a real browser tab"
@@ -68841,6 +68856,16 @@ function WorkflowBrowserNode({ node, zoom, selected, onSelect, onMove, onResize,
       <div className="workflow-browser-body">
         ${(hasUrl && !lodLive) ? html`
           <${WorkflowLodVeil} zoom=${zoom} glyph="🌐" label=${liveUrl} mode="body"/>
+        ` : isImage ? html`
+          <img
+            key=${node.id + "-img-" + nonce + (imgErr ? "-p" : "")}
+            className="workflow-browser-img"
+            src=${imgErr ? apiUrl("/__web_proxy?url=" + encodeURIComponent(liveUrl)) : liveUrl}
+            alt=${liveUrl}
+            draggable=${false}
+            referrerPolicy="no-referrer"
+            onError=${() => setImgErr(true)}
+          />
         ` : iframeSrc ? html`
           <iframe
             key=${node.id + "-" + mode + "-" + nonce}
