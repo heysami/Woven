@@ -14316,6 +14316,22 @@ async function postRunReply(runId, text, { isResuming = false } = {}) {
     r = await postTo(ep);
   }
   if (!r.ok) throw new Error(lastErr || "reply failed");
+  // The reply landed - but a card answer, unlike a composer send, has no
+  // path back into ChatDrawer's SSE bookkeeping. Whenever the reply went out
+  // over /resume (the normal state after a daemon restart, and for every
+  // single-shot agent), the daemon respawns the CLI under the SAME runId and
+  // starts appending events that NOTHING is listening to: the drawer's tail
+  // closed when the previous process ended and only a page refresh (which
+  // re-hydrates from /__chat) ever showed them. Announce the send on the
+  // window so the mounted drawer for this runId can re-open its tail exactly
+  // as ChatComposer's onSent does. Fired unconditionally (not just on the
+  // resume branch) for the same reason the composer bumps unconditionally -
+  // guessing when the socket is still alive is what kept regressing.
+  try {
+    window.dispatchEvent(new CustomEvent("th:run-replied", {
+      detail: { runId, viaResume: ep === "resume" },
+    }));
+  } catch {}
   return true;
 }
 
@@ -14932,6 +14948,31 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     })();
     return () => { cancelled = true; ctl.abort(); };
   }, [run?.runId, sseEpoch]);
+
+  // Card replies re-open the tail too. Every interactive card (decision
+  // request / direction options / question form / AskUserQuestion) sends
+  // through postRunReply, which - unlike ChatComposer - has no props back
+  // into this component: its `onAnswered` only records the pick in `answers`.
+  // So a card answered after the process ended (daemon restart, single-shot
+  // agent, post-Stop) respawned the CLI via /resume and then rendered
+  // nothing, because the SSE tail had already closed and only a page refresh
+  // re-hydrated from /__chat. Mirror ChatComposer's onSent exactly: clear the
+  // stale error, show the turn as live, bump the epoch to re-open the tail
+  // (cheap - it re-hydrates and dedupes against _seenSeqRef), and re-arm
+  // onRunComplete for the turn that's now starting.
+  useEffect(() => {
+    if (!run?.runId || isNew) return;
+    const onReplied = (e) => {
+      if (e?.detail?.runId !== run.runId) return;
+      stickRef.current = true;
+      setError(null);
+      setStatus("streaming");
+      setSseEpoch(n => n + 1);
+      completedRef.current = false;
+    };
+    window.addEventListener("th:run-replied", onReplied);
+    return () => window.removeEventListener("th:run-replied", onReplied);
+  }, [run?.runId, isNew]);
 
   // Notify parent on every status change so it can keep its own derived state
   // (Submit button enable, iframe cache-bust, run history) in sync.
