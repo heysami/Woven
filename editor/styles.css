@@ -14519,25 +14519,69 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-family: var(--font-mono);
   font-size: 11px;
 }
+/* ONE COLUMN. A 3-up grid of cards squeezes every face into ~200px, which is
+   too narrow to show a face doing anything - and a library of 60 becomes 20
+   rows of scanning. A full-width row gives the specimen real measure, and the
+   row itself opens the landing-page preview. */
 .ds-fonts-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   min-height: 90px;
 }
+/* specimen | name+detail+note | role chips. Three columns keeps the row to
+   two text lines; stacking the chips under the note made every row ~137px,
+   which is 8000px of scrolling for a 60-family library. */
 .ds-fonts-card {
   position: relative;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface);
-  padding: 14px 14px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  padding: 8px 34px 8px 14px;   /* right pad clears the remove button */
+  display: grid;
+  grid-template-columns: minmax(150px, 0.85fr) minmax(0, 1.6fr) auto auto auto;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
 }
+/* The whole row opens the preview, but a click target with no visible
+   affordance is a click target nobody finds - so name it. The button and the
+   row do the same thing; the button is just the part you can see. */
+.ds-fonts-preview {
+  padding: 3px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ds-fonts-card:hover .ds-fonts-preview {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.ds-fonts-preview:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.ds-fonts-preview:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.ds-fonts-cat {
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.ds-fonts-cat:hover { border-color: var(--border); color: var(--text-muted); }
+.ds-fonts-cat:focus { outline: none; border-color: var(--accent); color: var(--text); }
+.ds-fonts-card > .ds-fonts-roles { margin-top: 0; justify-content: flex-end; }
+.ds-fonts-card:hover { border-color: var(--text-faint); }
+.ds-fonts-card:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 .ds-fonts-sample {
   font-size: 26px;
-  line-height: 1.15;
+  line-height: 1.25;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
@@ -14547,6 +14591,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 .ds-fonts-family {
   font-size: 12px;
@@ -14574,20 +14619,43 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text-muted);
 }
 .ds-fonts-note::placeholder { color: var(--text-faint); font-style: italic; }
-/* Where the face may be USED. Sits under the description; quiet until it
-   carries a real value, since an unset role is the common starting state. */
-.ds-fonts-role {
-  width: 100%;
+/* Where the face may be USED. A SET, not one pick - display-only and
+   mono-only are real constraints, but a face that reads well small almost
+   always headlines too, so text is rarely alone. Chips, because a dropdown
+   cannot show two answers at once. Quiet until a chip is on, since unset is
+   the common starting state. */
+.ds-fonts-roles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
   margin-top: 3px;
-  padding: 2px 4px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-  font-family: inherit;
-  font-size: 10.5px;
-  color: var(--text-muted);
 }
-.ds-fonts-role:focus { outline: none; border-color: var(--accent); color: var(--text); }
+.ds-fonts-role {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.ds-fonts-role:hover { color: var(--text-muted); border-color: var(--text-faint); }
+.ds-fonts-role.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+}
+.ds-fonts-role.is-all { font-style: italic; }
+.ds-fonts-role:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.ds-fonts-role-unset {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  font-style: italic;
+}
 .ds-fonts-note:hover { border-color: var(--border); }
 .ds-fonts-note:focus {
   outline: none;
@@ -14611,6 +14679,152 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .ds-fonts-card:hover .ds-fonts-remove { opacity: 1; }
 .ds-fonts-remove:hover { color: var(--danger, #c33); background: var(--surface-2); }
+/* ── Font preview: the landing template set in one face ───────────────────
+   Answers the question a specimen line cannot - does this face carry a real
+   page? Read-only; the palette picker is the DS customiser's, so a face can
+   be judged against the colours it will actually ship with. */
+.fontprev-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+}
+.fontprev-card {
+  width: min(1180px, 100%);
+  height: min(880px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.fontprev-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px 12px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.fontprev-titles { min-width: 0; }
+.fontprev-titles h2 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fontprev-titles p {
+  margin: 2px 0 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.fontprev-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+/* The palette dropdown is built for a wide controls rail - rein it in and let
+   its list escape upward-bounded so it doesn't push the stage. */
+.fontprev-tools .dscz-pal { width: 210px; position: relative; }
+.fontprev-tools .dscz-pal-list {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  max-height: 340px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+/* Which slot(s) this face fills - the DS's own one-font/two-font split. The
+   second field is the customiser's DsFontField verbatim, so the partner can
+   be any catalog family, a typed Google name, or an upload. */
+.fontprev-slots {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.fontprev-slots-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+.fontprev-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.06);
+}
+.fontprev-seg-opt {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.fontprev-seg-opt.is-active { background: var(--surface); color: var(--text); }
+.fontprev-seg-opt:disabled { opacity: 0.4; cursor: not-allowed; }
+.fontprev-partner { flex: 1; min-width: 190px; max-width: 340px; }
+.fontprev-partner .dscz-select { width: 100%; }
+/* Type scale sits at the far end of the same strip - it tunes the preview,
+   it does not assign the face, so it reads as a separate concern. */
+.fontprev-type {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.fontprev-type .dscz-range { width: 84px; }
+.fontprev-type .dscz-select { width: auto; min-width: 150px; }
+.fontprev-type-val {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text);
+  min-width: 30px;   /* 16px → 20px must not shuffle the select sideways */
+}
+.fontprev-warn {
+  padding: 7px 18px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--attention, #F57C00) 10%, transparent);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.fontprev-note {
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.fontprev-stage { flex: 1; min-height: 0; }
+.fontprev-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  transition: opacity 0.15s ease;
+}
 .ds-fonts-empty {
   grid-column: 1 / -1;
   border: 1px dashed var(--border);
@@ -14621,10 +14835,12 @@ a.ds-badge:hover, button.ds-badge:hover {
   line-height: 1.6;
   text-align: center;
 }
-/* Fonts panel hosted inside the no-DS empty state card */
+/* Fonts panel hosted inside the no-DS empty state card. Narrow host, so the
+   row stacks its specimen above the metadata instead of splitting in two. */
 .empty-view-card-fonts { margin-top: 14px; }
-.empty-view-card-fonts .ds-fonts-grid {
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+.empty-view-card-fonts .ds-fonts-card {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
 }
 /* Fonts panel hosted in the landing page's System tab ("Custom fonts") */
 .system-fonts .ds-fonts {

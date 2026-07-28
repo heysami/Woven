@@ -1224,18 +1224,70 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
                 # brand face or a trial file - exactly what this library is
                 # FOR - the name carries no typographic signal at all. When a
                 # note exists it is the primary basis for picking the face.
-                _ROLE_LABEL = {
-                    "display": "DISPLAY - headlines / large sizes ONLY, never body copy",
-                    "text":    "TEXT - safe for body copy at small sizes",
-                    "mono":    "MONO - code / tabular",
+                # Roles are a SET, and what matters is what is ABSENT: a
+                # family without `text` must never set body copy, one
+                # without `mono` must never set code. Listing only what a
+                # face CAN do reads as permissive, so spell out the bar.
+                _ROLE_WORD = {"display": "headlines / large sizes",
+                              "text":    "body copy at small sizes",
+                              "mono":    "code / tabular"}
+
+                def _roles_line(r):
+                    rs = r.get("roles") or ([r["role"]] if r.get("role") else [])
+                    rs = [x for x in ("display", "text", "mono") if x in rs]
+                    if not rs:
+                        return ""
+                    ok = ", ".join(_ROLE_WORD[x] for x in rs)
+                    bars = []
+                    if "text" not in rs:
+                        bars.append("NOT body copy")
+                    if "mono" not in rs:
+                        bars.append("NOT code / tabular")
+                    return ("      may set: " + ok
+                            + (" - " + ", ".join(bars) if bars else "")) + "\n"
+                # What the family can SET. A face list that says only
+                # "Harmond" hides whether asking for font-weight:700 will
+                # land on a real cut or get synthesised - so state the
+                # ladder the family actually ships.
+                # Letterform class first - it is the axis a pairing decision
+                # actually turns on ("this brief wants a serif"), and a family
+                # name alone does not carry it for an unfamiliar face.
+                _CAT_WORD = {
+                    "sans":            "sans-serif",
+                    "serif":           "serif",
+                    "mono":            "monospace",
+                    "condensed":       "condensed sans",
+                    "serif-condensed": "condensed serif",
+                    "script":          "script / brush",
                 }
+
+                def _coverage(r):
+                    ws = [w for w in (r.get("weights") or []) if w]
+                    if not ws or ws == ["100 900"]:
+                        cov = "single cut - answers any font-weight"
+                    else:
+                        cov = "weights " + ", ".join(ws)
+                    if r.get("hasItalic"):
+                        cov += " + true italics"
+                    cat = _CAT_WORD.get(r.get("cat"))
+                    return (cat + "; " + cov) if cat else cov
+
+                _CAP = 80
                 font_lines = "\n".join(
                     f"  • '{r['family']}'  ({r['format']}, ds={r['ds']}) - stylesheet: {r['cssUrl']}"
-                    + (f"\n      role: {_ROLE_LABEL[r['role']]}" if _ROLE_LABEL.get(r.get("role")) else "")
+                    + f"\n      has: {_coverage(r)}"
+                    + ("\n" + _roles_line(r).rstrip("\n") if _roles_line(r) else "")
                     + (f"\n      note: {r['note']}" if r.get("note") else "")
-                    for r in _font_rows[:40]
+                    for r in _font_rows[:_CAP]
                 )
-                if any(not r.get("note") for r in _font_rows[:40]):
+                if len(_font_rows) > _CAP:
+                    # Never let a cap read as "that is the whole library".
+                    font_lines += (
+                        f"\n  ({len(_font_rows) - _CAP} more families not listed here - "
+                        f"enumerate the full library with GET $TH_DAEMON_URL/__fonts"
+                        f"?project=$TH_PROJECT_ID before concluding a face is unavailable.)"
+                    )
+                if any(not r.get("note") for r in _font_rows[:_CAP]):
                     font_lines += (
                         "\n  (Faces with no note carry no description of how they read. Do NOT invent"
                         "\n   a character for an unfamiliar family name - either inspect the face"
