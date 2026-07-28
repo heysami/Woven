@@ -7791,11 +7791,14 @@ function saveChatQueue(runId, queue) {
    blob. We do NOT round-trip through the daemon's media-config.json
    because that file stores API KEYS, not preferences. */
 const DEFAULTS_KEY = "th.editor.default-providers.v1";
-const CAPABILITY_KEYS = ["agent","image","video","svg","3d","lottie"];
+const CAPABILITY_KEYS = ["agent","image","video","audio","svg","3d","lottie"];
 const CAPABILITY_LABELS = {
   agent:  "Chat / agent",
   image:  "Image generation",
   video:  "Video generation",
+  // ElevenLabs tts / sfx / music. The skill picks the MODE from intent, so this
+  // default is really "which provider + which mode when nothing else says".
+  audio:  "Audio / voice generation",
   svg:    "Vector / SVG generation",
   "3d":   "3D generation",
   lottie: "Lottie animation",
@@ -9946,7 +9949,7 @@ function CliUsagePopover({ usage, credits, onClose, style }) {
     <//>` : html`<${React.Fragment}>
       ${credits && !credits.loaded && html`<div className="cli-usage-msg">Reading balances…</div>`}
       ${credits && credits.loading && html`<div className="cli-usage-msg">Fetching from providers…</div>`}
-      ${credits && credits.loaded && byok.length === 0 && !credits.loading && html`<div className="cli-usage-msg">No provider API keys configured. Add keys in Settings → API keys to see balances here.</div>`}
+      ${credits && credits.loaded && byok.length === 0 && !credits.loading && html`<div className="cli-usage-msg">No provider API keys configured. Add keys in Settings → Model Config → API keys to see balances here.</div>`}
       ${byokLive.map(row => html`<${CreditUsageCard} key=${row.id} row=${row}/>`)}
       ${byokLive.length > 0 && byokQuiet.length > 0 && html`<div className="cli-usage-sep" role="separator"/>`}
       ${byokQuiet.map(row => html`<${CreditUsageCard} key=${row.id} row=${row}/>`)}
@@ -10211,7 +10214,7 @@ function SettingsGearButton({ onClick, className }) {
   return html`<${HoverTip}
     className=${"workflow-toolbar-gear " + (className || "")}
     ariaLabel="Settings"
-    tip="Settings · API keys"
+    tip="Settings · models and API keys"
     onClick=${onClick}
   ><${Icon.Gear}/><//>`;
 }
@@ -22081,10 +22084,10 @@ function OnboardingAssetProvidersSection({ mediaCfg, headless }) {
     <div className="onboarding-asset-providers">
       ${!headless && html`
         <div className="onboarding-section-head">
-          <div className="onboarding-section-eyebrow">Step 2 · Optional · Asset providers</div>
+          <div className="onboarding-section-eyebrow">Step 2 · Optional · Models and keys</div>
           <div className="onboarding-section-title">Add keys for image, video, SVG, audio…</div>
           <div className="onboarding-section-desc">
-            Each asset skill (image · video · vector · 3D · audio) calls a specific provider. You can add these keys now or any time later via the gear icon - projects can still be created without them. ✓ means the daemon has a usable key for that provider.
+            Each asset skill (image · video · vector · 3D · audio) calls a specific provider. You can add these keys now or any time later via the gear icon - projects can still be created without them. ✓ means the daemon has a usable key for that provider. Once a key is in, you can pin which model each capability uses by default below.
           </div>
         </div>
       `}
@@ -22096,6 +22099,62 @@ function OnboardingAssetProvidersSection({ mediaCfg, headless }) {
           status=${(mediaCfg.config && mediaCfg.config.providers && mediaCfg.config.providers[p.id]) || {}}
           onChanged=${() => mediaCfg.reload()}/>
       `)}
+    </div>
+  `;
+}
+
+/* Onboarding twin of the Settings "Default models" panel (Model Config tab).
+   Same rows, same storage - it reuses WorkflowDefaultProviderRow verbatim so
+   there is one implementation of the picker. Collapsed by default: a first-run
+   user should not have to make seven decisions before making a project, but
+   the moment they have pasted a key they may want to say "use this one", and
+   discovering that only later in a gear menu is the friction we are avoiding.
+   The summary line names how many capabilities are still on Auto. */
+function OnboardingDefaultModelsSection({ mediaCfg }) {
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState(() => loadDefaultProviders());
+  useEffect(() => {
+    const on = () => setState(loadDefaultProviders());
+    window.addEventListener("th:default-providers-changed", on);
+    return () => window.removeEventListener("th:default-providers-changed", on);
+  }, []);
+  const setCap = (cap, patch) => {
+    const cur = state[cap] || {};
+    setState(saveDefaultProviders({ [cap]: patch ? { ...cur, ...patch } : null }));
+  };
+  const pinned = CAPABILITY_KEYS.filter(c => state[c] && state[c].provider).length;
+  const config = (mediaCfg && mediaCfg.config) || null;
+  return html`
+    <div className="onboarding-default-models">
+      <button
+        type="button"
+        className="onboarding-default-models-toggle"
+        aria-expanded=${open}
+        onClick=${() => setOpen(v => !v)}
+      >
+        <span className="onboarding-default-models-caret" data-open=${open}>${open ? "▾" : "▸"}</span>
+        <span>Default models</span>
+        <span className="onboarding-default-models-summary">${
+          pinned === 0
+            ? "all on Auto - Woven picks the best available"
+            : `${pinned} pinned · the rest on Auto`
+        }</span>
+      </button>
+      ${open && html`
+        <div className="onboarding-default-models-body">
+          <div className="onboarding-default-models-hint">
+            ✓ key set · CLI = CLI fallback · ⚠ no key. Auto follows whatever you have wired, so leaving these alone is a fine answer. Change them any time in Settings → Model Config.
+          </div>
+          ${CAPABILITY_KEYS.map(cap => html`
+            <${WorkflowDefaultProviderRow}
+              key=${cap}
+              capability=${cap}
+              value=${state[cap] || null}
+              mediaConfig=${config}
+              onChange=${(v) => setCap(cap, v)}/>
+          `)}
+        </div>
+      `}
     </div>
   `;
 }
@@ -22469,7 +22528,7 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
 
   const pips = [
     { n: 1, label: "Agent model",   done: modelOk },
-    { n: 2, label: "Asset keys",    done: false },
+    { n: 2, label: "Models & keys", done: false },
     { n: 3, label: "Orchestrators", done: false },
     { n: 4, label: "Local services",  done: skillsOk },
     { n: 5, label: "Done",          done: allOk   },
@@ -22524,7 +22583,12 @@ function ModelSetupCard({ onRefresh, mediaCfg, localSkills, onAcknowledge }) {
           </div>
         `}
 
-        ${step === 2 && mediaCfg && html`<${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg} headless=${true}/>`}
+        ${step === 2 && mediaCfg && html`
+          <${React.Fragment}>
+            <${OnboardingAssetProvidersSection} mediaCfg=${mediaCfg} headless=${true}/>
+            <${OnboardingDefaultModelsSection} mediaCfg=${mediaCfg}/>
+          <//>
+        `}
         ${step === 3 && html`<${OnboardingOrchestratorsSection} mediaCfg=${mediaCfg}/>`}
         ${step === 4 && html`<${OnboardingLocalToolsSection} headless=${true} autoInstall=${true}/>`}
         ${step === 5 && html`
@@ -88515,7 +88579,7 @@ function WorkflowSearchDefaultsSection({ mediaConfig }) {
     <div className="workflow-default-providers">
       <div className="workflow-settings-section-group-head">Web search</div>
       <div className="workflow-settings-section-group-sub">
-        Agent = free built-in web tools · Exa = paid exa.ai (higher recall)${exaReady ? "" : " · ⚠ needs an Exa key below"}
+        Agent = free built-in web tools · Exa = paid exa.ai (higher recall)${exaReady ? "" : " · ⚠ needs an Exa key in the API keys tab"}
       </div>
       ${ROWS.map(r => html`
         <div key=${r.tier} className="workflow-default-provider-row" title=${r.hint}>
@@ -88646,7 +88710,7 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
   // first-option label and not leave the user guessing.
   const auto = useMemo(() => _pickAutoForCapability(capability, models, mediaConfig), [capability, models, mediaConfig]);
   const autoLabel = (() => {
-    if (!auto) return "Auto (no provider available - paste a key below)";
+    if (!auto) return "Auto (no provider available - see API keys tab)";
     const pc = providerCatalog[auto.provider] || {};
     const m  = models.find(mm => mm.id === auto.model);
     // The native CLI per provider - used for the (CLI) tag and the
@@ -88903,10 +88967,13 @@ function WorkflowBrowserSetupSection() {
 
 function WorkflowSettingsDialog({ onClose }) {
   const [config, setConfig] = useState(null);
-  // Three-tab split: API keys / things to install / chat send key. Each tab
+  // Tab split: Model Config / things to install / chat send key. Each tab
   // owns the header subtitle so the file-path caption only shows where it
-  // applies (the BYOK config). Defaults to the API-keys tab.
+  // applies (the BYOK config). Defaults to Model Config.
   const [tab, setTab] = useState("api");
+  // Model Config carries two subtabs: the per-capability default picks (the
+  // landing view - it is what people come back to) and the raw API keys.
+  const [modelSub, setModelSub] = useState("defaults");
   const reload = useCallback(async () => {
     try {
       const r = await fetch(apiUrl("/__media_config"));
@@ -88937,14 +89004,21 @@ function WorkflowSettingsDialog({ onClose }) {
   // on the landing there is nothing to export from and the tab hides.
   const activeProject = activeProjectId();
   const TABS = [
-    { id: "api", label: "API keys" },
+    { id: "api", label: "Model Config" },
     { id: "install", label: "Things to install" },
     { id: "figma", label: "Send to Figma" },
     { id: "orchestrators", label: "Orchestrators" },
     ...(activeProject ? [{ id: "exports", label: "Exports" }] : []),
     { id: "sendkey", label: "Preferences" },
   ];
+  const MODEL_SUBTABS = [
+    { id: "defaults", label: "Default models" },
+    { id: "keys",     label: "API keys" },
+  ];
   const subByTab = {
+    api: modelSub === "keys"
+      ? "Your provider keys · stored by the daemon, never sent to the browser"
+      : "Which provider and model each capability uses by default",
     install: "Local tools the daemon installs on demand · no API key needed",
     figma: "Woven Bridge plugin · one-time setup, runs in Figma Desktop",
     orchestrators: "Toggle which orchestrators auto-dispatch · pick each one's default model",
@@ -88975,10 +89049,23 @@ function WorkflowSettingsDialog({ onClose }) {
             >${t.label}</button>
           `)}
         </div>
+        ${tab === "api" && html`
+          <div className="workflow-settings-subtabs" role="tablist" aria-label="Model config sections">
+            ${MODEL_SUBTABS.map(s => html`
+              <button
+                key=${s.id}
+                type="button"
+                role="tab"
+                className="workflow-settings-subtab"
+                data-active=${modelSub === s.id}
+                aria-selected=${modelSub === s.id}
+                onClick=${() => setModelSub(s.id)}
+              >${s.label}</button>
+            `)}
+          </div>
+        `}
         <div className="workflow-settings-body">
-          ${tab === "api" ? html`
-            <${WorkflowDefaultProvidersSection} mediaConfig=${config}/>
-            <${WorkflowSearchDefaultsSection} mediaConfig=${config}/>
+          ${tab === "api" ? (modelSub === "keys" ? html`
             ${providerIds.map(pid => html`
               <${WorkflowProviderSection}
                 key=${pid}
@@ -88987,7 +89074,10 @@ function WorkflowSettingsDialog({ onClose }) {
                 onChanged=${reload}
               />
             `)}
-          ` : tab === "install" ? html`
+          ` : html`
+            <${WorkflowDefaultProvidersSection} mediaConfig=${config}/>
+            <${WorkflowSearchDefaultsSection} mediaConfig=${config}/>
+          `) : tab === "install" ? html`
             ${LOCAL_PACKAGES.map(p => html`<${WorkflowLocalPackageRow} key=${p.id} pkg=${p}/>`)}
             <${WorkflowUserTestingSettingsRow}/>
             <${WorkflowBrowserSetupSection}/>
