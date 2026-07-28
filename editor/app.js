@@ -3355,6 +3355,29 @@ function DSFontsPanel({ scope }) {
     setBusy(false);
     await refresh(true);
   };
+  // Describe how a face READS so agents can pick it on fit. A file name
+  // carries no typographic signal, so an undescribed custom face is one an
+  // agent can only guess at. Saves on blur; no-ops when unchanged. Mirrors
+  // removeFont's global-vs-project URL split.
+  const saveNote = async (f, value) => {
+    const next = (value || "").trim();
+    if (next === ((f.note || "").trim())) return;
+    try {
+      const url = f.ds === "global"
+        ? `/__font_note?scope=global&slug=${encodeURIComponent(f.slug)}`
+        : `/__font_note?ds=${encodeURIComponent(f.ds)}&slug=${encodeURIComponent(f.slug)}`;
+      const r = await fetch(apiUrl(url), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: next }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      f.note = next;   // keep the row in sync without a full refetch/reflow
+    } catch (e) {
+      uiAlert(`Could not save the font description: ${e?.message || e}`);
+    }
+  };
   const removeFont = async (f) => {
     if (!await uiConfirm(`Remove '${f.family}' from the font library? Pages using it fall back to the next family in their stack.`)) return;
     try {
@@ -3399,6 +3422,11 @@ function DSFontsPanel({ scope }) {
             <div className="ds-fonts-meta">
               <span className="ds-fonts-family" title=${f.fontPath}>${f.family}</span>
               <span className="ds-fonts-detail">${f.format} · ${f.ds === "global" ? "workspace" : "ds=" + f.ds}</span>
+              <input className="ds-fonts-note" type="text" defaultValue=${f.note || ""}
+                placeholder="describe how it reads - agents pick on this"
+                title=${"How this face reads (e.g. \"condensed grotesque, tight apertures, editorial\"). Agents propose typography from this description - a file name tells them nothing."}
+                onBlur=${(e) => saveNote(f, e.target.value)}
+                onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); }}/>
             </div>
             <button className="ds-fonts-remove" title=${"Remove " + f.family + " from the library"} onClick=${() => removeFont(f)}>×</button>
           </div>

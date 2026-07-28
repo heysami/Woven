@@ -213,7 +213,8 @@ def _daemon_endpoints() -> list:
         {"method": "GET",  "path": "/__capabilities",       "purpose": "This catalog - what the app can do"},
         {"method": "GET",  "path": "/__design_system",      "purpose": "Read DS metadata + token files (incl. per-DS local fonts)"},
         {"method": "POST", "path": "/__design_system",      "purpose": "Write a DS trio (vars/primitives/index)"},
-        {"method": "GET",  "path": "/__fonts",              "purpose": "LOCAL FONT LIBRARY - every user-uploaded font under design-systems/*/fonts/ (family, cssUrl, ds)"},
+        {"method": "GET",  "path": "/__fonts",              "purpose": "LOCAL FONT LIBRARY - every user-uploaded font under design-systems/*/fonts/ (family, cssUrl, ds, note = how the face reads)"},
+        {"method": "POST", "path": "/__font_note",          "purpose": "Describe how a local face READS so it can be picked on fit (?ds=<id>&slug=<slug>[&scope=global], body {note})"},
         {"method": "GET",  "path": "/__resolve_font",       "purpose": "Resolve a font family: local library FIRST, then Google/Bunny/Fontsource (?name=<family>)"},
         {"method": "POST", "path": "/__upload_font",        "purpose": "Add a font to the local library (?name=<family>&ds=<id>, raw .woff2/.ttf/.otf body)"},
         {"method": "POST", "path": "/__delete_font",        "purpose": "Remove a font from the local library (?ds=<id>&slug=<slug>)"},
@@ -1073,10 +1074,24 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
         if project_root:
             _font_rows = _editor_import()._list_local_fonts(project_root)
             if _font_rows:
+                # The `note` is the user's own description of how the face
+                # READS. A family name alone is only informative for faces the
+                # model knows from training (Inter, Playfair); for a client's
+                # brand face or a trial file - exactly what this library is
+                # FOR - the name carries no typographic signal at all. When a
+                # note exists it is the primary basis for picking the face.
                 font_lines = "\n".join(
                     f"  • '{r['family']}'  ({r['format']}, ds={r['ds']}) - stylesheet: {r['cssUrl']}"
+                    + (f"\n      note: {r['note']}" if r.get("note") else "")
                     for r in _font_rows[:40]
                 )
+                if any(not r.get("note") for r in _font_rows[:40]):
+                    font_lines += (
+                        "\n  (Faces with no note carry no description of how they read. Do NOT invent"
+                        "\n   a character for an unfamiliar family name - either inspect the face"
+                        "\n   before committing to it, or pick one whose note fits the brief. The user"
+                        "\n   can describe a face in the font library panel, which sets its note.)"
+                    )
             else:
                 font_lines = "  (none uploaded yet in this project - re-check with GET /__fonts before assuming so)"
     except Exception:

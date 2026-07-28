@@ -3879,6 +3879,13 @@ def _scan_fonts_dir(fonts_dir, ds_label, font_path_prefix, css_url):
             "fontPath": font_path_prefix + fname,
             "cssUrl":   css_url,
             "format":   ext.lower(),
+            # Optional human description of how the face READS ("condensed
+            # grotesque, tight apertures, editorial"). A filename carries no
+            # typographic signal, so without this an agent can only pattern-
+            # match the family NAME - fine for Inter, useless for a client's
+            # brand face or a trial file, which is exactly when the local
+            # library matters most. Set via POST /__font_note.
+            "note":     ((entry or {}).get("note") or "").strip(),
         })
     return out
 
@@ -12321,6 +12328,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._upload_font_post(qs)
             if parsed.path == "/__delete_font":
                 return self._delete_font_post(qs)
+            if parsed.path == "/__font_note":
+                return self._font_note_post(qs)
             if parsed.path == "/__orchestrators/disable":
                 return self._orchestrators_disable(qs)
             if parsed.path == "/__cc_skills/upload":
@@ -17691,6 +17700,57 @@ class H(http.server.SimpleHTTPRequestHandler):
             "scope":   scope or "project",
             "source":  "uploaded",
         })
+
+    # ── POST /__font_note?ds=<id>&slug=<slug>[&scope=global] ─────────────
+    # Body {note}. Attach (or clear, with "") a short description of how the
+    # face READS - "condensed grotesque, tight apertures, editorial" - so an
+    # agent proposing typography can judge FIT instead of pattern-matching
+    # the family name. Without it, a custom or trial face is a name with no
+    # typographic signal, which is precisely the case the local library
+    # exists to serve. Font bytes and _fontface.css are untouched.
+    def _font_note_post(self, qs):
+        scope = (qs.get("scope") or [""])[0].strip().lower()
+        ds_id = (qs.get("ds") or [""])[0].strip().lower() or "main"
+        slug  = (qs.get("slug") or [""])[0].strip().lower()
+        if not SLUG_OK.match(ds_id):
+            return self._reply(400, {"error": "invalid ds id", "id": ds_id})
+        if not slug or not re.match(r"^[a-z0-9+\-_]+$", slug):
+            return self._reply(400, {"error": "invalid or missing slug", "slug": slug})
+        try:
+            body = self._read_json_body(max_bytes=8 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        note = (body.get("note") if isinstance(body, dict) else "") or ""
+        if not isinstance(note, str):
+            return self._reply(400, {"error": "note must be a string"})
+        note = " ".join(note.split())[:400]
+        if scope == "global":
+            fonts_dir = _global_fonts_dir()
+        else:
+            try:
+                project_root = resolve_project_root(qs)
+            except ValueError as e:
+                return self._reply(400, {"error": str(e)})
+            fonts_dir = os.path.join(project_root, "design-systems", ds_id, "fonts")
+        if not os.path.isdir(fonts_dir):
+            return self._reply(404, {"error": "no fonts dir", "ds": ds_id, "scope": scope or "project"})
+        if not any(os.path.isfile(os.path.join(fonts_dir, slug + e)) for e in FONT_EXTS):
+            return self._reply(404, {"error": "font not found", "slug": slug, "ds": ds_id})
+        manifest = _read_fonts_manifest(fonts_dir)
+        entry = manifest.get(slug) if isinstance(manifest.get(slug), dict) else {}
+        entry = dict(entry)
+        if note:
+            entry["note"] = note
+        else:
+            entry.pop("note", None)
+        entry.setdefault("family", " ".join(p.capitalize() for p in slug.split("-")))
+        manifest[slug] = entry
+        try:
+            with open(os.path.join(fonts_dir, "fonts.json"), "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=2, sort_keys=True)
+        except Exception as e:
+            return self._reply(500, {"error": f"could not write fonts.json: {e}"})
+        return self._reply(200, {"ok": True, "slug": slug, "ds": ds_id, "note": note})
 
     # ── POST /__delete_font?ds=<id>&slug=<slug>[&scope=global] ───────────
     # Remove one face from the local font library: deletes the font file,
