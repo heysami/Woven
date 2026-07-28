@@ -7883,9 +7883,9 @@ const CAPABILITY_TEXT_CAPABLE_CAPS = {
   "3d":  "t23d",
 };
 /* Raw catalog per capability, for looking a pinned model id up directly.
-   listModelsForCapability is NOT a substitute here: for 3d / svg / lottie it
-   synthesises PROVIDER rows (empty model ids) instead of returning the
-   catalog, so a real model id would not be found in it. */
+   listModelsForCapability is NOT a substitute here: for svg / lottie it
+   synthesises PROVIDER rows (empty model ids) instead of returning a catalog
+   (neither has one), so a real model id would not be found in it. */
 const CAPABILITY_RAW_CATALOG = {
   video: "videoModels",
   "3d":  "models3d",
@@ -8315,14 +8315,20 @@ function listModelsForCapability(cap) {
   if (cap === "video") return (M.videoModels || []).filter(m => m.integrated !== false);
   // Audio catalog (ElevenLabs tts / sfx / music).
   if (cap === "audio") return (M.audioModels || []).filter(m => m.integrated !== false);
+  // 3D catalog (meshy text/image-to-3d + fal rodin / hunyuan / triposr). These
+  // ids are the same ones the per-node model dropdowns already use, and the
+  // daemon consumes them directly (fal treats the id AS the endpoint; meshy
+  // parses it for the image-to-3d / anim family), so they are safe to offer
+  // wherever a model can be picked.
+  if (cap === "3d") return (M.models3d || []).filter(m => m.integrated !== false);
   // Synthesized lists for capabilities the catalog doesn't enumerate yet.
-  // We expose every provider that *plausibly* serves the capability so the
-  // user can wire it up even if there's no integrated model row yet.
+  // svg and lottie have no model catalog at all in window.TH_MEDIA, so we
+  // expose every provider that *plausibly* serves them - the user picks the
+  // provider and the daemon picks its own default model.
   const PROVIDERS_BY_CAP = {
     video: ["fal","runway","pika","luma","replicate"],
     audio: ["elevenlabs"],
     svg:   ["quiver","openai","anthropic","fal","recraft"],
-    "3d":  ["meshy","fal"],
     lottie:["lottiefiles","fal"],
   };
   const allowed = new Set(PROVIDERS_BY_CAP[cap] || []);
