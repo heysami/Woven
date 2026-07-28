@@ -372,6 +372,165 @@ def _node_xy(node, layout, dx=0.0, dy=0.0):
     return _f(x), _f(y)
 
 
+# ── Canvas auto-placement for agent-scaffolded node batches ────────────────
+# Every orchestrator playbook POSTs its scaffold as `addNodes` WITHOUT x/y (the
+# agent has no idea what the canvas looks like). The daemon used to write those
+# as 0,0 - so the art-director's plate, its contract node and the family's first
+# research node all landed on the same pixel, on top of whatever already lived
+# at the origin. These helpers give a coordinate-less batch (a) a readable
+# internal layout, chain order read off the batch's OWN edges, and (b) a home in
+# empty canvas, found by the same overlap scan the explicit `placement` modes
+# use. A node that DOES carry x/y is never moved.
+_PLACE_W, _PLACE_H = 280.0, 200.0   # fallback node box (matches the add route)
+_PLACE_GAP = 48.0                   # between batch and existing content
+_PLACE_COL = 120.0                  # between chain columns
+_PLACE_ROW = 60.0                   # between siblings in a column
+
+
+def _place_box(node, layout=None):
+    """(x, y, w, h) for a node, tolerant of missing/blank fields."""
+    def _f(v, d):
+        try: return float(v if v not in (None, "") else d)
+        except Exception: return float(d)
+    bx, by = _node_xy(node, layout or {})
+    return bx, by, _f(node.get("w"), _PLACE_W), _f(node.get("h"), _PLACE_H)
+
+
+def _edge_node_id(ref):
+    """Node id out of an edge endpoint - `id.port` or a bare `id`."""
+    if not isinstance(ref, str):
+        return None
+    return ref.split(".", 1)[0] or None
+
+
+def _layout_batch(new_nodes, add_edges):
+    """Lay a coordinate-less batch out as a left-to-right chain, in place.
+
+    Column = longest-path depth over the batch's own edges, so `research ->
+    world -> runtime -> container` reads as four columns in build order and
+    parallel drawers stack as rows inside one column. Cycles cannot hang it:
+    depth is resolved by bounded relaxation, and anything unresolved keeps
+    depth 0. Coordinates are batch-relative; _place_batch translates them."""
+    ids = [n["id"] for n in new_nodes]
+    idx = {nid: i for i, nid in enumerate(ids)}
+    deps = {nid: set() for nid in ids}
+    for ee in (add_edges or []):
+        if not isinstance(ee, dict):
+            continue
+        f, t = _edge_node_id(ee.get("from")), _edge_node_id(ee.get("to"))
+        if f in idx and t in idx and f != t:
+            deps[t].add(f)
+    depth = {nid: 0 for nid in ids}
+    for _ in range(len(ids)):
+        changed = False
+        for nid in ids:
+            d = max([depth[p] + 1 for p in deps[nid]] or [0])
+            if d > depth[nid] and d < len(ids):
+                depth[nid] = d
+                changed = True
+        if not changed:
+            break
+    cols = {}
+    for nid in ids:
+        cols.setdefault(depth[nid], []).append(nid)
+    x = 0.0
+    for d in sorted(cols):
+        col = sorted(cols[d], key=lambda nid: idx[nid])
+        col_w = 0.0
+        y = 0.0
+        for nid in col:
+            n = new_nodes[idx[nid]]
+            _, _, w, hgt = _place_box(n)
+            n["x"], n["y"] = x, y
+            y += hgt + _PLACE_ROW
+            col_w = max(col_w, w)
+        x += col_w + _PLACE_COL
+
+
+def _place_batch(wf_nodes, new_nodes, layout, placement=None, anchor_id=None):
+    """Translate an already-laid-out batch into free canvas. Returns (dx, dy).
+
+    `placement`: "anchor" (right of anchor_id), "right" / "below" (past the
+    existing content bbox), or None for the default - anchor when an anchorId
+    was given, else below everything. Sections and tables are containers, not
+    obstacles, so they are excluded from the overlap scan (same rule the client
+    uses in workflowFindFreeSpot)."""
+    boxes = [_place_box(n) for n in new_nodes]
+    if not boxes:
+        return 0.0, 0.0
+    bminx = min(b[0] for b in boxes)
+    bminy = min(b[1] for b in boxes)
+    bw = max(b[0] + b[2] for b in boxes) - bminx
+    bh = max(b[1] + b[3] for b in boxes) - bminy
+    anchor = None
+    ext = []
+    for n in wf_nodes:
+        if not isinstance(n, dict):
+            continue
+        if anchor_id and n.get("id") == anchor_id:
+            anchor = n
+        if n.get("kind") in ("section", "table"):
+            continue
+        ext.append(_place_box(n, layout))
+    if placement is None:
+        placement = "anchor" if anchor is not None else "below"
+    ox = oy = 0.0
+    if placement == "anchor" and anchor is not None:
+        ax, ay, aw, _ah = _place_box(anchor, layout)
+        ox, oy = ax + aw + _PLACE_GAP, ay
+    elif ext:
+        minx = min(e[0] for e in ext)
+        miny = min(e[1] for e in ext)
+        maxx = max(e[0] + e[2] for e in ext)
+        maxy = max(e[1] + e[3] for e in ext)
+        if placement == "right":
+            ox, oy = maxx + _PLACE_GAP, miny
+        else:
+            ox, oy = minx, maxy + _PLACE_GAP
+    # Free-space scan: slide down until the batch's bbox clears everything.
+    PAD = 24.0
+    def _hits(rx, ry):
+        return any(rx < e[0] + e[2] + PAD and rx + bw + PAD > e[0]
+                   and ry < e[1] + e[3] + PAD and ry + bh + PAD > e[1]
+                   for e in ext)
+    guard = 0
+    while _hits(ox, oy) and guard < 200:
+        oy += 56.0
+        guard += 1
+    return ox - bminx, oy - bminy
+
+
+def _autoplace_new_nodes(wf_nodes, new_nodes, add_edges, layout,
+                         placement=None, anchor_id=None):
+    """Give a batch of NEW nodes real coordinates. No-op when the batch already
+    carries any x/y (an agent that positioned its own nodes is obeyed) unless an
+    explicit `placement` was requested, which keeps translating as before."""
+    if not new_nodes:
+        return 0.0, 0.0
+    has_coords = any(
+        (n.get("x") not in (None, "")) or (n.get("y") not in (None, ""))
+        for n in new_nodes)
+    if not has_coords:
+        _layout_batch(new_nodes, add_edges)
+    elif placement is None:
+        return 0.0, 0.0   # legacy: caller-supplied absolute coords, verbatim
+    # No anchor named? Infer one from the batch's own wiring: an EXISTING node
+    # that feeds a new node is what this batch hangs off, so growing to its
+    # right reads as a continuation of that chain instead of a detached slab
+    # (the art-director contract landing beside its plate, not under it).
+    if not anchor_id and placement is None:
+        batch_ids = {n["id"] for n in new_nodes}
+        existing_ids = {n.get("id") for n in wf_nodes if isinstance(n, dict)}
+        for ee in (add_edges or []):
+            if not isinstance(ee, dict):
+                continue
+            f, t = _edge_node_id(ee.get("from")), _edge_node_id(ee.get("to"))
+            if t in batch_ids and f in existing_ids and f not in batch_ids:
+                anchor_id = f
+                break
+    return _place_batch(wf_nodes, new_nodes, layout, placement, anchor_id)
+
+
 # In-flight git ops, keyed by project root → {"op", "startedAt"}. Lets the Git
 # panel show "Committing…/Pulling…/Pushing…" after a tab reload (the op runs on
 # the daemon, not the tab) and serialises ops so a second request is refused
@@ -14678,68 +14837,21 @@ class H(http.server.SimpleHTTPRequestHandler):
                 existing_ids = {n.get("id") for n in wf_nodes if isinstance(n, dict)}
 
                 # ── resolve batch placement (overlap avoidance) ──────────
-                # Translate the incoming batch so it never overlaps existing
-                # nodes. dx/dy are the offset applied to every node's x/y;
-                # they stay 0 when no `placement` is requested (legacy: write
-                # caller-supplied absolute coords verbatim).
-                # Existing-node positions live in the gitignored sidecar (not
-                # workflow.json); read them so batch placement clears real
-                # content instead of piling every new trio at the origin.
+                # Orchestrator playbooks POST their scaffold with NO x/y, so
+                # without this every plate / contract / research node lands on
+                # 0,0 - stacked on each other and on whatever already sits at
+                # the origin. _autoplace_new_nodes lays a coordinate-less batch
+                # out as a chain (order read off its own edges) and finds it
+                # empty canvas; a batch that DOES carry coordinates is written
+                # verbatim as before unless an explicit `placement` asks for the
+                # translate. Existing-node positions live in the gitignored
+                # sidecar for pre-sync projects, so read it for the scan.
                 _place_layout = _sidecar_layout(project_root)
-                def _box(n):
-                    def _f(v, d):
-                        try: return float(v if v not in (None, "") else d)
-                        except Exception: return float(d)
-                    bx, by = _node_xy(n, _place_layout)
-                    return (bx, by, _f(n.get("w"), 280), _f(n.get("h"), 200))
-                GAP = 48.0
-                dx = dy = 0.0
                 placement = body.get("placement")
+                if placement not in ("anchor", "below", "right"):
+                    placement = None
                 anchor_id = body.get("anchorId")
-                if placement in ("anchor", "below", "right"):
-                    # bbox of the nodes we will actually add (relative coords)
-                    bxs = [_box(nn) for nn in add_nodes
-                           if isinstance(nn, dict)
-                           and isinstance(nn.get("id"), str) and nn.get("id")
-                           and isinstance(nn.get("kind"), str) and nn.get("kind")
-                           and nn.get("id") not in existing_ids]
-                    if bxs:
-                        bminx = min(b[0] for b in bxs)
-                        bminy = min(b[1] for b in bxs)
-                        bmaxx = max(b[0] + b[2] for b in bxs)
-                        bmaxy = max(b[1] + b[3] for b in bxs)
-                        bw, bh = bmaxx - bminx, bmaxy - bminy
-                        anchor = None
-                        ext = []
-                        for n in wf_nodes:
-                            if not isinstance(n, dict): continue
-                            if anchor_id and n.get("id") == anchor_id: anchor = n
-                            if n.get("kind") in ("section", "table"): continue
-                            ext.append(_box(n))
-                        ox = oy = 0.0
-                        if placement == "anchor" and anchor is not None:
-                            ax, ay, aw, ah = _box(anchor)
-                            ox, oy = ax + aw + GAP, ay
-                            PAD = 24.0
-                            def _hits(rx, ry):
-                                return any(rx < e[0] + e[2] + PAD and rx + bw + PAD > e[0]
-                                           and ry < e[1] + e[3] + PAD and ry + bh + PAD > e[1]
-                                           for e in ext)
-                            guard = 0
-                            while _hits(ox, oy) and guard < 200:
-                                oy += 56.0; guard += 1
-                        elif ext:
-                            minx = min(e[0] for e in ext)
-                            miny = min(e[1] for e in ext)
-                            maxx = max(e[0] + e[2] for e in ext)
-                            maxy = max(e[1] + e[3] for e in ext)
-                            if placement == "right":
-                                ox, oy = maxx + GAP, miny
-                            else:  # "below", or "anchor" with no/unknown anchor
-                                ox, oy = minx, maxy + GAP
-                        dx, dy = ox - bminx, oy - bminy
-
-                added_ids = []
+                staged = []
                 for nn in add_nodes:
                     if not isinstance(nn, dict): continue
                     nid = nn.get("id"); kind = nn.get("kind")
@@ -14749,13 +14861,19 @@ class H(http.server.SimpleHTTPRequestHandler):
                     entry = dict(nn)
                     entry["id"] = nid
                     entry["kind"] = kind
-                    try: entry["x"] = float(nn.get("x", 0)) + dx
+                    staged.append(entry)
+                    existing_ids.add(nid)
+                dx, dy = _autoplace_new_nodes(wf_nodes, staged, add_edges,
+                                              _place_layout, placement, anchor_id)
+
+                added_ids = []
+                for entry in staged:
+                    try: entry["x"] = float(entry.get("x") or 0) + dx
                     except Exception: entry["x"] = dx
-                    try: entry["y"] = float(nn.get("y", 0)) + dy
+                    try: entry["y"] = float(entry.get("y") or 0) + dy
                     except Exception: entry["y"] = dy
                     wf_nodes.append(entry)
-                    existing_ids.add(nid)
-                    added_ids.append(nid)
+                    added_ids.append(entry["id"])
                 existing_edge_keys = {(e.get("from"), e.get("to"))
                                       for e in wf_edges if isinstance(e, dict)}
                 added_edges = 0
@@ -16720,12 +16838,27 @@ class H(http.server.SimpleHTTPRequestHandler):
               if add_nodes:
                 wf_nodes = wf.get("nodes") or []
                 existing = {n.get("id") for n in wf_nodes if isinstance(n, dict)}
+                staged = []
                 for nn in add_nodes:
                   if not isinstance(nn, dict): continue
                   if not nn.get("id") or nn["id"] in existing: continue
-                  wf_nodes.append(nn)
+                  staged.append(dict(nn))
                   existing.add(nn["id"])
-                  added_node_ids.append(nn["id"])
+                # Same auto-placement as the append route: an orchestrator
+                # flushing its scaffold in the commit body ships no x/y either,
+                # and 0,0 for a whole family graph is the messiest case of all.
+                # Anchored on the committing node so the graph it extends grows
+                # out of it instead of somewhere across the canvas.
+                _cdx, _cdy = _autoplace_new_nodes(
+                    wf_nodes, staged, add_edges,
+                    _sidecar_layout(project_root), None, node_id)
+                for entry in staged:
+                  try: entry["x"] = float(entry.get("x") or 0) + _cdx
+                  except Exception: entry["x"] = _cdx
+                  try: entry["y"] = float(entry.get("y") or 0) + _cdy
+                  except Exception: entry["y"] = _cdy
+                  wf_nodes.append(entry)
+                  added_node_ids.append(entry["id"])
                 wf["nodes"] = wf_nodes
               if add_edges:
                 wf_edges = wf.get("edges") or []
