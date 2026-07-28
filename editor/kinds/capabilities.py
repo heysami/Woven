@@ -54,7 +54,9 @@ def _editor_import(module: str = "serve"):
 _MEDIA_MODELS_PATH = os.path.join(_EDITOR_DIR, "prompts", "media-models.js")
 
 def _parse_media_models() -> dict:
-    out = {"providers": [], "skills": [], "imageModels": [], "defaultImageModel": None}
+    out = {"providers": [], "skills": [], "imageModels": [], "textModels": [],
+           "videoModels": [], "models3d": [], "audioModels": [],
+           "defaultImageModel": None}
     if not os.path.isfile(_MEDIA_MODELS_PATH):
         return out
     try:
@@ -89,33 +91,51 @@ def _parse_media_models() -> dict:
                 "integrated": (integ == "true") if integ else None,
             })
 
-    # Image models: `{ id: "...", provider: "...", label: "...", hint: "...", caps: [...], integrated: ... }`
-    image_model_re = re.compile(
+    # Model rows: `{ id: "...", provider: "...", label: "...", hint: "...",
+    #                caps: [...], integrated: ..., variantOf?: "..." }`
+    # Scanned PER CATALOG ARRAY, not globally: one global sweep dumped every
+    # video / 3d / audio row into imageModels, which left the daemon with no way
+    # to tell an agent what it may pick for a given capability. The preamble's
+    # model-catalog block is built from these lists, so a family that isn't
+    # parsed here is a family agents can only reach by guessing an id.
+    model_row_re = re.compile(
         r"\{\s*id:\s*\"([^\"]+)\"\s*,\s*provider:\s*\"([^\"]+)\"\s*,\s*label:\s*\"([^\"]+)\"\s*,"
         r"[^}]*?caps:\s*\[([^\]]*)\][^}]*?(?:integrated:\s*(true|false))?[^}]*?\}",
         re.DOTALL,
     )
-    seen_model_ids = set()
-    for m in image_model_re.finditer(src):
-        mid, prov, label, caps_str, integ = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5) or ""
-        if mid in seen_model_ids: continue
-        seen_model_ids.add(mid)
-        caps = [c.strip().strip('"') for c in caps_str.split(",") if c.strip()]
-        # `default: true` marks the user-default image model; surface it so
-        # agents read the default from here instead of guessing one.
-        is_default = bool(re.search(r"default:\s*true", m.group(0)))
-        out["imageModels"].append({
-            "id":         mid,
-            "provider":   prov,
-            "label":      label,
-            "caps":       caps,
-            "integrated": (integ == "true") if integ else None,
-            "default":    is_default,
-        })
-        # Only an actual image model can be the image default (this regex also
-        # matches text/video/3d model objects, which carry their own default:true).
-        if is_default and not out.get("defaultImageModel") and any(c in caps for c in ("t2i", "i2i", "inpaint")):
-            out["defaultImageModel"] = {"id": mid, "provider": prov}
+    for const_name, out_key in (("IMAGE_MODELS", "imageModels"),
+                                ("TEXT_MODELS",  "textModels"),
+                                ("VIDEO_MODELS", "videoModels"),
+                                ("MODELS_3D",    "models3d"),
+                                ("AUDIO_MODELS", "audioModels")):
+        out.setdefault(out_key, [])
+        sect = re.search(r"const\s+" + const_name + r"\s*=\s*\[(.+?)\n\s*\];", src, re.DOTALL)
+        if not sect:
+            continue
+        seen_model_ids = set()
+        for m in model_row_re.finditer(sect.group(1)):
+            mid, prov, label, caps_str, integ = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5) or ""
+            if mid in seen_model_ids: continue
+            seen_model_ids.add(mid)
+            caps = [c.strip().strip('"') for c in caps_str.split(",") if c.strip()]
+            # `default: true` marks the catalog's own default for that family.
+            is_default = bool(re.search(r"default:\s*true", m.group(0)))
+            _vo = re.search(r"variantOf:\s*\"([^\"]+)\"", m.group(0))
+            out[out_key].append({
+                "id":         mid,
+                "provider":   prov,
+                "label":      label,
+                "caps":       caps,
+                "integrated": (integ == "true") if integ else None,
+                "default":    is_default,
+                "variantOf":  _vo.group(1) if _vo else None,
+            })
+            # Surface the image default so agents read it here instead of
+            # guessing one.
+            if (out_key == "imageModels" and is_default
+                    and not out.get("defaultImageModel")
+                    and any(c in caps for c in ("t2i", "i2i", "inpaint"))):
+                out["defaultImageModel"] = {"id": mid, "provider": prov}
 
     # Fallback: if no model carried `default: true` (parser miss / config drift),
     # mirror the daemon's own dispatch default (model = model or "gpt-image-2")
@@ -467,6 +487,13 @@ def get_capabilities() -> dict:
         "summary":         "Canonical catalog of what this app supports. If the user asks about something not listed here, it genuinely isn't integrated.",
         "providers":       media.get("providers", []),
         "imageModels":     media.get("imageModels", []),
+        # The other model families, parsed per catalog array. Before these were
+        # split out, every one of them was folded into imageModels, so a caller
+        # asking "what video models exist" had no answer but to guess.
+        "textModels":      media.get("textModels", []),
+        "videoModels":     media.get("videoModels", []),
+        "models3d":        media.get("models3d", []),
+        "audioModels":     media.get("audioModels", []),
         # The user-default image model (the `default: true` row in media-models.js).
         # Agents told to "use the user-default image model" MUST read THIS, never
         # guess. Currently {id: "gpt-image-2", provider: "openai"}.
@@ -1029,6 +1056,82 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     except Exception:
         pass
 
+    # ── The model catalog itself ──────────────────────────────────────────
+    # The blocks above name PROVIDERS and the user's pinned defaults; neither
+    # ever named a model an agent could pick. So on an Auto row - the common
+    # case - "pick any ✓ KEY provider" left the agent to supply a model id from
+    # training-data recall, which is how the video lane sat broken (a recalled
+    # id the daemon has no renderer for is a 400, not a fallback). Enumerate
+    # every catalog row mechanically instead, marked with the provider's live
+    # key status, so choosing is a lookup and never a memory exercise. Same
+    # principle as the orchestrator roster: recall-based lists hide whole
+    # families forever.
+    model_catalog_block = ""
+    try:
+        _status_by_provider = {r["id"]: r["status"] for r in avail_rows}
+        # A catalog row whose provider has NO dispatch entry is not a
+        # missing-key problem - the daemon has no renderer for it at all, and it
+        # 400s whatever the user pastes into Settings. Say that, so nobody is
+        # told "add a key and this works" about a model that cannot run.
+        _wired = _wired_provider_ids()
+        _FAMILIES = (
+            ("imageModels", "IMAGE GENERATION", "generate-image"),
+            ("videoModels", "VIDEO GENERATION", "video-gen / video-chain"),
+            ("models3d",    "3D GENERATION",    "text-to-3d / image-to-3d"),
+            ("audioModels", "AUDIO GENERATION", "audio-gen"),
+            ("textModels",  "TEXT / LLM",       "llm / describe, and per-node model pickers"),
+        )
+        sections = []
+        for key, title, skills_hint in _FAMILIES:
+            entries = [m for m in caps.get(key) or [] if m.get("integrated") is not False]
+            if not entries:
+                continue
+            lines = []
+            for m in entries:
+                _prov = m.get("provider")
+                _is_wired = _prov in _wired
+                st = _status_by_provider.get(_prov, "none")
+                mark = "✗" if not _is_wired else ("✓" if st != "none" else "⚠")
+                caps_str = ",".join(m.get("caps") or []) or "-"
+                notes = []
+                if m.get("default"):
+                    notes.append("catalog default")
+                if not _is_wired:
+                    notes.append("NO RENDERER - not dispatchable, a key won't help")
+                elif st == "none":
+                    notes.append("NO KEY - tell the user where to add one, don't call it")
+                elif st.startswith("cli"):
+                    # "cli (Claude CLI)" -> "runs via Claude CLI, no key needed"
+                    _inner = st[st.find("(") + 1:st.rfind(")")] if "(" in st else "a CLI"
+                    notes.append(f"runs via {_inner}, no key needed")
+                # An image-conditioned row cannot serve a prompt-only request.
+                _c = m.get("caps") or []
+                if ("i2v" in _c and "t2v" not in _c) or ("i23d" in _c and "t23d" not in _c):
+                    notes.append("needs an input image")
+                if m.get("variantOf"):
+                    notes.append(f"mode variant of {m['variantOf']}")
+                tail = ("  (" + "; ".join(notes) + ")") if notes else ""
+                lines.append(
+                    f"    {mark} {(m.get('provider') or ''):11s} {(m.get('id') or ''):46s} "
+                    f"{(m.get('label') or '')}  [{caps_str}]{tail}")
+            sections.append(f"  {title} ({len(entries)}) - skills: {skills_hint}\n" + "\n".join(lines))
+        if sections:
+            model_catalog_block = (
+                "\n\n**Model catalog THIS RUN - the complete set, and the ONLY ids the daemon accepts.** "
+                "A capability with no USER DEFAULT row above is on **Auto**, and Auto means **you choose**: "
+                "pick the row that best fits the asset in front of you (register, motion, cost, latency), from "
+                "any provider, and pass it explicitly as `provider` + `model` to `/__asset_generate`. "
+                "Choosing well is part of the work - do not default to whichever model you know best from "
+                "training data, and never invent an id: an id that isn't listed here has no renderer and comes "
+                "back `400 no renderer for skill=... provider=...`. When the user HAS pinned a default, use it "
+                "unless they name something else in this request.\n"
+                "`✓` = live this run, call it freely. `⚠` = wired, but the provider's key is missing - name it "
+                "to the user and point at Settings, don't call it. `✗` = catalogued but the daemon has no "
+                "renderer for that provider, so it 400s no matter what key is pasted - never promise it.\n\n"
+                + "\n\n".join(sections))
+    except Exception:
+        model_catalog_block = ""
+
     # Per-orchestrator model overrides, synced from the editor's Orchestrators
     # landing tab (localStorage → POST /__orchestrator_models). The
     # agent-capability default above governs the whole spawn; these rows name
@@ -1291,7 +1394,7 @@ If the user asks for a feature, model, provider, subagent, or endpoint and you d
 **Do not refuse the user with "no raster provider available" if ANY of those conditions hold.** Dispatch the relevant orchestrator and let it route through the available path - `/__asset_generate` already knows how to pick API vs CLI vs local fallback per skill.
 
 **Default models per capability THIS RUN** - the user picked these in Settings → API keys → "Default models per capability". When the user hasn't named a specific provider/model in their request, **use the USER DEFAULT row for that capability**. Do not override based on training-data familiarity (e.g. don't pick `fal-ai/flux-pro` just because FLUX is well-known when the user has set OpenAI gpt-image-2 as the Image-generation default). Override only when the user explicitly names a different provider/model in the current request.
-{defaults_block}{orchestrator_models_block}{subagent_models_block}
+{defaults_block}{model_catalog_block}{orchestrator_models_block}{subagent_models_block}
 
 **Local tool availability THIS RUN**:
 {tool_status}
