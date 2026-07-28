@@ -1045,6 +1045,13 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
                 if not _per_content and row.get("model"): pieces.append(row["model"])
                 if row.get("source"):   pieces.append(f"({row['source']})")
                 _tail = f" - {_per_content}" if _per_content else ""
+                # Provider pinned, model left on Auto - a deliberate setting,
+                # not an incomplete one. The user is saying "use this vendor,
+                # you choose which of its models fits the asset", so point at
+                # the catalog rather than letting it read as a missing value.
+                if not _per_content and row.get("provider") and not row.get("model"):
+                    _tail = (" (model on Auto - use ANY model from this provider "
+                             "in the catalog below, chosen per asset)")
                 # An image-conditioned VIDEO default is legal (Higgsfield ships
                 # DoP image→video only, so pinning it is the only way to name
                 # Higgsfield at all). Say what it needs, so the agent wires a

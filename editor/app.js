@@ -89310,16 +89310,12 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
             // Per-content capabilities pin the provider ONLY - storing a model
             // would be read as "always use this mode" by the spawn preamble.
             if (perContent) { onChange({ provider: p, model: "" }); return; }
-            // Auto-pick a model from this provider - prefer the model whose
-            // id matches what Auto would pick (so switching from Auto to
-            // explicit is a smooth refinement), else the first available.
-            let pickedModel = "";
-            if (auto && auto.provider === p) pickedModel = auto.model;
-            else {
-              const m = models.find(mm => mm.provider === p);
-              if (m) pickedModel = m.id;
-            }
-            onChange({ provider: p, model: pickedModel });
+            // Picking a provider pins the PROVIDER, and leaves the model on
+            // Auto. It used to silently pin that provider's first model too,
+            // which read as the app choosing for you: pick Higgsfield and you
+            // were pinned to DoP Turbo without ever saying so. The two
+            // dropdowns are two decisions - make the second one explicitly.
+            onChange({ provider: p, model: "" });
           }}>
           <option value="">${autoLabel}</option>
           ${providersInUse.map(renderProviderOption)}
@@ -89335,8 +89331,16 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
             // one of them can be chosen, which is the whole misreading.
             ? html`<option value="">All - chosen per asset (${perContent})</option>`
             : html`
-              ${!currentProvider && html`<option value="">- Auto picks this for you -</option>`}
-              ${currentProvider && modelsForProvider.length === 0 && html`<option value="">(no integrated models for this provider)</option>`}
+              ${/* Auto is offered at BOTH levels, and the two mean different
+                    things: no provider = anything with a key; provider pinned +
+                    model Auto = that provider, agent picks the model per asset.
+                    The second was unreachable - the Auto option only rendered
+                    while no provider was set, so choosing a provider forced a
+                    model pin with no way back short of resetting the row. */""}
+              <option value="">${currentProvider
+                ? `Auto - the agent picks a ${(providerCatalog[currentProvider] || {}).label || currentProvider} model per asset`
+                : "- Auto picks this for you -"}</option>
+              ${currentProvider && modelsForProvider.length === 0 && html`<option value="" disabled>(no integrated models for this provider)</option>`}
               ${currentProvider && modelsForProvider.map(m => html`
                 <option key=${m.id || m.provider} value=${m.id}>${(m.label || m.id || "(provider default)") + (defaultModelNeedsInput(capability, m) ? " · needs a start frame" : "")}</option>
               `)}
