@@ -1080,8 +1080,14 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
                 # brand face or a trial file - exactly what this library is
                 # FOR - the name carries no typographic signal at all. When a
                 # note exists it is the primary basis for picking the face.
+                _ROLE_LABEL = {
+                    "display": "DISPLAY - headlines / large sizes ONLY, never body copy",
+                    "text":    "TEXT - safe for body copy at small sizes",
+                    "mono":    "MONO - code / tabular",
+                }
                 font_lines = "\n".join(
                     f"  • '{r['family']}'  ({r['format']}, ds={r['ds']}) - stylesheet: {r['cssUrl']}"
+                    + (f"\n      role: {_ROLE_LABEL[r['role']]}" if _ROLE_LABEL.get(r.get("role")) else "")
                     + (f"\n      note: {r['note']}" if r.get("note") else "")
                     for r in _font_rows[:40]
                 )
@@ -1331,6 +1337,13 @@ To judge content (not just "did it move / render"), add `judge=<plain-English ex
 ## Local font library - check it BEFORE proposing typography
 
 The user collects custom fonts in two tiers, both returned by `GET /__fonts`: the WORKSPACE collection (`ds=global` - uploaded via the landing page's System → Custom fonts section, shared across every project, stylesheet at `/__global_fonts/_fontface.css`) and per-project faces under `design-systems/<dsId>/fonts/` (one file per face + an auto-generated `_fontface.css` + a `fonts.json` manifest with exact family casing). These are deliberate picks - licensed faces, brand fonts, faces the CDNs don't carry. **When proposing a design or choosing typography, look through this library FIRST and prefer a local face that fits the brief over a Google Fonts default.** Only fall back to CDN families when nothing local fits (and say so).
+
+**Local-first is a preference between SUITABLE candidates - it never overrides role fitness.** Each face may carry a `role`: `display` (headlines / large sizes only), `text` (body copy, readable small), `mono` (code / tabular). Match the role to the job:
+
+- **Never set body copy, form labels, table cells, captions or any long-form running text in a `display` face.** Display faces are drawn for size - tight spacing, extreme weights or contrast, decorative forms - and they become unreadable at paragraph sizes. Reaching for the local display face just because it is local is a worse outcome than a CDN body face, and it is the specific failure this rule exists to prevent.
+- A `display` local face is the RIGHT pick for headlines, hero type, numerals-as-graphics, and section titles.
+- When the brief needs body text and the library has no `text`-role face, **pair**: use the local display face for headings, and pick a genuinely readable body face (a local `text` face if one exists, otherwise a CDN family), then say in one line which face carries which role and why.
+- A face with **no** role recorded is unclassified, not "safe for anything": judge it from its `note`, and if the note is missing too, treat it as unknown per the caution below rather than defaulting it into body copy.
 
 **Local fonts in THIS project right now:**
 {font_lines}

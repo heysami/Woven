@@ -3359,9 +3359,9 @@ function DSFontsPanel({ scope }) {
   // carries no typographic signal, so an undescribed custom face is one an
   // agent can only guess at. Saves on blur; no-ops when unchanged. Mirrors
   // removeFont's global-vs-project URL split.
-  const saveNote = async (f, value) => {
-    const next = (value || "").trim();
-    if (next === ((f.note || "").trim())) return;
+  // `patch` carries only the field being edited - the daemon leaves absent
+  // keys alone, so the note control can't clobber the role or vice versa.
+  const saveFontMeta = async (f, patch, label) => {
     try {
       const url = f.ds === "global"
         ? `/__font_note?scope=global&slug=${encodeURIComponent(f.slug)}`
@@ -3369,14 +3369,26 @@ function DSFontsPanel({ scope }) {
       const r = await fetch(apiUrl(url), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note: next }),
+        body: JSON.stringify(patch),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-      f.note = next;   // keep the row in sync without a full refetch/reflow
+      Object.assign(f, patch);   // keep the row in sync without a refetch/reflow
     } catch (e) {
-      uiAlert(`Could not save the font description: ${e?.message || e}`);
+      uiAlert(`Could not save the font ${label}: ${e?.message || e}`);
     }
+  };
+  const saveNote = (f, value) => {
+    const next = (value || "").trim();
+    if (next === ((f.note || "").trim())) return;
+    return saveFontMeta(f, { note: next }, "description");
+  };
+  // Role decides where a face may be USED - a display face must never end up
+  // as body copy just because it is the local one.
+  const saveRole = (f, value) => {
+    const next = (value || "").trim();
+    if (next === ((f.role || "").trim())) return;
+    return saveFontMeta(f, { role: next }, "role");
   };
   const removeFont = async (f) => {
     if (!await uiConfirm(`Remove '${f.family}' from the font library? Pages using it fall back to the next family in their stack.`)) return;
@@ -3427,6 +3439,14 @@ function DSFontsPanel({ scope }) {
                 title=${"How this face reads (e.g. \"condensed grotesque, tight apertures, editorial\"). Agents propose typography from this description - a file name tells them nothing."}
                 onBlur=${(e) => saveNote(f, e.target.value)}
                 onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); }}/>
+              <select className="ds-fonts-role" value=${f.role || ""}
+                title="What this face may be USED for. Display faces are never set as body copy, however much the design leans on them."
+                onChange=${(e) => saveRole(f, e.target.value)}>
+                <option value="">role: unset</option>
+                <option value="display">display - headlines only</option>
+                <option value="text">text - body copy</option>
+                <option value="mono">mono - code</option>
+              </select>
             </div>
             <button className="ds-fonts-remove" title=${"Remove " + f.family + " from the library"} onClick=${() => removeFont(f)}>×</button>
           </div>

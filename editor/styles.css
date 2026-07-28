@@ -14390,6 +14390,20 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text-muted);
 }
 .ds-fonts-note::placeholder { color: var(--text-faint); font-style: italic; }
+/* Where the face may be USED. Sits under the description; quiet until it
+   carries a real value, since an unset role is the common starting state. */
+.ds-fonts-role {
+  width: 100%;
+  margin-top: 3px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  font-family: inherit;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.ds-fonts-role:focus { outline: none; border-color: var(--accent); color: var(--text); }
 .ds-fonts-note:hover { border-color: var(--border); }
 .ds-fonts-note:focus {
   outline: none;

@@ -3886,6 +3886,13 @@ def _scan_fonts_dir(fonts_dir, ds_label, font_path_prefix, css_url):
             # brand face or a trial file, which is exactly when the local
             # library matters most. Set via POST /__font_note.
             "note":     ((entry or {}).get("note") or "").strip(),
+            # What the face can CARRY: "display" (headlines / large sizes
+            # only - decorative, tight or extreme forms that fall apart as
+            # body copy), "text" (body copy, readable small), "mono", or ""
+            # when unspecified. Distinct from `note`: the note says how it
+            # reads, the role says where it may be USED. Local-first must
+            # never mean setting paragraphs in a display face.
+            "role":     ((entry or {}).get("role") or "").strip().lower(),
         })
     return out
 
@@ -17720,10 +17727,26 @@ class H(http.server.SimpleHTTPRequestHandler):
             body = self._read_json_body(max_bytes=8 * 1024)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
-        note = (body.get("note") if isinstance(body, dict) else "") or ""
-        if not isinstance(note, str):
-            return self._reply(400, {"error": "note must be a string"})
-        note = " ".join(note.split())[:400]
+        # note and role are INDEPENDENTLY optional: an absent key leaves the
+        # stored value alone, so saving one field can never clobber the other
+        # (the panel edits them with separate controls).
+        note = body.get("note") if isinstance(body, dict) else None
+        if note is not None:
+            if not isinstance(note, str):
+                return self._reply(400, {"error": "note must be a string"})
+            note = " ".join(note.split())[:400]
+        # Optional role. Absent key = leave whatever is stored alone (so a
+        # note-only save can't silently clear a role, and vice versa).
+        role = body.get("role") if isinstance(body, dict) else None
+        if role is not None:
+            if not isinstance(role, str):
+                return self._reply(400, {"error": "role must be a string"})
+            role = role.strip().lower()
+            if role not in ("", "display", "text", "mono"):
+                return self._reply(400, {
+                    "error": "role must be one of: display, text, mono (or \"\" to clear)",
+                    "got": role,
+                })
         if scope == "global":
             fonts_dir = _global_fonts_dir()
         else:
@@ -17739,10 +17762,16 @@ class H(http.server.SimpleHTTPRequestHandler):
         manifest = _read_fonts_manifest(fonts_dir)
         entry = manifest.get(slug) if isinstance(manifest.get(slug), dict) else {}
         entry = dict(entry)
-        if note:
-            entry["note"] = note
-        else:
-            entry.pop("note", None)
+        if note is not None:
+            if note:
+                entry["note"] = note
+            else:
+                entry.pop("note", None)
+        if role is not None:
+            if role:
+                entry["role"] = role
+            else:
+                entry.pop("role", None)
         entry.setdefault("family", " ".join(p.capitalize() for p in slug.split("-")))
         manifest[slug] = entry
         try:
@@ -17750,7 +17779,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                 json.dump(manifest, f, indent=2, sort_keys=True)
         except Exception as e:
             return self._reply(500, {"error": f"could not write fonts.json: {e}"})
-        return self._reply(200, {"ok": True, "slug": slug, "ds": ds_id, "note": note})
+        return self._reply(200, {"ok": True, "slug": slug, "ds": ds_id,
+                                 "note": entry.get("note", ""),
+                                 "role": entry.get("role", "")})
 
     # ── POST /__delete_font?ds=<id>&slug=<slug>[&scope=global] ───────────
     # Remove one face from the local font library: deletes the font file,
