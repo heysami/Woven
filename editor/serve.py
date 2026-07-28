@@ -1942,6 +1942,221 @@ def _fal_generate_image(api_key, prompt, model, aspect, options):
     return _download_bytes(image_url)
 
 
+# ── Image providers beyond OpenAI / fal ─────────────────────────────────────
+# xAI, Volcengine Ark, Black Forest Labs and Gemini all sat in the catalog with
+# NO dispatch entry: Settings accepted their keys, media-models.js listed their
+# models, the README advertised them - and every call came back
+# `400 no renderer for skill='generate-image' provider='bfl'`. Wired July 2026.
+# Each header below records what came from the vendor's own docs (fetched, not
+# recalled) and what is INFERRED, so the first real Run corrects the right line.
+
+def _image_bytes_from_openai_shape(payload, provider):
+    """Several providers return OpenAI's images shape - {data: [{b64_json}]} or
+    {data: [{url}]}. Decode or download whichever came back."""
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        b64 = data[0].get("b64_json")
+        if isinstance(b64, str) and b64:
+            return base64.b64decode(b64)
+        url = data[0].get("url")
+        if isinstance(url, str) and url:
+            return _download_bytes(url, timeout=180)
+    raise RuntimeError(
+        f"{provider}: unexpected image response shape: "
+        f"{json.dumps(payload)[:300] if isinstance(payload, dict) else type(payload)}")
+
+
+def _json_post(url, headers, body, timeout=300):
+    req = urllib.request.Request(
+        url, method="POST", headers=headers,
+        data=json.dumps(body).encode("utf-8"))
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read()
+    return json.loads(raw) if raw else {}
+
+
+def _xai_generate_image(api_key, prompt, model, aspect, options):
+    """xAI Grok image generation.
+    DOCS (docs.x.ai/docs/guides/image-generations):
+      POST https://api.x.ai/v1/images/generations
+      Authorization: Bearer <key>
+      body: { model, prompt, n?, response_format? }   -> OpenAI images shape back
+    NOT SUPPORTED by the endpoint: any size / aspect parameter. `aspect` is
+    accepted here for signature parity and deliberately not sent - passing an
+    unknown field is how a 422 happens. Compose the framing in the prompt."""
+    body = {"model": model or "grok-imagine-image-quality", "prompt": prompt, "n": 1}
+    if isinstance(options, dict) and options.get("response_format"):
+        body["response_format"] = options["response_format"]
+    payload = _json_post(
+        "https://api.x.ai/v1/images/generations",
+        {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        body, timeout=300)
+    return _image_bytes_from_openai_shape(payload, "xai")
+
+
+# Ark takes either a shorthand ("2K") or an explicit WxH. We send WxH so the
+# requested aspect actually survives - INFERRED mapping at roughly 2K.
+_ARK_IMAGE_SIZES = {
+    "1:1":  "2048x2048",
+    "3:2":  "2304x1536",
+    "16:9": "2560x1440",
+    "2:3":  "1536x2304",
+    "9:16": "1440x2560",
+}
+
+
+def _volcengine_generate_image(api_key, prompt, model, aspect, options):
+    """Volcengine Ark (Doubao Seedream) text-to-image.
+    DOCS: POST https://ark.cn-beijing.volces.com/api/v3/images/generations
+      Authorization: Bearer <ARK_API_KEY>
+      body: { model, prompt, response_format: "url"|"b64_json", size,
+              watermark: bool, seed?, guidance_scale? }
+      -> OpenAI images shape back.
+    `model` is the Ark model id OR a user's own endpoint id (ep-...), passed
+    through verbatim. watermark defaults to False: a watermarked asset is not
+    usable in a prototype, and the caller can re-enable it via options."""
+    body = {
+        "model": model or "doubao-seedream-3-0-t2i-250415",
+        "prompt": prompt,
+        "response_format": "url",
+        "size": _ARK_IMAGE_SIZES.get(aspect, "2048x2048"),
+        "watermark": False,
+    }
+    if isinstance(options, dict):
+        for k in ("seed", "guidance_scale", "size", "watermark", "response_format"):
+            if options.get(k) is not None:
+                body[k] = options[k]
+    payload = _json_post(
+        "https://ark.cn-beijing.volces.com/api/v3/images/generations",
+        {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        body, timeout=300)
+    return _image_bytes_from_openai_shape(payload, "volcengine")
+
+
+# BFL wants explicit pixels, multiples of 32.
+_BFL_IMAGE_SIZES = {
+    "1:1":  (1440, 1440),
+    "3:2":  (1728, 1152),
+    "16:9": (1920, 1088),
+    "2:3":  (1152, 1728),
+    "9:16": (1088, 1920),
+}
+
+
+def _bfl_generate_image(api_key, prompt, model, aspect, options):
+    """Black Forest Labs FLUX, direct (not via fal).
+    DOCS (docs.bfl.ai/quick_start/generating_images):
+      submit: POST https://api.bfl.ai/v1/<model>   header `x-key: <key>`
+              body { prompt, width, height }
+              -> { id, polling_url }
+      poll:   GET <polling_url>  (same x-key header)
+              -> { status: "Ready" | "Error" | "Failed" | ..., result: { sample } }
+              `result.sample` is a signed URL, valid ~10 minutes.
+    The model id IS the path segment (same convention as fal), so a new BFL
+    endpoint needs a catalog row and nothing here."""
+    w, h = _BFL_IMAGE_SIZES.get(aspect, (1440, 1440))
+    body = {"prompt": prompt, "width": w, "height": h}
+    if isinstance(options, dict):
+        for k in ("width", "height", "aspect_ratio", "output_format", "seed",
+                  "prompt_upsampling", "safety_tolerance", "raw"):
+            if options.get(k) is not None:
+                body[k] = options[k]
+    headers = {"x-key": api_key, "Content-Type": "application/json",
+               "accept": "application/json"}
+    submit = _json_post(f"https://api.bfl.ai/v1/{(model or 'flux-pro-1.1').lstrip('/')}",
+                        headers, body, timeout=120)
+    poll_url = submit.get("polling_url") if isinstance(submit, dict) else None
+    if not poll_url:
+        # Some endpoints answer synchronously; take the image if it's there.
+        try:
+            return _image_bytes_from_openai_shape(submit, "bfl")
+        except Exception:
+            raise RuntimeError(f"bfl: no polling_url in submit response: "
+                               f"{json.dumps(submit)[:300]}")
+    deadline = time.time() + 300
+    last = {}
+    while time.time() < deadline:
+        time.sleep(2)
+        req = urllib.request.Request(poll_url, method="GET", headers=headers)
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            last = json.loads(resp.read() or b"{}")
+        st = str((last or {}).get("status") or "").lower()
+        if st == "ready":
+            sample = ((last.get("result") or {}) if isinstance(last.get("result"), dict) else {}).get("sample")
+            if not isinstance(sample, str) or not sample:
+                raise RuntimeError(f"bfl: Ready with no result.sample: {json.dumps(last)[:300]}")
+            return _download_bytes(sample, timeout=180)
+        if st in ("error", "failed", "request moderated", "content moderated"):
+            raise RuntimeError(f"bfl job {st}: {json.dumps(last)[:300]}")
+    raise RuntimeError("bfl: timed out waiting for the render")
+
+
+def _gemini_extract_image_b64(payload):
+    """Walk either Gemini response shape for the first inline image blob:
+      • /v1beta/interactions   -> steps[].content[].data
+      • :generateContent       -> candidates[].content.parts[].inlineData.data
+    Both nest a base64 string under a handful of known keys, so recurse rather
+    than hard-code one path."""
+    found = []
+
+    def walk(node):
+        if found:
+            return
+        if isinstance(node, dict):
+            for k in ("data", "b64_json", "bytesBase64Encoded"):
+                v = node.get(k)
+                # An image blob is long; a short string here is a mime/type tag.
+                if isinstance(v, str) and len(v) > 256:
+                    found.append(v)
+                    return
+            inline = node.get("inlineData") or node.get("inline_data")
+            if isinstance(inline, dict):
+                walk(inline)
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(payload)
+    if not found:
+        raise RuntimeError(
+            f"nanobanana: no image data in response: {json.dumps(payload)[:300]}")
+    return base64.b64decode(found[0])
+
+
+def _gemini_generate_image(api_key, prompt, model, aspect, options):
+    """Google Gemini image generation ("nano banana").
+    DOCS (ai.google.dev/gemini-api/docs/image-generation):
+      POST https://generativelanguage.googleapis.com/v1beta/interactions
+      header x-goog-api-key: <key>
+      body { model, input: [{ type: "text", text: <prompt> }] }
+      -> steps[0].content[0].data (base64)
+    Falls back to the older :generateContent endpoint (inlineData.data) when
+    the interactions route answers 404/400 - Gemini has moved this surface
+    before, and an image provider that silently stops working is worse than
+    one extra request on the error path.
+    Aspect: the docs list supported ratios per model but not the REST field
+    name, so it rides in the prompt unless the caller passes options.aspect."""
+    mid = model or "gemini-3.1-flash-image"
+    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+    body = {"model": mid, "input": [{"type": "text", "text": prompt}]}
+    if isinstance(options, dict) and options.get("input_extra"):
+        body["input"].append(options["input_extra"])
+    try:
+        payload = _json_post(
+            "https://generativelanguage.googleapis.com/v1beta/interactions",
+            headers, body, timeout=300)
+        return _gemini_extract_image_b64(payload)
+    except urllib.error.HTTPError as e:
+        if e.code not in (400, 404, 405):
+            raise
+    payload = _json_post(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{mid}:generateContent",
+        headers, {"contents": [{"parts": [{"text": prompt}]}]}, timeout=300)
+    return _gemini_extract_image_b64(payload)
+
+
 def _fal_video_i2v_variant(model):
     """Map a t2v endpoint id to its image-to-video sibling, for when a start
     frame is wired into a video-gen call whose picked model is text-only.
@@ -2233,9 +2448,10 @@ def _higgsfield_status(payload):
     return "unknown"
 
 
-def _higgsfield_extract_video_url(payload):
+def _higgsfield_extract_video_url(payload, kind="video"):
     """Confirmed shape: jobs[0].results.raw.url (with .min.url thumb); also walk
-    flatter fallbacks."""
+    flatter fallbacks. Shared by DoP (video) and Soul (image) - the job-set
+    envelope is the same for both, only the asset behind the URL differs."""
     if isinstance(payload, dict):
         js = payload.get("jobs")
         if isinstance(js, list) and js and isinstance(js[0], dict):
@@ -2251,10 +2467,10 @@ def _higgsfield_extract_video_url(payload):
                 slot = res.get(k)
                 if isinstance(slot, dict) and isinstance(slot.get("url"), str):
                     return slot["url"]
-        for k in ("video_url", "url"):
+        for k in (f"{kind}_url", "url"):
             if isinstance(payload.get(k), str):
                 return payload[k]
-    raise RuntimeError("higgsfield: no video url in status response")
+    raise RuntimeError(f"higgsfield: no {kind} url in status response")
 
 
 def _higgsfield_generate_video(api_key, prompt, model, aspect, options):
@@ -2302,6 +2518,66 @@ def _higgsfield_generate_video(api_key, prompt, model, aspect, options):
         if st in ("failed", "nsfw"):
             raise RuntimeError(f"higgsfield job {st}: {json.dumps(last)[:300]}")
     raise RuntimeError("higgsfield: timed out waiting for DoP render")
+
+
+# Soul's documented `width_and_height` values, nearest to each editor aspect.
+# The catalogue is 1536x1536 / 2048x1152 / 1152x2048 / 2048x1536 / 1536x2048,
+# so 3:2 and 2:3 land on the 4:3 and 3:4 plates.
+_HIGGSFIELD_SOUL_SIZES = {
+    "1:1":  "1536x1536",
+    "3:2":  "2048x1536",
+    "16:9": "2048x1152",
+    "2:3":  "1536x2048",
+    "9:16": "1152x2048",
+}
+
+
+def _higgsfield_generate_image(api_key, prompt, model, aspect, options):
+    """Higgsfield Soul text→image. Same job-set envelope as DoP (submit → poll
+    /requests/{id}/status → download), different endpoint.
+    DOCS (the official JS SDK):
+      POST /v1/text2image/soul
+      input: { prompt, width_and_height, quality, batch_size,
+               style_id?, style_strength?, seed?, enhance_prompt?,
+               custom_reference_id?, custom_reference_strength? }
+      -> jobs[0].results.raw.url
+    INFERRED: the SDK example passes no `model` for Soul (unlike DoP, where the
+    tier IS the model), so none is sent unless the caller puts one in options.
+    `custom_reference_id` is Higgsfield's character-consistency handle - pass a
+    Soul ID through options to keep a subject stable across generations."""
+    opts = options if isinstance(options, dict) else {}
+    inp = {
+        "prompt": prompt or "",
+        "width_and_height": _HIGGSFIELD_SOUL_SIZES.get(aspect, "1536x1536"),
+        "quality": opts.get("quality") or "1080p",
+        "batch_size": opts.get("batch_size") or 1,
+    }
+    for k in ("style_id", "style_strength", "seed", "enhance_prompt",
+              "custom_reference_id", "custom_reference_strength", "model"):
+        if opts.get(k) is not None:
+            inp[k] = opts[k]
+    # A namespaced catalog id ("higgsfield/soul") is a routing label, not a
+    # model the API knows - only forward one the caller set deliberately.
+    if model and "/" not in model and model != "soul":
+        inp["model"] = model
+
+    submit = _higgsfield_request(api_key, "/v1/text2image/soul", {"input": inp},
+                                 method="POST", timeout=60)
+    job_id = _higgsfield_extract_id(submit)
+    # Stills are much faster than DoP renders; ~3 min is generous.
+    deadline = time.time() + 180
+    last = None
+    while time.time() < deadline:
+        time.sleep(2)
+        last = _higgsfield_request(api_key, f"/requests/{job_id}/status",
+                                   method="GET", timeout=60)
+        st = _higgsfield_status(last)
+        if st == "completed":
+            return _download_bytes(
+                _higgsfield_extract_video_url(last, kind="image"), timeout=180)
+        if st in ("failed", "nsfw"):
+            raise RuntimeError(f"higgsfield soul job {st}: {json.dumps(last)[:300]}")
+    raise RuntimeError("higgsfield: timed out waiting for the Soul render")
 
 
 # ── Video chain (start→end-frame handoff + ffmpeg concat) ────────────────────
@@ -2838,6 +3114,14 @@ def _replace_inline_svg_in_sources(project_root, branch, original_svg, new_conte
 _GENERATE_DISPATCH = {
     ("generate-image", "openai"): "openai_image",
     ("generate-image", "fal"):    "fal_image",
+    # The four image providers that were catalogued + key-accepting + advertised
+    # but had no renderer, so every call 400'd "no renderer" (wired July 2026),
+    # plus Higgsfield Soul - the same key as DoP, on the text→image endpoint.
+    ("generate-image", "xai"):        "xai_image",
+    ("generate-image", "volcengine"): "volcengine_image",
+    ("generate-image", "bfl"):        "bfl_image",
+    ("generate-image", "nanobanana"): "gemini_image",
+    ("generate-image", "higgsfield"): "higgsfield_image",
     # slice9-frame: ONE-SHOT ornate 9-slice frame. Prompt in -> the daemon
     # appends the geometry contract, generates, rembg's, and auto-slices, all
     # internally (_slice9_oneshot), so the user drives it from a single node.
@@ -19443,6 +19727,18 @@ class H(http.server.SimpleHTTPRequestHandler):
                                                        project_root=project_root, output=output)
                 elif provider == "fal":
                     bytes_ = _fal_generate_image(api_key, prompt, model, aspect, options)
+                elif provider == "xai":
+                    bytes_ = _xai_generate_image(api_key, prompt, model, aspect, options)
+                elif provider == "volcengine":
+                    bytes_ = _volcengine_generate_image(api_key, prompt, model, aspect, options)
+                elif provider == "bfl":
+                    bytes_ = _bfl_generate_image(api_key, prompt, model, aspect, options)
+                elif provider == "nanobanana":
+                    bytes_ = _gemini_generate_image(api_key, prompt, model, aspect, options)
+                elif provider == "higgsfield" and skill == "generate-image":
+                    # Soul (text→image). The DoP video branch above is keyed on
+                    # skill == "video-gen", so the two share a key and nothing else.
+                    bytes_ = _higgsfield_generate_image(api_key, prompt, model, aspect, options)
                 elif provider == "quiver" and skill == "svg-gen":
                     bytes_ = _quiver_generate_svg(api_key, prompt, model, options)
                 else:

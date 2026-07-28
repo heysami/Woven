@@ -200,17 +200,36 @@
     { id: "fal-ai/ideogram/v3",       provider: "fal", label: "ideogram/v3",       hint: "fal · Ideogram V3 (typography · current)", caps: ["t2i"], integrated: true },
     { id: "fal-ai/stable-diffusion-v35-large", provider: "fal", label: "sd-3.5-large", hint: "fal · SD 3.5", caps: ["t2i"], integrated: true },
 
-    // xAI Grok - not integrated yet (listed for the UI)
-    { id: "grok-imagine-image", provider: "xai", label: "grok-imagine-image", hint: "xAI · 2K t2i", caps: ["t2i"], integrated: false },
+    // ── Wired July 2026 ──────────────────────────────────────────────────
+    // These four were `integrated: false` ("listed for the UI") for months
+    // while Settings happily took their keys and the README advertised them -
+    // so every call returned `no renderer for skill='generate-image'`. They
+    // now have real renderers in serve.py; the ids below are the ones each
+    // vendor's own docs name.
 
-    // Volcengine - not integrated yet
-    { id: "doubao-seedream-3-0-t2i-250415", provider: "volcengine", label: "seedream-3.0", hint: "ByteDance · Doubao", caps: ["t2i"], integrated: false },
+    // xAI Grok. POST api.x.ai/v1/images/generations (OpenAI-shaped). The
+    // endpoint takes no size/aspect field - frame it in the prompt.
+    { id: "grok-imagine-image-quality", provider: "xai", label: "grok-imagine", hint: "xAI · Grok Imagine (no aspect param - frame it in the prompt)", caps: ["t2i"], integrated: true },
 
-    // BFL - not integrated yet (BFL needs polling)
-    { id: "flux-pro-1.1", provider: "bfl", label: "flux-1.1-pro", hint: "BFL direct (async)", caps: ["t2i"], integrated: false },
+    // Volcengine Ark (Doubao Seedream). OpenAI-shaped images endpoint; `model`
+    // may also be one of the user's own `ep-...` endpoint ids.
+    { id: "doubao-seedream-3-0-t2i-250415", provider: "volcengine", label: "seedream-3.0", hint: "ByteDance · Doubao Seedream (Ark)", caps: ["t2i"], integrated: true },
 
-    // Nano Banana / Gemini - not integrated yet
-    { id: "gemini-3.1-flash-image-preview", provider: "nanobanana", label: "nano-banana", hint: "Google · t2i", caps: ["t2i"], integrated: false },
+    // BFL direct (async submit → poll polling_url → result.sample). The model
+    // id IS the endpoint path segment, same convention as fal.
+    { id: "flux-pro-1.1",       provider: "bfl", label: "flux-1.1-pro",  hint: "BFL direct · FLUX 1.1 Pro (async)", caps: ["t2i"], integrated: true },
+    { id: "flux-2-pro-preview", provider: "bfl", label: "flux-2-pro",    hint: "BFL direct · FLUX 2 Pro preview (async)", caps: ["t2i"], integrated: true },
+
+    // Nano Banana / Gemini. POST v1beta/interactions, falling back to the
+    // older :generateContent route (see _gemini_generate_image).
+    { id: "gemini-3.1-flash-image",      provider: "nanobanana", label: "nano-banana",       hint: "Google · Gemini 3.1 Flash Image (4K workhorse)", caps: ["t2i"], integrated: true },
+    { id: "gemini-3.1-flash-lite-image", provider: "nanobanana", label: "nano-banana-lite",  hint: "Google · fastest / cheapest tier",               caps: ["t2i"], integrated: true },
+    { id: "gemini-3-pro-image",          provider: "nanobanana", label: "nano-banana-pro",   hint: "Google · premium tier for complex composition",  caps: ["t2i"], integrated: true },
+
+    // Higgsfield Soul - the text→image half of the Higgsfield key (DoP, in
+    // VIDEO_MODELS, is the image→video half). Async, same job-set envelope.
+    // options.custom_reference_id pins a Soul ID for character consistency.
+    { id: "higgsfield/soul", provider: "higgsfield", label: "Higgsfield Soul", hint: "Higgsfield · text → image (async; options.custom_reference_id keeps a character consistent)", caps: ["t2i"], integrated: true },
   ];
 
   // Text models for the LLM / describe skills. Both OpenAI + Anthropic share

@@ -114,7 +114,13 @@ def _parse_media_models() -> dict:
             continue
         seen_model_ids = set()
         for m in model_row_re.finditer(sect.group(1)):
-            mid, prov, label, caps_str, integ = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5) or ""
+            mid, prov, label, caps_str = m.group(1), m.group(2), m.group(3), m.group(4)
+            # group(5) never fires - the lazy [^}]*? before it eats the field -
+            # so `integrated` read None for EVERY row and nothing could be
+            # filtered on it. Search the matched row text instead, same as
+            # `default` and `variantOf` below.
+            _ig = re.search(r"integrated:\s*(true|false)", m.group(0))
+            integ = _ig.group(1) if _ig else ""
             if mid in seen_model_ids: continue
             seen_model_ids.add(mid)
             caps = [c.strip().strip('"') for c in caps_str.split(",") if c.strip()]
