@@ -68,12 +68,16 @@
   .tool:hover{background:var(--panel); color:var(--ink);}
   .tool.active{background:var(--accent); color:var(--wv-text-on-accent, #fff); border-color:var(--accent);}
   .tool svg{width:19px; height:19px; display:block;}
-  .tool .tip{
-    position:absolute; left:46px; top:50%; transform:translateY(-50%);
+  /* One shared bubble, position:fixed on <body> - the rail scrolls (overflow
+     auto both docked and as a floating panel), so a tip nested inside a rail
+     button gets clipped by it. */
+  #tip{
+    position:fixed; left:0; top:0; transform:translateY(-50%); z-index:9999;
     background:var(--wv-text); color:var(--wv-bg); padding:3px 7px; border-radius:4px; font-size:11px; white-space:nowrap;
-    opacity:0; pointer-events:none; transition:opacity .12s; z-index:50;
+    opacity:0; pointer-events:none; transition:opacity .12s;
+    box-shadow:var(--wv-shadow-sm, 0 2px 8px rgba(0,0,0,.25));
   }
-  .tool:hover .tip{opacity:.92;}
+  #tip.on{opacity:.94;}
   .rail-sep{width:30px; height:1px; background:var(--line); margin:4px 0;}
   .rail-mini{font-size:9px; color:var(--ink3); text-align:center; line-height:1;}
   .swatches{display:flex; flex-wrap:wrap; gap:3px; width:40px; justify-content:center;}
@@ -217,6 +221,7 @@ function freshDoc(){
 let TOOL = 'move';
 let BRUSH = { size:8, color:'#ff3b30' };
 const BRUSH_COLORS = ['#ff3b30','#ffcc00','#34c759','#0a84ff','#af52de','#ffffff','#111111'];
+const BRUSH_COLOR_NAMES = { '#ff3b30':'Red', '#ffcc00':'Yellow', '#34c759':'Green', '#0a84ff':'Blue', '#af52de':'Purple', '#ffffff':'White', '#111111':'Black' };
 let selObjId = null;
 const COLORS = ['#28c08a','#e0823a','#3b82f6','#d6478e','#8b5cf6','#14b8a6','#ef4444','#eab308','#6366f1','#10b981'];
 function colorFor(i){ return COLORS[i % COLORS.length]; }
@@ -245,20 +250,59 @@ function refreshButtons(){
 }
 
 // ============================================================================
+// TOOLTIPS
+// ============================================================================
+// Any element carrying data-tip gets the shared bubble on hover. It lives on
+// <body> at position:fixed so it escapes the rail's scroll clip, and flips to
+// the left of its anchor when it would run past the frame edge.
+const tipEl=document.createElement('div'); tipEl.id='tip'; document.body.appendChild(tipEl);
+let tipFor=null, PTR={x:-1,y:-1};
+function showTip(el){
+  const txt=el && el.getAttribute('data-tip');
+  if(!txt){ hideTip(); return; }
+  tipFor=el; tipEl.textContent=txt; tipEl.classList.add('on');
+  const r=el.getBoundingClientRect();
+  tipEl.style.top=(r.top+r.height/2)+'px';
+  tipEl.style.left=(r.right+8)+'px';
+  const w=tipEl.offsetWidth;
+  if(r.right+8+w > window.innerWidth-4) tipEl.style.left=Math.max(4, r.left-8-w)+'px';
+}
+function hideTip(el){ if(el && el!==tipFor) return; tipFor=null; tipEl.classList.remove('on'); }
+function retipUnderCursor(){
+  if(PTR.x<0){ hideTip(); return; }
+  const el=document.elementFromPoint(PTR.x,PTR.y);
+  const t=el&&el.closest?el.closest('[data-tip]'):null;
+  if(t) showTip(t); else hideTip();
+}
+document.addEventListener('pointermove', e=>{ PTR={x:e.clientX,y:e.clientY}; });
+document.addEventListener('pointerover', e=>{
+  const t=e.target.closest?e.target.closest('[data-tip]'):null;
+  if(t) showTip(t);
+});
+document.addEventListener('pointerout', e=>{
+  const t=e.target.closest?e.target.closest('[data-tip]'):null;
+  if(!t) return;
+  if(e.relatedTarget && t.contains(e.relatedTarget)) return; // moved onto own child
+  hideTip(t);
+});
+document.addEventListener('pointerdown', ()=>hideTip(), true);
+
+// ============================================================================
 // TOOLRAIL
 // ============================================================================
 const TOOLS = [
-  { id:'move',    tip:'Move / resize boxes',   svg:'<path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>' },
-  { id:'box',     tip:'Draw a new region',     svg:'<rect x="3" y="3" width="18" height="18" rx="2"/>' },
-  { id:'scribble',tip:'Scribble (annotate)',   svg:'<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/>' },
-  { id:'erase',   tip:'Erase scribble',        svg:'<path d="M20 20H7L3 16a2 2 0 0 1 0-3l9-9a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3l-7 7"/><path d="M6 13l6 6"/>' },
+  { id:'move',    tip:'Move - drag a box or object, corner handle resizes', svg:'<path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>' },
+  { id:'box',     tip:'Region - drag on the image to add a new box', svg:'<rect x="3" y="3" width="18" height="18" rx="2"/>' },
+  { id:'scribble',tip:'Scribble - draw an annotation the regen follows', svg:'<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/>' },
+  { id:'erase',   tip:'Erase - rub out scribble strokes', svg:'<path d="M20 20H7L3 16a2 2 0 0 1 0-3l9-9a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3l-7 7"/><path d="M6 13l6 6"/>' },
 ];
 function buildToolrail(){
   const rail=$('toolrail'); rail.innerHTML='';
   for(const t of TOOLS){
     const el=document.createElement('div');
     el.className='tool'+(TOOL===t.id?' active':''); el.dataset.tool=t.id;
-    el.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+t.svg+'</svg><span class="tip">'+t.tip+'</span>';
+    el.setAttribute('data-tip', t.tip);
+    el.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+t.svg+'</svg>';
     el.onclick=()=>{ TOOL=t.id; buildToolrail(); updateOverlayMode(); };
     rail.appendChild(el);
   }
@@ -266,15 +310,23 @@ function buildToolrail(){
   const sep=document.createElement('div'); sep.className='rail-sep'; rail.appendChild(sep);
   const sizeWrap=document.createElement('div'); sizeWrap.className='rail-mini'; sizeWrap.textContent='size';
   const size=document.createElement('input'); size.type='range'; size.min='2'; size.max='40'; size.value=String(BRUSH.size); size.className='vsize';
-  size.oninput=()=>{ BRUSH.size=parseInt(size.value,10)||8; };
+  const sizeTip=()=>{
+    const t='Scribble / eraser width: '+BRUSH.size+'px';
+    sizeWrap.setAttribute('data-tip', t); size.setAttribute('data-tip', t);
+    if(tipFor===size||tipFor===sizeWrap) showTip(tipFor);
+  };
+  size.oninput=()=>{ BRUSH.size=parseInt(size.value,10)||8; sizeTip(); };
+  sizeTip();
   rail.appendChild(sizeWrap); rail.appendChild(size);
   const sw=document.createElement('div'); sw.className='swatches';
   for(const c of BRUSH_COLORS){
     const d=document.createElement('div'); d.className='sw'+(BRUSH.color===c?' active':''); d.style.background=c;
+    d.setAttribute('data-tip', 'Scribble colour: '+(BRUSH_COLOR_NAMES[c]||c));
     d.onclick=()=>{ BRUSH.color=c; buildToolrail(); };
     sw.appendChild(d);
   }
   rail.appendChild(sw);
+  retipUnderCursor(); // the rail was just replaced under the pointer
 }
 function updateOverlayMode(){
   // Scribble/erase: the scribble canvas captures pointer; boxes ignore it.
