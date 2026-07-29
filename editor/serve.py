@@ -19445,6 +19445,36 @@ class H(http.server.SimpleHTTPRequestHandler):
                       "?name=<family>[&ds=<id>] with the raw font file as body. "
                       "Resolve any name (local first, then Google/Bunny/Fontsource) "
                       "via GET /__resolve_font?name=<family>."),
+            # The picking rules live HERE, not in the chat preamble. They used to
+            # be ~30k chars of preamble - a full catalogue of every uploaded face
+            # with a paragraph of prose each - carried by every setup-tier spawn,
+            # including turns that had already committed their typography and were
+            # deciding something else entirely (the orchestrator plan gate, which
+            # measurably degraded as this block grew). Typography is chosen at one
+            # identifiable moment; the guidance belongs at that moment, which is
+            # this call.
+            "guidance": [
+                "Local-first: prefer a face from this list over a Google/CDN default "
+                "when one fits the brief. Fall back to a CDN family only when nothing "
+                "local fits, and say so.",
+                "Local-first is a preference between SUITABLE candidates and NEVER "
+                "overrides role fitness. Each face may carry role: display (headlines "
+                "/ large sizes only), text (body copy, readable small), mono (code / "
+                "tabular).",
+                "Never set body copy, form labels, table cells, captions or any "
+                "long-form running text in a display face - they are drawn for size "
+                "and become unreadable at paragraph sizes. Reaching for the local "
+                "display face just because it is local is a worse outcome than a "
+                "well-chosen CDN text face.",
+                "A display local face IS the right pick for headlines, hero type, "
+                "numerals-as-graphics and section titles.",
+                "If the brief needs body text and no text-role face exists here, "
+                "PAIR: local display for headings, a genuinely readable family for "
+                "body - and say why.",
+                "A face with NO role recorded is unclassified, not safe-for-anything: "
+                "judge it from its note, and if the note is missing too treat it as "
+                "unknown rather than defaulting it into body copy.",
+            ],
         })
 
     # ── GET /__global_fonts/<file> ───────────────────────────────────────

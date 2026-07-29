@@ -1333,28 +1333,27 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
                     cat = _CAT_WORD.get(r.get("cat"))
                     return (cat + "; " + cov) if cat else cov
 
-                _CAP = 80
-                font_lines = "\n".join(
-                    f"  • '{r['family']}'  ({r['format']}, ds={r['ds']}) - stylesheet: {r['cssUrl']}"
-                    + f"\n      has: {_coverage(r)}"
-                    + ("\n" + _roles_line(r).rstrip("\n") if _roles_line(r) else "")
-                    + (f"\n      note: {r['note']}" if r.get("note") else "")
-                    for r in _font_rows[:_CAP]
+                # A COUNT, not a catalogue. The full per-face enumeration (role,
+                # weights, letterform class, and a paragraph of prose each) used to
+                # live here: ~30k chars on EVERY setup-tier spawn, growing without
+                # bound as the user uploads faces. It sat next to the orchestrator
+                # plan gate - 1.6x its size - in turns that had already committed
+                # their typography, and the gate measurably degraded as it grew.
+                # Typography is chosen at one identifiable moment; the catalogue is
+                # served at that moment by GET /__fonts, which also carries the
+                # picking rules in its `guidance` array.
+                _n = len(_font_rows)
+                _by_role = {}
+                for r in _font_rows:
+                    for _r in (_roles_of(r) if callable(globals().get('_roles_of')) else []) or []:
+                        _by_role[_r] = _by_role.get(_r, 0) + 1
+                _mix = ", ".join("%d %s" % (v, k) for k, v in sorted(_by_role.items())) if _by_role else ""
+                _fams = ", ".join(repr(r["family"]) for r in _font_rows[:6])
+                font_lines = (
+                    "  %d local famil%s available%s."
+                    % (_n, "y" if _n == 1 else "ies", (" (" + _mix + ")") if _mix else "")
+                    + ("\n  e.g. " + _fams + (", ..." if _n > 6 else "") if _fams else "")
                 )
-                if len(_font_rows) > _CAP:
-                    # Never let a cap read as "that is the whole library".
-                    font_lines += (
-                        f"\n  ({len(_font_rows) - _CAP} more families not listed here - "
-                        f"enumerate the full library with GET $TH_DAEMON_URL/__fonts"
-                        f"?project=$TH_PROJECT_ID before concluding a face is unavailable.)"
-                    )
-                if any(not r.get("note") for r in _font_rows[:_CAP]):
-                    font_lines += (
-                        "\n  (Faces with no note carry no description of how they read. Do NOT invent"
-                        "\n   a character for an unfamiliar family name - either inspect the face"
-                        "\n   before committing to it, or pick one whose note fits the brief. The user"
-                        "\n   can describe a face in the font library panel, which sets its note.)"
-                    )
             else:
                 font_lines = "  (none uploaded yet in this project - re-check with GET /__fonts before assuming so)"
     except Exception:
@@ -1604,24 +1603,21 @@ To judge content (not just "did it move / render"), add `judge=<plain-English ex
 {node_kinds_block}
 {build_register_block}{custom_skills_block}{mcp_inventory_block}
 
-## Local font library - check it BEFORE proposing typography
+## Local font library - consult it WHEN YOU CHOOSE TYPOGRAPHY, not before
 
-The user collects custom fonts in two tiers, both returned by `GET /__fonts`: the WORKSPACE collection (`ds=global` - uploaded via the landing page's System → Custom fonts section, shared across every project, stylesheet at `/__global_fonts/_fontface.css`) and per-project faces under `design-systems/<dsId>/fonts/` (one file per face + an auto-generated `_fontface.css` + a `fonts.json` manifest with exact family casing). These are deliberate picks - licensed faces, brand fonts, faces the CDNs don't carry. **When proposing a design or choosing typography, look through this library FIRST and prefer a local face that fits the brief over a Google Fonts default.** Only fall back to CDN families when nothing local fits (and say so).
-
-**Local-first is a preference between SUITABLE candidates - it never overrides role fitness.** Each face may carry a `role`: `display` (headlines / large sizes only), `text` (body copy, readable small), `mono` (code / tabular). Match the role to the job:
-
-- **Never set body copy, form labels, table cells, captions or any long-form running text in a `display` face.** Display faces are drawn for size - tight spacing, extreme weights or contrast, decorative forms - and they become unreadable at paragraph sizes. Reaching for the local display face just because it is local is a worse outcome than a CDN body face, and it is the specific failure this rule exists to prevent.
-- A `display` local face is the RIGHT pick for headlines, hero type, numerals-as-graphics, and section titles.
-- When the brief needs body text and the library has no `text`-role face, **pair**: use the local display face for headings, and pick a genuinely readable body face (a local `text` face if one exists, otherwise a CDN family), then say in one line which face carries which role and why.
-- A face with **no** role recorded is unclassified, not "safe for anything": judge it from its `note`, and if the note is missing too, treat it as unknown per the caution below rather than defaulting it into body copy.
-
-**Local fonts in THIS project right now:**
+The user keeps a curated library of licensed / brand / CDN-absent faces, in two tiers:
+the workspace collection (`ds=global`) and per-project faces under `design-systems/<dsId>/fonts/`.
 {font_lines}
 
-How to use one:
-- In any `source/` page: `<link rel="stylesheet" href="/design-systems/<ds>/fonts/_fontface.css">` then `font-family: '<family>'` (use the exact family casing from the list / `GET /__fonts`).
-- To resolve any family name (local first, then Google → Bunny → Fontsource): `GET /__resolve_font?name=<family>`.
-- To add a face the user gives you (or a file already on disk): `POST /__upload_font?name=<family>&ds=<id>` with the raw `.woff2`/`.ttf`/`.otf` as the request body - it lands in the library, regenerates `_fontface.css`, and becomes visible to every future run.
+**At the moment you pick type - and only then - call `GET $TH_DAEMON_URL/__fonts?project=$TH_PROJECT_ID`.**
+It returns every face with its role, weights, letterform class and a note on what it is for, plus a
+`guidance` array carrying the picking rules (local-first, and the role-fitness rules that override it -
+never set body copy in a `display` face). Prefer a local face that fits the brief over a CDN default;
+fall back to Google/Bunny/Fontsource only when nothing local fits, and say so.
+
+Using one: link the face's `cssUrl` stylesheet in your `source/` page, then `font-family: '<family>'`
+with the exact family casing. `GET /__resolve_font?name=<family>` resolves any name (local first, then
+Google -> Bunny -> Fontsource). `POST /__upload_font?name=<family>&ds=<id>` adds a face from raw bytes.
 
 ## Never use em dashes (v3.13 hard rule)
 
