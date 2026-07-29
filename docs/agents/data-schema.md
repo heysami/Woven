@@ -80,6 +80,12 @@ window.EDITOR_DATA = {
     { id: "a1", from: "library", to: "library-cmdk", action: "Press ⌘K" }
   ],
 
+  // Canvas layout - col/row, w/h, meta.defaultFrame, meta.canvasGap and
+  // sections[] - is the SINGLE source of truth for what the editor renders.
+  // The editor writes hand-arrangements (drags, section edits, frame size)
+  // straight back into this file via /__layout; there is no layout sidecar.
+  // A regen that rewrites this file rewrites the user's canvas, so preserve
+  // existing col/row and section ids.
   sections: [
     {
       id:    "applicant-portal",       // string - primary key

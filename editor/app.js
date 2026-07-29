@@ -181,7 +181,7 @@ function buildFramesRegenPrompt(branch) {
     "",
     "SECTIONS - you are already clustering related screens into neighbouring cells; `sections` is how you NAME that cluster so the editor can draw it and let the user jump to it. One entry per group, as a rectangle of grid cells with the top-left and bottom-right cells INCLUSIVE:",
     "  { id: \"applicant-portal\", label: \"Applicant portal\", col: 0, row: 0, col2: 1, row2: 4 }",
-    "Rules: membership is purely SPATIAL - every frame whose (col,row) lands inside the rect belongs to that section, so lay the frames out first and then draw rects around the clusters. Sections must NOT overlap. Cover every frame you can justify grouping (a stray one-off screen can sit outside any section). Name them the way a designer would say them out loud (\"Applicant portal\", \"Admin review\", \"Onboarding\"), not by file path. Leave a spare column/row between two sections so their bands don't touch. Optional `tone` picks the band colour from: accent, violet, amber, cyan, rose, lime.",
+    "Rules: membership is purely SPATIAL - every frame whose (col,row) lands inside the rect belongs to that section, so lay the frames out first and then draw rects around the clusters. Sections must NOT overlap. Cover every frame you can justify grouping (a stray one-off screen can sit outside any section). Name them the way a designer would say them out loud (\"Applicant portal\", \"Admin review\", \"Onboarding\"), not by file path. Leave a spare column/row between two sections so their bands don't touch. Optional `tone` picks the band colour from: accent, violet, amber, cyan, rose, lime. PRESERVE what is already there: the editor writes the user's own drags, renames and section edits straight back into this same data file, so an existing `col`/`row` or `sections[]` entry is the canvas they are looking at - reuse section ids and don't move frames that already have positions.",
     "",
     "GRANULARITY - 'distinct SCREEN/STATE' means every page-level state a user can put the page into, not just whole pages: wizard/stepper STEPS (one substep frame PER STEP - do not collapse a wizard to entry + final step), tab panels, modals/sheets, submitted/outcome states, drill-down selections. Chain step substeps with arrows labeled by each step's actual advance-button text. Leave out only purely local interactions (field focus, accordion toggles, validation hints, hovers).",
     "",
@@ -200,8 +200,23 @@ function buildFramesRegenPrompt(branch) {
     "Gate check: meta.dsRef should already be set (this is a frames-only regen, not a fresh project bootstrap). If it isn't, ignore and proceed - frames don't depend on DS.",
   ].join("\n");
 }
-// Apply the layout sidecar (if loaded by data.js) BEFORE the editor reads
-// frame positions or grid meta. EDITOR_LAYOUT shapes:
+// ────────── Legacy layout sidecar (migration path only) ──────────
+// Canvas layout - frame col/row, frame size, canvas gap, sections - lives in
+// the prototype's DATA FILE and nowhere else. /__layout patches those fields
+// into it directly.
+//
+// It used to live in a SECOND file (editor/<slug>.layout.js) that was merged
+// over the data file at boot, and the two drifted: an agent regen rewrote
+// col/row in the data file while the sidecar kept overriding them, so the file
+// the agent read was never the canvas the user saw. Worse, the standalone
+// editor resolved the sidecar slug as "main" and skipped it entirely while the
+// workflow embed applied it - one prototype, two layouts.
+//
+// This block stays ONLY to migrate a project that still has one: the merge
+// below reproduces the old rendering, and App's one-shot migration effect
+// posts the merged snapshot back so the daemon folds it into the data file and
+// deletes the sidecar. After that the branch never runs again.
+// EDITOR_LAYOUT shapes:
 //   new:    { positions: { [frameId]: { col, row } }, meta: { defaultFrame: {w,h}, canvasGap } }
 //   legacy: { [frameId]: { col, row } }              - older flat map
 // Mutating D in place is intentional - applyModelEdits reads from D and
@@ -417,9 +432,10 @@ function sectionViewInitial(sectionId) {
   };
 }
 
-// Apply the sections carried by the layout sidecar over whatever the data file
-// declared. Runs at boot, next to the frame-position shim above, so every
-// reader (CanvasView, the sections bar, the minimap) sees one merged list.
+// Sections come from the data file. A project that still has the legacy
+// sidecar gets its sections merged over the top for this one boot (same
+// migration path as the positions above) - then the sidecar is retired and
+// D.sections is simply what the file says.
 (() => {
   const L = (window.EDITOR_LAYOUT && typeof window.EDITOR_LAYOUT === "object") ? window.EDITOR_LAYOUT : null;
   D.sections = mergeSections(D.sections || (D.meta && D.meta.sections) || [], L && L.sections);
@@ -96334,40 +96350,57 @@ function App() {
   // keystroke. Now it's O(edits) per queue change, shared.
   const model = useMemo(() => applyModelEdits(D, [...edits, ...layoutEdits]), [edits, layoutEdits]);
 
-  // Persist layout to disk on every layout-edit change. Sends the *full
-  // positions snapshot* + meta overrides (defaultFrame, canvasGap) - both
-  // computed from the post-edit model, so the sidecar is always self-
-  // contained. Fire-and-forget; the editor state is the source of truth
-  // during a session. Frame size / canvas gap belong here (not in the
-  // LLM-bound `edits` queue) because they're editor preferences, not
-  // design changes.
-  useEffect(() => {
-    if (layoutEdits.length === 0) return;
+  // Persist layout to the prototype's DATA FILE - the single source of truth
+  // for the canvas (positions, frame size, gap, sections). /__layout patches
+  // those fields into editor/<slug>.data.js in place; it no longer writes a
+  // second file. Layout still bypasses the LLM-bound `edits` queue: dragging a
+  // frame is organisation, not a design change.
+  //
+  // Always the FULL snapshot computed from the post-edit model, so one write
+  // fully describes the canvas and a partial patch can't leave the file half
+  // migrated.
+  const postLayout = useCallback(() => {
     const positions = {};
-    model.frames.forEach(f => { positions[f.id] = { col: f.col, row: f.row }; });
+    model.frames.forEach(f => { positions[f.id] = { col: f.col, row: f.row, w: f.w, h: f.h }; });
     const meta = {
       defaultFrame: model.defaultFrame,
       canvasGap:    model.canvasGap,
     };
-    // Sections ride the same sidecar - full snapshot, plus a tombstone for
-    // every data-file section the user deleted (a plain omission would let the
-    // next boot merge resurrect it from D.sections).
+    // Sections: the live list, plus a tombstone for every one the user deleted
+    // that the file still declares, so the daemon drops it instead of leaving
+    // it behind.
     const live = model.sections || [];
     const liveIds = new Set(live.map(s => s.id));
     const sections = live.concat(
       (D.sections || []).filter(s => !liveIds.has(s.id)).map(s => ({ id: s.id, deleted: true }))
     );
-    // Scope the write to THIS prototype's sidecar. Without the slug the daemon
-    // falls back to "main", so a project whose prototype is called anything
-    // else read <slug>.layout.js and wrote main.layout.js - two files, one of
-    // them never loaded again.
+    // Scope the write to THIS prototype. Without the slug the daemon falls
+    // back to "main" and patches the wrong project's file.
     const slug = (typeof window !== "undefined" && window.EDITOR_LAYOUT_SLUG) || activePrototypeSlug();
-    fetch(apiUrl(`/__layout?prototype=${encodeURIComponent(slug)}`), {
+    return fetch(apiUrl(`/__layout?prototype=${encodeURIComponent(slug)}`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ positions, meta, sections }),
     }).catch(() => { /* offline / not running serve.py - keep in-memory state regardless */ });
+  }, [model]);
+  useEffect(() => {
+    if (layoutEdits.length === 0) return;
+    postLayout();
   }, [layoutEdits]);
+  // One-shot migration off the legacy sidecar. A project written before the
+  // consolidation still has editor/<slug>.layout.js, and index.html still
+  // merges it over the data file at boot - so THIS session is already
+  // rendering the merged truth. Write it back once; the daemon folds it into
+  // the data file and retires the sidecar, and every later boot reads one
+  // file. No-op for projects that never had one.
+  const migratedRef = useRef(false);
+  useEffect(() => {
+    if (embedMode || migratedRef.current) return;
+    if (!window.EDITOR_LAYOUT || typeof window.EDITOR_LAYOUT !== "object") return;
+    if (!model.frames || !model.frames.length) return;
+    migratedRef.current = true;
+    postLayout();
+  }, [embedMode, model.frames && model.frames.length, postLayout]);
   // Undo/redo (Phase 2). Same hook is mounted on WorkflowCanvas so editor +
   // workflow modes share the project history stack.
   const history = useHistory();

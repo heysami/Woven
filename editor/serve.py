@@ -14256,6 +14256,185 @@ class H(http.server.SimpleHTTPRequestHandler):
     # The sidecar shape is { positions: {...}, meta: {...} }. Legacy sidecars
     # (flat id → {col,row}) are auto-upgraded on the next write.
     @staticmethod
+    def _data_file_for(project_root, slug):
+        """The data file the editor is served for `?prototype=<slug>`.
+
+        Same rule as the GET path above: editor/<slug>.data.js when it exists,
+        else the project-level editor/data.js. Layout writes MUST target the
+        same file the editor read, or the canvas silently renders one file and
+        persists into another.
+        """
+        editor_dir = os.path.join(project_root, "editor")
+        per_proto = os.path.join(editor_dir, f"{slug}.data.js")
+        if os.path.isfile(per_proto):
+            return per_proto
+        return os.path.join(editor_dir, "data.js")
+
+    @staticmethod
+    def _scan_block(text, open_idx):
+        """Index just past the bracket/brace that closes the one at open_idx.
+
+        STRING-AWARE: a naive depth counter breaks on this file, because
+        frames carry setupScript strings full of braces
+        (`setTimeout(function(){...},80)`). Skips over double-quoted strings
+        and their backslash escapes.
+        """
+        opener = text[open_idx]
+        closer = {"{": "}", "[": "]"}[opener]
+        depth, i, n = 0, open_idx, len(text)
+        while i < n:
+            c = text[i]
+            if c == '"':
+                i += 1
+                while i < n:
+                    if text[i] == "\\":
+                        i += 2
+                        continue
+                    if text[i] == '"':
+                        break
+                    i += 1
+            elif c == opener:
+                depth += 1
+            elif c == closer:
+                depth -= 1
+                if depth == 0:
+                    return i + 1
+            i += 1
+        raise ValueError("unbalanced %s at %d" % (opener, open_idx))
+
+    @staticmethod
+    def _patch_data_layout(path, positions, meta, sections):
+        """Write canvas layout INTO the prototype's data file, in place.
+
+        Layout used to live in a second file (editor/<slug>.layout.js) that the
+        editor merged over the data file at boot. Two writers, two files, one
+        truth - and they drifted: an agent regen rewrote col/row in data.js
+        while the sidecar kept overriding them, so the file the agent read was
+        never the canvas the user saw. The data file is now the single source
+        of truth and this patches it surgically.
+
+        SURGICAL on purpose - the file is agent-authored JS with comments and
+        hand formatting (`// -- Applicant portal --` group headers and the
+        like). Individual numeric fields and the `sections:` array are
+        rewritten; the document is never reserialised. Handles both key styles
+        agents emit: bare (`col: 3`) and JSON-quoted (`"col": 3`).
+
+        Returns (text, changed_count). Raises ValueError when the file can't be
+        parsed well enough to patch safely - the caller keeps the old file.
+        """
+        with open(path, "r", encoding="utf-8") as f:
+            text = f.read()
+        changed = 0
+
+        def set_num(chunk, key, value, insert_after_id=False):
+            """Set `key` to `value` inside one object literal's text.
+
+            `insert_after_id` is for FRAME objects only, where the chunk IS the
+            frame and its `id` field is the right anchor for a missing key. It
+            must stay off for the meta block: the first `id:` in there belongs
+            to the nested dsRef, and an insert would land inside it.
+            """
+            pat = re.compile(r'(?<=[{,\s])("%s"|%s)(\s*:\s*)(-?\d+(?:\.\d+)?)' % (key, key))
+            m = pat.search(chunk)
+            if m:
+                if m.group(3) == str(value):
+                    return chunk, False
+                return chunk[:m.start(3)] + str(value) + chunk[m.end(3):], True
+            if not insert_after_id:
+                return chunk, False
+            mid = re.search(r'("id"|\bid)(\s*:\s*)("[^"]*")', chunk)
+            if not mid:
+                return chunk, False
+            quoted = chunk[mid.start(1)] == '"'
+            ins = ', "%s": %d' % (key, value) if quoted else ", %s: %d" % (key, value)
+            return chunk[:mid.end(3)] + ins + chunk[mid.end(3):], True
+
+        # -- frames: col / row / w / h per id -----------------------------
+        # Line-scoped: agents emit one frame object per line, and a frame's
+        # setupScript can contain anything, so bounding the rewrite to the
+        # frame's own line(s) is safer than parsing the object.
+        lines = text.split("\n")
+        for fid, pos in (positions or {}).items():
+            idpat = re.compile(r'("id"|\bid)\s*:\s*"%s"' % re.escape(fid))
+            for li, line in enumerate(lines):
+                if not idpat.search(line):
+                    continue
+                new_line = line
+                for key in ("col", "row", "w", "h"):
+                    if isinstance(pos.get(key), int):
+                        new_line, hit = set_num(new_line, key, pos[key], insert_after_id=True)
+                        if hit:
+                            changed += 1
+                if new_line != line:
+                    lines[li] = new_line
+                break
+        text = "\n".join(lines)
+
+        # -- meta: defaultFrame + canvasGap -------------------------------
+        mm = re.search(r'("meta"|\bmeta)\s*:\s*\{', text)
+        if mm and isinstance(meta, dict):
+            start = text.index("{", mm.end() - 1)
+            end = H._scan_block(text, start)
+            meta_text = text[start:end]
+            new_meta = meta_text
+            df = meta.get("defaultFrame")
+            if isinstance(df, dict) and isinstance(df.get("w"), int) and isinstance(df.get("h"), int):
+                emit = '"defaultFrame": {"w": %d, "h": %d}' % (df["w"], df["h"])
+                dm = re.search(r'("defaultFrame"|\bdefaultFrame)\s*:\s*\{[^{}]*\}', new_meta)
+                if dm:
+                    if dm.group(0) != emit:
+                        new_meta = new_meta[:dm.start()] + emit + new_meta[dm.end():]
+                        changed += 1
+                else:
+                    new_meta = new_meta[:1] + " " + emit + "," + new_meta[1:]
+                    changed += 1
+            if isinstance(meta.get("canvasGap"), int):
+                # Top-level meta key only. If it isn't there, insert at the
+                # FRONT of the block - never anchored on an `id` field, which
+                # in meta belongs to the nested dsRef.
+                gm = re.search(r'(?<=[{,\s])("canvasGap"|canvasGap)(\s*:\s*)(-?\d+)', new_meta)
+                if gm:
+                    if gm.group(3) != str(meta["canvasGap"]):
+                        new_meta = new_meta[:gm.start(3)] + str(meta["canvasGap"]) + new_meta[gm.end(3):]
+                        changed += 1
+                else:
+                    new_meta = new_meta[:1] + ' "canvasGap": %d,' % meta["canvasGap"] + new_meta[1:]
+                    changed += 1
+            if new_meta != meta_text:
+                text = text[:start] + new_meta + text[end:]
+
+        # -- sections: replace the whole array (or insert one) ------------
+        if isinstance(sections, list):
+            live = [s for s in sections if isinstance(s, dict) and not s.get("deleted")]
+            body = ",\n".join(
+                "    " + json.dumps({k: s[k] for k in ("id", "label", "col", "row", "col2", "row2", "tone") if k in s},
+                                    ensure_ascii=False)
+                for s in live
+            )
+            block = "sections: [\n%s\n  ]" % body if live else "sections: []"
+            sm = re.search(r'("sections"|\bsections)\s*:\s*\[', text)
+            if sm:
+                open_idx = text.index("[", sm.end() - 1)
+                end = H._scan_block(text, open_idx)
+                if text[sm.start():end] != block:
+                    text = text[:sm.start()] + block + text[end:]
+                    changed += 1
+            elif live:
+                am = re.search(r'("arrows"|\barrows)\s*:\s*\[', text)
+                if not am:
+                    raise ValueError("cannot locate an insertion point for sections")
+                anchor = H._scan_block(text, text.index("[", am.end() - 1))
+                tail = text[anchor:]
+                if tail.lstrip().startswith(","):
+                    ci = anchor + tail.index(",") + 1
+                    text = text[:ci] + "\n  " + block + "," + text[ci:]
+                else:
+                    text = text[:anchor] + ",\n  " + block + text[anchor:]
+                changed += 1
+
+        return text, changed
+
+    @staticmethod
     def _layout_read_sections(path):
         """Sections already persisted in a `<slug>.layout.js` sidecar, or [].
 
@@ -14304,7 +14483,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         positions = body.get("positions") or {}
         if not isinstance(positions, dict):
             return self._reply(400, {"error": "positions must be an object"})
-        # Sanitize positions - only id → { col:int, row:int } allowed.
+        # Sanitize positions - id → { col, row } plus the optional per-frame
+        # size the frame-size dialog resizes every frame to.
         sanitized_positions = {}
         for fid, pos in positions.items():
             if not isinstance(fid, str) or not fid:
@@ -14314,7 +14494,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             col = pos.get("col"); row = pos.get("row")
             if not isinstance(col, int) or not isinstance(row, int):
                 continue
-            sanitized_positions[fid] = {"col": col, "row": row}
+            entry = {"col": col, "row": row}
+            for k in ("w", "h"):
+                if isinstance(pos.get(k), int) and pos[k] >= 100:
+                    entry[k] = pos[k]
+            sanitized_positions[fid] = entry
         # Sanitize meta - defaultFrame.{w,h} ints, canvasGap int.
         sanitized_meta = {}
         meta_in = body.get("meta") if isinstance(body.get("meta"), dict) else {}
@@ -14329,7 +14513,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         dest_dir = _project_paths(project_root)["editor_dir"]
         if not os.path.isdir(dest_dir):
             return self._reply(404, {"error": "editor dir missing", "dir": dest_dir})
-        dest = os.path.join(dest_dir, slug + ".layout.js")
+        # The data file is the single source of truth for canvas layout; the
+        # sidecar below is legacy and gets deleted once its contents land here.
+        data_path = self._data_file_for(project_root, slug)
+        if not os.path.isfile(data_path):
+            return self._reply(404, {"error": "data file missing", "path": os.path.relpath(data_path, project_root)})
+        legacy_sidecar = os.path.join(dest_dir, slug + ".layout.js")
         # Sanitize sections - the screen-flow grouping layer over the cell grid.
         # Each entry is a NAMED, INCLUSIVE cell rect { id, label, col, row,
         # col2, row2, tone }, or a tombstone { id, deleted: true } marking a
@@ -14365,33 +14554,38 @@ class H(http.server.SimpleHTTPRequestHandler):
                     entry["tone"] = sec["tone"][:24]
                 sanitized_sections.append(entry)
         else:
-            sanitized_sections = self._layout_read_sections(dest)
-        payload = {"positions": sanitized_positions}
-        if sanitized_meta:
-            payload["meta"] = sanitized_meta
-        if sanitized_sections:
-            payload["sections"] = sanitized_sections
-        js = (
-            "// Auto-generated by /__layout. Carries editor preferences:\n"
-            "//   positions - frame.id → { col, row } for the Canvas grid.\n"
-            "//   meta      - defaultFrame { w, h }, canvasGap (px).\n"
-            "//   sections  - named cell rects grouping the screen flow\n"
-            "//               ({ id, label, col, row, col2, row2 }); an entry\n"
-            "//               { id, deleted: true } hides a section the\n"
-            "//               prototype's data file declares.\n"
-            "// Hand-edits OK but the editor overwrites on next rearrange\n"
-            "// or frame-size change. Delete to reset everything.\n"
-            "window.EDITOR_LAYOUT = " + json.dumps(payload, indent=2, sort_keys=True) + ";\n"
-        )
-        rel_dest = os.path.relpath(dest, project_root)
-        with _history_bracket(project_root, [rel_dest],
+            sanitized_sections = None      # partial update - leave the file's sections alone
+        # Patch the data file in place. A parse failure leaves the file
+        # untouched and reports up - never a half-written data file.
+        try:
+            text, changed = self._patch_data_layout(
+                data_path, sanitized_positions, sanitized_meta, sanitized_sections)
+        except Exception as e:
+            return self._reply(500, {"error": "could not patch the data file", "detail": str(e),
+                                     "path": os.path.relpath(data_path, project_root)})
+        rel_dest = os.path.relpath(data_path, project_root)
+        touched = [rel_dest]
+        # The legacy sidecar has now been folded in (the client posts the
+        # MERGED snapshot it is rendering, sidecar included). Retire it, or it
+        # keeps overriding the file it was just merged into.
+        drop_sidecar = os.path.isfile(legacy_sidecar)
+        if drop_sidecar:
+            touched.append(os.path.relpath(legacy_sidecar, project_root))
+        with _history_bracket(project_root, touched,
                               kind="ui-edit",
                               label=f"Layout: {slug}",
                               source="editor",
                               extra={"prototype": slug}):
-            with open(dest, "w", encoding="utf-8") as f:
-                f.write(js)
-        return self._reply(200, {"ok": True, "path": rel_dest, "frames": len(sanitized_positions)})
+            if changed:
+                with open(data_path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            if drop_sidecar:
+                try:
+                    os.remove(legacy_sidecar)
+                except OSError:
+                    drop_sidecar = False
+        return self._reply(200, {"ok": True, "path": rel_dest, "frames": len(sanitized_positions),
+                                 "fields": changed, "sidecarRetired": drop_sidecar})
 
     # ── GET /__workflow / POST /__workflow ──────────────────────────────
     # Persists the Workflow Canvas surface (Phase 3.5b+): pan/zoom + a flat

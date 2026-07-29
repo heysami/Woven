@@ -42,7 +42,7 @@ Placing related screens next to each other is only half the job: the editor draw
 - Name them the way a designer would say them out loud - "Applicant portal", "Admin review", "Onboarding" - not by file path or route.
 - A one-off screen that belongs to no group can sit outside every section. Don't stretch a rect to swallow it.
 - Optional `tone` picks the band colour: `accent`, `violet`, `amber`, `cyan`, `rose`, `lime`. Omit it and the editor assigns one.
-- Users can draw and rename sections by hand in the editor; those hand-edits live in a layout sidecar and survive your regen. Keep `id` stable across runs so a renamed section stays renamed.
+- Users draw, rename, move and resize sections by hand in the editor, and those edits are written straight back into this same data file - there is no second layout file. So the `sections[]` you read may be the user's, not your last run's: keep `id` stable across runs so a renamed section stays renamed, and treat an existing rect as authoritative unless the screens genuinely moved.
 
 ## You must read source
 
@@ -50,7 +50,7 @@ Placing related screens next to each other is only half the job: the editor draw
 
 - `source/*.html` - what UI surfaces exist
 - `source/*.js` - useState branches that produce distinct rendered states worth placing
-- Existing `source/prototype.json` - **preserve any prior `col`/`row` for frame IDs that match the convention**. Users drag frames manually; positions must be stable across regens.
+- The prototype's editor data file (`editor/<slug>.data.js`, else `editor/data.js`) - **this is the live canvas**. Its `frames[i].col` / `.row` and its `sections[]` are exactly what the user sees and drags; there is no separate layout file. **Preserve any prior `col`/`row` for frame IDs that match the convention** - users arrange frames by hand and that arrangement must survive every regen.
 
 ## Enumerate through your lens
 
@@ -64,7 +64,7 @@ If you find yourself enumerating a frame whose source page is the storyboard, st
 
 ## Recipe
 
-1. **Read existing positions.** If `source/prototype.json` has `frames[i].col` / `.row` for a frame ID matching the convention, preserve it.
+1. **Read existing positions from the editor data file.** If it has `frames[i].col` / `.row` for a frame ID matching the convention, preserve it verbatim - that is the user's own arrangement, not a suggestion. Same for a `sections[]` entry's `id`: reuse it so a section the user renamed keeps its name.
 2. **Place new frames** (frames you enumerated that aren't already positioned):
    - You don't have a `parent` field handed to you; infer from source structure. Conventions: a frame whose source declares a useState branch (`if (submitted) return ...`) is a child of its declaring page. A modal whose render is conditional in another page is a child of that page.
    - Top-level (no inferred parent) → column 0, next free row.
@@ -90,11 +90,11 @@ If a card is missing, stacked, off-screen, or shifted from its preserved positio
 Each item requires **evidence**.
 
 - [ ] I read `conventions.md`.
-- [ ] I read existing `prototype.json` and preserved its `col`/`row` for matching IDs.
+- [ ] I read the existing editor data file and preserved its `col`/`row` for matching IDs.
 - [ ] I scanned source for useState branches + modal renders + page files to enumerate canvas-worthy frames.
 - [ ] My frame IDs follow the naming convention.
 - [ ] I excluded the storyboard, triggers, notifications, externals, decisions, starts, inputs.
-- [ ] Existing IDs from `prototype.json` retained their positions.
+- [ ] Existing IDs retained their positions from the editor data file.
 - [ ] I wrote only `id` + `label` + `col` + `row` (+ optional `w`/`h`) per frame, plus `sections[]`.
 - [ ] **No two frames share the same `(col, row)` pair.** (Stacking bug.)
 - [ ] Every cluster I placed has a named `sections[]` rect around it; no two sections overlap; each rect's cells actually contain the frames I meant to group.
@@ -114,6 +114,6 @@ Each item requires **evidence**.
 
 - Don't invent frames not actually present as UI in source.
 - Don't include storyboard or Flow-only kinds.
-- Don't shift positions of frames already placed in `prototype.json`.
+- Don't shift positions of frames already placed in the editor data file - that file IS the canvas the user is looking at.
 - Don't write `kind`, `lane`, `parent`, `entry`, `hash`, `setupScript`, `entities`.
 - Don't invent a per-frame `section` field - membership is spatial, read off `(col, row)` against each rect.
