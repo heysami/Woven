@@ -8463,6 +8463,20 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Group heading inside the popover - separates canvas section NODES from the
+   screen-flow sections read out of canvas-frames embeds. */
+.workflow-sections-group {
+  padding: 8px 8px 3px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.workflow-sections-item-swatch[data-flow="true"] {
+  border-style: solid;
+  border-color: oklch(62% 0.13 174);
+}
 
 /* v3.4.27 - Sub-tabs under Outputs (Prototypes & components / Visual assets).
    Compacter than the top-level tabs so the hierarchy reads as parent/child:
@@ -19160,6 +19174,177 @@ a.ds-badge:hover, button.ds-badge:hover {
   box-shadow: 0 0 0 2px var(--accent);
 }
 .canvas .edge-chip[data-empty="true"] { color: var(--text-faint); font-style: italic; }
+
+/* ────────── Screen-flow sections ──────────
+   A named rectangle of grid cells drawn UNDER the frames it groups. The band
+   itself never takes the mouse (pointer-events: none) so clicking a frame
+   inside a section behaves exactly as it did before sections existed - only
+   the title chip and the resize corner are interactive.
+
+   Everything on the chrome is counter-scaled by --sec-inv (= 1/zoom, clamped),
+   so titles and handles read at a steady screen size whether you're at 100%
+   or browsing the whole flow at 6%. */
+.canvas-section-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.canvas-section {
+  --sec: var(--accent);
+  --sec-inv: 1;
+  position: absolute;
+  pointer-events: none;
+  border: 2px dashed color-mix(in oklab, var(--sec) 45%, transparent);
+  border-radius: 28px;
+  background: color-mix(in oklab, var(--sec) 7%, transparent);
+  z-index: 0;
+}
+.canvas-section[data-tone="accent"] { --sec: oklch(62% 0.13 174); }
+.canvas-section[data-tone="violet"] { --sec: oklch(58% 0.16 300); }
+.canvas-section[data-tone="amber"]  { --sec: oklch(70% 0.14 70); }
+.canvas-section[data-tone="cyan"]   { --sec: oklch(65% 0.12 220); }
+.canvas-section[data-tone="rose"]   { --sec: oklch(62% 0.16 15); }
+.canvas-section[data-tone="lime"]   { --sec: oklch(70% 0.15 130); }
+.canvas-section[data-selected="true"] {
+  border-style: solid;
+  border-color: var(--sec);
+  background: color-mix(in oklab, var(--sec) 11%, transparent);
+}
+/* Title chip - anchored to the band's top-left corner and grown UPWARD out of
+   it, so it never covers the first screen in the group. */
+.canvas-section-head {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  transform-origin: 0 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+  padding: 4px 9px;
+  border: 1px solid color-mix(in oklab, var(--sec) 40%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: grab;
+}
+.canvas-section-head:active { cursor: grabbing; }
+.canvas-section[data-selected="true"] .canvas-section-head {
+  border-color: var(--sec);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--sec) 40%, transparent), var(--shadow-sm);
+}
+.canvas-section-swatch {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--sec);
+}
+.canvas-section-name { font-weight: 600; letter-spacing: -0.005em; }
+.canvas-section-count {
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: 7px;
+  background: var(--surface-3);
+  color: var(--text-muted);
+  font: 500 10px/15px var(--font-mono);
+  text-align: center;
+}
+.canvas-section-x {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.canvas-section-x:hover { background: var(--surface-2); color: var(--danger, oklch(58% 0.19 25)); }
+/* Resize corner - drag to re-cut which cells the section covers. Sized in
+   screen px via the same counter-scale factor as the title. */
+.canvas-section-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: calc(16px * var(--sec-inv));
+  height: calc(16px * var(--sec-inv));
+  transform: translate(35%, 35%);
+  border-right: calc(3px * var(--sec-inv)) solid var(--sec);
+  border-bottom: calc(3px * var(--sec-inv)) solid var(--sec);
+  border-bottom-right-radius: calc(6px * var(--sec-inv));
+  opacity: 0.55;
+  pointer-events: auto;
+  cursor: nwse-resize;
+}
+.canvas-section-resize:hover { opacity: 1; }
+/* Section tool - a transparent capture sheet over the world. It must be a
+   real element so useEndlessCanvas's empty-canvas drag-pan doesn't claim the
+   gesture (that handler fires on mousedowns whose target IS the canvas). */
+.canvas-section-draw {
+  position: absolute;
+  left: -200000px;
+  top: -200000px;
+  width: 400000px;
+  height: 400000px;
+  z-index: 40;
+  cursor: crosshair;
+}
+.canvas-wrap[data-tool="section"] { cursor: crosshair; }
+.canvas-section-ghost {
+  position: absolute;
+  z-index: 41;
+  pointer-events: none;
+  border: 2px dashed var(--accent);
+  border-radius: 28px;
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+.canvas-section-ghost-caption {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  transform-origin: 0 100%;
+  margin-bottom: 6px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: oklch(100% 0 0);
+  font: 600 11px var(--font-mono);
+  white-space: nowrap;
+}
+/* Sections in the docked minimap - drawn under the frame rects so a long flow
+   reads as a handful of labelled blocks instead of a field of dots. */
+.minimap-section {
+  position: absolute;
+  border-radius: 2px;
+  border: 1px dashed color-mix(in oklab, var(--sec, var(--accent)) 55%, transparent);
+  background: color-mix(in oklab, var(--sec, var(--accent)) 12%, transparent);
+}
+.minimap-section[data-tone="accent"] { --sec: oklch(62% 0.13 174); }
+.minimap-section[data-tone="violet"] { --sec: oklch(58% 0.16 300); }
+.minimap-section[data-tone="amber"]  { --sec: oklch(70% 0.14 70); }
+.minimap-section[data-tone="cyan"]   { --sec: oklch(65% 0.12 220); }
+.minimap-section[data-tone="rose"]   { --sec: oklch(62% 0.16 15); }
+.minimap-section[data-tone="lime"]   { --sec: oklch(70% 0.15 130); }
+/* The jump bar reuses the workflow sections-bar styling; in this panel it
+   docks directly above the minimap at the bottom. */
+.canvas-tools-panel .workflow-sections-bar { margin-top: auto; }
+.canvas-tools-panel .workflow-sections-bar + .minimap { margin-top: 10px; }
+.workflow-sections-item-swatch[data-tone="accent"] { border-color: oklch(62% 0.13 174); border-style: solid; }
+.workflow-sections-item-swatch[data-tone="violet"] { border-color: oklch(58% 0.16 300); border-style: solid; }
+.workflow-sections-item-swatch[data-tone="amber"]  { border-color: oklch(70% 0.14 70);  border-style: solid; }
+.workflow-sections-item-swatch[data-tone="cyan"]   { border-color: oklch(65% 0.12 220); border-style: solid; }
+.workflow-sections-item-swatch[data-tone="rose"]   { border-color: oklch(62% 0.16 15);  border-style: solid; }
+.workflow-sections-item-swatch[data-tone="lime"]   { border-color: oklch(70% 0.15 130); border-style: solid; }
 
 /* Clone-mode visuals - the canvas dims slightly and the cursor changes so
    the user knows they're in placement mode. The ghost outline sits at the

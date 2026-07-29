@@ -177,6 +177,11 @@ function buildFramesRegenPrompt(branch) {
     "SCOPE - produce ONLY:",
     "  • frames[]   - one per distinct SCREEN/STATE under source/" + branch + "/, with id/label/kind/hash/col/row/w/h/entry AND setupScript",
     "  • arrows[]   - connections between frames (from/to/action) derived from in-source navigation (links, programmatic routing, hash changes)",
+    "  • sections[] - the NAMED GROUPS the frames fall into (see below)",
+    "",
+    "SECTIONS - you are already clustering related screens into neighbouring cells; `sections` is how you NAME that cluster so the editor can draw it and let the user jump to it. One entry per group, as a rectangle of grid cells with the top-left and bottom-right cells INCLUSIVE:",
+    "  { id: \"applicant-portal\", label: \"Applicant portal\", col: 0, row: 0, col2: 1, row2: 4 }",
+    "Rules: membership is purely SPATIAL - every frame whose (col,row) lands inside the rect belongs to that section, so lay the frames out first and then draw rects around the clusters. Sections must NOT overlap. Cover every frame you can justify grouping (a stray one-off screen can sit outside any section). Name them the way a designer would say them out loud (\"Applicant portal\", \"Admin review\", \"Onboarding\"), not by file path. Leave a spare column/row between two sections so their bands don't touch. Optional `tone` picks the band colour from: accent, violet, amber, cyan, rose, lime.",
     "",
     "GRANULARITY - 'distinct SCREEN/STATE' means every page-level state a user can put the page into, not just whole pages: wizard/stepper STEPS (one substep frame PER STEP - do not collapse a wizard to entry + final step), tab panels, modals/sheets, submitted/outcome states, drill-down selections. Chain step substeps with arrows labeled by each step's actual advance-button text. Leave out only purely local interactions (field focus, accordion toggles, validation hints, hovers).",
     "",
@@ -281,6 +286,125 @@ function snapToCell(x, y, meta) {
     row: Math.max(0, Math.round((y - CANVAS_MARGIN) / pitchY)),
   };
 }
+
+// ────────── Screen-flow sections ──────────
+// A section is a NAMED RECTANGLE OF GRID CELLS on the Canvas view - the
+// grouping layer that sits on top of the col/row grid ("Applicant portal",
+// "Admin review", "Onboarding"). It owns no frames: membership is purely
+// spatial, so every frame whose cell falls inside the rect belongs to it and
+// moving a frame in or out is just a drag. Shape - all four coords are CELL
+// coords, top-left and bottom-right INCLUSIVE, exactly the "from which grid
+// cell to which grid cell" mental model:
+//   { id, label, col, row, col2, row2, tone }
+//
+// Two authors write sections, and both land in the same list:
+//   • the regen agent, as `sections: [...]` in the prototype's editor data
+//     file - it already clusters related screens into adjacent cells, this
+//     just names the cluster;
+//   • the user, via the Section tool on the Canvas view, persisted to the
+//     layout sidecar (window.EDITOR_LAYOUT.sections) so hand-organisation
+//     survives reload without an LLM round-trip.
+// Sidecar entries merge over data-file entries BY ID; a sidecar entry with
+// `deleted: true` tombstones a data-file section the user removed (without it
+// the next merge would resurrect it).
+const SECTION_TONES = ["accent", "violet", "amber", "cyan", "rose", "lime"];
+// Frame chrome strip (label row above the iframe body). Frames occupy
+// gridY … gridY + h + FRAME_CHROME_H, so section bands have to cover it too.
+const FRAME_CHROME_H = 32;
+// Breathing room (world px) between a section's edge and the frames inside it,
+// plus the height reserved above the band for its title.
+const SECTION_PAD = 44;
+const SECTION_LABEL_H = 34;
+
+function normalizeSection(raw, i) {
+  if (!raw || typeof raw !== "object") return null;
+  const int = (v, dflt) => {
+    const n = Math.round(Number(v));
+    return Number.isFinite(n) ? Math.max(0, n) : dflt;
+  };
+  const col = int(raw.col, 0);
+  const row = int(raw.row, 0);
+  // Accept either an inclusive bottom-right cell (col2/row2 - what the editor
+  // writes) or a span (cols/rows - the shape an agent reaches for first).
+  const col2 = raw.col2 != null ? int(raw.col2, col) : col + Math.max(1, int(raw.cols, 1)) - 1;
+  const row2 = raw.row2 != null ? int(raw.row2, row) : row + Math.max(1, int(raw.rows, 1)) - 1;
+  const label = String(raw.label ?? raw.title ?? "").trim();
+  return {
+    id: (typeof raw.id === "string" && raw.id.trim()) ? raw.id.trim() : `sec-${i}-${slugify(label) || "group"}`,
+    label: label || "Section",
+    col:  Math.min(col, col2),
+    row:  Math.min(row, row2),
+    col2: Math.max(col, col2),
+    row2: Math.max(row, row2),
+    tone: SECTION_TONES.includes(raw.tone) ? raw.tone : SECTION_TONES[i % SECTION_TONES.length],
+  };
+}
+
+// Fold the sidecar list over the data-file list. Order follows the base list
+// first (so the agent's authoring order is stable across reloads), then any
+// section the user added by hand.
+function mergeSections(base, overlay) {
+  const out = [];
+  const byId = new Map();
+  (Array.isArray(base) ? base : []).forEach((raw, i) => {
+    const s = normalizeSection(raw, i);
+    if (!s || byId.has(s.id)) return;
+    byId.set(s.id, s); out.push(s);
+  });
+  (Array.isArray(overlay) ? overlay : []).forEach((raw, i) => {
+    if (!raw || typeof raw !== "object" || !raw.id) return;
+    if (raw.deleted) {
+      const cur = byId.get(raw.id);
+      if (cur) { byId.delete(raw.id); out.splice(out.indexOf(cur), 1); }
+      return;
+    }
+    const s = normalizeSection(raw, out.length + i);
+    if (!s) return;
+    const cur = byId.get(s.id);
+    if (cur) Object.assign(cur, s);
+    else { byId.set(s.id, s); out.push(s); }
+  });
+  return out;
+}
+
+// Is this frame inside the section's cell rect? Spatial membership - the one
+// and only rule for "belongs to".
+function frameInSection(frame, sec) {
+  if (!frame || !sec) return false;
+  const c = frame.col != null ? frame.col : 0;
+  const r = frame.row != null ? frame.row : 0;
+  return c >= sec.col && c <= sec.col2 && r >= sec.row && r <= sec.row2;
+}
+
+// World-space rect for a section band, in the same coordinate space frames
+// render in. Grows past the cell rect when a frame inside carries a bespoke
+// w/h that overhangs its cell, so a band never clips a screen it contains.
+function sectionRect(sec, meta, frames) {
+  const { cellW, cellH, pitchX, pitchY } = gridCellSize(meta || (typeof D !== "undefined" ? D.meta : {}));
+  const [x0, y0] = gridXY({ col: sec.col, row: sec.row }, meta);
+  let x1 = x0 + (sec.col2 - sec.col) * pitchX + cellW;
+  let y1 = y0 + (sec.row2 - sec.row) * pitchY + cellH + FRAME_CHROME_H;
+  (frames || []).forEach(f => {
+    if (!frameInSection(f, sec)) return;
+    const [fx, fy] = gridXY(f, meta);
+    x1 = Math.max(x1, fx + (f.w || cellW));
+    y1 = Math.max(y1, fy + (f.h || cellH) + FRAME_CHROME_H);
+  });
+  return {
+    x: x0 - SECTION_PAD,
+    y: y0 - SECTION_PAD,
+    w: (x1 - x0) + SECTION_PAD * 2,
+    h: (y1 - y0) + SECTION_PAD * 2,
+  };
+}
+
+// Apply the sections carried by the layout sidecar over whatever the data file
+// declared. Runs at boot, next to the frame-position shim above, so every
+// reader (CanvasView, the sections bar, the minimap) sees one merged list.
+(() => {
+  const L = (window.EDITOR_LAYOUT && typeof window.EDITOR_LAYOUT === "object") ? window.EDITOR_LAYOUT : null;
+  D.sections = mergeSections(D.sections || (D.meta && D.meta.sections) || [], L && L.sections);
+})();
 
 // Multi-HTML sources let each frame / primitive variant / type token declare
 // its own `entry`. The intuitive author shape is a bare filename relative to
@@ -663,6 +787,9 @@ const Icon = {
   StateM:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="4" r="2"/><path d="M6 4h4M12 6v4M10.5 6.5l-5 5"/></svg>`,
   Clock:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>`,
   Grid:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 6h12M2 10h12M6 2v12M10 2v12"/></svg>`,
+  // Section: a labelled band wrapping a group of screens - dashed outer rect
+  // (the section) with two solid cells inside it (the screens it groups).
+  Section:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="1.5" y="3.5" width="13" height="10" rx="1.5" strokeDasharray="2.4 1.8"/><rect x="4" y="6" width="3.5" height="5"/><rect x="8.5" y="6" width="3.5" height="5"/><path d="M1.5 2h5"/></svg>`,
   Refresh:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 8a6 6 0 0110-4.5M14 3v3h-3M14 8a6 6 0 01-10 4.5M2 13v-3h3"/></svg>`,
   // Revert: history mark (clock + counter-clockwise arrow) - "go back to this
   // version". Used by the git panel's per-commit Revert action.
@@ -1452,7 +1579,7 @@ function useDsProposalIndex() {
 }
 
 /* ────────── Frame ────────── */
-function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onStartArrow, arrowFromId, onCompleteArrow, edits, strokes, onAddStroke, rearrangeDrag, onRearrangeMouseDown, gridMeta, rearrangeSelected, auditCount, live = true }) {
+function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onStartArrow, arrowFromId, onCompleteArrow, edits, strokes, onAddStroke, rearrangeDrag, onRearrangeMouseDown, gridMeta, rearrangeSelected, auditCount, sectionShift, live = true }) {
   const captureActive = !!tool && tool !== "draw" && tool !== "rearrange";  // draw / rearrange use their own overlays
   const drawActive = tool === "draw";
   const rearrangeActive = tool === "rearrange";
@@ -1553,9 +1680,12 @@ function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onSta
   // Applied via CSS transform so we don't pay a layout cost per mousemove tick.
   // Group followers (selected frames during a multi-drag) get the same delta
   // as the anchor - preserves the visual grouping while in flight.
-  const dragX = isDragging || isGroupFollower ? rearrangeDrag.dx : 0;
-  const dragY = isDragging || isGroupFollower ? rearrangeDrag.dy : 0;
-  const transformOn = isDragging || isGroupFollower;
+  // `sectionShift` is the same idea one level up: while a SECTION's title chip
+  // is being dragged, every frame inside that section rides along so the group
+  // reads as one object in flight.
+  const dragX = isDragging || isGroupFollower ? rearrangeDrag.dx : (sectionShift ? sectionShift.dx : 0);
+  const dragY = isDragging || isGroupFollower ? rearrangeDrag.dy : (sectionShift ? sectionShift.dy : 0);
+  const transformOn = isDragging || isGroupFollower || !!sectionShift;
   return html`
     <div
       className="frame"
@@ -2700,7 +2830,45 @@ function applyModelEdits(D, edits) {
   });
   const timelines     = (D.timelines     || []).map(t => ({ ...t, events: (t.events || []).map(e => ({ ...e })) }));
   const grids         = (D.grids         || []).map(g => ({ ...g, cells:  (g.cells  || []).map(c => ({ ...c })) }));
-  return { entities, frames, arrows, links, framesEntities: framesEntitiesArr, commentsByTarget, lanes, framesRank, defaultFrame, canvasGap, stateMachines, timelines, grids };
+
+  // ───── section-targeted edits (screen-flow grouping over the cell grid) ─────
+  // Applied after the clone so mutations land on the local copy. Sections are
+  // ORGANISATION, not design: every one of these edits rides the layout channel
+  // (setLayoutEdits → the /__layout sidecar), never the LLM-bound submit queue.
+  //   add    - { section: { id, label, col, row, col2, row2, tone } }
+  //   rename - { sectionId, newLabel }
+  //   bounds - { sectionId, col, row, col2, row2 }   (any subset)
+  //   tone   - { sectionId, tone }
+  //   delete - { sectionId }
+  const sections = (D.sections || []).map(s => ({ ...s }));
+  edits.forEach((ed) => {
+    if (ed.target !== "section") return;
+    if (ed.kind === "add") {
+      const s = normalizeSection(ed.section, sections.length);
+      if (s && !sections.some(x => x.id === s.id)) sections.push(s);
+      return;
+    }
+    const i = sections.findIndex(s => s.id === ed.sectionId);
+    if (i < 0) return;
+    if (ed.kind === "delete") { sections.splice(i, 1); return; }
+    const s = sections[i];
+    if (ed.kind === "rename") {
+      if (ed.newLabel != null) s.label = String(ed.newLabel).trim() || s.label;
+    } else if (ed.kind === "tone") {
+      if (SECTION_TONES.includes(ed.tone)) s.tone = ed.tone;
+    } else if (ed.kind === "bounds") {
+      const next = normalizeSection({
+        ...s,
+        col:  ed.col  != null ? ed.col  : s.col,
+        row:  ed.row  != null ? ed.row  : s.row,
+        col2: ed.col2 != null ? ed.col2 : s.col2,
+        row2: ed.row2 != null ? ed.row2 : s.row2,
+      }, i);
+      if (next) Object.assign(s, next);
+    }
+  });
+
+  return { entities, frames, arrows, links, framesEntities: framesEntitiesArr, commentsByTarget, lanes, framesRank, defaultFrame, canvasGap, stateMachines, timelines, grids, sections };
 }
 
 /* ────────── Type-sample renderer - uses the source's actual fonts ────────── */
@@ -6989,6 +7157,74 @@ function InspectorPanel({ picked, tool, edits, onStyle, onMove }) {
   `;
 }
 
+/* ────────── Section layer (screen-flow grouping) ──────────
+   Renders one tinted band per section BEHIND the frames, plus a title that
+   counter-scales with zoom so it stays readable at screen resolution however
+   far out you are (a world-fixed title vanishes at the 8% zoom you browse a
+   40-screen flow at). The band itself is pointer-events:none - only the title
+   chip and the resize corner take the mouse, so clicking "through" a section
+   onto a frame keeps working exactly as before.
+
+   Read-only in embed mode (the workflow Canvas-frames node): bands + titles
+   render, the drag/rename/delete affordances don't. */
+function SectionLayer({ sections, frames, gridMeta, zoom, selectedId, editable, onSelect, onRename, onDelete, onHeaderMouseDown, onResizeMouseDown }) {
+  if (!sections || !sections.length) return null;
+  // Screen-constant chrome: a title drawn at `20 / zoom` world px reads as a
+  // steady 20 screen px. Clamped so it neither disappears at 1:1 nor swallows
+  // the canvas when someone zooms to 2%.
+  const inv = Math.min(14, Math.max(1, 1 / Math.max(zoom, 0.02)));
+  return html`
+    <div className="canvas-section-layer">
+      ${sections.map(s => {
+        const r = sectionRect(s, gridMeta, frames);
+        const count = (frames || []).filter(f => frameInSection(f, s)).length;
+        return html`
+          <div
+            key=${s.id}
+            className="canvas-section"
+            data-section-id=${s.id}
+            data-tone=${s.tone || "accent"}
+            data-selected=${selectedId === s.id ? "true" : "false"}
+            style=${{ left: r.x, top: r.y, width: r.w, height: r.h, "--sec-inv": inv }}
+          >
+            <div
+              className="canvas-section-head"
+              style=${{ transform: `scale(${inv})` }}
+              onMouseDown=${editable ? (e) => onHeaderMouseDown(e, s) : undefined}
+              onClick=${(e) => { e.stopPropagation(); onSelect && onSelect(s.id); }}
+              onDoubleClick=${editable ? (e) => { e.stopPropagation(); onRename(s); } : undefined}
+              title=${editable
+                ? `${s.label} - drag to move the whole group, double-click to rename. Cells (${s.col}, ${s.row}) → (${s.col2}, ${s.row2}).`
+                : `${s.label} - cells (${s.col}, ${s.row}) → (${s.col2}, ${s.row2}).`}
+            >
+              <span className="canvas-section-swatch" aria-hidden="true"/>
+              <span className="canvas-section-name">${s.label}</span>
+              <span className="canvas-section-count">${count}</span>
+              ${editable && html`
+                <button
+                  type="button"
+                  className="canvas-section-x"
+                  title="Delete this section (the screens inside stay put)"
+                  aria-label=${"Delete section " + s.label}
+                  onMouseDown=${(e) => e.stopPropagation()}
+                  onClick=${(e) => { e.stopPropagation(); onDelete(s); }}
+                ><${Icon.Trash}/></button>
+              `}
+            </div>
+            ${editable && html`
+              <div
+                className="canvas-section-resize"
+                title="Drag to change which cells this section covers"
+                onMouseDown=${(e) => onResizeMouseDown(e, s)}
+              />
+            `}
+          </div>
+        `;
+      })}
+    </div>
+  `;
+}
+
 function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLayoutEdits, strokes, onAddStroke, selectionRef, onSelectionCountChange }) {
   // Read frames/arrows from the materialized model so col/row migration and
   // edit-time moves both flow through. D.frames (raw data) only carries x/y
@@ -7164,6 +7400,174 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
   // it doesn't appear in the pending-edits panel and isn't submitted with
   // the design-edit batch.
   const queueLayout = (eds) => setLayoutEdits(prev => [...prev, ...(Array.isArray(eds) ? eds : [eds])]);
+
+  // ── Sections (screen-flow grouping over the cell grid) ────────────────
+  // The list is materialised by applyModelEdits, so agent-authored sections
+  // (data file) and hand-drawn ones (layout sidecar) arrive as one array.
+  const sections = model?.sections || D.sections || [];
+  const [selectedSection, setSelectedSection] = useState(null);
+  // Live drag state for the Section tool's create-marquee, and for the
+  // move / resize drags on an existing section.
+  //   draw:   { c1, r1, c2, r2 }             - cells the marquee covers
+  //   sectionDrag: { id, mode:"move"|"resize", … } - live preview overrides
+  const [sectionDraw, setSectionDraw] = useState(null);
+  const [sectionDrag, setSectionDrag] = useState(null);
+  const sectionsEditable = !_embedNoInteract;
+
+  // Cell under the cursor by CONTAINMENT (floor), not by nearest edge. The
+  // clone/rearrange paths want "which cell do I snap to" (snapToCell rounds);
+  // a marquee wants "which cell am I inside".
+  const screenToCellFloor = (clientX, clientY) => {
+    const wrap = wrapRef.current; if (!wrap) return null;
+    const r = wrap.getBoundingClientRect();
+    const { pitchX, pitchY } = gridCellSize(gridMeta);
+    const canvasX = (clientX - r.left - pan.x) / zoom;
+    const canvasY = (clientY - r.top  - pan.y) / zoom;
+    return {
+      col: Math.max(0, Math.floor((canvasX - CANVAS_MARGIN) / pitchX)),
+      row: Math.max(0, Math.floor((canvasY - CANVAS_MARGIN) / pitchY)),
+    };
+  };
+
+  // Section tool: drag across cells to draw a new section, release to name it.
+  const onSectionDrawDown = (e) => {
+    if (e.button !== 0 || !sectionsEditable) return;
+    const start = screenToCellFloor(e.clientX, e.clientY);
+    if (!start) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setSectionDraw({ c1: start.col, r1: start.row, c2: start.col, r2: start.row });
+    let last = { c1: start.col, r1: start.row, c2: start.col, r2: start.row };
+    const onMove = (mv) => {
+      const cell = screenToCellFloor(mv.clientX, mv.clientY);
+      if (!cell) return;
+      last = { ...last, c2: cell.col, r2: cell.row };
+      setSectionDraw(last);
+    };
+    const onUp = async () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      setSectionDraw(null);
+      const col = Math.min(last.c1, last.c2), row = Math.min(last.r1, last.r2);
+      const col2 = Math.max(last.c1, last.c2), row2 = Math.max(last.r1, last.r2);
+      // Default the name to nothing and let the user type - the cell range is
+      // already visible behind the prompt.
+      const label = await uiPrompt(
+        `Name this section (cells ${col},${row} → ${col2},${row2}):`, "");
+      if (label == null) return;
+      const id = `sec-${slugify(label) || "group"}-${Math.random().toString(36).slice(2, 6)}`;
+      queueLayout({ target: "section", kind: "add", section: { id, label: label || "Section", col, row, col2, row2 } });
+      setSelectedSection(id);
+      setTool(null);   // one section per press, like the clone gesture
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  // Drag a section's title chip: moves the band AND every frame inside it, so
+  // a group stays a group. Frames outside the band never move.
+  const onSectionHeaderDown = (e, sec) => {
+    if (e.button !== 0 || !sectionsEditable) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedSection(sec.id);
+    const startCell = screenToCellFloor(e.clientX, e.clientY);
+    if (!startCell) return;
+    const members = frames.filter(f => frameInSection(f, sec)).map(f => ({ id: f.id, col: f.col, row: f.row }));
+    let delta = { dCol: 0, dRow: 0 };
+    let started = false;
+    const onMove = (mv) => {
+      const cell = screenToCellFloor(mv.clientX, mv.clientY);
+      if (!cell) return;
+      const dCol = Math.max(-sec.col, cell.col - startCell.col);
+      const dRow = Math.max(-sec.row, cell.row - startCell.row);
+      if (!started && dCol === 0 && dRow === 0) return;
+      started = true;
+      delta = { dCol, dRow };
+      setSectionDrag({ id: sec.id, mode: "move", dCol, dRow });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      setSectionDrag(null);
+      const { dCol, dRow } = delta;
+      if (!started || (dCol === 0 && dRow === 0)) return;
+      const batch = [{
+        target: "section", kind: "bounds", sectionId: sec.id,
+        col: sec.col + dCol, row: sec.row + dRow,
+        col2: sec.col2 + dCol, row2: sec.row2 + dRow,
+      }];
+      members.forEach(m => batch.push({
+        target: "frame", kind: "move", frameId: m.id,
+        col: Math.max(0, m.col + dCol), row: Math.max(0, m.row + dRow),
+      }));
+      queueLayout(batch);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  // Drag the bottom-right corner: re-cut which cells the section covers.
+  // Frames don't move - they join or leave by where the edge lands.
+  const onSectionResizeDown = (e, sec) => {
+    if (e.button !== 0 || !sectionsEditable) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedSection(sec.id);
+    let next = { col2: sec.col2, row2: sec.row2 };
+    const onMove = (mv) => {
+      const cell = screenToCellFloor(mv.clientX, mv.clientY);
+      if (!cell) return;
+      next = { col2: Math.max(sec.col, cell.col), row2: Math.max(sec.row, cell.row) };
+      setSectionDrag({ id: sec.id, mode: "resize", ...next });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      setSectionDrag(null);
+      if (next.col2 === sec.col2 && next.row2 === sec.row2) return;
+      queueLayout({ target: "section", kind: "bounds", sectionId: sec.id, col2: next.col2, row2: next.row2 });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const renameSection = async (sec) => {
+    const label = await uiPrompt("Section name:", sec.label || "");
+    if (label == null) return;
+    queueLayout({ target: "section", kind: "rename", sectionId: sec.id, newLabel: label });
+  };
+  const deleteSection = async (sec) => {
+    const ok = await uiConfirm(
+      `Delete the section "${sec.label}"? The ${frames.filter(f => frameInSection(f, sec)).length} screens inside stay exactly where they are.`);
+    if (!ok) return;
+    queueLayout({ target: "section", kind: "delete", sectionId: sec.id });
+    setSelectedSection(cur => (cur === sec.id ? null : cur));
+  };
+
+  // Sections as rendered THIS frame - a live move/resize drag overrides the
+  // committed bounds so the band tracks the cursor before the edit commits.
+  const drawnSections = useMemo(() => sections.map(s => {
+    if (!sectionDrag || sectionDrag.id !== s.id) return s;
+    if (sectionDrag.mode === "move") {
+      return { ...s,
+        col:  s.col  + sectionDrag.dCol, row:  s.row  + sectionDrag.dRow,
+        col2: s.col2 + sectionDrag.dCol, row2: s.row2 + sectionDrag.dRow };
+    }
+    return { ...s, col2: sectionDrag.col2, row2: sectionDrag.row2 };
+  }), [sections, sectionDrag]);
+
+  // Pixel delta a frame inherits from the section being dragged over it, or
+  // null when it isn't in the moving section. Membership is read from the
+  // section's COMMITTED bounds - the ones the frames were inside when the
+  // drag started.
+  const sectionShiftFor = (f) => {
+    if (!sectionDrag || sectionDrag.mode !== "move") return null;
+    const orig = sections.find(s => s.id === sectionDrag.id);
+    if (!orig || !frameInSection(f, orig)) return null;
+    const { pitchX, pitchY } = gridCellSize(gridMeta);
+    return { dx: sectionDrag.dCol * pitchX, dy: sectionDrag.dRow * pitchY };
+  };
 
   // Multi-select state for rearrange. Empty set = no selection (single-frame
   // drag is the natural mode). Cmd/Ctrl+click toggles a frame in. Plain click
@@ -7472,7 +7876,7 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
 
   return html`
     <div className="canvas-view">
-    ${!viewIsEmbed() && html`<${CanvasToolsPanel} tool=${tool} setTool=${setTool} frames=${frames} pan=${pan} zoom=${zoom} setPan=${setPan} setZoom=${setZoom} wrapRef=${wrapRef} gridMeta=${gridMeta}/>`}
+    ${!viewIsEmbed() && html`<${CanvasToolsPanel} tool=${tool} setTool=${setTool} frames=${frames} sections=${sections} pan=${pan} zoom=${zoom} setPan=${setPan} setZoom=${setZoom} wrapRef=${wrapRef} gridMeta=${gridMeta} onPickSection=${(id) => setSelectedSection(id)}/>`}
     <div
       ref=${wrapRef}
       className=${"canvas-wrap" + (cloneMode ? " is-clone-placing" : "") + (arrowFrom ? " is-arrow-drawing" : "")}
@@ -7504,6 +7908,7 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
         // Rearrange mode: clicks on the empty canvas clear the multi-selection.
         if (tool === "rearrange") { setSelectedFrames(new Set()); return; }
         setPicked(null); setSelected(null); setSelectedArrow(null); setEditArrow(null);
+        setSelectedSection(null);
       }}
     >
       <div className="canvas" style=${(() => {
@@ -7516,6 +7921,20 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
           "--grid-origin-y": CANVAS_MARGIN + "px",
         };
       })()}>
+        ${/* Sections paint first - they're the ground the frames sit on. */ ""}
+        <${SectionLayer}
+          sections=${drawnSections}
+          frames=${frames}
+          gridMeta=${gridMeta}
+          zoom=${zoom}
+          selectedId=${selectedSection}
+          editable=${sectionsEditable}
+          onSelect=${(id) => setSelectedSection(id)}
+          onRename=${renameSection}
+          onDelete=${deleteSection}
+          onHeaderMouseDown=${onSectionHeaderDown}
+          onResizeMouseDown=${onSectionResizeDown}
+        />
         <${ArrowLayer}
           frames=${frames}
           arrows=${arrows}
@@ -7554,8 +7973,29 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
             onRearrangeMouseDown=${onRearrangeMouseDown}
             rearrangeSelected=${selectedFrames.has(f.id)}
             auditCount=${(auditByFrame[f.id] || []).length}
+            sectionShift=${sectionShiftFor(f)}
           />
         `)}
+        ${tool === "section" && sectionsEditable && html`
+          ${/* Capture layer for the Section tool. It has to be a real element
+              (not the .canvas itself) so useEndlessCanvas's empty-drag pan
+              bails out - that handler treats a mousedown whose target IS the
+              canvas as a pan gesture, and it runs before React's. */ ""}
+          <div className="canvas-section-draw" onMouseDown=${onSectionDrawDown}/>
+        `}
+        ${sectionDraw && (() => {
+          const col = Math.min(sectionDraw.c1, sectionDraw.c2), row = Math.min(sectionDraw.r1, sectionDraw.r2);
+          const col2 = Math.max(sectionDraw.c1, sectionDraw.c2), row2 = Math.max(sectionDraw.r1, sectionDraw.r2);
+          const r = sectionRect({ col, row, col2, row2 }, gridMeta, frames);
+          const inside = frames.filter(f => frameInSection(f, { col, row, col2, row2 })).length;
+          return html`
+            <div className="canvas-section-ghost" style=${{ left: r.x, top: r.y, width: r.w, height: r.h }}>
+              <span className="canvas-section-ghost-caption" style=${{ transform: `scale(${Math.min(14, Math.max(1, 1 / Math.max(zoom, 0.02)))})` }}>
+                ${col},${row} → ${col2},${row2} · ${inside} screen${inside === 1 ? "" : "s"}
+              </span>
+            </div>
+          `;
+        })()}
         ${cloneMode && cloneHover && (() => {
           // Ghost outline at the hovered cell. Renders inside .canvas so it
           // inherits the pan/zoom transform automatically.
@@ -7674,6 +8114,16 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
           <button className="clone-mode-cancel" onClick=${() => { setCloneMode(null); setCloneHover(null); }}>Cancel · Esc</button>
         </div>
       `}
+      ${tool === "section" && sectionsEditable && html`
+        <div className="clone-mode-banner" onClick=${(e) => e.stopPropagation()}>
+          <${Icon.Section}/>
+          <span>
+            Drag across the cells a group covers - top-left to bottom-right - then name it.
+            Every screen inside becomes part of the section.
+          </span>
+          <button className="clone-mode-cancel" onClick=${() => setTool(null)}>Cancel · Esc</button>
+        </div>
+      `}
       ${arrowFrom && html`
         <div className="clone-mode-banner" onClick=${(e) => e.stopPropagation()}>
           <span>→</span>
@@ -7704,7 +8154,7 @@ function ZoomPill({ zoom }) {
    viewport scale to the actual panel width, centers the projected world, lets
    you click/drag to pan when setPan is wired, and carries the zoom indicator in
    its bottom-left corner when setZoom is wired. */
-function MiniMap({ frames, pan, zoom, wrapRef, gridMeta, setZoom, setPan }) {
+function MiniMap({ frames, sections, pan, zoom, wrapRef, gridMeta, setZoom, setPan }) {
   const meta = gridMeta || ((typeof D !== "undefined") ? D.meta : {});
   const cellW = (meta?.defaultFrame?.w) || 1440;
   const cellH = (meta?.defaultFrame?.h) || 900;
@@ -7820,6 +8270,19 @@ function MiniMap({ frames, pan, zoom, wrapRef, gridMeta, setZoom, setPan }) {
         onMouseDown=${onMinimapMouseDown}
         data-pannable=${setPan ? "true" : "false"}
       >
+        ${(sections || []).map(sec => {
+          // Section bands under the frame dots - at minimap scale they're the
+          // only thing that makes a 40-screen flow legible as a shape.
+          const r = sectionRect(sec, meta, frames);
+          return html`
+            <div key=${sec.id} className="minimap-section" data-tone=${sec.tone || "accent"} style=${{
+              left: offX + (r.x - bb.minX) * s,
+              top:  offY + (r.y - bb.minY) * s,
+              width:  Math.max(2, r.w * s),
+              height: Math.max(2, r.h * s),
+            }}/>
+          `;
+        })}
         ${frames.map(f => {
           const [fx, fy] = gridXY(f, meta);
           const fw = f.w || cellW;
@@ -8030,9 +8493,69 @@ function WorkflowMiniMap({ nodes, pan, zoom, wrapRef, setPan, setZoom, extraBoun
    fits the viewport (zoom-to-fit, capped at 100%) and selects it.
    Renders nothing when the canvas has no sections - the bar earns its
    row only when there's something to jump to. */
-function WorkflowSectionsBar({ sections, wrapRef, setPan, setZoom, onPick }) {
+/* Screen-flow sections living INSIDE the canvas-frames nodes on this canvas.
+   Those nodes embed the editor's Canvas view, which draws its own section
+   bands - so the workflow canvas can offer them in the same jump list. The
+   embed is same-origin, can't pan, and renders at native pixel size inside the
+   node, so a band's on-screen box is read straight off its DOM rect and mapped
+   back through the node's own scale. Returns screen-space rects; the caller
+   converts to world with its pan/zoom. */
+function collectEmbeddedFlowSections() {
+  const out = [];
+  try {
+    document.querySelectorAll(".workflow-node-frames").forEach(nodeEl => {
+      const nodeId = nodeEl.getAttribute("data-node-id") || "";
+      const iframe = nodeEl.querySelector("iframe");
+      if (!iframe) return;
+      let doc = null;
+      try { doc = iframe.contentDocument; } catch { return; }
+      if (!doc) return;
+      const box = iframe.getBoundingClientRect();
+      if (!box.width || !iframe.clientWidth) return;
+      // The node carries the outer canvas zoom; the embed's own pixels don't.
+      const sx = box.width / iframe.clientWidth;
+      const sy = box.height / (iframe.clientHeight || 1);
+      const nodeLabel = (nodeEl.querySelector(".workflow-node-label")?.textContent || "Screen flow").trim();
+      doc.querySelectorAll(".canvas-section[data-section-id]").forEach(el => {
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height) return;
+        out.push({
+          id: nodeId + ":" + el.getAttribute("data-section-id"),
+          nodeId,
+          title: (el.querySelector(".canvas-section-name")?.textContent || "Section").trim(),
+          group: nodeLabel,
+          screen: {
+            left: box.left + r.left * sx,
+            top:  box.top  + r.top  * sy,
+            w:    r.width  * sx,
+            h:    r.height * sy,
+          },
+        });
+      });
+    });
+  } catch { /* embed mid-reload - the next scan picks it up */ }
+  return out;
+}
+
+function WorkflowSectionsBar({ sections, wrapRef, pan, zoom, setPan, setZoom, onPick }) {
   const [open, setOpen] = useState(false);
   const hostRef = useRef(null);
+  // Sections drawn inside canvas-frames embeds. Scanned on mount (with a few
+  // retries - embeds boot async) and again every time the popover opens, so
+  // the list is fresh without polling the DOM forever.
+  const [flowSections, setFlowSections] = useState([]);
+  useEffect(() => {
+    let tries = 0, timer = 0, stop = false;
+    const tick = () => {
+      if (stop) return;
+      const found = collectEmbeddedFlowSections();
+      setFlowSections(found);
+      if (found.length || ++tries >= 8) return;
+      timer = setTimeout(tick, 900);
+    };
+    timer = setTimeout(tick, 600);
+    return () => { stop = true; clearTimeout(timer); };
+  }, []);
   // Close on click-out / Esc - popover discipline matching the other
   // floating menus (model chip, connector menus).
   useEffect(() => {
@@ -8052,7 +8575,29 @@ function WorkflowSectionsBar({ sections, wrapRef, setPan, setZoom, onPick }) {
   const list = (Array.isArray(sections) ? sections : [])
     .slice()
     .sort((a, b) => ((a.y || 0) - (b.y || 0)) || ((a.x || 0) - (b.x || 0)));
-  if (!list.length) return null;
+  if (!list.length && !flowSections.length) return null;
+  // Jump to a screen-flow section inside a canvas-frames node: its box is
+  // known in SCREEN px, so convert back through the current pan/zoom to world
+  // coords and fit the same way a node section does.
+  const jumpFlow = (sec) => {
+    const wrap = wrapRef && wrapRef.current;
+    if (!wrap || !setPan || !setZoom || !zoom) return;
+    const wr = wrap.getBoundingClientRect();
+    const wx = (sec.screen.left - wr.left - pan.x) / zoom;
+    const wy = (sec.screen.top  - wr.top  - pan.y) / zoom;
+    const ww = Math.max(1, sec.screen.w / zoom);
+    const wh = Math.max(1, sec.screen.h / zoom);
+    const pad = 60;
+    const fit = Math.min((wrap.clientWidth - pad * 2) / ww, (wrap.clientHeight - pad * 2) / wh);
+    const z = Math.max(0.08, Math.min(1, fit));
+    setZoom(z);
+    setPan({
+      x: wrap.clientWidth  / 2 - (wx + ww / 2) * z,
+      y: wrap.clientHeight / 2 - (wy + wh / 2) * z,
+    });
+    setOpen(false);
+    onPick && onPick(sec.nodeId);
+  };
   const jump = (sec) => {
     const wrap = wrapRef && wrapRef.current;
     if (!wrap || !setPan || !setZoom) return;
@@ -8091,6 +8636,22 @@ function WorkflowSectionsBar({ sections, wrapRef, setPan, setZoom, onPick }) {
               <span className="workflow-sections-item-label">${s.title || "Section"}</span>
             </button>
           `)}
+          ${flowSections.length > 0 && html`
+            ${list.length > 0 && html`<div className="workflow-sections-group">Screen flow</div>`}
+            ${flowSections.map(s => html`
+              <button
+                key=${s.id}
+                type="button"
+                className="workflow-sections-item"
+                role="menuitem"
+                title=${"Jump to “" + s.title + "” in " + s.group}
+                onClick=${() => jumpFlow(s)}
+              >
+                <span className="workflow-sections-item-swatch" data-flow="true" aria-hidden="true"/>
+                <span className="workflow-sections-item-label">${s.title}</span>
+              </button>
+            `)}
+          `}
         </div>
       `}
       <button
@@ -8098,11 +8659,11 @@ function WorkflowSectionsBar({ sections, wrapRef, setPan, setZoom, onPick }) {
         className="workflow-sections-toggle"
         aria-expanded=${open ? "true" : "false"}
         title="Sections on this canvas - click to jump to one"
-        onClick=${() => setOpen(o => !o)}
+        onClick=${() => { setOpen(o => !o); setFlowSections(collectEmbeddedFlowSections()); }}
       >
         <span className="workflow-sections-toggle-glyph" aria-hidden="true">▦</span>
         <span>Go to section</span>
-        <span className="workflow-sections-count">${list.length}</span>
+        <span className="workflow-sections-count">${list.length + flowSections.length}</span>
         <span className="workflow-sections-caret" aria-hidden="true">${open ? "▾" : "▴"}</span>
       </button>
     </div>
@@ -52473,6 +53034,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             <${WorkflowSectionsBar}
               sections=${(data.nodes || []).filter(n => n.kind === "section")}
               wrapRef=${wrapRef}
+              pan=${pan}
+              zoom=${zoom}
               setPan=${setPan}
               setZoom=${setZoom}
               onPick=${(id) => setSelectedNodeIds(new Set([id]))}
@@ -94627,6 +95190,7 @@ const EDITOR_TOOL_TABS = [
   { key: "comment",   icon: () => Icon.Comment, label: "Comment",   kbd: "C" },
   { key: "text",      icon: () => Icon.Text,    label: "Text",      kbd: "T" },
   { key: "draw",      icon: () => Icon.Pen,     label: "Draw",      kbd: "D" },
+  { key: "section",   icon: () => Icon.Section, label: "Section",   kbd: "S" },
 ];
 
 /* The editor's left icon rail - the thin VIEW switcher only (like the workflow
@@ -94671,7 +95235,88 @@ function EditorLeftRail({ view, setView, chatOpen, chatHasThread, onToggleChat }
    minimap below, the same shape the workflow whiteboard-tools panel uses.
    Rendered by CanvasView (so the minimap shares the canvas pan/zoom/frames);
    suppressed in embed mode. */
-function CanvasToolsPanel({ tool, setTool, frames, pan, zoom, setPan, setZoom, wrapRef, gridMeta }) {
+/* ────────── Canvas sections bar (jump to a section) ──────────
+   The editor-canvas twin of WorkflowSectionsBar: same one-line toggle docked
+   above the minimap, same popover, same zoom-to-fit jump - but reading the
+   screen-flow sections (named cell rects) instead of workflow section nodes.
+   Reuses the workflow-sections-* classes so the two bars stay one pattern.
+   Renders nothing until the flow HAS sections. */
+function CanvasSectionsBar({ sections, frames, gridMeta, wrapRef, setPan, setZoom, onPick }) {
+  const [open, setOpen] = useState(false);
+  const hostRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (hostRef.current && hostRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+  // Reading order down the flow: top-to-bottom, then left-to-right.
+  const list = (Array.isArray(sections) ? sections : []).slice()
+    .sort((a, b) => (a.row - b.row) || (a.col - b.col));
+  if (!list.length) return null;
+  const jump = (sec) => {
+    const wrap = wrapRef && wrapRef.current;
+    if (!wrap || !setPan || !setZoom) return;
+    const r = sectionRect(sec, gridMeta, frames);
+    const pad = 60;
+    const fit = Math.min((wrap.clientWidth - pad * 2) / r.w, (wrap.clientHeight - pad * 2) / r.h);
+    const z = Math.max(0.02, Math.min(1, fit));
+    setZoom(z);
+    setPan({
+      x: wrap.clientWidth  / 2 - (r.x + r.w / 2) * z,
+      y: wrap.clientHeight / 2 - (r.y + r.h / 2) * z,
+    });
+    setOpen(false);
+    onPick && onPick(sec.id);
+  };
+  return html`
+    <div className="workflow-sections-bar" ref=${hostRef}>
+      ${open && html`
+        <div className="workflow-sections-pop" role="menu" aria-label="Jump to section">
+          ${list.map(s => {
+            const n = (frames || []).filter(f => frameInSection(f, s)).length;
+            return html`
+              <button
+                key=${s.id}
+                type="button"
+                className="workflow-sections-item"
+                role="menuitem"
+                title=${`Jump to “${s.label}” - cells (${s.col}, ${s.row}) → (${s.col2}, ${s.row2})`}
+                onClick=${() => jump(s)}
+              >
+                <span className="workflow-sections-item-swatch" data-tone=${s.tone || "accent"} aria-hidden="true"/>
+                <span className="workflow-sections-item-label">${s.label}</span>
+                <span className="workflow-sections-count">${n}</span>
+              </button>
+            `;
+          })}
+        </div>
+      `}
+      <button
+        type="button"
+        className="workflow-sections-toggle"
+        aria-expanded=${open ? "true" : "false"}
+        title="Sections in this screen flow - click to jump to one"
+        onClick=${() => setOpen(o => !o)}
+      >
+        <span className="workflow-sections-toggle-glyph" aria-hidden="true">▦</span>
+        <span>Go to section</span>
+        <span className="workflow-sections-count">${list.length}</span>
+        <span className="workflow-sections-caret" aria-hidden="true">${open ? "▾" : "▴"}</span>
+      </button>
+    </div>
+  `;
+}
+
+function CanvasToolsPanel({ tool, setTool, frames, sections, pan, zoom, setPan, setZoom, wrapRef, gridMeta, onPickSection }) {
   const setOrToggle = (t) => setTool(cur => cur === t ? null : t);
   return html`
     <div className="canvas-tools-panel">
@@ -94690,7 +95335,8 @@ function CanvasToolsPanel({ tool, setTool, frames, pan, zoom, setPan, setZoom, w
           </button>
         `)}
       </div>
-      <${MiniMap} frames=${frames} pan=${pan} zoom=${zoom} setPan=${setPan} setZoom=${setZoom} wrapRef=${wrapRef} gridMeta=${gridMeta}/>
+      <${CanvasSectionsBar} sections=${sections} frames=${frames} gridMeta=${gridMeta} wrapRef=${wrapRef} setPan=${setPan} setZoom=${setZoom} onPick=${onPickSection}/>
+      <${MiniMap} frames=${frames} sections=${sections} pan=${pan} zoom=${zoom} setPan=${setPan} setZoom=${setZoom} wrapRef=${wrapRef} gridMeta=${gridMeta}/>
     </div>
   `;
 }
@@ -95517,10 +96163,18 @@ function App() {
       defaultFrame: model.defaultFrame,
       canvasGap:    model.canvasGap,
     };
+    // Sections ride the same sidecar - full snapshot, plus a tombstone for
+    // every data-file section the user deleted (a plain omission would let the
+    // next boot merge resurrect it from D.sections).
+    const live = model.sections || [];
+    const liveIds = new Set(live.map(s => s.id));
+    const sections = live.concat(
+      (D.sections || []).filter(s => !liveIds.has(s.id)).map(s => ({ id: s.id, deleted: true }))
+    );
     fetch(apiUrl("/__layout"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ positions, meta }),
+      body: JSON.stringify({ positions, meta, sections }),
     }).catch(() => { /* offline / not running serve.py - keep in-memory state regardless */ });
   }, [layoutEdits]);
   // Undo/redo (Phase 2). Same hook is mounted on WorkflowCanvas so editor +
@@ -96055,6 +96709,7 @@ function App() {
       if (e.key === "c" || e.key === "C") setTool(t => t === "comment"   ? null : "comment");
       if (e.key === "t" || e.key === "T") setTool(t => t === "text"      ? null : "text");
       if (e.key === "d" || e.key === "D") setTool(t => t === "draw"      ? null : "draw");
+      if (e.key === "s" || e.key === "S") setTool(t => t === "section"   ? null : "section");
       if (e.key === "Escape") setTool(null);
       if (e.key === "1") setView("canvas");
       if (e.key === "2") setView("prototype");

@@ -80,6 +80,18 @@ window.EDITOR_DATA = {
     { id: "a1", from: "library", to: "library-cmdk", action: "Press ⌘K" }
   ],
 
+  sections: [
+    {
+      id:    "applicant-portal",       // string - primary key
+      label: "Applicant portal",       // string - what a designer would call this group out loud
+      col:   0,                        // number - top-left CELL of the group
+      row:   0,
+      col2:  1,                        // number - bottom-right CELL, INCLUSIVE
+      row2:  4,
+      tone:  "accent"                  // optional - accent | violet | amber | cyan | rose | lime
+    }
+  ],
+
   entities: [
     {
       id:    "Reference",
@@ -303,7 +315,7 @@ Use this table to know which subagent's output writes which field. The orchestra
 |---|---|
 | 0 DS-builder | `design-systems/<id>/styles.css, gallery.html, meta.json`; `editor/design-systems/<id>.js` |
 | 1 Source | `source/*.html, *.js, *.css, data.js` (NOT the data file, NOT `design-systems/`) |
-| 2 Canvas | `frames[i].col`, `frames[i].row` |
+| 2 Canvas | `frames[i].col`, `frames[i].row`, `sections[]` |
 | 3 Prototype | `frames[i].entry`, `frames[i].hash`, `frames[i].setupScript`, **`frames[i].w`**, **`frames[i].h`** |
 | 4 User flow | `frames[i].kind`, `frames[i].lane`, `arrows[]` |
 | 5 IA | `frames[i].entities` (echoes `frames[i].parent` from its own enumeration) |

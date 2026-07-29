@@ -14,19 +14,35 @@ No orchestrator-provided inventory. You enumerate.
 
 ## Output
 
-Per [`../data-schema.md`](../data-schema.md): `frames[i].col`, `frames[i].row`, optional `w`/`h`.
+Per [`../data-schema.md`](../data-schema.md): `frames[i].col`, `frames[i].row`, optional `w`/`h`, and `sections[]`.
 
 ```json
 {
   "frames": [
     { "id": "library",       "label": "Library",          "col": 0, "row": 0 },
     { "id": "library-cmdk",  "label": "Command palette",  "col": 1, "row": 0 },
-    { "id": "settings",      "label": "Settings",         "col": 0, "row": 1 }
+    { "id": "settings",      "label": "Settings",         "col": 0, "row": 2 }
+  ],
+  "sections": [
+    { "id": "reading",  "label": "Reading",  "col": 0, "row": 0, "col2": 1, "row2": 0 },
+    { "id": "account",  "label": "Account",  "col": 0, "row": 2, "col2": 1, "row2": 2 }
   ]
 }
 ```
 
 Include `label` so reconciliation has the same name across subagents.
+
+## Sections - name the clusters you place
+
+Placing related screens next to each other is only half the job: the editor draws a **section** band around a named rectangle of cells so a 40-screen flow can be browsed and jumped through by group. You already decide the clusters - `sections[]` is where you name them.
+
+- A section is a rectangle of CELLS: `col`/`row` = top-left cell, `col2`/`row2` = bottom-right cell, **both inclusive**.
+- Membership is purely **spatial**. Every frame whose `(col, row)` lands inside the rect belongs to the section - there is no per-frame section field, and none should be invented.
+- Sections must **not overlap**. Leave one spare row (or column) between two sections so their bands don't collide.
+- Name them the way a designer would say them out loud - "Applicant portal", "Admin review", "Onboarding" - not by file path or route.
+- A one-off screen that belongs to no group can sit outside every section. Don't stretch a rect to swallow it.
+- Optional `tone` picks the band colour: `accent`, `violet`, `amber`, `cyan`, `rose`, `lime`. Omit it and the editor assigns one.
+- Users can draw and rename sections by hand in the editor; those hand-edits live in a layout sidecar and survive your regen. Keep `id` stable across runs so a renamed section stays renamed.
 
 ## You must read source
 
@@ -53,7 +69,9 @@ If you find yourself enumerating a frame whose source page is the storyboard, st
    - You don't have a `parent` field handed to you; infer from source structure. Conventions: a frame whose source declares a useState branch (`if (submitted) return ...`) is a child of its declaring page. A modal whose render is conditional in another page is a child of that page.
    - Top-level (no inferred parent) → column 0, next free row.
    - Children → column 1 of parent's row; if taken, column 2, etc.
+   - Keep each cluster (an actor's journey, a role's area, a lifecycle stage) in a contiguous block of rows, and leave one empty row between clusters - that gap is where the section bands breathe.
 3. **Don't shift existing frames.** Only place new ones. Positions are stable across regens.
+4. **Draw the sections.** For each cluster, emit one `sections[]` entry covering exactly the cells that cluster occupies (top-left → bottom-right, inclusive), named the way a designer would say it. Re-use the section `id` from a previous run when the cluster is the same one, so a user's rename sticks.
 
 ## Render-verify your slice
 
@@ -77,8 +95,9 @@ Each item requires **evidence**.
 - [ ] My frame IDs follow the naming convention.
 - [ ] I excluded the storyboard, triggers, notifications, externals, decisions, starts, inputs.
 - [ ] Existing IDs from `prototype.json` retained their positions.
-- [ ] I wrote only `id` + `label` + `col` + `row` (+ optional `w`/`h`).
+- [ ] I wrote only `id` + `label` + `col` + `row` (+ optional `w`/`h`) per frame, plus `sections[]`.
 - [ ] **No two frames share the same `(col, row)` pair.** (Stacking bug.)
+- [ ] Every cluster I placed has a named `sections[]` rect around it; no two sections overlap; each rect's cells actually contain the frames I meant to group.
 - [ ] **I rendered the Canvas view in the editor and confirmed every card is visible, none stacked, none off-screen.** (Screenshot required.)
 
 ## Common blindspots
@@ -88,6 +107,8 @@ Each item requires **evidence**.
 - **Forgetting modals.** Modal/sheet/popover frames are real UI surfaces with a state branch - include them even though they aren't whole pages.
 - **Collapsing wizards.** A stepper's intermediate steps are real UI surfaces too - a 9-step wizard represented as entry + review loses 7 screens. One card per step, placed as a column-adjacent chain of children off the wizard's page.
 - **Including triggers/notifications/decisions.** These are Flow-only kinds with no rendered UI. Excluding them is correct; including them gives the editor empty cards.
+- **Clusters with no section.** Placing "the admin screens over here, the applicant screens over there" and shipping no `sections[]` leaves the grouping invisible - the reader has to re-derive it from position. If you clustered it, name it.
+- **Overlapping or greedy rects.** A section whose rect swallows a neighbouring cluster's cells silently changes what that cluster means. Bands must not overlap, and a rect should not cover an empty separator row.
 
 ## Don't
 
@@ -95,3 +116,4 @@ Each item requires **evidence**.
 - Don't include storyboard or Flow-only kinds.
 - Don't shift positions of frames already placed in `prototype.json`.
 - Don't write `kind`, `lane`, `parent`, `entry`, `hash`, `setupScript`, `entities`.
+- Don't invent a per-frame `section` field - membership is spatial, read off `(col, row)` against each rect.

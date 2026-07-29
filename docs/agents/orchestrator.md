@@ -46,7 +46,7 @@ Each subagent returns its lens-specific JSON per `docs/agents/data-schema.md`. Y
 
 | Subagent | Returns |
 |---|---|
-| 2 Canvas | `frames: [{ id, label, col, row, w?, h? }]` - full enumeration through the Canvas lens (what gets a card?) |
+| 2 Canvas | `frames: [{ id, label, col, row, w?, h? }], sections: [{ id, label, col, row, col2, row2, tone? }]` - full enumeration through the Canvas lens (what gets a card?) plus the named cell-rect groups those cards fall into |
 | 3 Prototype | `frames: [{ id, label, entry, hash, setupScript }]` - full enumeration through the iframe-loadability lens |
 | 4 User flow | `frames: [{ id, label, kind, lane }], arrows: [...], lanes: [...]` - full enumeration through the flow lens + lane identification |
 | 5 IA | `frames: [{ id, label, parent, entities }]` - full enumeration through the sitemap lens |
@@ -131,7 +131,7 @@ After writing the data file (Step 5), load the editor and **screenshot every vie
 
 | View | What to confirm |
 |---|---|
-| **Canvas** | Every frame is a visible card. No two cards stack at the same `(col, row)`. No card off-screen at default zoom. |
+| **Canvas** | Every frame is a visible card. No two cards stack at the same `(col, row)`. No card off-screen at default zoom. Every cluster of cards sits inside a named section band; no two bands overlap; the "Go to section" list in the canvas tools panel names each group the way a designer would say it. |
 | **Prototype** | Walk every frame in the left nav. Each iframe loads at full size (>100×100 px - not collapsed). Every `setupScript`-driven branch is visible on load. No frame orphaned to "Other screens" unless deliberately (form-with-children rule). |
 | **Flow** | Every `meta.lanes[*]` appears as a swimlane with at least one frame. No empty lane. Kind mix is realistic (not 80% page rectangles). Every arrow is visible with its label. Cross-actor handoff arrows (added in 4c) appear correctly. |
 | **IA** | Sitemap nests correctly - no orphan parents. Dashboard / library / feed frames show entity badges (not empty when source renders `DEMO.foo`). |
@@ -195,7 +195,7 @@ This is the structural check that catches the modals/drawers/toasts blind spot e
 
 Per `docs/agents/data-schema.md` - **this is the canonical schema, no improvisation:**
 
-- `editor/data.js` (or per-prototype `editor/<slug>.data.js`) - `window.EDITOR_DATA = { meta, tokens, primitives, library, frames, arrows, entities, stateMachines, timelines, grids }`. `meta.lanes` lives inside `meta`, not at the top level (editor reads `D.meta.lanes` in `app.js:1083`). Preserve `meta.prototype` (legacy alias: `meta.branch`), `meta.prototypeLabel`, `meta.exploration` verbatim.
+- `editor/data.js` (or per-prototype `editor/<slug>.data.js`) - `window.EDITOR_DATA = { meta, tokens, primitives, library, frames, arrows, sections, entities, stateMachines, timelines, grids }`. `meta.lanes` lives inside `meta`, not at the top level (editor reads `D.meta.lanes` in `app.js:1083`). Preserve `meta.prototype` (legacy alias: `meta.branch`), `meta.prototypeLabel`, `meta.exploration` verbatim.
 - `source/prototype.json` - flatten `meta` to top-level; omit `tokens` / `primitives` / `library`.
 
 Delete any `<NAME>_REQUEST.md` files at repo root.
