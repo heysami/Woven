@@ -222,7 +222,7 @@
           <span><i style="background:var(--accent)"></i>advance</span>
         </div>
         <div class="spacer" style="flex:1"></div>
-        <div id="editHint" class="">Drag square anchors and round Bézier handles (Alt-drag breaks the mirror). Double-click the outline to insert a node; select one and press Delete to remove it. Type, roundness and handle coordinates sit in the Anchor panel. Y-up, baseline = 0.</div>
+        <div id="editHint" class="">Drag square anchors and round Bézier handles (Alt-drag inverts the anchor's mirror mode). Double-click the outline to insert a node; select one and press Delete to remove it. Type, roundness and handle coordinates sit in the Anchor panel. Y-up, baseline = 0.</div>
       </div>
     </div>
 
@@ -235,8 +235,8 @@
         <div id="anchor-body">
           <div class="seg" id="anchorType">
             <button type="button" data-t="corner" title="No handles - a hard corner.">corner</button>
-            <button type="button" data-t="smooth" title="Both handles mirrored through the anchor.">smooth</button>
-            <button type="button" data-t="asymmetric" title="Both handles, independent lengths / angles.">asymm.</button>
+            <button type="button" data-t="smooth" title="Dragging one handle mirrors the other through the anchor.">smooth</button>
+            <button type="button" data-t="asymmetric" title="Each handle moves on its own - the geometry stays put, only the drag behaviour changes.">asymm.</button>
           </div>
           <div id="anchorRadiusRow">
             <div class="sub">Roundness <span class="pill" id="anchorRadiusVal">0</span></div>
@@ -261,7 +261,7 @@
           <div class="row2" style="margin-top:10px">
             <button id="anchorDelete" class="tiny">Delete anchor</button>
           </div>
-          <div class="hint">Drag a round handle to curve the segment; hold <b>Alt</b> to break the mirror. Double-click the outline to insert an anchor.</div>
+          <div class="hint">Drag a round handle to curve the segment. A <b>smooth</b> anchor mirrors the opposite handle, an <b>asymm.</b> one doesn't; <b>Alt</b> inverts that for one drag. Double-click the outline to insert an anchor.</div>
         </div>
       </div>
       <div class="ph">Preview</div>
@@ -1101,12 +1101,21 @@ function feHandles(){
  * =======================================================================*/
 
 /* corner     - no handles either side
- * smooth     - both handles present and mirrored through the anchor
- * asymmetric - handles present but not collinear-opposite (or only one) */
+ * smooth     - both handles present, dragging one mirrors the other
+ * asymmetric - both handles, each dragged independently (or only one)
+ *
+ * The mode is an INTENT the anchor carries in `hType`, not something
+ * re-derived from geometry every render: two collinear handles can be
+ * either mode, and asking the geometry would silently relabel an
+ * asymmetric anchor "smooth" the moment its handles happened to line
+ * up - which is exactly what made the asymm. button look dead. Anchors
+ * parsed from a font have no intent yet, so those fall back to the
+ * geometric reading. */
 function feAnchorType(a){
   const hasIn=a.inX!=null&&a.inY!=null, hasOut=a.outX!=null&&a.outY!=null;
   if(!hasIn && !hasOut) return "corner";
   if(!hasIn || !hasOut) return "asymmetric";
+  if(a.hType==="smooth" || a.hType==="asymmetric") return a.hType;
   const ix=a.inX-a.x, iy=a.inY-a.y, ox=a.outX-a.x, oy=a.outY-a.y;
   const il=Math.hypot(ix,iy)||1, ol=Math.hypot(ox,oy)||1;
   const dot=(ix/il)*(ox/ol)+(iy/il)*(oy/ol);
@@ -1126,11 +1135,13 @@ function feRoundable(sub, anchorIdx){
 
 /* Switch the selected anchor between corner / smooth / asymmetric,
  * synthesizing missing handles along the tangent toward the neighbours
- * so they land somewhere grabbable rather than under the anchor. */
+ * so they land somewhere grabbable rather than under the anchor.
+ * Going smooth → asymmetric keeps the geometry put and only changes
+ * what a handle drag does, the way Figma's break-tangent does. */
 function feSetAnchorType(next){
   const sel=feSelected(); if(!sel) return;
   const a=sel.anchor;
-  if(next==="corner"){ fePatchAnchor(sel.subIdx, sel.anchorIdx, {inX:null,inY:null,outX:null,outY:null}); return; }
+  if(next==="corner"){ fePatchAnchor(sel.subIdx, sel.anchorIdx, {inX:null,inY:null,outX:null,outY:null,hType:null}); return; }
   const off=fePhantomOffset(editState.anchors);
   const nb=feNeighbours(sel.sub, sel.anchorIdx);
   const toward=(t,fx,fy)=>{
@@ -1159,12 +1170,12 @@ function feSetAnchorType(next){
     else if(inX==null){ inX=Math.round(2*a.x-outX); inY=Math.round(2*a.y-outY); }
     else { outX=Math.round(2*a.x-inX); outY=Math.round(2*a.y-inY); }
     // A filleted corner and explicit handles are mutually exclusive.
-    fePatchAnchor(sel.subIdx, sel.anchorIdx, {inX,inY,outX,outY,radius:0});
+    fePatchAnchor(sel.subIdx, sel.anchorIdx, {inX,inY,outX,outY,radius:0,hType:"smooth"});
     return;
   }
   if(inX==null){ inX=fbInX; inY=fbInY; }
   if(outX==null){ outX=fbOutX; outY=fbOutY; }
-  fePatchAnchor(sel.subIdx, sel.anchorIdx, {inX,inY,outX,outY,radius:0});
+  fePatchAnchor(sel.subIdx, sel.anchorIdx, {inX,inY,outX,outY,radius:0,hType:"asymmetric"});
 }
 
 /* Refresh the inspector from the live graph. Never writes the field the
@@ -1440,10 +1451,15 @@ function setupCanvasInteraction(){
     });
     if(bh && (!ba || bhd<=bad)){
       const A=(parsed.subpaths[bh.si].anchors||[])[bh.ai];
+      // The anchor's own mode decides whether the opposite handle
+      // follows; Alt inverts it for this drag (break a smooth tangent,
+      // or re-mirror an asymmetric one). A corner being pulled open
+      // starts out smooth - that's the curve people expect.
+      const mirrorByType = feAnchorType(A) !== "asymmetric";
       dragHandle={ si:bh.si, ai:bh.ai, side:bh.side, base:Object.assign({},A), start,
                    // a phantom drag picks up from where the ghost dot is
                    // drawn, not from the anchor hidden under the square
-                   sx:bh.x, sy:bh.y, mirror:!e.altKey };
+                   sx:bh.x, sy:bh.y, mirror: e.altKey ? !mirrorByType : mirrorByType };
       editState.selAnchor=bh.si+":"+bh.ai;
       cv.setPointerCapture(e.pointerId); drawCanvas(); renderAnchorPanel(); return;
     }
@@ -1464,9 +1480,11 @@ function setupCanvasInteraction(){
       const dx=p.x-d.start.x, dy=p.y-d.start.y;
       const nx=R(d.sx+dx), ny=R(d.sy+dy);
       const patch = d.side==="in" ? {inX:nx, inY:ny} : {outX:nx, outY:ny};
+      // The drag settles the anchor's mode: mirroring makes it smooth,
+      // moving one handle alone makes it asymmetric.
+      patch.hType = d.mirror ? "smooth" : "asymmetric";
       if(d.mirror){
-        // Mirror the opposite handle through the anchor (smooth node);
-        // Alt-drag broke the mirror at pointerdown.
+        // Mirror the opposite handle through the anchor.
         if(d.side==="in"){ patch.outX=R(2*d.base.x-nx); patch.outY=R(2*d.base.y-ny); }
         else             { patch.inX =R(2*d.base.x-nx); patch.inY =R(2*d.base.y-ny); }
       }
