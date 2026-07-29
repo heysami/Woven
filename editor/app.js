@@ -67663,6 +67663,86 @@ function WorkflowAssetCropModal({ src, path, label, onClose, onApplied }) {
   `, document.body);
 }
 
+// ── Font specimen ────────────────────────────────────────────────────────
+// A font FILE (.otf / .ttf / .woff2 - the font editor's bake, or one dropped
+// on the canvas) gets the Typography node's treatment: the same size ladder
+// set in the real face. What it does NOT get is the family picker - the file
+// IS the family, so there is nothing to choose.
+//
+// The face is registered through the FontFace API under a per-node family
+// name, so a file whose internal name collides with a loaded CDN family
+// (very likely while iterating on a font in the editor) still renders its
+// own bytes. One string across the ladder, editable in place like the
+// Typography node's samples.
+const FONT_SPECIMEN_SIZES = [40, 26, 16, 11];
+const FONT_SPECIMEN_DEFAULT = "Handgloves 0123";
+function WorkflowFontSpecimen({ src, family, text, onTextChange, onMissing }) {
+  const [state, setState] = useState("loading");   // loading | ready | missing
+  useEffect(() => {
+    if (!src) { setState("missing"); return; }
+    if (typeof FontFace === "undefined") { setState("ready"); return; }
+    let cancelled = false;
+    let face = null;
+    setState("loading");
+    (async () => {
+      try {
+        face = new FontFace(family, `url("${src}")`);
+        await face.load();
+        if (cancelled) return;
+        document.fonts.add(face);
+        setState("ready");
+      } catch (_e) {
+        if (cancelled) return;
+        setState("missing");
+        onMissing && onMissing();
+      }
+    })();
+    return () => {
+      cancelled = true;
+      // Drop the face on unmount / src change so a re-baked font doesn't
+      // keep rendering the previous bytes under the same family name.
+      if (face) { try { document.fonts.delete(face); } catch (_e) {} }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, family]);
+
+  if (state === "missing") {
+    return html`
+      <div className="workflow-node-asset-empty">
+        <div className="workflow-node-asset-empty-icon">Aa</div>
+        <div className="workflow-node-asset-empty-text">font won't load</div>
+        <div className="workflow-node-asset-empty-hint">bake the font node, or re-drop the file</div>
+      </div>
+    `;
+  }
+  const sample = (text != null && text !== "") ? text : FONT_SPECIMEN_DEFAULT;
+  return html`
+    <div className="workflow-node-asset-specimen" data-state=${state}>
+      ${FONT_SPECIMEN_SIZES.map((size, i) => html`
+        <div key=${i} className="workflow-node-typo-row">
+          <div className="workflow-node-typo-rowmeta">
+            <span className="workflow-node-asset-specimen-meta">${size}</span>
+          </div>
+          <div
+            className="workflow-node-typo-sample"
+            style=${{
+              fontFamily: `'${family}', system-ui, sans-serif`,
+              fontSize: size + "px",
+              lineHeight: 1.2,
+            }}
+            contentEditable="true"
+            suppressContentEditableWarning=${true}
+            spellCheck="false"
+            title="Type here to change the specimen text"
+            onMouseDown=${(e) => e.stopPropagation()}
+            onBlur=${(e) => onTextChange && onTextChange(e.target.textContent)}
+          >${sample}</div>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
 function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTarget, onReplace, onOpenReplaceChooser, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onZoom, onToggleCode, codeOpen, hasPickedChild, allNodes, allEdges, lodVisible, onRunSkill, onPatchNode, runStates }) {
   const [dragging, setDragging] = useState(false);
   // Canvas LOD - embed kinds (live iframes) gate at the embed floor and get
@@ -68935,6 +69015,25 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
         onError=${() => setThumbState("missing")}
       />
     `);
+  } else if (kind === "font") {
+    // A font file reads as a specimen, not as a glyph placeholder - the
+    // Typography node's size ladder set in the actual face, minus the
+    // family picker (the file is the family).
+    bodyContent = thumbState === "missing" ? html`
+      <div className="workflow-node-asset-empty">
+        <div className="workflow-node-asset-empty-icon">Aa</div>
+        <div className="workflow-node-asset-empty-text">no bytes yet</div>
+        <div className="workflow-node-asset-empty-hint">bake the font node → it lands here</div>
+      </div>
+    ` : html`
+      <${WorkflowFontSpecimen}
+        src=${fileSrc}
+        family=${"wv-specimen-" + node.id}
+        text=${node.specimenText}
+        onTextChange=${(t) => onChange && onChange({ specimenText: t })}
+        onMissing=${() => setThumbState("missing")}
+      />
+    `;
   } else {
     // shader / 3d / viz / audio without a file preview - glyph placeholder.
     bodyContent = html`

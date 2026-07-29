@@ -11487,6 +11487,35 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   color: var(--text-faint);
   font-style: italic;
 }
+/* Font asset card - the Typography node's specimen ladder set in the file's
+   own face, with no family picker (the file IS the family). Reuses the
+   typo row / sample rules so both cards read as one family of surfaces. */
+.workflow-node-asset-specimen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 14px;
+  overflow: auto;
+  background: var(--surface);
+  border-radius: inherit;
+}
+.workflow-node-asset-specimen .workflow-node-typo-row {
+  grid-template-columns: 26px 1fr;
+  gap: 10px;
+  align-items: baseline;
+}
+.workflow-node-asset-specimen-meta {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+/* Until the face resolves the ladder renders in the fallback stack - fade it
+   so the swap to the real font doesn't read as a glitch. */
+.workflow-node-asset-specimen[data-state="loading"] { opacity: 0.35; }
 /* Background-color picker on asset card header. Native <input type="color">
    is hidden inside a label that opens it on click. The label itself shows
    the current color so users can tell at a glance. Alt+click clears back
