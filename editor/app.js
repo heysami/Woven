@@ -229,6 +229,11 @@ if (window.EDITOR_LAYOUT && typeof window.EDITOR_LAYOUT === "object") {
   for (const f of D.frames || []) {
     const pos = positions[f.id];
     if (pos && pos.col != null && pos.row != null) {
+      // Remember where the DATA FILE had this frame before the sidecar moves
+      // it. Sections in the data file were drawn against those cells, so the
+      // section re-fit below needs both states to work out which frames a
+      // rect was actually holding.
+      if (f.col !== pos.col || f.row !== pos.row) f._preLayoutCell = { col: f.col, row: f.row };
       f.col = pos.col;
       f.row = pos.row;
     }
@@ -439,6 +444,39 @@ function sectionViewInitial(sectionId) {
 (() => {
   const L = (window.EDITOR_LAYOUT && typeof window.EDITOR_LAYOUT === "object") ? window.EDITOR_LAYOUT : null;
   D.sections = mergeSections(D.sections || (D.meta && D.meta.sections) || [], L && L.sections);
+
+  // ── Re-fit sections the sidecar migration just stranded ──────────────
+  // A section rect and the frames it holds are ONE fact expressed twice: the
+  // rect is cells, membership is spatial. The agent writes both together, so
+  // they agree. The legacy sidecar broke that pairing - it overrode frame
+  // positions but knew nothing about sections, so every rect stayed where the
+  // data file's (now overridden) positions had been, and a band that held a
+  // dozen screens silently became an empty rectangle a few columns away.
+  //
+  // Migration therefore has to move the rect WITH its members: take the frames
+  // the rect held under the data file's own cells, and re-cut the rect to
+  // their bounding box after the move. Deterministic, no guessing - and it
+  // only runs while a legacy sidecar is present, so it happens once per
+  // project and is then persisted by the one-shot migration write.
+  if (!L) return;
+  const moved = (D.frames || []).filter(f => f._preLayoutCell);
+  if (!moved.length) return;
+  for (const sec of D.sections) {
+    // Membership as the AGENT saw it: pre-move cells for frames that moved,
+    // current cells for everything else.
+    const members = (D.frames || []).filter(f => {
+      const cell = f._preLayoutCell || { col: f.col, row: f.row };
+      return cell.col >= sec.col && cell.col <= sec.col2 && cell.row >= sec.row && cell.row <= sec.row2;
+    });
+    if (!members.length) continue;                 // nothing to follow - leave it alone
+    const cols = members.map(f => f.col), rows = members.map(f => f.row);
+    const next = {
+      col:  Math.min(...cols), row:  Math.min(...rows),
+      col2: Math.max(...cols), row2: Math.max(...rows),
+    };
+    if (next.col === sec.col && next.row === sec.row && next.col2 === sec.col2 && next.row2 === sec.row2) continue;
+    Object.assign(sec, next);
+  }
 })();
 
 // Multi-HTML sources let each frame / primitive variant / type token declare
