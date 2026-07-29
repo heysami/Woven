@@ -19351,7 +19351,8 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-node-section-pick {
   height: 20px;
   max-width: 150px;
-  margin-right: 4px;
+  flex: 0 0 auto;          /* sits beside the node name, never stretches */
+  margin-left: 8px;
   padding: 0 22px 0 8px;
   font-size: 11px;
   background-color: var(--surface);

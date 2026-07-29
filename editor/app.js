@@ -65500,6 +65500,25 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
       <div className="workflow-node-bar workflow-node-frames-bar" onMouseDown=${onHandleDown}>
         <span className="workflow-node-glyph"><${cfg.glyph}/></span>
         <span className="workflow-node-label">${cfg.label} · ${protoSlug}</span>
+        ${node.kind === "frames" && embedSections.length > 0 && html`
+          ${/* Section scope. A flow wider than the fit cap can't be shown
+              whole in one node, so pick the band this node stands for. Same
+              native-select pattern as the editor's prototype switcher. */ ""}
+          <select
+            className="editor-proto-switch workflow-node-section-pick"
+            value=${sectionScope}
+            title=${sectionScope
+              ? "This node shows one section of the flow - switch which one, or go back to the whole flow"
+              : "Showing the whole flow. Scope this node to one section when the flow is too wide to fit"}
+            aria-label="Section shown in this node"
+            onMouseDown=${(e) => e.stopPropagation()}
+            onClick=${(e) => e.stopPropagation()}
+            onChange=${(e) => { e.stopPropagation(); pickSection(e.target.value); }}
+          >
+            <option value="">Whole flow</option>
+            ${embedSections.map(s => html`<option key=${s.id} value=${s.id}>${s.label || "Section"}</option>`)}
+          </select>
+        `}
         <span className="workflow-node-bar-spacer"/>
         <${HoverTip}
           className="workflow-node-action"
@@ -65529,25 +65548,6 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
             }}
             onMouseDown=${(e) => e.stopPropagation()}
           ><${Icon.Expand}/><//>
-        `}
-        ${node.kind === "frames" && embedSections.length > 0 && html`
-          ${/* Section scope. A flow wider than the fit cap can't be shown
-              whole in one node, so pick the band this node stands for. Same
-              native-select pattern as the editor's prototype switcher. */ ""}
-          <select
-            className="editor-proto-switch workflow-node-section-pick"
-            value=${sectionScope}
-            title=${sectionScope
-              ? "This node shows one section of the flow - switch which one, or go back to the whole flow"
-              : "Showing the whole flow. Scope this node to one section when the flow is too wide to fit"}
-            aria-label="Section shown in this node"
-            onMouseDown=${(e) => e.stopPropagation()}
-            onClick=${(e) => e.stopPropagation()}
-            onChange=${(e) => { e.stopPropagation(); pickSection(e.target.value); }}
-          >
-            <option value="">Whole flow</option>
-            ${embedSections.map(s => html`<option key=${s.id} value=${s.id}>${s.label || "Section"}</option>`)}
-          </select>
         `}
         ${node.kind === "frames" && html`
           <${HoverTip}
