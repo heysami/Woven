@@ -748,6 +748,27 @@ const Icon = {
   // visually without leaning on the ~ tilde character.
   Wave:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 9c1.2-3 2.5-3 3.5 0s2.3 3 3.5 0 2.3-3 3.5 0"/></svg>`,
   Star:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2l1.7 3.9 4.3.4-3.2 2.8 1 4.2L8 11.6 4.2 13.3l1-4.2L2 6.3l4.3-.4z"/></svg>`,
+  // ── Drawing-tool icons (vector editor palette) ────────────────────
+  // Arrow cursor with the tail Figma/Illustrator draw on the move tool -
+  // reads as "select" where the bare Cursor arrow reads as "pointer".
+  SelectArrow: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3.2 2.2l8.4 4.6-3.7 1.1-1.1 3.7z"/><path d="M8.6 8.6L13 13"/></svg>`,
+  // Square with a corner nub - the rectangle tool (distinct from Block,
+  // whose interior cross means "node").
+  SquareTool: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="3.5" width="11" height="9" rx="1"/></svg>`,
+  // Bare diagonal with endpoint dots - the line tool. Dots are kept small
+  // and pulled off the corners so the icon's ink box matches its neighbours
+  // instead of running corner-to-corner.
+  LineTool: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M5.2 10.8L10.8 5.2"/><circle cx="3.8" cy="12.2" r="1.1"/><circle cx="12.2" cy="3.8" r="1.1"/></svg>`,
+  // Pen nib - shouldered body tapering to a point, with the breather hole
+  // and slit that make it read as a nib rather than a kite at 14px. The
+  // vent is deliberately small: opening it up enough to stay a visible ring
+  // at 2x pushes it into the body's top edge and the two merge instead. At
+  // this radius it reads as a solid vent dot below ~3x, which is correct
+  // for a nib, and the silhouette + slit carry the icon on their own.
+  PenNib: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3.6 3h8.8v5L8 13.4 3.6 8z"/><circle cx="8" cy="6.2" r="1"/><path d="M8 7.4v4.2"/></svg>`,
+  // Pencil on a baseline - the free-form sketch tool. (Icon.Pen is the
+  // generic edit pencil; this one carries the stroke it leaves behind.)
+  PencilTool: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 11.2l1.1-2.8 6-6 1.7 1.7-6 6z"/><path d="M9.6 2.4l1.7 1.7"/><path d="M2.5 14h11"/></svg>`,
   Code:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M6 4L2 8l4 4M10 4l4 4-4 4"/></svg>`,
   // OpenExt: arrow leaving a box (standard "open in new tab" affordance).
   //   Used by Prototype node's "Open in editor" button.
@@ -73294,15 +73315,110 @@ const VECTOR_FONT_FAMILIES = [
   { id: "Source Serif 4",     label: "Source Serif 4",     stack: '"Source Serif 4", serif' },
 ];
 
+// Tool palette. `icon` is a component from the shared inline-SVG Icon set
+// (never an emoji / dingbat glyph - those render at inconsistent sizes and
+// weights across platforms). `key` is the single-letter shortcut, shown as
+// its own line in the hover tip; `hint` is the sentence under the title.
 const VECTOR_TOOLS = [
-  { id: "select",  label: "Select",    glyph: "▢", hint: "Select / move shapes (V)" },
-  { id: "rect",    label: "Rectangle", glyph: "▭", hint: "Drag to draw a rectangle (R)" },
-  { id: "ellipse", label: "Ellipse",   glyph: "◯", hint: "Drag to draw an ellipse (O)" },
-  { id: "line",    label: "Line",      glyph: "／", hint: "Drag to draw a line (L)" },
-  { id: "pen",     label: "Pen",       glyph: "✒", hint: "Click anchors; double-click or Enter to finish (P)" },
-  { id: "pencil",  label: "Pencil",    glyph: "✎", hint: "Free-form sketch (B)" },
-  { id: "text",    label: "Text",      glyph: "T", hint: "Click to place text (T)" },
+  { id: "select",  label: "Select",    icon: Icon.SelectArrow, key: "V", hint: "Click a shape to select it, drag to move. Shift-click adds to the selection; double-click a path to edit its anchor points." },
+  { id: "rect",    label: "Rectangle", icon: Icon.SquareTool,  key: "R", hint: "Drag to draw a rectangle. Round its corners with the rx slider in Properties." },
+  { id: "ellipse", label: "Ellipse",   icon: Icon.Circle,      key: "O", hint: "Drag to draw an ellipse. The drag defines its bounding box." },
+  { id: "line",    label: "Line",      icon: Icon.LineTool,    key: "L", hint: "Drag to draw a straight line between two points." },
+  { id: "star",    label: "Star",      icon: Icon.Star,        key: "S", hint: "Drag to draw a star. Set the spike count, depth and roundness in Properties - depth 0 turns it into a regular polygon." },
+  { id: "pen",     label: "Pen",       icon: Icon.PenNib,      key: "P", hint: "Click to place anchor points one by one. Double-click or press Enter to finish the path." },
+  { id: "pencil",  label: "Pencil",    icon: Icon.PencilTool,  key: "B", hint: "Draw a free-form stroke. The sketch is smoothed into a Bézier path on release." },
+  { id: "text",    label: "Text",      icon: Icon.Text,        key: "T", hint: "Click to place a text label, then type. Convert it to editable outlines from Properties." },
 ];
+
+// ── Star / polygon geometry ──────────────────────────────────────────
+// A star is stored as a regular `path` shape carrying a `star` param
+// block, so every existing path code path (bbox, boolean ops, offset,
+// serialize, node-edit) works on it unchanged - and the params stay live
+// so the spike count / depth / roundness remain editable after the fact.
+//
+//   star: { cx, cy, rx, ry, points, innerRatio, roundness }
+//
+//   points     - spike count (3..60)
+//   innerRatio - valley radius as a fraction of the outer radius. The UI
+//                exposes its complement as "depth", so depth 0 is a regular
+//                polygon and depth 100% is the thinnest star that still has
+//                area. innerRatio 0 would put every valley ON the centre -
+//                a zero-area polygon that renders as a speck - so the depth
+//                slider maps onto [VECTOR_STAR_MIN_INNER, 1], never to 0.
+//   roundness  - 0..1 fillet applied to every vertex (tips AND valleys),
+//                measured as a fraction of the shorter adjacent half-edge.
+const VECTOR_STAR_DEFAULTS = { points: 5, innerRatio: 0.5, roundness: 0 };
+const VECTOR_STAR_MIN_INNER = 0.05;
+const _vecStarDepthToInner = (depth) =>
+  1 - Math.max(0, Math.min(1, depth)) * (1 - VECTOR_STAR_MIN_INNER);
+const _vecStarInnerToDepth = (inner) =>
+  Math.max(0, Math.min(1, (1 - inner) / (1 - VECTOR_STAR_MIN_INNER)));
+
+function _vecStarPathD(star) {
+  if (!star) return "";
+  const cx = +star.cx || 0, cy = +star.cy || 0;
+  const rx = Math.max(0, +star.rx || 0), ry = Math.max(0, +star.ry || 0);
+  if (rx <= 0 || ry <= 0) return "";
+  const n = Math.max(3, Math.min(60, Math.round(star.points ?? VECTOR_STAR_DEFAULTS.points)));
+  // Floor the valley radius: an innerRatio of 0 collapses every valley onto
+  // the centre, leaving a zero-area polygon that renders as a speck.
+  const inner = Math.max(VECTOR_STAR_MIN_INNER,
+    Math.min(1, star.innerRatio ?? VECTOR_STAR_DEFAULTS.innerRatio));
+  const round = Math.max(0, Math.min(1, star.roundness ?? VECTOR_STAR_DEFAULTS.roundness));
+
+  // Vertices, alternating outer tip / inner valley, first tip pointing up.
+  // innerRatio 1 collapses the valleys onto the tip circle, which is
+  // exactly the n-gon - emit n vertices instead of 2n coincident ones so
+  // the fillet math sees real edges.
+  const pts = [];
+  const polygonOnly = inner >= 0.999;
+  const count = polygonOnly ? n : n * 2;
+  for (let i = 0; i < count; i++) {
+    const t = -Math.PI / 2 + (i / count) * Math.PI * 2;
+    const k = (polygonOnly || i % 2 === 0) ? 1 : inner;
+    pts.push([cx + Math.cos(t) * rx * k, cy + Math.sin(t) * ry * k]);
+  }
+
+  if (round <= 0.001) {
+    return "M " + pts.map(([x, y]) => x.toFixed(2) + " " + y.toFixed(2)).join(" L ") + " Z";
+  }
+
+  // Fillet each vertex: walk `cut` back along both adjacent edges and
+  // bridge the gap with a quadratic whose control point is the original
+  // corner. cut is capped at half the shorter edge so neighbouring
+  // fillets never overrun each other.
+  const seg = [];
+  const N = pts.length;
+  for (let i = 0; i < N; i++) {
+    const p = pts[i];
+    const prev = pts[(i - 1 + N) % N];
+    const next = pts[(i + 1) % N];
+    const dPrev = Math.hypot(prev[0] - p[0], prev[1] - p[1]) || 1;
+    const dNext = Math.hypot(next[0] - p[0], next[1] - p[1]) || 1;
+    const cut = round * 0.5 * Math.min(dPrev, dNext);
+    seg.push({
+      a: [p[0] + ((prev[0] - p[0]) / dPrev) * cut, p[1] + ((prev[1] - p[1]) / dPrev) * cut],
+      c: p,
+      b: [p[0] + ((next[0] - p[0]) / dNext) * cut, p[1] + ((next[1] - p[1]) / dNext) * cut],
+    });
+  }
+  const f = (v) => v.toFixed(2);
+  const out = [`M ${f(seg[0].b[0])} ${f(seg[0].b[1])}`];
+  for (let i = 1; i <= N; i++) {
+    const s = seg[i % N];
+    out.push(`L ${f(s.a[0])} ${f(s.a[1])}`);
+    out.push(`Q ${f(s.c[0])} ${f(s.c[1])} ${f(s.b[0])} ${f(s.b[1])}`);
+  }
+  out.push("Z");
+  return out.join(" ");
+}
+
+// Rebuild a star shape's `d` after its params change. Clears any anchor
+// graph - the params are the source of truth again.
+function _vecApplyStar(shape, patch) {
+  const star = { ...(shape.star || {}), ...(patch || {}) };
+  return { ...shape, star, d: _vecStarPathD(star), anchors: undefined, anchorRadii: undefined };
+}
 
 const VECTOR_DEFAULT_FILL   = "#3b82f6";
 const VECTOR_DEFAULT_STROKE = "#0f172a";
@@ -73317,6 +73433,7 @@ function _vecNextName(shapes, type) {
     ellipse: "Ellipse",
     line:    "Line",
     path:    "Path",
+    star:    "Star",
     text:    "Text",
   })[type] || "Shape";
   let max = 0;
@@ -74160,13 +74277,23 @@ function WorkflowVectorEditorNode({
       return;
     }
 
-    if (tool === "rect" || tool === "ellipse" || tool === "line") {
+    if (tool === "rect" || tool === "ellipse" || tool === "line" || tool === "star") {
       e.stopPropagation();
       e.preventDefault();
       let draft;
       if (tool === "rect")     draft = _makeShape("rect",    { x: start.x, y: start.y, w: 0, h: 0, rx: 0 });
       if (tool === "ellipse")  draft = _makeShape("ellipse", { cx: start.x, cy: start.y, rx: 0, ry: 0 });
       if (tool === "line")     draft = _makeShape("line",    { x1: start.x, y1: start.y, x2: start.x, y2: start.y });
+      if (tool === "star") {
+        // A star is a `path` shape carrying live `star` params. Named off
+        // the star base so the layer row reads "Star 1", not "Path 1".
+        draft = _makeShape("path", {
+          d: "",
+          closed: true,
+          star: { cx: start.x, cy: start.y, rx: 0, ry: 0, ...VECTOR_STAR_DEFAULTS },
+        });
+        draft.name = _vecNextName(shapes, "star");
+      }
       setDraftShape(draft);
       const onMv = (ev) => {
         const p = _vecScreenToCanvas(svg, ev.clientX, ev.clientY, canvasW, canvasH);
@@ -74188,6 +74315,19 @@ function WorkflowVectorEditorNode({
           if (prev.type === "line") {
             return { ...prev, x2: p.x, y2: p.y };
           }
+          if (prev.star) {
+            // Same bounding-box drag as the ellipse - the star inscribes it,
+            // so a wide drag gives a squashed star. Shift constrains to a
+            // circular (equal-radii) star.
+            let rx = Math.abs(p.x - start.x) / 2;
+            let ry = Math.abs(p.y - start.y) / 2;
+            if (ev.shiftKey) { const r = Math.min(rx, ry); rx = r; ry = r; }
+            return _vecApplyStar(prev, {
+              cx: (start.x + p.x) / 2,
+              cy: (start.y + p.y) / 2,
+              rx, ry,
+            });
+          }
           return prev;
         });
       };
@@ -74198,6 +74338,7 @@ function WorkflowVectorEditorNode({
           if (!d) return d;
           if (d.type === "rect"    && (d.w < 1 || d.h < 1)) return null;
           if (d.type === "ellipse" && (d.rx < 1 || d.ry < 1)) return null;
+          if (d.star && (d.star.rx < 1 || d.star.ry < 1)) return null;
           if (d.type === "line") {
             if (Math.hypot(d.x2 - d.x1, d.y2 - d.y1) < 1) return null;
           }
@@ -74393,6 +74534,7 @@ function WorkflowVectorEditorNode({
         else if (sk === "r") setTool("rect");
         else if (sk === "o") setTool("ellipse");
         else if (sk === "l") setTool("line");
+        else if (sk === "s") setTool("star");
         else if (sk === "p") setTool("pen");
         else if (sk === "b") setTool("pencil");
         else if (sk === "t") setTool("text");
@@ -74931,6 +75073,11 @@ function WorkflowVectorEditorNode({
       // Clear the legacy radii sidecar - anchors carry their own
       // `.radius` field now.
       anchorRadii: undefined,
+      // Hand-editing an anchor makes the anchor graph the source of truth.
+      // A star's params would regenerate `d` from scratch on the next
+      // slider nudge and wipe that edit, so the shape stops being a star
+      // the moment its points are moved by hand.
+      star: undefined,
     });
   };
 
@@ -75260,13 +75407,14 @@ function WorkflowVectorEditorNode({
             <div className="workflow-vector-section-head">Tools</div>
             <div className="workflow-vector-tools">
               ${VECTOR_TOOLS.map(t => html`
-                <button
+                <${HoverTip}
                   key=${t.id}
+                  tip=${t.label + "  ·  " + t.key + "\n" + t.hint}
+                  ariaLabel=${t.label}
                   className=${"workflow-vector-tool" + (tool === t.id ? " is-on" : "")}
-                  title=${t.hint}
                   onMouseDown=${(e) => e.stopPropagation()}
                   onClick=${(e) => { e.stopPropagation(); setTool(t.id); setDraftShape(null); }}
-                ><span className="workflow-vector-tool-glyph">${t.glyph}</span></button>
+                ><span className="workflow-vector-tool-glyph"><${t.icon}/></span><//>
               `)}
             </div>
           </div>
@@ -75342,7 +75490,8 @@ function WorkflowVectorEditorNode({
               <button className=${"workflow-vector-outline-btn" + (nodeEditId === singleSel.id ? " is-on" : "")}
                 title=${nodeEditId === singleSel.id
                   ? "Exit node-edit mode (Esc)."
-                  : "Edit individual anchor points + Bézier handles on this path."}
+                  : "Edit individual anchor points + Bézier handles on this path."
+                    + (singleSel.star ? " Moving an anchor by hand ends the star's spike / depth / roundness params." : "")}
                 onClick=${(e) => {
                   e.stopPropagation();
                   setNodeEditId(nodeEditId === singleSel.id ? null : singleSel.id);
@@ -75575,6 +75724,10 @@ function _vecTranslateShape(s, dx, dy) {
   if (s.type === "line")    return { ...s, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy };
   if (s.type === "text")    return { ...s, x: s.x + dx, y: s.y + dy };
   if (s.type === "path") {
+    // A parametric star moves by its centre - regenerating `d` from the
+    // params keeps them authoritative, so the spike/depth/roundness
+    // sliders still drive the shape after it's been dragged.
+    if (s.star) return _vecApplyStar(s, { cx: s.star.cx + dx, cy: s.star.cy + dy });
     // Keep shape.anchors in sync if it's the source of truth - otherwise
     // node-edit mode would read stale (untranslated) anchors next time
     // the user enters it. Translate every anchor's xy + its handles,
@@ -76579,6 +76732,18 @@ function VectorPropertiesPanel({ shape, onPatch }) {
   if (!shape) return null;
   const type = shape.type;
   const isText = type === "text";
+  // Live star params (spikes / depth / roundness). Every write regenerates
+  // the path `d` from the params, so the shape stays parametric for as long
+  // as its anchors haven't been hand-edited (see _commitPath).
+  const star = shape.star || null;
+  const patchStar = (p) => {
+    const next = _vecApplyStar(shape, p);
+    onPatch({ star: next.star, d: next.d, anchors: undefined, anchorRadii: undefined });
+  };
+  const starPoints = star ? Math.round(star.points ?? VECTOR_STAR_DEFAULTS.points) : 5;
+  const starInner  = star ? (star.innerRatio ?? VECTOR_STAR_DEFAULTS.innerRatio) : 0.5;
+  const starRound  = star ? (star.roundness  ?? VECTOR_STAR_DEFAULTS.roundness)  : 0;
+  const starDepth  = _vecStarInnerToDepth(starInner);
 
   return html`
     <div className="workflow-vector-section">
@@ -76709,6 +76874,59 @@ function VectorPropertiesPanel({ shape, onPatch }) {
               value=${shape.rx || 0}
               onInput=${(e) => onPatch({ rx: +e.target.value || 0, ry: +e.target.value || 0 })}/>
             <span className="workflow-vector-field-val">${shape.rx || 0}</span>
+          </label>
+        </div>
+      `}
+
+      ${star && html`
+        <div className="workflow-vector-subhead">Star</div>
+        <div className="workflow-vector-row">
+          <label className="workflow-vector-field workflow-vector-field-wide"
+            title="How many spikes the star has. At depth 0 this is the side count of a regular polygon.">
+            <span>spikes</span>
+            <input type="range" min="3" max="40" step="1" value=${starPoints}
+              onInput=${(e) => patchStar({ points: Math.max(3, Math.min(60, +e.target.value || 3)) })}/>
+            <span className="workflow-vector-field-val">${starPoints}</span>
+          </label>
+        </div>
+        <div className="workflow-vector-row">
+          <label className="workflow-vector-field workflow-vector-field-wide"
+            title="How far the valleys cut in toward the centre. 0 is a regular polygon, 1 is a needle-thin burst.">
+            <span>depth</span>
+            <input type="range" min="0" max="1" step="0.01" value=${starDepth}
+              onInput=${(e) => patchStar({ innerRatio: _vecStarDepthToInner(+e.target.value || 0) })}/>
+            <span className="workflow-vector-field-val">${Math.round(starDepth * 100)}%</span>
+          </label>
+        </div>
+        <div className="workflow-vector-row">
+          <label className="workflow-vector-field workflow-vector-field-wide"
+            title="Fillets every tip and valley. 0 is sharp, 1 rounds each corner as far as its edges allow (a flower / burst).">
+            <span>roundness</span>
+            <input type="range" min="0" max="1" step="0.01" value=${starRound}
+              onInput=${(e) => patchStar({ roundness: +e.target.value || 0 })}/>
+            <span className="workflow-vector-field-val">${Math.round(starRound * 100)}%</span>
+          </label>
+        </div>
+        <div className="workflow-vector-pos-grid">
+          <label className="workflow-vector-field workflow-vector-field-stacked">
+            <span>cx</span>
+            <input type="number" value=${Math.round(star.cx || 0)}
+              onInput=${(e) => patchStar({ cx: +e.target.value || 0 })}/>
+          </label>
+          <label className="workflow-vector-field workflow-vector-field-stacked">
+            <span>cy</span>
+            <input type="number" value=${Math.round(star.cy || 0)}
+              onInput=${(e) => patchStar({ cy: +e.target.value || 0 })}/>
+          </label>
+          <label className="workflow-vector-field workflow-vector-field-stacked">
+            <span>rx</span>
+            <input type="number" min="1" value=${Math.round(star.rx || 0)}
+              onInput=${(e) => patchStar({ rx: Math.max(1, +e.target.value || 1) })}/>
+          </label>
+          <label className="workflow-vector-field workflow-vector-field-stacked">
+            <span>ry</span>
+            <input type="number" min="1" value=${Math.round(star.ry || 0)}
+              onInput=${(e) => patchStar({ ry: Math.max(1, +e.target.value || 1) })}/>
           </label>
         </div>
       `}

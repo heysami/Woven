@@ -30011,8 +30011,8 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   opacity: 1;
 }
 
-/* Tool palette - 2-col grid of icon + label buttons. */
-/* Icon-only tool buttons (label dropped; name is in the native title tooltip). */
+/* Tool palette - 4-col grid of icon-only buttons. The name, shortcut and
+   description live in a portaled HoverTip bubble, not a native title. */
 .workflow-vector-tools {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -30038,14 +30038,17 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   border-color: color-mix(in oklab, var(--accent) 35%, transparent);
   color: var(--accent-text);
 }
+/* Holds one inline-SVG Icon.* component (currentColor, 14px grid) - never
+   an emoji or dingbat glyph, which render at inconsistent size + weight
+   across platforms and made this palette look ragged. */
 .workflow-vector-tool-glyph {
   display: inline-flex;
   width: 14px;
   height: 14px;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
 }
+.workflow-vector-tool-glyph svg { display: block; }
 .workflow-vector-tool-label {
   flex: 1;
   min-width: 0;
