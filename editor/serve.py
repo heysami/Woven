@@ -14407,7 +14407,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if isinstance(sections, list):
             live = [s for s in sections if isinstance(s, dict) and not s.get("deleted")]
             body = ",\n".join(
-                "    " + json.dumps({k: s[k] for k in ("id", "label", "col", "row", "col2", "row2", "tone") if k in s},
+                "    " + json.dumps({k: s[k] for k in ("id", "label", "col", "row", "col2", "row2", "tone", "members") if k in s},
                                     ensure_ascii=False)
                 for s in live
             )
@@ -14552,6 +14552,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                 }
                 if isinstance(sec.get("tone"), str) and sec["tone"][:24].isalpha():
                     entry["tone"] = sec["tone"][:24]
+                # Recovery hint, not authority - the frame ids the rect held at
+                # this save. Lets the editor re-fit a band whose screens an
+                # agent regen moved out from under it.
+                mem = sec.get("members")
+                if isinstance(mem, list):
+                    ids = [m for m in mem if isinstance(m, str) and m][:400]
+                    if ids:
+                        entry["members"] = ids
                 sanitized_sections.append(entry)
         else:
             sanitized_sections = None      # partial update - leave the file's sections alone

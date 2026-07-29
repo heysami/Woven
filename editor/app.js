@@ -342,6 +342,13 @@ function normalizeSection(raw, i) {
     const n = Math.round(Number(v));
     return Number.isFinite(n) ? Math.max(0, n) : dflt;
   };
+  // Recovery hint, not authority: the ids this rect held at the last editor
+  // save. Membership stays spatial - this only lets a rect find its way back
+  // when something OUTSIDE the editor (an agent regen) moves the screens out
+  // from under it. See the self-heal in the sections boot block.
+  const members = Array.isArray(raw.members)
+    ? raw.members.filter(m => typeof m === "string" && m).slice(0, 400)
+    : undefined;
   const col = int(raw.col, 0);
   const row = int(raw.row, 0);
   // Accept either an inclusive bottom-right cell (col2/row2 - what the editor
@@ -357,6 +364,7 @@ function normalizeSection(raw, i) {
     col2: Math.max(col, col2),
     row2: Math.max(row, row2),
     tone: SECTION_TONES.includes(raw.tone) ? raw.tone : SECTION_TONES[i % SECTION_TONES.length],
+    ...(members ? { members } : {}),
   };
 }
 
@@ -458,6 +466,32 @@ function sectionViewInitial(sectionId) {
   // their bounding box after the move. Deterministic, no guessing - and it
   // only runs while a legacy sidecar is present, so it happens once per
   // project and is then persisted by the one-shot migration write.
+  // ── Self-heal: a band whose screens were moved out from under it ─────
+  // Sections are spatial by design, which means anything that moves frames
+  // WITHOUT moving the rect strands the rect. The editor can't do that (it
+  // moves a section and its members together, and saves both), but an agent
+  // regen writes the data file directly and can. `members` is the recovery
+  // hint written at the last editor save: if a rect now holds NOTHING but its
+  // recorded members still exist, follow them.
+  //
+  // Deliberately narrow. A rect that still holds anything is left alone, and a
+  // user emptying a section by hand updates `members` in the same save - so
+  // the hint can only be stale when something other than the editor moved the
+  // screens, which is exactly the case worth healing.
+  const frameCell = new Map((D.frames || []).map(f => [f.id, f]));
+  for (const sec of D.sections) {
+    if (!sec.members || !sec.members.length) continue;
+    const held = (D.frames || []).some(f => frameInSection(f, sec));
+    if (held) continue;
+    const live = sec.members.map(id => frameCell.get(id)).filter(Boolean);
+    if (!live.length) continue;
+    const cols = live.map(f => f.col), rows = live.map(f => f.row);
+    Object.assign(sec, {
+      col:  Math.min(...cols), row:  Math.min(...rows),
+      col2: Math.max(...cols), row2: Math.max(...rows),
+    });
+  }
+
   if (!L) return;
   const moved = (D.frames || []).filter(f => f._preLayoutCell);
   if (!moved.length) return;
@@ -96407,7 +96441,13 @@ function App() {
     // Sections: the live list, plus a tombstone for every one the user deleted
     // that the file still declares, so the daemon drops it instead of leaving
     // it behind.
-    const live = model.sections || [];
+    // Stamp each section with the ids it holds RIGHT NOW. Spatial membership
+    // stays the rule; this is the breadcrumb that lets a rect follow its
+    // screens if an agent regen later moves them (see the boot self-heal).
+    const live = (model.sections || []).map(s => ({
+      ...s,
+      members: model.frames.filter(f => frameInSection(f, s)).map(f => f.id),
+    }));
     const liveIds = new Set(live.map(s => s.id));
     const sections = live.concat(
       (D.sections || []).filter(s => !liveIds.has(s.id)).map(s => ({ id: s.id, deleted: true }))
