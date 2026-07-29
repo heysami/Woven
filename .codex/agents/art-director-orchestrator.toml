@@ -407,6 +407,8 @@ Runs in the `mode: "finalize"` dispatch, after §4.5/§4.6. The plate image node
 
 Use the **race-safe append** route (`POST /__workflow/nodes/add`) - it appends under the project lock without clobbering concurrent writers, and is idempotent on re-POST.
 
+**Do NOT invent x/y.** Omit coordinates on every node you add (here and in §2): the daemon lays a coordinate-less batch out as a left-to-right chain, reading the order off your own `addEdges`, then finds it empty canvas - so the plate, the contract and the downstream research nodes land as a readable row instead of stacked on the origin. Hand-picked coordinates are written verbatim and are how nodes end up on top of each other. If you want a batch beside a SPECIFIC node, pass `"anchorId": "<nodeId>", "placement": "anchor"` rather than coordinates; an edge from an existing node into your batch already anchors it automatically.
+
 ```bash
 # Discover the prototype node id to wire the contract into the build chain.
 PROTO_ID=$(curl -fsS "$TH_DAEMON_URL/__workflow?project=$TH_PROJECT_ID" \\
