@@ -44,6 +44,14 @@
      transparent so orbit/select still hit the live canvas underneath. Hidden
      (display:none) whenever no wired effects are active, so it's a true no-op. */
   #fx-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 5; display: none; }
+  /* VIEW-ONLY (?view=1&readUrl=…): this same tool rendering a baked
+     .scene.json for an asset card. No authoring chrome, no gizmo, no
+     persistence - just the scene, framed and slowly orbiting. The file format
+     is untouched; this is only a read path for what the editor already writes. */
+  body.view-only .toolbar,
+  body.view-only .panel,
+  body.view-only .badge,
+  body.view-only .hint { display: none !important; }
 
   .toolbar {
     position: fixed; left: 14px; top: 50%; transform: translateY(-50%);
@@ -140,6 +148,9 @@
 </style>
 </head>
 <body>
+<!-- View-only flag set at PARSE time (before the chrome below is parsed) so an
+     asset-card preview never flashes the toolbar/inspector it will never use. -->
+<script>if (new URLSearchParams(location.search).get('view') === '1') document.body.classList.add('view-only');</script>
 <!-- #coreCanvas wraps the WebGL stage (+ fx overlay) so floating-panels mode can
      pin the live canvas onto the node's core rect. In the default layout it's a
      transparent full-bleed passthrough - JS still references #stage/#fx-overlay. -->
@@ -833,6 +844,7 @@ function select(list) {
 }
 renderer.domElement.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
 renderer.domElement.addEventListener('pointerup', e => {
+  if (VIEW_ONLY) { down = null; return; }   // read-only preview: orbit only, no picking
   if (!down) return; const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y); down = null;
   if (moved > 5 || gizmo.dragging) return;
   // NDC relative to the GL canvas rect (== #coreCanvas in detached mode), not the
@@ -2010,6 +2022,7 @@ function refresh() {
 
 // Keyboard
 addEventListener('keydown', e => {
+  if (VIEW_ONLY) return;   // read-only preview: no authoring shortcuts
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   const k = e.key.toLowerCase();
   if (k === 'w') setTool('select'); else if (k === 'e') setTool('rotate'); else if (k === 'r') setTool('scale');
@@ -2227,6 +2240,29 @@ function fitToCore() {
   renderer.setSize(w, h);
 }
 addEventListener('resize', fitToCore);
+// Frame the camera on whatever the scene actually contains. Used by the
+// view-only preview, where nobody is around to orbit the camera into a useful
+// spot. The ground plane + grid are excluded on purpose: they're 40-60 units
+// wide and would swamp the fit, leaving the model a speck in the middle.
+function frameSceneForView() {
+  const box = new THREE.Box3();
+  let any = false;
+  for (const o of objects) { box.expandByObject(o); any = true; }
+  if (wiredPosGroup && wiredPosGroup.children.length) { box.expandByObject(wiredPosGroup); any = true; }
+  if (!any || box.isEmpty()) return false;
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const radius = Math.max(size.length() * 0.5, 0.4);
+  const vFov = (camera.fov || 45) * Math.PI / 180;
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * (camera.aspect || 1));
+  const dist = (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 1.12;
+  orbit.target.copy(center);
+  camera.position.set(center.x + dist * 0.58, center.y + dist * 0.40, center.z + dist * 0.71);
+  camera.near = Math.max(dist / 500, 0.01); camera.far = dist * 20;
+  camera.updateProjectionMatrix();
+  orbit.update();
+  return true;
+}
 // Re-fit whenever #coreCanvas changes size (node resize while detached, or the
 // float/unfloat reflow) - event-driven, never per-frame polling.
 if (coreEl && 'ResizeObserver' in window) {
@@ -2275,6 +2311,13 @@ const __SP_FORCE_SIDECAR = __SP_Q.get('forceSidecar') === '1';
 // sidecar write. Standalone (opened directly, no nodeId) keeps localStorage +
 // sidecar boot + download-bake exactly as before.
 const EMBEDDED = !!__SP_NODE;
+// v4.1 - VIEW-ONLY. An asset card holding a baked `.scene.json` renders THIS
+// tool with `?view=1&readUrl=<file>`: it fetches the scene itself, hides every
+// authoring surface, frames the camera on the model and slowly orbits. Nothing
+// about the file changes - a .scene.json stays a .scene.json; this is purely a
+// read path so the card shows the scene instead of a dead "SCENE" glyph.
+const VIEW_ONLY = __SP_Q.get('view') === '1';
+const VIEW_URL = __SP_Q.get('readUrl') || '';
 // Imported .glb/.gltf meshes are NOT serialized into the scene JSON, so the
 // node owns the import list and we track loaded meshes by source URL to add /
 // remove them idempotently (reload-free).
@@ -2307,7 +2350,7 @@ const LINKED_TEX = Array.isArray(window.__SPLINE3D_TEXTURES) ? window.__SPLINE3D
 const SAVE_KEY = 'spline3d:' + (__SP_NODE || location.pathname || 'default');
 let lastSaved = '', saveTimer = null;
 function persist() {
-  if (EMBEDDED) return;   // node-driven: the host owns persistence (no localStorage)
+  if (EMBEDDED || VIEW_ONLY) return;   // node-driven / read-only: never write localStorage
   try { const s = JSON.stringify(serializeScene()); if (s !== lastSaved) { localStorage.setItem(SAVE_KEY, s); lastSaved = s; blip('Saved'); } }
   catch (e) { console.warn('save failed', e); }
 }
@@ -2551,6 +2594,39 @@ async function bake() {
 
 const LINKED = Array.isArray(window.__SPLINE3D_IMPORT) ? window.__SPLINE3D_IMPORT : __splitList(__SP_Q.get('imports'));
 (async function boot() {
+  // VIEW-ONLY: read the file straight off disk, frame it, orbit it. No
+  // localStorage, no sidecar write, no demo seed, no gizmo - an asset card is a
+  // preview surface, not an editor. Two sources, one viewer: a `.scene.json`
+  // from the 3D editor goes through restoreScene; a `.glb`/`.gltf` (the voxel
+  // editor's bake, a 3D-gen asset, a dropped model) goes through the same import
+  // path the editor uses. Either way the file itself is untouched.
+  if (VIEW_ONLY) {
+    const isModel = (u) => /\.(glb|gltf)(\?|$)/i.test(u || '');
+    const glbs = __splitList(__SP_Q.get('imports'));
+    if (isModel(VIEW_URL)) glbs.unshift(VIEW_URL);
+    else if (VIEW_URL) {
+      try {
+        const r = await fetch(VIEW_URL, { cache: 'no-store' });
+        if (r.ok) restoreScene(await r.json());
+      } catch (e) { console.warn('scene preview load failed', e); }
+    }
+    // Await the imports so the first framing pass sees real geometry rather
+    // than an empty scene (the retries below only cover late async parts).
+    for (const u of glbs) {
+      await new Promise(res => gltfLoader.load(
+        u,
+        g => { try { addImportedScene(g, 'preview', u); } catch (e) { console.warn(e); } res(); },
+        undefined,
+        err => { console.warn('model preview load failed', u, err); res(); }));
+    }
+    select([]); gizmo.detach(); scene.remove(gizmo);
+    orbit.enablePan = false;
+    orbit.autoRotate = true; orbit.autoRotateSpeed = 0.85;
+    frameSceneForView();
+    setTimeout(frameSceneForView, 400);
+    setTimeout(frameSceneForView, 1400);
+    return;
+  }
   // EMBEDDED: start empty + announce ready; the host node then pushes
   // spline:init (scene + imports). Single source of truth = the node.
   if (EMBEDDED) {

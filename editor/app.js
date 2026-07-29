@@ -68611,6 +68611,29 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     ? fileSrcRaw + (fileSrcRaw.includes("?") ? "&" : "?") + "_b=" + bust
     : fileSrcRaw;
   const isStaleInline = isInlinePath && !isInlineSvg && !(isCanvasSnapshot && node.src);
+  // 3D files that carry no renderable document of their own and so used to fall
+  // all the way through to the dead glyph placeholder:
+  //   • `spline-<id>.scene.json` - the 3D editor's autosaved scene (kind "scene")
+  //   • `.glb` / `.gltf`         - the voxel editor's bake, 3D-gen output, drops
+  // Both render through the 3D editor itself in view-only mode: same file, same
+  // format, just a read path. The path tests also catch cards whose assetKind was
+  // mistyped by an older extension map (json → "lottie", glb → "image").
+  const isSpline3dScene = kind === "scene"
+    || (isFileRef && /\.scene\.json($|\?)/i.test(String(path || "")));
+  const is3dModelFile = !isSpline3dScene
+    && isFileRef && /\.(glb|gltf)($|\?)/i.test(String(path || ""));
+  const isSpline3dPreview = isSpline3dScene || is3dModelFile;
+  const sceneViewerSrc = (() => {
+    if (!isSpline3dPreview || !fileSrc) return null;
+    const p = new URLSearchParams();
+    const pid = activeProjectId();
+    if (pid) p.set("project", pid);
+    p.set("view", "1");
+    // One param for both - the tool routes on the extension (scene JSON is
+    // restored, a model is imported). Avoids the comma-split `imports` list.
+    p.set("readUrl", fileSrc);
+    return SPLINE_TOOL_SRC + "?" + p.toString();
+  })();
 
   // Selection-driven playback for media kinds (video + lottie).
   // Placed HERE (after `kind` and `fileSrc` are computed) so the dep arrays
@@ -68665,6 +68688,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     audio:  html`<${Icon.Music}/>`,
     shader: html`<${Icon.Shader}/>`,
     "3d":   html`<${Icon.Cube}/>`,
+    scene:  html`<${Icon.Cube}/>`,
     viz:    html`<${Icon.Chart}/>`,
   };
   const glyph = GLYPH[kind] || html`<${Icon.Block}/>`;
@@ -68735,12 +68759,32 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     `;
   } else if (!lodLive && (kind === "image" || kind === "svg" || kind === "vector"
                        || kind === "lottie" || kind === "video"
-                       || kind === "html" || kind === "html-set")) {
+                       || kind === "html" || kind === "html-set"
+                       || isSpline3dPreview)) {
     // Canvas LOD - heavy asset that has never qualified as live (offscreen
     // beyond the load margin, or below the zoom floor since mount): paint
     // the veil and fetch NOTHING. Flips to the real branch the first time
     // the node scrolls/zooms into range.
     bodyContent = html`<${WorkflowLodVeil} zoom=${zoom} glyph=${glyph} label=${basename} mode="inline"/>`;
+  } else if (isSpline3dPreview) {
+    // The 3D editor rendering the file, chrome-stripped: camera framed on the
+    // model, slow auto-orbit, drag to look around, no editing.
+    bodyContent = sceneViewerSrc ? html`
+      <iframe
+        key=${"asset-scene3d-" + bust}
+        className="workflow-node-asset-thumb workflow-node-asset-iframe"
+        src=${sceneViewerSrc}
+        title=${basename}
+        sandbox="allow-scripts allow-same-origin"
+        data-asset-id=${node.id}
+      />
+    ` : html`
+      <div className="workflow-node-asset-empty">
+        <div className="workflow-node-asset-empty-icon"><${Icon.Cube}/></div>
+        <div className="workflow-node-asset-empty-text">no scene yet</div>
+        <div className="workflow-node-asset-empty-hint">edit the 3D node → it autosaves here</div>
+      </div>
+    `;
   } else if (kind === "image" || kind === "svg" || kind === "vector") {
     // `vector` covers SVG files produced by svg-gen + Quiver. The
     // browser renders SVG natively in <img>, same code path as image/svg.
@@ -78557,6 +78601,9 @@ function spawnAppNodeOutput(setData, n, bakedPath, extraProps) {
     : ext === "html" ? "html"
     : ext === "wav" || ext === "mp3" || ext === "ogg" ? "audio"
     : ext === "otf" || ext === "ttf" || ext === "woff" || ext === "woff2" ? "font"
+    // The voxel editor bakes a .glb; without this it fell to the "image"
+    // default and the card tried to render the mesh bytes in an <img>.
+    : ext === "glb" || ext === "gltf" ? "3d"
     : ext === "json" ? "scene"
     : "image";
   setData(d => {
