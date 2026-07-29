@@ -183,8 +183,14 @@
       background-size: 28px 28px;
       position: relative;
     }
+    /* The shell's LAYOUT box is the full composition size (e.g. 1280x720) and
+       only the transform shrinks it to fit, so it overflows the wrap - and grid
+       centring falls back to start-edge alignment the moment an item overflows,
+       which parks the preview off to one side. Centre it by position instead. */
     .stage-shell {
-      position: relative;
+      position: absolute;
+      left: 50%;
+      top: 50%;
       transform-origin: center;
       box-shadow: var(--wv-shadow-lg), 0 0 0 1px var(--wv-border);
     }
@@ -210,6 +216,7 @@
       border: 0;
       display: block;
     }
+    .hf-clip .tx { display: block; width: 100%; white-space: pre-wrap; }
     .hf-clip .missing {
       width: 100%;
       height: 100%;
@@ -224,7 +231,7 @@
       left: 14px;
       right: 14px;
       bottom: 14px;
-      height: 118px;
+      height: 152px;
       border: 1px solid var(--tl-line);
       background: var(--tl-surface);
       backdrop-filter: blur(8px);
@@ -285,7 +292,7 @@
     }
     .track-row {
       position: relative;
-      height: 18px;
+      height: 22px;
       display: grid;
       grid-template-columns: 110px minmax(0, 1fr);
       gap: 8px;
@@ -301,22 +308,45 @@
     }
     .lane {
       position: relative;
-      height: 10px;
-      border-radius: 999px;
+      height: 14px;
+      border-radius: 4px;
       background: var(--tl-lane);
     }
     .segment {
       position: absolute;
       top: 0;
-      height: 10px;
+      height: 14px;
       min-width: 4px;
-      border-radius: 999px;
+      border-radius: 4px;
       background: linear-gradient(90deg, var(--accent), var(--wv-hot));
       border: 1px solid var(--tl-line);
-      cursor: pointer;
+      cursor: grab;
+      touch-action: none;
     }
     .segment.active {
       box-shadow: 0 0 0 2px var(--accent);
+    }
+    .segment:active { cursor: grabbing; }
+    /* Keyframe diamonds ride ON the lane (not the segment) so their left % is
+       measured against the same full-duration axis as the segment itself. */
+    .kf {
+      position: absolute;
+      top: 50%;
+      width: 9px;
+      height: 9px;
+      margin-left: -4.5px;
+      transform: translateY(-50%) rotate(45deg);
+      background: var(--wv-surface);
+      border: 1.5px solid var(--accent);
+      border-radius: 2px;
+      cursor: ew-resize;
+      touch-action: none;
+      z-index: 2;
+    }
+    .kf:hover { background: var(--accent-soft); }
+    .kf.active {
+      background: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 40%, transparent);
     }
     .playhead {
       position: absolute;
@@ -348,6 +378,50 @@
       border-radius: 8px;
       text-align: center;
     }
+    /* ── Control kit ─────────────────────────────────────────────────────────
+       Every inspector field is one .ctl: a label line (name on the left, live
+       value readout on the right) over the control itself. */
+    .ctl { display: grid; gap: 4px; min-width: 0; }
+    .ctl-label {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 6px;
+      color: var(--muted);
+    }
+    .ctl-val {
+      font: 600 10px/1 var(--mono);
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .color-row {
+      display: grid;
+      grid-template-columns: 30px minmax(0, 1fr) auto;
+      gap: 6px;
+      align-items: center;
+    }
+    .color-row input[type="color"] { width: 30px; height: 26px; }
+    .color-row .none-btn { padding: 5px 7px; font-size: 10px; color: var(--muted); }
+    .color-row .none-btn.on { border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft); }
+    .kf-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .kf-chip {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 999px;
+      padding: 4px 8px;
+      font: 10px/1 var(--mono);
+      cursor: pointer;
+      color: var(--muted);
+    }
+    .kf-chip:hover { border-color: var(--line-strong); color: var(--text); }
+    .kf-chip.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent-text);
+    }
+    .btn-row { display: flex; gap: 6px; }
+    .btn-row button { flex: 1; min-width: 0; }
+    .hint { color: var(--faint); font-size: 10px; line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -356,6 +430,7 @@
       <div class="brand">Hyperframes</div>
       <button id="playBtn" class="primary">Play</button>
       <button id="restartBtn">Restart</button>
+      <button id="addKeyBtn" title="Add a keyframe to the selected clip at the playhead (K)">Key</button>
       <button id="addTextBtn">Text</button>
       <button id="addShapeBtn">Shape</button>
       <button id="addAssetBtn">Asset</button>
@@ -367,15 +442,43 @@
     <aside class="panel" id="leftPanel" data-float-panel="left">
       <div class="section stack">
         <h2>Composition</h2>
+        <label class="ctl">
+          <span class="ctl-label">Frame</span>
+          <select id="docPreset">
+            <option value="1920x1080">1920 x 1080 &middot; 16:9</option>
+            <option value="1280x720">1280 x 720 &middot; 16:9</option>
+            <option value="1080x1080">1080 x 1080 &middot; square</option>
+            <option value="1080x1350">1080 x 1350 &middot; 4:5</option>
+            <option value="1080x1920">1080 x 1920 &middot; 9:16</option>
+            <option value="1600x900">1600 x 900 &middot; hero</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
         <div class="row">
-          <label>Width <input id="docW" type="number" min="160" step="10"></label>
-          <label>Height <input id="docH" type="number" min="160" step="10"></label>
+          <label class="ctl"><span class="ctl-label">Width</span><input id="docW" type="number" min="160" step="10"></label>
+          <label class="ctl"><span class="ctl-label">Height</span><input id="docH" type="number" min="160" step="10"></label>
         </div>
         <div class="row">
-          <label>Duration <input id="docDuration" type="number" min="0.5" step="0.1"></label>
-          <label>FPS <input id="docFps" type="number" min="1" step="1"></label>
+          <label class="ctl"><span class="ctl-label">Duration <b class="ctl-val" id="docDurationVal"></b></span><input id="docDuration" type="number" min="0.5" step="0.1"></label>
+          <label class="ctl">
+            <span class="ctl-label">FPS</span>
+            <select id="docFps">
+              <option value="24">24</option>
+              <option value="25">25</option>
+              <option value="30">30</option>
+              <option value="50">50</option>
+              <option value="60">60</option>
+            </select>
+          </label>
         </div>
-        <label>Background <input id="docBg" type="text"></label>
+        <div class="ctl">
+          <span class="ctl-label">Background</span>
+          <div class="color-row">
+            <input id="docBgSwatch" type="color">
+            <input id="docBg" type="text">
+            <span></span>
+          </div>
+        </div>
       </div>
       <div class="section">
         <h2>Clips</h2>
@@ -412,6 +515,7 @@
     var PREFIX = "hyperframes";
     var doc = null;
     var selectedId = null;
+    var selectedKeyId = null;
     var contentAssets = [];
     var timelineSources = [];
     var timeline = null;
@@ -419,11 +523,13 @@
     var saveTimer = 0;
     var playStart = 0;
     var currentTime = 0;
-    var scrubbing = false;
+    // Pointer drag on the timeline: one of "scrub" | "kf" | "clip" (or null).
+    var drag = null;
 
     var els = {
       play: document.getElementById("playBtn"),
       restart: document.getElementById("restartBtn"),
+      addKey: document.getElementById("addKeyBtn"),
       addText: document.getElementById("addTextBtn"),
       addShape: document.getElementById("addShapeBtn"),
       addAsset: document.getElementById("addAssetBtn"),
@@ -444,9 +550,12 @@
       rightPanel: document.getElementById("rightPanel"),
       docW: document.getElementById("docW"),
       docH: document.getElementById("docH"),
+      docPreset: document.getElementById("docPreset"),
       docDuration: document.getElementById("docDuration"),
+      docDurationVal: document.getElementById("docDurationVal"),
       docFps: document.getElementById("docFps"),
-      docBg: document.getElementById("docBg")
+      docBg: document.getElementById("docBg"),
+      docBgSwatch: document.getElementById("docBgSwatch")
     };
 
     function uid(prefix) {
@@ -460,6 +569,12 @@
 
     function clamp(v, lo, hi) {
       return Math.max(lo, Math.min(hi, v));
+    }
+
+    // Times come out of pointer maths as long floats; millisecond precision is
+    // plenty and keeps the persisted JSON readable.
+    function round3(v) {
+      return Math.round(v * 1000) / 1000;
     }
 
     function esc(s) {
@@ -478,6 +593,81 @@
       return JSON.stringify(value).replace(/</g, "\\u003c");
     }
 
+    // ── Colour ────────────────────────────────────────────────────────────────
+    // <input type=color> only speaks #rrggbb, but a clip's fill may legitimately
+    // be "transparent", a named colour, an rgb()/hsl() string or a gradient. A
+    // hidden probe lets the browser resolve anything it understands back to hex
+    // so the swatch can show it; the paired text field keeps the authored value.
+    var colorProbe = document.createElement("div");
+    colorProbe.style.display = "none";
+    document.body.appendChild(colorProbe);
+
+    function isNoneColor(v) {
+      var s = String(v == null ? "" : v).trim().toLowerCase();
+      return !s || s === "transparent" || s === "none";
+    }
+
+    function resolveHex(value, fallback) {
+      fallback = fallback || "#000000";
+      if (isNoneColor(value)) return fallback;
+      var s = String(value).trim();
+      colorProbe.style.color = "";
+      colorProbe.style.color = s;
+      if (!colorProbe.style.color) return fallback;
+      var m = getComputedStyle(colorProbe).color.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+      if (!m) return fallback;
+      return "#" + [1, 2, 3].map(function (i) {
+        return ("0" + Number(m[i]).toString(16)).slice(-2);
+      }).join("");
+    }
+
+    var FONT_STACKS = [
+      { label: "Sans", value: "ui-sans-serif, system-ui, sans-serif" },
+      { label: "Serif", value: "Georgia, 'Times New Roman', serif" },
+      { label: "Mono", value: "ui-monospace, SFMono-Regular, Menlo, monospace" },
+      { label: "Display", value: "Impact, Haettenschweiler, 'Arial Black', sans-serif" },
+      { label: "Rounded", value: "'Avenir Next', 'Segoe UI', Verdana, sans-serif" }
+    ];
+
+    var WEIGHTS = [
+      [100, "100 Thin"], [200, "200 Extra light"], [300, "300 Light"],
+      [400, "400 Regular"], [500, "500 Medium"], [600, "600 Semibold"],
+      [700, "700 Bold"], [800, "800 Extra bold"], [900, "900 Black"]
+    ];
+
+    var EASES = [
+      ["Smooth", ["power1.out", "power2.out", "power3.out", "power4.out", "sine.out", "circ.out"]],
+      ["Ease in", ["power1.in", "power2.in", "power3.in", "expo.in", "circ.in"]],
+      ["Both ends", ["power1.inOut", "power2.inOut", "power3.inOut", "expo.inOut", "sine.inOut"]],
+      ["Snappy", ["expo.out", "back.out(1.7)", "back.inOut(1.7)", "elastic.out(1,0.4)", "bounce.out"]],
+      ["Constant", ["none"]]
+    ];
+
+    function optionList(items, selected) {
+      return items.map(function (it) {
+        var value = Array.isArray(it) ? String(it[0]) : String(it);
+        var label = Array.isArray(it) ? String(it[1]) : String(it);
+        return '<option value="' + esc(value) + '"' +
+          (value === String(selected) ? " selected" : "") + ">" + esc(label) + "</option>";
+      }).join("");
+    }
+
+    function easeOptions(selected) {
+      var known = false;
+      var html = EASES.map(function (group) {
+        return '<optgroup label="' + esc(group[0]) + '">' + group[1].map(function (e) {
+          if (e === selected) known = true;
+          return '<option value="' + esc(e) + '"' + (e === selected ? " selected" : "") + ">" + esc(e) + "</option>";
+        }).join("") + "</optgroup>";
+      }).join("");
+      // An agent-authored doc may carry an ease we don't list; keep it selectable
+      // instead of silently snapping the clip to a different curve.
+      if (!known && selected) {
+        html = '<option value="' + esc(selected) + '" selected>' + esc(selected) + "</option>" + html;
+      }
+      return html;
+    }
+
     function defaultDoc() {
       var id = "hf-" + (NODE_ID || "composition");
       return {
@@ -494,7 +684,7 @@
             kind: "text",
             text: "Hyperframes",
             start: 0.15,
-            duration: 2.1,
+            duration: 2.6,
             x: 110,
             y: 210,
             w: 760,
@@ -507,8 +697,11 @@
             fontSize: 84,
             fontWeight: 800,
             ease: "power3.out",
-            from: { x: -90, y: 0, opacity: 0, scale: 0.92, rotation: 0 },
-            to: { x: 0, y: 0, opacity: 1, scale: 1, rotation: 0 }
+            keys: [
+              { t: 0, x: -90, y: 0, opacity: 0, scale: 0.92, rotation: 0 },
+              { t: 1.2, x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, ease: "power3.out" },
+              { t: 2.6, x: 0, y: -26, opacity: 1, scale: 1.04, rotation: 0, ease: "sine.inOut" }
+            ]
           },
           {
             id: "accent",
@@ -526,8 +719,11 @@
             color: "#ffffff",
             radius: 99,
             ease: "expo.out",
-            from: { x: 0, y: 0, opacity: 0, scale: 0.08, rotation: 0 },
-            to: { x: 0, y: 0, opacity: 1, scale: 1, rotation: 0 }
+            keys: [
+              { t: 0, x: 0, y: 0, opacity: 0, scale: 0.08, rotation: 0 },
+              { t: 1.1, x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, ease: "expo.out" },
+              { t: 2.8, x: 0, y: -26, opacity: 1, scale: 1, rotation: 0, ease: "sine.inOut" }
+            ]
           }
         ]
       };
@@ -536,14 +732,16 @@
     function normalizeClip(c, i) {
       c = c || {};
       var kind = c.kind || "text";
-      return {
+      var duration = Math.max(0.1, num(c.duration, 2));
+      var ease = c.ease || "power3.out";
+      var clip = {
         id: String(c.id || uid("clip")),
         kind: kind,
         shape: c.shape || "rect",
         assetId: c.assetId || "",
         text: c.text == null ? (kind === "text" ? "Text clip" : "") : String(c.text),
         start: Math.max(0, num(c.start, i * 0.25)),
-        duration: Math.max(0.1, num(c.duration, 2)),
+        duration: duration,
         x: num(c.x, 100 + i * 40),
         y: num(c.y, 120 + i * 36),
         w: Math.max(12, num(c.w, kind === "text" ? 520 : 260)),
@@ -555,10 +753,12 @@
         radius: Math.max(0, num(c.radius, kind === "shape" ? 18 : 0)),
         fontSize: Math.max(8, num(c.fontSize, 64)),
         fontWeight: Math.max(100, num(c.fontWeight, 700)),
-        ease: c.ease || "power3.out",
-        from: normalizePose(c.from, { x: 0, y: 40, opacity: 0, scale: 0.96, rotation: 0 }),
-        to: normalizePose(c.to, { x: 0, y: 0, opacity: 1, scale: 1, rotation: 0 })
+        fontFamily: c.fontFamily == null ? FONT_STACKS[0].value : String(c.fontFamily),
+        align: ["left", "center", "right"].indexOf(c.align) >= 0 ? c.align : "center",
+        ease: ease,
+        keys: normalizeKeys(c, duration, ease)
       };
+      return syncPoses(clip);
     }
 
     function normalizePose(p, fallback) {
@@ -570,6 +770,112 @@
         scale: Math.max(0.01, num(p.scale, fallback.scale)),
         rotation: num(p.rotation, fallback.rotation)
       };
+    }
+
+    // ── Keyframes ─────────────────────────────────────────────────────────────
+    // A clip animates through `keys`: poses at times measured from the clip's own
+    // start. A key's `ease` governs the segment ARRIVING at it, so the first key
+    // has no ease of its own. Legacy docs (and agent-written ones) carry only a
+    // from/to pair - those upgrade to a two-key list, and `from`/`to` are kept in
+    // sync as derived mirrors of the first + last key so anything still reading
+    // them keeps working.
+    function normalizeKey(k, fallback) {
+      k = k || {};
+      var f = fallback || { t: 0, x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, ease: "power3.out" };
+      return {
+        id: String(k.id || uid("k")),
+        t: Math.max(0, num(k.t, f.t)),
+        x: num(k.x, f.x),
+        y: num(k.y, f.y),
+        opacity: clamp(num(k.opacity, f.opacity), 0, 1),
+        scale: Math.max(0.01, num(k.scale, f.scale)),
+        rotation: num(k.rotation, f.rotation),
+        ease: String(k.ease || f.ease || "power3.out")
+      };
+    }
+
+    function normalizeKeys(c, duration, ease) {
+      var raw = Array.isArray(c.keys) && c.keys.length ? c.keys : null;
+      var keys;
+      if (raw) {
+        keys = raw.map(function (k) {
+          return normalizeKey(k, { t: 0, x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, ease: ease });
+        });
+      } else {
+        var from = normalizePose(c.from, { x: 0, y: 40, opacity: 0, scale: 0.96, rotation: 0 });
+        var to = normalizePose(c.to, { x: 0, y: 0, opacity: 1, scale: 1, rotation: 0 });
+        keys = [
+          normalizeKey({ t: 0, x: from.x, y: from.y, opacity: from.opacity, scale: from.scale, rotation: from.rotation, ease: ease }),
+          normalizeKey({ t: duration, x: to.x, y: to.y, opacity: to.opacity, scale: to.scale, rotation: to.rotation, ease: ease })
+        ];
+      }
+      keys.forEach(function (k) { k.t = clamp(k.t, 0, duration); });
+      keys.sort(function (a, b) { return a.t - b.t; });
+      return keys;
+    }
+
+    function syncPoses(clip) {
+      var a = clip.keys[0];
+      var b = clip.keys[clip.keys.length - 1];
+      clip.from = { x: a.x, y: a.y, opacity: a.opacity, scale: a.scale, rotation: a.rotation };
+      clip.to = { x: b.x, y: b.y, opacity: b.opacity, scale: b.scale, rotation: b.rotation };
+      return clip;
+    }
+
+    // Pose the clip would hold at clip-local time `t` - linear between the
+    // bracketing keys. Used when inserting a key so the new one lands ON the
+    // existing motion path instead of snapping the clip somewhere else.
+    function sampleKeys(keys, t) {
+      if (!keys.length) return { x: 0, y: 0, opacity: 1, scale: 1, rotation: 0 };
+      if (t <= keys[0].t) return keys[0];
+      var last = keys[keys.length - 1];
+      if (t >= last.t) return last;
+      for (var i = 1; i < keys.length; i++) {
+        var a = keys[i - 1];
+        var b = keys[i];
+        if (t > b.t) continue;
+        var span = b.t - a.t;
+        var f = span > 0 ? (t - a.t) / span : 0;
+        return {
+          x: a.x + (b.x - a.x) * f,
+          y: a.y + (b.y - a.y) * f,
+          opacity: a.opacity + (b.opacity - a.opacity) * f,
+          scale: a.scale + (b.scale - a.scale) * f,
+          rotation: a.rotation + (b.rotation - a.rotation) * f
+        };
+      }
+      return last;
+    }
+
+    function selectedKey() {
+      var c = selectedClip();
+      if (!c) return null;
+      return c.keys.find(function (k) { return k.id === selectedKeyId; }) || null;
+    }
+
+    function addKeyAt(clip, t) {
+      if (!clip) return null;
+      t = round3(clamp(num(t, 0), 0, clip.duration));
+      var existing = clip.keys.find(function (k) { return Math.abs(k.t - t) < 0.001; });
+      if (existing) return existing;
+      var pose = sampleKeys(clip.keys, t);
+      var key = normalizeKey({
+        t: t, x: pose.x, y: pose.y, opacity: pose.opacity,
+        scale: pose.scale, rotation: pose.rotation, ease: clip.ease
+      });
+      clip.keys.push(key);
+      clip.keys.sort(function (a, b) { return a.t - b.t; });
+      syncPoses(clip);
+      return key;
+    }
+
+    function deleteKey(clip, keyId) {
+      if (!clip || clip.keys.length <= 1) return false;
+      var next = clip.keys.filter(function (k) { return k.id !== keyId; });
+      if (next.length === clip.keys.length) return false;
+      clip.keys = next;
+      syncPoses(clip);
+      return true;
     }
 
     function normalizeDoc(value) {
@@ -598,6 +904,11 @@
       };
       if (!out.clips.some(function (c) { return c.id === selectedId; })) {
         selectedId = out.clips[0] ? out.clips[0].id : null;
+        selectedKeyId = null;
+      }
+      var sel = out.clips.find(function (c) { return c.id === selectedId; });
+      if (sel && !sel.keys.some(function (k) { return k.id === selectedKeyId; })) {
+        selectedKeyId = sel.keys[0] ? sel.keys[0].id : null;
       }
       return out;
     }
@@ -701,15 +1012,16 @@
         "background:" + css(c.fill),
         "font-size:" + c.fontSize + "px",
         "font-weight:" + c.fontWeight,
+        "font-family:" + css(c.fontFamily),
         "line-height:1.02",
-        "text-align:center"
+        "text-align:" + css(c.align)
       ];
       if (c.kind === "shape" && c.shape === "circle") style.push("border-radius:999px");
       return style.join(";");
     }
 
     function renderClipContent(c) {
-      if (c.kind === "text") return esc(c.text);
+      if (c.kind === "text") return '<span class="tx">' + esc(c.text) + "</span>";
       if (c.kind === "shape") return "";
       var a = assetById(c.assetId);
       if (!a || !a.url) return '<div class="missing">wire an asset</div>';
@@ -720,8 +1032,7 @@
       return '<img src="' + url + '" alt="">';
     }
 
-    function renderStage() {
-      if (!doc) return;
+    function syncStageFrame() {
       els.stage.style.width = doc.width + "px";
       els.stage.style.height = doc.height + "px";
       els.stage.style.background = doc.background;
@@ -729,6 +1040,11 @@
       els.stage.setAttribute("data-width", String(doc.width));
       els.stage.setAttribute("data-height", String(doc.height));
       els.stage.setAttribute("data-duration", String(activeDuration()));
+    }
+
+    function renderStage() {
+      if (!doc) return;
+      syncStageFrame();
       els.stage.innerHTML = doc.clips.map(function (c) {
         return '<div id="' + esc(c.id) + '" class="hf-clip clip" data-start="' + esc(c.start) +
           '" data-duration="' + esc(c.duration) + '" style="' + esc(clipStyle(c)) + '">' +
@@ -736,7 +1052,29 @@
       }).join("");
       fitStage();
       buildPreviewTimeline();
-      renderTimeline();
+    }
+
+    // Restyle the clips that are already on stage instead of rebuilding them.
+    // A full innerHTML rebuild on every keystroke / slider tick would restart
+    // every wired <video> and reload every <iframe> clip.
+    function syncStageStyles() {
+      if (!doc) return;
+      syncStageFrame();
+      doc.clips.forEach(function (c) {
+        var el = document.getElementById(c.id);
+        if (!el) return;
+        el.setAttribute("data-start", String(c.start));
+        el.setAttribute("data-duration", String(c.duration));
+        // GSAP's inline transform/opacity go with this, but buildPreviewTimeline()
+        // re-seeks straight after and writes them back.
+        el.style.cssText = clipStyle(c);
+        if (c.kind === "text") {
+          var tx = el.querySelector(".tx");
+          if (tx && tx.textContent !== c.text) tx.textContent = c.text;
+        }
+      });
+      fitStage();
+      buildPreviewTimeline();
     }
 
     function fitStage() {
@@ -747,7 +1085,35 @@
       scale = Math.max(0.05, Math.min(1, scale));
       els.shell.style.width = doc.width + "px";
       els.shell.style.height = doc.height + "px";
-      els.shell.style.transform = "scale(" + scale + ")";
+      els.shell.style.transform = "translate(-50%, -50%) scale(" + scale + ")";
+    }
+
+    // Lay ONE clip's keyframe chain onto `tl`. The first key is planted with a
+    // fromTo (immediateRender, so the clip sits in its opening pose before its
+    // start time) and every later key is a .to landing at that key's time.
+    // `scale` stretches doc time onto the driving timeline's duration.
+    function addClipTween(tl, el, c, scale) {
+      var keys = c.keys;
+      if (!keys || !keys.length) return;
+      var at = c.start * scale;
+      var first = poseToGsap(keys[0], c.rotation);
+      if (keys.length === 1) {
+        var hold = poseToGsap(keys[0], c.rotation);
+        hold.duration = Math.max(0.001, c.duration * scale);
+        hold.ease = "none";
+        tl.fromTo(el, first, hold, at + keys[0].t * scale);
+        return;
+      }
+      var second = poseToGsap(keys[1], c.rotation);
+      second.duration = Math.max(0.001, (keys[1].t - keys[0].t) * scale);
+      second.ease = keys[1].ease || c.ease || "power3.out";
+      tl.fromTo(el, first, second, at + keys[0].t * scale);
+      for (var i = 2; i < keys.length; i++) {
+        var step = poseToGsap(keys[i], c.rotation);
+        step.duration = Math.max(0.001, (keys[i].t - keys[i - 1].t) * scale);
+        step.ease = keys[i].ease || c.ease || "power3.out";
+        tl.to(el, step, at + keys[i - 1].t * scale);
+      }
     }
 
     function buildPreviewTimeline() {
@@ -757,12 +1123,7 @@
       timeline = gsap.timeline({ paused: true });
       doc.clips.forEach(function (c) {
         var el = document.getElementById(c.id);
-        if (!el) return;
-        var from = poseToGsap(c.from, c.rotation);
-        var to = poseToGsap(c.to, c.rotation);
-        to.duration = c.duration;
-        to.ease = c.ease || "power3.out";
-        timeline.fromTo(el, from, to, c.start);
+        if (el) addClipTween(timeline, el, c, 1);
       });
       timeline.to({}, { duration: 0 }, doc.duration);
       currentTime = clamp(currentTime, 0, activeDuration());
@@ -788,14 +1149,59 @@
       els.ruler.innerHTML = ticks.join("");
       els.durationReadout.textContent = duration.toFixed(2) + "s";
       els.track.innerHTML = doc.clips.map(function (c) {
-        var left = clamp(displayTimeForDoc(c.start) / duration * 100, 0, 100);
-        var width = clamp(c.duration * timingScale() / duration * 100, 1, 100 - left);
+        var box = clipBox(c);
+        var kfs = c.keys.map(function (k) {
+          return '<div class="kf ' + (k.id === selectedKeyId && c.id === selectedId ? "active" : "") +
+            '" data-id="' + esc(c.id) + '" data-key="' + esc(k.id) + '" title="' + esc(k.t.toFixed(2)) +
+            's into ' + esc(clipLabel(c)) + '" style="left:' + keyPct(c, k) + '%"></div>';
+        }).join("");
         return '<div class="track-row" data-id="' + esc(c.id) + '">' +
           '<div class="track-label">' + esc(clipLabel(c)) + '</div>' +
-          '<div class="lane"><div class="segment ' + (c.id === selectedId ? "active" : "") + '" data-id="' + esc(c.id) + '" title="' + esc(clipLabel(c)) + '" style="left:' + left + '%;width:' + width + '%"></div></div>' +
+          '<div class="lane"><div class="segment ' + (c.id === selectedId ? "active" : "") +
+            '" data-id="' + esc(c.id) + '" title="' + esc(clipLabel(c)) +
+            '" style="left:' + box.left + '%;width:' + box.width + '%"></div>' + kfs + '</div>' +
           '</div>';
       }).join("");
+      bindTimelineRows();
       syncTimelineUi();
+    }
+
+    function clipBox(c) {
+      var duration = activeDuration();
+      var left = clamp(displayTimeForDoc(c.start) / duration * 100, 0, 100);
+      var width = clamp(c.duration * timingScale() / duration * 100, 1, 100 - left);
+      return { left: left, width: width };
+    }
+
+    function keyPct(c, k) {
+      var duration = activeDuration();
+      return clamp(displayTimeForDoc(c.start + k.t) / duration * 100, 0, 100);
+    }
+
+    // Reposition the existing segments / diamonds without rebuilding them - the
+    // element being dragged has to survive the drag.
+    function syncTimelineGeometry() {
+      if (!doc) return;
+      doc.clips.forEach(function (c) {
+        var row = els.track.querySelector('.track-row[data-id="' + cssId(c.id) + '"]');
+        if (!row) return;
+        var label = row.querySelector(".track-label");
+        if (label && label.textContent !== clipLabel(c)) label.textContent = clipLabel(c);
+        var seg = row.querySelector(".segment");
+        if (seg) {
+          var box = clipBox(c);
+          seg.style.left = box.left + "%";
+          seg.style.width = box.width + "%";
+        }
+        c.keys.forEach(function (k) {
+          var el = row.querySelector('.kf[data-key="' + cssId(k.id) + '"]');
+          if (el) el.style.left = keyPct(c, k) + "%";
+        });
+      });
+    }
+
+    function cssId(v) {
+      return String(v == null ? "" : v).replace(/["\\]/g, "\\$&");
     }
 
     function timelineRangeRect() {
@@ -832,11 +1238,16 @@
       els.timeReadout.textContent = currentTime.toFixed(2) + "s";
     }
 
+    // Screen x -> time on the DISPLAY (driving) axis.
+    function displayTimeAt(clientX) {
+      var rect = timelineRangeRect();
+      var x = clamp(clientX - rect.left, 0, rect.width || 1);
+      return x / Math.max(1, rect.width) * activeDuration();
+    }
+
     function seekFromPointer(ev) {
       if (!doc) return;
-      var rect = timelineRangeRect();
-      var x = clamp(ev.clientX - rect.left, 0, rect.width || 1);
-      setTimelineTime(x / Math.max(1, rect.width) * activeDuration(), false);
+      setTimelineTime(displayTimeAt(ev.clientX), false);
     }
 
     function tickPlayhead() {
@@ -856,23 +1267,38 @@
         return '<div class="clip-row ' + (c.id === selectedId ? "active" : "") + '" data-id="' + esc(c.id) + '">' +
           '<div><div class="clip-title">' + esc(clipLabel(c)) + '</div>' +
           '<div class="clip-meta">' + esc(c.kind) + " | " + c.start.toFixed(1) + "s / " + c.duration.toFixed(1) + "s</div></div>" +
-          '<div class="clip-meta">#</div></div>';
+          '<div class="clip-meta">' + c.keys.length + (c.keys.length === 1 ? " key" : " keys") + '</div></div>';
       }).join("");
       Array.prototype.forEach.call(els.list.querySelectorAll(".clip-row"), function (row) {
         row.addEventListener("click", function () {
-          selectedId = row.getAttribute("data-id");
-          renderAll(false);
+          selectClip(row.getAttribute("data-id"), null);
         });
       });
+    }
+
+    function bindTimelineRows() {
+      // Double-click anywhere on a clip's bar drops a keyframe there.
       Array.prototype.forEach.call(els.track.querySelectorAll(".segment"), function (seg) {
-        seg.addEventListener("click", function (ev) {
+        seg.addEventListener("dblclick", function (ev) {
+          ev.preventDefault();
           ev.stopPropagation();
-          selectedId = seg.getAttribute("data-id");
-          var c = selectedClip();
-          if (c) setTimelineTime(displayTimeForDoc(c.start), false);
-          renderAll(false);
+          var c = doc.clips.find(function (x) { return x.id === seg.getAttribute("data-id"); });
+          if (!c) return;
+          var key = addKeyAt(c, docTimeFor(displayTimeAt(ev.clientX)) - c.start);
+          selectedId = c.id;
+          selectedKeyId = key ? key.id : selectedKeyId;
+          commit({ structure: true, inspector: true });
         });
       });
+    }
+
+    function selectClip(id, keyId) {
+      selectedId = id;
+      var c = selectedClip();
+      selectedKeyId = keyId || (c && c.keys[0] ? c.keys[0].id : null);
+      renderList();
+      renderTimeline();
+      renderInspector();
     }
 
     function assetOptions(selected) {
@@ -883,71 +1309,279 @@
       }).join("");
     }
 
+    // ── Inspector control builders ────────────────────────────────────────────
+    function ctl(label, inner, readout) {
+      return '<div class="ctl"><span class="ctl-label"><span>' + esc(label) + "</span>" +
+        (readout == null ? "" : '<b class="ctl-val">' + esc(readout) + "</b>") +
+        "</span>" + inner + "</div>";
+    }
+
+    function attrs(field, key) {
+      return 'data-field="' + esc(field) + '"' + (key ? ' data-key-field="1"' : "");
+    }
+
+    function numberCtl(label, field, value, step, opts) {
+      opts = opts || {};
+      return ctl(label, '<input type="number" ' + attrs(field, opts.key) + ' step="' + step + '"' +
+        (opts.min == null ? "" : ' min="' + opts.min + '"') +
+        (opts.max == null ? "" : ' max="' + opts.max + '"') +
+        ' value="' + esc(value) + '">');
+    }
+
+    function sliderCtl(label, field, value, min, max, step, opts) {
+      opts = opts || {};
+      var readout = opts.format ? opts.format(value) : String(value);
+      return ctl(label, '<input type="range" ' + attrs(field, opts.key) +
+        ' min="' + min + '" max="' + max + '" step="' + step + '" value="' + esc(value) + '"' +
+        (opts.unit ? ' data-unit="' + esc(opts.unit) + '"' : "") +
+        (opts.digits == null ? "" : ' data-digits="' + opts.digits + '"') + ">", readout);
+    }
+
+    function selectCtl(label, field, html, opts) {
+      opts = opts || {};
+      return ctl(label, "<select " + attrs(field, opts.key) + ">" + html + "</select>");
+    }
+
+    function colorCtl(label, field, value, allowNone) {
+      var off = isNoneColor(value);
+      return ctl(label,
+        '<div class="color-row">' +
+          '<input type="color" data-color-swatch="1" value="' + esc(resolveHex(value, "#000000")) + '">' +
+          '<input type="text" ' + attrs(field) + ' value="' + esc(value) + '">' +
+          (allowNone
+            ? '<button type="button" class="none-btn ' + (off ? "on" : "") + '" data-none="' + esc(field) + '">None</button>'
+            : "<span></span>") +
+        "</div>");
+    }
+
     function renderInspector() {
       var c = selectedClip();
       if (!c) {
         els.inspector.innerHTML = '<div class="empty">Add a clip to start.</div>';
         return;
       }
+      var k = selectedKey();
+      var keyIndex = k ? c.keys.indexOf(k) : -1;
+
+      var kindRow = selectCtl("Kind", "kind",
+        optionList([["text", "Text"], ["shape", "Shape"], ["asset", "Asset"]], c.kind));
+
+      var contentRow = "";
+      if (c.kind === "text") {
+        contentRow = ctl("Text", '<textarea data-field="text">' + esc(c.text) + "</textarea>");
+      } else if (c.kind === "shape") {
+        contentRow = selectCtl("Shape", "shape",
+          optionList([["rect", "Rectangle"], ["circle", "Circle"]], c.shape));
+      } else {
+        contentRow = selectCtl("Asset", "assetId", assetOptions(c.assetId));
+      }
+
+      var typeRows = c.kind === "text" ? [
+        selectCtl("Typeface", "fontFamily", optionList(FONT_STACKS.map(function (f) {
+          return [f.value, f.label];
+        }), c.fontFamily)),
+        selectCtl("Weight", "fontWeight", optionList(WEIGHTS, c.fontWeight)),
+        sliderCtl("Size", "fontSize", c.fontSize, 8, 240, 1, { unit: "px", digits: 0 }),
+        selectCtl("Align", "align", optionList([["left", "Left"], ["center", "Center"], ["right", "Right"]], c.align))
+      ] : [];
+
       els.inspector.innerHTML = [
-        '<h2>Clip</h2>',
-        '<label>Kind <select data-field="kind"><option value="text">Text</option><option value="shape">Shape</option><option value="asset">Asset</option></select></label>',
-        c.kind === "text" ? '<label>Text <textarea data-field="text">' + esc(c.text) + '</textarea></label>' : "",
-        c.kind === "shape" ? '<label>Shape <select data-field="shape"><option value="rect">Rect</option><option value="circle">Circle</option></select></label>' : "",
-        c.kind === "asset" ? '<label>Asset <select data-field="assetId">' + assetOptions(c.assetId) + '</select></label>' : "",
-        '<div class="row"><label>Start <input data-field="start" type="number" step="0.1" value="' + esc(c.start) + '"></label><label>Duration <input data-field="duration" type="number" step="0.1" value="' + esc(c.duration) + '"></label></div>',
-        '<div class="row"><label>X <input data-field="x" type="number" step="1" value="' + esc(c.x) + '"></label><label>Y <input data-field="y" type="number" step="1" value="' + esc(c.y) + '"></label></div>',
-        '<div class="row"><label>W <input data-field="w" type="number" step="1" value="' + esc(c.w) + '"></label><label>H <input data-field="h" type="number" step="1" value="' + esc(c.h) + '"></label></div>',
-        '<div class="row"><label>Fill <input data-field="fill" type="text" value="' + esc(c.fill) + '"></label><label>Text color <input data-field="color" type="text" value="' + esc(c.color) + '"></label></div>',
-        '<div class="row3"><label>Radius <input data-field="radius" type="number" step="1" value="' + esc(c.radius) + '"></label><label>Font <input data-field="fontSize" type="number" step="1" value="' + esc(c.fontSize) + '"></label><label>Weight <input data-field="fontWeight" type="number" step="100" value="' + esc(c.fontWeight) + '"></label></div>',
-        '<h2>From</h2>',
-        '<div class="row3"><label>X <input data-pose="from" data-field="x" type="number" step="1" value="' + esc(c.from.x) + '"></label><label>Y <input data-pose="from" data-field="y" type="number" step="1" value="' + esc(c.from.y) + '"></label><label>Opacity <input data-pose="from" data-field="opacity" type="number" step="0.05" value="' + esc(c.from.opacity) + '"></label></div>',
-        '<div class="row"><label>Scale <input data-pose="from" data-field="scale" type="number" step="0.05" value="' + esc(c.from.scale) + '"></label><label>Rotate <input data-pose="from" data-field="rotation" type="number" step="1" value="' + esc(c.from.rotation) + '"></label></div>',
-        '<h2>To</h2>',
-        '<div class="row3"><label>X <input data-pose="to" data-field="x" type="number" step="1" value="' + esc(c.to.x) + '"></label><label>Y <input data-pose="to" data-field="y" type="number" step="1" value="' + esc(c.to.y) + '"></label><label>Opacity <input data-pose="to" data-field="opacity" type="number" step="0.05" value="' + esc(c.to.opacity) + '"></label></div>',
-        '<div class="row"><label>Scale <input data-pose="to" data-field="scale" type="number" step="0.05" value="' + esc(c.to.scale) + '"></label><label>Rotate <input data-pose="to" data-field="rotation" type="number" step="1" value="' + esc(c.to.rotation) + '"></label></div>',
-        '<label>Ease <select data-field="ease"><option>power1.out</option><option>power2.out</option><option>power3.out</option><option>expo.out</option><option>back.out(1.7)</option><option>linear</option></select></label>',
-        '<button id="deleteClip" class="danger">Delete clip</button>'
+        "<h2>Clip</h2>",
+        kindRow,
+        contentRow,
+        '<div class="row">' +
+          numberCtl("Start", "start", c.start, 0.05, { min: 0 }) +
+          numberCtl("Length", "duration", c.duration, 0.05, { min: 0.1 }) +
+        "</div>",
+        '<div class="row">' +
+          numberCtl("X", "x", c.x, 1) + numberCtl("Y", "y", c.y, 1) +
+        "</div>",
+        '<div class="row">' +
+          numberCtl("Width", "w", c.w, 1, { min: 12 }) +
+          numberCtl("Height", "h", c.h, 1, { min: 12 }) +
+        "</div>",
+        sliderCtl("Rotation", "rotation", c.rotation, -180, 180, 1, { unit: "deg", digits: 0 }),
+        sliderCtl("Opacity", "opacity", c.opacity, 0, 1, 0.01, { digits: 2 }),
+        sliderCtl("Corner radius", "radius", c.radius, 0, 200, 1, { unit: "px", digits: 0 }),
+
+        "<h2>Style</h2>",
+        colorCtl("Fill", "fill", c.fill, true),
+        colorCtl("Text colour", "color", c.color, false),
+        typeRows.join(""),
+
+        "<h2>Keyframes</h2>",
+        '<div class="kf-chips">' + c.keys.map(function (key, i) {
+          return '<button type="button" class="kf-chip ' + (key.id === selectedKeyId ? "active" : "") +
+            '" data-key-pick="' + esc(key.id) + '">' + (i + 1) + " &middot; " + key.t.toFixed(2) + "s</button>";
+        }).join("") + "</div>",
+        '<div class="btn-row"><button type="button" id="addKeyInspector">Add key</button>' +
+          '<button type="button" id="deleteKey" class="danger"' + (c.keys.length <= 1 ? " disabled" : "") + ">Delete key</button></div>",
+        k ? [
+          numberCtl("Time (into clip)", "t", k.t, 0.05, { key: true, min: 0, max: c.duration }),
+          '<div class="row">' +
+            numberCtl("Offset X", "x", k.x, 1, { key: true }) +
+            numberCtl("Offset Y", "y", k.y, 1, { key: true }) +
+          "</div>",
+          sliderCtl("Opacity", "opacity", k.opacity, 0, 1, 0.01, { key: true, digits: 2 }),
+          sliderCtl("Scale", "scale", k.scale, 0.01, 3, 0.01, { key: true, digits: 2 }),
+          sliderCtl("Rotate", "rotation", k.rotation, -360, 360, 1, { key: true, unit: "deg", digits: 0 }),
+          keyIndex > 0
+            ? selectCtl("Ease into key", "ease", easeOptions(k.ease), { key: true })
+            : '<div class="hint">The first key is the pose the clip starts from, so it has no incoming ease.</div>'
+        ].join("") : "",
+        selectCtl("Default ease", "ease", easeOptions(c.ease)),
+        '<button type="button" id="deleteClip" class="danger">Delete clip</button>'
       ].join("");
-      setSelectValue("kind", c.kind);
-      setSelectValue("shape", c.shape);
-      setSelectValue("ease", c.ease);
+
       Array.prototype.forEach.call(els.inspector.querySelectorAll("input,select,textarea"), function (input) {
-        input.addEventListener("input", updateSelectedFromInput);
-        input.addEventListener("change", updateSelectedFromInput);
+        input.addEventListener("input", onInspectorInput);
+        input.addEventListener("change", onInspectorInput);
       });
+      Array.prototype.forEach.call(els.inspector.querySelectorAll("[data-key-pick]"), function (chip) {
+        chip.addEventListener("click", function () {
+          selectedKeyId = chip.getAttribute("data-key-pick");
+          renderTimeline();
+          renderInspector();
+        });
+      });
+      Array.prototype.forEach.call(els.inspector.querySelectorAll("[data-none]"), function (btn) {
+        btn.addEventListener("click", function () {
+          var clip = selectedClip();
+          if (!clip) return;
+          var field = btn.getAttribute("data-none");
+          clip[field] = isNoneColor(clip[field]) ? "#ffffff" : "transparent";
+          commit({ inspector: true });
+        });
+      });
+      var addKey = document.getElementById("addKeyInspector");
+      if (addKey) addKey.addEventListener("click", addKeyAtPlayhead);
+      var delKey = document.getElementById("deleteKey");
+      if (delKey) delKey.addEventListener("click", deleteSelectedKey);
       var del = document.getElementById("deleteClip");
       if (del) del.addEventListener("click", deleteSelectedClip);
     }
 
-    function setSelectValue(field, value) {
-      var el = els.inspector.querySelector('[data-field="' + field + '"]');
-      if (el) el.value = value;
-    }
+    var NUMERIC_FIELDS = ["start", "duration", "x", "y", "w", "h", "radius", "fontSize",
+                          "fontWeight", "opacity", "scale", "rotation", "t"];
 
-    function updateSelectedFromInput(ev) {
+    // Edits stream in continuously (every slider tick, every keystroke), so this
+    // path deliberately does NOT rebuild the inspector - re-rendering mid-drag
+    // would tear the slider out from under the pointer. It patches the readout,
+    // restyles the stage in place, and only rebuilds structure when the shape of
+    // the doc actually changed.
+    function onInspectorInput(ev) {
       var c = selectedClip();
       if (!c) return;
       var input = ev.currentTarget;
       var field = input.getAttribute("data-field");
-      var pose = input.getAttribute("data-pose");
+      if (!field) return;
+      var isKeyField = input.getAttribute("data-key-field") === "1";
       var value = input.value;
-      var numeric = ["start", "duration", "x", "y", "w", "h", "radius", "fontSize", "fontWeight", "opacity", "scale", "rotation"].indexOf(field) >= 0;
-      if (pose) {
-        c[pose][field] = numeric ? num(value, c[pose][field]) : value;
+      var numeric = NUMERIC_FIELDS.indexOf(field) >= 0;
+
+      if (isKeyField) {
+        var k = selectedKey();
+        if (!k) return;
+        k[field] = numeric ? num(value, k[field]) : value;
+        if (field === "t") k.t = clamp(k.t, 0, c.duration);
+        c.keys.sort(function (a, b) { return a.t - b.t; });
+        syncPoses(c);
+      } else if (field === "duration") {
+        // Stretch the keys with the clip so retiming a clip never throws motion away.
+        var next = Math.max(0.1, num(value, c.duration));
+        var factor = next / c.duration;
+        c.keys.forEach(function (key) { key.t = round3(clamp(key.t * factor, 0, next)); });
+        c.duration = next;
       } else {
         c[field] = numeric ? num(value, c[field]) : value;
       }
-      doc = normalizeDoc(doc);
-      renderAll(true);
+
+      updateReadout(input);
+      var structural = ["kind", "shape", "assetId"].indexOf(field) >= 0;
+      commit({
+        structure: structural,
+        inspector: structural,
+        rebuildTimeline: structural || isKeyField || field === "duration" || field === "start",
+        keepFocus: true
+      });
     }
 
+    function updateReadout(input) {
+      if (input.type !== "range") return;
+      var box = input.closest(".ctl");
+      var out = box && box.querySelector(".ctl-val");
+      if (!out) return;
+      var digits = Number(input.getAttribute("data-digits"));
+      if (!Number.isFinite(digits)) digits = 2;
+      var unit = input.getAttribute("data-unit") || "";
+      out.textContent = Number(input.value).toFixed(digits) + (unit ? " " + unit : "");
+    }
+
+    function syncColorPair(input) {
+      var row = input.closest(".color-row");
+      if (!row) return;
+      var swatch = row.querySelector('input[type="color"]');
+      var text = row.querySelector('input[type="text"]');
+      if (!swatch || !text) return;
+      if (input === swatch) text.value = swatch.value;
+      else swatch.value = resolveHex(text.value, swatch.value);
+    }
+
+    // The paired swatch has no data-field of its own; it writes through the text
+    // input so both the doc and the authored string stay in step.
+    els.inspector.addEventListener("input", function (ev) {
+      var t = ev.target;
+      if (!t || t.getAttribute("data-color-swatch") !== "1") return;
+      var row = t.closest(".color-row");
+      var text = row && row.querySelector('input[type="text"]');
+      if (!text) return;
+      text.value = t.value;
+      text.dispatchEvent(new Event("input", { bubbles: false }));
+      var noneBtn = row.querySelector(".none-btn");
+      if (noneBtn) noneBtn.classList.remove("on");
+    });
+
+    function addKeyAtPlayhead() {
+      var c = selectedClip();
+      if (!c) return;
+      var key = addKeyAt(c, docTimeFor(currentTime) - c.start);
+      if (key) selectedKeyId = key.id;
+      commit({ structure: true, inspector: true });
+    }
+
+    function deleteSelectedKey() {
+      var c = selectedClip();
+      if (!c || !selectedKeyId) return;
+      if (!deleteKey(c, selectedKeyId)) return;
+      selectedKeyId = c.keys[0] ? c.keys[0].id : null;
+      commit({ structure: true, inspector: true });
+    }
+
+    // Never write back into the control the user is currently typing in - that
+    // would fight the caret on every keystroke.
     function renderCompositionControls() {
-      els.docW.value = doc.width;
-      els.docH.value = doc.height;
-      els.docDuration.value = doc.duration;
-      els.docFps.value = doc.fps;
-      els.docBg.value = doc.background;
+      var live = document.activeElement;
+      function put(el, value) { if (el && el !== live) el.value = value; }
+      put(els.docW, doc.width);
+      put(els.docH, doc.height);
+      put(els.docDuration, doc.duration);
+      put(els.docFps, String(doc.fps));
+      put(els.docBg, doc.background);
+      put(els.docBgSwatch, resolveHex(doc.background, "#000000"));
+      if (els.docDurationVal) els.docDurationVal.textContent = doc.duration.toFixed(2) + "s";
+      var preset = doc.width + "x" + doc.height;
+      if (els.docPreset && els.docPreset !== live) {
+        var known = Array.prototype.some.call(els.docPreset.options, function (o) { return o.value === preset; });
+        els.docPreset.value = known ? preset : "custom";
+      }
+      // A non-standard FPS from an agent-authored doc stays selectable.
+      if (els.docFps && !Array.prototype.some.call(els.docFps.options, function (o) { return o.value === String(doc.fps); })) {
+        var opt = document.createElement("option");
+        opt.value = String(doc.fps);
+        opt.textContent = String(doc.fps);
+        els.docFps.insertBefore(opt, els.docFps.firstChild);
+        els.docFps.value = String(doc.fps);
+      }
     }
 
     function updateDocField() {
@@ -956,17 +1590,44 @@
       doc.duration = num(els.docDuration.value, doc.duration);
       doc.fps = num(els.docFps.value, doc.fps);
       doc.background = els.docBg.value || doc.background;
-      doc = normalizeDoc(doc);
-      renderAll(true);
+      commit({});
     }
 
+    function applyPreset() {
+      var v = els.docPreset.value;
+      if (v === "custom") return;
+      var parts = v.split("x");
+      doc.width = num(parts[0], doc.width);
+      doc.height = num(parts[1], doc.height);
+      commit({});
+    }
+
+    // Full rebuild - selection changes, host messages, boot.
     function renderAll(shouldPersist) {
       renderCompositionControls();
       renderDriverPill();
       renderStage();
+      renderTimeline();
       renderList();
       renderInspector();
       if (shouldPersist) schedulePersist();
+    }
+
+    // Incremental rebuild for a live edit. `structure` means the set of clips or
+    // keys changed, so the DOM has to be rebuilt; anything else is patched in
+    // place so a drag in progress survives.
+    function commit(opts) {
+      opts = opts || {};
+      doc = normalizeDoc(doc);
+      renderCompositionControls();
+      renderDriverPill();
+      if (opts.structure) renderStage();
+      else syncStageStyles();
+      renderList();
+      if (opts.structure) renderTimeline();
+      else syncTimelineGeometry();
+      if (opts.inspector) renderInspector();
+      schedulePersist();
     }
 
     function schedulePersist() {
@@ -1024,18 +1685,24 @@
         x: 120 + doc.clips.length * 34,
         y: 120 + doc.clips.length * 30,
         w: kind === "text" ? 520 : 280,
-        h: kind === "text" ? 100 : 180
+        h: kind === "text" ? 100 : 180,
+        keys: [
+          { t: 0, x: 0, y: 40, opacity: 0, scale: 0.96, rotation: 0 },
+          { t: 2, x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, ease: "power3.out" }
+        ]
       }, doc.clips.length);
       doc.clips.push(c);
       selectedId = c.id;
-      renderAll(true);
+      selectedKeyId = c.keys[0].id;
+      commit({ structure: true, inspector: true });
     }
 
     function deleteSelectedClip() {
       if (!selectedId) return;
       doc.clips = doc.clips.filter(function (c) { return c.id !== selectedId; });
       selectedId = doc.clips[0] ? doc.clips[0].id : null;
-      renderAll(true);
+      selectedKeyId = null;
+      commit({ structure: true, inspector: true });
     }
 
     function togglePlay() {
@@ -1082,27 +1749,39 @@
         '<title>' + esc(d.compositionId) + '</title>' +
         '<style>' +
         'html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:Inter,ui-sans-serif,system-ui,sans-serif}' +
-        'body{display:grid;place-items:center}' +
-        '#stage{position:relative;overflow:hidden;isolation:isolate;transform-origin:center;background:' + css(d.background) + ';width:' + d.width + 'px;height:' + d.height + 'px}' +
+        'body{position:relative}' +
+        /* The stage keeps its full composition size in layout and is only scaled
+           by transform, so it overflows the viewport - centring it with grid or
+           flex falls back to start-edge alignment and crops one side. Centre it
+           by position + translate instead. */
+        '#stage{position:absolute;left:50%;top:50%;overflow:hidden;isolation:isolate;transform-origin:center;background:' + css(d.background) + ';width:' + d.width + 'px;height:' + d.height + 'px}' +
         '.clip{position:absolute;display:grid;place-items:center;overflow:hidden;transform-origin:center;will-change:transform,opacity}' +
         '.clip img,.clip video,.clip iframe{width:100%;height:100%;object-fit:cover;border:0;display:block}' +
+        '.clip .tx{display:block;width:100%;white-space:pre-wrap}' +
         '.missing{width:100%;height:100%;display:grid;place-items:center;color:#9aa7bc;border:1px dashed rgba(255,255,255,.28);background:rgba(255,255,255,.06)}' +
         '</style></head><body>' +
         '<div id="stage" data-composition-id="' + esc(d.compositionId) + '" data-width="' + esc(d.width) + '" data-height="' + esc(d.height) + '" data-duration="' + esc(renderDuration) + '">' +
         clipsMarkup + '</div>' +
-        '<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"><\\/script>' +
+        '<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"><\/script>' +
         '<script>window.__HYPERFRAMES_DOC__=' + jsData(d) + ';window.__HYPERFRAMES_ASSETS__=' + jsData(assets) + ';window.__HYPERFRAMES_TIMING__=' + jsData({ duration: renderDuration, scale: scale }) + ';' +
         '(function(){var doc=window.__HYPERFRAMES_DOC__;var stage=document.getElementById("stage");' +
         'var timing=window.__HYPERFRAMES_TIMING__||{};var scale=Number(timing.scale)||1;var renderDuration=Number(timing.duration)||doc.duration||5;' +
-        'function fit(){var s=Math.max(.01,Math.min(innerWidth/doc.width,innerHeight/doc.height));stage.style.transform="scale("+s+")";}' +
+        'function fit(){var s=Math.max(.01,Math.min(innerWidth/doc.width,innerHeight/doc.height));stage.style.transform="translate(-50%,-50%) scale("+s+")";}' +
         'addEventListener("resize",fit);fit();' +
         'var tl=window.gsap?gsap.timeline({paused:true}):null;' +
-        'if(tl){doc.clips.forEach(function(c){var el=document.getElementById(c.id);if(!el)return;var fr=c.from||{},to=c.to||{};' +
-        'tl.fromTo(el,{x:fr.x||0,y:fr.y||0,opacity:fr.opacity==null?0:fr.opacity,scale:fr.scale||1,rotation:(c.rotation||0)+(fr.rotation||0)},' +
-        '{x:to.x||0,y:to.y||0,opacity:to.opacity==null?1:to.opacity,scale:to.scale||1,rotation:(c.rotation||0)+(to.rotation||0),duration:(c.duration||1)*scale,ease:c.ease||"power3.out"},(c.start||0)*scale);});' +
+        'function pose(k,r){return{x:k.x||0,y:k.y||0,opacity:k.opacity==null?1:k.opacity,scale:k.scale==null?1:k.scale,rotation:(r||0)+(k.rotation||0)};}' +
+        'if(tl){doc.clips.forEach(function(c){var el=document.getElementById(c.id);if(!el)return;' +
+        'var ks=(c.keys&&c.keys.length)?c.keys:[{t:0,opacity:0,scale:1},{t:c.duration||1,opacity:1,scale:1}];' +
+        'var at=(c.start||0)*scale,dflt=c.ease||"power3.out";' +
+        'if(ks.length===1){var hold=pose(ks[0],c.rotation);hold.duration=Math.max(.001,(c.duration||1)*scale);hold.ease="none";' +
+        'tl.fromTo(el,pose(ks[0],c.rotation),hold,at+(ks[0].t||0)*scale);return;}' +
+        'var b=pose(ks[1],c.rotation);b.duration=Math.max(.001,((ks[1].t||0)-(ks[0].t||0))*scale);b.ease=ks[1].ease||dflt;' +
+        'tl.fromTo(el,pose(ks[0],c.rotation),b,at+(ks[0].t||0)*scale);' +
+        'for(var i=2;i<ks.length;i++){var p=pose(ks[i],c.rotation);p.duration=Math.max(.001,((ks[i].t||0)-(ks[i-1].t||0))*scale);' +
+        'p.ease=ks[i].ease||dflt;tl.to(el,p,at+(ks[i-1].t||0)*scale);}});' +
         'tl.to({},{duration:0},renderDuration);window.__timelines=window.__timelines||{};window.__timelines[doc.compositionId]=tl;' +
         'if(!window.__hyperframesRender){if(matchMedia("(prefers-reduced-motion: reduce)").matches){tl.progress(1);}else{tl.repeat(-1).play(0);}}}' +
-        '})();<\\/script></body></html>';
+        '})();<\/script></body></html>';
     }
 
     function initFromHost(state, content, numbers, timelines) {
@@ -1138,29 +1817,85 @@
       el.addEventListener("input", updateDocField);
       el.addEventListener("change", updateDocField);
     });
+    els.docBgSwatch.addEventListener("input", function () {
+      els.docBg.value = els.docBgSwatch.value;
+      updateDocField();
+    });
+    els.docPreset.addEventListener("change", applyPreset);
     els.play.addEventListener("click", togglePlay);
     els.restart.addEventListener("click", restart);
+    els.addKey.addEventListener("click", addKeyAtPlayhead);
     els.addText.addEventListener("click", function () { addClip("text"); });
     els.addShape.addEventListener("click", function () { addClip("shape"); });
     els.addAsset.addEventListener("click", function () { addClip("asset"); });
+
+    // ── Timeline pointer ──────────────────────────────────────────────────────
+    // One handler, three modes: drag a keyframe diamond to retime it, drag a
+    // clip bar to slide the whole clip, or scrub anywhere else.
     els.timelineControl.addEventListener("pointerdown", function (ev) {
-      if (ev.target && ev.target.closest && ev.target.closest(".segment")) return;
-      scrubbing = true;
-      playing = false;
-      els.play.textContent = "Play";
-      seekFromPointer(ev);
+      var target = ev.target;
+      var kfEl = target && target.closest ? target.closest(".kf") : null;
+      var segEl = target && target.closest ? target.closest(".segment") : null;
+
+      if (kfEl) {
+        var kc = doc.clips.find(function (x) { return x.id === kfEl.getAttribute("data-id"); });
+        var kk = kc && kc.keys.find(function (x) { return x.id === kfEl.getAttribute("data-key"); });
+        if (!kc || !kk) return;
+        selectedId = kc.id;
+        selectedKeyId = kk.id;
+        drag = { mode: "kf", clipId: kc.id, keyId: kk.id };
+        renderTimeline();
+        renderInspector();
+      } else if (segEl) {
+        var sc = doc.clips.find(function (x) { return x.id === segEl.getAttribute("data-id"); });
+        if (!sc) return;
+        if (sc.id !== selectedId) selectClip(sc.id, null);
+        drag = { mode: "clip", clipId: sc.id, grab: docTimeFor(displayTimeAt(ev.clientX)) - sc.start };
+        renderTimeline();
+      } else {
+        drag = { mode: "scrub" };
+        playing = false;
+        els.play.textContent = "Play";
+        seekFromPointer(ev);
+      }
       try { els.timelineControl.setPointerCapture(ev.pointerId); } catch (_e) {}
     });
+
     els.timelineControl.addEventListener("pointermove", function (ev) {
-      if (!scrubbing) return;
-      seekFromPointer(ev);
+      if (!drag) return;
+      if (drag.mode === "scrub") { seekFromPointer(ev); return; }
+      var c = doc.clips.find(function (x) { return x.id === drag.clipId; });
+      if (!c) return;
+      var docTime = docTimeFor(displayTimeAt(ev.clientX));
+      if (drag.mode === "kf") {
+        var k = c.keys.find(function (x) { return x.id === drag.keyId; });
+        if (!k) return;
+        k.t = round3(clamp(docTime - c.start, 0, c.duration));
+        c.keys.sort(function (a, b) { return a.t - b.t; });
+        syncPoses(c);
+      } else {
+        c.start = round3(Math.max(0, docTime - drag.grab));
+      }
+      syncTimelineGeometry();
+      syncStageStyles();
     });
-    els.timelineControl.addEventListener("pointerup", function (ev) {
-      scrubbing = false;
-      try { els.timelineControl.releasePointerCapture(ev.pointerId); } catch (_e) {}
-    });
-    els.timelineControl.addEventListener("pointercancel", function () {
-      scrubbing = false;
+
+    function endTimelineDrag(ev) {
+      var was = drag;
+      drag = null;
+      if (ev) { try { els.timelineControl.releasePointerCapture(ev.pointerId); } catch (_e) {} }
+      if (!was || was.mode === "scrub") return;
+      commit({ inspector: true });
+    }
+    els.timelineControl.addEventListener("pointerup", endTimelineDrag);
+    els.timelineControl.addEventListener("pointercancel", endTimelineDrag);
+
+    document.addEventListener("keydown", function (ev) {
+      var t = ev.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
+      if (ev.key === "k" || ev.key === "K") { ev.preventDefault(); addKeyAtPlayhead(); }
+      else if (ev.key === "Delete" || ev.key === "Backspace") { ev.preventDefault(); deleteSelectedKey(); }
+      else if (ev.key === " ") { ev.preventDefault(); togglePlay(); }
     });
     window.addEventListener("resize", function () { fitStage(); reportPanels(); });
     document.addEventListener("mousedown", function (ev) {
