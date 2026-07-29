@@ -14171,15 +14171,26 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 /* v2.4b - active edges (source OR target is the selected node). Animated
    dashes flow in the data direction (outgoing = source→target, incoming =
    target→source) so the user sees what feeds into / out of the selected
-   node at a glance. Direction set via data-direction attribute. */
+   node at a glance. Direction set via data-direction attribute.
+
+   The dash + colour mark the edge as active always; `is-marching` (added by
+   WorkflowEdgesLayer only while the wire is on screen) grants the animation.
+   Workflow boards spread wide and animating stroke-dashoffset costs WebKit a
+   full relayout + CoreGraphics re-dash per frame, priced by PATH LENGTH - see
+   the .edge-flow block for the measurements. */
 .workflow-edge-active {
   opacity: 1;
   stroke-width: 2.5;
-  stroke-dasharray: 8 6;
   stroke: color-mix(in oklab, var(--accent) 80%, oklch(60% 0.18 18));
+}
+/* Dash rides WITH the animation, never without it: a dashed-but-still path is
+   not free, it gets re-dashed by CoreGraphics on every frame that any other
+   path is marching. */
+.workflow-edge-active.is-marching {
+  stroke-dasharray: 8 6;
   animation: workflow-edge-flow-fwd 1.4s linear infinite;
 }
-.workflow-edge-active[data-direction="incoming"] {
+.workflow-edge-active.is-marching[data-direction="incoming"] {
   animation-name: workflow-edge-flow-rev;
 }
 @keyframes workflow-edge-flow-fwd {
@@ -14191,7 +14202,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   to   { stroke-dashoffset: 14; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .workflow-edge-active { animation: none; }
+  .workflow-edge-active.is-marching { animation: none; }
 }
 
 /* v2.4b - connected-node highlight. Distinct from data-selected (the node
@@ -21742,15 +21753,44 @@ a.ds-badge:hover, button.ds-badge:hover {
    parent toward the target / child. Shared by Screen Flows (canvas), User
    flows, Data objects, and Information Architecture. The class overrides each
    path's inline stroke-dasharray, and the negative dashoffset keyframe moves
-   the pattern in the path's draw direction (always source→target). */
+   the pattern in the path's draw direction (always source→target).
+
+   The dash is FREE; the marching is not. WebKit's legacy SVG engine treats
+   stroke-dashoffset as layout-affecting, so each animation frame re-lays-out
+   the shape and LegacyRenderSVGShape::layout() asks CoreGraphics for the real
+   dashed outline (CGPathCreateDashedPath) just to get the stroke bbox. Cost is
+   linear in PATH LENGTH: measured in a WKWebView harness, 16 animated
+   connectors hold 60fps at a 600px span but collapse to 9.6fps at 4000px and
+   3.7fps at 8000px - while 16 STATIC dashed connectors stay at 60fps even at
+   8000px. Blink approximates the stroke bbox and never dashes it, which is why
+   this only ever bit the desktop app and never a browser tab.
+
+   Worse, the tax is not per-ANIMATED path: one marching path forces a document
+   layout each frame, and EVERY dashed path re-dashes with it - even in a
+   different <svg> root. Measured at 40 connectors x 8000px: all dashed with 3
+   marching = 2.1fps, and moving those 3 into their own <svg> changed nothing
+   (2.1fps). Leaving the other 37 SOLID is what recovers it (38.8fps). So
+   scoping the ANIMATION is not enough - the DASH itself has to go from
+   connectors that are not marching.
+
+   Which is also the correct look: before the dash was made uniform + decorative,
+   it carried meaning (inherit / weak-link in Data objects, decision-branch in
+   User flows) and defaulted to solid. Those inline presentation attributes are
+   restored, and this class no longer overrides them; `is-marching` does, and it
+   is granted only to connectors BOTH attached to the current selection AND on
+   screen. See useWorldViewport / curveInView in app.js. */
 @keyframes edge-flow-march { to { stroke-dashoffset: -24; } }
 .edge-flow {
-  stroke-dasharray: 6 6;
   stroke-dashoffset: 0;
+}
+/* A CSS declaration outranks an SVG presentation attribute, so this wins over
+   each path's semantic inline stroke-dasharray while it is marching. */
+.edge-flow.is-marching {
+  stroke-dasharray: 6 6;
   animation: edge-flow-march 1.4s linear infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .edge-flow { stroke-dasharray: none; animation: none; }
+  .edge-flow.is-marching { stroke-dasharray: none; animation: none; }
 }
 .flow-node-tools, .flow-edge-tools {
   display: flex;

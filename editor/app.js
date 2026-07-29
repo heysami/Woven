@@ -1751,8 +1751,61 @@ function cssPath(el) {
   return parts.join(" > ");
 }
 
+/* ────────── Connector marching-dash gating (shared by every canvas) ──────────
+   Animating stroke-dashoffset is cheap in Blink and ruinous in WebKit: the
+   legacy SVG engine classifies it as layout-affecting, so every frame relayouts
+   the shape and rebuilds the real dashed outline through CoreGraphics just to
+   compute a stroke bbox. The cost is linear in PATH LENGTH, so it stays
+   invisible on a fresh board and melts a core once nodes spread out. Static
+   dashes cost nothing. See the .edge-flow block in styles.css for the numbers.
+
+   Both helpers exist so a connector only marches when it is attached to the
+   current selection AND actually on screen. */
+
+// World-space viewport rect for a useEndlessCanvas surface. Padded (so a
+// connector animates slightly before it scrolls in) and quantized (so panning
+// does not re-render the edge layer on every mousemove - the returned identity
+// only changes when the view crosses a QUANTUM boundary). Returns null until
+// the surface has been measured, which every caller reads as "do not cull".
+function useWorldViewport(wrapRef, pan, zoom) {
+  const PAD = 300;      // world px of slack beyond the visible edge
+  const QUANTUM = 512;  // world px; the rect only moves in these steps
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = wrapRef && wrapRef.current;
+    if (!el) return;
+    const read = () => setSize(s =>
+      (s.w === el.clientWidth && s.h === el.clientHeight)
+        ? s : { w: el.clientWidth, h: el.clientHeight });
+    read();
+    let ro = null;
+    try { ro = new ResizeObserver(read); ro.observe(el); } catch {}
+    return () => { try { ro && ro.disconnect(); } catch {} };
+  }, [wrapRef]);
+  const z = Math.max(zoom || 1, 0.01);
+  const px = (pan && pan.x) || 0, py = (pan && pan.y) || 0;
+  // floor the mins / ceil the maxes so quantizing only ever GROWS the rect.
+  const x0 = Math.floor(((-px) / z - PAD) / QUANTUM) * QUANTUM;
+  const y0 = Math.floor(((-py) / z - PAD) / QUANTUM) * QUANTUM;
+  const x1 = Math.ceil((((size.w || 0) - px) / z + PAD) / QUANTUM) * QUANTUM;
+  const y1 = Math.ceil((((size.h || 0) - py) / z + PAD) / QUANTUM) * QUANTUM;
+  return useMemo(
+    () => (size.w && size.h ? { x0, y0, x1, y1 } : null),
+    [size.w, size.h, x0, y0, x1, y1]
+  );
+}
+
+// Conservative on-screen test for a cubic bezier. A bezier is contained in the
+// hull of its four control points, so testing that box can over-report but
+// never under-report visibility - exactly the right bias for an animation gate.
+function curveInView(vp, x1, y1, c1x, c1y, c2x, c2y, x2, y2) {
+  if (!vp) return true;
+  return Math.max(x1, c1x, c2x, x2) >= vp.x0 && Math.min(x1, c1x, c2x, x2) <= vp.x1
+      && Math.max(y1, c1y, c2y, y2) >= vp.y0 && Math.min(y1, c1y, c2y, y2) <= vp.y1;
+}
+
 /* ────────── Arrow layer (curved SVG arrows + action labels) ────────── */
-function ArrowLayer({ frames, arrows, dimNonSelected, gridMeta,
+function ArrowLayer({ frames, arrows, dimNonSelected, gridMeta, selectedFrameId, viewport,
                       selectedArrow, onSelectArrow, onEditArrow, onDeleteArrow,
                       editArrow, draftAction, setDraftAction, onSaveAction }) {
   const byId = useMemo(() => Object.fromEntries(frames.map(f => [f.id, f])), [frames]);
@@ -1826,6 +1879,10 @@ function ArrowLayer({ frames, arrows, dimNonSelected, gridMeta,
         const a = arrows[s.i];
         const dim = dimNonSelected && !(dimNonSelected.has(a.from) && dimNonSelected.has(a.to));
         const isSel = !!(selectedArrow && a.id === selectedArrow);
+        // Marching dashes are granted only to this arrow if it is the selected
+        // arrow, or touches the selected frame - and only while on screen.
+        const marching = (isSel || (selectedFrameId && (a.from === selectedFrameId || a.to === selectedFrameId)))
+          && curveInView(viewport, s.fx, s.fy, s.c1x, s.c1y, s.c2x, s.c2y, s.tx, s.ty);
         const gid = `canvas-grad-${s.i}`;
         const onSelect = (ev) => {
           ev.stopPropagation();
@@ -1843,7 +1900,7 @@ function ArrowLayer({ frames, arrows, dimNonSelected, gridMeta,
               <stop offset="0%"   stopColor=${isSel ? "var(--accent-text)" : "oklch(54% 0.16 252)"} stopOpacity="0.1"/>
               <stop offset="100%" stopColor=${isSel ? "var(--accent-text)" : "oklch(54% 0.16 252)"} stopOpacity="1"/>
             </linearGradient>
-            <path className="edge-flow" d=${`M ${s.fx} ${s.fy} C ${s.c1x} ${s.c1y}, ${s.c2x} ${s.c2y}, ${s.tx} ${s.ty}`}
+            <path className=${"edge-flow" + (marching ? " is-marching" : "")} d=${`M ${s.fx} ${s.fy} C ${s.c1x} ${s.c1y}, ${s.c2x} ${s.c2y}, ${s.tx} ${s.ty}`}
                   fill="none" stroke=${`url(#${gid})`}
                   strokeWidth=${isSel ? "2.6" : "2"}
                   markerEnd=${isSel ? "url(#arr-sel)" : "url(#arr)"}
@@ -4416,6 +4473,8 @@ function generateDesignMd() {
 /* ────────── Entities view (canvas of entity cards + relationship lines) ────────── */
 function EntitiesView({ model, setEdits }) {
   const { wrapRef, pan, zoom, panning, spaceHeld } = useEndlessCanvas({ x: 80, y: 80, z: 0.85 });
+  // On-screen rect (world coords) - gates which connectors march. See useWorldViewport.
+  const entViewport = useWorldViewport(wrapRef, pan, zoom);
   const entities = model.entities;
   const links = model.links;
   const commentsOf = (key) => model.commentsByTarget[key] || [];
@@ -4647,6 +4706,10 @@ function EntitiesView({ model, setEdits }) {
             const dim = connectedEntities && !(connectedEntities.has(l.from) && connectedEntities.has(l.to));
             const gid = `ent-grad-${idx}`;
             const isSel = selectedEdge && selectedEdge.key === l.key;
+            // Marching dashes only for the selected link or the selected
+            // entity's own links, and only while on screen.
+            const marching = (isSel || (selectedEntityId && (l.from === selectedEntityId || l.to === selectedEntityId)))
+              && curveInView(entViewport, l.fx, l.fy, l.c1x, l.c1y, l.c2x, l.c2y, l.tx, l.ty);
             const onSelect = (ev) => { ev.stopPropagation(); setSelectedEdge(l); setSelectedEntityId(null); };
             return html`
               <g key=${l.key} style=${{ opacity: dim ? 0.1 : 1, transition: "opacity 0.12s" }}>
@@ -4660,8 +4723,9 @@ function EntitiesView({ model, setEdits }) {
                   <stop offset="0%"   stopColor=${color} stopOpacity="0.1"/>
                   <stop offset="100%" stopColor=${color} stopOpacity="1"/>
                 </linearGradient>
-                <path className="edge-flow" d=${`M ${l.fx} ${l.fy} C ${l.c1x} ${l.c1y}, ${l.c2x} ${l.c2y}, ${l.tx} ${l.ty}`}
+                <path className=${"edge-flow" + (marching ? " is-marching" : "")} d=${`M ${l.fx} ${l.fy} C ${l.c1x} ${l.c1y}, ${l.c2x} ${l.c2y}, ${l.tx} ${l.ty}`}
                       fill="none" stroke=${`url(#${gid})`}
+                      strokeDasharray=${l.kind === "inherit" ? "4 3" : l.kind === "weak-link" ? "3 4" : "none"}
                       strokeWidth=${isSel ? "2.4" : "1.5"}
                       markerEnd=${marker}
                       style=${{ pointerEvents: "none" }}/>
@@ -5146,6 +5210,8 @@ function FlowView({ model, setEdits }) {
   // Pan + zoom - same model as Canvas / Entity. Wheel pans, cmd+wheel zooms,
   // space+drag (or alt-drag / middle-mouse / background drag) pans.
   const { wrapRef, pan, zoom, setPan, panning, spaceHeld } = useEndlessCanvas({ x: 40, y: 40, z: 1 });
+  // On-screen rect (world coords) - gates which connectors march. See useWorldViewport.
+  const flowViewport = useWorldViewport(wrapRef, pan, zoom);
   // Latest pan/zoom for the keyboard handler to read without re-subscribing
   // the listener on every pan tick.
   const viewRef = useRef({ pan, zoom });
@@ -5674,6 +5740,10 @@ function FlowView({ model, setEdits }) {
     const isEditing = editArrow === e.id;
     const isDropTarget = drag?.hoverEdge === e.id;
     const isDimmed = connectedFlow && !(connectedFlow.has(e.from) && connectedFlow.has(e.to));
+    // Marching dashes only for the selected edge or the selected node's own
+    // edges, and only while on screen.
+    const marching = (isSel || (selectedNode && (e.from === selectedNode || e.to === selectedNode)))
+      && curveInView(flowViewport, e.fx, e.fy, e.c1x, e.c1y, e.c2x, e.c2y, e.tx, e.ty);
     const branchTone = e.isDecisionBranch ? decisionBranchTone(e.action) : "neutral";
     const toneStroke =
       branchTone === "yes" ? "oklch(58% 0.15 174)" :
@@ -5695,9 +5765,10 @@ function FlowView({ model, setEdits }) {
           <stop offset="0%"   stopColor=${edgeColor} stopOpacity="0.1"/>
           <stop offset="100%" stopColor=${edgeColor} stopOpacity="1"/>
         </linearGradient>
-        <path className="edge-flow" d=${`M ${e.fx} ${e.fy} C ${e.c1x} ${e.c1y}, ${e.c2x} ${e.c2y}, ${e.tx} ${e.ty}`}
+        <path className=${"edge-flow" + (marching ? " is-marching" : "")} d=${`M ${e.fx} ${e.fy} C ${e.c1x} ${e.c1y}, ${e.c2x} ${e.c2y}, ${e.tx} ${e.ty}`}
               fill="none"
               stroke=${`url(#${gid})`}
+              strokeDasharray=${e.isDecisionBranch ? "5 4" : "none"}
               strokeWidth=${isDropTarget ? "3.5" : (isSel ? "2.2" : "1.6")}
               markerEnd="url(#flow-arr)"
               style=${{ pointerEvents: "none" }}/>
@@ -6093,6 +6164,8 @@ function IAView({ model, setEdits }) {
 
   // Pan + zoom canvas, same as Canvas/Entity/Flow.
   const { wrapRef, pan, zoom, panning, spaceHeld } = useEndlessCanvas({ x: 60, y: 60, z: 0.85 });
+  // On-screen rect (world coords) - gates which connectors march. See useWorldViewport.
+  const iaViewport = useWorldViewport(wrapRef, pan, zoom);
 
   // IA sitemap only contains real screens. Flow-control kinds (decision,
   // start, input) come from the User-flow view and aren't sitemap nodes.
@@ -6440,6 +6513,11 @@ function IAView({ model, setEdits }) {
                 && !connectedIA.has(e.fromId)
                 && !connectedIA.has(e.toId);
               const gid = `ia-grad-${idx}`;
+              // IA has no edge selection - marching follows the active page's
+              // own parent/child connectors, and only while on screen.
+              const marching = !!(activeId && activeId !== ROOT_ID
+                && (e.fromId === activeId || e.toId === activeId))
+                && curveInView(iaViewport, fx, fy, fx, midY, tx, midY, tx, ty);
               return html`
                 <g key=${e.fromId + "→" + e.toId} opacity=${dim ? 0.1 : 1}>
                   <linearGradient id=${gid} gradientUnits="userSpaceOnUse"
@@ -6447,7 +6525,7 @@ function IAView({ model, setEdits }) {
                     <stop offset="0%"   stopColor="var(--border-strong)" stopOpacity="0.1"/>
                     <stop offset="100%" stopColor="var(--border-strong)" stopOpacity="1"/>
                   </linearGradient>
-                  <path className="edge-flow" d=${`M ${fx} ${fy} C ${fx} ${midY}, ${tx} ${midY}, ${tx} ${ty}`}
+                  <path className=${"edge-flow" + (marching ? " is-marching" : "")} d=${`M ${fx} ${fy} C ${fx} ${midY}, ${tx} ${midY}, ${tx} ${ty}`}
                         fill="none" stroke=${`url(#${gid})`} strokeWidth="1.2"/>
                 </g>
               `;
@@ -6905,6 +6983,8 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
     return q && q.get("embed") === "1";
   })();
   const { wrapRef, pan, zoom, setPan, setZoom, panning, spaceHeld } = useEndlessCanvas(undefined, { interactive: !_embedNoInteract });
+  // On-screen rect (world coords) - gates which connectors march. See useWorldViewport.
+  const canvasViewport = useWorldViewport(wrapRef, pan, zoom);
   const { byFrame: auditByFrame } = useDsProposalIndex();
   const [selected, setSelected] = useState(null);
   const [picked, setPicked] = useState(null);
@@ -7418,6 +7498,8 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
           arrows=${arrows}
           dimNonSelected=${connectedFrames}
           gridMeta=${gridMeta}
+          selectedFrameId=${selected}
+          viewport=${canvasViewport}
           selectedArrow=${selectedArrow}
           onSelectArrow=${(id) => { setSelectedArrow(id); setSelected(null); }}
           onEditArrow=${(id, current) => { setEditArrow(id); setDraftAction(current); }}
@@ -38556,6 +38638,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     { x: data.pan?.x ?? 0, y: data.pan?.y ?? 0, z: data.zoom ?? 1 },
     { letSelectedScroll: true, disableEmptyDragPan: true },
   );
+  // On-screen rect (world coords) - gates which wires march. Workflow boards
+  // spread wide, so an active wire can easily be several thousand px long; see
+  // useWorldViewport for why that matters.
+  const wfViewport = useWorldViewport(wrapRef, pan, zoom);
   // Micro-fx overlays (drag trails / connector sparks / completion waves).
   // Purely decorative: pointer-events none, observes state, adds no listeners.
   const { underRef: fxUnderRef, overRef: fxOverRef } = useWorkflowFx(wrapRef);
@@ -52755,6 +52841,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               selectedNodeIds=${selectedNodeIds}
               appNodeLayout=${appNodeLayout}
               layerGeom=${layerGeomRef.current}
+              viewport=${wfViewport}
             />
             ${/* Tables render ABOVE the edges layer, like every other node
                  kind, so a wire's fat invisible hit-stroke can never sit on
@@ -88521,7 +88608,7 @@ function WorkflowAgentBadgeLayer({ nodes, zoom, pan, wrapRef, tetherHost, chatBu
      3. Pending edge   - dashed, follows cursor during a port drag.
    Stroke uses vector-effect non-scaling-stroke so widths stay constant
    across zoom. */
-function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge, onSelectEdge, selectedNodeId, selectedNodeIds, appNodeLayout, layerGeom }) {
+function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge, onSelectEdge, selectedNodeId, selectedNodeIds, appNodeLayout, layerGeom, viewport }) {
   const nodeById = useMemo(() => {
     const m = {};
     for (const n of nodes) m[n.id] = n;
@@ -88602,6 +88689,12 @@ function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge
         // the path (data-direction) lets CSS pick the keyframe for fwd / rev.
         const isActive = !!selectedNodeId && (fromRef.node === selectedNodeId || toRef.node === selectedNodeId);
         const direction = !isActive ? null : (fromRef.node === selectedNodeId ? "outgoing" : "incoming");
+        // An active wire keeps its dash + colour always; it only MARCHES while
+        // on screen. The bezier's control points sit up to `off` outside the
+        // endpoint box, so widen by that much and stay conservative.
+        const _off = Math.max(40, Math.abs(b.x - a.x) * 0.4);
+        const marching = isActive
+          && curveInView(viewport, a.x - _off, a.y, a.x + _off, a.y, b.x - _off, b.y, b.x + _off, b.y);
         // Logic Graph (W1A): colour the wire by its source port's dtype (null
         // for legacy edges, which keeps the default accent stroke).
         const edgeDtype = workflowPortDtype(fn, fromRef.port, "provides")
@@ -88621,7 +88714,7 @@ function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge
               onMouseDown=${(ev) => { ev.stopPropagation(); onSelectEdge(i); }}
             />
             <path
-              className=${"workflow-edge" + (isSelected ? " workflow-edge-selected" : "") + (isActive ? " workflow-edge-active" : "") + workflowDtypeClass(edgeDtype)}
+              className=${"workflow-edge" + (isSelected ? " workflow-edge-selected" : "") + (isActive ? " workflow-edge-active" : "") + (marching ? " is-marching" : "") + workflowDtypeClass(edgeDtype)}
               data-direction=${direction}
               data-dtype=${edgeDtype}
               d=${d}
