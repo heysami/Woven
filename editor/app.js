@@ -65142,9 +65142,12 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
         w: clamp(wantW, floor.minW),
         h: clamp(wantH, floor.minH),
         // The cap is a real truncation - the embed can't pan, so whatever the
-        // clamp cut off is unreachable. Report it so the caller can say so
-        // instead of silently showing a partial flow.
+        // clamp cut off is unreachable. Report it (with the size the view
+        // actually wanted) so the caller can SAY so instead of silently
+        // showing a partial flow.
         clamped: wantW > VIEW_FIT_MAX || wantH > VIEW_FIT_MAX,
+        wantW: Math.round(wantW),
+        wantH: Math.round(wantH),
       };
     } catch { /* embed mid-reload / not booted - caller retries */ }
     return null;
@@ -65154,10 +65157,17 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
   // user grabs the resize corner) opts a node out for good - their geometry
   // wins over ours from then on. The Fit button below clears it.
   const fittedRef = useRef(null);
+  // Set while the view is bigger than a node is allowed to be: the embed can't
+  // pan, so the overflow isn't just off-screen, it's unreachable. Drives the
+  // banner over the node body. `{ wantW, wantH }` = the size it asked for.
+  const [fitClamp, setFitClamp] = useState(null);
   const applyFit = useCallback((force) => {
     const size = measureFitSize();
     if (!size) return false;
     fittedRef.current = nonce;
+    // Truncation is a standing condition, not a one-off event: record it so the
+    // node can show a banner for as long as it's showing a partial flow.
+    setFitClamp(size.clamped ? { wantW: size.wantW, wantH: size.wantH } : null);
     if (!onChange) return true;
     const drawn = workflowNodeDrawnSize(node);
     if (!force && Math.abs(drawn.w - size.w) < 8 && Math.abs(drawn.h - size.h) < 8) return true;
@@ -65176,6 +65186,25 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     }
     return true;
   }, [measureFitSize, onChange, node.w, node.h, node.kind, nonce, embedSections.length]);
+  // Truncation probe. Runs independently of the auto-fit above so the banner
+  // is honest even for a hand-sized node (`fit: "manual"`, where auto-fit bails
+  // out) - measuring costs one rect sweep inside an already-loaded embed.
+  useEffect(() => {
+    if (node.kind !== "frames" || !lodLive) return;
+    let tries = 0, timer = 0, stop = false;
+    const tick = () => {
+      if (stop) return;
+      const size = measureFitSize();
+      if (size) {
+        setFitClamp(size.clamped ? { wantW: size.wantW, wantH: size.wantH } : null);
+        return;
+      }
+      if (++tries >= 12) return;             // embed never booted - stay quiet
+      timer = setTimeout(tick, 500);
+    };
+    timer = setTimeout(tick, 400);
+    return () => { stop = true; clearTimeout(timer); };
+  }, [node.kind, lodLive, nonce, measureFitSize]);
   useEffect(() => {
     if (!PROTOTYPE_VIEW_FIT[node.kind]) return;
     if (node.fit === "manual") return;       // user sized it themselves
@@ -65618,6 +65647,30 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
             onMouseDown=${onHandleDown}
             title="Drag to move · click to select · once selected, the embedded canvas is navigable."
           />
+        `}
+        ${node.kind === "frames" && lodLive && fitClamp && html`
+          ${/* Standing truncation warning. The embed can't pan, so the part
+              that didn't fit isn't merely off-screen - it's unreachable, and
+              a silent partial flow reads as "this is the whole thing". Same
+              floating-pill shape as the canvas's clone-mode banner. */ ""}
+          <div className="workflow-node-clip-banner" onMouseDown=${(e) => e.stopPropagation()}>
+            <span className="workflow-node-clip-glyph" aria-hidden="true">!</span>
+            <span className="workflow-node-clip-text">
+              Showing about ${Math.max(1, Math.round(VIEW_FIT_MAX / Math.max(fitClamp.wantW, fitClamp.wantH, 1) * 100))}% of this
+              ${sectionScope ? " section" : " flow"} - it needs
+              ${" " + fitClamp.wantW.toLocaleString()}×${fitClamp.wantH.toLocaleString()}px and a node stops at
+              ${" " + VIEW_FIT_MAX.toLocaleString()}px. The rest can't be reached here.
+            </span>
+            ${embedSections.length > 0 && html`
+              <button
+                type="button"
+                className="workflow-node-clip-btn"
+                title=${"Scope this node to “" + (embedSections[0].label || "the first section") + "” - each section fits on its own. Add another node for the next one."}
+                onMouseDown=${(e) => e.stopPropagation()}
+                onClick=${(e) => { e.stopPropagation(); pickSection(embedSections[0].id); }}
+              >Show one section</button>
+            `}
+          </div>
         `}
       </div>
       ${lod !== "full" && html`<${WorkflowLodVeil}
