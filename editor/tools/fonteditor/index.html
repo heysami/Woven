@@ -124,6 +124,31 @@
   #preview-pane .ph{padding:8px 12px; border-bottom:1px solid var(--line); font-size:11px;
     text-transform:uppercase; letter-spacing:.05em; color:var(--ink2)}
   #preview-body{padding:12px; overflow:auto; flex:1}
+
+  /* ---- anchor inspector (node-edit) ---- */
+  #anchor-pane{border-bottom:1px solid var(--line); flex:none; max-height:60%; overflow:auto}
+  #anchor-pane[hidden]{display:none !important}
+  #anchor-body{padding:10px 12px; display:none}
+  #anchor-pane.has-sel #anchor-body{display:block}
+  #anchor-pane.has-sel #anchor-empty{display:none}
+  #anchor-pane .sub{
+    font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--wv-text-faint);
+    font-family:var(--wv-font-mono); margin:10px 0 4px; display:flex; align-items:center; gap:6px;
+  }
+  #anchor-pane .sub:first-child{margin-top:0}
+  #anchor-pane .row2{display:flex; gap:8px}
+  #anchor-pane .row2 label.fld{flex:1; min-width:0}
+  #anchor-pane .row2 input[type=number]{width:100%}
+  #anchor-pane input[type=range]{width:100%; accent-color:var(--accent)}
+  #anchor-pane .hint{line-height:1.5}
+  .seg{display:flex; gap:0}
+  .seg button{
+    flex:1; border-radius:0; padding:4px 6px; font-size:11px;
+    border-left-width:0; background:var(--panel2);
+  }
+  .seg button:first-child{border-left-width:1px; border-radius:var(--wv-radius) 0 0 var(--wv-radius)}
+  .seg button:last-child{border-radius:0 var(--wv-radius) var(--wv-radius) 0}
+  .seg button.on{background:var(--accent); border-color:var(--accent); color:var(--wv-text-on-accent)}
   #preview-canvas{width:100%; background:var(--cell-bg); border:1px solid var(--line); border-radius:var(--wv-radius); display:block}
   #preview-text{width:100%; margin-top:8px}
   .hint{font-size:11px; color:var(--ink3); margin-top:8px; line-height:1.5}
@@ -197,11 +222,48 @@
           <span><i style="background:var(--accent)"></i>advance</span>
         </div>
         <div class="spacer" style="flex:1"></div>
-        <div id="editHint" class="">Drag anchors + square bezier handles. Double-click the outline to add a node; click a node, Delete to remove. Y-up, baseline = 0.</div>
+        <div id="editHint" class="">Drag square anchors and round Bézier handles (Alt-drag breaks the mirror). Double-click the outline to insert a node; select one and press Delete to remove it. Type, roundness and handle coordinates sit in the Anchor panel. Y-up, baseline = 0.</div>
       </div>
     </div>
 
     <div id="preview-pane" data-float-panel="right">
+      <!-- Per-anchor inspector - mirrors the workflow vector editor's anchor
+           panel. Only present while node-edit is on. -->
+      <div id="anchor-pane" hidden>
+        <div class="ph">Anchor <span class="pill" id="anchorLabel">-</span></div>
+        <div id="anchor-empty" class="hint" style="padding:10px 12px">Click an anchor on the canvas to edit its type, roundness and Bézier handles.</div>
+        <div id="anchor-body">
+          <div class="seg" id="anchorType">
+            <button type="button" data-t="corner" title="No handles - a hard corner.">corner</button>
+            <button type="button" data-t="smooth" title="Both handles mirrored through the anchor.">smooth</button>
+            <button type="button" data-t="asymmetric" title="Both handles, independent lengths / angles.">asymm.</button>
+          </div>
+          <div id="anchorRadiusRow">
+            <div class="sub">Roundness <span class="pill" id="anchorRadiusVal">0</span></div>
+            <input id="anchorRadius" type="range" min="0" max="100" step="1" value="0"
+                   title="Fillets this corner. Capped at half the shorter adjacent segment.">
+          </div>
+          <div class="sub">Position</div>
+          <div class="row2">
+            <label class="fld"><span>x</span><input id="anchorX" type="number"></label>
+            <label class="fld"><span>y</span><input id="anchorY" type="number"></label>
+          </div>
+          <div class="sub">Incoming handle</div>
+          <div class="row2">
+            <label class="fld"><span>x</span><input id="anchorInX" type="number" placeholder="none"></label>
+            <label class="fld"><span>y</span><input id="anchorInY" type="number" placeholder="none"></label>
+          </div>
+          <div class="sub">Outgoing handle</div>
+          <div class="row2">
+            <label class="fld"><span>x</span><input id="anchorOutX" type="number" placeholder="none"></label>
+            <label class="fld"><span>y</span><input id="anchorOutY" type="number" placeholder="none"></label>
+          </div>
+          <div class="row2" style="margin-top:10px">
+            <button id="anchorDelete" class="tiny">Delete anchor</button>
+          </div>
+          <div class="hint">Drag a round handle to curve the segment; hold <b>Alt</b> to break the mirror. Double-click the outline to insert an anchor.</div>
+        </div>
+      </div>
       <div class="ph">Preview</div>
       <div id="preview-body">
         <canvas id="preview-canvas" width="216" height="120"></canvas>
@@ -653,7 +715,8 @@ async function renderGrid(){
 }
 
 /* ----- center editor canvas ----- */
-let editState = { data:"", advanceWidth:600, from:"base", nodes:[], nodeEdit:false };
+let editState = { data:"", advanceWidth:600, from:"base",
+                  anchors:{subpaths:[]}, selAnchor:null, nodeEdit:false };
 
 async function selectGlyph(ch){
   current = ch;
@@ -685,48 +748,515 @@ function syncEditHeader(){
   document.getElementById("editNodesBtn").textContent = editState.nodeEdit ? "Done editing" : "Edit nodes";
 }
 
-/* Parse data -> anchors + control handles for the node editor.
- * On-curve anchor points (M / L / C-end / Q-end) are draggable circles;
- * moving an anchor translates its incoming control points by the same
- * delta. Off-curve bezier control points (C: two, Q: one) are exposed as
- * independently draggable square handles tethered to their anchors.
- * Each anchor records its command start index (ci) + letter so add /
- * delete can splice the token stream structurally. */
-function rebuildNodes(){
-  const data = editState.data;
-  editState.tokens = data ? (data.match(/[a-zA-Z]|-?\d*\.?\d+(?:e-?\d+)?/g)||[]) : [];
-  const toks = editState.tokens;
-  const nodes = [];
-  const ctrls = [];
-  let i=0, prev=null;
-  while(i<toks.length){
-    const c=toks[i];
-    if(c==="M"||c==="L"){
-      prev = {ci:i, cmd:c, ti:i+1, x:parseFloat(toks[i+1]), y:parseFloat(toks[i+2])};
-      nodes.push(prev); i+=3;
-    }
-    else if(c==="C"){
-      const n = {ci:i, cmd:c, ti:i+5, cx1:i+1, cx2:i+3, x:parseFloat(toks[i+5]), y:parseFloat(toks[i+6])};
-      // handle 1 tethers to the segment start (previous anchor), handle 2 to the endpoint
-      ctrls.push({ti:i+1, attach:[prev?prev.ti:null]});
-      ctrls.push({ti:i+3, attach:[i+5]});
-      nodes.push(n); prev=n; i+=7;
-    }
-    else if(c==="Q"){
-      const n = {ci:i, cmd:c, ti:i+3, cx1:i+1, x:parseFloat(toks[i+3]), y:parseFloat(toks[i+4])};
-      ctrls.push({ti:i+1, attach:[prev?prev.ti:null, i+3]});
-      nodes.push(n); prev=n; i+=5;
-    }
-    else if(c==="Z"||c==="z"){ i+=1; }
-    else { i+=1; }
+/* =========================================================================
+ * Anchor graph - the node-edit model
+ *
+ * Same shape as the workflow vector editor's (app.js _vecParsePathD /
+ * _vecBuildPathD), so anchors behave identically in both tools:
+ *
+ *   { subpaths: [{ closed, anchors: [{ x, y, inX, inY, outX, outY, radius }] }] }
+ *
+ * inX/inY = the incoming cubic control point (absolute font units),
+ * outX/outY = the outgoing one; either is null on a corner anchor whose
+ * adjacent segment is straight. `radius` fillets a corner whose BOTH
+ * adjacent segments are straight (the roundness control).
+ *
+ * The graph - not the token stream - is the source of truth while
+ * node-edit is on; editState.data is rebuilt from it after every edit.
+ * =======================================================================*/
+function feParsePathD(d){
+  if(!d || typeof d!=="string") return { subpaths:[] };
+  const re = /([MLHVCSQTAZmlhvcsqtaz])|(-?\d+\.?\d*(?:[eE][-+]?\d+)?)/g;
+  const steps=[]; let cur=null, m;
+  while((m=re.exec(d))){
+    if(m[1]){ if(cur) steps.push(cur); cur={cmd:m[1], args:[]}; }
+    else if(cur) cur.args.push(+m[2]);
   }
-  editState.nodes = nodes;
-  editState.ctrls = ctrls;
-  editState.selNode = null;   // token indices shifted - stale selection is unsafe
+  if(cur) steps.push(cur);
+
+  const subpaths=[];
+  let active=null;              // current subpath { closed, anchors }
+  let cx=0, cy=0;               // pen position (absolute)
+  let startX=0, startY=0;       // current subpath start
+  let prevCtrlX=null, prevCtrlY=null;   // last cubic c2, for S reflection
+  let prevQuadX=null, prevQuadY=null;   // last quad control, for T reflection
+
+  const A=(x,y)=>({x, y, inX:null, inY:null, outX:null, outY:null, radius:0});
+  const startSubpath=(x,y)=>{
+    if(active) subpaths.push(active);
+    active={closed:false, anchors:[A(x,y)]};
+    startX=x; startY=y;
+  };
+  const closeSubpath=()=>{
+    if(!active) return;
+    active.closed=true;
+    // A glyph contour closes back onto its start point, so the final
+    // anchor usually coincides with the first - merge its incoming
+    // handle into anchor 0 and drop the duplicate, else every contour
+    // shows two stacked anchor squares at the start point.
+    const a=active.anchors;
+    if(a.length>=2){
+      const first=a[0], last=a[a.length-1];
+      if(Math.hypot(last.x-first.x, last.y-first.y) < 0.5){
+        first.inX=last.inX; first.inY=last.inY;
+        a.pop();
+      }
+    }
+    subpaths.push(active); active=null;
+    cx=startX; cy=startY;
+  };
+  const lineTo=(x,y)=>{
+    if(!active) startSubpath(cx,cy);
+    active.anchors.push(A(x,y));
+    cx=x; cy=y;
+    prevCtrlX=prevCtrlY=prevQuadX=prevQuadY=null;
+  };
+  const cubicTo=(c1x,c1y,c2x,c2y,x,y)=>{
+    if(!active) startSubpath(cx,cy);
+    const prev=active.anchors[active.anchors.length-1];
+    prev.outX=c1x; prev.outY=c1y;
+    const a=A(x,y); a.inX=c2x; a.inY=c2y;
+    active.anchors.push(a);
+    cx=x; cy=y;
+    prevCtrlX=c2x; prevCtrlY=c2y; prevQuadX=prevQuadY=null;
+  };
+  // Quadratic -> cubic: c1 = p0 + 2/3 (q - p0), c2 = p2 + 2/3 (q - p2).
+  const quadTo=(qx,qy,x,y)=>{
+    const c1x=cx+(2/3)*(qx-cx), c1y=cy+(2/3)*(qy-cy);
+    const c2x=x +(2/3)*(qx-x),  c2y=y +(2/3)*(qy-y);
+    cubicTo(c1x,c1y,c2x,c2y,x,y);
+    prevQuadX=qx; prevQuadY=qy; prevCtrlX=c2x; prevCtrlY=c2y;
+  };
+
+  for(const step of steps){
+    const {cmd,args}=step;
+    const C=cmd.toUpperCase();
+    const rel=cmd!==C;
+    if(C==="Z"){ closeSubpath(); continue; }
+    let i=0;
+    while(i<args.length){
+      if(C==="M"){
+        const x=rel?cx+args[i]:args[i], y=rel?cy+args[i+1]:args[i+1];
+        i+=2;
+        if(i===2){ if(active){ subpaths.push(active); active=null; } startSubpath(x,y); }
+        else lineTo(x,y);      // extra pairs after M are implicit L
+        continue;
+      }
+      if(C==="L"){ const x=rel?cx+args[i]:args[i], y=rel?cy+args[i+1]:args[i+1]; i+=2; lineTo(x,y); continue; }
+      if(C==="H"){ const x=rel?cx+args[i]:args[i]; i+=1; lineTo(x,cy); continue; }
+      if(C==="V"){ const y=rel?cy+args[i]:args[i]; i+=1; lineTo(cx,y); continue; }
+      if(C==="C"){
+        const c1x=rel?cx+args[i]:args[i],     c1y=rel?cy+args[i+1]:args[i+1];
+        const c2x=rel?cx+args[i+2]:args[i+2], c2y=rel?cy+args[i+3]:args[i+3];
+        const x  =rel?cx+args[i+4]:args[i+4], y  =rel?cy+args[i+5]:args[i+5];
+        i+=6; cubicTo(c1x,c1y,c2x,c2y,x,y); continue;
+      }
+      if(C==="S"){
+        const c1x=prevCtrlX!=null?2*cx-prevCtrlX:cx, c1y=prevCtrlY!=null?2*cy-prevCtrlY:cy;
+        const c2x=rel?cx+args[i]:args[i],     c2y=rel?cy+args[i+1]:args[i+1];
+        const x  =rel?cx+args[i+2]:args[i+2], y  =rel?cy+args[i+3]:args[i+3];
+        i+=4; cubicTo(c1x,c1y,c2x,c2y,x,y); continue;
+      }
+      if(C==="Q"){
+        const qx=rel?cx+args[i]:args[i],     qy=rel?cy+args[i+1]:args[i+1];
+        const x =rel?cx+args[i+2]:args[i+2], y =rel?cy+args[i+3]:args[i+3];
+        i+=4; quadTo(qx,qy,x,y); continue;
+      }
+      if(C==="T"){
+        const qx=prevQuadX!=null?2*cx-prevQuadX:cx, qy=prevQuadY!=null?2*cy-prevQuadY:cy;
+        const x =rel?cx+args[i]:args[i], y=rel?cy+args[i+1]:args[i+1];
+        i+=2; quadTo(qx,qy,x,y); continue;
+      }
+      i=args.length;   // unknown command (A) - skip its args
+    }
+  }
+  if(active) subpaths.push(active);
+  return { subpaths };
 }
 
-function nodesToData(){
-  return (editState.tokens||[]).join(" ").replace(/([a-zA-Z]) /g,"$1 ").trim();
+/* Serialize the anchor graph back to path data. Straight segments emit
+ * L, curved ones C. A corner anchor with radius > 0 whose two adjacent
+ * segments are BOTH straight is filleted: the segments stop short at
+ * entry / exit and a quadratic with the original corner as its control
+ * point rounds the turn. */
+function feBuildPathD(parsed){
+  if(!parsed || !parsed.subpaths) return "";
+  const fmt=(n)=>(Math.round(n*100)/100).toString();
+  const out=[];
+  for(const sub of parsed.subpaths){
+    const a=sub.anchors||[]; const N=a.length;
+    if(N<1) continue;
+    const closed=!!sub.closed;
+
+    const entry=new Array(N), exit=new Array(N), rounded=new Array(N).fill(false);
+    for(let i=0;i<N;i++){ entry[i]={x:a[i].x,y:a[i].y}; exit[i]={x:a[i].x,y:a[i].y}; }
+    for(let i=0;i<N;i++){
+      const r=+a[i].radius||0;
+      if(r<=0) continue;
+      const pi = i-1>=0 ? i-1 : (closed? N-1 : -1);
+      const ni = i+1<N  ? i+1 : (closed? 0   : -1);
+      if(pi<0||ni<0) continue;
+      const prev=a[pi], cur=a[i], next=a[ni];
+      if((prev.outX!=null)||(cur.inX!=null)) continue;   // incoming segment already curved
+      if((cur.outX!=null)||(next.inX!=null)) continue;   // outgoing segment already curved
+      const d1=Math.hypot(prev.x-cur.x, prev.y-cur.y);
+      const d2=Math.hypot(next.x-cur.x, next.y-cur.y);
+      const rr=Math.min(r, d1*0.5, d2*0.5);
+      if(rr<=0||d1===0||d2===0) continue;
+      entry[i]={x:cur.x+(prev.x-cur.x)/d1*rr, y:cur.y+(prev.y-cur.y)/d1*rr};
+      exit[i] ={x:cur.x+(next.x-cur.x)/d2*rr, y:cur.y+(next.y-cur.y)/d2*rr};
+      rounded[i]=true;
+    }
+
+    out.push("M "+fmt(exit[0].x)+" "+fmt(exit[0].y));
+    const segCount = closed ? N : N-1;
+    for(let si=0; si<segCount; si++){
+      const toIdx=(si+1)%N;
+      const cur=a[si], nxt=a[toIdx];
+      const curved=(cur.outX!=null&&cur.outY!=null)||(nxt.inX!=null&&nxt.inY!=null);
+      if(curved){
+        const c1x=cur.outX!=null?cur.outX:cur.x, c1y=cur.outY!=null?cur.outY:cur.y;
+        const c2x=nxt.inX !=null?nxt.inX :nxt.x, c2y=nxt.inY !=null?nxt.inY :nxt.y;
+        out.push("C "+fmt(c1x)+" "+fmt(c1y)+" "+fmt(c2x)+" "+fmt(c2y)+" "+fmt(entry[toIdx].x)+" "+fmt(entry[toIdx].y));
+      } else {
+        out.push("L "+fmt(entry[toIdx].x)+" "+fmt(entry[toIdx].y));
+      }
+      const continues = closed || si+1 < segCount;
+      if(rounded[toIdx] && continues){
+        out.push("Q "+fmt(nxt.x)+" "+fmt(nxt.y)+" "+fmt(exit[toIdx].x)+" "+fmt(exit[toIdx].y));
+      }
+    }
+    if(closed) out.push("Z");
+  }
+  return out.join(" ");
+}
+
+/* Insert an anchor on the segment leaving anchors[segIdx] at t in (0,1).
+ * Cubic segments split by de Casteljau so the outline doesn't move;
+ * straight segments get a plain corner anchor at the lerp point. */
+function feInsertAnchorAt(parsed, subIdx, segIdx, t){
+  const sub = parsed && parsed.subpaths && parsed.subpaths[subIdx];
+  if(!sub) return parsed;
+  const anchors=sub.anchors||[]; const N=anchors.length;
+  if(N<2) return parsed;
+  const closed=!!sub.closed;
+  const toIdx=(segIdx+1)%N;
+  if(!closed && toIdx===0) return parsed;
+  const cur=anchors[segIdx], nxt=anchors[toIdx];
+  const tt=Math.max(0.001, Math.min(0.999, t));
+  const curved=(cur.outX!=null&&cur.outY!=null)||(nxt.inX!=null&&nxt.inY!=null);
+
+  let newAnchor, curPatch=null, nxtPatch=null;
+  if(curved){
+    const p0={x:cur.x,y:cur.y};
+    const p1={x:cur.outX!=null?cur.outX:cur.x, y:cur.outY!=null?cur.outY:cur.y};
+    const p2={x:nxt.inX !=null?nxt.inX :nxt.x, y:nxt.inY !=null?nxt.inY :nxt.y};
+    const p3={x:nxt.x,y:nxt.y};
+    const lerp=(a,b)=>({x:a.x+(b.x-a.x)*tt, y:a.y+(b.y-a.y)*tt});
+    const a01=lerp(p0,p1), a12=lerp(p1,p2), a23=lerp(p2,p3);
+    const b0=lerp(a01,a12), b1=lerp(a12,a23);
+    const mid=lerp(b0,b1);
+    newAnchor={x:mid.x, y:mid.y, inX:b0.x, inY:b0.y, outX:b1.x, outY:b1.y, radius:0};
+    curPatch={outX:a01.x, outY:a01.y};
+    nxtPatch={inX:a23.x, inY:a23.y};
+  } else {
+    newAnchor={x:cur.x+(nxt.x-cur.x)*tt, y:cur.y+(nxt.y-cur.y)*tt,
+               inX:null, inY:null, outX:null, outY:null, radius:0};
+  }
+  const nextAnchors=anchors.map((a,i)=>{
+    if(i===segIdx && curPatch) return Object.assign({}, a, curPatch);
+    if(i===toIdx  && nxtPatch) return Object.assign({}, a, nxtPatch);
+    return a;
+  });
+  nextAnchors.splice(segIdx+1, 0, newAnchor);
+  return { subpaths: parsed.subpaths.map((s,si)=> si!==subIdx ? s : Object.assign({}, s, {anchors:nextAnchors})) };
+}
+
+/* Remove one anchor. A subpath that drops below 2 anchors is dropped. */
+function feDeleteAnchorAt(parsed, subIdx, anchorIdx){
+  if(!parsed || !parsed.subpaths || !parsed.subpaths[subIdx]) return parsed;
+  const next=[];
+  parsed.subpaths.forEach((s,si)=>{
+    if(si!==subIdx){ next.push(s); return; }
+    const anchors=(s.anchors||[]).filter((_a,ai)=>ai!==anchorIdx);
+    if(anchors.length>=2) next.push(Object.assign({}, s, {anchors}));
+  });
+  return { subpaths: next };
+}
+
+/* Reparse editState.data into the anchor graph. Any stale selection is
+ * dropped - indices shift when the outline is replaced wholesale. */
+function rebuildNodes(){
+  editState.anchors = feParsePathD(editState.data);
+  editState.selAnchor = null;
+  renderAnchorPanel();
+}
+
+/* The selected anchor, resolved against the live graph (or null). */
+function feSelected(){
+  if(!editState.selAnchor) return null;
+  const parts=String(editState.selAnchor).split(":");
+  const subIdx=+parts[0], anchorIdx=+parts[1];
+  const sub=(editState.anchors&&editState.anchors.subpaths||[])[subIdx];
+  const anchor=sub && (sub.anchors||[])[anchorIdx];
+  if(!anchor) return null;
+  return {subIdx, anchorIdx, sub, anchor};
+}
+
+/* The two neighbours of an anchor (null at an open subpath's ends). */
+function feNeighbours(sub, anchorIdx){
+  const A=sub.anchors||[]; const N=A.length;
+  return {
+    prev: A[anchorIdx-1] || (sub.closed ? A[N-1] : null),
+    next: A[anchorIdx+1] || (sub.closed ? A[0]   : null),
+  };
+}
+
+/* Cap for the roundness slider: half of the shorter adjacent segment. */
+function feMaxRadius(sub, anchorIdx){
+  const a=(sub.anchors||[])[anchorIdx]; if(!a) return 0;
+  const nb=feNeighbours(sub, anchorIdx);
+  if(!nb.prev || !nb.next) return 0;
+  const d1=Math.hypot(nb.prev.x-a.x, nb.prev.y-a.y);
+  const d2=Math.hypot(nb.next.x-a.x, nb.next.y-a.y);
+  return Math.max(0, Math.floor(Math.min(d1,d2)*0.5));
+}
+
+/* Push an edited graph back into editState.data (+ redraw + panel).
+ * `commit` defaults to true; drags pass false per move and commit once
+ * on release so every pointermove doesn't re-render the glyph grid. */
+function feApplyAnchors(parsed, commit){
+  editState.anchors = parsed;
+  editState.data = feBuildPathD(parsed);
+  if(commit!==false) commitGlyph("custom");
+  drawCanvas();
+  renderAnchorPanel();
+}
+
+/* Patch one anchor's fields. */
+function fePatchAnchor(subIdx, anchorIdx, patch, commit){
+  const parsed=editState.anchors;
+  if(!parsed || !parsed.subpaths[subIdx]) return;
+  const next={ subpaths: parsed.subpaths.map((s,si)=> si!==subIdx ? s : Object.assign({}, s, {
+    anchors: s.anchors.map((a,ai)=> ai!==anchorIdx ? a : Object.assign({}, a, patch)),
+  }))};
+  feApplyAnchors(next, commit);
+}
+
+/* Trailing commit for panel edits - keeps typing responsive without
+ * re-rendering the grid + re-emitting state on every keystroke. */
+let feCommitTimer=null;
+function feCommitSoon(){
+  clearTimeout(feCommitTimer);
+  feCommitTimer=setTimeout(()=>{ feCommitTimer=null; commitGlyph("custom"); }, 200);
+}
+
+/* Offset (font units) for the ghost handles a corner anchor exposes so
+ * it can be pulled into a curve. Scales with the outline's own size. */
+function fePhantomOffset(parsed){
+  const upm=doc.unitsPerEm||1000;
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  for(const sub of (parsed&&parsed.subpaths||[])){
+    for(const a of (sub.anchors||[])){
+      if(a.x<minX) minX=a.x; if(a.x>maxX) maxX=a.x;
+      if(a.y<minY) minY=a.y; if(a.y>maxY) maxY=a.y;
+    }
+  }
+  const diag = isFinite(minX) ? Math.hypot(maxX-minX, maxY-minY) : upm;
+  return Math.max(upm*0.03, Math.min(upm*0.12, diag*0.06));
+}
+
+/* Every grabbable Bézier handle: the REAL handles of every anchor, plus
+ * PHANTOM (ghosted) ones on the selected anchor so a corner has a
+ * visible affordance to drag a curve out of. Shared by draw + hit-test
+ * so what you see is exactly what you can grab. */
+function feHandles(){
+  const parsed=editState.anchors||{subpaths:[]};
+  const off=fePhantomOffset(parsed);
+  const out=[];
+  parsed.subpaths.forEach((sub,si)=>{
+    const A=sub.anchors||[];
+    A.forEach((a,ai)=>{
+      const isSel = editState.selAnchor === (si+":"+ai);
+      const nb=feNeighbours(sub, ai);
+      const toward=(t,fx,fy)=>{
+        if(!t) return {x:fx,y:fy};
+        const dx=t.x-a.x, dy=t.y-a.y, l=Math.hypot(dx,dy);
+        return l ? {x:dx/l, y:dy/l} : {x:fx,y:fy};
+      };
+      if(a.inX!=null && a.inY!=null) out.push({si,ai,side:"in",x:a.inX,y:a.inY,phantom:false});
+      else if(isSel){ const n=toward(nb.prev,-0.7071,0.7071); out.push({si,ai,side:"in",x:a.x+n.x*off,y:a.y+n.y*off,phantom:true}); }
+      if(a.outX!=null && a.outY!=null) out.push({si,ai,side:"out",x:a.outX,y:a.outY,phantom:false});
+      else if(isSel){ const n=toward(nb.next,0.7071,-0.7071); out.push({si,ai,side:"out",x:a.x+n.x*off,y:a.y+n.y*off,phantom:true}); }
+    });
+  });
+  return out;
+}
+
+/* =========================================================================
+ * Anchor inspector - type / roundness / position / handles
+ *
+ * Same controls as the workflow vector editor's anchor panel, so the two
+ * editors read the same way.
+ * =======================================================================*/
+
+/* corner     - no handles either side
+ * smooth     - both handles present and mirrored through the anchor
+ * asymmetric - handles present but not collinear-opposite (or only one) */
+function feAnchorType(a){
+  const hasIn=a.inX!=null&&a.inY!=null, hasOut=a.outX!=null&&a.outY!=null;
+  if(!hasIn && !hasOut) return "corner";
+  if(!hasIn || !hasOut) return "asymmetric";
+  const ix=a.inX-a.x, iy=a.inY-a.y, ox=a.outX-a.x, oy=a.outY-a.y;
+  const il=Math.hypot(ix,iy)||1, ol=Math.hypot(ox,oy)||1;
+  const dot=(ix/il)*(ox/ol)+(iy/il)*(oy/ol);
+  return dot < -0.98 ? "smooth" : "asymmetric";     // ≈ opposite directions
+}
+
+/* A corner is filletable only when BOTH adjacent segments are straight -
+ * the same condition feBuildPathD applies when emitting the arc. */
+function feRoundable(sub, anchorIdx){
+  const a=(sub.anchors||[])[anchorIdx]; if(!a) return false;
+  const nb=feNeighbours(sub, anchorIdx);
+  if(!nb.prev || !nb.next) return false;
+  if(nb.prev.outX!=null || a.inX!=null) return false;
+  if(a.outX!=null || nb.next.inX!=null) return false;
+  return feMaxRadius(sub, anchorIdx) > 0;
+}
+
+/* Switch the selected anchor between corner / smooth / asymmetric,
+ * synthesizing missing handles along the tangent toward the neighbours
+ * so they land somewhere grabbable rather than under the anchor. */
+function feSetAnchorType(next){
+  const sel=feSelected(); if(!sel) return;
+  const a=sel.anchor;
+  if(next==="corner"){ fePatchAnchor(sel.subIdx, sel.anchorIdx, {inX:null,inY:null,outX:null,outY:null}); return; }
+  const off=fePhantomOffset(editState.anchors);
+  const nb=feNeighbours(sel.sub, sel.anchorIdx);
+  const toward=(t,fx,fy)=>{
+    if(!t) return {x:fx,y:fy};
+    const dx=t.x-a.x, dy=t.y-a.y, l=Math.hypot(dx,dy);
+    return l ? {x:dx/l,y:dy/l} : {x:fx,y:fy};
+  };
+  const vi=toward(nb.prev,-0.7071,0.7071), vo=toward(nb.next,0.7071,-0.7071);
+  const fbInX=Math.round(a.x+vi.x*off), fbInY=Math.round(a.y+vi.y*off);
+  const fbOutX=Math.round(a.x+vo.x*off), fbOutY=Math.round(a.y+vo.y*off);
+  let inX=a.inX, inY=a.inY, outX=a.outX, outY=a.outY;
+  if(next==="smooth"){
+    if(inX==null && outX==null){
+      // Both handles are missing: lay them along the tangent that runs
+      // prev → next, so the pair comes out genuinely mirrored (pointing
+      // each handle straight at its own neighbour would not be smooth).
+      let tx, ty;
+      if(nb.prev && nb.next){ tx=nb.next.x-nb.prev.x; ty=nb.next.y-nb.prev.y; }
+      else if(nb.next){ tx=nb.next.x-a.x; ty=nb.next.y-a.y; }
+      else if(nb.prev){ tx=a.x-nb.prev.x; ty=a.y-nb.prev.y; }
+      else { tx=1; ty=0; }
+      const tl=Math.hypot(tx,ty)||1; tx/=tl; ty/=tl;
+      inX=Math.round(a.x-tx*off); inY=Math.round(a.y-ty*off);
+      outX=Math.round(a.x+tx*off); outY=Math.round(a.y+ty*off);
+    }
+    else if(inX==null){ inX=Math.round(2*a.x-outX); inY=Math.round(2*a.y-outY); }
+    else { outX=Math.round(2*a.x-inX); outY=Math.round(2*a.y-inY); }
+    // A filleted corner and explicit handles are mutually exclusive.
+    fePatchAnchor(sel.subIdx, sel.anchorIdx, {inX,inY,outX,outY,radius:0});
+    return;
+  }
+  if(inX==null){ inX=fbInX; inY=fbInY; }
+  if(outX==null){ outX=fbOutX; outY=fbOutY; }
+  fePatchAnchor(sel.subIdx, sel.anchorIdx, {inX,inY,outX,outY,radius:0});
+}
+
+/* Refresh the inspector from the live graph. Never writes the field the
+ * user is typing in (that would fight the caret). */
+function renderAnchorPanel(){
+  const pane=document.getElementById("anchor-pane");
+  if(!pane) return;
+  pane.hidden = !editState.nodeEdit;
+  const sel = editState.nodeEdit ? feSelected() : null;
+  pane.classList.toggle("has-sel", !!sel);
+  const label=document.getElementById("anchorLabel");
+  if(!sel){ if(label) label.textContent="-"; return; }
+  const a=sel.anchor;
+  label.textContent = (sel.subIdx+1)+"."+(sel.anchorIdx+1);
+
+  const type=feAnchorType(a);
+  for(const b of document.querySelectorAll("#anchorType button")){
+    b.classList.toggle("on", b.dataset.t===type);
+  }
+
+  const roundRow=document.getElementById("anchorRadiusRow");
+  const roundable = type==="corner" && feRoundable(sel.sub, sel.anchorIdx);
+  roundRow.style.display = roundable ? "" : "none";
+  if(roundable){
+    const rng=document.getElementById("anchorRadius");
+    const max=feMaxRadius(sel.sub, sel.anchorIdx);
+    rng.max=String(max);
+    const r=Math.min(max, Math.round(+a.radius||0));
+    if(rng!==document.activeElement) rng.value=String(r);
+    document.getElementById("anchorRadiusVal").textContent=String(r);
+  }
+
+  const set=(id,v)=>{
+    const el=document.getElementById(id);
+    if(!el || el===document.activeElement) return;
+    el.value = (v==null) ? "" : String(Math.round(v*100)/100);
+  };
+  set("anchorX", a.x);       set("anchorY", a.y);
+  set("anchorInX", a.inX);   set("anchorInY", a.inY);
+  set("anchorOutX", a.outX); set("anchorOutY", a.outY);
+}
+
+function wireAnchorPanel(){
+  for(const b of document.querySelectorAll("#anchorType button")){
+    b.addEventListener("click", ()=>{ feSetAnchorType(b.dataset.t); });
+  }
+  const rng=document.getElementById("anchorRadius");
+  rng.addEventListener("input", ()=>{
+    const sel=feSelected(); if(!sel) return;
+    document.getElementById("anchorRadiusVal").textContent=rng.value;
+    fePatchAnchor(sel.subIdx, sel.anchorIdx, {radius:parseInt(rng.value)||0}, false);
+    feCommitSoon();
+  });
+  // Position: the anchor's own handles ride along, so typing a
+  // coordinate moves the node exactly like dragging it does.
+  const movePos=()=>{
+    const sel=feSelected(); if(!sel) return;
+    const a=sel.anchor;
+    const nx=parseFloat(document.getElementById("anchorX").value);
+    const ny=parseFloat(document.getElementById("anchorY").value);
+    if(isNaN(nx)||isNaN(ny)) return;
+    const dx=nx-a.x, dy=ny-a.y;
+    if(!dx && !dy) return;
+    fePatchAnchor(sel.subIdx, sel.anchorIdx, {
+      x:nx, y:ny,
+      inX:  a.inX !=null ? a.inX +dx : null, inY:  a.inY !=null ? a.inY +dy : null,
+      outX: a.outX!=null ? a.outX+dx : null, outY: a.outY!=null ? a.outY+dy : null,
+    }, false);
+    feCommitSoon();
+  };
+  document.getElementById("anchorX").addEventListener("input", movePos);
+  document.getElementById("anchorY").addEventListener("input", movePos);
+
+  // Handle fields: blank clears the handle (that side goes straight).
+  const handleField=(id, key)=>{
+    document.getElementById(id).addEventListener("input", (e)=>{
+      const sel=feSelected(); if(!sel) return;
+      const raw=e.target.value.trim();
+      const v = raw==="" ? null : parseFloat(raw);
+      if(v!==null && isNaN(v)) return;
+      const patch={};
+      patch[key]=v;
+      // x and y of one handle live or die together.
+      if(v===null) patch[key.slice(0,-1)+(key.endsWith("X")?"Y":"X")]=null;
+      fePatchAnchor(sel.subIdx, sel.anchorIdx, patch, false);
+      feCommitSoon();
+    });
+  };
+  handleField("anchorInX","inX");   handleField("anchorInY","inY");
+  handleField("anchorOutX","outX"); handleField("anchorOutY","outY");
+
+  document.getElementById("anchorDelete").addEventListener("click", deleteSelectedAnchor);
 }
 
 /* canvas view transform: maps font units (y-up) -> screen px */
@@ -798,114 +1328,90 @@ function drawCanvas(){
     }
   }
 
-  // node handles (only in node-edit mode). Coordinates are read LIVE from
-  // the token stream (not the cached node.x/y) so control handles stay
-  // glued through anchor drags that translate them.
-  if(editState.nodeEdit && editState.nodes.length){
-    const toks = editState.tokens;
-    const tx=(ti)=>u2sx(+toks[ti]), ty=(ti)=>u2sy(+toks[ti+1]);
-    // tether lines + square handles for the bezier control points
-    for(const ct of (editState.ctrls||[])){
-      const sx=tx(ct.ti), sy=ty(ct.ti);
-      ctx.strokeStyle=getCSS("--guide"); ctx.lineWidth=1;
-      for(const a of ct.attach){
-        if(a==null) continue;
-        ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(tx(a),ty(a)); ctx.stroke();
-      }
-      ctx.fillStyle=(ct===dragCtrl)?getCSS("--good"):getCSS("--canvas-bg");
-      ctx.strokeStyle=getCSS("--accent"); ctx.lineWidth=1;
-      ctx.fillRect(sx-3.5,sy-3.5,7,7); ctx.strokeRect(sx-3.5,sy-3.5,7,7);
+  // node-edit overlay: Bézier handles (tether + dot, ghosted when the
+  // anchor doesn't own that handle yet) under the anchor squares.
+  if(editState.nodeEdit){
+    const parsed = editState.anchors || {subpaths:[]};
+    const accent=getCSS("--accent"), surface=getCSS("--canvas-bg"), good=getCSS("--good");
+    for(const h of feHandles()){
+      const A=(parsed.subpaths[h.si].anchors||[])[h.ai];
+      const ax=u2sx(A.x), ay=u2sy(A.y);
+      const hx=u2sx(h.x),  hy=u2sy(h.y);
+      const live = dragHandle && dragHandle.si===h.si && dragHandle.ai===h.ai && dragHandle.side===h.side;
+      ctx.save();
+      ctx.strokeStyle=accent; ctx.lineWidth=1;
+      ctx.globalAlpha = h.phantom ? 0.45 : 1;
+      if(h.phantom) ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(hx,hy); ctx.stroke();
+      ctx.setLineDash(h.phantom?[2,2]:[]);
+      ctx.fillStyle = live ? good : surface;
+      ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(hx,hy, h.phantom?4:4.5, 0, Math.PI*2);
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
     }
-    for(const n of editState.nodes){
-      const sx=tx(n.ti), sy=ty(n.ti);
-      ctx.fillStyle = (n===dragNode||n===editState.selNode)?getCSS("--good"):getCSS("--accent");
-      // Ring the handle with the light canvas surface so the colored dot pops
-      // (was a hardcoded near-black ring tuned for the old dark canvas).
-      ctx.strokeStyle=getCSS("--canvas-bg"); ctx.lineWidth=1.5;
-      ctx.beginPath(); ctx.arc(sx,sy,5,0,Math.PI*2); ctx.fill(); ctx.stroke();
-    }
+    parsed.subpaths.forEach((sub,si)=>{
+      (sub.anchors||[]).forEach((a,ai)=>{
+        const sx=u2sx(a.x), sy=u2sy(a.y);
+        const isSel = editState.selAnchor === (si+":"+ai);
+        const r = isSel ? 5 : 4;
+        ctx.fillStyle = isSel ? accent : surface;
+        ctx.strokeStyle = accent; ctx.lineWidth=1.5;
+        ctx.fillRect(sx-r,sy-r,r*2,r*2); ctx.strokeRect(sx-r,sy-r,r*2,r*2);
+      });
+    });
   }
 }
 
 function getCSS(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || "#888"; }
 
-/* ----- node editing: drag anchors + handles, add on double-click,
- * delete the selected anchor with Backspace/Delete ----- */
-let dragNode=null, dragCtrl=null;
+/* ----- node editing: drag anchors + Bézier handles, insert on
+ * double-click, delete the selected anchor with Backspace/Delete ----- */
+let dragAnchor=null;   // {si, ai, base, start}
+let dragHandle=null;   // {si, ai, side, base, start, sx, sy, mirror}
 
-/* Remove one anchor's command from the token stream. Deleting an M
- * promotes the next command's endpoint to the new subpath start (or
- * drops a degenerate M-Z remnant outright). */
-function deleteNode(n){
-  const toks=editState.tokens;
-  if(n.cmd==="M"){
-    const j=n.ci+3, nc=toks[j];
-    if(nc==="L")      toks.splice(n.ci, 6,  "M", toks[j+1], toks[j+2]);
-    else if(nc==="C") toks.splice(n.ci, 10, "M", toks[j+5], toks[j+6]);
-    else if(nc==="Q") toks.splice(n.ci, 8,  "M", toks[j+3], toks[j+4]);
-    else {
-      let end=n.ci+3;
-      if(nc==="Z"||nc==="z") end+=1;
-      toks.splice(n.ci, end-n.ci);
-    }
-  } else {
-    toks.splice(n.ci, n.cmd==="C"?7 : n.cmd==="Q"?5 : 3);
-  }
-  editState.data = toks.join(" ");
-  rebuildNodes();
-  commitGlyph("custom");
-  drawCanvas();
+/* Delete the selected anchor. A contour that falls below 2 anchors goes
+ * with it; an outline with nothing left becomes an empty glyph. */
+function deleteSelectedAnchor(){
+  const sel=feSelected(); if(!sel) return;
+  const next=feDeleteAnchorAt(editState.anchors, sel.subIdx, sel.anchorIdx);
+  editState.selAnchor=null;
+  feApplyAnchors(next);
 }
 
-/* Insert an anchor on the outline nearest to screen point (px,py).
- * L splits exactly; C/Q split by de Casteljau at the sampled t, so the
- * curve shape is preserved. Z closing segments are not splittable. */
+/* Insert an anchor on the outline nearest to screen point (px,py) by
+ * sampling every segment of the anchor graph for the closest t. */
 function addNodeAt(px,py){
-  const toks=editState.tokens;
-  const lerp=(a,b,t)=>({x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t});
-  let i=0, cur=null, start=null, best=null, bd=10*10;   // 10px pick radius
-  const consider=(ci,cmd,p0,pts)=>{
-    for(let s=1;s<48;s++){
-      const t=s/48;
-      let p;
-      if(cmd==="L") p=lerp(p0,pts[0],t);
-      else if(cmd==="Q"){ const a=lerp(p0,pts[0],t), b=lerp(pts[0],pts[1],t); p=lerp(a,b,t); }
-      else { const a=lerp(p0,pts[0],t), b=lerp(pts[0],pts[1],t), c2=lerp(pts[1],pts[2],t),
-                   d=lerp(a,b,t), e2=lerp(b,c2,t); p=lerp(d,e2,t); }
-      const dx=u2sx(p.x)-px, dy=u2sy(p.y)-py, d2=dx*dx+dy*dy;
-      if(d2<bd){ bd=d2; best={ci,cmd,t,p0,pts}; }
+  const parsed=editState.anchors||{subpaths:[]};
+  let best=null, bd=12*12;    // 12px pick radius
+  parsed.subpaths.forEach((sub,si)=>{
+    const A=sub.anchors||[]; const N=A.length;
+    if(N<2) return;
+    const segCount = sub.closed ? N : N-1;
+    for(let seg=0; seg<segCount; seg++){
+      const cur=A[seg], nxt=A[(seg+1)%N];
+      const curved=(cur.outX!=null&&cur.outY!=null)||(nxt.inX!=null&&nxt.inY!=null);
+      const p1={x:cur.outX!=null?cur.outX:cur.x, y:cur.outY!=null?cur.outY:cur.y};
+      const p2={x:nxt.inX !=null?nxt.inX :nxt.x, y:nxt.inY !=null?nxt.inY :nxt.y};
+      for(let s=1;s<48;s++){
+        const t=s/48;
+        let p;
+        if(curved){
+          const u=1-t;
+          p={ x: u*u*u*cur.x + 3*u*u*t*p1.x + 3*u*t*t*p2.x + t*t*t*nxt.x,
+              y: u*u*u*cur.y + 3*u*u*t*p1.y + 3*u*t*t*p2.y + t*t*t*nxt.y };
+        } else {
+          p={ x: cur.x+(nxt.x-cur.x)*t, y: cur.y+(nxt.y-cur.y)*t };
+        }
+        const dx=u2sx(p.x)-px, dy=u2sy(p.y)-py, d2=dx*dx+dy*dy;
+        if(d2<bd){ bd=d2; best={si, seg, t}; }
+      }
     }
-  };
-  while(i<toks.length){
-    const c=toks[i];
-    if(c==="M"){ cur={x:+toks[i+1],y:+toks[i+2]}; start=cur; i+=3; }
-    else if(c==="L"){ const p1={x:+toks[i+1],y:+toks[i+2]}; if(cur) consider(i,"L",cur,[p1]); cur=p1; i+=3; }
-    else if(c==="C"){ const p1={x:+toks[i+1],y:+toks[i+2]}, p2={x:+toks[i+3],y:+toks[i+4]}, p3={x:+toks[i+5],y:+toks[i+6]};
-                      if(cur) consider(i,"C",cur,[p1,p2,p3]); cur=p3; i+=7; }
-    else if(c==="Q"){ const p1={x:+toks[i+1],y:+toks[i+2]}, p2={x:+toks[i+3],y:+toks[i+4]};
-                      if(cur) consider(i,"Q",cur,[p1,p2]); cur=p2; i+=5; }
-    else if(c==="Z"||c==="z"){ cur=start; i+=1; }
-    else i+=1;
-  }
+  });
   if(!best) return false;
-  const R=(v)=>String(Math.round(v));
-  const {ci,cmd,t,p0,pts}=best;
-  if(cmd==="L"){
-    const m=lerp(p0,pts[0],t);
-    toks.splice(ci, 3, "L",R(m.x),R(m.y), "L",R(pts[0].x),R(pts[0].y));
-  } else if(cmd==="Q"){
-    const a=lerp(p0,pts[0],t), b=lerp(pts[0],pts[1],t), m=lerp(a,b,t);
-    toks.splice(ci, 5, "Q",R(a.x),R(a.y),R(m.x),R(m.y), "Q",R(b.x),R(b.y),R(pts[1].x),R(pts[1].y));
-  } else {
-    const a=lerp(p0,pts[0],t), b=lerp(pts[0],pts[1],t), c2=lerp(pts[1],pts[2],t),
-          d=lerp(a,b,t), e2=lerp(b,c2,t), m=lerp(d,e2,t);
-    toks.splice(ci, 7, "C",R(a.x),R(a.y),R(d.x),R(d.y),R(m.x),R(m.y),
-                       "C",R(e2.x),R(e2.y),R(c2.x),R(c2.y),R(pts[2].x),R(pts[2].y));
-  }
-  editState.data = toks.join(" ");
-  rebuildNodes();
-  commitGlyph("custom");
-  drawCanvas();
+  feApplyAnchors(feInsertAnchorAt(parsed, best.si, best.seg, best.t));
+  editState.selAnchor = best.si+":"+(best.seg+1);
+  drawCanvas(); renderAnchorPanel();
   return true;
 }
 
@@ -915,60 +1421,74 @@ function setupCanvasInteraction(){
     if(!editState.nodeEdit) return;
     const r=cv.getBoundingClientRect();
     const px=e.clientX-r.left, py=e.clientY-r.top;
-    const toks=editState.tokens;
-    let best=null, bd=12*12;
-    for(const n of editState.nodes){
-      const dx=u2sx(+toks[n.ti])-px, dy=u2sy(+toks[n.ti+1])-py; const d=dx*dx+dy*dy;
-      if(d<bd){ bd=d; best=n; }
+    const parsed=editState.anchors||{subpaths:[]};
+    const start={x:s2ux(px), y:s2uy(py)};
+    const PICK=11*11;
+    // Handles win ties with anchors - a zero-length handle sits right on
+    // top of its anchor and would otherwise be unreachable.
+    let bh=null, bhd=PICK;
+    for(const h of feHandles()){
+      const dx=u2sx(h.x)-px, dy=u2sy(h.y)-py, d=dx*dx+dy*dy;
+      if(d<=bhd){ bhd=d; bh=h; }
     }
-    if(best){
-      dragNode=best; editState.selNode=best;
-      best.x=+toks[best.ti]; best.y=+toks[best.ti+1];   // re-sync drag baseline
-      cv.setPointerCapture(e.pointerId); drawCanvas(); return;
+    let ba=null, bad=PICK;
+    parsed.subpaths.forEach((sub,si)=>{
+      (sub.anchors||[]).forEach((a,ai)=>{
+        const dx=u2sx(a.x)-px, dy=u2sy(a.y)-py, d=dx*dx+dy*dy;
+        if(d<bad){ bad=d; ba={si,ai,a}; }
+      });
+    });
+    if(bh && (!ba || bhd<=bad)){
+      const A=(parsed.subpaths[bh.si].anchors||[])[bh.ai];
+      dragHandle={ si:bh.si, ai:bh.ai, side:bh.side, base:Object.assign({},A), start,
+                   // a phantom drag picks up from where the ghost dot is
+                   // drawn, not from the anchor hidden under the square
+                   sx:bh.x, sy:bh.y, mirror:!e.altKey };
+      editState.selAnchor=bh.si+":"+bh.ai;
+      cv.setPointerCapture(e.pointerId); drawCanvas(); renderAnchorPanel(); return;
     }
-    // no anchor hit - try the bezier control handles
-    let bestC=null; bd=12*12;
-    for(const ct of (editState.ctrls||[])){
-      const dx=u2sx(+toks[ct.ti])-px, dy=u2sy(+toks[ct.ti+1])-py; const d=dx*dx+dy*dy;
-      if(d<bd){ bd=d; bestC=ct; }
+    if(ba){
+      dragAnchor={ si:ba.si, ai:ba.ai, base:Object.assign({},ba.a), start };
+      editState.selAnchor=ba.si+":"+ba.ai;
+      cv.setPointerCapture(e.pointerId); drawCanvas(); renderAnchorPanel(); return;
     }
-    if(bestC){ dragCtrl=bestC; cv.setPointerCapture(e.pointerId); drawCanvas(); return; }
-    // empty space: clear the selection
-    if(editState.selNode){ editState.selNode=null; drawCanvas(); }
+    if(editState.selAnchor){ editState.selAnchor=null; drawCanvas(); renderAnchorPanel(); }
   });
   cv.addEventListener("pointermove", e=>{
-    if(!dragNode && !dragCtrl) return;
+    if(!dragAnchor && !dragHandle) return;
     const r=cv.getBoundingClientRect();
-    const nx=Math.round(s2ux(e.clientX-r.left));
-    const ny=Math.round(s2uy(e.clientY-r.top));
-    const toks=editState.tokens;
-    if(dragCtrl){
-      toks[dragCtrl.ti]=String(nx); toks[dragCtrl.ti+1]=String(ny);
-      editState.data = toks.join(" ");
-      drawCanvas();
+    const p={x:s2ux(e.clientX-r.left), y:s2uy(e.clientY-r.top)};
+    const R=(v)=>Math.round(v);
+    if(dragHandle){
+      const d=dragHandle;
+      const dx=p.x-d.start.x, dy=p.y-d.start.y;
+      const nx=R(d.sx+dx), ny=R(d.sy+dy);
+      const patch = d.side==="in" ? {inX:nx, inY:ny} : {outX:nx, outY:ny};
+      if(d.mirror){
+        // Mirror the opposite handle through the anchor (smooth node);
+        // Alt-drag broke the mirror at pointerdown.
+        if(d.side==="in"){ patch.outX=R(2*d.base.x-nx); patch.outY=R(2*d.base.y-ny); }
+        else             { patch.inX =R(2*d.base.x-nx); patch.inY =R(2*d.base.y-ny); }
+      }
+      fePatchAnchor(d.si, d.ai, patch, false);
       return;
     }
-    const dx=nx-dragNode.x, dy=ny-dragNode.y;
-    // move anchor
-    toks[dragNode.ti]=String(nx); toks[dragNode.ti+1]=String(ny);
-    // translate this node's own incoming control points (cx2 / cx1 for C, cx1 for Q) along
-    if(dragNode.cx2!=null){ toks[dragNode.cx2]=String(+toks[dragNode.cx2]+dx); toks[dragNode.cx2+1]=String(+toks[dragNode.cx2+1]+dy); }
-    if(dragNode.cx1!=null){ toks[dragNode.cx1]=String(+toks[dragNode.cx1]+dx); toks[dragNode.cx1+1]=String(+toks[dragNode.cx1+1]+dy); }
-    dragNode.x=nx; dragNode.y=ny;
-    editState.data = toks.join(" ");
-    drawCanvas();
+    const d=dragAnchor;
+    const dx=R(p.x)-d.base.x, dy=R(p.y)-d.base.y;
+    // The anchor's own handles ride along so the curve keeps its shape.
+    fePatchAnchor(d.si, d.ai, {
+      x: d.base.x+dx, y: d.base.y+dy,
+      inX:  d.base.inX  !=null ? d.base.inX +dx : null,
+      inY:  d.base.inY  !=null ? d.base.inY +dy : null,
+      outX: d.base.outX !=null ? d.base.outX+dx : null,
+      outY: d.base.outY !=null ? d.base.outY+dy : null,
+    }, false);
   });
-  cv.addEventListener("pointerup", e=>{
-    if(dragNode||dragCtrl){
-      const sel=dragNode;
-      dragNode=null; dragCtrl=null;
-      // committing node edits switches glyph to custom. commitGlyph
-      // triggers a re-render path that rebuilds nodes - restore the
-      // selection by matching token index so Delete still works.
-      const selTi=sel?sel.ti:null;
-      commitGlyph("custom");
-      if(selTi!=null) editState.selNode = (editState.nodes||[]).find(n=>n.ti===selTi) || null;
-      drawCanvas();
+  cv.addEventListener("pointerup", ()=>{
+    if(dragAnchor||dragHandle){
+      dragAnchor=null; dragHandle=null;
+      commitGlyph("custom");   // node edits make the glyph custom
+      drawCanvas(); renderAnchorPanel();
     }
   });
   cv.addEventListener("dblclick", e=>{
@@ -977,12 +1497,12 @@ function setupCanvasInteraction(){
     addNodeAt(e.clientX-r.left, e.clientY-r.top);
   });
   document.addEventListener("keydown", e=>{
-    if(!editState.nodeEdit || !editState.selNode) return;
+    if(!editState.nodeEdit || !editState.selAnchor) return;
     if(e.key!=="Backspace" && e.key!=="Delete") return;
     const t=e.target, tag=(t&&t.tagName||"").toLowerCase();
     if(tag==="input"||tag==="textarea"||tag==="select"||(t&&t.isContentEditable)) return;
     e.preventDefault();
-    deleteNode(editState.selNode);
+    deleteSelectedAnchor();
   });
   window.addEventListener("resize", ()=>{ drawCanvas(); });
 }
@@ -1083,8 +1603,8 @@ function wireToolbar(){
 
   document.getElementById("editNodesBtn").addEventListener("click", ()=>{
     editState.nodeEdit=!editState.nodeEdit;
-    if(editState.nodeEdit){ rebuildNodes(); }
-    syncEditHeader(); drawCanvas();
+    if(editState.nodeEdit) rebuildNodes(); else editState.selAnchor=null;
+    syncEditHeader(); drawCanvas(); renderAnchorPanel();
   });
 
   document.getElementById("downloadBtn").addEventListener("click", async ()=>{
@@ -1336,6 +1856,7 @@ function boot(){
     setStatus("opentype.js failed to load","err");
   }
   wireToolbar();
+  wireAnchorPanel();
   populateGoogleFontList();
   setupCanvasInteraction();
   if(EMBEDDED){
