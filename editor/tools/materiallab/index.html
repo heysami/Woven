@@ -1750,6 +1750,19 @@ async function captureDSRaster(dark){
     const cv=await html2canvas(page,{width:W,height:H,windowWidth:W,scale:1,
       backgroundColor:(dark?'#1E232C':'#ffffff'),useCORS:true,allowTaint:false,logging:false,
       onclone:(doc,el)=>{ try{
+        // The injected CSS had :root retargeted to :host so the DS token block
+        // cascades inside the shadow root. html2canvas clones the subtree into a
+        // PLAIN document where :host matches nothing, so every token evaporates
+        // and the raster renders at browser defaults - no type scale, no gaps,
+        // no button fills, body font inherited from the lab's own UI. Re-scope
+        // :host back onto the clone's root (attribute form first, then bare) and
+        // carry the theme attribute so :host([data-theme=dark]) keeps matching.
+        doc.querySelectorAll('style').forEach(st=>{
+          const t=st.textContent; if(t.indexOf(':host')<0) return;
+          st.textContent = t.replace(/:host\(\s*(\[[^\]]*\])\s*\)/g, ':root$1')
+                            .replace(/:host\b(?!\()/g, ':root');
+        });
+        doc.documentElement.setAttribute('data-theme', dark?'dark':'light');
         const root=el&&el.querySelectorAll?el:doc;
         root.querySelectorAll('*').forEach(e=>{ e.style.visibility='visible'; });
         root.querySelectorAll('.mat-surface').forEach(e=>{ e.style.visibility='hidden'; e.querySelectorAll('*').forEach(c=>{ c.style.visibility='hidden'; }); });
