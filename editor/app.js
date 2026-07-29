@@ -64275,11 +64275,26 @@ const PROTOTYPE_VIEW_NODE = {
   timeline: { view: "timeline", label: "Timeline",                glyph: Icon.Clock },
 };
 const PROTOTYPE_VIEW_KINDS = Object.keys(PROTOTYPE_VIEW_NODE);
-// Ceiling on the fit-to-flow auto-size (see measureFlowSize). A 40-frame flow
-// at the embed's fixed zoom lands around 5-6k px; the cap is a guard against a
-// garbage layout (a frame parked at col 900) turning the node into a canvas-
-// eating rectangle, not a size anyone should hit legitimately.
-const FRAMES_FIT_MAX = 12000;
+// Fit-to-content strategy per view (see measureFitSize). `wrap` is the element
+// whose viewport has to end up big enough to show everything; growing the node
+// by that box's DEFICIT (not by the raw content size) is what keeps each view's
+// own chrome - the flow's lane sidebar, the IA sitemap bar - accounted for.
+//   canvas - content lives on a transform-panned/zoomed layer, so the required
+//            size is the union of the content RECTS (rect math carries the
+//            transform; scrollWidth/Height does not).
+//   scroll - plain document flow in an overflow:auto box, so its own
+//            scrollWidth/Height already IS the required size.
+const PROTOTYPE_VIEW_FIT = {
+  frames:   { mode: "canvas", wrap: ".canvas-wrap",      content: ".frame[data-frame-id]" },
+  userflow: { mode: "canvas", wrap: ".flow-canvas-wrap", content: ".flow-svg" },
+  ia:       { mode: "canvas", wrap: ".ia-canvas-wrap",   content: ".ia-tree" },
+  timeline: { mode: "scroll", wrap: ".timeline-view" },
+};
+// Ceiling on the fit-to-content auto-size. A 40-frame flow at the canvas view's
+// fixed zoom lands around 5-6k px; the cap is a guard against a garbage layout
+// (a frame parked at col 900) turning the node into a canvas-eating rectangle,
+// not a size anyone should hit legitimately.
+const VIEW_FIT_MAX = 12000;
 
 function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onRegenerate, lodVisible }) {
   const [dragging, setDragging] = useState(false);
@@ -64384,65 +64399,82 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     }
   }, [protoSlug]);
 
-  // ── Fit to flow (frames kind) ────────────────────────────────────────
-  // The embed can't pan or zoom (interactive: false - the outer workflow
-  // canvas owns navigation), so whatever falls outside the node box is simply
-  // unreachable: at the old fixed 800x540 spawn size a canvas-frames node
-  // showed the top-left corner of the first frame and nothing else. So the
-  // node sizes itself to the WHOLE flow.
+  // ── Fit to content ───────────────────────────────────────────────────
+  // Every one of these embeds is locked: the canvas view runs with
+  // interactive: false, and all four have pointer-events: none on the iframe
+  // (the outer workflow canvas owns navigation). So whatever falls outside the
+  // node box is not merely off-screen, it's unreachable - at the old fixed
+  // 800x540 spawn size a canvas-frames node showed the corner of the first
+  // frame and nothing else, and the user-flow / IA / timeline nodes clipped
+  // their diagram the same way. So the node sizes itself to the whole view.
   //
-  // Measured, not computed: the embed's real geometry depends on the layout
-  // sidecar (<slug>.layout.js positions), per-frame w/h, the default-frame /
-  // gap meta AND the canvas view's own fixed pan+zoom - re-deriving all of
-  // that out here would drift. Instead read the union of the embed's own
-  // `.frame` rects (they're in the embed's viewport px, which IS the node box
-  // in world units - the iframe is 100%x100% of a body inset:0 over the node,
-  // and the outer workflow transform scales node + iframe together). Frames
-  // culled by the virtualizer still render a same-size dormant body, so the
-  // union covers every frame, not just the live ones.
-  const measureFlowSize = useCallback(() => {
+  // Measured, not computed: the real geometry depends on the layout sidecar
+  // (<slug>.layout.js positions), per-frame w/h, the default-frame / gap meta,
+  // each view's own fixed pan+zoom AND its internal chrome - re-deriving all of
+  // that out here would drift. Instead measure inside the embed (same-origin)
+  // and grow the node by the WRAP BOX'S DEFICIT: the embed's px are the node
+  // box's world units 1:1 (the iframe is 100%x100% of a body inset:0 over the
+  // node, and the outer workflow transform scales node + iframe together), so
+  // whatever the wrap is short by, the node is short by. Sizing off the raw
+  // content instead would swallow the flow view's 240px lane sidebar and the IA
+  // sitemap bar. Frames culled by the virtualizer still render a same-size
+  // dormant body, so the union covers every frame, not just the live ones.
+  const measureFitSize = useCallback(() => {
+    const spec = PROTOTYPE_VIEW_FIT[node.kind];
+    if (!spec) return null;
     try {
       const embed = iframeRef.current;
       const doc = embed && embed.contentDocument;
       if (!doc) return null;
-      const wrap = doc.querySelector(".canvas-wrap");
-      const els = doc.querySelectorAll(".frame[data-frame-id]");
-      if (!wrap || !els.length) return null;
+      const wrap = doc.querySelector(spec.wrap);
+      if (!wrap) return null;                 // empty state / view still booting
       const wr = wrap.getBoundingClientRect();
-      if (!wr.width || !wr.height) return null;
-      let left = Infinity, top = Infinity, right = 0, bottom = 0;
-      for (const el of els) {
-        const r = el.getBoundingClientRect();
-        if (!r.width || !r.height) continue;
-        left   = Math.min(left,   r.left   - wr.left);
-        top    = Math.min(top,    r.top    - wr.top);
-        right  = Math.max(right,  r.right  - wr.left);
-        bottom = Math.max(bottom, r.bottom - wr.top);
+      if (!(wr.width > 0 && wr.height > 0)) return null;   // hidden or mid-boot
+      let needW, needH, baseW, baseH;
+      if (spec.mode === "scroll") {
+        // Document flow in an overflow:auto box - it reports its own overflow.
+        // clientW/H (not the rect) is the right baseline: same box scrollW/H
+        // measures against, and it already excludes borders + scrollbars.
+        needW = wrap.scrollWidth; needH = wrap.scrollHeight;
+        baseW = wrap.clientWidth; baseH = wrap.clientHeight;
+        if (!(needW > 0 && needH > 0 && baseW > 0 && baseH > 0)) return null;
+      } else {
+        const els = doc.querySelectorAll(spec.content);
+        if (!els.length) return null;         // nothing generated for this view yet
+        let left = Infinity, top = Infinity, right = 0, bottom = 0;
+        for (const el of els) {
+          const r = el.getBoundingClientRect();
+          if (!r.width || !r.height) continue;
+          left   = Math.min(left,   r.left   - wr.left);
+          top    = Math.min(top,    r.top    - wr.top);
+          right  = Math.max(right,  r.right  - wr.left);
+          bottom = Math.max(bottom, r.bottom - wr.top);
+        }
+        if (!(right > 0 && bottom > 0) || !Number.isFinite(left) || !Number.isFinite(top)) return null;
+        // Mirror the view's own left/top inset (its fixed pan, scaled by its
+        // fixed zoom) on the right/bottom edge so the diagram sits in a
+        // balanced frame instead of ending flush against the border.
+        needW = right + Math.min(200, Math.max(24, left));
+        needH = bottom + Math.min(200, Math.max(24, top));
+        baseW = wr.width; baseH = wr.height;
       }
-      if (!(right > 0 && bottom > 0) || !Number.isFinite(left) || !Number.isFinite(top)) return null;
-      // Mirror the canvas's own left/top inset (its fixed pan + grid margin,
-      // scaled by the embed's fixed zoom) on the right/bottom edge so the flow
-      // sits in a balanced frame instead of ending flush against the border.
-      const padX = Math.min(200, Math.max(24, Math.round(left)));
-      const padY = Math.min(200, Math.max(24, Math.round(top)));
-      // `wr.left/top` is the wrap's own offset inside the embed viewport (0 in
-      // embed mode today - the toolbar/rails are stripped - but counted so any
-      // future embed chrome doesn't silently clip the last row/column).
-      const floor = WORKFLOW_NODE_FLOOR.frames;
+      const drawn = workflowNodeDrawnSize(node);
+      const floor = workflowNodeFloor(node) || { minW: 320, minH: 220 };
+      const clamp = (v, min) => Math.max(min, Math.min(VIEW_FIT_MAX, Math.round(v)));
       return {
-        w: Math.max(floor.minW, Math.min(FRAMES_FIT_MAX, Math.round(wr.left + right + padX))),
-        h: Math.max(floor.minH, Math.min(FRAMES_FIT_MAX, Math.round(wr.top + bottom + padY))),
+        w: clamp(drawn.w + (needW - baseW), floor.minW),
+        h: clamp(drawn.h + (needH - baseH), floor.minH),
       };
     } catch { /* embed mid-reload / not booted - caller retries */ }
     return null;
-  }, []);
+  }, [node.kind, node.w, node.h]);
 
   // Auto-fit, once per embed load. `node.fit === "manual"` (set the moment the
   // user grabs the resize corner) opts a node out for good - their geometry
   // wins over ours from then on. The Fit button below clears it.
   const fittedRef = useRef(null);
   const applyFit = useCallback((force) => {
-    const size = measureFlowSize();
+    const size = measureFitSize();
     if (!size) return false;
     fittedRef.current = nonce;
     if (!onChange) return true;
@@ -64450,15 +64482,16 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     if (!force && Math.abs(drawn.w - size.w) < 8 && Math.abs(drawn.h - size.h) < 8) return true;
     onChange({ w: size.w, h: size.h, ...(force ? { fit: "auto" } : {}) });
     return true;
-  }, [measureFlowSize, onChange, node.w, node.h, node.kind, nonce]);
+  }, [measureFitSize, onChange, node.w, node.h, node.kind, nonce]);
   useEffect(() => {
-    if (node.kind !== "frames") return;      // only the Canvas view is grid-laid-out
+    if (!PROTOTYPE_VIEW_FIT[node.kind]) return;
     if (node.fit === "manual") return;       // user sized it themselves
     if (!lodLive) return;                    // embed is a blank veil - nothing to measure
     if (fittedRef.current === nonce) return; // already fitted this load
-    // The embed boots + lays out asynchronously, so poll until the frames
-    // exist. Capped: a prototype with no frames yet never resolves (the
-    // awaitFrames poll bumps the nonce when data lands, restarting this).
+    // The embed boots + lays out asynchronously, so poll until the content
+    // exists. Capped: a prototype with nothing generated for this view never
+    // resolves (for frames, the awaitFrames poll bumps the nonce when data
+    // lands, restarting this).
     let tries = 0, timer = 0, stop = false;
     const tick = () => {
       if (stop) return;
@@ -64787,17 +64820,19 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
           }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.OpenExt}/><//>
-        ${node.kind === "frames" && html`
+        ${PROTOTYPE_VIEW_FIT[node.kind] && html`
           <${HoverTip}
             className="workflow-node-action"
-            tip="Fit to flow - resize this node so every frame + arrow of the flow is inside it (the embed can't pan, so anything outside the box is unreachable). Re-arms auto-fit if you'd hand-sized it."
-            ariaLabel="Fit node to the whole flow"
+            tip=${"Fit to content - resize this node so the whole " + cfg.label.toLowerCase() + " is inside it (the embed can't pan, so anything outside the box is unreachable). Re-arms auto-fit if you'd hand-sized it."}
+            ariaLabel="Fit node to the whole view"
             onClick=${(e) => {
               e.stopPropagation();
-              if (!applyFit(true)) uiAlert("The canvas is still loading - try again in a moment.");
+              if (!applyFit(true)) uiAlert("The view is still loading - try again in a moment.");
             }}
             onMouseDown=${(e) => e.stopPropagation()}
           ><${Icon.Expand}/><//>
+        `}
+        ${node.kind === "frames" && html`
           <${HoverTip}
             className="workflow-node-action workflow-node-frames-size"
             tip="Default frame size + grid gap"
@@ -64818,7 +64853,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
         <${HoverTip}
           className="workflow-node-action"
           tip="Reload data"
-          ariaLabel="Reload canvas frames from disk"
+          ariaLabel=${"Reload " + cfg.label.toLowerCase() + " from disk"}
           onClick=${(e) => { e.stopPropagation(); setNonce(n => n + 1); }}
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.Refresh}/><//>
