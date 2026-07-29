@@ -1869,7 +1869,7 @@ function ArrowLayer({ frames, arrows, dimNonSelected, gridMeta, selectedFrameId,
     <svg className="arrow-layer" width="20000" height="20000">
       <defs>
         <marker id="arr" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto">
-          <path d="M0 0 L10 6 L0 12 L3 6 z" fill="oklch(54% 0.16 252)"/>
+          <path d="M0 0 L10 6 L0 12 L3 6 z" fill="var(--accent)"/>
         </marker>
         <marker id="arr-sel" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto">
           <path d="M0 0 L10 6 L0 12 L3 6 z" fill="var(--accent-text)"/>
@@ -1897,8 +1897,8 @@ function ArrowLayer({ frames, arrows, dimNonSelected, gridMeta, selectedFrameId,
                   onClick=${onSelect}/>
             <linearGradient id=${gid} gradientUnits="userSpaceOnUse"
                             x1=${s.fx} y1=${s.fy} x2=${s.tx} y2=${s.ty}>
-              <stop offset="0%"   stopColor=${isSel ? "var(--accent-text)" : "oklch(54% 0.16 252)"} stopOpacity="0.1"/>
-              <stop offset="100%" stopColor=${isSel ? "var(--accent-text)" : "oklch(54% 0.16 252)"} stopOpacity="1"/>
+              <stop offset="0%"   stopColor=${isSel ? "var(--accent-text)" : "var(--accent)"} stopOpacity="0.1"/>
+              <stop offset="100%" stopColor=${isSel ? "var(--accent-text)" : "var(--accent)"} stopOpacity="1"/>
             </linearGradient>
             <path className=${"edge-flow" + (marching ? " is-marching" : "")} d=${`M ${s.fx} ${s.fy} C ${s.c1x} ${s.c1y}, ${s.c2x} ${s.c2y}, ${s.tx} ${s.ty}`}
                   fill="none" stroke=${`url(#${gid})`}
@@ -4696,12 +4696,14 @@ function EntitiesView({ model, setEdits }) {
       <div className="canvas" style=${{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
         <svg className="arrow-layer" width="10000" height="10000">
           <defs>
-            <marker id="ent-arr"      viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 6 L0 12 L3 6 z" fill="oklch(54% 0.16 252)"/></marker>
+            <marker id="ent-arr"      viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 6 L0 12 L3 6 z" fill="var(--accent)"/></marker>
             <marker id="ent-arr-soft" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 6 L0 12 L3 6 z" fill="oklch(58% 0.15 174)"/></marker>
             <marker id="ent-arr-warn" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 6 L0 12 L3 6 z" fill="oklch(60% 0.16 30)"/></marker>
           </defs>
           ${lines.map((l, idx) => {
-            const color = l.kind === "inherit" ? "oklch(58% 0.15 174)" : l.kind === "weak-link" ? "oklch(60% 0.16 30)" : "oklch(54% 0.16 252)";
+            // Plain links ride the project teal; inherit / weak-link keep their
+            // own semantic tints.
+            const color = l.kind === "inherit" ? "oklch(58% 0.15 174)" : l.kind === "weak-link" ? "oklch(60% 0.16 30)" : "var(--accent)";
             const marker = l.kind === "inherit" ? "url(#ent-arr-soft)" : l.kind === "weak-link" ? "url(#ent-arr-warn)" : "url(#ent-arr)";
             const dim = connectedEntities && !(connectedEntities.has(l.from) && connectedEntities.has(l.to));
             const gid = `ent-grad-${idx}`;
@@ -4790,9 +4792,9 @@ function EntitiesView({ model, setEdits }) {
             const sy = cyC;
             return html`
               <g key="link-rubber" style=${{ pointerEvents: "none" }}>
-                <circle cx=${sx} cy=${sy} r="4" fill="oklch(54% 0.16 252)"/>
+                <circle cx=${sx} cy=${sy} r="4" fill="var(--accent)"/>
                 <path d=${`M ${sx} ${sy} L ${linkPt.x} ${linkPt.y}`} fill="none"
-                      stroke="oklch(54% 0.16 252)" strokeWidth="2" strokeDasharray="6 4" markerEnd="url(#ent-arr)"/>
+                      stroke="var(--accent)" strokeWidth="2" strokeDasharray="6 4" markerEnd="url(#ent-arr)"/>
               </g>`;
           })()}
         </svg>
@@ -6522,8 +6524,8 @@ function IAView({ model, setEdits }) {
                 <g key=${e.fromId + "→" + e.toId} opacity=${dim ? 0.1 : 1}>
                   <linearGradient id=${gid} gradientUnits="userSpaceOnUse"
                                   x1=${fx} y1=${fy} x2=${tx} y2=${ty}>
-                    <stop offset="0%"   stopColor="var(--border-strong)" stopOpacity="0.1"/>
-                    <stop offset="100%" stopColor="var(--border-strong)" stopOpacity="1"/>
+                    <stop offset="0%"   stopColor="var(--accent)" stopOpacity="0.1"/>
+                    <stop offset="100%" stopColor="var(--accent)" stopOpacity="1"/>
                   </linearGradient>
                   <path className=${"edge-flow" + (marching ? " is-marching" : "")} d=${`M ${fx} ${fy} C ${fx} ${midY}, ${tx} ${midY}, ${tx} ${ty}`}
                         fill="none" stroke=${`url(#${gid})`} strokeWidth="1.2"/>
@@ -52941,6 +52943,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
                 onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
                 onDragStart=${() => startNodeDrag(n.id)}
                 onDragEnd=${() => setNodeDragging(false)}
                 onRegenerate=${n.kind === "frames" ? (() => regenerateCanvasFrames(nodePrototype(n))) : null}
@@ -64272,8 +64275,13 @@ const PROTOTYPE_VIEW_NODE = {
   timeline: { view: "timeline", label: "Timeline",                glyph: Icon.Clock },
 };
 const PROTOTYPE_VIEW_KINDS = Object.keys(PROTOTYPE_VIEW_NODE);
+// Ceiling on the fit-to-flow auto-size (see measureFlowSize). A 40-frame flow
+// at the embed's fixed zoom lands around 5-6k px; the cap is a guard against a
+// garbage layout (a frame parked at col 900) turning the node into a canvas-
+// eating rectangle, not a size anyone should hit legitimately.
+const FRAMES_FIT_MAX = 12000;
 
-function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onDragStart, onDragEnd, onRegenerate, lodVisible }) {
+function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onRegenerate, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   const [nonce, setNonce] = useState(0);
   const iframeRef = useRef(null);
@@ -64375,6 +64383,91 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
       uiAlert("Could not save the frame size: " + String((err && err.message) || err));
     }
   }, [protoSlug]);
+
+  // ── Fit to flow (frames kind) ────────────────────────────────────────
+  // The embed can't pan or zoom (interactive: false - the outer workflow
+  // canvas owns navigation), so whatever falls outside the node box is simply
+  // unreachable: at the old fixed 800x540 spawn size a canvas-frames node
+  // showed the top-left corner of the first frame and nothing else. So the
+  // node sizes itself to the WHOLE flow.
+  //
+  // Measured, not computed: the embed's real geometry depends on the layout
+  // sidecar (<slug>.layout.js positions), per-frame w/h, the default-frame /
+  // gap meta AND the canvas view's own fixed pan+zoom - re-deriving all of
+  // that out here would drift. Instead read the union of the embed's own
+  // `.frame` rects (they're in the embed's viewport px, which IS the node box
+  // in world units - the iframe is 100%x100% of a body inset:0 over the node,
+  // and the outer workflow transform scales node + iframe together). Frames
+  // culled by the virtualizer still render a same-size dormant body, so the
+  // union covers every frame, not just the live ones.
+  const measureFlowSize = useCallback(() => {
+    try {
+      const embed = iframeRef.current;
+      const doc = embed && embed.contentDocument;
+      if (!doc) return null;
+      const wrap = doc.querySelector(".canvas-wrap");
+      const els = doc.querySelectorAll(".frame[data-frame-id]");
+      if (!wrap || !els.length) return null;
+      const wr = wrap.getBoundingClientRect();
+      if (!wr.width || !wr.height) return null;
+      let left = Infinity, top = Infinity, right = 0, bottom = 0;
+      for (const el of els) {
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        left   = Math.min(left,   r.left   - wr.left);
+        top    = Math.min(top,    r.top    - wr.top);
+        right  = Math.max(right,  r.right  - wr.left);
+        bottom = Math.max(bottom, r.bottom - wr.top);
+      }
+      if (!(right > 0 && bottom > 0) || !Number.isFinite(left) || !Number.isFinite(top)) return null;
+      // Mirror the canvas's own left/top inset (its fixed pan + grid margin,
+      // scaled by the embed's fixed zoom) on the right/bottom edge so the flow
+      // sits in a balanced frame instead of ending flush against the border.
+      const padX = Math.min(200, Math.max(24, Math.round(left)));
+      const padY = Math.min(200, Math.max(24, Math.round(top)));
+      // `wr.left/top` is the wrap's own offset inside the embed viewport (0 in
+      // embed mode today - the toolbar/rails are stripped - but counted so any
+      // future embed chrome doesn't silently clip the last row/column).
+      const floor = WORKFLOW_NODE_FLOOR.frames;
+      return {
+        w: Math.max(floor.minW, Math.min(FRAMES_FIT_MAX, Math.round(wr.left + right + padX))),
+        h: Math.max(floor.minH, Math.min(FRAMES_FIT_MAX, Math.round(wr.top + bottom + padY))),
+      };
+    } catch { /* embed mid-reload / not booted - caller retries */ }
+    return null;
+  }, []);
+
+  // Auto-fit, once per embed load. `node.fit === "manual"` (set the moment the
+  // user grabs the resize corner) opts a node out for good - their geometry
+  // wins over ours from then on. The Fit button below clears it.
+  const fittedRef = useRef(null);
+  const applyFit = useCallback((force) => {
+    const size = measureFlowSize();
+    if (!size) return false;
+    fittedRef.current = nonce;
+    if (!onChange) return true;
+    const drawn = workflowNodeDrawnSize(node);
+    if (!force && Math.abs(drawn.w - size.w) < 8 && Math.abs(drawn.h - size.h) < 8) return true;
+    onChange({ w: size.w, h: size.h, ...(force ? { fit: "auto" } : {}) });
+    return true;
+  }, [measureFlowSize, onChange, node.w, node.h, node.kind, nonce]);
+  useEffect(() => {
+    if (node.kind !== "frames") return;      // only the Canvas view is grid-laid-out
+    if (node.fit === "manual") return;       // user sized it themselves
+    if (!lodLive) return;                    // embed is a blank veil - nothing to measure
+    if (fittedRef.current === nonce) return; // already fitted this load
+    // The embed boots + lays out asynchronously, so poll until the frames
+    // exist. Capped: a prototype with no frames yet never resolves (the
+    // awaitFrames poll bumps the nonce when data lands, restarting this).
+    let tries = 0, timer = 0, stop = false;
+    const tick = () => {
+      if (stop) return;
+      if (applyFit(false) || ++tries >= 20) return;
+      timer = setTimeout(tick, 400);
+    };
+    timer = setTimeout(tick, 300);
+    return () => { stop = true; clearTimeout(timer); };
+  }, [node.kind, node.fit, lodLive, nonce, applyFit]);
 
   // Iframe URL: hits editor/index.html with embed=1 (skip toolbar/chat/
   // edits panel) + view=<cfg.view> (lock the right tab) + prototype=<slug>
@@ -64638,6 +64731,10 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     let lastX = e.clientX, lastY = e.clientY;
     setCanvasDraggingSync(true);
     onDragStart && onDragStart();
+    // Hand-sizing opts this node out of fit-to-flow for good, so a later embed
+    // reload (regen, frame-size change, asset refresh) can't stomp the size the
+    // user chose. The Fit button opts back in.
+    if (node.fit !== "manual" && onChange) onChange({ fit: "manual" });
     const onMv = (ev) => {
       if (isReleasedDuringMove(ev)) { onUp(); return; }
       const dw = (ev.clientX - lastX) / zoom;
@@ -64655,7 +64752,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
     window.addEventListener("blur", onUp);
-  }, [zoom, onResize, onDragStart, onDragEnd]);
+  }, [zoom, onResize, onDragStart, onDragEnd, onChange, node.fit]);
 
   const { w, h } = workflowNodeDrawnSize(node);
 
@@ -64691,6 +64788,16 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
           onMouseDown=${(e) => e.stopPropagation()}
         ><${Icon.OpenExt}/><//>
         ${node.kind === "frames" && html`
+          <${HoverTip}
+            className="workflow-node-action"
+            tip="Fit to flow - resize this node so every frame + arrow of the flow is inside it (the embed can't pan, so anything outside the box is unreachable). Re-arms auto-fit if you'd hand-sized it."
+            ariaLabel="Fit node to the whole flow"
+            onClick=${(e) => {
+              e.stopPropagation();
+              if (!applyFit(true)) uiAlert("The canvas is still loading - try again in a moment.");
+            }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          ><${Icon.Expand}/><//>
           <${HoverTip}
             className="workflow-node-action workflow-node-frames-size"
             tip="Default frame size + grid gap"

@@ -633,15 +633,15 @@
               <defs>
                 <marker id="sv-arrowhead" viewBox="0 0 12 12" refX="10" refY="6"
                   markerWidth="8" markerHeight="8" orient="auto">
-                  <path d="M0 0 L10 6 L0 12 L3 6 z" fill="oklch(54% 0.16 252)"/>
+                  <path d="M0 0 L10 6 L0 12 L3 6 z" fill="oklch(70% 0.11 174)"/>
                 </marker>
               </defs>
               ${world.arrows.map((a, i) => html`
                 <g key=${a.key}>
                   <linearGradient id=${"sv-grad-" + i} gradientUnits="userSpaceOnUse"
                     x1=${a.ends.fx} y1=${a.ends.fy} x2=${a.ends.tx} y2=${a.ends.ty}>
-                    <stop offset="0%"   stopColor="oklch(54% 0.16 252)" stopOpacity="0.1"/>
-                    <stop offset="100%" stopColor="oklch(54% 0.16 252)" stopOpacity="1"/>
+                    <stop offset="0%"   stopColor="oklch(70% 0.11 174)" stopOpacity="0.1"/>
+                    <stop offset="100%" stopColor="oklch(70% 0.11 174)" stopOpacity="1"/>
                   </linearGradient>
                   <path className="sv-edge-flow" d=${a.d} fill="none"
                     stroke=${`url(#sv-grad-${i})`} stroke-width="2"
