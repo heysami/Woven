@@ -96357,7 +96357,12 @@ function App() {
     const sections = live.concat(
       (D.sections || []).filter(s => !liveIds.has(s.id)).map(s => ({ id: s.id, deleted: true }))
     );
-    fetch(apiUrl("/__layout"), {
+    // Scope the write to THIS prototype's sidecar. Without the slug the daemon
+    // falls back to "main", so a project whose prototype is called anything
+    // else read <slug>.layout.js and wrote main.layout.js - two files, one of
+    // them never loaded again.
+    const slug = (typeof window !== "undefined" && window.EDITOR_LAYOUT_SLUG) || activePrototypeSlug();
+    fetch(apiUrl(`/__layout?prototype=${encodeURIComponent(slug)}`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ positions, meta, sections }),

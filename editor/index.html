@@ -103,22 +103,44 @@
     (function () {
       var qs = location.search || "";
       document.write('<script src="data.js' + qs + '"><\/script>');
-      // v3.2 / v3.7 - Layout sidecar (frame positions + grid meta).
-      // Written by /__layout on every layout edit, lives at
-      // <project>/editor/<prototype>.layout.js. Loaded after data.js (so
-      // EDITOR_DATA exists) and before app.js (so the bootstrap merger
-      // can apply positions + defaultFrame/canvasGap onto D.frames and
-      // D.meta before the React tree mounts). 404 is non-fatal (fresh
-      // project - no layout has been saved yet). The slug comes from
-      // ?prototype= (legacy: ?branch=), defaulting to "main".
+    })();
+  </script>
+  <script>
+    // v3.2 / v3.7 - Layout sidecar (frame positions + grid meta + the screen-
+    // flow sections). Written by /__layout, lives at
+    // <project>/editor/<prototype>.layout.js. Loaded after data.js (so
+    // EDITOR_DATA exists) and before app.js (so the bootstrap merger can apply
+    // positions + defaultFrame/canvasGap + sections onto D before the React
+    // tree mounts). 404 is non-fatal (fresh project - nothing saved yet).
+    //
+    // SEPARATE script block on purpose: the data.js tag above is document.
+    // written by the previous block, so it only EXECUTES once that block ends.
+    // Reading window.EDITOR_DATA there would always see undefined - which is
+    // how the slug used to fall back to the hardcoded "main" and silently load
+    // nothing on every project whose prototype isn't called "main". The result
+    // was two surfaces disagreeing about frame positions: the workflow embed
+    // (URL always carries ?prototype=) applied the sidecar, the standalone
+    // editor (opened from the top nav with no param) did not.
+    (function () {
+      var qs = location.search || "";
+      var slug = "main";
       try {
-        var _qp = new URLSearchParams(location.search);
-        var _slug = (_qp.get("prototype") || _qp.get("branch") || "main").trim();
-        if (!/^[A-Za-z0-9_.-]{1,80}$/.test(_slug)) _slug = "main";
-        document.write('<script src="' + _slug + '.layout.js' + qs + '" onerror="void 0"><\/script>');
-      } catch (e) {
-        document.write('<script src="main.layout.js' + qs + '" onerror="void 0"><\/script>');
-      }
+        var qp = new URLSearchParams(location.search);
+        slug = (qp.get("prototype") || qp.get("branch") || "").trim();
+        if (!slug) {
+          // Same resolution order as app.js's activePrototypeSlug(): explicit
+          // boot stamp, then the slug baked into the served data file's
+          // sourceRoot ("../source/<slug>/"), then the legacy default.
+          var meta = (window.EDITOR_DATA && window.EDITOR_DATA.meta) || {};
+          var m = /(?:^|\/)source\/([A-Za-z0-9_.-]+)\//.exec(meta.sourceRoot || "");
+          slug = (meta.activePrototype || meta.activeBranch || (m && m[1]) || "main").trim();
+        }
+        if (!/^[A-Za-z0-9_.-]{1,80}$/.test(slug)) slug = "main";
+      } catch (e) { slug = "main"; }
+      // Stamp it so app.js posts layout writes back to the SAME file it read
+      // (the daemon also defaults to "main" when the query omits the slug).
+      window.EDITOR_LAYOUT_SLUG = slug;
+      document.write('<script src="' + slug + '.layout.js' + qs + '" onerror="void 0"><\/script>');
       // Phase 7 - Design system runtime mirrors. The daemon concatenates
       // every editor/design-systems/*.js for the active project and emits
       // a window.EDITOR_DS_REGISTRY of available ids. Loaded after data.js
