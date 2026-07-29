@@ -19346,6 +19346,17 @@ a.ds-badge:hover, button.ds-badge:hover {
 .workflow-sections-item-swatch[data-tone="rose"]   { border-color: oklch(62% 0.16 15);  border-style: solid; }
 .workflow-sections-item-swatch[data-tone="lime"]   { border-color: oklch(70% 0.15 130); border-style: solid; }
 
+/* Section-scope picker in the canvas-frames node title bar. Same control as
+   the editor's prototype switcher, sized down for the node bar. */
+.workflow-node-section-pick {
+  height: 20px;
+  max-width: 150px;
+  margin-right: 4px;
+  padding: 0 22px 0 8px;
+  font-size: 11px;
+  background-color: var(--surface);
+}
+
 /* Clone-mode visuals - the canvas dims slightly and the cursor changes so
    the user knows they're in placement mode. The ghost outline sits at the
    hovered cell with a dashed accent border + a label showing the target cell. */

@@ -398,6 +398,25 @@ function sectionRect(sec, meta, frames) {
   };
 }
 
+// Initial camera for a section-scoped embed (`?section=<id>`): park the
+// section's top-left at the same inset the unscoped view uses, at the same
+// fixed zoom, so the node's fit-to-content measures that band and nothing
+// else. Returns undefined for "no scope" so useEndlessCanvas keeps its own
+// default. Reads boot data (D) - it runs before the model exists.
+const CANVAS_EMBED_ZOOM = 0.45;
+const CANVAS_EMBED_INSET = 80;
+function sectionViewInitial(sectionId) {
+  if (!sectionId) return undefined;
+  const sec = (D.sections || []).find(s => s.id === sectionId);
+  if (!sec) return undefined;
+  const r = sectionRect(sec, D.meta, D.frames || []);
+  return {
+    x: CANVAS_EMBED_INSET - r.x * CANVAS_EMBED_ZOOM,
+    y: CANVAS_EMBED_INSET - r.y * CANVAS_EMBED_ZOOM,
+    z: CANVAS_EMBED_ZOOM,
+  };
+}
+
 // Apply the sections carried by the layout sidecar over whatever the data file
 // declared. Runs at boot, next to the frame-position shim above, so every
 // reader (CanvasView, the sections bar, the minimap) sees one merged list.
@@ -7230,7 +7249,7 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
   // edit-time moves both flow through. D.frames (raw data) only carries x/y
   // until the migration shim inside applyModelEdits attaches col/row to the
   // cloned model frames - Canvas needs the post-migration shape to render.
-  const frames = model?.frames || D.frames;
+  const allFrames = model?.frames || D.frames;
   const arrows = model?.arrows || D.arrows;
   // Canvas-frames workflow node embeds this view with ?embed=1.
   // The workflow canvas owns pan/zoom for the whole composition; the embed
@@ -7241,7 +7260,29 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
     const q = _qsFromLocation();
     return q && q.get("embed") === "1";
   })();
-  const { wrapRef, pan, zoom, setPan, setZoom, panning, spaceHeld } = useEndlessCanvas(undefined, { interactive: !_embedNoInteract });
+  // ── Section scoping (`?section=<id>`, embed only) ─────────────────────
+  // A big flow can't fit one canvas-frames node: the embed can't pan and the
+  // node's fit-to-content is capped, so a 45-column flow is unreachable past
+  // the cap however you size it. Scoping the embed to ONE section makes each
+  // node a readable slice - the node fits that band, and the node's picker
+  // switches which one it shows. Standalone (non-embed) always shows the whole
+  // flow; there the sections bar is how you move around.
+  const _sectionScopeId = (() => {
+    if (!_embedNoInteract) return "";
+    const q = _qsFromLocation();
+    return (q && q.get("section")) || "";
+  })();
+  // Scope applied ONCE, here: every downstream consumer (frame render, arrows,
+  // the node's fit measurement, the virtualizer) reads `frames` / `sections`.
+  const allSections = model?.sections || D.sections || [];
+  const scopedSection = _sectionScopeId ? allSections.find(s => s.id === _sectionScopeId) : null;
+  const sections = scopedSection ? [scopedSection] : allSections;
+  const frames = scopedSection ? allFrames.filter(f => frameInSection(f, scopedSection)) : allFrames;
+  // Initial camera has to be known BEFORE the canvas hook runs, so it reads
+  // the boot data (D) rather than the materialised model - identical for the
+  // read-only embed, which applies no edits.
+  const { wrapRef, pan, zoom, setPan, setZoom, panning, spaceHeld } =
+    useEndlessCanvas(sectionViewInitial(_sectionScopeId), { interactive: !_embedNoInteract });
   // On-screen rect (world coords) - gates which connectors march. See useWorldViewport.
   const canvasViewport = useWorldViewport(wrapRef, pan, zoom);
   const { byFrame: auditByFrame } = useDsProposalIndex();
@@ -7404,7 +7445,6 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
   // ── Sections (screen-flow grouping over the cell grid) ────────────────
   // The list is materialised by applyModelEdits, so agent-authored sections
   // (data file) and hand-drawn ones (layout sidecar) arrive as one array.
-  const sections = model?.sections || D.sections || [];
   const [selectedSection, setSelectedSection] = useState(null);
   // Live drag state for the Section tool's create-marquee, and for the
   // move / resize drags on an existing section.
@@ -64870,7 +64910,10 @@ const PROTOTYPE_VIEW_KINDS = Object.keys(PROTOTYPE_VIEW_NODE);
 //   scroll - plain document flow in an overflow:auto box, so its own
 //            scrollWidth/Height already IS the required size.
 const PROTOTYPE_VIEW_FIT = {
-  frames:   { mode: "canvas", wrap: ".canvas-wrap",      content: ".frame[data-frame-id]" },
+  // Section bands count as content: a band can extend past the last frame in
+  // it (empty cells inside the declared rect), and a node scoped to one
+  // section should frame the whole band, not just the screens in it.
+  frames:   { mode: "canvas", wrap: ".canvas-wrap",      content: ".frame[data-frame-id], .canvas-section" },
   userflow: { mode: "canvas", wrap: ".flow-canvas-wrap", content: ".flow-svg" },
   ia:       { mode: "canvas", wrap: ".ia-canvas-wrap",   content: ".ia-tree" },
   timeline: { mode: "scroll", wrap: ".timeline-view" },
@@ -64878,14 +64921,20 @@ const PROTOTYPE_VIEW_FIT = {
 // Ceiling on the fit-to-content auto-size. A 40-frame flow at the canvas view's
 // fixed zoom lands around 5-6k px; the cap is a guard against a garbage layout
 // (a frame parked at col 900) turning the node into a canvas-eating rectangle,
-// not a size anyone should hit legitimately.
-const VIEW_FIT_MAX = 12000;
+// not a size anyone should hit legitimately. Raised from 12k after a real
+// 100-frame flow whose LARGEST SINGLE SECTION measured 12,080 - a legitimate
+// band shouldn't clip. A whole flow that outgrows even this is what the node's
+// section scope is for (`node.section`), not a bigger rectangle.
+const VIEW_FIT_MAX = 20000;
 
 function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onRegenerate, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   const [nonce, setNonce] = useState(0);
   const iframeRef = useRef(null);
   const loadRetryRef = useRef(0);
+  // Latest-callback ref: the embed's load handler is defined above the section
+  // reader it wants to call.
+  const readEmbedSectionsRef = useRef(null);
   const protoSlug = nodePrototype(node);
 
   // Self-heal a white embed. The frames node loads the full editor in an
@@ -64912,7 +64961,13 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
       // Cross-origin or not-yet-evaluated - let the retry budget decide.
       loaded = false;
     }
-    if (loaded) { loadRetryRef.current = 0; return; }
+    if (loaded) {
+      loadRetryRef.current = 0;
+      // Refresh the section list the title-bar picker offers - the embed is
+      // the only place the merged (data file + layout sidecar) list exists.
+      readEmbedSectionsRef.current && readEmbedSectionsRef.current();
+      return;
+    }
     if (loadRetryRef.current >= MAX_FRAMES_LOAD_RETRIES) return;
     loadRetryRef.current += 1;
     const delay = 400 * loadRetryRef.current; // 400ms, 800ms, 1.2s, 1.6s
@@ -64952,6 +65007,41 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     });
     setSizeDialogOpen(true);
   }, []);
+  // ── Section scope ────────────────────────────────────────────────────
+  // A whole flow rarely fits one node (the embed can't pan and fit-to-content
+  // is capped), so a node can be scoped to ONE section: the embed then renders
+  // just that band and fits it exactly. `node.section` persists the choice;
+  // empty = the whole flow, which stays the default.
+  const [embedSections, setEmbedSections] = useState([]);
+  const readEmbedSections = useCallback(() => {
+    const ed = readEmbedData();
+    const list = (ed && Array.isArray(ed.sections)) ? ed.sections : [];
+    setEmbedSections(list.slice().sort((a, b) => ((a.row || 0) - (b.row || 0)) || ((a.col || 0) - (b.col || 0))));
+  }, []);
+  readEmbedSectionsRef.current = readEmbedSections;
+  // The embed's load event is the main trigger, but it can fire before this
+  // handler is attached (cached boot) - poll briefly so the picker still
+  // appears. Bounded: a prototype with no sections never resolves.
+  useEffect(() => {
+    if (node.kind !== "frames" || !lodLive) return;
+    let tries = 0, timer = 0, stop = false;
+    const tick = () => {
+      if (stop) return;
+      const ed = readEmbedData();
+      if (ed && Array.isArray(ed.sections) && ed.sections.length) { readEmbedSections(); return; }
+      if (++tries >= 8) return;
+      timer = setTimeout(tick, 700);
+    };
+    timer = setTimeout(tick, 500);
+    return () => { stop = true; clearTimeout(timer); };
+  }, [node.kind, lodLive, nonce, readEmbedSections]);
+  // Switching scope reloads the embed at the new URL and re-arms auto-fit, so
+  // the node resizes to the band you just picked.
+  const pickSection = useCallback((id) => {
+    if (!onChange) return;
+    onChange({ section: id || "", fit: "auto" });
+    setNonce(n => n + 1);
+  }, [onChange]);
   const saveFrameSize = useCallback(async (w, h, gap) => {
     setSizeDialogOpen(false);
     const ed = readEmbedData();
@@ -65046,9 +65136,15 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
       const drawn = workflowNodeDrawnSize(node);
       const floor = workflowNodeFloor(node) || { minW: 320, minH: 220 };
       const clamp = (v, min) => Math.max(min, Math.min(VIEW_FIT_MAX, Math.round(v)));
+      const wantW = drawn.w + (needW - baseW);
+      const wantH = drawn.h + (needH - baseH);
       return {
-        w: clamp(drawn.w + (needW - baseW), floor.minW),
-        h: clamp(drawn.h + (needH - baseH), floor.minH),
+        w: clamp(wantW, floor.minW),
+        h: clamp(wantH, floor.minH),
+        // The cap is a real truncation - the embed can't pan, so whatever the
+        // clamp cut off is unreachable. Report it so the caller can say so
+        // instead of silently showing a partial flow.
+        clamped: wantW > VIEW_FIT_MAX || wantH > VIEW_FIT_MAX,
       };
     } catch { /* embed mid-reload / not booted - caller retries */ }
     return null;
@@ -65066,8 +65162,20 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     const drawn = workflowNodeDrawnSize(node);
     if (!force && Math.abs(drawn.w - size.w) < 8 && Math.abs(drawn.h - size.h) < 8) return true;
     onChange({ w: size.w, h: size.h, ...(force ? { fit: "auto" } : {}) });
+    // Hit the ceiling on an explicit Fit press: say so, and point at the way
+    // out (scope the node to one section) rather than leave the user pressing
+    // a button that visibly does nothing.
+    if (force && size.clamped) {
+      uiAlert(
+        "This flow is wider than a single node can show (the view is capped at " +
+        VIEW_FIT_MAX.toLocaleString() + "px, and the embed can't pan, so the rest would be unreachable).\n\n" +
+        (embedSections.length
+          ? "Use the section picker in this node's title bar to show one section at a time - each one fits, and you can add a second node for the next section."
+          : "Regenerate the frames so the agent groups the screens into sections, then scope this node to one of them from the title bar.")
+      );
+    }
     return true;
-  }, [measureFitSize, onChange, node.w, node.h, node.kind, nonce]);
+  }, [measureFitSize, onChange, node.w, node.h, node.kind, nonce, embedSections.length]);
   useEffect(() => {
     if (!PROTOTYPE_VIEW_FIT[node.kind]) return;
     if (node.fit === "manual") return;       // user sized it themselves
@@ -65091,7 +65199,12 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
   // edits panel) + view=<cfg.view> (lock the right tab) + prototype=<slug>
   // (point editor/data.js scope at the right prototype). apiUrl appends
   // ?project=... when in workspace mode.
-  const baseUrl = apiUrl(`/editor/index.html?embed=1&view=${cfg.view}&prototype=${encodeURIComponent(protoSlug)}`);
+  // `section=<id>` scopes a canvas-frames embed to one band (see CanvasView's
+  // section-scope block) - the whole flow otherwise outgrows any node it can
+  // be given.
+  const sectionScope = (node.kind === "frames" && typeof node.section === "string") ? node.section : "";
+  const baseUrl = apiUrl(`/editor/index.html?embed=1&view=${cfg.view}&prototype=${encodeURIComponent(protoSlug)}`)
+    + (sectionScope ? "&section=" + encodeURIComponent(sectionScope) : "");
   const iframeSrc = nonce === 0
     ? baseUrl
     : baseUrl + "&_n=" + nonce;
@@ -65416,6 +65529,25 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
             }}
             onMouseDown=${(e) => e.stopPropagation()}
           ><${Icon.Expand}/><//>
+        `}
+        ${node.kind === "frames" && embedSections.length > 0 && html`
+          ${/* Section scope. A flow wider than the fit cap can't be shown
+              whole in one node, so pick the band this node stands for. Same
+              native-select pattern as the editor's prototype switcher. */ ""}
+          <select
+            className="editor-proto-switch workflow-node-section-pick"
+            value=${sectionScope}
+            title=${sectionScope
+              ? "This node shows one section of the flow - switch which one, or go back to the whole flow"
+              : "Showing the whole flow. Scope this node to one section when the flow is too wide to fit"}
+            aria-label="Section shown in this node"
+            onMouseDown=${(e) => e.stopPropagation()}
+            onClick=${(e) => e.stopPropagation()}
+            onChange=${(e) => { e.stopPropagation(); pickSection(e.target.value); }}
+          >
+            <option value="">Whole flow</option>
+            ${embedSections.map(s => html`<option key=${s.id} value=${s.id}>${s.label || "Section"}</option>`)}
+          </select>
         `}
         ${node.kind === "frames" && html`
           <${HoverTip}
