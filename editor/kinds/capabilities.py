@@ -957,6 +957,67 @@ def _local_tool_availability() -> dict:
     return out
 
 
+def _orchestrator_roster_block(project_root: Optional[str] = None) -> str:
+    """Render the installed orchestrator roster INTO the preamble.
+
+    Step 0 of the plan gate tells the agent to establish its candidate universe
+    by calling `GET /__orchestrators`. Measured behaviour: it often does not.
+    In project `indoproject` the call was made zero times, and the roster was
+    composed from recall inside a ~58k-token preamble - which dropped
+    `art-director-orchestrator` and `motion-studio-orchestrator` even though the
+    locked direction was `shell-scroll-journey-scene` +
+    `aesthetic-luxury-cinematic-dark`, the exact pair the step-0.5 bug history
+    names as pointing at motion-studio, with fal video and an OpenAI key live.
+
+    An instruction to go fetch a list is a step that can be skipped; a list
+    already in the context cannot be. This block is the same data the endpoint
+    returns, rendered inline, so composing the card requires no tool call and
+    "I forgot that family existed" stops being reachable.
+
+    Returns "" on any failure - the endpoint instruction remains the fallback.
+    """
+    try:
+        pl = _editor_import("orchestrators")
+        reg = pl.get_registry(project_root) if project_root else pl.get_registry()
+        items = reg.get("orchestrators") or []
+    except Exception:
+        return ""
+    if not items:
+        return ""
+    on, off = [], []
+    for o in items:
+        if not isinstance(o, dict):
+            continue
+        line = "    %-38s %-16s %s" % (
+            o.get("id") or "?",
+            o.get("directionImpact") or "-",
+            (o.get("tagline") or "")[:104],
+        )
+        (on if o.get("enabled", True) else off).append(line)
+    out = [
+        "",
+        "",
+        "**THE ORCHESTRATOR ROSTER THIS RUN - this IS your candidate universe, already fetched.**",
+        "This is the rendered `GET /__orchestrators` response for this project. You do NOT need to "
+        "call the endpoint to compose the plan card; call it only if you want to re-confirm state "
+        "at dispatch time. Every enabled entry below MUST land in exactly one bucket in your turn: "
+        "recommended (ticked on the card), offered (unticked on the card, with what opting in adds), "
+        "or excluded (named in your turn text with a one-line reason). **A family you neither put on "
+        "the card nor name as excluded is a BUG in your turn, not a judgement call** - and it is the "
+        "single most common way this gate fails, because composing from memory inside a preamble this "
+        "long silently drops whichever family you happen not to recall.",
+        "",
+        "    %-38s %-16s %s" % ("ID", "DIRECTION IMPACT", "WHAT IT DOES"),
+    ]
+    out.extend(on)
+    if off:
+        out.append("")
+        out.append("  DISABLED by the user - never offer, tick, or dispatch these:")
+        out.extend(off)
+    out.append("")
+    return "\n".join(out)
+
+
 def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full", prototype: Optional[str] = None) -> str:
     """A compact summary to inject into every spawn's system prompt. Includes
     the names + one-line purposes - not the full catalog - so the agent
@@ -1429,6 +1490,10 @@ See `GET /__kinds/registry` for full per-kind contracts + each authoring schema.
         " **This user has set Exa as the app-wide default search backend (Settings -> Web search), a standing cost opt-in: for THIS user Exa IS the default web-research path - prefer `/__exa/search` over the plain agent search for web research they ask for, and you do NOT need to offer-first before each Exa call. The 'only search when the task genuinely needs web research' part still holds: never reach for it to idly double-check something the user did not ask to research.**"
         if _app_search == "exa" else ""
     )
+
+    # The plan gate's candidate universe, rendered inline so composing the card
+    # needs no tool call. See _orchestrator_roster_block for why.
+    orchestrator_roster_block = _orchestrator_roster_block(project_root)
 
     _preamble = f"""## App capabilities - read this before saying "I don't have <X>"
 
@@ -1975,7 +2040,8 @@ Which orchestrator passes run is a taste + budget decision, and it belongs to th
 
 **How to compose the proposal:**
 
-0. **Enumerate the roster MECHANICALLY first: `GET $TH_DAEMON_URL/__orchestrators?project=$TH_PROJECT_ID`.** **Its `enabled` flag is AUTHORITATIVE in both directions**: an entry with `enabled: false` must never be offered, ticked, or dispatched *even when prose elsewhere in this preamble tells you to dispatch it FIRST* - the user turned it off in the Orchestrators tab, and a few families (art-director, scene-3d) have guidance woven through shared paragraphs that the disable-strip cannot cleanly remove, so their cues survive being switched off. Treat this response as the allow-list and that prose as advice about families that pass it. It returns every installed manifest with an `enabled` flag (manifest `defaultEnabled` merged with the project's disable list), plus each one's `tagline` / `description` / `directionImpact`. **That response - not your recall - is the candidate universe.** Walk EVERY `enabled` entry and put it in exactly one bucket: recommended (ticked), offered (unticked, with what opting in would add), or excluded (with a one-line reason you state in your turn text). A family you never mention is a bug, not a judgement: the predicate table below covers only the primary surface families, and the other ~12 (art-direction, photography, illustration, shader, creative-visual, material, sound, voice, polish, scene-3d, …) live in scattered hard-rule sections, so recall-based composition silently drops whichever you happen not to think of. This step is what makes "the user decides" true rather than "the user decides among the ones I remembered".
+{orchestrator_roster_block}
+0. **Your candidate universe is the ORCHESTRATOR ROSTER block above - it is already rendered for you, no call needed.** (`GET $TH_DAEMON_URL/__orchestrators?project=$TH_PROJECT_ID` returns the same data if you want to re-confirm at dispatch time.) **Its `enabled` flag is AUTHORITATIVE in both directions**: an entry with `enabled: false` must never be offered, ticked, or dispatched *even when prose elsewhere in this preamble tells you to dispatch it FIRST* - the user turned it off in the Orchestrators tab, and a few families (art-director, scene-3d) have guidance woven through shared paragraphs that the disable-strip cannot cleanly remove, so their cues survive being switched off. Treat this response as the allow-list and that prose as advice about families that pass it. It returns every installed manifest with an `enabled` flag (manifest `defaultEnabled` merged with the project's disable list), plus each one's `tagline` / `description` / `directionImpact`. **That response - not your recall - is the candidate universe.** Walk EVERY `enabled` entry and put it in exactly one bucket: recommended (ticked), offered (unticked, with what opting in would add), or excluded (with a one-line reason you state in your turn text). A family you never mention is a bug, not a judgement: the predicate table below covers only the primary surface families, and the other ~12 (art-direction, photography, illustration, shader, creative-visual, material, sound, voice, polish, scene-3d, …) live in scattered hard-rule sections, so recall-based composition silently drops whichever you happen not to think of. This step is what makes "the user decides" true rather than "the user decides among the ones I remembered".
 0.5. **Read what the locked DIRECTION already told you, before reasoning about the brief.** `cat` the `design-library/` entry for each axis the direction lock committed - `detail.aesthetic`, `detail.style`, `detail.shell`, and the recipe when one was named - and look for a `suggestsOrchestrator:` list in its frontmatter, with its `suggestsOrchestratorWhy:` line. Only a minority of entries carry it: the ones whose DEFINING quality needs a medium a CSS build cannot reach (a scroll-scrubbed reveal, a rendered chrome material, a mesh-gradient field, sound-synced UI). Most carry nothing, and that absence is normal and means nothing. When the field IS present, that family moves to the recommended bucket (ticked) unless the user has already declined it, and you quote the `Why` line as its plan line. It stays a HINT - the gate proposes, the user disposes - but dropping it silently is the exact failure it was added to stop: the direction lock is the user's most explicit statement of intent, and an entry reading "the defining gesture is the reveal, on a scroll-scrubbed dolly" is them asking for motion in the only vocabulary the picker gave them. Bug history: a museum build locked `shell-scroll-journey-scene` + `aesthetic-luxury-cinematic-dark` + the brand-story-journey recipe - three entries that each point at motion-studio - and the gate still proposed a stills-only roster with video wired and unoffered.
 1. Run the predicate table below against the brief to decide WHICH BUCKET each candidate lands in - it does not decide *whether* a family gets considered (step 0 already settled that). **Run the SECTION-scoped predicates per section, not once against the whole brief.** `motion-studio-orchestrator` (and any owns-surface family that claims individual surfaces) qualifies when ONE section matches, even if the app is mostly features - the family hands the remainder back as hygienic scope. A whole-payload reading of a section-scoped predicate is the bug that kept motion-studio at zero dispatches since it shipped: every real brief has features, so a "no features" reading rejects it every time and the user never even sees the option.
 2. For each candidate write a one-line PLAN, not a category name: which pages / sections / slots it will fill, with what, and WHY it earns its place ("photography-orchestrator - hero + 3 testimonial portraits, golden-hour editorial register; the warm-restraint pick is photo-led"). Include rough volume where it drives cost ("8 narrative scenes ≈ 56 drawers"). The user must be able to veto from the label alone.
