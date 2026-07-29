@@ -72231,6 +72231,13 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     if (activeLayerIdx == null || !layers[activeLayerIdx]) return;
     const patch = { anchor: preset.anchor };
     if (preset.zeroAll) { patch.offsetX = 0; patch.offsetY = 0; }
+    // Zeroing the offsets changes the shrink-to-fit space an auto-width layer
+    // is measured against, so snap-to-edge would resize it too. Pin the width
+    // first - unless this preset deliberately hands the width to the canvas.
+    if (preset.zeroAll && !preset.nullW) {
+      const w = freezeAutoWidth(activeLayerIdx);
+      if (w != null) patch.width = w;
+    }
     if (preset.nullW) patch.width = null;
     if (preset.nullH) patch.height = null;
     updateLayer(activeLayerIdx, patch);
@@ -72255,6 +72262,36 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
       lw: lr.width  * sx,
       lh: lr.height * sy,
     };
+  };
+  // Pin an AUTO-WIDTH layer's current width before an offset changes.
+  //
+  // With width == null the layer wrapper is an absolutely positioned box with
+  // `width: auto`, which CSS sizes SHRINK-TO-FIT: its used width is capped by
+  // the space left over after the anchor offset (canvas width minus `left`,
+  // etc). So nudging a layer right also makes it narrower - a move that
+  // silently rescales. (Height has no equivalent rule: auto height is always
+  // content height, so only the width needs pinning.) Measuring once and
+  // committing the width the user already sees makes every subsequent offset
+  // change a pure translation - the same trick changeAnchor uses, and the
+  // reason the symptom disappears for good after the first manual resize.
+  //
+  // Returns null when there is nothing to pin: the layer already carries a
+  // concrete width, the anchor owns the width outright (fill / stretch-h pin
+  // both edges), or the stage isn't measurable yet.
+  const freezeAutoWidth = (idx) => {
+    const L = layers[idx];
+    if (!L || L.width != null) return null;
+    const a = L.anchor || "center";
+    if (a === "fill" || a === "stretch-h") return null;
+    const rect = measureLayerRect(idx);
+    if (!rect || !(rect.lw > 0)) return null;
+    return Math.round(rect.lw);
+  };
+  // Every write that only means to MOVE a layer routes through here, so an
+  // auto-sized layer gets its width pinned in the same patch.
+  const updateLayerOffset = (idx, patch) => {
+    const w = freezeAutoWidth(idx);
+    updateLayer(idx, w != null ? { width: w, ...patch } : patch);
   };
   // Change a layer's ANCHOR without visually moving it. The
   // anchor decides which side of the canvas the offsets are measured
@@ -72333,7 +72370,11 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     const anchor = startLayer.anchor || "center";
     const lockX = anchor === "stretch-h" || anchor === "fill";
     const lockY = anchor === "stretch-v" || anchor === "fill";
-    layerDragRef.current = { idx, kind: "move", startOX, startOY };
+    // Pin the width BEFORE the first delta lands (see freezeAutoWidth): an
+    // auto-width layer would otherwise shrink as it travels away from its
+    // anchor edge, so the drag would move AND resize it.
+    const frozenW = freezeAutoWidth(idx);
+    layerDragRef.current = { idx, kind: "move", startOX, startOY, frozenW };
     const onMv = (ev) => {
       // Shield on first move: a layer can be an iframe/asset that swallows the
       // mouseup, leaving a stale resize listener that compounds into the next
@@ -72349,6 +72390,7 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
       const d = layerDragRef.current;
       if (d && (d.liveOX !== undefined || d.liveOY !== undefined)) {
         updateLayer(idx, {
+          ...(d.frozenW != null ? { width: d.frozenW } : null),
           offsetX: d.liveOX !== undefined ? d.liveOX : startOX,
           offsetY: d.liveOY !== undefined ? d.liveOY : startOY,
         });
@@ -72420,6 +72462,9 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
     if (d.kind === "move") {
       return {
         ...base,
+        // carry the pinned width through the live paint too, else the layer
+        // would still shrink under the cursor and only snap back on mouseup.
+        ...(d.frozenW != null ? { width: d.frozenW } : null),
         offsetX: d.liveOX !== undefined ? d.liveOX : base.offsetX,
         offsetY: d.liveOY !== undefined ? d.liveOY : base.offsetY,
       };
@@ -72457,7 +72502,11 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
   const duplicateLayer = (idx) => {
     if (idx == null || !layers[idx]) return;
     const src = layers[idx];
-    const clone = { ...src, offsetX: (src.offsetX || 0) + 24, offsetY: (src.offsetY || 0) + 24 };
+    // The +24 nudge is an offset change like any other, so pin the width or
+    // the copy comes out narrower than the layer it was cloned from.
+    const frozenW = freezeAutoWidth(idx);
+    const clone = { ...src, ...(frozenW != null ? { width: frozenW } : null),
+      offsetX: (src.offsetX || 0) + 24, offsetY: (src.offsetY || 0) + 24 };
     const next = layers.slice(); next.splice(idx + 1, 0, clone);
     onChange({ layers: next });
     setActiveLayerIdx(idx + 1);
@@ -73071,12 +73120,12 @@ function WorkflowComposerNode({ node, zoom, selected, onSelect, onMove, onResize
               <label className="workflow-composer-field workflow-composer-field-stacked">
                 <span>x</span>
                 <input type="number" value=${layers[activeLayerIdx].offsetX || 0}
-                  onInput=${(e) => updateLayer(activeLayerIdx, { offsetX: +e.target.value || 0 })}/>
+                  onInput=${(e) => updateLayerOffset(activeLayerIdx, { offsetX: +e.target.value || 0 })}/>
               </label>
               <label className="workflow-composer-field workflow-composer-field-stacked">
                 <span>y</span>
                 <input type="number" value=${layers[activeLayerIdx].offsetY || 0}
-                  onInput=${(e) => updateLayer(activeLayerIdx, { offsetY: +e.target.value || 0 })}/>
+                  onInput=${(e) => updateLayerOffset(activeLayerIdx, { offsetY: +e.target.value || 0 })}/>
               </label>
               <label className="workflow-composer-field workflow-composer-field-stacked">
                 <span>w</span>
