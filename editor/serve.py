@@ -2556,6 +2556,152 @@ def _video_resolve_prompt_only(provider, model):
     return provider, model, ""
 
 
+# ── Provider failover on AVAILABILITY failures ────────────────────────────
+# A generation that dies because the provider is out of credit / over quota is
+# not the same class of failure as a bad prompt or an unsupported aspect: the
+# identical call would succeed on a sibling provider that is also keyed. Before
+# this existed, a fal 402 became a flat 502 and every caller stopped dead - a
+# nine-scene film stalled mid-build with Higgsfield keyed, idle, and perfectly
+# able to render the remaining clips.
+#
+# Only availability failures reroute. A 400 (malformed request), a content
+# refusal, or a validation error fails identically everywhere, so retrying it
+# elsewhere would just burn a second provider's credit to reproduce the error.
+_AVAILABILITY_STATUS = {402, 429}
+# Matched case-insensitively against the response body / error text. Providers
+# disagree on status codes for billing (fal 403s, some 401, some 402), so the
+# wording is the more reliable signal and the status is the fast path.
+_AVAILABILITY_WORDS = (
+    "insufficient", "exhausted", "out of credit", "no credit", "credits",
+    "balance", "quota", "billing", "payment required", "spending limit",
+    "rate limit", "too many requests", "overloaded", "capacity",
+    "subscription", "upgrade your plan", "free tier",
+)
+
+
+def _availability_failure_reason(exc):
+    """Classify an exception from a provider renderer. Returns a short
+    human-readable reason when the failure is an AVAILABILITY problem worth
+    rerouting (out of credit, over quota, rate limited, provider overloaded),
+    or None when it is a request/content problem that would fail identically
+    on any other provider.
+
+    Handles both shapes the renderers raise: urllib HTTPError (sync submit
+    paths) and RuntimeError carrying the provider's payload (the async
+    queue/poll paths in fal + higgsfield + worldlabs)."""
+    body = ""
+    status = None
+    if isinstance(exc, urllib.error.HTTPError):
+        status = exc.code
+        try:
+            body = exc.read().decode("utf-8", "replace")
+        except Exception:
+            body = ""
+        # The body is consumed by the read above; stash it so the caller's
+        # error reply can still show the provider's own words.
+        try:
+            exc._th_body = body
+        except Exception:
+            pass
+    else:
+        body = str(exc or "")
+    low = body.lower()
+    if status in _AVAILABILITY_STATUS:
+        return "HTTP {} from the provider".format(status)
+    hit = next((w for w in _AVAILABILITY_WORDS if w in low), None)
+    if hit and (status is None or status in (401, 403, 409, 500, 503)):
+        snippet = " ".join(body.split())[:160]
+        return "provider reported '{}'{}".format(
+            hit, (": " + snippet) if snippet else "")
+    return None
+
+
+# Which model-catalog family (editor/prompts/media-models.js) backs each skill.
+# Used to resolve a VALID model id for a fallback provider - a model id pinned
+# for the failed provider is meaningless on the next one.
+_SKILL_CATALOG_FAMILY = {
+    "generate-image": "imageModels",
+    "slice9-frame":   "imageModels",
+    "pose-subject":   "imageModels",
+    "video-gen":      "videoModels",
+    "video-chain":    "videoModels",
+    "3d-gen":         "models3d",
+    "text-to-3d":     "models3d",
+    "image-to-3d":    "models3d",
+    "audio-gen":      "audioModels",
+}
+
+
+def _catalog_model_for(skill, provider, need_cap=None):
+    """Pick a valid model id for (skill, provider) from the live model catalog.
+    Prefers the catalog default, then the first integrated row. `need_cap`
+    filters on the row's declared caps (e.g. 'i2v' when a start frame is wired,
+    't2v' when the request is prompt-only) so failover never picks a row that
+    structurally cannot serve this request. Returns "" when the catalog has
+    nothing suitable - most renderers then apply their own internal default,
+    and the ladder builder drops the candidate when it cannot."""
+    fam = _SKILL_CATALOG_FAMILY.get(skill)
+    if not fam:
+        return ""
+    try:
+        from kinds.capabilities import _parse_media_models
+        rows = (_parse_media_models() or {}).get(fam) or []
+    except Exception:
+        return ""
+    cands = []
+    for m in rows:
+        if not isinstance(m, dict):
+            continue
+        if m.get("provider") != provider or m.get("integrated") is False:
+            continue
+        if need_cap and need_cap not in (m.get("caps") or []):
+            continue
+        cands.append(m)
+    if not cands:
+        return ""
+    for m in cands:
+        if m.get("default"):
+            return m.get("id") or ""
+    return cands[0].get("id") or ""
+
+
+def _failover_ladder(skill, provider, model, api_key, need_cap=None):
+    """Ordered [(provider, model, api_key)] to try for one generation request.
+
+    Entry 0 is always the caller's own pick, untouched - staying with what the
+    user asked for always wins. The rest are sibling providers that (a) have a
+    renderer registered for this exact skill in _GENERATE_DISPATCH /
+    _TRANSFORM_DISPATCH, (b) have a key wired right now, and (c) can supply a
+    catalog model satisfying need_cap. Derived from the dispatch registry rather
+    than a hand-kept list, so wiring a new provider makes it a failover target
+    automatically."""
+    ladder = [(provider, model, api_key)]
+    seen = {provider}
+    for (s, pid) in list(_GENERATE_DISPATCH.keys()) + list(_TRANSFORM_DISPATCH.keys()):
+        if s != skill or pid in seen:
+            continue
+        seen.add(pid)
+        if pid == "local":
+            continue
+        key = _resolve_provider_key(pid)
+        if not key:
+            continue
+        alt_model = _catalog_model_for(skill, pid, need_cap)
+        # A required capability with no catalog row for this provider means the
+        # provider structurally cannot serve THIS request - dropping it here is
+        # what stops a prompt-only video rerouting onto Higgsfield DoP, which is
+        # image-to-video only and would just raise "needs a start frame".
+        if need_cap and not alt_model:
+            continue
+        # fal routes on the model id itself (it IS the endpoint path), so a
+        # blank model is unrunnable there; other renderers fall back to their
+        # own default and a blank is fine.
+        if not alt_model and pid == "fal":
+            continue
+        ladder.append((pid, alt_model, key))
+    return ladder
+
+
 def _fal_video_normalize_duration(model, dur):
     """Coerce a caller-supplied duration into the vocabulary the model family
     actually accepts (live-probed against fal's OpenAPI schemas, July 2026):
@@ -20401,9 +20547,28 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if not os.path.isfile(input_abs):
                     return self._reply(404, {"error": f"input file not found: {input_path}"})
 
-        # Dispatch.
-        scrub_gop = None   # set by the video branches when options.scrub is on
-        try:
+        # Dispatch. Wrapped in a callable so ONE request can be re-attempted on
+        # a sibling provider when the first pick fails on availability (out of
+        # credit / over quota / rate limited) rather than on the request itself.
+        # See _failover_ladder. `provider` / `model` / `api_key` are parameters
+        # because they are exactly what changes between attempts; everything
+        # else is closed over unchanged.
+        #
+        # Returns (bytes_, scrub_gop, model) on success, or None when a branch
+        # already sent its own reply - the validation paths inside the chain do
+        # that, and a validation failure must NEVER reroute (it would fail
+        # identically on the next provider and bill a second one for the answer).
+        def _attempt(provider, model, api_key):
+            scrub_gop = None   # set by the video branches when options.scrub is on
+            bytes_ = None
+            # Recomputed per attempt: the renderer family is keyed on
+            # (skill, provider), so a reroute can legitimately move a request
+            # between the generate and transform families.
+            is_generate  = (skill, provider) in _GENERATE_DISPATCH
+            is_transform = (skill, provider) in _TRANSFORM_DISPATCH
+            if not is_generate and not is_transform:
+                return self._reply(400, {
+                    "error": f"no renderer for skill={skill!r} provider={provider!r}"})
             if is_generate:
                 # Image-to-image branch: generate-image with an input image
                 # promotes to the edit endpoint so the image actually
@@ -20595,12 +20760,72 @@ class H(http.server.SimpleHTTPRequestHandler):
                                                        project_root=project_root, output=output)
                 else:
                     return self._reply(400, {"error": f"unhandled transform provider: {provider}"})
-        except urllib.error.HTTPError as e:
-            try: detail = json.loads(e.read().decode("utf-8", "replace"))
-            except Exception: detail = {"status": e.code}
-            return self._reply(502, {"error": f"{provider} API error", "detail": detail})
-        except Exception as e:
-            return self._reply(500, {"error": f"{type(e).__name__}: {e}"})
+            return bytes_, scrub_gop, model
+
+        # A video request that already carries a start frame needs an i2v-capable
+        # fallback; a prompt-only one needs t2v. Filtering the ladder on that cap
+        # is what stops a reroute from landing on Higgsfield DoP with no frame.
+        _need_cap = None
+        if skill in ("video-gen", "video-chain"):
+            _need_cap = "i2v" if (
+                input_abs or input_data_uri
+                or (isinstance(options, dict)
+                    and (options.get("image_url") or options.get("start_image_url")))
+            ) else "t2v"
+        _ladder = _failover_ladder(skill, provider, model, api_key, _need_cap)
+        _failover = None      # set when an attempt after the first one succeeds
+        _attempts_log = []    # every provider tried, with why it was abandoned
+        _res = None
+        for _i, (_p, _m, _k) in enumerate(_ladder):
+            try:
+                _res = _attempt(_p, _m, _k)
+            except urllib.error.HTTPError as e:
+                _reason = _availability_failure_reason(e)
+                _body = getattr(e, "_th_body", None)
+                try:
+                    detail = json.loads(_body) if _body else {"status": e.code}
+                except Exception:
+                    detail = {"status": e.code, "body": (_body or "")[:400]}
+                if _reason and _i + 1 < len(_ladder):
+                    _attempts_log.append({"provider": _p, "model": _m, "reason": _reason})
+                    print(f"[asset-gen] {_p} unavailable ({_reason}) - "
+                          f"rerouting to {_ladder[_i + 1][0]}", flush=True)
+                    continue
+                return self._reply(502, {
+                    "error": f"{_p} API error", "detail": detail,
+                    "attempts": _attempts_log or None,
+                    "hint": ("every wired provider for this skill failed on "
+                             "availability - add credit or a key in Settings")
+                    if _attempts_log else None,
+                })
+            except Exception as e:
+                _reason = _availability_failure_reason(e)
+                if _reason and _i + 1 < len(_ladder):
+                    _attempts_log.append({"provider": _p, "model": _m, "reason": _reason})
+                    print(f"[asset-gen] {_p} unavailable ({_reason}) - "
+                          f"rerouting to {_ladder[_i + 1][0]}", flush=True)
+                    continue
+                return self._reply(500, {
+                    "error": f"{type(e).__name__}: {e}",
+                    "attempts": _attempts_log or None,
+                })
+            if _res is None:
+                return   # the branch already replied (validation) - never reroute
+            bytes_, scrub_gop, model = _res
+            if _i:
+                _failover = {
+                    "requested": {"provider": _ladder[0][0], "model": _ladder[0][1]},
+                    "rendered":  {"provider": _p, "model": model},
+                    "why": _attempts_log,
+                }
+                _note = (f"{_ladder[0][0]} was unavailable "
+                         f"({_attempts_log[-1]['reason'] if _attempts_log else 'unavailable'}), "
+                         f"so this was rendered on {_p} {model or '(provider default)'} instead")
+                video_substitution = (
+                    (video_substitution + "; " + _note) if video_substitution else _note)
+                print(f"[asset-gen] failover: {_note}", flush=True)
+            provider = _p
+            break
 
         try:
             out_path = _safe_join(project_root, output)
@@ -20702,6 +20927,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             # / `model` fields above already report what actually rendered; this
             # says why they differ from what was asked for.
             "substitution": video_substitution,
+            # Set when the provider the caller ASKED for was unavailable (out of
+            # credit / quota / rate limited) and the request was rerouted to a
+            # keyed sibling. null on the normal path. Structured rather than
+            # prose so a caller can report the reroute (and the spend that moved
+            # with it) instead of silently attributing the asset to the wrong
+            # provider - `provider` / `model` above are what ACTUALLY rendered.
+            "failover": _failover,
             "snapshot": snapshot_info,
             "inline_replace": (
                 {"ok": True, "files": replaced_files} if replaced_files

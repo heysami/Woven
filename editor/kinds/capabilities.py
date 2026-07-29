@@ -1445,6 +1445,15 @@ If the user asks for a feature, model, provider, subagent, or endpoint and you d
 
 - `✓ KEY` (any provider) → full integration. The daemon's `/__asset_generate` and `/__llm_run` paths call the provider's HTTP API directly. Image, video, svg, text - whatever that provider's skill catalog supports - all works.
 
+**Running out of credit does NOT end a build - the daemon reroutes for you, and you must report it.** When a provider fails on AVAILABILITY (out of credit, over quota, rate limited, overloaded), `/__asset_generate` automatically retries the same request on the next keyed provider that has a renderer for that skill and a catalog model able to serve it - so a fal balance hitting zero mid-build now lands on Higgsfield (or whoever else is keyed) instead of stopping. This is availability-only: a 400, a validation error or a content refusal never reroutes, because it would fail identically everywhere and just bill a second provider for the same error.
+
+Two obligations on you:
+
+1. **Read `failover` in the reply and SAY SO.** On a reroute the reply carries `failover: { requested: {provider, model}, rendered: {provider, model}, why: [...] }`, and the top-level `provider` / `model` fields report what ACTUALLY rendered. Never attribute the asset to what you asked for - the user's spend moved to a different vendor and they are entitled to know. Mention it in your run output and in any cost line you surface.
+2. **Do not build your own fallback ladder in prompt-space.** Do not catch an error and re-POST with a provider you picked yourself, and do not pre-emptively "spread" calls across providers to avoid running out. The daemon owns this; a second ladder on top of it double-charges and hides which provider really served the asset.
+
+When EVERY keyed provider for the skill is exhausted, the reply is a `502` carrying `attempts[]` (each provider tried and why it was abandoned) plus a hint. That is a real stop - report it to the user as a billing/credit problem naming the providers tried, and point at Settings; do not retry it in a loop.
+
 - `✓ CLI (Codex CLI)` (openai only) → BOTH text AND image generation work. Codex CLI has a built-in image-gen tool that calls `gpt-image-2` via the user's `codex login` OAuth. The daemon's `_codex_cli_generate_image` routes raster requests to it. No `OPENAI_API_KEY` needed. **This counts as a raster provider being available.**
 
 - `✓ CLI (Claude CLI)` (anthropic only) → TEXT ONLY. Claude CLI has no image-generation tool. Use this for `llm` / `describe` skills; do NOT count it as a raster provider.
