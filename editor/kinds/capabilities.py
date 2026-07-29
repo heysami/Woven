@@ -1449,7 +1449,7 @@ If the user asks for a feature, model, provider, subagent, or endpoint and you d
 
 Two obligations on you:
 
-1. **Read `failover` in the reply and SAY SO.** On a reroute the reply carries `failover: { requested: {provider, model}, rendered: {provider, model}, why: [...] }`, and the top-level `provider` / `model` fields report what ACTUALLY rendered. Never attribute the asset to what you asked for - the user's spend moved to a different vendor and they are entitled to know. Mention it in your run output and in any cost line you surface.
+1. **Read `failover` in the reply and SAY SO.** On a reroute the reply carries a `failover` object with `requested` (provider + model), `rendered` (provider + model), and `why` (the providers tried and what each failed on), and the top-level `provider` / `model` fields report what ACTUALLY rendered. Never attribute the asset to what you asked for - the user's spend moved to a different vendor and they are entitled to know. Mention it in your run output and in any cost line you surface.
 2. **Do not build your own fallback ladder in prompt-space.** Do not catch an error and re-POST with a provider you picked yourself, and do not pre-emptively "spread" calls across providers to avoid running out. The daemon owns this; a second ladder on top of it double-charges and hides which provider really served the asset.
 
 When EVERY keyed provider for the skill is exhausted, the reply is a `502` carrying `attempts[]` (each provider tried and why it was abandoned) plus a hint. That is a real stop - report it to the user as a billing/credit problem naming the providers tried, and point at Settings; do not retry it in a loop.
