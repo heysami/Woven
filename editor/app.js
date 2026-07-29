@@ -75236,7 +75236,10 @@ function WorkflowVectorEditorNode({
     const startHY = baseAnchor[inKey[1]] != null
       ? baseAnchor[inKey[1]]
       : (phantomOpts && phantomOpts.phantomXY ? phantomOpts.phantomXY.y : baseAnchor.y);
-    const mirror = !ev.altKey;
+    // An anchor whose tangent was broken from the panel (asymm.) stays
+    // broken - dragging one handle never moves the other. Otherwise the
+    // handles are linked and alt is the transient escape hatch.
+    const mirror = baseAnchor.mirror === false ? false : !ev.altKey;
     const onMv = (e) => {
       const p = _vecScreenToCanvas(svg, e.clientX, e.clientY, canvasW, canvasH);
       const dx = p.x - start.x, dy = p.y - start.y;
@@ -76108,6 +76111,46 @@ function _vecGetAnchorStruct(shape) {
   return _vecParsePathD((shape && shape.d) || "");
 }
 
+// ── Cubic helpers (corner fillets on curved segments) ────────────────
+const _vecLerpPt = (p, q, t) => ({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t });
+
+// de Casteljau split at t → { left: [P0,C1,C2,P], right: [P,C1,C2,P3] }.
+function _vecCubicSplit(p0, p1, p2, p3, t) {
+  const a = _vecLerpPt(p0, p1, t), b = _vecLerpPt(p1, p2, t), c = _vecLerpPt(p2, p3, t);
+  const d = _vecLerpPt(a, b, t), e = _vecLerpPt(b, c, t), f = _vecLerpPt(d, e, t);
+  return { left: [p0, a, d, f], right: [f, e, c, p3] };
+}
+
+// The sub-curve over [t0,t1], as its own cubic [P0,C1,C2,P3].
+function _vecCubicSlice(p0, p1, p2, p3, t0, t1) {
+  const r = _vecCubicSplit(p0, p1, p2, p3, Math.max(0, Math.min(1, t0))).right;
+  // t1 is in the ORIGINAL parameter space; re-map it onto the tail piece.
+  const u = t0 >= 1 ? 1 : (t1 - t0) / (1 - t0);
+  return _vecCubicSplit(r[0], r[1], r[2], r[3], Math.max(0, Math.min(1, u))).left;
+}
+
+function _vecCubicAt(p0, p1, p2, p3, t) {
+  const mt = 1 - t, a = mt * mt * mt, b = 3 * mt * mt * t, c = 3 * mt * t * t, d = t * t * t;
+  return { x: a * p0.x + b * p1.x + c * p2.x + d * p3.x,
+           y: a * p0.y + b * p1.y + c * p2.y + d * p3.y };
+}
+
+// The t at which the curve sits `dist` away (straight-line) from one of
+// its endpoints - t=1's end when `fromEnd`, t=0's otherwise. Distance
+// from an endpoint grows monotonically over the useful range, so a fixed
+// bisection is both stable and cheap enough to run per corner per frame.
+function _vecCubicTAtDist(p0, p1, p2, p3, dist, fromEnd) {
+  const target = fromEnd ? p3 : p0;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) / 2;
+    const pt = _vecCubicAt(p0, p1, p2, p3, fromEnd ? 1 - mid : mid);
+    if (Math.hypot(pt.x - target.x, pt.y - target.y) < dist) lo = mid; else hi = mid;
+  }
+  const u = (lo + hi) / 2;
+  return fromEnd ? 1 - u : u;
+}
+
 function _vecBuildPathD(parsed) {
   if (!parsed || !parsed.subpaths) return "";
   const fmt = (n) => (Math.round(n * 100) / 100).toString();
@@ -76119,16 +76162,22 @@ function _vecBuildPathD(parsed) {
     const closed = !!sub.closed;
 
     // Per-anchor "rounded corner" precomputation. An anchor is rounded
-    // when radius > 0 AND both adjacent segments are straight (any
-    // existing Bézier handle disables the radius treatment - the user
-    // already has explicit curvature there). The "entry" point is
-    // where the segment terminating at this anchor stops; the "exit"
-    // point is where the segment leaving this anchor begins; the arc
-    // from entry → corner → exit is emitted as a quadratic Bézier
+    // when radius > 0 and it has a segment on both sides. The "entry"
+    // point is where the segment terminating at this anchor stops; the
+    // "exit" point is where the segment leaving this anchor begins; the
+    // arc from entry → corner → exit is emitted as a quadratic Bézier
     // with the original anchor as control point.
+    //
+    // A CURVED neighbouring segment is trimmed back to its entry / exit
+    // point by slicing the cubic (de Casteljau), not by cutting along the
+    // straight chord - so a corner between two curves (e.g. one anchor of
+    // a converted circle set to `corner`) rounds correctly. Bailing out on
+    // curved neighbours, as this used to, made the radius slider a silent
+    // no-op on every path that wasn't an all-straight polygon.
     const entry = new Array(N);
     const exit  = new Array(N);
     const rounded = new Array(N).fill(false);
+    const rrOf = new Array(N).fill(0);
     for (let i = 0; i < N; i++) { entry[i] = { x: a[i].x, y: a[i].y }; exit[i] = { x: a[i].x, y: a[i].y }; }
     for (let i = 0; i < N; i++) {
       const r = +a[i].radius || 0;
@@ -76137,32 +76186,106 @@ function _vecBuildPathD(parsed) {
       const nextIdx = i + 1 < N ? i + 1 : (closed ? 0 : -1);
       if (prevIdx < 0 || nextIdx < 0) continue;
       const prev = a[prevIdx], cur = a[i], next = a[nextIdx];
-      const prevSegCurved = (prev.outX != null) || (cur.inX != null);
-      const nextSegCurved = (cur.outX != null) || (next.inX != null);
-      if (prevSegCurved || nextSegCurved) continue;
       const d1 = Math.hypot(prev.x - cur.x, prev.y - cur.y);
       const d2 = Math.hypot(next.x - cur.x, next.y - cur.y);
+      if (d1 === 0 || d2 === 0) continue;
+      // Cap at half the shorter neighbour chord so adjacent fillets can
+      // never overrun each other.
       const rr = Math.min(r, d1 * 0.5, d2 * 0.5);
-      if (rr <= 0 || d1 === 0 || d2 === 0) continue;
-      entry[i] = { x: cur.x + (prev.x - cur.x) / d1 * rr, y: cur.y + (prev.y - cur.y) / d1 * rr };
-      exit[i]  = { x: cur.x + (next.x - cur.x) / d2 * rr, y: cur.y + (next.y - cur.y) / d2 * rr };
+      if (rr <= 0) continue;
+      rrOf[i] = rr;
       rounded[i] = true;
+    }
+
+    // Walk the segments once, resolving each one's endpoints + control
+    // points with any fillet trim already applied.
+    const segCount = closed ? N : N - 1;
+    const segCurved = new Array(segCount).fill(false);
+    const segC1 = new Array(segCount);
+    const segC2 = new Array(segCount);
+    // Unit direction of travel arriving at / leaving each anchor, AFTER
+    // any trim. The fillet's control point is the intersection of these
+    // two rays (see below), so they have to describe the trimmed curve,
+    // not the original one.
+    const tanIn  = new Array(N);
+    const tanOut = new Array(N);
+    const unit = (dx, dy) => { const l = Math.hypot(dx, dy); return l ? { x: dx / l, y: dy / l } : null; };
+    for (let si = 0; si < segCount; si++) {
+      const toIdx = (si + 1) % N;
+      const cur = a[si], nxt = a[toIdx];
+      const curved = (cur.outX != null && cur.outY != null) || (nxt.inX != null && nxt.inY != null);
+      segCurved[si] = curved;
+      if (!curved) {
+        const len = Math.hypot(nxt.x - cur.x, nxt.y - cur.y) || 1;
+        if (rounded[si])    exit[si]    = { x: cur.x + (nxt.x - cur.x) / len * rrOf[si],
+                                            y: cur.y + (nxt.y - cur.y) / len * rrOf[si] };
+        if (rounded[toIdx]) entry[toIdx] = { x: nxt.x + (cur.x - nxt.x) / len * rrOf[toIdx],
+                                             y: nxt.y + (cur.y - nxt.y) / len * rrOf[toIdx] };
+        const t = unit(nxt.x - cur.x, nxt.y - cur.y);
+        tanOut[si] = t; tanIn[toIdx] = t;
+        continue;
+      }
+      const p0 = { x: cur.x, y: cur.y };
+      const p1 = { x: cur.outX != null ? cur.outX : cur.x, y: cur.outY != null ? cur.outY : cur.y };
+      const p2 = { x: nxt.inX  != null ? nxt.inX  : nxt.x, y: nxt.inY  != null ? nxt.inY  : nxt.y };
+      const p3 = { x: nxt.x, y: nxt.y };
+      let t0 = rounded[si]    ? _vecCubicTAtDist(p0, p1, p2, p3, rrOf[si], false) : 0;
+      let t1 = rounded[toIdx] ? _vecCubicTAtDist(p0, p1, p2, p3, rrOf[toIdx], true) : 1;
+      // Two fillets eating the same short segment - meet them in the
+      // middle rather than emitting a back-to-front slice.
+      if (t0 > t1) { const mid = (t0 + t1) / 2; t0 = mid; t1 = mid; }
+      const q = _vecCubicSlice(p0, p1, p2, p3, t0, t1);
+      if (rounded[si])    exit[si]     = q[0];
+      if (rounded[toIdx]) entry[toIdx] = q[3];
+      segC1[si] = q[1];
+      segC2[si] = q[2];
+      // A cubic's end tangents run along its control legs; fall back to
+      // the chord when a leg is degenerate (control sitting on its anchor).
+      tanOut[si]    = unit(q[1].x - q[0].x, q[1].y - q[0].y) || unit(q[3].x - q[0].x, q[3].y - q[0].y);
+      tanIn[toIdx]  = unit(q[3].x - q[2].x, q[3].y - q[2].y) || unit(q[3].x - q[0].x, q[3].y - q[0].y);
+    }
+
+    // Fillet control point for each rounded anchor: where the arriving
+    // tangent ray and the (reversed) leaving tangent ray cross. With
+    // straight neighbours this lands exactly on the original anchor, so
+    // polygons are byte-identical to before; with curved neighbours the
+    // anchor is the WRONG control point (a trimmed cubic no longer aims at
+    // it) and using it creased the outline by up to ~8° at large radii.
+    const fillet = new Array(N);
+    for (let i = 0; i < N; i++) {
+      if (!rounded[i]) continue;
+      const P = entry[i], Q = exit[i], u = tanIn[i], v = tanOut[i];
+      let ctrl = { x: a[i].x, y: a[i].y };
+      if (u && v) {
+        // Solve P + s*u = Q - t*v  →  s*u + t*v = Q - P.
+        const den = u.x * v.y - u.y * v.x;
+        if (Math.abs(den) > 1e-9) {
+          const wx = Q.x - P.x, wy = Q.y - P.y;
+          const s = (wx * v.y - wy * v.x) / den;
+          const t = (u.x * wy - u.y * wx) / den;
+          // Negative parameters mean the rays diverge - the intersection is
+          // behind one of them and would fold the fillet inside out.
+          if (s >= 0 && t >= 0) ctrl = { x: P.x + u.x * s, y: P.y + u.y * s };
+        }
+      }
+      fillet[i] = ctrl;
     }
 
     // Emit. Start at exit[0] - equals a[0] when anchor 0 isn't rounded.
     out.push(`M ${fmt(exit[0].x)} ${fmt(exit[0].y)}`);
-    const segCount = closed ? N : N - 1;
     for (let si = 0; si < segCount; si++) {
       const toIdx = (si + 1) % N;
-      const cur = a[si], nxt = a[toIdx];
-      const segCurved = (cur.outX != null && cur.outY != null) || (nxt.inX != null && nxt.inY != null);
+      const nxt = a[toIdx];
+      // When two fillets eat a whole segment they meet in its middle, so
+      // the segment shrinks to nothing. The pen is already there - emitting
+      // it would just add a degenerate command that re-parses as a
+      // duplicate anchor.
+      const degenerate = Math.hypot(entry[toIdx].x - exit[si].x, entry[toIdx].y - exit[si].y) < 1e-6;
       // Straight or cubic segment from this anchor's exit to next anchor's entry.
-      if (segCurved) {
-        const c1x = cur.outX != null ? cur.outX : cur.x;
-        const c1y = cur.outY != null ? cur.outY : cur.y;
-        const c2x = nxt.inX != null ? nxt.inX : nxt.x;
-        const c2y = nxt.inY != null ? nxt.inY : nxt.y;
-        out.push(`C ${fmt(c1x)} ${fmt(c1y)} ${fmt(c2x)} ${fmt(c2y)} ${fmt(entry[toIdx].x)} ${fmt(entry[toIdx].y)}`);
+      if (degenerate) {
+        // nothing to draw
+      } else if (segCurved[si]) {
+        out.push(`C ${fmt(segC1[si].x)} ${fmt(segC1[si].y)} ${fmt(segC2[si].x)} ${fmt(segC2[si].y)} ${fmt(entry[toIdx].x)} ${fmt(entry[toIdx].y)}`);
       } else {
         out.push(`L ${fmt(entry[toIdx].x)} ${fmt(entry[toIdx].y)}`);
       }
@@ -76172,7 +76295,8 @@ function _vecBuildPathD(parsed) {
       // segment so its arc would be a dead branch - skip.
       const continues = closed || si + 1 < segCount;
       if (rounded[toIdx] && continues) {
-        out.push(`Q ${fmt(nxt.x)} ${fmt(nxt.y)} ${fmt(exit[toIdx].x)} ${fmt(exit[toIdx].y)}`);
+        const c = fillet[toIdx] || nxt;
+        out.push(`Q ${fmt(c.x)} ${fmt(c.y)} ${fmt(exit[toIdx].x)} ${fmt(exit[toIdx].y)}`);
       }
     }
     if (closed) out.push("Z");
@@ -77054,13 +77178,24 @@ function VectorPropertiesPanel({ shape, onPatch }) {
 function VectorAnchorPanel({ anchor, parsed, subIdx, anchorIdx, onAnchorChange, onDelete }) {
   const hasIn  = anchor.inX != null && anchor.inY != null;
   const hasOut = anchor.outX != null && anchor.outY != null;
-  // Anchor type heuristic:
+  // Anchor type:
   //   corner    - no handles on either side
-  //   asymmetric- both handles present but not collinear / different lengths
-  //   smooth    - both handles present and mirrored through the anchor
+  //   asymmetric- the tangent is BROKEN (anchor.mirror === false), or the
+  //               handles aren't collinear / only one side has a handle
+  //   smooth    - both handles present, linked, mirrored through the anchor
+  //
+  // `mirror: false` is an explicit, persistent flag rather than something
+  // inferred from geometry. Without it the asymm. button was dead on any
+  // already-symmetric anchor: it re-committed the same handle coordinates,
+  // the geometric heuristic re-derived "smooth", and nothing appeared to
+  // happen. The flag also survives the handle drag (see onHandleMouseDown),
+  // which is what makes the mode mean anything.
+  const broken = anchor.mirror === false;
   let type = "corner";
   if (hasIn || hasOut) {
-    if (hasIn && hasOut) {
+    if (broken) {
+      type = "asymmetric";
+    } else if (hasIn && hasOut) {
       const inDx = anchor.inX - anchor.x, inDy = anchor.inY - anchor.y;
       const outDx = anchor.outX - anchor.x, outDy = anchor.outY - anchor.y;
       // Smooth = handles are collinear AND opposite (their sum ≈ 0
@@ -77078,12 +77213,13 @@ function VectorAnchorPanel({ anchor, parsed, subIdx, anchorIdx, onAnchorChange, 
     }
   }
 
-  const setType = (next) => {
-    if (next === type) return;
-    if (next === "corner") {
-      // Drop both handles + reset radius to 0 (the user can still
-      // set radius via the slider afterwards).
-      onAnchorChange({ inX: null, inY: null, outX: null, outY: null });
+  const setType = (want) => {
+    if (want === type) return;
+    if (want === "corner") {
+      // Drop both handles + re-link the tangent, so a later smooth/asymm.
+      // starts from a clean state. Radius is left alone - the slider below
+      // is the only thing that should change it.
+      onAnchorChange({ inX: null, inY: null, outX: null, outY: null, mirror: undefined });
       return;
     }
     // Synthesize handles offset along the tangent toward the prev /
@@ -77107,13 +77243,17 @@ function VectorAnchorPanel({ anchor, parsed, subIdx, anchorIdx, onAnchorChange, 
       if (!len) return null;
       return { x: dx / len, y: dy / len };
     };
+    // NB: `prev` / `next` are the NEIGHBOURING ANCHORS declared below.
+    // The mode argument is deliberately named `want`, not `next` - it used
+    // to shadow the neighbour, so every synthesized outgoing handle pointed
+    // flat right instead of toward the next anchor.
     const vToPrev = norm(anchor, prev) || { x: -1, y: 0 };
     const vToNext = norm(anchor, next) || { x:  1, y: 0 };
     const fallbackInX  = anchor.x + vToPrev.x * handleLen;
     const fallbackInY  = anchor.y + vToPrev.y * handleLen;
     const fallbackOutX = anchor.x + vToNext.x * handleLen;
     const fallbackOutY = anchor.y + vToNext.y * handleLen;
-    if (next === "smooth") {
+    if (want === "smooth") {
       // Pick a tangent direction: use whichever handle we have,
       // otherwise the horizontal default.
       let inX = anchor.inX, inY = anchor.inY;
@@ -77126,16 +77266,20 @@ function VectorAnchorPanel({ anchor, parsed, subIdx, anchorIdx, onAnchorChange, 
         // anchor using the inX/inY as the reference.
         outX = 2 * anchor.x - inX; outY = 2 * anchor.y - inY;
       }
-      onAnchorChange({ inX, inY, outX, outY });
+      // Re-link the tangent: dragging either handle mirrors the other again.
+      onAnchorChange({ inX, inY, outX, outY, mirror: undefined });
       return;
     }
-    if (next === "asymmetric") {
-      // Add whichever handle is missing; keep existing.
+    if (want === "asymmetric") {
+      // Break the tangent and add whichever handle is missing, keeping any
+      // that already exist. The handles may still LOOK mirrored right after
+      // the switch - that's fine, the point is that dragging one no longer
+      // drags the other.
       let inX = anchor.inX, inY = anchor.inY;
       let outX = anchor.outX, outY = anchor.outY;
       if (inX == null) { inX = fallbackInX; inY = fallbackInY; }
       if (outX == null) { outX = fallbackOutX; outY = fallbackOutY; }
-      onAnchorChange({ inX, inY, outX, outY });
+      onAnchorChange({ inX, inY, outX, outY, mirror: false });
     }
   };
 
