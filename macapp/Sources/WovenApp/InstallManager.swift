@@ -100,6 +100,47 @@ final class InstallManager: NSObject, URLSessionDownloadDelegate {
 
     // MARK: - Release check
 
+    /// Cheap tag probe that does NOT touch the rate-limited API.
+    ///
+    /// `github.com/<repo>/releases/latest` 302s to `/releases/tag/<tag>`, and
+    /// that redirect is served by the website, not by api.github.com - so it
+    /// keeps working on an IP whose API budget is spent. Reported bug: the app
+    /// checked the API on EVERY launch, unauthenticated, against a 60-req/hour
+    /// budget that is shared by everything else on the same IP. Behind an
+    /// office NAT or a VPN - or beside any other GitHub tooling - the budget is
+    /// gone and every check failed with a bare "HTTP 403", on machines whose
+    /// install was perfectly healthy.
+    ///
+    /// Returns just the tag. The API is consulted only when that tag turns out
+    /// to be new, which is the rare case, so a normal launch now costs zero API
+    /// requests instead of one.
+    static let repoLatestWebURL = URL(string: "https://github.com/heysami/Woven/releases/latest")!
+
+    func fetchLatestTagCheaply(completion: @escaping (Result<String, Error>) -> Void) {
+        var req = URLRequest(url: Self.repoLatestWebURL, timeoutInterval: 20)
+        req.httpMethod = "HEAD"
+        req.setValue("Woven-mac-app", forHTTPHeaderField: "User-Agent")
+        // Resolve the redirect ourselves so the tag can be read off the final URL.
+        URLSession.shared.dataTask(with: req) { _, resp, err in
+            let finish: (Result<String, Error>) -> Void = { r in DispatchQueue.main.async { completion(r) } }
+            if let err = err { return finish(.failure(err)) }
+            guard let http = resp as? HTTPURLResponse else {
+                return finish(.failure(InstallError.badResponse("no response")))
+            }
+            // URLSession follows the 302, so the landing URL is /releases/tag/<tag>.
+            let landing = http.url?.absoluteString ?? ""
+            guard let r = landing.range(of: "/releases/tag/") else {
+                return finish(.failure(InstallError.badResponse("HTTP \(http.statusCode)")))
+            }
+            let tag = String(landing[r.upperBound...])
+                .split(separator: "/").first.map(String.init) ?? ""
+            guard !tag.isEmpty else {
+                return finish(.failure(InstallError.badResponse("no tag in \(landing)")))
+            }
+            finish(.success(tag))
+        }.resume()
+    }
+
     func fetchLatestRelease(completion: @escaping (Result<Release, Error>) -> Void) {
         var req = URLRequest(url: Self.repoLatestURL, timeoutInterval: 20)
         req.setValue("Woven-mac-app", forHTTPHeaderField: "User-Agent")
@@ -107,8 +148,27 @@ final class InstallManager: NSObject, URLSessionDownloadDelegate {
         URLSession.shared.dataTask(with: req) { data, resp, err in
             let finish: (Result<Release, Error>) -> Void = { r in DispatchQueue.main.async { completion(r) } }
             if let err = err { return finish(.failure(err)) }
-            guard let http = resp as? HTTPURLResponse, http.statusCode == 200, let data = data else {
-                let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            let httpResp = resp as? HTTPURLResponse
+            guard let http = httpResp, http.statusCode == 200, let data = data else {
+                let code = httpResp?.statusCode ?? 0
+                // 403 + an exhausted remaining counter is the rate limit, not a
+                // broken repo. Say which it is, and when it lifts - "HTTP 403"
+                // alone sent people looking for a problem with their install.
+                if code == 403 || code == 429 {
+                    let remaining = httpResp?.value(forHTTPHeaderField: "x-ratelimit-remaining").flatMap { Int($0) }
+                    if remaining == 0 {
+                        var when = "shortly"
+                        if let s = httpResp?.value(forHTTPHeaderField: "x-ratelimit-reset"),
+                           let epoch = Double(s) {
+                            let mins = max(1, Int((Date(timeIntervalSince1970: epoch).timeIntervalSinceNow) / 60) + 1)
+                            when = "in about \(mins) minute\(mins == 1 ? "" : "s")"
+                        }
+                        return finish(.failure(InstallError.badResponse(
+                            "GitHub's hourly limit for this network was reached. "
+                            + "Woven is fine and your install is untouched - try again \(when). "
+                            + "(The limit counts every app on this internet connection, not just Woven.)")))
+                    }
+                }
                 return finish(.failure(InstallError.badResponse("HTTP \(code)")))
             }
             guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
@@ -138,14 +198,36 @@ final class InstallManager: NSObject, URLSessionDownloadDelegate {
     /// Background check on every launch. When a new tag exists it is
     /// downloaded + swapped silently; `onUpdateReady` fires so the menu can
     /// show "Update ready - Restart Daemon to apply".
+    /// Minimum gap between automatic launch checks. `lastCheckAt` was recorded
+    /// from the very first version but never read, so quitting and reopening
+    /// three times ran three checks. Manual "Check for Updates" ignores this.
+    private static let backgroundCheckInterval: TimeInterval = 6 * 3600
+
     func backgroundCheck(onUpdateReady: @escaping (String) -> Void) {
-        fetchLatestRelease { [weak self] result in
-            guard let self = self, case .success(let rel) = result else { return }
-            guard rel.tag != self.state.installedTag else { return }
-            self.install(release: rel, progress: { _, _ in }) { r in
-                if case .success = r {
-                    self.updateReadyTag = rel.tag
-                    onUpdateReady(rel.tag)
+        if let last = state.lastCheckAt,
+           Date().timeIntervalSince(last) < Self.backgroundCheckInterval {
+            return
+        }
+        // Cheap probe first - the website redirect, not the rate-limited API.
+        // A launch on an already-current install now costs zero API requests,
+        // which is what keeps the hourly budget intact for the machines that
+        // genuinely need to download something.
+        fetchLatestTagCheaply { [weak self] result in
+            guard let self = self else { return }
+            guard case .success(let tag) = result else { return }
+            self.state.lastCheckAt = Date()
+            self.saveState()
+            guard tag != self.state.installedTag else { return }
+            // Only now, with a genuinely new tag, spend an API request to
+            // resolve the release's asset URL.
+            self.fetchLatestRelease { r2 in
+                guard case .success(let rel) = r2 else { return }
+                guard rel.tag != self.state.installedTag else { return }
+                self.install(release: rel, progress: { _, _ in }) { r in
+                    if case .success = r {
+                        self.updateReadyTag = rel.tag
+                        onUpdateReady(rel.tag)
+                    }
                 }
             }
         }
