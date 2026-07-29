@@ -40640,7 +40640,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const ok = await uiConfirm(
       "Regenerate canvas frames for source/" + branch + "/?\n\n" +
       "This re-runs the Workflow 1 frames + arrows agent: it rescans every " +
-      "HTML page under the prototype, rebuilds frames[] + arrows[] in " +
+      "HTML page under the prototype, rebuilds frames[] + arrows[] + the " +
+      "named sections[] grouping them in " +
       "editor/data.js, and streams progress in the chat drawer. Existing " +
       "primitives / entities / state-machines / timelines / grids are not " +
       "touched. Frame layout (positions saved in <slug>.layout.js) is " +
