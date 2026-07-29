@@ -141,6 +141,45 @@ final class InstallManager: NSObject, URLSessionDownloadDelegate {
         }.resume()
     }
 
+    /// Every release names its tree zip `Woven-<tag>.zip` (checked back to
+    /// v0.1.34), so the download URL is derivable from the tag alone. This is
+    /// the last rung: it lets an install complete on a network where
+    /// api.github.com is unreachable but github.com is not - blocked by a
+    /// corporate proxy, or the API budget for a shared IP being spent. Without
+    /// it the cheap probe would find the new version and then fail to resolve
+    /// the asset, which is a worse failure than not checking at all.
+    static func conventionalZipURL(forTag tag: String) -> URL? {
+        URL(string: "https://github.com/heysami/Woven/releases/download/\(tag)/Woven-\(tag).zip")
+    }
+
+    /// The full resolve used by both the launch check and the menu item:
+    /// website probe for the tag, API for the asset, derived URL if the API is
+    /// unreachable. Only the first step is required for an up-to-date install.
+    func resolveLatestRelease(completion: @escaping (Result<Release, Error>) -> Void) {
+        fetchLatestTagCheaply { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .failure(let e):
+                completion(.failure(e))
+            case .success(let tag):
+                self.state.lastCheckAt = Date()
+                self.saveState()
+                self.fetchLatestRelease { apiResult in
+                    switch apiResult {
+                    case .success(let rel):
+                        completion(.success(rel))
+                    case .failure(let apiErr):
+                        if let u = Self.conventionalZipURL(forTag: tag) {
+                            completion(.success(Release(tag: tag, zipURL: u)))
+                        } else {
+                            completion(.failure(apiErr))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func fetchLatestRelease(completion: @escaping (Result<Release, Error>) -> Void) {
         var req = URLRequest(url: Self.repoLatestURL, timeoutInterval: 20)
         req.setValue("Woven-mac-app", forHTTPHeaderField: "User-Agent")
@@ -198,29 +237,23 @@ final class InstallManager: NSObject, URLSessionDownloadDelegate {
     /// Background check on every launch. When a new tag exists it is
     /// downloaded + swapped silently; `onUpdateReady` fires so the menu can
     /// show "Update ready - Restart Daemon to apply".
-    /// Minimum gap between automatic launch checks. `lastCheckAt` was recorded
-    /// from the very first version but never read, so quitting and reopening
-    /// three times ran three checks. Manual "Check for Updates" ignores this.
-    private static let backgroundCheckInterval: TimeInterval = 6 * 3600
-
+    /// Checks on EVERY launch, deliberately - f50b5629 removed a 6h throttle on
+    /// purpose, so `lastCheckAt` is recorded for diagnostics and is NOT a gate.
+    /// Do not reintroduce a throttle here: an unthrottled check is affordable
+    /// precisely because the probe below costs no API budget.
     func backgroundCheck(onUpdateReady: @escaping (String) -> Void) {
-        if let last = state.lastCheckAt,
-           Date().timeIntervalSince(last) < Self.backgroundCheckInterval {
-            return
-        }
         // Cheap probe first - the website redirect, not the rate-limited API.
-        // A launch on an already-current install now costs zero API requests,
-        // which is what keeps the hourly budget intact for the machines that
-        // genuinely need to download something.
+        // A launch on an already-current install costs zero API requests, which
+        // is what makes checking on every launch affordable.
         fetchLatestTagCheaply { [weak self] result in
             guard let self = self else { return }
             guard case .success(let tag) = result else { return }
             self.state.lastCheckAt = Date()
             self.saveState()
             guard tag != self.state.installedTag else { return }
-            // Only now, with a genuinely new tag, spend an API request to
-            // resolve the release's asset URL.
-            self.fetchLatestRelease { r2 in
+            // Only now, with a genuinely new tag, resolve the asset - API
+            // first, derived URL if the API cannot be reached.
+            self.resolveLatestRelease { r2 in
                 guard case .success(let rel) = r2 else { return }
                 guard rel.tag != self.state.installedTag else { return }
                 self.install(release: rel, progress: { _, _ in }) { r in

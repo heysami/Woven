@@ -54,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setup.update(fraction: -1, text: "Checking the latest Woven release...")
         setup.present()
 
-        installManager.fetchLatestRelease { [weak self] result in
+        installManager.resolveLatestRelease { [weak self] result in
             guard let self = self else { return }
             switch result {
             case .failure(let err):
@@ -249,7 +249,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func manualUpdateCheck() {
-        installManager.fetchLatestRelease { [weak self] result in
+        installManager.resolveLatestRelease { [weak self] result in
             guard let self = self else { return }
             switch result {
             case .failure(let err):
