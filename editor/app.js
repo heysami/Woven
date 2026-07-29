@@ -66944,6 +66944,97 @@ function assetPickBucket(w, h) {
   return best;
 }
 
+// --- outpaint seam softening -------------------------------------------------
+// After the model renders the extended frame we paste the ORIGINAL back over it
+// so the source pixels survive. Pasted as a hard rectangle that join reads as a
+// visible line, because the generated margin never matches the original's tone,
+// grain and sharpness exactly. So the paste-back happens across a BAND instead:
+// the original's interior stays pixel-exact, and the last stretch before each
+// EXPANDED edge cross-fades into the generated margin, with a light blur over
+// the band so residual tone difference dissolves rather than stacking up on one
+// pixel column. Feather width is proportional to the image, so small assets keep
+// their subject and large ones get a band wide enough to actually read as a
+// gradient.
+const ASSET_SEAM_FEATHER     = 0.09; // of the original's SHORTER side
+const ASSET_SEAM_FEATHER_MIN = 16;   // px
+const ASSET_SEAM_FEATHER_MAX = 220;  // px
+
+// Alpha mask for the paste-back: opaque over the original's rect, ramping to
+// transparent over each expanded side. `a` / `b` are distances from that edge,
+// inward: fully transparent inside `a`, smoothstep up to fully opaque at `b`.
+// Corners compose multiplicatively (two destination-out passes), which is what
+// a corner expansion wants.
+function assetSeamMask(ow, oh, dx, dy, iw, ih, sides, a, b) {
+  const m = document.createElement("canvas");
+  m.width = ow; m.height = oh;
+  const c = m.getContext("2d");
+  c.fillStyle = "#ffffff";
+  c.fillRect(dx, dy, iw, ih);
+  c.globalCompositeOperation = "destination-out";
+  // Gradient carrying the ERASE alpha: 1 at distance `a`, 0 at distance `b`.
+  const ramp = (x0, y0, x1, y1) => {
+    const g = c.createLinearGradient(x0, y0, x1, y1);
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8, s = t * t * (3 - 2 * t); // smoothstep
+      g.addColorStop(t, "rgba(0,0,0," + (1 - s) + ")");
+    }
+    return g;
+  };
+  const solid = "rgba(0,0,0,1)";
+  if (sides.w) {
+    if (a > 0) { c.fillStyle = solid; c.fillRect(dx, dy, a, ih); }
+    c.fillStyle = ramp(dx + a, 0, dx + b, 0); c.fillRect(dx + a, dy, b - a, ih);
+  }
+  if (sides.e) {
+    if (a > 0) { c.fillStyle = solid; c.fillRect(dx + iw - a, dy, a, ih); }
+    c.fillStyle = ramp(dx + iw - a, 0, dx + iw - b, 0); c.fillRect(dx + iw - b, dy, b - a, ih);
+  }
+  if (sides.n) {
+    if (a > 0) { c.fillStyle = solid; c.fillRect(dx, dy, iw, a); }
+    c.fillStyle = ramp(0, dy + a, 0, dy + b); c.fillRect(dx, dy + a, iw, b - a);
+  }
+  if (sides.s) {
+    if (a > 0) { c.fillStyle = solid; c.fillRect(dx, dy + ih - a, iw, a); }
+    c.fillStyle = ramp(0, dy + ih - a, 0, dy + ih - b); c.fillRect(dx, dy + ih - b, iw, b - a);
+  }
+  c.globalCompositeOperation = "source-over";
+  return m;
+}
+
+// The original masked by `assetSeamMask`, as its own ow x oh layer.
+function assetMaskedOriginal(full, ow, oh, dx, dy, iw, ih, sides, a, b) {
+  const layer = document.createElement("canvas");
+  layer.width = ow; layer.height = oh;
+  const lc = layer.getContext("2d");
+  lc.drawImage(full, dx, dy, iw, ih);
+  lc.globalCompositeOperation = "destination-in";
+  lc.drawImage(assetSeamMask(ow, oh, dx, dy, iw, ih, sides, a, b), 0, 0);
+  lc.globalCompositeOperation = "source-over";
+  return layer;
+}
+
+// Paste `full` (the original, already flip/rotate-baked) back onto `octx` (which
+// already holds the generated frame) with a soft join on every expanded side.
+// Two passes: a blurred feathered layer that owns the band, then a sharp layer
+// inset past the band that restores the interior pixel for pixel. The sharp
+// layer's own ramp lands on top of a blurred copy of the SAME pixels, so it adds
+// no second edge - only sharpness comes back, not tone.
+function assetPasteOriginalFeathered(octx, full, ow, oh, dx, dy, iw, ih) {
+  const sides = { w: dx > 0.5, n: dy > 0.5, e: dx + iw < ow - 0.5, s: dy + ih < oh - 0.5 };
+  let f = Math.round(Math.min(iw, ih) * ASSET_SEAM_FEATHER);
+  f = Math.max(ASSET_SEAM_FEATHER_MIN, Math.min(ASSET_SEAM_FEATHER_MAX, f));
+  f = Math.min(f, Math.floor(Math.min(iw, ih) / 3)); // never eat the subject
+  const anySide = sides.w || sides.n || sides.e || sides.s;
+  const canBlur = typeof octx.filter === "string";
+  if (!anySide || f < 2 || !canBlur) { octx.drawImage(full, dx, dy, iw, ih); return; }
+
+  const blurPx = Math.max(1.5, Math.min(24, f / 8)); // subtle - dissolves the join, doesn't smear it
+  octx.filter = "blur(" + blurPx + "px)";
+  octx.drawImage(assetMaskedOriginal(full, ow, oh, dx, dy, iw, ih, sides, 0, f), 0, 0);
+  octx.filter = "none";
+  octx.drawImage(assetMaskedOriginal(full, ow, oh, dx, dy, iw, ih, sides, f * 0.6, f * 1.7), 0, 0);
+}
+
 // In-place crop / EXPAND overlay for a raster image asset. Drag the frame, then
 // Apply - the framed region is drawn at the image's NATURAL resolution and
 // written back to the SAME file path via /__write_binary, so every prototype /
@@ -67125,8 +67216,10 @@ function WorkflowAssetCropModal({ src, path, label, onClose, onApplied }) {
   // crop's aspect. So we use the model only for the NEW margin: send the padded
   // image + a mask, let it write a candidate to the file, then load that back,
   // stretch it to the TRUE expand size (ow x oh, the crop's real ratio), and
-  // paste the ORIGINAL pixels back over their exact region. The result is the
-  // right ratio and the original is untouched - only the added margin is AI.
+  // paste the ORIGINAL pixels back over their exact region - feathered at the
+  // join (see assetPasteOriginalFeathered) so the seam doesn't read as a line.
+  // The result is the right ratio and the original's interior is untouched;
+  // only the added margin plus a narrow blend band is AI.
   // (The mask still helps the model paint a margin that abuts the original; it
   // needs the daemon restarted to take effect, but the local paste-back makes
   // preservation correct either way.)
@@ -67191,7 +67284,10 @@ function WorkflowAssetCropModal({ src, path, label, onClose, onApplied }) {
       const octx = out.getContext("2d");
       if (mime !== "image/png") { octx.fillStyle = "#ffffff"; octx.fillRect(0, 0, ow, oh); }
       octx.drawImage(gen, 0, 0, ow, oh);                  // model frame -> true ratio (fills the new margin)
-      octx.drawImage(full, dx, dy, tnatW, tnatH);         // original pasted back, pixel-exact
+      // Original pasted back: pixel-exact in the interior, cross-faded + lightly
+      // blurred over the last band before each expanded edge so the join reads
+      // as a gradient instead of a line.
+      assetPasteOriginalFeathered(octx, full, ow, oh, dx, dy, tnatW, tnatH);
       const dataUrl = out.toDataURL(mime, 0.92);
       const wr = await fetch(apiUrl("/__write_binary"), {
         method: "POST",
