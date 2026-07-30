@@ -20678,6 +20678,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(504, {"ok": False, "error": "research agent timed out"})
         except Exception as e:
             return self._reply(502, {"ok": False, "error": f"{type(e).__name__}: {e}"})
+        # Cap the research result. A runaway agent can hand back hundreds of
+        # KB (whole scraped pages); this text is held by the tab (canvas
+        # tables / stickies) and re-fed to downstream LLM calls, so bound it
+        # at the seam. Keep the head - the structured answer comes first.
+        _RESEARCH_TEXT_CAP = 10 * 1024
+        text = text or ""
+        if len(text) > _RESEARCH_TEXT_CAP:
+            text = text[:_RESEARCH_TEXT_CAP] + "\n…(research result truncated at 10KB)"
         return self._reply(200, {"ok": True, "text": text})
 
     def _assistant_prototype_text(self, qs):
