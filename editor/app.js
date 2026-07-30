@@ -940,6 +940,7 @@ const Icon = {
   Shader:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M2.5 6h11M2.5 9.5h11M6 2.5v11"/></svg>`,
   Cube:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2l5 2.8v6.4L8 14l-5-2.8V4.8z"/><path d="M3 4.8L8 7.6l5-2.8M8 7.6V14"/></svg>`,
   Chart:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 13h11M4 13V9M7.5 13V5M11 13V7"/></svg>`,
+  Gauge:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 11.5a5.5 5.5 0 0111 0"/><path d="M8 11.5L10.8 7"/><path d="M2.5 11.5h1M12.5 11.5h1"/></svg>`,
   Folder:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.5 4.5a1 1 0 011-1h3l1.5 1.5h4.5a1 1 0 011 1v5a1 1 0 01-1 1h-9a1 1 0 01-1-1z"/></svg>`,
   Clip:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M12 7l-4.5 4.5a2.5 2.5 0 01-3.5-3.5l5-5a1.5 1.5 0 012 2l-4.8 4.8"/></svg>`,
   Bolt:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M9 2L4 9h3.5L7 14l5-7H8.5z"/></svg>`,
@@ -16202,6 +16203,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           </span>`}
         </div>
         <div className="chat-status-group">
+          ${!isNew && html`<${ChatContextGauge} run=${run} events=${events} runModel=${runModel}/>`}
           ${!isNew && html`<${ChatStatusChip} status=${status} error=${error}/>`}
           <button className="chat-action chat-action-close" onClick=${handleClose} title="Close (run keeps going)"><${Icon.X}/></button>
         </div>
@@ -17521,6 +17523,184 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   `;
 }
 
+/* ── Context gauge + compact popover ──────────────────────────────────────
+   Folds the per-API-call `usage` events (claude + opencode emit them; codex
+   has none, so the gauge hides) into the thread's LIVE context size, and
+   surfaces it as a small ring in the chat header. Clicking opens a popover
+   with the context bar (100k ticks), the thread's cost, a "Compact now"
+   action (POST /__run/<id>/compact - summarise history, reseed a fresh
+   session), and the global auto-compact toggle + threshold slider
+   (GET/POST /__compact_config). */
+function chatContextInfo(events) {
+  let ctx = null, compacted = false;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const ev = events[i];
+    if (ev.event !== "agent") continue;
+    const d = ev.data || {};
+    if (d.type === "compact") { compacted = true; break; }
+    if (d.type === "usage") {
+      const u = d.usage || {};
+      let t = contextInputTokensFromUsage(u);
+      if (t == null && u.tokens && typeof u.tokens === "object") {
+        // opencode shape: {tokens: {input, cache: {read, write}}}
+        const c = u.tokens.cache || {};
+        const n = (+u.tokens.input || 0) + (+c.read || 0) + (+c.write || 0);
+        t = n > 0 ? n : null;
+      }
+      if (t != null) { ctx = t; break; }
+    }
+  }
+  return { ctx, compacted };
+}
+/* Thread cost: costUsd on status frames is RUNNING CUMULATIVE per CLI
+   session; a drop marks a session restart (resume/compact). Sum the maxima
+   of each monotonic segment. */
+function chatRunCost(events) {
+  let total = 0, cur = 0, prev = -1;
+  for (const ev of events) {
+    if (ev.event !== "agent") continue;
+    const d = ev.data || {};
+    if (d.type === "status" && d.costUsd != null) {
+      const c = +d.costUsd || 0;
+      if (c < prev) { total += cur; cur = 0; }
+      if (c > cur) cur = c;
+      prev = c;
+    }
+  }
+  return total + cur;
+}
+function contextWindowFor(runModel, agentId) {
+  if (runModel && String(runModel).includes("[1m]")) return 1_000_000;
+  if (agentId === "claude" || !agentId) return 200_000;
+  return null; // codex / opencode: window varies by model - show absolute only
+}
+
+function ChatContextGauge({ run, events, runModel }) {
+  const [open, setOpen] = useState(false);
+  const [cfg, setCfg] = useState(null);           // {autoCompact, thresholdTokens}
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState(null);         // last action feedback
+  const btnRef = useRef(null);
+  const [, setTick] = useState(0);                // re-measure on resize
+
+  const { ctx, compacted } = useMemo(() => chatContextInfo(events), [events]);
+  const cost = useMemo(() => chatRunCost(events), [events]);
+  const win = contextWindowFor(runModel, run?.agentId);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (btnRef.current && btnRef.current.contains(e.target)) return;
+      if (e.target.closest && e.target.closest(".chat-ctx-pop")) return;
+      setOpen(false);
+    };
+    const onResize = () => setTick(t => t + 1);
+    document.addEventListener("mousedown", onDoc);
+    window.addEventListener("resize", onResize);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || cfg) return;
+    fetch(apiUrl("/__compact_config"))
+      .then(r => r.json()).then(setCfg)
+      .catch(() => setCfg({ autoCompact: false, thresholdTokens: 400000 }));
+  }, [open, cfg]);
+
+  if (ctx == null && !compacted) return null;
+
+  const pct = (win && ctx != null) ? Math.min(100, (ctx / win) * 100) : null;
+  const thr = cfg?.thresholdTokens || 400000;
+  const level = ctx == null ? "ok" : ctx >= thr ? "high" : ctx >= thr / 2 ? "mid" : "ok";
+  const ringLen = 2 * Math.PI * 5.5;
+  const ringFill = pct != null ? (pct / 100) * ringLen
+                 : ctx != null ? Math.min(1, ctx / thr) * ringLen : 0;
+
+  const saveCfg = (patch) => {
+    const next = { ...(cfg || {}), ...patch };
+    setCfg(next);
+    fetch(apiUrl("/__compact_config"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).catch(() => {});
+  };
+
+  const doCompact = async () => {
+    if (busy || !run?.runId) return;
+    setBusy(true); setNote(null);
+    try {
+      const r = await fetch(apiUrl(`/__run/${encodeURIComponent(run.runId)}/compact`), { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) setNote({ ok: true, text: "Compacted - the next message starts a fresh session seeded from the summary." });
+      else setNote({ ok: false, text: j.error || `compact failed (${r.status})` });
+    } catch (e) {
+      setNote({ ok: false, text: String(e) });
+    }
+    setBusy(false);
+  };
+
+  const label = ctx != null
+    ? `${fmtTokens(ctx)}${win ? ` / ${fmtTokens(win)}` : ""} context`
+    : "context compacted - fresh session";
+
+  return html`<span className="chat-ctx-wrap" ref=${btnRef}>
+    <button className="chat-action chat-ctx-gauge" data-level=${level}
+            title=${label} aria-label=${label}
+            onClick=${() => setOpen(o => !o)}>
+      <svg viewBox="0 0 16 16" width="14" height="14">
+        <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2"/>
+        <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" strokeWidth="2"
+                strokeDasharray=${`${ringFill} ${ringLen}`}
+                strokeLinecap="round" transform="rotate(-90 8 8)"/>
+      </svg>
+    </button>
+    ${open && (() => {
+      const r = btnRef.current ? btnRef.current.getBoundingClientRect() : null;
+      const style = !r ? {} : {
+        position: "fixed", top: (r.bottom + 6) + "px",
+        right: Math.max(8, window.innerWidth - r.right) + "px",
+        zIndex: 8000,
+      };
+      const tickPct = win ? (100000 / win) * 100 : null;
+      return createPortal(html`
+        <div className="chat-ctx-pop" style=${style}>
+          <div className="chat-ctx-head">
+            <span className="chat-ctx-title">Context</span>
+            <span className="chat-ctx-figure">${label}${cost > 0.005 ? ` · $${cost.toFixed(2)} this thread` : ""}</span>
+          </div>
+          ${pct != null && html`
+            <div className="chat-ctx-bar" style=${tickPct ? { "--ctx-tick": tickPct + "%" } : {}}>
+              <div className="chat-ctx-bar-fill" data-level=${level} style=${{ width: pct + "%" }}/>
+              ${win && html`<div className="chat-ctx-thr" style=${{ left: Math.min(100, thr / win * 100) + "%" }} title=${`auto-compact threshold ${fmtTokens(thr)}`}/>`}
+            </div>`}
+          <div className="chat-ctx-actions">
+            <button className="chat-ctx-compact-btn" disabled=${busy || ctx == null} onClick=${doCompact}>
+              ${busy ? "Compacting…" : "Compact now"}
+            </button>
+            <span className="chat-ctx-hint">summarises history into a fresh session</span>
+          </div>
+          ${note && html`<div className="chat-ctx-note" data-ok=${!!note.ok}>${note.text}</div>`}
+          <div className="chat-ctx-auto">
+            <label className="chat-ctx-auto-toggle">
+              <input type="checkbox" checked=${!!cfg?.autoCompact}
+                     onChange=${(e) => saveCfg({ autoCompact: e.target.checked })}/>
+              Auto-compact at
+              <strong>${fmtTokens(thr)}</strong>
+            </label>
+            <input type="range" className="chat-ctx-slider"
+                   min="100000" max="800000" step="50000"
+                   value=${thr} disabled=${!cfg}
+                   onInput=${(e) => saveCfg({ thresholdTokens: +e.target.value })}/>
+            <div className="chat-ctx-scale"><span>100k</span><span>800k</span></div>
+          </div>
+        </div>`, document.body);
+    })()}
+  </span>`;
+}
+
 function ChatStatusChip({ status, error }) {
   if (status === "done")  return html`<span className="chat-chip chip-done">done</span>`;
   if (status === "fail")  return html`<span className="chat-chip chip-fail" title=${error || "Agent process exited with a non-zero status. Reply to retry - sends through /resume."}>fail</span>`;
@@ -17738,6 +17918,15 @@ function buildBlocks(events) {
       if (d.type === "usage") {
         // Raw token counts are not actionable in the chat view. The "done"
         // status frame already includes cost; that's the useful summary.
+        // (The header context gauge folds these same events separately.)
+        continue;
+      }
+      if (d.type === "compact") {
+        // Compact-by-handoff marker: everything above this line was
+        // summarised out of the model's context. Render as a divider so
+        // scroll-back explains why the agent "forgot" verbatim details.
+        closeAll();
+        blocks.push({ kind: "compact", data: d, key: `cp-${i}` });
         continue;
       }
       if (d.type === "error") {
@@ -20270,6 +20459,16 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
                     />`)}
                 </div>
               `}
+              <div className="chat-direction-meta">
+                <div className="chat-direction-label">
+                  <span className="chat-direction-value">${opt.value}</span>
+                  <span className="chat-direction-title">${opt.label}</span>
+                  ${opt.recommended && html`<span className="chat-direction-recommended">recommended</span>`}
+                </div>
+                ${opt.axes && html`<div className="chat-direction-axes">${opt.axes}</div>`}
+                ${opt.vibe && html`<div className="chat-direction-vibe">Vibe · ${opt.vibe}</div>`}
+                ${opt.why && html`<div className="chat-direction-why">${opt.why}</div>`}
+              </div>
               ${(opt.display?.text || opt.body?.text) && html`
                 <div className="chat-direction-type">
                   <div className="chat-direction-type-eyebrow">Typography</div>
@@ -20357,16 +20556,6 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
                 return null;
               })()}
               ${opt.badge && html`<div className="chat-direction-badge"><span className="chat-direction-badge-dot">◉</span> ${opt.badge}</div>`}
-              <div className="chat-direction-meta">
-                <div className="chat-direction-label">
-                  <span className="chat-direction-value">${opt.value}</span>
-                  <span className="chat-direction-title">${opt.label}</span>
-                  ${opt.recommended && html`<span className="chat-direction-recommended">recommended</span>`}
-                </div>
-                ${opt.axes && html`<div className="chat-direction-axes">${opt.axes}</div>`}
-                ${opt.vibe && html`<div className="chat-direction-vibe">Vibe · ${opt.vibe}</div>`}
-                ${opt.why && html`<div className="chat-direction-why">${opt.why}</div>`}
-              </div>
             </button>
           `;
         })}
@@ -20913,6 +21102,14 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
     case "usage": {
       const u = block.data.usage || {};
       return html`<div className="chat-row chat-usage">in ${u.input_tokens||0} · out ${u.output_tokens||0}${u.cache_read_input_tokens ? ` · cache ${u.cache_read_input_tokens}` : ""}</div>`;
+    }
+    case "compact": {
+      const before = block.data.contextTokensBefore;
+      return html`<div className="chat-compact-divider" role="status">
+        <span className="chat-compact-line"/>
+        <span className="chat-compact-label">context compacted${before ? ` at ${fmtTokens(before)} tokens` : ""} · earlier turns summarised</span>
+        <span className="chat-compact-line"/>
+      </div>`;
     }
     case "error":
       return html`<div className="chat-row chat-row-error">${block.data.message || "error"}</div>`;
@@ -92132,6 +92329,22 @@ function WorkflowSendKeySection() {
     window.addEventListener("th:node-simplify-changed", on);
     return () => window.removeEventListener("th:node-simplify-changed", on);
   }, []);
+  // Context auto-compact policy - daemon-persisted (the daemon needs it to
+  // fire the trigger on threads whose chat UI is closed), so unlike the
+  // localStorage prefs above this one round-trips /__compact_config.
+  const [compactCfg, setCompactCfg] = useState(null);
+  useEffect(() => {
+    fetch(apiUrl("/__compact_config"))
+      .then(r => r.json()).then(setCompactCfg)
+      .catch(() => setCompactCfg({ autoCompact: false, thresholdTokens: 400000 }));
+  }, []);
+  const saveCompactCfg = (patch) => {
+    setCompactCfg(prev => ({ ...(prev || {}), ...patch }));
+    fetch(apiUrl("/__compact_config"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).catch(() => {});
+  };
   const pick = (v) => { saveSendOnEnter(v); setSendOnEnter(v); };
   const pickSimplify = (v) => { saveNodeSimplify(v); setSimplify(v); };
   const pickTheme = (v) => { saveEditorTheme(v); setTheme(v); };
@@ -92189,6 +92402,23 @@ function WorkflowSendKeySection() {
             <span className="onboarding-sendkey-sub">⇧/⌘ + Enter = new line</span>
           </button>
         </div>
+      </div>
+      <div className="workflow-settings-section">
+        <div className="onboarding-sendkey-head">
+          <span className="onboarding-sendkey-title">Chat context auto-compact</span>
+          <span className="onboarding-sendkey-desc">When a chat thread's context crosses the threshold, its history is summarised into a fresh session at the next turn boundary. Each extra 100k of carried context costs roughly $5 per 100 agent calls.</span>
+        </div>
+        <label className="chat-ctx-auto-toggle chat-ctx-auto-settings">
+          <input type="checkbox" checked=${!!compactCfg?.autoCompact}
+                 disabled=${!compactCfg}
+                 onChange=${(e) => saveCompactCfg({ autoCompact: e.target.checked })}/>
+          Auto-compact at <strong>${fmtTokens(compactCfg?.thresholdTokens || 400000)}</strong> tokens
+        </label>
+        <input type="range" className="chat-ctx-slider"
+               min="100000" max="800000" step="50000"
+               value=${compactCfg?.thresholdTokens || 400000} disabled=${!compactCfg}
+               onInput=${(e) => saveCompactCfg({ thresholdTokens: +e.target.value })}/>
+        <div className="chat-ctx-scale"><span>100k</span><span>800k</span></div>
       </div>
       <div className="workflow-settings-section">
         <div className="onboarding-sendkey-head">

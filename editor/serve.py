@@ -929,27 +929,6 @@ DEFAULT_PROVIDERS_PATH   = os.path.join(MEDIA_CONFIG_DIR, "default-providers.jso
 ORCHESTRATOR_MODELS_PATH = os.path.join(MEDIA_CONFIG_DIR, "orchestrator-models.json")
 SUBAGENT_MODELS_PATH     = os.path.join(MEDIA_CONFIG_DIR, "subagent-models.json")
 SEARCH_DEFAULTS_PATH     = os.path.join(MEDIA_CONFIG_DIR, "search-defaults.json")
-# Context-compaction policy for chat threads (the "compact by handoff"
-# feature): manual compaction is always available; auto-compact fires at the
-# end of a turn once the thread's live context crosses thresholdTokens.
-# Global (cross-project) on purpose - it's a cost preference, not project
-# state. Defaults: auto OFF, threshold 400k (~40% of a 1M-window claude chat).
-COMPACT_CONFIG_PATH      = os.path.join(MEDIA_CONFIG_DIR, "compact-config.json")
-COMPACT_DEFAULTS         = {"autoCompact": False, "thresholdTokens": 400_000}
-
-
-def _compact_config() -> dict:
-    cfg = dict(COMPACT_DEFAULTS)
-    try:
-        saved = _persist_json_load(COMPACT_CONFIG_PATH)
-        if isinstance(saved.get("autoCompact"), bool):
-            cfg["autoCompact"] = saved["autoCompact"]
-        thr = saved.get("thresholdTokens")
-        if isinstance(thr, (int, float)) and 50_000 <= int(thr) <= 2_000_000:
-            cfg["thresholdTokens"] = int(thr)
-    except Exception:
-        pass
-    return cfg
 
 # Aspect ratio → OpenAI gpt-image-1 size mapping. The model accepts a small
 # fixed set: 1024×1024, 1536×1024, 1024×1536, or "auto". Unknown aspect strings
@@ -10126,18 +10105,7 @@ class RunState:
                  # codex/opencode resume (a fresh spawn) re-applies the same
                  # --model instead of silently reverting to the CLI default on
                  # the second message. None/"" = CLI default.
-                 "model",
-                 # Live context size of the underlying CLI session, in tokens:
-                 # input + cache_read + cache_creation of the LAST per-call
-                 # `usage` event (claude and opencode both emit these; codex
-                 # has no token telemetry so it stays None). Drives the chat
-                 # context gauge and the auto-compact trigger. Reset to None
-                 # by a compact (fresh session = unknown until first turn).
-                 "context_tokens",
-                 # Guard so the auto-compact trigger fires at most once per
-                 # crossing (set when a background compact is scheduled,
-                 # cleared when the compact lands or fails).
-                 "_compact_inflight")
+                 "model")
 
     def __init__(self, run_id, proc, agent_id, branch, kind, title, project_id=None, project_root=None):
         self.run_id = run_id
@@ -10154,10 +10122,6 @@ class RunState:
         self.prototype = None
         # Chosen default model (Settings > Agent model); set by _run_create.
         self.model = None
-        # Live context tokens (see __slots__ comment). Lazily backfilled from
-        # the event log for rehydrated runs by _run_context_tokens().
-        self.context_tokens = None
-        self._compact_inflight = False
         self.title = title
         # Phase 6 - remember which project this run was spawned in so /resume
         # can rebuild the same env + cwd, and so /__runs can group by project.
@@ -11609,208 +11573,6 @@ def _kill_run_tree(state: "RunState", grace: float = 3.0) -> None:
                      name=f"run-{state.run_id}-reaper").start()
 
 
-def _context_tokens_from_usage(u: dict):
-    """Live context size of one API call, from a normalised `usage` event.
-    Two shapes flow through the pipeline:
-      - claude:   {input_tokens, cache_read_input_tokens, cache_creation_input_tokens, ...}
-      - opencode: {tokens: {input, output, reasoning, cache: {read, write}}, cost}
-    The context of the call = everything the model READ: raw input + cache
-    reads + cache writes. Returns int or None when the shape is unknown."""
-    if not isinstance(u, dict):
-        return None
-    try:
-        if "input_tokens" in u or "cache_read_input_tokens" in u:
-            n = (int(u.get("input_tokens") or 0)
-                 + int(u.get("cache_read_input_tokens") or 0)
-                 + int(u.get("cache_creation_input_tokens") or 0))
-            return n or None
-        tok = u.get("tokens")
-        if isinstance(tok, dict):
-            cache = tok.get("cache") or {}
-            n = (int(tok.get("input") or 0)
-                 + int(cache.get("read") or 0)
-                 + int(cache.get("write") or 0))
-            return n or None
-    except Exception:
-        pass
-    return None
-
-
-def _last_compact_index(events: list) -> int:
-    """Index of the LAST compact marker in a run's event list, or -1."""
-    for i in range(len(events) - 1, -1, -1):
-        ev = events[i]
-        if ev.get("type") == "agent" and (ev.get("data") or {}).get("type") == "compact":
-            return i
-    return -1
-
-
-def _run_context_tokens(state: "RunState"):
-    """Live context tokens for a run, lazily backfilled from the event log
-    (rehydrated ghosts never went through _drain_stdout's capture). Scans
-    backwards; a compact marker encountered BEFORE any usage event means the
-    session was reset and its size is unknown until the next turn."""
-    if state.context_tokens is not None:
-        return state.context_tokens
-    with state.lock:
-        events = list(state.events)
-    for i in range(len(events) - 1, -1, -1):
-        ev = events[i]
-        if ev.get("type") != "agent":
-            continue
-        d = ev.get("data") or {}
-        if d.get("type") == "compact":
-            return None
-        if d.get("type") == "usage":
-            n = _context_tokens_from_usage(d.get("usage") or {})
-            if n:
-                state.context_tokens = n
-                return n
-    return None
-
-
-_GATE_MARKUP_RE = re.compile(r"<\s*(decision-request|direction-options|question-form)\b")
-
-
-def _compact_gate_pending(state: "RunState") -> bool:
-    """True when the run's LAST agent output (since the user last replied)
-    contains an interactive gate card - compacting now could orphan the pick.
-    Mirrors the client's gate parsing loosely; err on the side of True."""
-    with state.lock:
-        events = list(state.events)
-    tail = []
-    for i in range(len(events) - 1, -1, -1):
-        ev = events[i]
-        t = ev.get("type")
-        if t in ("user_message", "tool_answer"):
-            break
-        d = ev.get("data") or {}
-        if t == "agent":
-            if d.get("type") == "text_delta":
-                tail.append(d.get("delta") or "")
-            elif d.get("type") == "status" and d.get("result"):
-                tail.append(str(d.get("result")))
-            elif d.get("type") == "compact":
-                break
-    try:
-        return bool(_GATE_MARKUP_RE.search("".join(reversed(tail))))
-    except Exception:
-        return True
-
-
-_COMPACT_SUMMARY_SYSTEM = (
-    "You write HANDOFF SUMMARIES for coding-agent conversations. The summary "
-    "replaces the full transcript as the only memory a fresh agent process "
-    "gets, so completeness of STATE matters more than brevity of prose. "
-    "Capture, in this order: (1) the user's goal and any constraints they "
-    "stated; (2) every decision made and gate answered (with the chosen "
-    "option); (3) current state of the work - what is DONE and verified, "
-    "what is in progress, what failed and why; (4) exact file paths, ids, "
-    "commands, and URLs that later turns will need; (5) open items / next "
-    "steps. Write plain prose + bullet lists, no preamble, no meta-comments "
-    "about being a summary. Hard cap ~1500 words."
-)
-
-
-def _compact_summarize(transcript: str) -> str:
-    """Generate the handoff summary. Prefers the CLI subscription path
-    (_assistant_agent_complete - no API key needed); falls back to the BYOK
-    HTTP helper. Raises on total failure - the caller aborts the compact and
-    the thread is left untouched."""
-    prompt = ("Summarize this agent conversation for handoff to a fresh "
-              "process:\n\n===== TRANSCRIPT =====\n" + transcript
-              + "\n===== END TRANSCRIPT =====")
-    try:
-        out = _assistant_agent_complete(_COMPACT_SUMMARY_SYSTEM, prompt,
-                                        model=None, tools="none", timeout=300)
-        if out and out.strip():
-            return out.strip()
-    except Exception:
-        pass
-    out = _ut_llm_text(prompt, system=_COMPACT_SUMMARY_SYSTEM, max_tokens=4000)
-    if not (out and out.strip()):
-        raise RuntimeError("summary generation returned empty text")
-    return out.strip()
-
-
-def _compact_run(state: "RunState", reason: str) -> dict:
-    """Core of compact-by-handoff, shared by the manual endpoint and the
-    auto-compact trigger. The thread's history is summarised, a `compact`
-    marker event is appended (persisted + streamed like any event), the live
-    subprocess (if any) is torn down, and the session id is cleared so the
-    NEXT message re-seeds a fresh CLI session from the summary instead of
-    resuming the bloated one. Raises on failure - nothing is mutated until
-    the summary exists."""
-    ctx_before = _run_context_tokens(state)
-    transcript = _transcript_from_run_events(state)
-    if not transcript:
-        raise RuntimeError("nothing to compact - empty transcript")
-    summary = _compact_summarize(transcript)
-    # Summary in hand - now it's safe to mutate. Kill an idle live process
-    # (claude stream-json keeps it open between turns); codex/opencode are
-    # already dead between turns so this is a no-op for them.
-    if state.proc is not None and state.proc.poll() is None:
-        state.stop_reason = "compacted"
-        try:
-            _kill_run_tree(state)
-        except Exception:
-            pass
-    state.append("agent", {
-        "type": "compact",
-        "summary": summary,
-        "reason": reason,
-        "contextTokensBefore": ctx_before,
-    })
-    state.session_id = None
-    state.context_tokens = None
-    return {"ok": True, "reason": reason,
-            "contextTokensBefore": ctx_before,
-            "summaryChars": len(summary)}
-
-
-def _auto_compact_maybe(state: "RunState") -> None:
-    """Turn-end hook: schedule a background compact when the policy says so.
-    Chat threads only (freeform kind) - node agents / planners are short-lived
-    by design and their context IS their job. Never fires while a gate card
-    is waiting for the user, and at most one compact can be in flight."""
-    try:
-        if state.kind != "freeform" or state._compact_inflight:
-            return
-        cfg = _compact_config()
-        if not cfg.get("autoCompact"):
-            return
-        ctx = state.context_tokens
-        if not ctx or ctx < int(cfg.get("thresholdTokens") or 0):
-            return
-        if _compact_gate_pending(state):
-            return
-        state._compact_inflight = True
-
-        def _bg():
-            try:
-                info = _compact_run(state, "auto")
-                state.append("status", {
-                    "label": "compacted",
-                    "detail": (f"auto-compact at "
-                               f"{(info.get('contextTokensBefore') or 0)//1000}k "
-                               f"context tokens - next message starts a fresh "
-                               f"session seeded from the summary"),
-                })
-            except Exception as e:
-                state.append("status", {"label": "compact-failed",
-                                        "detail": str(e)[:400]})
-            finally:
-                state._compact_inflight = False
-
-        threading.Thread(target=_bg, daemon=True,
-                         name=f"compact-{state.run_id}").start()
-    except Exception:
-        try:
-            state._compact_inflight = False
-        except Exception:
-            pass
-
-
 def _transcript_from_run_events(state: "RunState") -> str:
     """Reconstruct a run's conversation as a plain-text transcript from its
     event log. Used by the fake-resume paths (_run_resume_codex for the
@@ -11818,24 +11580,10 @@ def _transcript_from_run_events(state: "RunState") -> str:
     runs whose sessions were never persisted): the rebuilt transcript is
     prepended to the new user message so a fresh process can continue the
     thread. Each event-log entry of type "agent" carries a normalised event
-    dict; we walk those and rebuild a transcript that reads naturally.
-
-    Compact-aware: when the run carries a `compact` marker, the transcript
-    starts from that marker's summary and only replays events AFTER it - the
-    pre-compact history is represented by the summary alone. This one seam
-    makes every resume path (codex, opencode, planner-claude, and the
-    fresh-seeded native-claude path) honour compaction automatically."""
+    dict; we walk those and rebuild a transcript that reads naturally."""
     lines = []
     with state.lock:
         events = list(state.events)
-    _ci = _last_compact_index(events)
-    if _ci >= 0:
-        _summary = ((events[_ci].get("data") or {}).get("summary") or "").strip()
-        if _summary:
-            lines.append("[SUMMARY OF EARLIER CONVERSATION - the turns before "
-                         "this point were compacted into the following summary]\n"
-                         + _summary)
-        events = events[_ci + 1:]
     for ev in events:
         t = ev.get("type")
         d = ev.get("data") or {}
@@ -11859,19 +11607,12 @@ def _transcript_from_run_events(state: "RunState") -> str:
                 cmd = inp.get("text") or inp.get("command") or json.dumps(inp)
                 lines.append(f"[TOOL CALL: {name}]\n{cmd}")
             elif dt == "tool_result":
-                # _normalize_frame emits `content` as a FLAT STRING and the
-                # error flag as `isError`; only raw pass-through frames still
-                # carry the list-of-parts shape. Handle both - the list-only
-                # reading made every rebuilt transcript's tool results empty.
-                parts = d.get("content")
+                parts = d.get("content") or []
                 body_txt = ""
-                if isinstance(parts, str):
-                    body_txt = parts
-                elif isinstance(parts, list):
-                    for p in parts:
-                        if isinstance(p, dict) and p.get("type") == "text":
-                            body_txt += (p.get("text") or "")
-                err = " (error)" if (d.get("isError") or d.get("is_error")) else ""
+                for p in parts:
+                    if isinstance(p, dict) and p.get("type") == "text":
+                        body_txt += (p.get("text") or "")
+                err = " (error)" if d.get("is_error") else ""
                 # Truncate large tool results so the prompt doesn't blow up.
                 if len(body_txt) > 4000:
                     body_txt = body_txt[:4000] + "\n…(truncated)"
@@ -11944,13 +11685,6 @@ def _drain_stdout(state: "RunState") -> None:
                 # same Claude conversation instead of starting fresh.
                 if ev.get("type") == "status" and ev.get("sessionId") and not state.session_id:
                     state.session_id = ev["sessionId"]
-                # Track the live context size off every per-call usage event
-                # (claude + opencode emit them; codex has no token telemetry).
-                # Drives the chat context gauge + the auto-compact trigger.
-                if ev.get("type") == "usage":
-                    _ctx = _context_tokens_from_usage(ev.get("usage") or {})
-                    if _ctx:
-                        state.context_tokens = _ctx
                 # Promote chat runs to "modifying" the first time the agent
                 # actually touches a file. The lock is scoped to runs that
                 # need it; ad-hoc chats (visualization, Q&A) don't freeze
@@ -11974,15 +11708,6 @@ def _drain_stdout(state: "RunState") -> None:
                     if ev.get("label") in ("done", "error"):
                         state.turn_done = True
                         state.turns_completed += 1
-                        # Auto-compact policy check at the turn boundary -
-                        # the only safe moment (mid-turn kill would lose the
-                        # in-flight work). No-op unless enabled + threshold
-                        # crossed + no gate card awaiting the user.
-                        if ev.get("label") == "done":
-                            try:
-                                _auto_compact_maybe(state)
-                            except Exception:
-                                pass
                         # promote NORMAL -> SETUP for the badge when this
                         # run starts a build. The decide phase runs on the normal
                         # tier (untargeted default) and escalates; _drain_stdout
