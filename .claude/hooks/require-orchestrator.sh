@@ -1,11 +1,21 @@
 #!/bin/bash
-# Woven v3.8 - PreToolUse hook that gates Write/Edit/MultiEdit per family.
+# Woven v3.9 - PreToolUse hook that gates Write/Edit/MultiEdit per family.
 #
 # Each orchestrator owns a territory. The top-level agent (the chat) is allowed
 # to write the app shell freely (source/<branch>/*.html, styles.css, app.js,
 # any file at the top level of source/<branch>/). But writing INSIDE one of
 # the orchestrator-owned folders, or writing a visual binary anywhere, requires
 # the matching orchestrator to have been dispatched in this session.
+#
+# v3.9 adds the LEAF-TERRITORY HARD GATE: the main chat thread may not write
+# inside family territories AT ALL - not even Edits to existing files. The
+# indonesiaaa build showed why: three s3d subsystem leaves died on 529s and
+# the main chat absorbed their work inline (130 Write/Edits at a ~620K-token
+# context, ~59% of the project's entire token spend). Leaf work belongs in
+# node agents (POST /__workflow/node/<id>/run) or Task subagents, whose
+# throwaway contexts stay cheap. The old "edits to existing files always
+# pass" rule still applies OUTSIDE territories (shell HTML, css, top-level
+# js), and EDITOR-mode chats keep full hand-edit rights everywhere.
 #
 # Territory map:
 #   source/<branch>/simulations/<simId>/*   → simulation-orchestrator
@@ -28,9 +38,33 @@ set -u
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
 TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
+AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null)
 
 # No file path → not a file write we can gate; let it through.
 if [ -z "$FILE_PATH" ]; then exit 0; fi
+
+# ── Task-subagent exemption (payload discriminator) ──────────────────────
+# PreToolUse payloads from inside a Task subagent carry `agent_type`; main
+# thread payloads don't (verified empirically 2026-07-24 - same discriminator
+# require-visual-delegation.py uses). Subagents - orchestrators, drawers, and
+# general-purpose fixers alike - burn their own throwaway context, which is
+# exactly where leaf work belongs. Full rights.
+if [ -n "$AGENT_TYPE" ]; then exit 0; fi
+
+# ── Node-agent exemption ─────────────────────────────────────────────────
+# A per-node spawn (POST /__workflow/node/<id>/run) IS the leaf worker - its
+# whole process exists to build inside its territory. Two markers, either
+# suffices:
+#   1. TH_SPAWN_KIND env, stamped by serve.py at spawn/resume time
+#      ("node-agent" for node runs, "planner" for /__dispatch_planner
+#      workers - both are delegated throwaway contexts).
+#   2. The daemon's kick line ("Begin the task for node `...`") in the
+#      transcript - covers spawns from a daemon predating the env stamp.
+case "${TH_SPAWN_KIND:-}" in node-agent|planner) exit 0 ;; esac
+if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] \
+   && grep -aq 'Begin the task for node \`' "$TRANSCRIPT" 2>/dev/null; then
+    exit 0
+fi
 
 # ── Subagent exemption ───────────────────────────────────────────────────
 # Each orchestrator subagent's playbook is loaded as its system prompt. The
@@ -54,6 +88,40 @@ if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
         *"EDITOR MODE"*) exit 0 ;;
     esac
 fi
+
+# ── LEAF-TERRITORY HARD GATE (main chat thread only) ─────────────────────
+# Reaching here means: not a Task subagent, not a node-agent spawn, not an
+# editor-mode chat. This is the long-lived main working thread. It must not
+# do leaf work inline - creating OR editing files inside a family territory.
+# Every one of these directories has (or gets) an owning canvas node; work
+# in them re-reads the main thread's entire context per turn, which is how
+# a $0.25-per-trivial-turn thread happens. Re-dispatch instead.
+case "$FILE_PATH" in
+    */source/*/simulations/*  | */source/*/interactives/* | \
+    */source/*/narratives/*   | */source/*/games/*        | \
+    */source/*/motionscenes/* | */source/*/scene3d/*      | \
+    */source/*/hero3d/*       | */source/*/appnodes/*     | \
+    */source/*/_polish/*      | */source/*/_material/*    | \
+    */source/*/_artdir/*      | */source/*/audio/*)
+        TERRITORY=$(echo "$FILE_PATH" | sed -E 's#.*/source/[^/]+/([^/]+)/.*#\1#')
+        BASENAME="${FILE_PATH##*/}"
+        cat >&2 <<MSG
+[Woven v3.9 leaf-delegation gate] Blocked: the main chat thread must not write ${BASENAME} inside the ${TERRITORY}/ territory - not even a small fix. Leaf work done inline bloats this thread's context (every later turn re-reads it) and starves the owning node of its history.
+
+Do ONE of these instead:
+
+  1. The artefact has an owning canvas node (research/storyboard/scenes/motion/runtime/subsystem/qa_gate...): re-dispatch it -
+       curl -X POST "\$TH_DAEMON_URL/__workflow/node/<nodeId>/run"
+     If the node's last run died on a transient API error (529 etc), re-running it IS the recovery path - do not absorb its job here.
+
+  2. No node exists yet: dispatch the matching orchestrator via Task to scaffold it (simulation- / interactive-media- / narrative-experience- / game-experience- / motion-studio- / scene-3d- / scrapbook-experience- / interactive-polish- / material- / sound-orchestrator).
+
+  3. Genuinely tiny targeted fix: dispatch a general-purpose Task subagent with a self-contained brief (exact file, exact change, verify step). Task subagents pass this gate; their context is throwaway.
+
+This gate is unconditional for the main thread. EDITOR-mode chats and node agents are exempt.
+MSG
+        exit 2 ;;
+esac
 
 # ── Edits to existing files always pass ─────────────────────────────────
 # Orchestrator gating is for SCAFFOLDING - creating the initial sim/im/nx file
