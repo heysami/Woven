@@ -53,6 +53,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import signal
 import socketserver
@@ -13356,12 +13357,16 @@ def _ensure_harness_settings() -> "str | None":
         return None
     # Build the canonical config every time so we self-heal if a stale or
     # broken file sits there from a prior daemon version.
+    # The command strings are run through a SHELL - an unquoted install path
+    # containing a space ("Woven IN USE") splits into a bogus argv and the
+    # hook fails OPEN silently (cottagecore/indonesiaaa took 200+ inline
+    # images through a dead hook). Always shlex-quote.
     settings = {
         "hooks": {
             "PreToolUse": [
                 {
                     "matcher": "Write|Edit|MultiEdit",
-                    "hooks":   [{"type": "command", "command": hook_path}],
+                    "hooks":   [{"type": "command", "command": shlex.quote(hook_path)}],
                 }
             ]
         }
@@ -13377,7 +13382,7 @@ def _ensure_harness_settings() -> "str | None":
     if os.path.isfile(visual_hook):
         settings["hooks"]["PreToolUse"].append({
             "matcher": "Read|mcp__claude_preview__preview_screenshot",
-            "hooks":   [{"type": "command", "command": visual_hook}],
+            "hooks":   [{"type": "command", "command": shlex.quote(visual_hook)}],
         })
     # Short-circuit if the file already matches - avoid disk churn at every
     # spawn (a typical session triggers many spawns).
