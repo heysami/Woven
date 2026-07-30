@@ -32458,3 +32458,102 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 .workflow-node-asset-gds .gds-sync { margin-left: 0; flex-wrap: nowrap; gap: 4px; }
 .workflow-node-asset-gds .gds-sync-btn { padding: 2px 7px; font-size: 11px; }
 .workflow-node-asset-gds .gds-sync-chip { font-size: 11px; }
+
+/* ── Chat context gauge + compact popover ─────────────────────────────────
+   Header ring showing the thread's live context size (folded from per-call
+   usage events); click opens the compact popover. Level bands follow the
+   auto-compact threshold: ok < ½·thr, mid ≥ ½·thr, high ≥ thr. */
+.chat-ctx-wrap { display: inline-flex; align-items: center; flex: 0 0 auto; }
+.chat-ctx-gauge { color: var(--text-faint); }
+.chat-ctx-gauge[data-level="mid"]  { color: var(--warning, #b8860b); }
+.chat-ctx-gauge[data-level="high"] { color: var(--danger); }
+.chat-ctx-gauge:hover { color: var(--text); }
+
+.chat-ctx-pop {
+  width: 280px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: default;
+  font-size: 12px;
+}
+.chat-ctx-head { display: flex; flex-direction: column; gap: 2px; }
+.chat-ctx-title { font-weight: 600; font-size: 12px; }
+.chat-ctx-figure { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
+
+/* Bar with 100k tick marks (tick pitch supplied inline as --ctx-tick). */
+.chat-ctx-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-muted, var(--border));
+  overflow: hidden;
+}
+.chat-ctx-bar::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(90deg,
+    transparent 0,
+    transparent calc(var(--ctx-tick, 10%) - 1px),
+    color-mix(in oklab, var(--text) 18%, transparent) calc(var(--ctx-tick, 10%) - 1px),
+    color-mix(in oklab, var(--text) 18%, transparent) var(--ctx-tick, 10%));
+  pointer-events: none;
+}
+.chat-ctx-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--success);
+  transition: width 0.3s ease;
+}
+.chat-ctx-bar-fill[data-level="mid"]  { background: var(--warning, #b8860b); }
+.chat-ctx-bar-fill[data-level="high"] { background: var(--danger); }
+.chat-ctx-thr {
+  position: absolute; top: -2px; bottom: -2px; width: 2px;
+  background: var(--text-muted);
+  border-radius: 1px;
+}
+
+.chat-ctx-actions { display: flex; align-items: center; gap: 8px; }
+.chat-ctx-compact-btn {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.chat-ctx-compact-btn:hover:not(:disabled) { background: var(--surface-muted, var(--border)); }
+.chat-ctx-compact-btn:disabled { opacity: 0.5; cursor: default; }
+.chat-ctx-hint { color: var(--text-faint); font-size: 11px; min-width: 0; }
+
+.chat-ctx-note { font-size: 11px; color: var(--danger); }
+.chat-ctx-note[data-ok="true"] { color: var(--success); }
+
+.chat-ctx-auto { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--border); padding-top: 8px; }
+.chat-ctx-auto-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+.chat-ctx-auto-toggle input[type="checkbox"] { accent-color: var(--success); margin: 0; }
+.chat-ctx-slider { width: 100%; accent-color: var(--success); margin: 0; }
+.chat-ctx-scale { display: flex; justify-content: space-between; color: var(--text-faint); font-size: 10px; font-family: var(--font-mono); }
+.chat-ctx-auto-settings { margin-top: 8px; }
+
+/* Compact divider row in the chat scroll-back. */
+.chat-compact-divider {
+  display: flex; align-items: center; gap: 8px;
+  margin: 8px 0;
+}
+.chat-compact-line { flex: 1 1 auto; height: 1px; background: var(--border-strong); }
+.chat-compact-label {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
