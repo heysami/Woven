@@ -17538,7 +17538,9 @@ function chatContextInfo(events) {
     if (ev.event !== "agent") continue;
     const d = ev.data || {};
     if (d.type === "compact") { compacted = true; break; }
-    if (d.type === "usage") {
+    // Sidechain usage = a Task subagent's own (small, throwaway) context,
+    // tagged by serve.py's normalizer. Not this chat's window - skip.
+    if (d.type === "usage" && !d.sidechain) {
       const u = d.usage || {};
       let t = contextInputTokensFromUsage(u);
       if (t == null && u.tokens && typeof u.tokens === "object") {

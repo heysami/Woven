@@ -11193,7 +11193,15 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
                 out.append({"type": "raw", "subtype": f"assistant/{kind}", "part": part})
         usage = msg.get("usage")
         if usage:
-            out.append({"type": "usage", "usage": usage})
+            ev = {"type": "usage", "usage": usage}
+            # Subagent (Task) assistant frames stream through the SAME stdout
+            # with parent_tool_use_id set. Their usage reflects the subagent's
+            # own fresh little context, not this chat's - tag it so the
+            # context gauge / auto-compact trigger skip it. Cost totals still
+            # count every call, so keep emitting rather than dropping.
+            if frame.get("parent_tool_use_id"):
+                ev["sidechain"] = True
+            out.append(ev)
         return out
 
     if ftype == "user":
@@ -11661,7 +11669,7 @@ def _run_context_tokens(state: "RunState"):
         d = ev.get("data") or {}
         if d.get("type") == "compact":
             return None
-        if d.get("type") == "usage":
+        if d.get("type") == "usage" and not d.get("sidechain"):
             n = _context_tokens_from_usage(d.get("usage") or {})
             if n:
                 state.context_tokens = n
@@ -11947,7 +11955,7 @@ def _drain_stdout(state: "RunState") -> None:
                 # Track the live context size off every per-call usage event
                 # (claude + opencode emit them; codex has no token telemetry).
                 # Drives the chat context gauge + the auto-compact trigger.
-                if ev.get("type") == "usage":
+                if ev.get("type") == "usage" and not ev.get("sidechain"):
                     _ctx = _context_tokens_from_usage(ev.get("usage") or {})
                     if _ctx:
                         state.context_tokens = _ctx
