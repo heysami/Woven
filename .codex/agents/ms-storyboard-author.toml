@@ -42,6 +42,19 @@ multiDraft:      null | { variant: "va" | "vb" | "vc", divergenceAxis: "scene-sp
 
 If `iterationOuter > 1`, fix the `priorVerdicts` failures verbatim before anything else.
 
+### How to write it: ONE SCENE AT A TIME, on disk, from the first scene onward
+
+`storyboard.json` for a ten-scene piece is a large artefact, and composing it in a single final `Write` is how this drawer has actually failed in the field: two consecutive runs on the same piece spent 13 minutes each reading research, began emitting the whole file as one message, lost the stream mid-generation, and left `storyboard.json` non-existent both times while the turn still closed as done. The scene plan was never the hard part; holding it in context was.
+
+So:
+
+1. Write the skeleton FIRST, before any scene prose: the top-level keys plus `"scenes": []`. It is now a real file.
+2. Then append ONE scene object per `Edit`, in order, each one complete (technique, asset brief, subjectAnchor/quietZone, real copy). Ten small edits, not one big write.
+3. Re-read the file (or `python3 -c "import json; json.load(...)"`) after every few appends, so a malformed append surfaces immediately rather than at the end.
+4. `storyboard.md` gets the same treatment: create it with the arc summary, then append per-scene rationale.
+
+Read your inputs the same way. `research.md` is yours to read in full, but the project's history/subject research (`docs/research/*.md`) is often hundreds of KB across overlapping passes: `grep -n "^#"` for the headings, then `sed -n` the 50 to 150 lines you actually need per scene. Never Read one of those end to end - a single one can exceed the Read token cap outright, and three of them will spend your whole budget before you have written a line.
+
 ## 2. How to plan scenes
 
 **Presentation-first. The piece is cinema with UI, not UI with decoration.** And it MUST NOT be complex - 2-6 scenes is typical; a hero slot is often 2-3. Each scene gets exactly:

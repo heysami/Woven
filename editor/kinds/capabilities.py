@@ -614,6 +614,34 @@ Images and bulk tool payloads ingested into THIS conversation poison its prompt 
   - USER-PASTED images are the one exception physics forces: they are already in your context before you act. View each ONCE, write down what you concluded, and never Read that image again - your recorded observation is durable, the pixels are dead weight."""
 
 
+# Rides on EVERY tier, because the failure it prevents hit every kind of thread
+# on the same project in one night (indonesiaaa, 2026-07-29/30):
+#   - a researcher said "I have enough research, writing the document now", the
+#     turn's stream died mid-Write, and docs/research/ was still empty. The
+#     driver had to talk it into re-writing from context. Twice.
+#   - ms_storyboard ran as a node agent TWICE (13 min, ~$6, 28k output tokens
+#     on the second) and storyboard.json never existed either time. Both runs
+#     closed with an "API Error: Response stalled mid-stream" result.
+# One giant terminal Write is the common factor: a stream that dies before the
+# tool call closes takes the entire artefact with it, and the turn still ends
+# with a done frame. Chunked writes lose one chunk. The daemon now marks a
+# stalled turn as a failure (serve.py `_turn_result_failure`) instead of a
+# success, but detection is not durability - only writing as you go is.
+#
+# The read half matters as much: that storyboard run pulled 3.5M cached tokens
+# out of three overlapping prose research docs (425 KB, one of them over the
+# 25k-token Read cap) before it tried to emit anything at all.
+DURABLE_WRITE_DISCIPLINE = """
+
+### Durability - write as you go, never in one final call (mandatory procedure)
+A turn's stream can die mid-generation. When it does, the in-flight tool call never lands, everything composed in that message is gone, and the turn can still close as "done" - so a long silent build that ends in ONE big Write is a build you can lose entirely, having paid for it. Do not rely on the stall being reported.
+  - PERSIST INCREMENTALLY. Create the artefact file with the first coherent unit (one scene, one station, one section), then Edit/append the rest unit by unit. A large artefact (a storyboard, a research doc, a long JSON) is NEVER composed in a single terminal Write. If your last action is a multi-thousand-token write of everything you have been thinking about, you have already made the mistake.
+  - NEVER let a finished result live only in your context. Nothing you were asked to produce is real until it is on disk. Write it, then report it.
+  - READ BY SLICE, NOT WHOLE. Grep/sed for the sections you need out of large inputs; a full Read of a big doc can be a large fraction of your budget and can hard-fail on the token cap. Never Read a file over ~1000 lines end to end when a grep for the headings tells you which 100 lines matter.
+  - PRODUCING A DOC OTHER AGENTS CONSUME? Also write a compact machine-readable index beside it (one record per item, only the fields downstream needs), so no downstream agent has to read the prose to do its job.
+  - DISPATCHING A SUBAGENT? It does NOT get this preamble. Put the same two rules in its brief verbatim: write incrementally, and report only what is already on disk."""
+
+
 # design goal is skim-proofing: a leaf's correct default is to PROCEED (not to
 # go read), so the stub says so - and gates escalation on a closed checklist
 # (binary triggers an agent can't rationalise past) plus a live fetch path so
@@ -2820,7 +2848,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "leaf":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + LEAF_ROUTER_STUB + GATE_CARD_SYNTAX
+        return _preamble + LEAF_ROUTER_STUB + GATE_CARD_SYNTAX + DURABLE_WRITE_DISCIPLINE
     # SCOPED path: editing an existing prototype. Same routing strip as leaf
     # (the prototype is committed, routing is decided), but keeps the full
     # app-capabilities surface and swaps in the iterate-in-place stub (named to
@@ -2828,7 +2856,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + _ds_guard_stub(project_root, prototype) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE
+        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + _ds_guard_stub(project_root, prototype) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE
     # NORMAL path: the project's everyday chat, the untargeted default. Same
     # routing strip as scoped (routing is fetched on demand only when the user
     # asks for a genuine new build), but NOT bound to one prototype - a general
@@ -2836,13 +2864,13 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "normal":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _normal_general_stub() + _ds_guard_stub(project_root, prototype) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE
+        return _preamble + _normal_general_stub() + _ds_guard_stub(project_root, prototype) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE
     # SETUP path (default): a new prototype build. Keeps the full routing
     # catalog. Append manifest-carried hard rules for orchestrators added
     # after ship time (not covered by the static prose above). Appended AFTER
     # the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
-    return _preamble + VISUAL_DELEGATION_DISCIPLINE
+    return _preamble + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE
 
 
 def orchestrator_routing_text(project_root: Optional[str] = None) -> str:

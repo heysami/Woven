@@ -11143,6 +11143,11 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
             "costUsd": frame.get("total_cost_usd"),
             "usage": frame.get("usage"),
             "result": frame.get("result"),
+            # `is_error` rides along because subtype alone LIES: a turn whose
+            # upstream stream dies mid-generation closes as
+            # subtype:"success" with the failure text in `result`. See
+            # _turn_result_failure() - the node completion hook reads both.
+            "isError": frame.get("is_error"),
         })
         return out
 
@@ -11267,8 +11272,48 @@ def _maybe_advance_build_chain(state):
         print(f"[auto-chain] failed to advance to {nxt!r}: {e}", flush=True)
 
 
-def _fire_node_completion_hook(state, *, exit_code):
+# A `result` frame that says subtype:"success" is NOT proof the turn worked.
+# When the upstream stream dies mid-generation the CLI still closes the turn
+# with label "done" and puts the failure in `result`:
+#     label:"done", subtype:"success",
+#     result:"API Error: Response stalled mid-stream. The response above may
+#             be incomplete."
+# The model was mid-Write when the stream died, so NOTHING landed on disk.
+# The node completion hook used to fire on the "done" LABEL alone, which
+# flipped the node to done and let the build chain advance onto an artefact
+# that does not exist. Observed on indonesiaaa/ruang-gelap: two consecutive
+# ms_storyboard runs "succeeded" (13 min and ~$6 each, 28k output tokens on
+# the second), storyboard.json never existed, and the chain dispatched
+# concept-plates one second after the second false success.
+#
+# Match strictly - the CLI's synthetic failure text always leads with
+# "API Error", and the stall wording is unmistakable. A model that merely
+# TALKS about an API error in its final message says so mid-sentence, not at
+# offset 0, so this can't fire on prose.
+def _turn_result_failure(ev):
+    """Return a short reason string when a `done` status frame is really a
+    FAILED turn, else None."""
+    if ev.get("isError") is True:
+        res = ev.get("result")
+        return (str(res).strip().splitlines()[0][:200] if res else "turn reported is_error")
+    res = ev.get("result")
+    if not isinstance(res, str): return None
+    head = res.strip()
+    low = head.lower()
+    if (low.startswith("api error")
+            or "stalled mid-stream" in low
+            or "response stalled" in low):
+        return head.splitlines()[0][:200]
+    return None
+
+
+def _fire_node_completion_hook(state, *, exit_code, error_detail=None, stopped=False):
     """v2.24 - flip a workflow node's runStatus + record runId, atomically.
+
+    `stopped=True` means the run was deliberately STOPPED (user-stop), which is
+    not a failure: the node goes back to idle so it can be re-run, and the
+    build chain does NOT advance. `error_detail` overrides the generic
+    "subprocess exit N" runError with a real reason (a stalled turn, say).
 
     Extracted from `_drain_stdout`'s finally block so the same logic can fire
     both from process-exit (legacy path) AND from turn-done (new path for
@@ -11289,11 +11334,20 @@ def _fire_node_completion_hook(state, *, exit_code):
      nodes = wf.get("nodes") or []
      target = next((n for n in nodes if isinstance(n, dict) and n.get("id") == wf_node_id), None)
      if target is None: return
-     target["runStatus"] = "done" if exit_code == 0 else "error"
-     if exit_code == 0:
+     if stopped:
+        # A stop is not a verdict. Leave the node idle (no badge, no error) so
+        # the user can just press Run again. Before this, a stopped node kept
+        # runStatus "error" / runError "subprocess exit 143" - the graceful
+        # SIGTERM read as a crash - and since the chain only advances on a
+        # clean exit, one stop left the phase permanently halted on a red node.
+        target.pop("runStatus", None)
         target.pop("runError", None)
      else:
-        target["runError"] = f"subprocess exit {exit_code}"
+        target["runStatus"] = "done" if exit_code == 0 else "error"
+        if exit_code == 0:
+            target.pop("runError", None)
+        else:
+            target["runError"] = error_detail or f"subprocess exit {exit_code}"
      # keep runId + runRunId both populated so the chat tab can find
      # the transcript via /__chat?runId= regardless of which field the
      # frontend reads.
@@ -11301,7 +11355,7 @@ def _fire_node_completion_hook(state, *, exit_code):
      target["runRunId"] = state.run_id
      # asset-versioning snapshot hook for async agent runs. Only fires
      # on success; failure leaves the run in error state with no snapshot.
-     if exit_code == 0:
+     if exit_code == 0 and not stopped:
          try:
              from kinds.versioning import snapshot_downstream_assets
              snapshot_downstream_assets(state.project_root, wf, wf_node_id)
@@ -11309,7 +11363,8 @@ def _fire_node_completion_hook(state, *, exit_code):
              print(f"[asset-versioning] async snapshot error on {wf_node_id}: {_vsn_err}", flush=True)
      with _history_bracket(state.project_root, ["workflow/workflow.json"],
                            kind="workflow-op",
-                           label=f"Node finish: {target.get('title') or wf_node_id} → {target['runStatus']}",
+                           label=(f"Node finish: {target.get('title') or wf_node_id} → "
+                                  f"{target.get('runStatus') or 'stopped'}"),
                            source="workflow",
                            extra={"nodeId": wf_node_id, "runId": state.run_id, "exitCode": exit_code}):
          _write_json_atomic(wf_path, wf)
@@ -11318,8 +11373,9 @@ def _fire_node_completion_hook(state, *, exit_code):
     # daemon-side build-chain. If this node carried a chain and exited
     # cleanly, dispatch the next builder daemon-side (no chat turn). On error
     # the chain HALTS here (we only advance on exit_code == 0) so the failure
-    # surfaces instead of silently skipping ahead.
-    if exit_code == 0:
+    # surfaces instead of silently skipping ahead. A STOP halts it too - the
+    # user pressed stop, they don't want the next drawer spawned.
+    if exit_code == 0 and not stopped:
         _maybe_advance_build_chain(state)
     # Live session - drop the agent lease on this node so guests can edit again.
     try: _live.release_agent_lease(state.project_id or project_id, wf_node_id)
@@ -11626,11 +11682,32 @@ def _drain_stdout(state: "RunState") -> None:
                         # subprocess exit code as the verdict. (Reported by
                         # user: "The research run flipped to error but wrote
                         # an 8.2 KB research.md on disk.")
+                        #
+                        # ...and `done` is not proof of success either: a turn
+                        # whose stream died mid-generation closes as
+                        # done/success with the failure in `result`.
+                        # _turn_result_failure() reads the frame properly, so a
+                        # stalled drawer lands as an ERROR the user can see and
+                        # re-run instead of a green node the chain builds on.
+                        if ev.get("label") == "done":
+                            _turn_fail = _turn_result_failure(ev)
+                            if _turn_fail:
+                                state.append("status", {
+                                    "label":  "turn failed - the model's stream died before it finished",
+                                    "detail": _turn_fail,
+                                })
+                        else:
+                            _turn_fail = None
                         if (ev.get("label") == "done"
                                 and getattr(state, "workflow_node_id", None)
                                 and not getattr(state, "_node_completion_fired", False)):
                             try:
-                                _fire_node_completion_hook(state, exit_code=0)
+                                if _turn_fail:
+                                    _fire_node_completion_hook(
+                                        state, exit_code=1,
+                                        error_detail=f"turn failed: {_turn_fail}")
+                                else:
+                                    _fire_node_completion_hook(state, exit_code=0)
                             except Exception as _e:
                                 state.append("status", {"label": "node-status-update-failed", "detail": str(_e)})
                             state._node_completion_fired = True
@@ -11640,7 +11717,7 @@ def _drain_stdout(state: "RunState") -> None:
                             # finish() knows this was intentional; the SIGTERM
                             # exit code (143) shouldn't be reported as a
                             # failure to the chat UI.
-                            state.stop_reason = "completed-orchestrator"
+                            state.stop_reason = "turn-failed" if _turn_fail else "completed-orchestrator"
                             try: state.proc.terminate()
                             except Exception: pass
                     elif ev.get("label") == "starting":
@@ -11696,7 +11773,19 @@ def _drain_stdout(state: "RunState") -> None:
         wf_node_id = getattr(state, "workflow_node_id", None)
         if wf_node_id and state.project_root and not getattr(state, "_node_completion_fired", False):
             try:
-                _fire_node_completion_hook(state, exit_code=exit_code or 0)
+                if state.stop_reason == "user-stop":
+                    # STOPPED, not failed. This fallback used to pass the RAW
+                    # exit code, so the graceful SIGTERM behind every stop
+                    # landed on the node as runError "subprocess exit 143" -
+                    # a red node the chain refuses to advance past. (Observed:
+                    # ms_concept_ruang-gelap, stopped 50s in, permanently
+                    # errored.) `effective_exit` right above already knows
+                    # this is a 0; the node hook needs the same truth.
+                    _fire_node_completion_hook(state, exit_code=None, stopped=True)
+                else:
+                    _fire_node_completion_hook(
+                        state,
+                        exit_code=(effective_exit if state.stop_reason else exit_code) or 0)
             except Exception as e:
                 state.append("status", {"label": "node-status-update-failed", "detail": str(e)})
         # ── History snapshot - AFTER state ───────────────────────────────
@@ -15247,6 +15336,30 @@ class H(http.server.SimpleHTTPRequestHandler):
                                            "assistant-strategy", "table")
                         if disk_status == "running" and disk_n.get("kind") not in _no_owner_kinds:
                             n["runStatus"] = "running"
+                            disk_error = disk_n.get("runError")
+                            if disk_error is not None:
+                                n["runError"] = disk_error
+                        # The same hazard one step later, for the TERMINAL
+                        # verdict of a daemon-owned agent run. The editor's
+                        # debounced save echoes each node from React state as of
+                        # its last FETCH; when a node-agent run finishes inside
+                        # that window the echo carries an empty runStatus and
+                        # erased the daemon's verdict. Observed on
+                        # indonesiaaa/ms_storyboard_ruang-gelap: the node kept
+                        # its runId but lost `done`, so the auto-chain's
+                        # "already running/done -> skip dispatch" guard stopped
+                        # matching and the drawer became eligible to be spawned
+                        # all over again (~$6 and 14 minutes per re-run).
+                        # Narrow on purpose: kind "agent" only - the drawer
+                        # family whose runs are ALWAYS owned by a daemon
+                        # subprocess - and only when the editor posts an EMPTY
+                        # status. An explicit pending / running / error from the
+                        # editor is a deliberate re-run or reset and still wins.
+                        elif (disk_status in ("done", "error")
+                                and disk_n.get("kind") == "agent"
+                                and disk_n.get("runId")
+                                and n.get("runStatus") in (None, "")):
+                            n["runStatus"] = disk_status
                             disk_error = disk_n.get("runError")
                             if disk_error is not None:
                                 n["runError"] = disk_error
