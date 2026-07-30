@@ -15881,6 +15881,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         run_id = uuid.uuid4().hex[:16]
         env = _build_child_env(agent_id, run_id,
                                project_root=project_root, project_id=project_id)
+        # Leaf-delegation gate discriminator: a per-node spawn IS the leaf
+        # worker, so the require-orchestrator.sh territory hard-gate must let
+        # it write inside its own family folder. The hook also has a
+        # transcript-marker fallback ("Begin the task for node `"), but the
+        # env stamp is the deterministic primary signal.
+        env["TH_SPAWN_KIND"] = "node-agent"
+        env["TH_NODE_ID"] = node_id or ""
         try:
             proc = subprocess.Popen(
                 [bin_path, *spawn_args],
@@ -21554,6 +21561,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         run_id = uuid.uuid4().hex[:16]
         env = _build_child_env(agent_id, run_id,
                                project_root=project_root, project_id=project_id)
+        # Planner dispatches (visual-verifier, codex drawers, ...) are
+        # delegated throwaway workers, not the main chat - exempt them from
+        # the leaf-territory hard gate the same way node agents are.
+        env["TH_SPAWN_KIND"] = "planner"
         argv = [bin_path, *spawn_args]
         if prompt_argv is not None:
             argv.append(prompt_argv)
@@ -32272,6 +32283,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             first_msg = text
         env = _build_child_env("claude", run_id,
                                project_root=state.project_root, project_id=state.project_id)
+        # Same leaf-delegation exemption as the initial planner spawn.
+        env["TH_SPAWN_KIND"] = "planner"
         try:
             proc = subprocess.Popen(
                 [bin_path, *spawn_args],
@@ -32614,6 +32627,13 @@ class H(http.server.SimpleHTTPRequestHandler):
 
         env = _build_child_env(state.agent_id, run_id,
                                project_root=state.project_root, project_id=state.project_id)
+        # A resumed node-agent run keeps its leaf identity: re-stamp the
+        # leaf-delegation discriminator so the territory hard-gate in
+        # require-orchestrator.sh still recognises it after resume (the
+        # transcript-marker fallback also covers this, belt and braces).
+        if getattr(state, "workflow_node_id", None):
+            env["TH_SPAWN_KIND"] = "node-agent"
+            env["TH_NODE_ID"] = state.workflow_node_id
 
         # log just the permission-related flags so a future
         # regression in this code path is immediately visible in the
