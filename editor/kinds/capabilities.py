@@ -642,6 +642,35 @@ A turn's stream can die mid-generation. When it does, the in-flight tool call ne
   - DISPATCHING A SUBAGENT? It does NOT get this preamble. Put the same two rules in its brief verbatim: write incrementally, and report only what is already on disk."""
 
 
+# Rides on EVERY tier. Motivating incident (indonesiaaa, 2026-07-30): the
+# brief's final era, "extremely futuristic", survived VERBATIM into
+# pipeline.json and every dispatch envelope, and research even committed a
+# far-future station for it - yet the concept the user approved ("each age
+# arrives on its own light across real stone") had already quietly foreclosed
+# it, and the storyboard then rendered that era as the OLDEST form in the
+# piece: an ancient megalith under sourceless light. Every derived doc was
+# internally consistent, so the final gate - which verifies against the
+# derived docs (successFeel, contract, research, storyboard), never the raw
+# brief - passed a piece that missed an era the user explicitly asked for.
+# The user approved the CONCEPT assuming the CONTENT stayed; no step ever
+# surfaced that the concept had rewritten it. Concept gates show the HOW and
+# silently carry a rewritten WHAT - this reflection is the only checkpoint
+# where that rewrite is still visible and cheap to reverse.
+CONTENT_FIDELITY_REFLECTION = """
+
+### Content fidelity - reflect before every concept gate (mandatory procedure)
+A concept can silently rewrite the content it was asked to carry, and the user cannot see that from the concept card: they approve the HOW (register, metaphor, vibe) assuming the WHAT (the things they literally asked for) is unchanged. Downstream QA verifies against the DERIVED docs, so a rewrite that happens at concept time is never caught later. This reflection is the only checkpoint.
+
+WHEN: every time you are about to surface a concept for user approval - the Step -1 direction pick, a PRD / successFeel commit, brainstorm surface claims, a family research gate, a storyboard or plates gate, any `<decision-request>` whose subject is "here is the concept / plan for X". When you RELAY a gate block composed by a node or subagent, run the reflection YOURSELF before relaying, and if the block lacks a divergence section that the diff says it needs, prepend one above the verbatim block.
+
+HOW:
+  1. EXTRACT the brief's content list from the VERBATIM user request (`pipeline.json` `brief`, or this thread's request): every concrete thing the user named - each item of an enumeration (eras, sections, chapters, levels), named subjects, named features. Mechanical extraction, no interpretation: if the user listed nine things, the list has nine entries.
+  2. DIFF each entry against the concept you are presenting. Classify: INTACT (the thing is there, styled by the concept), REINTERPRETED (the label survives but the substance is replaced - test: would the user, shown the concept's treatment of this item, recognise the thing they asked for?), MERGED (folded into a sibling), or DROPPED.
+  3. ALL INTACT -> present the gate as normal and say nothing extra. Do NOT ask the user to re-confirm content that did not change: a reflex confirmation on every gate trains the user to stop reading gates.
+  4. ANY reinterpretation / merge / drop -> the gate MUST open with a **Content changes from your request** section, one plain line per divergence stating what they asked for, what the concept does instead, and why (e.g. "you asked for 'extremely futuristic' as the final era; this concept renders it as the OLDEST stone form under a sourceless light - conceptually future, visually ancient"). Offer the resolution explicitly: keep the concept's version / restore the literal content / adjust. Never bury the delta inside the concept prose - the user must see it without reading the docs.
+  5. RECORD the user's resolution in the decision's `detail.steers` (`POST $TH_DAEMON_URL/__decision/<gate-id>?project=$TH_PROJECT_ID`, same shape as the direction lock), so the build thread and every later gate inherit it as committed intent. A divergence the user resolved is committed; a divergence discovered later that was NEVER surfaced and resolved (e.g. at the final gate's PROMISED diff against the ledger `brief`) is a gate FAILURE that routes back to the responsible step, not a footnote."""
+
+
 # design goal is skim-proofing: a leaf's correct default is to PROCEED (not to
 # go read), so the stub says so - and gates escalation on a closed checklist
 # (binary triggers an agent can't rationalise past) plus a live fetch path so
@@ -849,10 +878,10 @@ The user was handed off here to run an already-decided build. DRIVE it: the lock
 
 THE DRIVE MECHANICS ARE NON-NEGOTIABLE (they used to live only in the routing catalog you are told not to fetch - that is how a build thread ran every builder through the Agent tool while the canvas sat dead at `pending`):
   - **Builders run as NODE RUNS, never Agent-tool dispatches.** After an orchestrator hands back its scaffolded builder nodes, dispatch the FIRST node with the rest as an auto-chain and let the daemon advance it: `POST $TH_DAEMON_URL/__workflow/node/<first>/run?project=$TH_PROJECT_ID&parent=$TH_RUN_ID&chain=<comma-joined rest>`. Always pass `parent=$TH_RUN_ID` - it is how the daemon's stall watchdog knows to tell YOU when a builder hangs instead of leaving you polling a dead node forever. Poll until the last is `done`; a builder `error` HALTS the chain daemon-side - surface it, don't silently retry. The canvas nodes ARE the build (live badges, per-node re-run, node-anchored envelopes, crash-resume). Agent dispatch of a scaffolded builder is allowed ONLY when its node /run POST itself errors, and you must say so in chat.
-  - **Final gate = QA + PROMISED + lenses, on the assembled runtime.** Before judging quality, re-read the family's `research.md` FROM DISK and diff every committed mechanism (chromeStrategy, sprite inventory + cycles, paradigm, inputs, audio) against the shipped files - a commitment that shipped as something else or silently vanished FAILS the gate and routes back to the responsible builder, even when the result looks fine. The PROMISED diff needs nothing but file reads: run it ESPECIALLY when lens subagents or the vision judge are unavailable - a degraded runtime is never a reason to self-certify obedience. Then `GET /__qa/run` (+ judge) and the lens trio per the routing catalog's contract 3; fetch `GET $TH_DAEMON_URL/__capabilities?section=orchestrators` for the full gate loop when you reach it.
+  - **Final gate = QA + PROMISED + lenses, on the assembled runtime.** Before judging quality, re-read the family's `research.md` FROM DISK and diff every committed mechanism (chromeStrategy, sprite inventory + cycles, paradigm, inputs, audio) against the shipped files - a commitment that shipped as something else or silently vanished FAILS the gate and routes back to the responsible builder, even when the result looks fine. The PROMISED diff has a second axis: the ledger `brief`'s content enumerations (per the Content fidelity reflection) - each named item must ship as something the user would recognise, unless a recorded resolution in a `DECISION_*.json` `detail.steers` says the user approved the rewrite; an unsurfaced rewrite FAILS the gate the same way a vanished mechanism does. The PROMISED diff needs nothing but file reads: run it ESPECIALLY when lens subagents or the vision judge are unavailable - a degraded runtime is never a reason to self-certify obedience. Then `GET /__qa/run` (+ judge) and the lens trio per the routing catalog's contract 3; fetch `GET $TH_DAEMON_URL/__capabilities?section=orchestrators` for the full gate loop when you reach it.
   - **Disk outranks memory.** research.md, DECISION_*.json and pipeline.json can be corrected on disk mid-build; re-read before composing any brief or INTEGRATION doc, reference doctrine instead of restating it, and never bake premises like "no direction committed" without reading the ledger.
 Two ledger fields shape HOW you drive:
-  - `brief` - the user's original build request, verbatim: the INTENT AUTHORITY over the plan's prose (a locked plan is a digest of the brief, and digests drift). Before dispatching, sanity-check the two: if the brief's explicit experiential intent contradicts the locked shape (e.g. the brief asks for an immersive / walkable / 3D piece but the resolution boxed that surface into a section, or dropped it), STOP and ask the user which to follow - never silently drive a plan that cannot deliver what the brief literally asks for.
+  - `brief` - the user's original build request, verbatim: the INTENT AUTHORITY over the plan's prose (a locked plan is a digest of the brief, and digests drift). Before dispatching, sanity-check the two: if the brief's explicit experiential intent contradicts the locked shape (e.g. the brief asks for an immersive / walkable / 3D piece but the resolution boxed that surface into a section, or dropped it), STOP and ask the user which to follow - never silently drive a plan that cannot deliver what the brief literally asks for. The same authority covers CONTENT, not just shape: the brief's enumerations (eras, sections, chapters, named subjects) bind every concept doc derived from it - run the Content fidelity reflection (below) at every concept gate you drive or relay, and treat an unsurfaced content rewrite found at the final gate as a failure that routes back.
   - `renderLayers` on a phase - orchestrators FOLDED into that phase as scene escalations (e.g. scene-3d under narrative-experience). Do NOT dispatch a folded orchestrator as its own top-level surface; instead thread each entry's `directive` verbatim into the HOST orchestrator's dispatch brief (it forces the 3d-environment paradigm so the host co-dispatches the layer host-driven and the scene ships genuinely 3D).
 
 ### Role B - no locked plan (or it is complete) AND the user asks to build a NEW `source/*` artefact from scratch: you are the DECIDE thread
@@ -2848,7 +2877,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "leaf":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + LEAF_ROUTER_STUB + GATE_CARD_SYNTAX + DURABLE_WRITE_DISCIPLINE
+        return _preamble + LEAF_ROUTER_STUB + GATE_CARD_SYNTAX + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
     # SCOPED path: editing an existing prototype. Same routing strip as leaf
     # (the prototype is committed, routing is decided), but keeps the full
     # app-capabilities surface and swaps in the iterate-in-place stub (named to
@@ -2856,7 +2885,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + _ds_guard_stub(project_root, prototype) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE
+        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + _ds_guard_stub(project_root, prototype) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
     # NORMAL path: the project's everyday chat, the untargeted default. Same
     # routing strip as scoped (routing is fetched on demand only when the user
     # asks for a genuine new build), but NOT bound to one prototype - a general
@@ -2864,13 +2893,13 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "normal":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _normal_general_stub() + _ds_guard_stub(project_root, prototype) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE
+        return _preamble + _normal_general_stub() + _ds_guard_stub(project_root, prototype) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
     # SETUP path (default): a new prototype build. Keeps the full routing
     # catalog. Append manifest-carried hard rules for orchestrators added
     # after ship time (not covered by the static prose above). Appended AFTER
     # the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
-    return _preamble + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE
+    return _preamble + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
 
 
 def orchestrator_routing_text(project_root: Optional[str] = None) -> str:
