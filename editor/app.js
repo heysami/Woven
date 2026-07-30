@@ -12589,6 +12589,25 @@ function extractRunTasks(events) {
 
 /* Map a /__chat response's JSONL rows into the { event, data } shape the
    extractors above expect (same mapping the ChatDrawer hydrate path uses). */
+// Rolling cap on the ChatDrawer's in-memory event array. A marathon run
+// streams for hours; holding every event grows the tab's heap without bound
+// and is one of the two ingredients of the renderer OOM crashes (the other,
+// the unbounded /__chat hydrate, is capped daemon-side by _chat_tail_budget).
+// When the cap bites we drop the OLDEST events, preserving user-authored ones
+// (user_message / tool_answer) because the drawer replays past
+// `[decision:<id>]` replies to keep answered gate cards answered.
+const CHAT_LIVE_EVENT_CAP = 6000;
+function capChatEvents(list) {
+  if (!Array.isArray(list) || list.length <= CHAT_LIVE_EVENT_CAP) return list;
+  const cutoff = list.length - CHAT_LIVE_EVENT_CAP;
+  const preserved = [];
+  for (let i = 0; i < cutoff; i++) {
+    const ev = list[i];
+    if (ev && (ev.event === "user_message" || ev.event === "tool_answer")) preserved.push(ev);
+  }
+  return [...preserved, ...list.slice(cutoff)];
+}
+
 function chatRowsToEvents(rows) {
   const evs = [];
   for (const row of rows || []) {
@@ -15589,7 +15608,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             }
           }
           if (cancelled) return;
-          setEvents(evs);
+          setEvents(capChatEvents(evs));
           // Harvest tool_answer payloads into the answers map so historical
           // AskUserQuestion cards render as resolved (same logic as the SSE
           // branch below). Also scan user_message events for the Phase 4
@@ -15653,7 +15672,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             if (typeof row.seq === "number" && row.seq > maxSeq) maxSeq = row.seq;
           }
           if (!cancelled && evs.length) {
-            setEvents(evs);
+            setEvents(capChatEvents(evs));
             lastIdRef.current = maxSeq;
             for (const ev of evs) { if (ev.id != null) _seenSeqRef.current.add(Number(ev.id)); }
             // Harvest answered cards from history so they render resolved.
@@ -15739,7 +15758,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
               if (_seenSeqRef.current.has(sid)) return;
               _seenSeqRef.current.add(sid);
             }
-            setEvents(prev => [...prev, ev]);
+            setEvents(prev => capChatEvents([...prev, ev]));
             // Harvest tool_answer events into the answers map so a re-mounted
             // drawer (Reopen) shows previously-answered cards as resolved.
             // Same harvest for user_message events that match the Phase 4

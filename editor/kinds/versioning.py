@@ -93,6 +93,78 @@ def view_dir(project_root: str, node_id: str, version_id: str,
     )
 
 
+# ── inline-manifest slimming ────────────────────────────────────────────────
+# A version entry's per-file manifest (`files` + `canonicalPaths`) is written
+# TWICE: into the snapshot dir's meta.json (authoritative, one file per
+# version) and inline into workflow.json. The inline copy is pure duplication,
+# and on a build with many files it dominates the whole document: indonesiaaa's
+# prototype node reached 21 versions x 167 files = 767 KB of manifest inside a
+# 1.2 MB workflow.json that the editor re-fetches and re-parses on every SSE
+# change broadcast (one ingredient of the browser-tab OOM crashes).
+#
+# So the inline copy is SLIMMED: `files` dropped, `canonicalPaths` cut to its
+# first element (the only one any frontend reader uses - the picker's
+# `canonicalPaths[0]` preview path), and `manifestInMeta: true` stamped. The
+# daemon-side readers that genuinely need the full manifest (materialise_view,
+# refresh_source_from_view, the branch-to-sibling copy) rehydrate it from
+# meta.json via load_version_manifest(). Safe because eviction removes the
+# snapshot dir and the inline entry TOGETHER - a surviving entry always has
+# its meta.json (guarded anyway: entries whose meta.json is missing or
+# manifest-less are never slimmed).
+
+def load_version_manifest(project_root: str, node_id: Optional[str],
+                          version: Dict[str, Any]) -> Tuple[List[Dict[str, str]], List[str]]:
+    """Return (files, canonicalPaths) for a version entry, reading the
+    snapshot dir's meta.json when the inline entry was slimmed."""
+    files = version.get("files")
+    canon = version.get("canonicalPaths")
+    if isinstance(files, list) and files:
+        return files, (canon if isinstance(canon, list) else [])
+    vid = version.get("id")
+    if node_id and vid:
+        try:
+            with open(os.path.join(runs_dir(project_root, node_id, vid), "meta.json"),
+                      "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            m_files = meta.get("files")
+            m_canon = meta.get("canonicalPaths")
+            if isinstance(m_files, list) and m_files:
+                return m_files, (m_canon if isinstance(m_canon, list) else [])
+        except Exception:
+            pass
+    return (files if isinstance(files, list) else [],
+            canon if isinstance(canon, list) else [])
+
+
+def slim_node_versions(project_root: str, node: Dict[str, Any]) -> int:
+    """Slim every inline version entry on `node` whose manifest is recoverable
+    from its snapshot meta.json. Returns how many entries were slimmed."""
+    node_id = node.get("id")
+    if not node_id: return 0
+    slimmed = 0
+    for v in node.get("versions") or []:
+        if not isinstance(v, dict): continue
+        files = v.get("files")
+        if not (isinstance(files, list) and files): continue  # already slim / empty
+        vid = v.get("id")
+        if not vid: continue
+        meta_path = os.path.join(runs_dir(project_root, node_id, vid), "meta.json")
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            if not (isinstance(meta.get("files"), list) and meta["files"]):
+                continue  # meta.json can't serve the manifest - keep inline
+        except Exception:
+            continue
+        v.pop("files", None)
+        cp = v.get("canonicalPaths")
+        if isinstance(cp, list) and len(cp) > 1:
+            v["canonicalPaths"] = cp[:1]
+        v["manifestInMeta"] = True
+        slimmed += 1
+    return slimmed
+
+
 # ── Asset node introspection ───────────────────────────────────────────────
 
 def asset_files(node: Dict[str, Any]) -> List[str]:
@@ -473,6 +545,13 @@ def snapshot_asset(project_root: str, node: Dict[str, Any], *,
     for v in node.get("versions", []):
         evict_compositions(project_root, node, v, max_unpinned=max_unpinned_compositions)
 
+    # Slim the inline manifests LAST - after meta.json is on disk (written
+    # above, before the append) and after materialise_view consumed the full
+    # entry. Covers the entry just added AND migrates any pre-slimming bloat
+    # this node accumulated (a 21-version prototype node carried 767 KB of
+    # duplicate manifest before this existed).
+    slim_node_versions(project_root, node)
+
     return version_entry
 
 
@@ -505,7 +584,8 @@ def materialise_view(project_root: str, node: Dict[str, Any],
     # Parent asset files - copy at their canonical relative path so HTML
     # imports under source/ continue to resolve when iframes load this dir.
     snap = runs_dir(project_root, node_id, version["id"])
-    for fe in version.get("files") or []:
+    manifest_files, _ = load_version_manifest(project_root, node_id, version)
+    for fe in manifest_files:
         rel = fe.get("path") if isinstance(fe, dict) else None
         canon = fe.get("canonical") if isinstance(fe, dict) else None
         if not rel: continue
@@ -552,7 +632,7 @@ def refresh_source_from_view(project_root: str, node: Dict[str, Any]) -> int:
     version = next((v for v in (node.get("versions") or [])
                     if isinstance(v, dict) and v.get("id") == active_vid), None)
     if not version: return 0
-    canonical = version.get("canonicalPaths") or []
+    _, canonical = load_version_manifest(project_root, node.get("id"), version)
     snap = runs_dir(project_root, node.get("id"), active_vid)
     n = 0
     for canon_rel in canonical:

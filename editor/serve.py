@@ -18035,7 +18035,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                                  if isinstance(c, dict) and c.get("id") == cid), None)
 
             from kinds.versioning import (make_ulid, runs_dir, view_dir,
-                                           copy_tree_into, materialise_view)
+                                           copy_tree_into, materialise_view,
+                                           load_version_manifest, slim_node_versions)
             # Build new sibling node id (collision suffix _b, _b2, _b3, ...).
             existing_ids = {n.get("id") for n in (wf.get("nodes") or [])
                             if isinstance(n, dict) and n.get("id")}
@@ -18103,7 +18104,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return p[len("source/"):] if p.startswith("source/") else p
             # Build per-file rename within the runs dir layout.
             src_files = []
-            for fe in (version.get("files") or []):
+            _src_manifest, _ = load_version_manifest(project_root, node_id, version)
+            for fe in _src_manifest:
                 if not isinstance(fe, dict): continue
                 in_ver = fe.get("path")            # e.g. "main/images/foo.png"
                 canon  = fe.get("canonical")       # e.g. "source/main/images/foo.png"
@@ -18208,6 +18210,16 @@ class H(http.server.SimpleHTTPRequestHandler):
             }
             wf.setdefault("nodes", []).append(new_node)
 
+            # Persist the sibling version's meta.json (snapshot_asset does this
+            # for normal snapshots; the branch path builds its entry by hand).
+            # Written BEFORE the slim below so the inline manifest can be
+            # dropped without becoming unrecoverable.
+            try:
+                with open(os.path.join(dst_dir, "meta.json"), "w", encoding="utf-8") as f:
+                    json.dump(new_version, f, indent=2)
+            except Exception as e:
+                print(f"[asset-versioning] branch meta.json write error: {e}", flush=True)
+
             # Materialise the sibling's view dir from its own runs/ snapshot.
             try:
                 materialise_view(project_root, new_node, new_version, new_composition,
@@ -18215,6 +18227,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                                  sub_asset_mounts=new_composition.get("subAssetMounts"))
             except Exception as e:
                 print(f"[asset-versioning] branch view materialise error: {e}", flush=True)
+
+            # Slim the inline copy - same contract as snapshot_asset.
+            try:
+                slim_node_versions(project_root, new_node)
+            except Exception:
+                pass
 
             self._versioning_persist(project_root, project_id, wf_path, wf,
                                      f"Branch from {node_id} v={src_vid[:8]} → {new_id}")
@@ -30796,7 +30814,46 @@ class H(http.server.SimpleHTTPRequestHandler):
     # GET /__chat?branch=<slug>[&runId=<id>][&project=<id>]
     #   Returns the persisted chat history for a branch (Phase 5a). When
     #   `runId` is provided, the result is filtered to that one run; otherwise
-    #   every event for every run on the branch is returned in file order.
+    #   every event for every run on the branch is returned in file order -
+    #   BUT capped to a newest-tail budget either way (see _chat_tail_budget):
+    #   a marathon build's chat.jsonl reaches nine figures of bytes, and
+    #   serializing all of it into the editor tab on every drawer open is what
+    #   ran the renderer out of memory (indonesiaaa: 117 MB log, four browser
+    #   tab crashes in two days). Response carries `truncated` + `omittedRows`
+    #   when the cap bit.
+    _CHAT_TAIL_MAX_ROWS  = 4000
+    _CHAT_TAIL_MAX_BYTES = 15 * 1024 * 1024
+
+    @classmethod
+    def _chat_tail_budget(cls, rows):
+        """Newest-tail slice of a transcript under row + byte budgets.
+
+        User-authored rows (`user_message` / `tool_answer`) older than the
+        cutoff are preserved anyway: they are tiny, rare, and load-bearing -
+        the drawer replays past `[decision:<id>]` user messages to keep
+        answered gate cards answered, and dropping one would resurrect its
+        gate as unanswered. Returns (rows, omitted_count)."""
+        n = len(rows)
+        if n <= 200:
+            return rows, 0
+        keep = []
+        size = 0
+        for r in reversed(rows):
+            if len(keep) >= cls._CHAT_TAIL_MAX_ROWS or size > cls._CHAT_TAIL_MAX_BYTES:
+                break
+            try: size += len(json.dumps(r))
+            except Exception: size += 256
+            keep.append(r)
+        if len(keep) == n:
+            return rows, 0
+        keep.reverse()
+        cutoff = n - len(keep)
+        preserved = [r for r in rows[:cutoff]
+                     if isinstance(r, dict)
+                     and r.get("type") in ("user_message", "tool_answer")]
+        out = preserved + keep
+        return out, n - len(out)
+
     def _chat_history(self, qs):
         # system threads first: their transcripts live under
         # .system-chats/, not in any project, and the landing page calls
@@ -30821,8 +30878,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                         sys_rows = rows
                         break
             if sys_rows is not None:
-                return self._reply(200, {"branch": "main", "scope": "system",
-                                          "events": sys_rows})
+                sys_rows, _sys_omitted = self._chat_tail_budget(sys_rows)
+                out = {"branch": "main", "scope": "system", "events": sys_rows}
+                if _sys_omitted:
+                    out["truncated"] = True
+                    out["omittedRows"] = _sys_omitted
+                return self._reply(200, out)
         try:
             project_root = resolve_project_root(qs)
         except ValueError as e:
@@ -30836,7 +30897,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             rows = [r for r in all_rows if r.get("runId") == run_filter]
         else:
             rows = all_rows
-        return self._reply(200, {"branch": branch, "events": rows})
+        rows, omitted = self._chat_tail_budget(rows)
+        out = {"branch": branch, "events": rows}
+        if omitted:
+            out["truncated"] = True
+            out["omittedRows"] = omitted
+        return self._reply(200, out)
 
     # GET /__doc?branch=<slug>&name=<NOTES.md|brand-spec.md>[&project=<id>]
     #   Phase 5a - bounded doc fetch for the toolbar Notes / Brand-spec
