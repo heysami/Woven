@@ -20448,6 +20448,16 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
               }}
               title=${opt.label}
             >
+              <div className="chat-direction-meta">
+                <div className="chat-direction-label">
+                  <span className="chat-direction-value">${opt.value}</span>
+                  <span className="chat-direction-title">${opt.label}</span>
+                  ${opt.recommended && html`<span className="chat-direction-recommended">recommended</span>`}
+                </div>
+                ${opt.axes && html`<div className="chat-direction-axes">${opt.axes}</div>`}
+                ${opt.vibe && html`<div className="chat-direction-vibe">Vibe · ${opt.vibe}</div>`}
+                ${opt.why && html`<div className="chat-direction-why">${opt.why}</div>`}
+              </div>
               ${opt.palette?.length > 0 && html`
                 <div className="chat-direction-palette">
                   ${opt.palette.map((hex, i) => html`
@@ -20459,16 +20469,6 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
                     />`)}
                 </div>
               `}
-              <div className="chat-direction-meta">
-                <div className="chat-direction-label">
-                  <span className="chat-direction-value">${opt.value}</span>
-                  <span className="chat-direction-title">${opt.label}</span>
-                  ${opt.recommended && html`<span className="chat-direction-recommended">recommended</span>`}
-                </div>
-                ${opt.axes && html`<div className="chat-direction-axes">${opt.axes}</div>`}
-                ${opt.vibe && html`<div className="chat-direction-vibe">Vibe · ${opt.vibe}</div>`}
-                ${opt.why && html`<div className="chat-direction-why">${opt.why}</div>`}
-              </div>
               ${(opt.display?.text || opt.body?.text) && html`
                 <div className="chat-direction-type">
                   <div className="chat-direction-type-eyebrow">Typography</div>
