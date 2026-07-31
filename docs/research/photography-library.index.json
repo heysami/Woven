@@ -2,7 +2,7 @@
   "version": "2.0",
   "library": "photography",
   "sourceDir": "design-library/",
-  "totalEntries": 60,
+  "totalEntries": 62,
   "decisionTree": {
     "recipe-warm-restraint": {
       "default": "aesop-apothecary",
@@ -236,6 +236,7 @@
       "default": "chrome-hearts-editorial",
       "alternatives": [
         "cos-lookbook",
+        "duotone-spot-sleeve",
         "eighties-cocaine-glam",
         "golden-hour-indoor-warm",
         "goldin-diary",
@@ -285,19 +286,22 @@
     "style-oversized-neo-grotesque": {
       "default": "cos-lookbook",
       "alternatives": [
-        "helmut-newton-flash"
+        "helmut-newton-flash",
+        "sodium-monochrome-installation"
       ]
     },
     "aesthetic-luxury-cinematic-dark": {
       "default": "dark-product-stage",
       "alternatives": [
         "elemental-ocean",
-        "motorsport-dramatic"
+        "motorsport-dramatic",
+        "sodium-monochrome-installation"
       ]
     },
     "aesthetic-monochrome-pop-poster": {
       "default": "dark-product-stage",
       "alternatives": [
+        "duotone-spot-sleeve",
         "motorsport-dramatic"
       ]
     },
@@ -341,6 +345,22 @@
         "florida-project-candy-anamorphic",
         "moonlight-miami-pastel-neon"
       ]
+    },
+    "style-bold-display": {
+      "default": "duotone-spot-sleeve",
+      "alternatives": [
+        "la-la-land-musical-magic",
+        "moonlight-miami-pastel-neon",
+        "weingart-staged"
+      ]
+    },
+    "material-silkscreen": {
+      "default": "duotone-spot-sleeve",
+      "alternatives": []
+    },
+    "aesthetic-constructivism": {
+      "default": "duotone-spot-sleeve",
+      "alternatives": []
     },
     "aesthetic-pastoral-serene": {
       "default": "eco-infrastructure",
@@ -471,13 +491,6 @@
       "default": "la-la-land-musical-magic",
       "alternatives": []
     },
-    "style-bold-display": {
-      "default": "la-la-land-musical-magic",
-      "alternatives": [
-        "moonlight-miami-pastel-neon",
-        "weingart-staged"
-      ]
-    },
     "style-claymorphism": {
       "default": "magic-glow",
       "alternatives": []
@@ -486,7 +499,8 @@
       "default": "motorsport-dramatic",
       "alternatives": [
         "nasa-archival-mono",
-        "orbital-space"
+        "orbital-space",
+        "sodium-monochrome-installation"
       ]
     },
     "aesthetic-atompunk": {
@@ -499,6 +513,10 @@
     },
     "shell-scrapbook-substrate": {
       "default": "polaroid-scatter",
+      "alternatives": []
+    },
+    "aesthetic-sculptural-minimal": {
+      "default": "sodium-monochrome-installation",
       "alternatives": []
     },
     "aesthetic-bioluminescent-deep": {
@@ -828,6 +846,25 @@
         "aesthetic-positivity-kawaii"
       ],
       "sourceFile": "design-library/photo-dreamy-haze.md"
+    },
+    "duotone-spot-sleeve": {
+      "name": "Mid-century duotone spot-color sleeve",
+      "category": "editorial",
+      "era": "mid-century",
+      "roleAffinity": [
+        "hero",
+        "section"
+      ],
+      "oneLine": "Record-sleeve photography in the mid-century session tradition: a candid performance photograph rendered ENTIRELY in shades of one flood spot color - the ink does the lighting. Shadows go to solid ink black, midtones to a deep spot-color tint, and the whole sleeve is flooded edge to edge in the same hue. The photo is cropped hard into one corner or edge, leaving a large flat field where angled all-caps type blocks carry the design.",
+      "notForUseWhen": "naturalistic product photography, soft lifestyle warmth, pastel wellness, clinical UI screenshots",
+      "pairsPrototypes": [
+        "aesthetic-monochrome-pop-poster",
+        "style-bold-display",
+        "recipe-editorial-magazine",
+        "material-silkscreen",
+        "aesthetic-constructivism"
+      ],
+      "sourceFile": "design-library/photo-duotone-spot-sleeve.md"
     },
     "eco-infrastructure": {
       "name": "Eco-infrastructure heroic",
@@ -1449,6 +1486,24 @@
         "aesthetic-y2k-memphis-loud"
       ],
       "sourceFile": "design-library/photo-skate-zine.md"
+    },
+    "sodium-monochrome-installation": {
+      "name": "Sodium monochrome installation (one-hue world)",
+      "category": "fine-art",
+      "era": "current",
+      "roleAffinity": [
+        "hero",
+        "bg"
+      ],
+      "oneLine": "Photography inside a monofrequency-light environment - a vast interior flooded by a single sodium-amber source, so the ENTIRE frame collapses into one hue. A huge glowing disc or light field hangs in haze; people become flat black silhouettes lying, standing and drifting across the floor. Every surface, skin tone and garment reads only as amber-vs-black. The picture is effectively a duotone made by physics, not by grading.",
+      "notForUseWhen": "e-comm product clarity, friendly consumer lifestyle, food, corporate headshots, colorful youth branding",
+      "pairsPrototypes": [
+        "aesthetic-luxury-cinematic-dark",
+        "aesthetic-sculptural-minimal",
+        "style-oversized-neo-grotesque",
+        "aesthetic-monochrome-tech-editorial"
+      ],
+      "sourceFile": "design-library/photo-sodium-monochrome-installation.md"
     },
     "sorrenti-grain": {
       "name": "Mario Sorrenti grain and tonality",

@@ -2,7 +2,7 @@
   "version": "2.0",
   "library": "material",
   "sourceDir": "design-library/",
-  "totalEntries": 66,
+  "totalEntries": 88,
   "decisionTree": {
     "aesthetic-cyberpunk": {
       "default": "anodized-chainmail",
@@ -12,6 +12,7 @@
         "crt-phosphor",
         "datamosh-compression-smear",
         "film-grain-cinestill-800t",
+        "neon-glass-tube",
         "nes-rom-corruption",
         "rgb-channel-split",
         "schematic-pcb-trace",
@@ -36,17 +37,22 @@
     "style-dense-mono-dark": {
       "default": "anodized-chainmail",
       "alternatives": [
+        "led-segment-display",
         "monospace-code-grid",
-        "signal-interference"
+        "signal-interference",
+        "split-flap-board"
       ]
     },
     "aesthetic-rgb-gamer": {
       "default": "anodized-chainmail",
-      "alternatives": []
+      "alternatives": [
+        "led-segment-display"
+      ]
     },
     "recipe-terminal-on-web": {
       "default": "ascii-art-surface",
       "alternatives": [
+        "led-segment-display",
         "monospace-code-grid",
         "rgb-channel-split",
         "schematic-pcb-trace",
@@ -81,6 +87,42 @@
         "silk"
       ]
     },
+    "aesthetic-neoclassical-remix": {
+      "default": "azulejo-painted-tile",
+      "alternatives": [
+        "jacquard-embroidery",
+        "mezzotint-plate"
+      ]
+    },
+    "recipe-brand-story-journey": {
+      "default": "azulejo-painted-tile",
+      "alternatives": [
+        "jacquard-embroidery",
+        "paper-construction",
+        "paper-marbling-ebru"
+      ]
+    },
+    "style-serif-warm-paper": {
+      "default": "azulejo-painted-tile",
+      "alternatives": [
+        "guilloche-security-print",
+        "hand-architect-sketch",
+        "mezzotint-plate",
+        "paper-marbling-ebru",
+        "patchwork-quilt",
+        "stipple-dot-field",
+        "vellum-translucency",
+        "washi-kozo-fiber"
+      ]
+    },
+    "shell-centered-column": {
+      "default": "azulejo-painted-tile",
+      "alternatives": [
+        "paper-marbling-ebru",
+        "suminagashi-marbling",
+        "washi-kozo-fiber"
+      ]
+    },
     "aesthetic-bioluminescent-deep": {
       "default": "bioluminescent-membrane",
       "alternatives": []
@@ -98,8 +140,11 @@
         "crt-phosphor",
         "film-grain-cinestill-800t",
         "iso-line-drawing",
+        "led-segment-display",
+        "nixie-glow",
         "schematic-pcb-trace",
         "signal-interference",
+        "split-flap-board",
         "vhs-distortion",
         "vhs-frutiger",
         "wireframe-3d-line"
@@ -136,7 +181,8 @@
       "default": "cad-blueprint",
       "alternatives": [
         "iso-line-drawing",
-        "plotter-pen-line"
+        "plotter-pen-line",
+        "sheer-silk-overlap"
       ]
     },
     "recipe-scientific-infra-marketing": {
@@ -153,6 +199,7 @@
       "alternatives": [
         "crt-phosphor",
         "iso-line-drawing",
+        "nixie-glow",
         "schematic-pcb-trace",
         "signal-interference",
         "wireframe-3d-line"
@@ -161,8 +208,54 @@
     "style-restrained-hairline": {
       "default": "cad-blueprint",
       "alternatives": [
-        "plotter-pen-line"
+        "plotter-pen-line",
+        "stitched-garment",
+        "suminagashi-marbling"
       ]
+    },
+    "aesthetic-industrial-catalog": {
+      "default": "cardboard-box-print",
+      "alternatives": [
+        "forged-steel-ember",
+        "glaze-drip-run",
+        "nixie-glow",
+        "split-flap-board"
+      ]
+    },
+    "aesthetic-monochrome-pop-poster": {
+      "default": "cardboard-box-print",
+      "alternatives": [
+        "hand-processed-filmstrip",
+        "reeded-fluted-glass",
+        "smoked-obsidian-glass"
+      ]
+    },
+    "aesthetic-craft-sketchbook": {
+      "default": "cardboard-box-print",
+      "alternatives": [
+        "embroidery-stitch",
+        "patchwork-quilt",
+        "stipple-dot-field",
+        "terracotta-earthenware"
+      ]
+    },
+    "style-bold-display": {
+      "default": "cardboard-box-print",
+      "alternatives": [
+        "forged-steel-ember"
+      ]
+    },
+    "shell-scrapbook-substrate": {
+      "default": "cardboard-box-print",
+      "alternatives": [
+        "decollage-poster-layers",
+        "embroidery-stitch",
+        "patchwork-quilt"
+      ]
+    },
+    "recipe-brutalist-web": {
+      "default": "cardboard-box-print",
+      "alternatives": []
     },
     "style-skeuomorphism (porcelain mascot)": {
       "default": "ceramic-glaze",
@@ -178,10 +271,15 @@
         "corduroy",
         "felt",
         "film-grain-tri-x",
+        "guilloche-security-print",
         "hand-architect-sketch",
         "ink-wash-sumi-e",
+        "jacquard-embroidery",
         "linen-weave",
         "marble",
+        "mezzotint-plate",
+        "nixie-glow",
+        "paper-marbling-ebru",
         "parchment",
         "pebbled-leather",
         "pencil-graphite",
@@ -250,6 +348,7 @@
         "frosted-glass",
         "glossy-plastic-aqua",
         "liquid-glass",
+        "neon-glass-tube",
         "rgb-channel-split",
         "silk"
       ]
@@ -271,9 +370,12 @@
       "default": "corduroy",
       "alternatives": [
         "denim",
+        "embroidery-stitch",
         "hand-architect-sketch",
         "linen-weave",
         "paper-with-watercolor",
+        "patchwork-quilt",
+        "terracotta-earthenware",
         "torn-edge",
         "vellum-translucency",
         "watercolor-wash",
@@ -283,8 +385,10 @@
     "aesthetic-coastal-grandmother": {
       "default": "corduroy",
       "alternatives": [
+        "guilloche-security-print",
         "linen-weave",
         "paper-with-watercolor",
+        "patchwork-quilt",
         "silk",
         "watercolor-wash"
       ]
@@ -296,6 +400,7 @@
         "film-grain-cinestill-800t",
         "film-grain-tri-x",
         "frosted-glass",
+        "neon-glass-tube",
         "rgb-channel-split",
         "signal-interference",
         "silk",
@@ -332,6 +437,53 @@
       "default": "datamosh-compression-smear",
       "alternatives": []
     },
+    "aesthetic-corporate-grunge": {
+      "default": "decollage-poster-layers",
+      "alternatives": [
+        "denim",
+        "dithered-1bit",
+        "film-grain-tri-x",
+        "halftone-cmyk",
+        "hand-processed-filmstrip",
+        "pencil-graphite",
+        "photocopy-xerox",
+        "risograph-glass",
+        "risograph",
+        "silkscreen",
+        "torn-edge",
+        "weathered-leather"
+      ]
+    },
+    "aesthetic-zine-type-wall": {
+      "default": "decollage-poster-layers",
+      "alternatives": [
+        "marker-stroke-frame"
+      ]
+    },
+    "style-raster-cutout": {
+      "default": "decollage-poster-layers",
+      "alternatives": [
+        "halftone-cmyk",
+        "torn-edge"
+      ]
+    },
+    "style-ransom-glyph-mix": {
+      "default": "decollage-poster-layers",
+      "alternatives": []
+    },
+    "recipe-editorial-magazine": {
+      "default": "decollage-poster-layers",
+      "alternatives": [
+        "film-grain-cinestill-800t",
+        "film-grain-tri-x",
+        "hand-architect-sketch",
+        "hand-processed-filmstrip",
+        "marble",
+        "marker-stroke-frame",
+        "mezzotint-plate",
+        "scanned-glass"
+      ]
+    },
     "aesthetic-y2k-myspace": {
       "default": "denim",
       "alternatives": [
@@ -340,21 +492,6 @@
         "torn-edge",
         "vhs-distortion",
         "vhs-frutiger"
-      ]
-    },
-    "aesthetic-corporate-grunge": {
-      "default": "denim",
-      "alternatives": [
-        "dithered-1bit",
-        "film-grain-tri-x",
-        "halftone-cmyk",
-        "pencil-graphite",
-        "photocopy-xerox",
-        "risograph-glass",
-        "risograph",
-        "silkscreen",
-        "torn-edge",
-        "weathered-leather"
       ]
     },
     "style-liquid-glass": {
@@ -381,6 +518,15 @@
         "pixel-bitmap"
       ]
     },
+    "style-doodle": {
+      "default": "embroidery-stitch",
+      "alternatives": [
+        "marker-stroke-frame",
+        "pencil-graphite",
+        "stipple-dot-field",
+        "watercolor-wash"
+      ]
+    },
     "style-skeuomorphism (poker felt": {
       "default": "felt",
       "alternatives": []
@@ -393,14 +539,18 @@
       "default": "filament-strand-ribbon",
       "alternatives": []
     },
-    "recipe-editorial-magazine": {
-      "default": "film-grain-cinestill-800t",
+    "aesthetic-arknights-endfield-industrial": {
+      "default": "forged-steel-ember",
+      "alternatives": []
+    },
+    "aesthetic-zenless-zone-zero-retrofuture": {
+      "default": "forged-steel-ember",
+      "alternatives": []
+    },
+    "style-brutalist-raw": {
+      "default": "forged-steel-ember",
       "alternatives": [
-        "film-grain-tri-x",
-        "hand-architect-sketch",
-        "marble",
-        "marker-stroke-frame",
-        "scanned-glass"
+        "hand-processed-filmstrip"
       ]
     },
     "aesthetic-positivity-kawaii": {
@@ -413,16 +563,31 @@
         "soft-ui-foam"
       ]
     },
+    "aesthetic-monochrome-tech-editorial": {
+      "default": "glaze-drip-run",
+      "alternatives": [
+        "stitched-garment"
+      ]
+    },
+    "style-micro-text-frame": {
+      "default": "glaze-drip-run",
+      "alternatives": [
+        "guilloche-security-print"
+      ]
+    },
     "style-skeuomorphism": {
       "default": "glossy-plastic-aqua",
       "alternatives": [
+        "neon-glass-tube",
+        "nixie-glow",
         "smooth-leather"
       ]
     },
-    "style-raster-cutout": {
-      "default": "halftone-cmyk",
+    "recipe-newspaper-of-record": {
+      "default": "guilloche-security-print",
       "alternatives": [
-        "torn-edge"
+        "halftone-cmyk",
+        "plotter-pen-line"
       ]
     },
     "aesthetic-y2k-memphis-loud": {
@@ -431,29 +596,40 @@
         "marker-stroke-frame"
       ]
     },
-    "recipe-newspaper-of-record": {
-      "default": "halftone-cmyk",
-      "alternatives": [
-        "plotter-pen-line"
-      ]
-    },
     "recipe-warm-restraint": {
       "default": "hand-architect-sketch",
-      "alternatives": []
+      "alternatives": [
+        "suminagashi-marbling",
+        "terracotta-earthenware",
+        "washi-kozo-fiber"
+      ]
     },
     "style-cream-humanist": {
       "default": "hand-architect-sketch",
-      "alternatives": []
-    },
-    "style-serif-warm-paper": {
-      "default": "hand-architect-sketch",
       "alternatives": [
-        "vellum-translucency"
+        "stipple-dot-field"
+      ]
+    },
+    "aesthetic-luxury-cinematic-dark": {
+      "default": "hand-processed-filmstrip",
+      "alternatives": [
+        "jacquard-embroidery",
+        "mezzotint-plate",
+        "neon-glass-tube",
+        "smoked-obsidian-glass",
+        "stitched-garment",
+        "volumetric-light-shaft"
       ]
     },
     "aesthetic-vaporwave (Japanese gloss element)": {
       "default": "ink-wash-sumi-e",
       "alternatives": []
+    },
+    "shell-terminal-frame": {
+      "default": "led-segment-display",
+      "alternatives": [
+        "split-flap-board"
+      ]
     },
     "style-skeuomorphism (iOS Game Center linen)": {
       "default": "linen-weave",
@@ -465,17 +641,6 @@
     },
     "aesthetic-vaporwave (the marble bust!)": {
       "default": "marble",
-      "alternatives": []
-    },
-    "style-doodle": {
-      "default": "marker-stroke-frame",
-      "alternatives": [
-        "pencil-graphite",
-        "watercolor-wash"
-      ]
-    },
-    "aesthetic-zine-type-wall": {
-      "default": "marker-stroke-frame",
       "alternatives": []
     },
     "style-material-m3": {
@@ -531,18 +696,19 @@
     "aesthetic-sculptural-minimal": {
       "default": "paper-construction",
       "alternatives": [
+        "sheer-silk-overlap",
         "volumetric-light-shaft"
       ]
-    },
-    "recipe-brand-story-journey": {
-      "default": "paper-construction",
-      "alternatives": []
     },
     "aesthetic-pastel-pop-fmcg": {
       "default": "paper-construction",
       "alternatives": [
         "reeded-fluted-glass"
       ]
+    },
+    "style-editorial-italic-accent": {
+      "default": "paper-marbling-ebru",
+      "alternatives": []
     },
     "aesthetic-defi-cosmic (achievement certificates)": {
       "default": "parchment",
@@ -564,11 +730,13 @@
       "default": "pixel-bitmap",
       "alternatives": []
     },
-    "aesthetic-monochrome-pop-poster": {
-      "default": "reeded-fluted-glass",
-      "alternatives": [
-        "smoked-obsidian-glass"
-      ]
+    "style-aurorism": {
+      "default": "sheer-silk-overlap",
+      "alternatives": []
+    },
+    "recipe-aurora-marketing": {
+      "default": "sheer-silk-overlap",
+      "alternatives": []
     },
     "aesthetic-constructivism": {
       "default": "silkscreen",
@@ -577,12 +745,6 @@
     "style-oversized-neo-grotesque": {
       "default": "smoked-obsidian-glass",
       "alternatives": []
-    },
-    "aesthetic-luxury-cinematic-dark": {
-      "default": "smoked-obsidian-glass",
-      "alternatives": [
-        "volumetric-light-shaft"
-      ]
     },
     "recipe-neo-grotesque-portfolio": {
       "default": "smoked-obsidian-glass",
@@ -596,15 +758,39 @@
       "default": "soft-ui-foam",
       "alternatives": []
     },
+    "recipe-bloomberg-dashboard": {
+      "default": "split-flap-board",
+      "alternatives": []
+    },
+    "aesthetic-organic-overgrowth": {
+      "default": "stipple-dot-field",
+      "alternatives": []
+    },
+    "recipe-object-stage-hero": {
+      "default": "stitched-garment",
+      "alternatives": []
+    },
+    "aesthetic-japanese-poster-layout": {
+      "default": "suminagashi-marbling",
+      "alternatives": [
+        "washi-kozo-fiber"
+      ]
+    },
+    "aesthetic-chinese-curated-modernist": {
+      "default": "suminagashi-marbling",
+      "alternatives": []
+    },
+    "aesthetic-pastoral-serene": {
+      "default": "terracotta-earthenware",
+      "alternatives": [
+        "volumetric-cloud"
+      ]
+    },
     "recipe-ios-system": {
       "default": "thin-glass-chip",
       "alternatives": []
     },
     "aesthetic-surreal-dream-stage": {
-      "default": "volumetric-cloud",
-      "alternatives": []
-    },
-    "aesthetic-pastoral-serene": {
       "default": "volumetric-cloud",
       "alternatives": []
     },
@@ -664,6 +850,21 @@
       ],
       "sourceFile": "design-library/material-atmosphere-rim-glow.md"
     },
+    "azulejo-painted-tile": {
+      "name": "Azulejo Painted Tile (hand-brushed cobalt on glazed tile grid)",
+      "category": "ceramic",
+      "family": "analog",
+      "surfaceFinish": "glossy (soft tin-glaze sheen)",
+      "scope": "both",
+      "oneLine": "A wall of glazed tiles painted by hand in cobalt on milk white: everything - scrolling rocaille borders, cartouche frames, architectural scenes, even letterforms - is BRUSHWORK sitting under a soft tin-glaze sheen, and the whole surface is divided by a faint grout-seam grid that runs straight through the painting.",
+      "pairsPrototypes": [
+        "aesthetic-neoclassical-remix",
+        "recipe-brand-story-journey",
+        "style-serif-warm-paper",
+        "shell-centered-column"
+      ],
+      "sourceFile": "design-library/material-azulejo-painted-tile.md"
+    },
     "bioluminescent-membrane": {
       "name": "Bioluminescent membrane",
       "category": "organic-emissive",
@@ -709,6 +910,23 @@
         "style-restrained-hairline"
       ],
       "sourceFile": "design-library/material-cad-blueprint.md"
+    },
+    "cardboard-box-print": {
+      "name": "Cardboard Box Print (one-ink screenprint on box board)",
+      "category": "packaging",
+      "family": "analog",
+      "surfaceFinish": "matte (paper tooth, screen-ink grain)",
+      "scope": "both",
+      "oneLine": "Printed corrugated packaging as a design system: the box-board color IS the field, everything on it is a single utility ink, and the layout follows die-line and shipping-label logic.",
+      "pairsPrototypes": [
+        "aesthetic-industrial-catalog",
+        "aesthetic-monochrome-pop-poster",
+        "aesthetic-craft-sketchbook",
+        "style-bold-display",
+        "shell-scrapbook-substrate",
+        "recipe-brutalist-web"
+      ],
+      "sourceFile": "design-library/material-cardboard-box-print.md"
     },
     "ceramic-glaze": {
       "name": "Ceramic Glaze (high-gloss porcelain finish)",
@@ -841,6 +1059,23 @@
       ],
       "sourceFile": "design-library/material-datamosh-compression-smear.md"
     },
+    "decollage-poster-layers": {
+      "name": "Decollage Poster Layers (stratified torn billboard skins)",
+      "category": "paper",
+      "family": "analog",
+      "surfaceFinish": "matte (weathered paste-board, halftone ink grain)",
+      "scope": "both",
+      "oneLine": "A stratigraphy of pasted poster skins: hand-rips expose older ink layers beneath, and type survives only as cropped fragments.",
+      "pairsPrototypes": [
+        "aesthetic-corporate-grunge",
+        "aesthetic-zine-type-wall",
+        "style-raster-cutout",
+        "style-ransom-glyph-mix",
+        "shell-scrapbook-substrate",
+        "recipe-editorial-magazine"
+      ],
+      "sourceFile": "design-library/material-decollage-poster-layers.md"
+    },
     "denim": {
       "name": "Denim (twill weave, indigo fade)",
       "category": "fabric",
@@ -888,6 +1123,21 @@
         "aesthetic-corporate-grunge"
       ],
       "sourceFile": "design-library/material-dithered-1bit.md"
+    },
+    "embroidery-stitch": {
+      "name": "Embroidery Stitch (hand-stitched thread on quilted fabric)",
+      "category": "textile",
+      "family": "analog",
+      "surfaceFinish": "matte (soft nap with raised thread)",
+      "scope": "both",
+      "oneLine": "Sparse hand stitches on a fabric ground: letterforms drawn in chain-stitch and backstitch thread, rules and dividers as dashed running stitches, and panels bounded by quilted padded seams - every line visibly made of short thread segments with a soft raised profile.",
+      "pairsPrototypes": [
+        "aesthetic-craft-sketchbook",
+        "aesthetic-cottagecore",
+        "style-doodle",
+        "shell-scrapbook-substrate"
+      ],
+      "sourceFile": "design-library/material-embroidery-stitch.md"
     },
     "felt": {
       "name": "Felt (matted wool, fuzzy)",
@@ -956,6 +1206,22 @@
       ],
       "sourceFile": "design-library/material-film-grain-tri-x.md"
     },
+    "forged-steel-ember": {
+      "name": "Forged Steel Ember (incandescent heat-gradient metal)",
+      "category": "metal",
+      "family": "analog",
+      "surfaceFinish": "matte (mill scale) with emissive incandescent passages",
+      "scope": "object",
+      "oneLine": "Iron under the hammer: matte scale-black steel that glows from within along a strict heat ramp - black through dull red, cherry, orange, to white heat - with spark showers and flaking mill scale.",
+      "pairsPrototypes": [
+        "aesthetic-arknights-endfield-industrial",
+        "aesthetic-industrial-catalog",
+        "aesthetic-zenless-zone-zero-retrofuture",
+        "style-bold-display",
+        "style-brutalist-raw"
+      ],
+      "sourceFile": "design-library/material-forged-steel-ember.md"
+    },
     "frosted-glass": {
       "name": "Frosted Glass (canonical glassmorphism)",
       "category": "glass",
@@ -975,6 +1241,20 @@
       ],
       "sourceFile": "design-library/material-frosted-glass.md"
     },
+    "glaze-drip-run": {
+      "name": "Glaze Drip Run (gravity-run cobalt glaze on porcelain)",
+      "category": "ceramic",
+      "family": "analog",
+      "surfaceFinish": "glossy (runny glaze) over matte porous shelf",
+      "scope": "object",
+      "oneLine": "Ceramic glaze caught mid-run: deep cobalt flowing down chalk-white ware under kiln gravity, thinning to translucent sapphire at the top, gathering into runny beads and drip fingers along lower edges, and stopping in glassy pooled feet just before the shelf - the material's entire story is WHERE THE FLOW STOPPED.",
+      "pairsPrototypes": [
+        "aesthetic-industrial-catalog",
+        "aesthetic-monochrome-tech-editorial",
+        "style-micro-text-frame"
+      ],
+      "sourceFile": "design-library/material-glaze-drip-run.md"
+    },
     "glossy-plastic-aqua": {
       "name": "Glossy Plastic (Frutiger Aero / Apple Aqua / Windows Vista wet button)",
       "category": "plastic",
@@ -989,6 +1269,22 @@
         "style-skeuomorphism"
       ],
       "sourceFile": "design-library/material-glossy-plastic-aqua.md"
+    },
+    "guilloche-security-print": {
+      "name": "Guilloche Security Print (passport / banknote engraving system)",
+      "category": "print",
+      "family": "analog",
+      "surfaceFinish": "matte (crisp security paper) with embossed leather cover accents",
+      "scope": "both",
+      "oneLine": "Security-document printing as a surface language: guilloche microline lattices tint the paper, display type is engraved with hatched strokes, machine-readable OCR-B rows anchor the data layer, and visa stamps scatter across it in their own inks.",
+      "pairsPrototypes": [
+        "aesthetic-dark-academia",
+        "style-serif-warm-paper",
+        "style-micro-text-frame",
+        "recipe-newspaper-of-record",
+        "aesthetic-coastal-grandmother"
+      ],
+      "sourceFile": "design-library/material-guilloche-security-print.md"
     },
     "halftone-cmyk": {
       "name": "Halftone CMYK (newspaper / comic process)",
@@ -1026,6 +1322,22 @@
       ],
       "sourceFile": "design-library/material-hand-architect-sketch.md"
     },
+    "hand-processed-filmstrip": {
+      "name": "Hand-Processed Filmstrip (sprockets, scratches, chemical bloom)",
+      "category": "film",
+      "family": "analog",
+      "surfaceFinish": "matte (emulsion) with glossy leader black",
+      "scope": "both",
+      "oneLine": "The physical film strip as interface chrome: sprocket-hole rails frame every component, and hand-processing artifacts - scratches, chemical stains, light leaks, burnt edges - become the surface treatment.",
+      "pairsPrototypes": [
+        "aesthetic-luxury-cinematic-dark",
+        "aesthetic-corporate-grunge",
+        "aesthetic-monochrome-pop-poster",
+        "style-brutalist-raw",
+        "recipe-editorial-magazine"
+      ],
+      "sourceFile": "design-library/material-hand-processed-filmstrip.md"
+    },
     "ink-wash-sumi-e": {
       "name": "Ink Wash (sumi-e / brush-and-ink)",
       "category": "ink",
@@ -1056,6 +1368,37 @@
         "aesthetic-cassette-futurism"
       ],
       "sourceFile": "design-library/material-iso-line-drawing.md"
+    },
+    "jacquard-embroidery": {
+      "name": "Jacquard Embroidery (gold-thread brocade on midnight silk)",
+      "category": "textile",
+      "family": "analog",
+      "surfaceFinish": "lustrous (metallic weft on matte silk ground)",
+      "scope": "both",
+      "oneLine": "A woven surface where imagery and letterforms are BUILT AS THREAD: dense gold weft stitches assemble birds, borders and display type row by row on a midnight silk ground, every motif showing its individual stitch texture, with punch-card dot rows as the loom's visible instruction motif.",
+      "pairsPrototypes": [
+        "aesthetic-luxury-cinematic-dark",
+        "aesthetic-dark-academia",
+        "aesthetic-neoclassical-remix",
+        "recipe-brand-story-journey"
+      ],
+      "sourceFile": "design-library/material-jacquard-embroidery.md"
+    },
+    "led-segment-display": {
+      "name": "LED Segment Display (lit segments over ghost cells)",
+      "category": "display",
+      "family": "hybrid",
+      "surfaceFinish": "matte black polymer chassis with emissive segments",
+      "scope": "object",
+      "oneLine": "Segmented LED typography as hardware: seven- and fourteen-segment digits glow red, amber, or green with soft bloom, while the UNLIT segments stay faintly visible as ghost cells on a matte black polymer chassis.",
+      "pairsPrototypes": [
+        "aesthetic-cassette-futurism",
+        "aesthetic-rgb-gamer",
+        "style-dense-mono-dark",
+        "shell-terminal-frame",
+        "recipe-terminal-on-web"
+      ],
+      "sourceFile": "design-library/material-led-segment-display.md"
     },
     "linen-weave": {
       "name": "Linen Weave (Apple-linen / textbook substrate)",
@@ -1150,6 +1493,22 @@
       ],
       "sourceFile": "design-library/material-matte-clay.md"
     },
+    "mezzotint-plate": {
+      "name": "Mezzotint Plate (burnished highlights out of velvet black)",
+      "category": "print",
+      "family": "analog",
+      "surfaceFinish": "matte (velvet ink, burnished-metal accents)",
+      "scope": "both",
+      "oneLine": "A darkness-first printmaking surface: the plate is rocked entirely to black, and every form is polished back toward light.",
+      "pairsPrototypes": [
+        "aesthetic-dark-academia",
+        "aesthetic-luxury-cinematic-dark",
+        "aesthetic-neoclassical-remix",
+        "style-serif-warm-paper",
+        "recipe-editorial-magazine"
+      ],
+      "sourceFile": "design-library/material-mezzotint-plate.md"
+    },
     "monospace-code-grid": {
       "name": "Monospace Code Grid (IDE / terminal text as visual material)",
       "category": "digital-effect",
@@ -1164,6 +1523,22 @@
         "style-dense-mono-dark"
       ],
       "sourceFile": "design-library/material-monospace-code-grid.md"
+    },
+    "neon-glass-tube": {
+      "name": "Neon Glass Tube (hand-bent gas-discharge craft object)",
+      "category": "glass",
+      "family": "analog",
+      "surfaceFinish": "glossy glass tube, self-emissive discharge core",
+      "scope": "object",
+      "oneLine": "Real bent-glass neon: letterforms are one continuous tube of constant gauge, script drawn in a single stroke with round glass-radius bends, terminated by red electrode caps, powered by visible transformer hardware - the halation glow belongs to a physical object, not a filter.",
+      "pairsPrototypes": [
+        "aesthetic-vaporwave",
+        "aesthetic-luxury-cinematic-dark",
+        "aesthetic-cyberpunk",
+        "aesthetic-y2k-futurism",
+        "style-skeuomorphism"
+      ],
+      "sourceFile": "design-library/material-neon-glass-tube.md"
     },
     "nes-rom-corruption": {
       "name": "NES ROM Corruption (palette-flipped sprites, garbled tile data)",
@@ -1185,6 +1560,22 @@
       ],
       "sourceFile": "design-library/material-nes-rom-corruption.md"
     },
+    "nixie-glow": {
+      "name": "Nixie Glow (gas-discharge digits in glass envelopes)",
+      "category": "display",
+      "family": "hybrid",
+      "surfaceFinish": "glossy glass envelope over matte blackened-steel chassis",
+      "scope": "object",
+      "oneLine": "Laboratory-counter digits: each glass envelope holds a physical stack of shaped wire cathodes - one digit lit in incandescent orange, the others visible as layered dark silhouettes behind and in front of it - fronted by a fine anode mesh, mounted on blackened steel with engraved label plates.",
+      "pairsPrototypes": [
+        "aesthetic-atompunk",
+        "aesthetic-cassette-futurism",
+        "aesthetic-industrial-catalog",
+        "style-skeuomorphism",
+        "aesthetic-dark-academia"
+      ],
+      "sourceFile": "design-library/material-nixie-glow.md"
+    },
     "paper-construction": {
       "name": "Paper construction (die-cut strata / pop-up volume)",
       "category": "paper",
@@ -1200,6 +1591,22 @@
         "aesthetic-pastel-pop-fmcg"
       ],
       "sourceFile": "design-library/material-paper-construction.md"
+    },
+    "paper-marbling-ebru": {
+      "name": "Paper Marbling Ebru (combed floated-pigment print)",
+      "category": "print",
+      "family": "analog",
+      "surfaceFinish": "matte",
+      "scope": "both",
+      "oneLine": "A matte one-contact print: pigment floats on a thickened bath, is dragged into figures with a comb or stylus, then lifts onto paper in a single touch - crisp swirl edges, stone rings, and fine granular speckle frozen mid-flow.",
+      "pairsPrototypes": [
+        "style-serif-warm-paper",
+        "style-editorial-italic-accent",
+        "recipe-brand-story-journey",
+        "shell-centered-column",
+        "aesthetic-dark-academia"
+      ],
+      "sourceFile": "design-library/material-paper-marbling-ebru.md"
     },
     "paper-with-watercolor": {
       "name": "Paper with Watercolor (botanical illustration substrate)",
@@ -1227,6 +1634,22 @@
         "aesthetic-defi-cosmic (achievement certificates)"
       ],
       "sourceFile": "design-library/material-parchment.md"
+    },
+    "patchwork-quilt": {
+      "name": "Patchwork Quilt (hand-pieced fabric assembly)",
+      "category": "textile",
+      "family": "analog",
+      "surfaceFinish": "matte",
+      "scope": "both",
+      "oneLine": "A surface ASSEMBLED from mismatched fabric patches - washed chambray, ticking stripe, worn black twill, cream laundry cloth - each patch cut with pinked zigzag edges, joined by visible red running-stitch seams, and labeled with sewn cloth tags carrying handwriting and stamped caps.",
+      "pairsPrototypes": [
+        "aesthetic-cottagecore",
+        "aesthetic-coastal-grandmother",
+        "aesthetic-craft-sketchbook",
+        "shell-scrapbook-substrate",
+        "style-serif-warm-paper"
+      ],
+      "sourceFile": "design-library/material-patchwork-quilt.md"
     },
     "pebbled-leather": {
       "name": "Pebbled Leather (luxury goods finish)",
@@ -1415,6 +1838,21 @@
       ],
       "sourceFile": "design-library/material-schematic-pcb-trace.md"
     },
+    "sheer-silk-overlap": {
+      "name": "Sheer Silk Overlap (translucent fields that mix color)",
+      "category": "textile",
+      "family": "analog",
+      "surfaceFinish": "matte (soft sheer sheen)",
+      "scope": "both",
+      "oneLine": "Layered planes of sheer dyed silk - indigo, madder red, saffron - stretched taut against light, each field translucent on its own and optically MIXING wherever two overlap: indigo over saffron yields violet, madder over indigo a deep plum, the crossings becoming new named colors with crisp straight edges.",
+      "pairsPrototypes": [
+        "style-aurorism",
+        "recipe-aurora-marketing",
+        "aesthetic-sculptural-minimal",
+        "aesthetic-swiss-modernist"
+      ],
+      "sourceFile": "design-library/material-sheer-silk-overlap.md"
+    },
     "signal-interference": {
       "name": "Signal Interference (hum bars, sync errors, vertical hold drift)",
       "category": "digital-effect",
@@ -1512,6 +1950,84 @@
         "aesthetic-frutiger-eco"
       ],
       "sourceFile": "design-library/material-soft-ui-foam.md"
+    },
+    "split-flap-board": {
+      "name": "Split-Flap Board (mechanical per-character flap cells)",
+      "category": "mechanical",
+      "family": "analog",
+      "surfaceFinish": "matte (printed plastic flaps) with brushed-steel frame",
+      "scope": "object",
+      "oneLine": "Departure-board typography: every character lives in its own hinged flap cell with a visible horizontal split line at mid-height, mounted in a steel frame - text changes by physically flipping through the character drum.",
+      "pairsPrototypes": [
+        "aesthetic-cassette-futurism",
+        "aesthetic-industrial-catalog",
+        "style-dense-mono-dark",
+        "shell-terminal-frame",
+        "recipe-bloomberg-dashboard"
+      ],
+      "sourceFile": "design-library/material-split-flap-board.md"
+    },
+    "stipple-dot-field": {
+      "name": "Stipple Dot Field (variable-density ink dots as the medium)",
+      "category": "print",
+      "family": "analog",
+      "surfaceFinish": "matte (crisp ink dots on warm paper)",
+      "scope": "medium",
+      "oneLine": "Pointillist print-register where the dot is the only mark: letterforms, borders, fills, and flow-lines are all built from fields of crisp ink dots whose DENSITY carries weight, tone, and emphasis on warm paper.",
+      "pairsPrototypes": [
+        "style-cream-humanist",
+        "style-serif-warm-paper",
+        "aesthetic-craft-sketchbook",
+        "style-doodle",
+        "aesthetic-organic-overgrowth"
+      ],
+      "sourceFile": "design-library/material-stipple-dot-field.md"
+    },
+    "stitched-garment": {
+      "name": "Stitched Garment (tailored construction chrome on dark silk)",
+      "category": "textile",
+      "family": "analog",
+      "surfaceFinish": "matte (fine silk nap with metallic hardware)",
+      "scope": "object",
+      "oneLine": "Garment CONSTRUCTION as interface chrome: near-black tailored silk panels bounded by dashed stitch channels, with functional gold drawcords threaded through concealed channels, brass eyelets as terminals, and cord ends marking state - the atelier's engineering made visible as thin luminous hardware on darkness.",
+      "pairsPrototypes": [
+        "aesthetic-luxury-cinematic-dark",
+        "recipe-object-stage-hero",
+        "style-restrained-hairline",
+        "aesthetic-monochrome-tech-editorial"
+      ],
+      "sourceFile": "design-library/material-stitched-garment.md"
+    },
+    "suminagashi-marbling": {
+      "name": "Suminagashi Marbling (monochrome ink-ring drift)",
+      "category": "print",
+      "family": "analog",
+      "surfaceFinish": "matte",
+      "scope": "both",
+      "oneLine": "A matte monochrome print of ink floated on still water: concentric rings widen from each dropped touch, currents pull the rings into feathered filaments, and the whole drift lifts onto white paper as veils of indigo-black over vast quiet margins.",
+      "pairsPrototypes": [
+        "style-restrained-hairline",
+        "recipe-warm-restraint",
+        "aesthetic-japanese-poster-layout",
+        "aesthetic-chinese-curated-modernist",
+        "shell-centered-column"
+      ],
+      "sourceFile": "design-library/material-suminagashi-marbling.md"
+    },
+    "terracotta-earthenware": {
+      "name": "Terracotta Earthenware (unglazed fired clay with coil logic)",
+      "category": "ceramic",
+      "family": "analog",
+      "surfaceFinish": "matte (rough fired-clay grain)",
+      "scope": "both",
+      "oneLine": "Real fired earth: rough unglazed clay surfaces with granular pore texture and pit flecks, banded courses laid like coil construction, seams of slip-white rope between them, and an earthen palette running terracotta through raw clay, umber and wet-clay dark to dry sand and slip white.",
+      "pairsPrototypes": [
+        "aesthetic-pastoral-serene",
+        "aesthetic-cottagecore",
+        "recipe-warm-restraint",
+        "aesthetic-craft-sketchbook"
+      ],
+      "sourceFile": "design-library/material-terracotta-earthenware.md"
     },
     "thin-glass-chip": {
       "name": "Thin Glass Chip (iOS-style toggle, Control Center pill)",
@@ -1627,6 +2143,21 @@
         "aesthetic-cosmic-horizon"
       ],
       "sourceFile": "design-library/material-volumetric-light-shaft.md"
+    },
+    "washi-kozo-fiber": {
+      "name": "Washi Kozo Fiber (long-fibered craft paper with fold scoring)",
+      "category": "paper",
+      "family": "analog",
+      "surfaceFinish": "matte",
+      "scope": "both",
+      "oneLine": "Handmade kozo-fiber paper whose long embedded strands stay visible in the sheet - fine pale filaments wandering through both the vermilion-dyed and natural-white grounds - scored by crisp fold creases that catch light as thin ridge lines, in a craft palette of vermilion, gold leaf dots, sumi black and warm paper grey.",
+      "pairsPrototypes": [
+        "aesthetic-japanese-poster-layout",
+        "recipe-warm-restraint",
+        "style-serif-warm-paper",
+        "shell-centered-column"
+      ],
+      "sourceFile": "design-library/material-washi-kozo-fiber.md"
     },
     "watercolor-wash": {
       "name": "Watercolor Wash (wet-on-wet, granulation)",

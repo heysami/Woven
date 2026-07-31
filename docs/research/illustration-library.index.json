@@ -2,11 +2,13 @@
   "version": "2.0",
   "library": "illustration",
   "sourceDir": "design-library/",
-  "totalEntries": 124,
+  "totalEntries": 149,
   "decisionTree": {
     "aesthetic-dark-academia": {
       "default": "3d-arsham-eroded",
       "alternatives": [
+        "antique-cartography",
+        "antique-engraving-etch",
         "beatrix-potter-watercolor",
         "charcoal-loose",
         "classical-painting-remix",
@@ -17,8 +19,10 @@
         "ink-wash-atmosphere",
         "lofi-contemplative",
         "painterly-mythic-creature",
+        "polish-poster-gouache",
         "typo-art-nouveau-ornament",
-        "typo-blackletter-neo-gothic"
+        "typo-blackletter-neo-gothic",
+        "typo-signpainter-chalk"
       ]
     },
     "aesthetic-defi-cosmic": {
@@ -59,7 +63,8 @@
         "typo-art-nouveau-ornament",
         "typo-hand-lettered-editorial",
         "typo-house-industries-revival",
-        "typo-wood-type-letterpress"
+        "typo-wood-type-letterpress",
+        "vintage-seed-lithograph"
       ]
     },
     "aesthetic-vaporwave": {
@@ -76,6 +81,7 @@
       "default": "3d-arsham-eroded",
       "alternatives": [
         "3d-premium-product-hero",
+        "architectural-section-poche",
         "outline-wireframe-illustration"
       ]
     },
@@ -91,7 +97,8 @@
       "default": "3d-crypto-gold-chrome",
       "alternatives": [
         "typo-bubble-graffiti",
-        "typo-chromeheart-gothic-luxury"
+        "typo-chromeheart-gothic-luxury",
+        "typo-wildstyle-blackbook"
       ]
     },
     "aesthetic-y2k-futurism": {
@@ -114,13 +121,18 @@
       "default": "3d-dreamscape-terrain",
       "alternatives": [
         "3d-miniature-diorama",
+        "botanical-engraving",
+        "folk-papercut-wycinanki",
         "lofi-contemplative",
-        "nature-meets-ui"
+        "nature-meets-ui",
+        "vintage-seed-lithograph"
       ]
     },
     "aesthetic-surreal-dream-stage": {
       "default": "3d-dreamscape-terrain",
-      "alternatives": []
+      "alternatives": [
+        "polish-poster-gouache"
+      ]
     },
     "aesthetic-frutiger-eco": {
       "default": "3d-dreamscape-terrain",
@@ -187,10 +199,12 @@
         "blush-little-things",
         "blush-open-peeps",
         "blush-stuck-at-home",
+        "botanical-engraving",
         "charley-harper-minimal-realism",
         "clay-3d-soft-sculpt",
         "drawkit-wooden-icons",
         "eric-carle-tissue-collage",
+        "folk-papercut-wycinanki",
         "frida-folk-surreal",
         "ghibli-watercolor-bg",
         "gouache-storybook",
@@ -277,6 +291,7 @@
       "default": "3d-premium-product-hero",
       "alternatives": [
         "3d-technical-exploded-precision",
+        "brick-instruction-diagram",
         "isometric-tech-saas"
       ]
     },
@@ -398,20 +413,47 @@
         "wireframe-3d"
       ]
     },
-    "aesthetic-honkai-star-rail-polished-sf": {
-      "default": "arcane-painterly-hybrid",
+    "style-serif-warm-paper": {
+      "default": "antique-cartography",
       "alternatives": [
-        "overwatch-stylized-pbr"
+        "antique-engraving-etch",
+        "botanical-engraving",
+        "humanities-marginalia",
+        "polish-poster-gouache",
+        "typo-hand-lettered-editorial",
+        "typo-signpainter-chalk",
+        "vintage-seed-lithograph",
+        "woodblock-ukiyoe"
       ]
     },
-    "aesthetic-belle-u-painterly-vr": {
-      "default": "arcane-painterly-hybrid",
-      "alternatives": []
+    "shell-infinite-canvas": {
+      "default": "antique-cartography",
+      "alternatives": [
+        "papercraft-diorama-world"
+      ]
+    },
+    "recipe-brand-story-journey": {
+      "default": "antique-cartography",
+      "alternatives": [
+        "folk-papercut-wycinanki",
+        "woodblock-ukiyoe"
+      ]
+    },
+    "recipe-newspaper-of-record": {
+      "default": "antique-engraving-etch",
+      "alternatives": [
+        "editorial-thick-brush",
+        "humanities-marginalia",
+        "noir-comic-ink"
+      ]
     },
     "recipe-editorial-magazine": {
-      "default": "arcane-painterly-hybrid",
+      "default": "antique-engraving-etch",
       "alternatives": [
+        "arcane-painterly-hybrid",
         "blush-open-peeps",
+        "bollywood-painted-poster",
+        "botanical-engraving",
         "charcoal-loose",
         "classical-painting-remix",
         "editorial-thick-brush",
@@ -426,13 +468,54 @@
         "noir-comic-ink",
         "painterly-mythic-creature",
         "pixar-coco-folk-vibrant",
+        "polish-poster-gouache",
+        "pop-art-silkscreen-repeat",
+        "pulp-cover-painted",
+        "push-pin-victorian-psychedelic",
         "raster-cutout-collage",
         "risograph-illustration",
         "saul-bass-cutout",
         "typo-hand-lettered-editorial",
         "typo-house-industries-revival",
+        "typo-letter-scatter",
+        "typo-massin-stage",
         "typo-weingart-deconstructed",
-        "typo-wood-type-letterpress"
+        "typo-wood-type-letterpress",
+        "woodblock-ukiyoe"
+      ]
+    },
+    "aesthetic-honkai-star-rail-polished-sf": {
+      "default": "arcane-painterly-hybrid",
+      "alternatives": [
+        "overwatch-stylized-pbr"
+      ]
+    },
+    "aesthetic-belle-u-painterly-vr": {
+      "default": "arcane-painterly-hybrid",
+      "alternatives": []
+    },
+    "aesthetic-swiss-modernist": {
+      "default": "architectural-section-poche",
+      "alternatives": [
+        "bauhaus-geometric",
+        "low-poly-paper-3d",
+        "spectrums-vector-shape-circle",
+        "typo-letter-scatter",
+        "typo-weingart-deconstructed"
+      ]
+    },
+    "recipe-swiss-grid": {
+      "default": "architectural-section-poche",
+      "alternatives": [
+        "spectrums-vector-shape-circle"
+      ]
+    },
+    "aesthetic-monochrome-tech-editorial": {
+      "default": "architectural-section-poche",
+      "alternatives": [
+        "ink-wash-atmosphere",
+        "noir-comic-ink",
+        "typo-letter-scatter"
       ]
     },
     "aesthetic-bauhaus": {
@@ -440,30 +523,26 @@
       "alternatives": [
         "blush-patterns",
         "low-poly-paper-3d",
-        "spectrums-vector-shape-circle"
+        "spectrums-vector-shape-circle",
+        "toyism-symbol-pop"
       ]
     },
     "aesthetic-de-stijl": {
       "default": "bauhaus-geometric",
       "alternatives": [
         "blush-patterns",
-        "spectrums-vector-shape-circle"
+        "spectrums-vector-shape-circle",
+        "toyism-symbol-pop"
       ]
     },
     "aesthetic-constructivism": {
       "default": "bauhaus-geometric",
       "alternatives": [
+        "expressionist-woodcut",
         "low-poly-paper-3d",
         "mc-escher-paradox",
-        "saul-bass-cutout"
-      ]
-    },
-    "aesthetic-swiss-modernist": {
-      "default": "bauhaus-geometric",
-      "alternatives": [
-        "low-poly-paper-3d",
-        "spectrums-vector-shape-circle",
-        "typo-weingart-deconstructed"
+        "saul-bass-cutout",
+        "solidarity-agitprop-flat"
       ]
     },
     "aesthetic-cottagegoth": {
@@ -505,9 +584,12 @@
         "blush-power-moves",
         "blush-tutto-ricco",
         "blush-we-are-women",
+        "bollywood-painted-poster",
         "classical-painting-remix",
         "frida-folk-surreal",
         "keith-haring-radiant",
+        "loteria-folk-card",
+        "lowbrow-kustom-kulture",
         "pixar-coco-folk-vibrant"
       ]
     },
@@ -519,6 +601,7 @@
         "blush-tutto-ricco",
         "frida-folk-surreal",
         "halftone-shape",
+        "silver-age-comic-print",
         "spectrums-complex-flower",
         "spiderverse-comic-halftone",
         "typo-bubble-graffiti",
@@ -529,10 +612,13 @@
       "default": "blush-cool-kids",
       "alternatives": [
         "blush-power-moves",
+        "pop-art-silkscreen-repeat",
         "raster-cutout-collage",
+        "skate-deck-silkscreen",
         "spectrums-complex-flower",
         "spiderverse-comic-halftone",
-        "typo-vector-musica"
+        "typo-vector-musica",
+        "typo-wildstyle-blackbook"
       ]
     },
     "aesthetic-solarpunk": {
@@ -550,6 +636,7 @@
       "default": "blush-goodies",
       "alternatives": [
         "crayon-wax-children",
+        "lowbrow-kustom-kulture",
         "pixar-coco-folk-vibrant",
         "sticker-cutout-puffy"
       ]
@@ -584,6 +671,8 @@
     "style-brutalist-raw": {
       "default": "blush-transhumans",
       "alternatives": [
+        "skate-deck-silkscreen",
+        "typo-dry-brush-grunge",
         "typo-vectorheart-industrial-futurist"
       ]
     },
@@ -599,12 +688,59 @@
         "spectrums-complex-flower"
       ]
     },
+    "style-bold-display": {
+      "default": "bollywood-painted-poster",
+      "alternatives": [
+        "expressionist-woodcut",
+        "loteria-folk-card",
+        "pop-art-silkscreen-repeat",
+        "pulp-cover-painted",
+        "shapes-gallery-michalczyk",
+        "silver-age-comic-print",
+        "solidarity-agitprop-flat",
+        "typo-letter-scatter"
+      ]
+    },
+    "shell-hero-stack": {
+      "default": "bollywood-painted-poster",
+      "alternatives": [
+        "pulp-cover-painted"
+      ]
+    },
+    "shell-centered-column": {
+      "default": "botanical-engraving",
+      "alternatives": [
+        "woodblock-ukiyoe"
+      ]
+    },
+    "aesthetic-industrial-catalog": {
+      "default": "brick-instruction-diagram",
+      "alternatives": [
+        "vintage-seed-lithograph"
+      ]
+    },
+    "style-flat-design": {
+      "default": "brick-instruction-diagram",
+      "alternatives": [
+        "folk-papercut-wycinanki",
+        "toyism-symbol-pop"
+      ]
+    },
+    "shell-bento-grid": {
+      "default": "brick-instruction-diagram",
+      "alternatives": [
+        "loteria-folk-card"
+      ]
+    },
     "aesthetic-wacky-pomo": {
       "default": "claymation-stop-motion",
       "alternatives": [
         "crayon-wax-children",
+        "loteria-folk-card",
         "plasticine-3d-rougher",
-        "retro-contraption-3d"
+        "push-pin-victorian-psychedelic",
+        "retro-contraption-3d",
+        "silver-age-comic-print"
       ]
     },
     "style-neumorphism": {
@@ -631,18 +767,30 @@
         "lofi-contemplative"
       ]
     },
-    "recipe-newspaper-of-record": {
-      "default": "editorial-thick-brush",
-      "alternatives": [
-        "humanities-marginalia",
-        "noir-comic-ink"
-      ]
-    },
     "style-raster-cutout": {
       "default": "eric-carle-tissue-collage",
       "alternatives": [
         "raster-cutout-collage",
-        "risograph-illustration"
+        "risograph-illustration",
+        "typo-wildstyle-blackbook"
+      ]
+    },
+    "aesthetic-zine-type-wall": {
+      "default": "expressionist-woodcut",
+      "alternatives": [
+        "pop-art-silkscreen-repeat",
+        "skate-deck-silkscreen",
+        "typo-massin-stage",
+        "typo-wildstyle-blackbook"
+      ]
+    },
+    "aesthetic-monochrome-pop-poster": {
+      "default": "expressionist-woodcut",
+      "alternatives": [
+        "monochrome-set-design",
+        "pop-art-silkscreen-repeat",
+        "pulp-cover-painted",
+        "solidarity-agitprop-flat"
       ]
     },
     "aesthetic-anti-design": {
@@ -659,24 +807,21 @@
       "default": "hilma-af-klint-symbolist",
       "alternatives": []
     },
-    "style-serif-warm-paper": {
-      "default": "humanities-marginalia",
+    "style-ransom-glyph-mix": {
+      "default": "lowbrow-kustom-kulture",
       "alternatives": [
-        "typo-hand-lettered-editorial"
+        "typo-massin-stage"
       ]
     },
-    "aesthetic-monochrome-tech-editorial": {
-      "default": "ink-wash-atmosphere",
+    "shell-scrapbook-substrate": {
+      "default": "lowbrow-kustom-kulture",
       "alternatives": [
-        "noir-comic-ink"
+        "skate-deck-silkscreen",
+        "sticker-cutout-puffy"
       ]
     },
     "aesthetic-op-art": {
       "default": "mc-escher-paradox",
-      "alternatives": []
-    },
-    "aesthetic-monochrome-pop-poster": {
-      "default": "monochrome-set-design",
       "alternatives": []
     },
     "aesthetic-organic-overgrowth": {
@@ -693,10 +838,6 @@
     },
     "shell-horizontal-scroll-stage": {
       "default": "noir-comic-ink",
-      "alternatives": []
-    },
-    "shell-infinite-canvas": {
-      "default": "papercraft-diorama-world",
       "alternatives": []
     },
     "aesthetic-cosmic-horizon": {
@@ -739,6 +880,14 @@
         "spiderverse-comic-halftone"
       ]
     },
+    "aesthetic-avantropop": {
+      "default": "push-pin-victorian-psychedelic",
+      "alternatives": []
+    },
+    "style-editorial-italic-accent": {
+      "default": "push-pin-victorian-psychedelic",
+      "alternatives": []
+    },
     "aesthetic-sculptural-minimal": {
       "default": "sculptural-3d-object",
       "alternatives": []
@@ -750,13 +899,19 @@
         "stylized-3d-avatar"
       ]
     },
-    "style-bold-display": {
-      "default": "shapes-gallery-michalczyk",
-      "alternatives": []
+    "style-neubrutalism": {
+      "default": "silver-age-comic-print",
+      "alternatives": [
+        "thick-border-cartoon"
+      ]
     },
-    "recipe-swiss-grid": {
-      "default": "spectrums-vector-shape-circle",
-      "alternatives": []
+    "recipe-brutalist-web": {
+      "default": "solidarity-agitprop-flat",
+      "alternatives": [
+        "thick-border-cartoon",
+        "typo-fella-anti-design",
+        "typo-weingart-deconstructed"
+      ]
     },
     "aesthetic-persona-5-heist-pop": {
       "default": "spiderverse-comic-halftone",
@@ -766,34 +921,44 @@
       "default": "spiderverse-comic-halftone",
       "alternatives": []
     },
-    "shell-scrapbook-substrate": {
-      "default": "sticker-cutout-puffy",
-      "alternatives": []
-    },
-    "style-neubrutalism": {
-      "default": "thick-border-cartoon",
-      "alternatives": []
-    },
     "aesthetic-neubrutalism": {
       "default": "thick-border-cartoon",
-      "alternatives": []
-    },
-    "recipe-brutalist-web": {
-      "default": "thick-border-cartoon",
       "alternatives": [
-        "typo-fella-anti-design",
-        "typo-weingart-deconstructed"
+        "toyism-symbol-pop"
       ]
     },
     "aesthetic-corporate-grunge": {
       "default": "typo-blackletter-neo-gothic",
       "alternatives": [
+        "typo-dry-brush-grunge",
         "typo-fella-anti-design",
         "typo-wood-type-letterpress"
       ]
     },
     "aesthetic-acid-graphics": {
       "default": "typo-bubble-graffiti",
+      "alternatives": []
+    },
+    "aesthetic-luxury-cinematic-dark": {
+      "default": "typo-dry-brush-grunge",
+      "alternatives": [
+        "typo-signpainter-chalk"
+      ]
+    },
+    "material-ink-wash-sumi-e": {
+      "default": "typo-dry-brush-grunge",
+      "alternatives": []
+    },
+    "style-oversized-neo-grotesque": {
+      "default": "typo-letter-scatter",
+      "alternatives": []
+    },
+    "aesthetic-neubrutalism-monochrome-editorial": {
+      "default": "typo-massin-stage",
+      "alternatives": []
+    },
+    "material-parchment": {
+      "default": "typo-signpainter-chalk",
       "alternatives": []
     },
     "aesthetic-vector-vector-musica": {
@@ -814,6 +979,10 @@
     },
     "aesthetic-rgb-gamer": {
       "default": "voxel-magicavoxel",
+      "alternatives": []
+    },
+    "aesthetic-japanese-poster-layout": {
+      "default": "woodblock-ukiyoe",
       "alternatives": []
     }
   },
@@ -1049,6 +1218,42 @@
       ],
       "sourceFile": "design-library/illust-3d-tron-emissive-glow.md"
     },
+    "antique-cartography": {
+      "name": "Antique nautical cartography",
+      "category": "Traditional print / engraving",
+      "subCategory": "antique-cartography",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "a full chart drawing system: rhumb lines, hatched coasts, compass roses, sepia ink on stained vellum.",
+      "notForUseWhen": "clinical modern UI, neon futurism, minimal flat SaaS",
+      "pairsPrototypes": [
+        "aesthetic-dark-academia",
+        "style-serif-warm-paper",
+        "shell-infinite-canvas",
+        "recipe-brand-story-journey"
+      ],
+      "sourceFile": "design-library/illust-antique-cartography.md"
+    },
+    "antique-engraving-etch": {
+      "name": "Antique engraving etch",
+      "category": "Traditional print / engraving",
+      "subCategory": "antique-engraving-etch",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "dense crosshatched pen scenes at old printing-plate density, ink black on cream.",
+      "notForUseWhen": "friendly SaaS, candy-color kids brands, minimal flat design",
+      "pairsPrototypes": [
+        "aesthetic-dark-academia",
+        "recipe-newspaper-of-record",
+        "style-serif-warm-paper",
+        "recipe-editorial-magazine"
+      ],
+      "sourceFile": "design-library/illust-antique-engraving-etch.md"
+    },
     "arcane-painterly-hybrid": {
       "name": "Arcane painterly 2.5D hybrid (Fortiche)",
       "category": "3D",
@@ -1067,6 +1272,24 @@
         "recipe-warm-restraint"
       ],
       "sourceFile": "design-library/illust-arcane-painterly-hybrid.md"
+    },
+    "architectural-section-poche": {
+      "name": "Architectural section poche",
+      "category": "Diagram / technical",
+      "subCategory": "architectural-section-poche",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "precise drafted building section: hard black poche fills, annotation leaders and sun-shaft overlays as ornament.",
+      "notForUseWhen": "playful kids brands, maximalist pop, grunge, cartoon registers",
+      "pairsPrototypes": [
+        "aesthetic-swiss-modernist",
+        "recipe-swiss-grid",
+        "style-restrained-hairline",
+        "aesthetic-monochrome-tech-editorial"
+      ],
+      "sourceFile": "design-library/illust-architectural-section-poche.md"
     },
     "aurorism-mesh-gradient": {
       "name": "Aurorism mesh gradient",
@@ -1566,6 +1789,61 @@
       ],
       "sourceFile": "design-library/illust-blush-yuppies.md"
     },
+    "bollywood-painted-poster": {
+      "name": "Bollywood painted poster",
+      "category": "Painted poster / vintage",
+      "subCategory": "bollywood-painted-poster",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "heroic hand-painted film portraiture with chunky two-script showcard titles on aged poster paper.",
+      "notForUseWhen": "minimal SaaS, clinical dashboards, quiet luxury, pastel friendliness",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "aesthetic-maximalism",
+        "style-bold-display",
+        "shell-hero-stack"
+      ],
+      "sourceFile": "design-library/illust-bollywood-painted-poster.md"
+    },
+    "botanical-engraving": {
+      "name": "Copperplate botanical engraving",
+      "category": "Traditional print / engraving",
+      "subCategory": "botanical-engraving",
+      "role": "spot",
+      "roleAffinity": [
+        "spot"
+      ],
+      "oneLine": "fine hatched specimen plates with muted natural hand-color on warm cream.",
+      "notForUseWhen": "loud maximalism, tech dashboards, neon nightlife brands",
+      "pairsPrototypes": [
+        "aesthetic-cottagecore",
+        "aesthetic-pastoral-serene",
+        "style-serif-warm-paper",
+        "recipe-editorial-magazine",
+        "shell-centered-column"
+      ],
+      "sourceFile": "design-library/illust-botanical-engraving.md"
+    },
+    "brick-instruction-diagram": {
+      "name": "Brick build-instruction diagram",
+      "category": "Diagram / technical",
+      "subCategory": "brick-instruction-diagram",
+      "role": "spot",
+      "roleAffinity": [
+        "spot"
+      ],
+      "oneLine": "toy build-instruction graphics: bold-outlined isometric parts in glossy ABS color on flat instruction-page blue.",
+      "notForUseWhen": "moody atmospheric brands, painterly editorial, luxury, organic hand-drawn looks",
+      "pairsPrototypes": [
+        "recipe-scientific-infra-marketing",
+        "aesthetic-industrial-catalog",
+        "style-flat-design",
+        "shell-bento-grid"
+      ],
+      "sourceFile": "design-library/illust-brick-instruction-diagram.md"
+    },
     "charcoal-loose": {
       "name": "Loose charcoal sketch",
       "category": "Hand-drawn / sketch",
@@ -1857,6 +2135,24 @@
       ],
       "sourceFile": "design-library/illust-eric-carle-tissue-collage.md"
     },
+    "expressionist-woodcut": {
+      "name": "German Expressionist woodcut",
+      "category": "Traditional print / engraving",
+      "subCategory": "expressionist-woodcut",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "jagged knife-slashed figures and letterforms, one poison hue against black.",
+      "notForUseWhen": "calm wellness brands, pastel kids products, corporate trust marketing",
+      "pairsPrototypes": [
+        "aesthetic-constructivism",
+        "aesthetic-zine-type-wall",
+        "aesthetic-monochrome-pop-poster",
+        "style-bold-display"
+      ],
+      "sourceFile": "design-library/illust-expressionist-woodcut.md"
+    },
     "fluffy-plush-3d": {
       "name": "3D Fluffy / Plush",
       "category": "3D",
@@ -1873,6 +2169,24 @@
         "style-claymorphism"
       ],
       "sourceFile": "design-library/illust-fluffy-plush-3d.md"
+    },
+    "folk-papercut-wycinanki": {
+      "name": "Folk papercut wycinanki",
+      "category": "Folk / craft",
+      "subCategory": "folk-papercut-wycinanki",
+      "role": "decoration",
+      "roleAffinity": [
+        "decoration"
+      ],
+      "oneLine": "symmetric layered paper cutouts of roosters and flowers with scalloped scissor edges.",
+      "notForUseWhen": "dark tech, brutalist rawness, corporate dashboards",
+      "pairsPrototypes": [
+        "aesthetic-cottagecore",
+        "aesthetic-pastoral-serene",
+        "style-flat-design",
+        "recipe-brand-story-journey"
+      ],
+      "sourceFile": "design-library/illust-folk-papercut-wycinanki.md"
     },
     "frida-folk-surreal": {
       "name": "Frida Kahlo folk surrealism",
@@ -2136,6 +2450,24 @@
       ],
       "sourceFile": "design-library/illust-lofi-contemplative.md"
     },
+    "loteria-folk-card": {
+      "name": "Loteria folk card",
+      "category": "Folk / craft",
+      "subCategory": "loteria-folk-card",
+      "role": "spot",
+      "roleAffinity": [
+        "spot"
+      ],
+      "oneLine": "flat engraved-line icons in numbered card frames, fiesta color and carnival woodtype.",
+      "notForUseWhen": "somber minimalism, cold enterprise software, luxury restraint",
+      "pairsPrototypes": [
+        "aesthetic-maximalism",
+        "aesthetic-wacky-pomo",
+        "style-bold-display",
+        "shell-bento-grid"
+      ],
+      "sourceFile": "design-library/illust-loteria-folk-card.md"
+    },
     "low-poly-paper-3d": {
       "name": "Low-Poly Paper Craft 3D",
       "category": "3D",
@@ -2152,6 +2484,24 @@
         "aesthetic-swiss-modernist"
       ],
       "sourceFile": "design-library/illust-low-poly-paper-3d.md"
+    },
+    "lowbrow-kustom-kulture": {
+      "name": "Lowbrow kustom kulture",
+      "category": "Pop surreal / kustom",
+      "subCategory": "lowbrow-kustom-kulture",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "candy-metalflake hot-rod monster art with pinstripe lacquer flourishes and hand-lettered showman script.",
+      "notForUseWhen": "corporate trust surfaces, fintech, minimal editorial, quiet luxury",
+      "pairsPrototypes": [
+        "aesthetic-maximalism",
+        "aesthetic-cluttercore",
+        "style-ransom-glyph-mix",
+        "shell-scrapbook-substrate"
+      ],
+      "sourceFile": "design-library/illust-lowbrow-kustom-kulture.md"
     },
     "mary-blair-stylized": {
       "name": "Mary Blair stylized mid-century",
@@ -2459,6 +2809,79 @@
       ],
       "sourceFile": "design-library/illust-plasticine-3d-rougher.md"
     },
+    "polish-poster-gouache": {
+      "name": "Polish School poster gouache",
+      "category": "Painted poster / vintage",
+      "subCategory": "polish-poster-gouache",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "dark expressive gouache where one symbolic image and hand-painted lettering share a single brush gesture.",
+      "notForUseWhen": "cheerful consumer brands, kids products, clean tech marketing",
+      "pairsPrototypes": [
+        "aesthetic-dark-academia",
+        "aesthetic-surreal-dream-stage",
+        "recipe-editorial-magazine",
+        "style-serif-warm-paper"
+      ],
+      "sourceFile": "design-library/illust-polish-poster-gouache.md"
+    },
+    "pop-art-silkscreen-repeat": {
+      "name": "Pop art silkscreen repeat",
+      "category": "Retro print / pop",
+      "subCategory": "pop-art-silkscreen-repeat",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "the same portrait repeated in a serial grid, each pull drifting off register in fluoro duotones.",
+      "notForUseWhen": "cozy craft brands, pastoral calm, conservative corporate",
+      "pairsPrototypes": [
+        "aesthetic-monochrome-pop-poster",
+        "aesthetic-acid-design",
+        "aesthetic-zine-type-wall",
+        "style-bold-display",
+        "recipe-editorial-magazine"
+      ],
+      "sourceFile": "design-library/illust-pop-art-silkscreen-repeat.md"
+    },
+    "pulp-cover-painted": {
+      "name": "Pulp cover painted noir",
+      "category": "Painted poster / vintage",
+      "subCategory": "pulp-cover-painted",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "mid-century paperback cover painting: brushed dramatic realism with tiered cover lines in taxi yellow and lipstick red.",
+      "notForUseWhen": "family-friendly brands, healthcare, minimal corporate, kids content",
+      "pairsPrototypes": [
+        "recipe-editorial-magazine",
+        "style-bold-display",
+        "aesthetic-monochrome-pop-poster",
+        "shell-hero-stack"
+      ],
+      "sourceFile": "design-library/illust-pulp-cover-painted.md"
+    },
+    "push-pin-victorian-psychedelic": {
+      "name": "Push Pin Victorian psychedelic",
+      "category": "Mid-century / vintage",
+      "subCategory": "push-pin-victorian-psychedelic",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "Victorian circus display type paired with flat-color psychedelic flowing-figure illustration in a candy palette on cream.",
+      "notForUseWhen": "dark tech, brutalism, clinical dashboards, somber editorial",
+      "pairsPrototypes": [
+        "aesthetic-avantropop",
+        "aesthetic-wacky-pomo",
+        "recipe-editorial-magazine",
+        "style-editorial-italic-accent"
+      ],
+      "sourceFile": "design-library/illust-push-pin-victorian-psychedelic.md"
+    },
     "raster-cutout-collage": {
       "name": "Raster cutout collage",
       "category": "Mid-century / vintage",
@@ -2617,6 +3040,42 @@
       ],
       "sourceFile": "design-library/illust-shoujo-soft-line-anime.md"
     },
+    "silver-age-comic-print": {
+      "name": "Silver-age comic print",
+      "category": "Retro print / pop",
+      "subCategory": "silver-age-comic-print",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "ben-day dot fills and misregistered CMY flats on aged pulp newsprint.",
+      "notForUseWhen": "luxury minimalism, serious finance, quiet editorial calm",
+      "pairsPrototypes": [
+        "aesthetic-wacky-pomo",
+        "aesthetic-y2k-memphis-loud",
+        "style-bold-display",
+        "style-neubrutalism"
+      ],
+      "sourceFile": "design-library/illust-silver-age-comic-print.md"
+    },
+    "skate-deck-silkscreen": {
+      "name": "Skate deck silkscreen",
+      "category": "Print / street",
+      "subCategory": "skate-deck-silkscreen",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "80s-90s skate deck graphics: silkscreened screaming-skull art with brush-scrawl lettering in neon on grip-tape black.",
+      "notForUseWhen": "corporate trust surfaces, healthcare, luxury restraint, quiet editorial",
+      "pairsPrototypes": [
+        "aesthetic-zine-type-wall",
+        "aesthetic-acid-design",
+        "style-brutalist-raw",
+        "shell-scrapbook-substrate"
+      ],
+      "sourceFile": "design-library/illust-skate-deck-silkscreen.md"
+    },
     "skeuomorphic-detailed": {
       "name": "Skeuomorphic detailed object",
       "category": "3D",
@@ -2632,6 +3091,24 @@
         "recipe-warm-restraint"
       ],
       "sourceFile": "design-library/illust-skeuomorphic-detailed.md"
+    },
+    "solidarity-agitprop-flat": {
+      "name": "Solidarity agitprop flat",
+      "category": "Print / propaganda",
+      "subCategory": "solidarity-agitprop-flat",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "tricontinental solidarity poster: symbolic flat figures and raised fists in three to four unmodulated silkscreen inks on cream.",
+      "notForUseWhen": "soft lifestyle brands, luxury, whimsical kids content, neutral corporate tone",
+      "pairsPrototypes": [
+        "aesthetic-constructivism",
+        "recipe-brutalist-web",
+        "style-bold-display",
+        "aesthetic-monochrome-pop-poster"
+      ],
+      "sourceFile": "design-library/illust-solidarity-agitprop-flat.md"
     },
     "spectrums-complex-flower": {
       "name": "Spectrums - Complex / Flower",
@@ -2758,6 +3235,24 @@
       ],
       "sourceFile": "design-library/illust-thick-border-cartoon.md"
     },
+    "toyism-symbol-pop": {
+      "name": "Toyism symbol pop",
+      "category": "Geometric / symbol pop",
+      "subCategory": "toyism-symbol-pop",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "hand-painted symbol-set pop: flat primary glyphs assembled from a shared vocabulary, with spray, brush and stamp paint textures.",
+      "notForUseWhen": "photoreal product marketing, luxury restraint, organic hand-drawn warmth",
+      "pairsPrototypes": [
+        "aesthetic-bauhaus",
+        "aesthetic-de-stijl",
+        "style-flat-design",
+        "aesthetic-neubrutalism"
+      ],
+      "sourceFile": "design-library/illust-toyism-symbol-pop.md"
+    },
     "typo-art-nouveau-ornament": {
       "name": "Art Nouveau ornamental lettering",
       "category": "Illustrative typography",
@@ -2827,6 +3322,24 @@
       ],
       "sourceFile": "design-library/illust-typo-chromeheart-gothic-luxury.md"
     },
+    "typo-dry-brush-grunge": {
+      "name": "Dry-brush grunge display",
+      "category": "Illustrative typography",
+      "subCategory": "dry-brush-grunge",
+      "role": "typography",
+      "roleAffinity": [
+        "typography"
+      ],
+      "oneLine": "Ragged dry-brush strokes doing the job of headline type - each letter a single fast pass of a starved brush, bristle streaks and broken edges left in. Ash white and ember orange on carbon black, with crackle and cinder texture soaking the whole frame. Fire-and-ash energy: the type looks scorched, not painted.",
+      "notForUseWhen": "friendly consumer onboarding, pastel wellness, precise fintech, kids products",
+      "pairsPrototypes": [
+        "style-brutalist-raw",
+        "aesthetic-corporate-grunge",
+        "aesthetic-luxury-cinematic-dark",
+        "material-ink-wash-sumi-e"
+      ],
+      "sourceFile": "design-library/illust-typo-dry-brush-grunge.md"
+    },
     "typo-fella-anti-design": {
       "name": "Ed Fella anti-design hand-letter",
       "category": "Illustrative typography",
@@ -2879,6 +3392,61 @@
         "recipe-editorial-magazine"
       ],
       "sourceFile": "design-library/illust-typo-house-industries-revival.md"
+    },
+    "typo-letter-scatter": {
+      "name": "Letterform dispersal display",
+      "category": "Illustrative typography",
+      "subCategory": "letter-scatter",
+      "role": "typography",
+      "roleAffinity": [
+        "typography"
+      ],
+      "oneLine": "Heavy monochrome display type whose glyphs break loose and scatter - letters dissolve off a word's trailing edge into flocks, streams and weather that literally depict the word's meaning. Type as image: RIVER's letters spill into a winding current of small glyphs, a bird word bursts into a flock.",
+      "notForUseWhen": "dense data UI, long-form reading surfaces, playful candy-color branding",
+      "pairsPrototypes": [
+        "style-bold-display",
+        "aesthetic-monochrome-tech-editorial",
+        "recipe-editorial-magazine",
+        "style-oversized-neo-grotesque",
+        "aesthetic-swiss-modernist"
+      ],
+      "sourceFile": "design-library/illust-typo-letter-scatter.md"
+    },
+    "typo-massin-stage": {
+      "name": "Typographic theatre",
+      "category": "Illustrative typography",
+      "subCategory": "massin-stage",
+      "role": "typography",
+      "roleAffinity": [
+        "typography"
+      ],
+      "oneLine": "Type performed as dialogue on a paper stage - every voice gets its own color, size and attack. The shouting character is a wall of towering rubber-stamped capitals slammed at an angle; the timid reply shrinks word by word, cascading down the page in perspective until it trails off into scattered characters. Speech made visible through scale, direction and ink pressure alone.",
+      "notForUseWhen": "calm reading apps, luxury restraint, data-dense dashboards, corporate reassurance",
+      "pairsPrototypes": [
+        "aesthetic-zine-type-wall",
+        "style-ransom-glyph-mix",
+        "aesthetic-neubrutalism-monochrome-editorial",
+        "recipe-editorial-magazine"
+      ],
+      "sourceFile": "design-library/illust-typo-massin-stage.md"
+    },
+    "typo-signpainter-chalk": {
+      "name": "Victorian signpainter chalk",
+      "category": "Illustrative typography",
+      "subCategory": "signpainter-chalk",
+      "role": "typography",
+      "roleAffinity": [
+        "typography"
+      ],
+      "oneLine": "Ornamented signpainter lettering on a near-black ground - gilded script with swash flourishes over chalk-textured small caps, framed by engraved rules, tickets and celestial ornament. The register of the Victorian shopfront and the tavern chalkboard at once.",
+      "notForUseWhen": "tech-minimal, kinetic-loud youth brands, clinical SaaS dashboards",
+      "pairsPrototypes": [
+        "aesthetic-dark-academia",
+        "style-serif-warm-paper",
+        "material-parchment",
+        "aesthetic-luxury-cinematic-dark"
+      ],
+      "sourceFile": "design-library/illust-typo-signpainter-chalk.md"
     },
     "typo-vector-musica": {
       "name": "Vector Música typographic illustration",
@@ -2935,6 +3503,24 @@
       ],
       "sourceFile": "design-library/illust-typo-weingart-deconstructed.md"
     },
+    "typo-wildstyle-blackbook": {
+      "name": "Wildstyle blackbook marker",
+      "category": "Illustrative typography",
+      "subCategory": "wildstyle-blackbook",
+      "role": "typography",
+      "roleAffinity": [
+        "typography"
+      ],
+      "oneLine": "Angular interlocked wildstyle graffiti lettering worked up in marker on sketchbook paper - the writer's blackbook register, not the finished wall.",
+      "notForUseWhen": "corporate trust, luxury restraint, quiet editorial, fintech",
+      "pairsPrototypes": [
+        "aesthetic-urbling",
+        "aesthetic-acid-design",
+        "aesthetic-zine-type-wall",
+        "style-raster-cutout"
+      ],
+      "sourceFile": "design-library/illust-typo-wildstyle-blackbook.md"
+    },
     "typo-wood-type-letterpress": {
       "name": "Wood-type letterpress slab",
       "category": "Illustrative typography",
@@ -2971,6 +3557,24 @@
       ],
       "sourceFile": "design-library/illust-typo-y2k-chrome-3d.md"
     },
+    "vintage-seed-lithograph": {
+      "name": "Vintage seed-packet lithograph",
+      "category": "Vintage commercial print",
+      "subCategory": "vintage-seed-lithograph",
+      "role": "subject",
+      "roleAffinity": [
+        "subject"
+      ],
+      "oneLine": "saturated chromolithograph produce under arched seedsman lettering on buff paper.",
+      "notForUseWhen": "dark tech futurism, neon nightlife, sterile clinical UI",
+      "pairsPrototypes": [
+        "aesthetic-pastoral-serene",
+        "aesthetic-industrial-catalog",
+        "style-serif-warm-paper",
+        "recipe-warm-restraint"
+      ],
+      "sourceFile": "design-library/illust-vintage-seed-lithograph.md"
+    },
     "voxel-magicavoxel": {
       "name": "Voxel Art (MagicaVoxel)",
       "category": "3D",
@@ -3006,6 +3610,25 @@
         "recipe-ai-foundry-dark"
       ],
       "sourceFile": "design-library/illust-wireframe-3d.md"
+    },
+    "woodblock-ukiyoe": {
+      "name": "Japanese woodblock print",
+      "category": "Traditional print / engraving",
+      "subCategory": "woodblock-ukiyoe",
+      "role": "hero",
+      "roleAffinity": [
+        "hero"
+      ],
+      "oneLine": "carved-line mountain landscapes in indigo ink on warm washi paper.",
+      "notForUseWhen": "glossy tech marketing, neon cyberpunk, corporate SaaS flat vector",
+      "pairsPrototypes": [
+        "aesthetic-japanese-poster-layout",
+        "style-serif-warm-paper",
+        "recipe-editorial-magazine",
+        "recipe-brand-story-journey",
+        "shell-centered-column"
+      ],
+      "sourceFile": "design-library/illust-woodblock-ukiyoe.md"
     }
   }
 }
