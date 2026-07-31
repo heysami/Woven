@@ -29087,6 +29087,42 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
    Photo / illust appear when the option's picks resolve to a register
    decisionTree hit. Layout uses auto-fit so 2-3 cells render on one row,
    4-5 cells wrap to two rows without crushing thumbnails. */
+/* Auto-preview group header - the option's <badge> line promoted from an
+   easily-missed footer to a mini title above the recoloured image strip.
+   First badge segment renders as the accent tag pill, the rest as the note. */
+.chat-direction-strip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 2px;
+}
+.chat-direction-strip-tag {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  white-space: nowrap;
+  flex: none;
+}
+.chat-direction-strip-note {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1.3;
+  min-width: 0;
+}
 .chat-direction-image-strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));

@@ -20434,6 +20434,14 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
           };
           const dispStyle = buildTextStyle(opt.display);
           const bodyStyle = buildTextStyle(opt.body);
+          // Grouped image strip = the auto-preview render. Its <badge> line
+          // ("auto-preview · no LLM · ...") is promoted from an easily-missed
+          // footer to a mini title ABOVE the strip: first segment becomes the
+          // tag, the rest the note. The footer badge stays only for non-strip
+          // (single-image / no-image) options.
+          const stripImgs = Array.isArray(opt.images) ? opt.images.filter(im => im && im.src) : [];
+          const stripMode = stripImgs.length > 1 && stripImgs.some(im => im.axis);
+          const badgeParts = String(opt.badge || "").split("·").map(s => s.trim()).filter(Boolean);
           return html`
             <button
               key=${opt.value}
@@ -20508,14 +20516,21 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
                 // (see prototype/step-neg1-emit-ui.md).
                 const AXIS_ORDER = ["aesthetic", "style", "shell", "photo", "illust"];
                 const AXIS_LABEL = { aesthetic: "Aesthetic", style: "Style", shell: "Shell", photo: "Photo", illust: "Illust" };
-                const imgs = Array.isArray(opt.images) ? opt.images.filter(im => im && im.src) : [];
-                const haveAxes = imgs.some(im => im.axis);
-                if (imgs.length > 1 && haveAxes) {
-                  const ordered = imgs.slice().sort((a, b) => {
+                if (stripMode) {
+                  const ordered = stripImgs.slice().sort((a, b) => {
                     const ai = AXIS_ORDER.indexOf(a.axis); const bi = AXIS_ORDER.indexOf(b.axis);
                     return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
                   });
                   return html`
+                    <div className="chat-direction-strip-head">
+                      <span className="chat-direction-strip-tag">
+                        <span className="chat-direction-badge-dot">◉</span>
+                        ${badgeParts[0] || "Auto-preview"}
+                      </span>
+                      ${badgeParts.length > 1 && html`
+                        <span className="chat-direction-strip-note">${badgeParts.slice(1).join(" · ")}</span>
+                      `}
+                    </div>
                     <div className="chat-direction-image-strip" data-count=${ordered.length}>
                       ${ordered.map((im, i) => html`
                         <div className="chat-direction-image-cell" key=${i}>
@@ -20557,7 +20572,7 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
                 }
                 return null;
               })()}
-              ${opt.badge && html`<div className="chat-direction-badge"><span className="chat-direction-badge-dot">◉</span> ${opt.badge}</div>`}
+              ${opt.badge && !stripMode && html`<div className="chat-direction-badge"><span className="chat-direction-badge-dot">◉</span> ${opt.badge}</div>`}
             </button>
           `;
         })}
