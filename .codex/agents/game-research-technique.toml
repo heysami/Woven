@@ -165,9 +165,10 @@ The world drawer needs to know WHAT it draws its entities from. For `2d-side` / 
 **The sprite inventory** - for each animated entity, commit:
 - `entity` - what it is (e.g. "player fox", "hopping enemy", "collectable coin")
 - `basePlate` - the one reference plate the cycle is redrawn from (a `raster-foreground` plate; generate it first)
+- `facing` - REQUIRED - the subject's orientation as the CAMERA sees it, in plain words (e.g. "seen from above, facing down toward the bottom of the frame" for top-down, "side profile facing right" for side-scroll). Most sprite failures are ART-side, not instruction-side: the plate is briefed one facing and GENERATED another, and every animation frame inherits the error. The base plate's generation prompt must state this facing verbatim, and the scaffolded `animated-sprite` node carries it as its `facing` field - the daemon then vision-verifies the plate BEFORE the sheet spend and the sheet's first frame before commit, hard-failing on mismatch (per-cycle override allowed when a cycle faces differently, e.g. `turn`)
 - `cycles[]` - the animation states, from the supported set: `idle | walk | run | jump | attack | hit | turn | blink | spin` (each is one loop; a coin might be only `spin`, a player might be `idle + walk + jump`)
 - per cycle: `frameCount` + `frameRate` + grid dims (cols×rows)
-- `loop` semantics (seamless-return vs play-once)
+- `loop` semantics (seamless-return vs play-once). A play-once cycle ALSO commits `endState` - what the final frame must show (e.g. "slumped flat on the ground" for `hit`) - carried onto the node so the daemon verifies the last frame before committing the sheet. Looping cycles need no end state (they return to the start pose)
 
 NEVER pick `raster-sprite` for a world whose entities are abstract shapes (a pinball, a paper plane silhouette, particle-field motes) - a sprite sheet there reads worse than a clean procedural draw.
 

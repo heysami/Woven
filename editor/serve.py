@@ -49,6 +49,7 @@ import difflib
 import glob
 import hashlib
 import http.server
+import io
 import json
 import math
 import os
@@ -16410,20 +16411,78 @@ class H(http.server.SimpleHTTPRequestHandler):
             "turn":   "the character TURNING to face a new direction, rotating around its vertical axis",
         }
         cycle = cycles.get(anim, "a smooth looping %s animation" % anim)
+        facing    = (node.get("facing") or "").strip()
+        end_state = (node.get("endState") or "").strip()
+        loops     = node.get("loop") is not False
         subject_directive = ("SUBJECT REFERENCE: preserve the subject identity from the attached reference image - "
                              "face, proportions, key features, outfit and colour palette - keeping it recognisably "
                              "the same subject. Recompose / restyle only as the prompt above directs.")
+        if loops:
+            loop_clause = ("The %d frames must form ONE smooth, seamless loop (the last flows back into the "
+                           "first) with the pose VISIBLY changing between consecutive frames" % n)
+        else:
+            loop_clause = ("The %d frames must play ONCE from start to finish - the FIRST frame matches the "
+                           "reference pose and the LAST frame holds the cycle's end state, NOT returning to "
+                           "the first pose%s - with the pose VISIBLY changing between consecutive frames"
+                           % (n, (" (the final frame must show the subject %s)" % end_state) if end_state else ""))
         sheet_prompt = (
             "Redraw the character from the reference image as a SPRITE SHEET of %s. "
             "Lay out EXACTLY %d frames on a uniform %dx%d grid (%d columns, %d rows), read left-to-right then "
             "top-to-bottom, evenly spaced, every cell the SAME size with the character centred at the SAME scale "
-            "in each cell. The %d frames must form ONE smooth, seamless loop (the last flows back into the first) "
-            "with the pose VISIBLY changing between consecutive frames - real articulated movement, NOT the same "
+            "in each cell. %s - real articulated movement, NOT the same "
             "drawing rescaled. Keep the character's identity, colours, proportions and art style identical to the "
             "reference. Place the whole grid on a PLAIN, FLAT, SOLID light-grey background with NO scenery, NO "
             "shadows and NO gradients, clearly separated from the character so the background can be cleanly "
             "removed afterwards. No gridlines, no borders, no frame numbers, no text."
-        ) % (cycle, n, cols, rows, cols, rows, n)
+        ) % (cycle, n, cols, rows, cols, rows, loop_clause)
+        if facing:
+            sheet_prompt += (" The character must be %s in EVERY frame - never rotated or mirrored away "
+                             "from that facing." % facing)
+
+        # Facing / end-state gates. Sprite failures are ART-side: a base plate
+        # briefed "facing down" but generated facing right bakes the wrong
+        # facing into every frame, and no animation prompt can fix it after
+        # the fact. When the node declares `facing`, a cheap vision judge
+        # verifies the SOURCE PLATE before the sheet i2i spend (hard-fail =
+        # regenerate the plate, nothing spent) and the sheet's first frame
+        # before commit; play-once cycles with `endState` also verify the
+        # final frame. Skipped when no expectation is declared or no vision
+        # provider key is configured (same degrade posture as rembg below).
+        def _vision_judge(question, input_path=None, input_data_uri=None):
+            if _resolve_provider_key("openai"):
+                provider, vmodel = "openai", "gpt-4o-mini"
+            elif _resolve_provider_key("anthropic"):
+                provider, vmodel = "anthropic", "claude-sonnet-4-6"
+            else:
+                return None
+            payload = {"skill": "describe", "provider": provider, "model": vmodel, "prompt": question}
+            if input_data_uri: payload["input_data_uri"] = input_data_uri
+            else:              payload["input_path"] = input_path
+            try:
+                out = self._self_api_post("/__llm_run", payload, project_id, timeout=180)
+                return (out.get("text") or "").strip()
+            except Exception as vj_err:
+                print("[animated-sprite] vision judge unavailable (%s) - gate skipped" % vj_err, flush=True)
+                return None
+
+        def _judge_prompt(requirement):
+            return ("You are gating a game sprite pipeline. Requirement: the subject must be %s. "
+                    "Judge ONLY the subject's facing / orientation / pose - ignore art style, quality and "
+                    "background. Reply with EXACTLY one line: PASS if it matches, otherwise "
+                    "FAIL: <which way the subject actually faces / what pose it actually holds>." % requirement)
+
+        def _cell_data_uri(img):
+            buf = io.BytesIO()
+            img.save(buf, "PNG")
+            return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+        if facing:
+            verdict = _vision_judge(_judge_prompt(facing), input_path=src)
+            if verdict and verdict.upper().startswith("FAIL"):
+                raise ValueError(
+                    "facing gate: base plate %s does not match facing=%r (%s). The animated sheet was NOT "
+                    "generated - regenerate the base plate with the facing stated explicitly in its prompt, "
+                    "then re-run this node." % (src, facing, verdict))
 
         raw_rel = "source/%s/sprites/animated-sprite-%s/__sheet_raw.png" % (branch, node_id)
         cut_rel = "source/%s/sprites/animated-sprite-%s/__sheet_cut.png" % (branch, node_id)
@@ -16460,6 +16519,29 @@ class H(http.server.SimpleHTTPRequestHandler):
             dw, dh = max(1, int(cell_img.width * fr)), max(1, int(cell_img.height * fr))
             cell_img = cell_img.resize((dw, dh), Image.LANCZOS)
             strip.paste(cell_img, (i * CELL + (CELL - dw) // 2, (CELL - dh) // 2), cell_img)
+
+        # Verify the generated frames BEFORE committing anything - the i2i
+        # redraw can flip the facing even when the source plate was right
+        # (cycle briefs like "side-view walk" pull against a top-down facing).
+        # A rejected sheet raises with the raw grid left on disk for
+        # inspection; the node and canonical JSON stay untouched.
+        if facing:
+            verdict = _vision_judge(_judge_prompt(facing),
+                                    input_data_uri=_cell_data_uri(strip.crop((0, 0, CELL, CELL))))
+            if verdict and verdict.upper().startswith("FAIL"):
+                raise ValueError(
+                    "facing gate: the generated sheet's FIRST frame does not match facing=%r (%s). "
+                    "The sheet was rejected before commit - re-run this node (the redraw is stochastic), "
+                    "or tighten `facing`." % (facing, verdict))
+        if (not loops) and end_state:
+            verdict = _vision_judge(_judge_prompt(end_state),
+                                    input_data_uri=_cell_data_uri(strip.crop(((n - 1) * CELL, 0, n * CELL, CELL))))
+            if verdict and verdict.upper().startswith("FAIL"):
+                raise ValueError(
+                    "end-state gate: the generated sheet's FINAL frame does not match endState=%r (%s). "
+                    "The sheet was rejected before commit - re-run this node, or tighten `endState`."
+                    % (end_state, verdict))
+
         sheet_rel = "source/%s/sprites/animated-sprite-%s.png" % (branch, node_id)
         sheet_abs = _safe_join(project_root, sheet_rel)
         os.makedirs(os.path.dirname(sheet_abs), exist_ok=True)

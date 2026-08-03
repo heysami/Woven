@@ -71823,7 +71823,17 @@ function WorkflowAnimatedSpriteNode({ node, zoom, onMove, onResize, onRemove, on
       jump:   "a JUMP - crouch / anticipation, launch with the body stretched, apex, then landing squash",
       turn:   "the character TURNING to face a new direction, rotating around its vertical axis",
     })[anim] || `a smooth looping ${anim} animation`;
-    return `Redraw the character from the reference image as a SPRITE SHEET of ${cycle}. Lay out EXACTLY ${n} frames on a uniform ${cols}x${rows} grid (${cols} columns, ${rows} rows), read left-to-right then top-to-bottom, evenly spaced, every cell the SAME size with the character centred at the SAME scale in each cell. The ${n} frames must form ONE smooth, seamless loop (the last flows back into the first) with the pose VISIBLY changing between consecutive frames - real articulated movement, NOT the same drawing rescaled. Keep the character's identity, colours, proportions and art style identical to the reference. Place the whole grid on a PLAIN, FLAT, SOLID light-grey background with NO scenery, NO shadows and NO gradients, clearly separated from the character so the background can be cleanly removed afterwards. No gridlines, no borders, no frame numbers, no text.`;
+    // Facing / end-state expectations mirror the daemon's headless run
+    // (serve.py _animated_sprite_run): the daemon additionally vision-gates
+    // the plate + generated frames against these fields; here the user's own
+    // eyes are the gate, so we only thread them into the prompt.
+    const facing = String(node.facing || "").trim();
+    const endState = String(node.endState || "").trim();
+    const loopClause = node.loop !== false
+      ? `The ${n} frames must form ONE smooth, seamless loop (the last flows back into the first) with the pose VISIBLY changing between consecutive frames`
+      : `The ${n} frames must play ONCE from start to finish - the FIRST frame matches the reference pose and the LAST frame holds the cycle's end state, NOT returning to the first pose${endState ? ` (the final frame must show the subject ${endState})` : ""} - with the pose VISIBLY changing between consecutive frames`;
+    const facingClause = facing ? ` The character must be ${facing} in EVERY frame - never rotated or mirrored away from that facing.` : "";
+    return `Redraw the character from the reference image as a SPRITE SHEET of ${cycle}. Lay out EXACTLY ${n} frames on a uniform ${cols}x${rows} grid (${cols} columns, ${rows} rows), read left-to-right then top-to-bottom, evenly spaced, every cell the SAME size with the character centred at the SAME scale in each cell. ${loopClause} - real articulated movement, NOT the same drawing rescaled. Keep the character's identity, colours, proportions and art style identical to the reference. Place the whole grid on a PLAIN, FLAT, SOLID light-grey background with NO scenery, NO shadows and NO gradients, clearly separated from the character so the background can be cleanly removed afterwards. No gridlines, no borders, no frame numbers, no text.${facingClause}`;
   }
 
   const loadImg = useCallback((url) => new Promise((res, rej) => {
