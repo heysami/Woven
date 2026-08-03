@@ -9486,10 +9486,9 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
    outline ring at rest, lifting on hover, and a 2px accent outline when
    selected. The glow rings the rounded body (the cell-wrap is inset:0 at the
    same 10px radius). */
-/* The table node reuses .workflow-node (overflow: clip + 64px buffer). Its side
-   port labels (`populate` / `contents`) + the up-shift when selected can run
-   past 64px and clip; widen the buffer so they show in full. */
-.workflow-node-table { overflow-clip-margin: 110px; }
+/* The table node reuses .workflow-node (overflow: clip + 150px buffer); its
+   side port labels (`populate` / `contents`) + the up-shift when selected fit
+   inside the base buffer, no per-kind widening needed. */
 .workflow-wb-table {
   box-sizing: border-box;
   border-radius: 10px;
@@ -10326,11 +10325,13 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   /* v3.5 - port labels need to sit OUTSIDE the node body so they don't
      overlap iframe content. `overflow: clip` + `overflow-clip-margin` keeps
      the iframe (and any other body content) clipped to the rounded node
-     rect for paint, while extending the clip rect 64px on every side so
-     labels positioned at `right: 100%` / `left: 100%` of their port-zone
-     remain visible. `overflow: hidden` would clip them. */
+     rect for paint, while extending the clip rect on every side so labels
+     positioned at `right: 100%` / `left: 100%` of their port-zone remain
+     visible. `overflow: hidden` would clip them. The margin must fit the
+     WIDEST label pill (agent/ds "read-only folder access" ≈ 130px + 10px
+     gap): the old 64px truncated it mid-word at the clip edge. */
   overflow: clip;
-  overflow-clip-margin: 64px;
+  overflow-clip-margin: 150px;
   transition: box-shadow 0.12s ease;
 }
 /* ── WebKit fallback: no overflow-clip-margin ────────────────────────────
@@ -10382,7 +10383,7 @@ body[data-wf-bulk-active="true"] .workflow-node-bulk-check { opacity: 1; }
   border-bottom-right-radius: 0;
 }
 /* Crop full-bleed opaque bodies to the node's rounded bottom corners. The
-   node clips with `overflow-clip-margin: 64px` (so the connector ports' hover
+   node clips with `overflow-clip-margin: 150px` (so the connector ports' hover
    labels can paint outside the card) - but that same margin stops the rounded
    corners from cropping a square-cornered opaque body, so the white/checker
    body would poke past the 10px radius and expose the canvas + shadow ring at
@@ -11057,10 +11058,9 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
      card is a clean rounded thumbnail and on hover the bars appear flush above
      and below it (the card visually grows; the asset stays put). Previously
      these were grid rows that grew 0→full on hover and shoved + re-cropped the
-     asset (the "bop" + squeeze). The bars paint outside the node box, so the
-     clip margin is widened to keep the bottom stack from being cut off. */
+     asset (the "bop" + squeeze). The bars paint outside the node box, inside
+     the base 150px overflow-clip-margin buffer. */
   display: block;
-  overflow-clip-margin: 120px;
   transition: opacity 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
 }
 /* At rest (not hovered, not selected) the card reads as a single clean rounded
@@ -11085,7 +11085,6 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
    now that the bar no longer eats body space.) */
 .workflow-node-proto {
   display: block;
-  overflow-clip-margin: 120px;
 }
 .workflow-node-proto .workflow-node-iframe-scale {
   position: absolute;
@@ -11163,7 +11162,6 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
    (The iframe is 100%×100% of the body, so no JS scale change is needed.) */
 .workflow-node-frames {
   display: block;
-  overflow-clip-margin: 120px;
 }
 .workflow-node-frames .workflow-node-frames-body {
   position: absolute;
@@ -12457,7 +12455,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 .workflow-port-label-right { left:  100%; margin-left:  10px; }
 /* When a node is SELECTED the connector [+] buttons appear centred on each
    side - right where a single centred port's label sits. Shifting the label
-   sideways would clip it (it already lives in the node's 64px overflow buffer),
+   sideways would clip it (it already lives in the node's 150px overflow buffer),
    so nudge it UP to clear the [+]. Scoped to the standard centred in/out zones
    only: multi-port agent / prototype ports use their own zones + offsets and
    are left untouched. */
@@ -14361,8 +14359,8 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
      `grid-template-rows: 32px 1fr`. Grid items default to `min-height: auto`,
      so as the user types the track refuses to shrink below the textarea's
      intrinsic content height: it expands past the node's fixed height and,
-     because the node uses `overflow: clip; overflow-clip-margin: 64px`,
-     that overflow PAINTS up to 64px outside the node (the input box visibly
+     because the node uses `overflow: clip; overflow-clip-margin: 150px`,
+     that overflow PAINTS up to 150px outside the node (the input box visibly
      spilling out the bottom). `min-height: 0` pins the track to its
      distributed size; the textarea then scrolls internally via overflow-y. */
   min-height: 0;
@@ -29469,7 +29467,7 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  /* clip (not hidden) so the inherited overflow-clip-margin:64px lets port
+  /* clip (not hidden) so the inherited overflow-clip-margin:150px lets port
      diamonds paint past the edge instead of being cropped. */
   overflow: clip;
   display: flex;
@@ -29940,7 +29938,7 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   border-radius: 8px;
   display: flex;
   flex-direction: column;
-  /* clip (not hidden) so the inherited overflow-clip-margin:64px lets port
+  /* clip (not hidden) so the inherited overflow-clip-margin:150px lets port
      diamonds paint past the edge instead of being cropped. */
   overflow: clip;
 }
@@ -30036,7 +30034,7 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  /* clip (not hidden) so the inherited overflow-clip-margin:64px lets port
+  /* clip (not hidden) so the inherited overflow-clip-margin:150px lets port
      diamonds paint past the edge instead of being cropped. */
   overflow: clip;
   display: flex;
@@ -30184,7 +30182,7 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  /* clip (not hidden) so the inherited overflow-clip-margin:64px lets port
+  /* clip (not hidden) so the inherited overflow-clip-margin:150px lets port
      diamonds paint past the edge instead of being cropped. */
   overflow: clip;
   display: flex;
