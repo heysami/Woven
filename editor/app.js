@@ -12331,7 +12331,7 @@ function RightRailDock({ mode }) {
     // falls back to the untargeted default (also normal).
     const scoped = pendingScopedRef.current;
     pendingScopedRef.current = null;
-    const wrappedPrompt = composeModeAwarePrompt(mode === "workflow" ? "workflow" : "editor", text);
+    const wrappedPrompt = composeModeAwarePrompt(mode === "workflow" || mode === "ramble" ? "workflow" : "editor", text);
     const title = text.length > 60 ? text.slice(0, 60) + "…" : text;
     const agentDefault = getDefaultForCapability("agent");
     const run = await triggerRun({
@@ -28790,7 +28790,8 @@ function thIsClientNavSafe(url) {
     const sp = new URL(url, window.location.href).searchParams;
     if (!sp.get("project")) return true;            // landing
     const v = sp.get("view") || null;
-    return v === "workflow" || v === "usertesting"; // canvas + user testing page
+    // canvas + user testing + ramble pages (none read the boot-captured `D`)
+    return v === "workflow" || v === "usertesting" || v === "ramble";
   } catch {
     return false;
   }
@@ -53232,6 +53233,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         <div className="workflow-bar-spacer"/>
         <${ModelStatusIndicator} onOpenSettings=${() => setSettingsOpen(true)}/>
         <${SettingsGearButton} onClick=${() => setSettingsOpen(true)}/>
+        <${RambleButton}/>
         <${PublishButton}/>
         <${ShareMenuButton}/>
         <${SurfaceNav}/>
@@ -96008,6 +96010,7 @@ function Toolbar({ view, setView, editsCount, onSubmit, defaultFrame, canvasGap,
           <${Icon.Spark}/>
           <span className="tab-tip">${runActive ? "Run active" : "Update from source"}</span>
         </button>
+        <${RambleButton}/>
         <${PublishButton}/>
         <${ShareMenuButton}/>
       </div>
@@ -96032,6 +96035,1945 @@ const DB_PROVIDERS = [
 // Toolbar entry point - sibling of ShareMenuButton. Opens the publish modal and,
 // once a run is dispatched, drops the user on the Development tab with the
 // agent chat auto-opened on the publish run (requestOpenChatRun handoff).
+/* ────────── Ramble mode - gesture-driven camera canvas ──────────
+   Full-page mode (?view=ramble, routed in Root like Development / User
+   testing). A live camera feed (pointed down at the desk, or the macOS
+   Continuity "Desk View" virtual camera) fills the page, slightly darkened,
+   with an endless pan/zoom canvas layered on top. Hand gestures (MediaPipe
+   hand landmarks via editor/ramble-vision.js, lazy-loaded) create and edit
+   canvas items; voice (WovenVoice STT) fills in text. "Done" saves the whole
+   canvas as a date-time-named section on the workflow canvas.
+
+   The keyboard/mouse debug driver (?rambledebug=1) fabricates the same
+   HandState frames the vision module emits, so every interaction can be
+   developed and regression-tested without a camera. */
+
+const RAMBLE_CAMERA_KEY = "th.ramble.camera";
+const RAMBLE_MIRROR_KEY = "th.ramble.mirror";
+
+// Right-hand fingertip tool menu (palm-up): finger -> whiteboard tool.
+const RAMBLE_TOOL_FINGERS = { index: "pen", middle: "text", ring: "textbox", pinky: "arrow" };
+const RAMBLE_TOOL_LABEL = { pen: "Pen", text: "Text", textbox: "Text box", arrow: "Arrow" };
+const RAMBLE_TOOL_GLYPH = { pen: "P", text: "T", textbox: "B", arrow: "A" };
+// Dial option rails per tool (horizontal drag = primary, vertical = secondary).
+const RAMBLE_DIAL = {
+  pen:     { primary: { key: "color", options: WB_COLOR_TOKENS }, secondary: { key: "size", min: 1, max: 10 } },
+  arrow:   { primary: { key: "color", options: WB_COLOR_TOKENS }, secondary: { key: "size", min: 1, max: 8 } },
+  text:    { primary: { key: "fontSize", options: ["sm", "md", "lg", "xl"] }, secondary: { key: "color", options: WB_COLOR_TOKENS } },
+  textbox: { primary: { key: "color", options: WB_COLOR_TOKENS }, secondary: { key: "fontSize", options: ["sm", "md", "lg", "xl"] } },
+};
+
+// Left-hand fingertip insert menu (palm-up): finger -> insert slot.
+// Ring is deliberately unassigned for now.
+const RAMBLE_INSERT_FINGERS = { pinky: "prototype", middle: "browser", index: "image" };
+const RAMBLE_INSERT_LABEL = { prototype: "Prototype", browser: "Browser", image: "Image" };
+const RAMBLE_INSERT_GLYPH = { prototype: "Pr", browser: "Br", image: "Im" };
+const RAMBLE_INSERT_DIMS = {
+  prototype: { w: 720, h: 480 },
+  browser: { w: 720, h: 540 },
+  asset: { w: 360, h: 360 },
+};
+
+// Lightweight embed renderer for ramble node items (prototype / browser /
+// asset). Deliberately NOT the Workflow*Node components - no ports, no LOD,
+// no selection chrome; just the content at the node's rect. Iframes are
+// pointer-inert here (fingertip interaction arrives via the screen-interact
+// gesture, not the mouse).
+function RambleEmbed({ item }) {
+  const node = item.node;
+  const style = {
+    left: node.x + "px",
+    top: node.y + "px",
+    width: (node.w || 320) + "px",
+    height: (node.h || 240) + "px",
+  };
+  if (node.kind === "prototype") {
+    const vw = 1440, vh = 900;
+    const scale = Math.min((node.w || 720) / vw, (node.h || 480) / vh);
+    return html`
+      <div className="ramble-embed ramble-embed-prototype" style=${style} data-ramble-item=${item.id}>
+        <iframe src=${apiUrl("/source/" + (node.prototype || "") + "/")}
+          style=${{ width: vw + "px", height: vh + "px", transform: "scale(" + scale + ")", transformOrigin: "top left", border: "0" }}
+          title=${"Prototype " + (node.prototype || "")}></iframe>
+        <div className="ramble-embed-tag">${node.prototype || "prototype"}</div>
+      </div>`;
+  }
+  if (node.kind === "browser") {
+    return html`
+      <div className="ramble-embed ramble-embed-browser" style=${style} data-ramble-item=${item.id}>
+        <iframe src=${apiUrl("/__web_proxy?url=" + encodeURIComponent(node.url || "https://www.google.com"))}
+          sandbox="allow-scripts allow-forms allow-popups"
+          style=${{ width: "100%", height: "100%", border: "0" }}
+          title=${node.url || "Browser"}></iframe>
+        <div className="ramble-embed-tag">${(node.url || "browser").replace(/^https?:\/\//, "").slice(0, 48)}</div>
+      </div>`;
+  }
+  const pending = node.runStatus === "pending";
+  const err = node.runStatus === "error";
+  return html`
+    <div className="ramble-embed ramble-embed-asset" style=${style} data-ramble-item=${item.id}>
+      ${pending ? html`<div className="workflow-skeleton workflow-skeleton-block"><span className="workflow-skeleton-label">Generating…</span></div>`
+        : err ? html`<div className="ramble-embed-error">Generation failed</div>`
+        : html`<img src=${apiUrl("/" + node.path)} alt=${node.title || "Generated image"}
+            style=${{ width: "100%", height: "100%", objectFit: "contain" }}/>`}
+    </div>`;
+}
+
+function rambleDraftKey() {
+  try { return "th.ramble.draft." + (activeProjectId() || ""); } catch { return "th.ramble.draft."; }
+}
+
+// Load the runtime voice helper into the editor page (it self-guards and
+// resolves its endpoint base to /__voice). Resolves null when unavailable.
+let _rambleVoicePromise = null;
+function rambleEnsureVoice() {
+  if (typeof window !== "undefined" && window.WovenVoice) return Promise.resolve(window.WovenVoice);
+  if (_rambleVoicePromise) return _rambleVoicePromise;
+  _rambleVoicePromise = new Promise((resolve) => {
+    try {
+      const s = document.createElement("script");
+      s.src = apiUrl("/__woven-voice.js");
+      s.onload = () => resolve(window.WovenVoice || null);
+      s.onerror = () => resolve(null);
+      document.head.appendChild(s);
+    } catch (e) { resolve(null); }
+  });
+  return _rambleVoicePromise;
+}
+
+function RambleButton() {
+  const goRamble = () => {
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set("view", "ramble");
+      u.searchParams.delete("utproto");
+      thNavigate(u.toString());
+    } catch {}
+  };
+  return html`
+    <button type="button" className="go-live-btn ramble-btn"
+      style=${{ background: "var(--bg)", borderColor: "var(--border)", color: "var(--text)" }}
+      title="Ramble - think out loud over a desk camera: hand gestures and voice sketch a canvas, saved back as a section"
+      onClick=${goRamble}>
+      <${Icon.Wave}/>
+      <span className="go-live-label">Ramble</span>
+    </button>
+  `;
+}
+
+// Resolve a whiteboard color token to a concrete canvas-drawable color (the
+// overlay is a <canvas>; CSS vars don't resolve there). Cached per token.
+const _rambleColorCache = {};
+function rambleWbColor(tok) {
+  if (_rambleColorCache[tok]) return _rambleColorCache[tok];
+  let v = "";
+  try {
+    const scope = document.querySelector(".ramble-view") || document.documentElement;
+    v = getComputedStyle(scope).getPropertyValue("--wb-" + tok).trim();
+  } catch {}
+  const c = v || "#9aa3b2";
+  _rambleColorCache[tok] = c;
+  return c;
+}
+
+// Screen-space projection of a normalized video-space point, honouring the
+// object-fit: cover crop. map = { w, h, vw, vh, mirror } (wrap CSS px + video
+// pixel size). Returns CSS px in the wrap's box. When no camera is running
+// (debug driver) vw/vh fall back to the wrap size, making this an identity map.
+function rambleToScreen(map, nx, ny) {
+  // Mirroring is owned by ramble-vision.js (landmarks arrive already in
+  // display space), so no x-flip here.
+  const vw = map.vw || map.w || 1, vh = map.vh || map.h || 1;
+  const w = map.w || 1, h = map.h || 1;
+  const s = Math.max(w / vw, h / vh);
+  const offX = (vw * s - w) / 2, offY = (vh * s - h) / 2;
+  return { x: nx * vw * s - offX, y: ny * vh * s - offY };
+}
+
+// Fabricate one HandFrame (the exact shape ramble-vision.js emits) around a
+// normalized center point - used only by the debug driver.
+function rambleMakeDebugHand(opts) {
+  const cx = opts.cx, cy = opts.cy;
+  const lm = [];
+  for (let i = 0; i < 21; i++) lm.push({ x: cx, y: cy, z: 0 });
+  // Fan the fingertips above the wrist so fingertip-anchored menus have
+  // plausible, stable anchors. Left hand mirrors the fan.
+  const dir = opts.hand === "left" ? -1 : 1;
+  const sp = 0.05;
+  lm[0]  = { x: cx, y: cy + 0.07, z: 0 };                       // wrist
+  lm[4]  = { x: cx - dir * sp * 1.5, y: cy + 0.015, z: 0 };     // thumb tip
+  lm[8]  = { x: cx - dir * sp, y: cy - 0.055, z: 0 };           // index tip
+  lm[12] = { x: cx - dir * sp * 0.33, y: cy - 0.068, z: 0 };    // middle tip
+  lm[16] = { x: cx + dir * sp * 0.33, y: cy - 0.06, z: 0 };     // ring tip
+  lm[20] = { x: cx + dir * sp, y: cy - 0.045, z: 0 };           // pinky tip
+  const tips = { thumb: lm[4], index: lm[8], middle: lm[12], ring: lm[16], pinky: lm[20] };
+  const pinchActive = !!opts.pinch;
+  return {
+    landmarks: lm,
+    palm: opts.palm || "down",
+    pose: opts.pose || (pinchActive ? "partial" : "open"),
+    pinch: {
+      active: pinchActive,
+      dist: pinchActive ? 0.2 : 1.2,
+      x: (lm[4].x + lm[8].x) / 2,
+      y: (lm[4].y + lm[8].y) / 2,
+    },
+    thumbTouch: opts.thumbTouch || null,
+    wrist: lm[0],
+    tips,
+    scale: 0.12,
+    vel: { x: 0, y: 0 },
+    shake: !!opts.shake,
+    stale: false,
+  };
+}
+
+// Keyboard/mouse hand simulator (?rambledebug=1). Emits HandState frames into
+// the same consumer as the vision module. Hold to assert:
+//   1 = left palm-up    2 = left palm-down    q = left pinch
+//   9 = right palm-up   0 = right palm-down   p = right pinch   o = right point
+//   j / k / l / ; = thumbTouch index / middle / ring / pinky (on the held hand)
+//   s = right fist shake pulse
+// Mouse position drives the most recently keyed hand.
+function useRambleDebugDriver(enabled, wrapRef, emit) {
+  useEffect(() => {
+    if (!enabled) return;
+    const held = new Set();
+    const mouse = { x: 0.5, y: 0.5 };
+    let activeHand = "right";
+    let rect = { left: 0, top: 0, width: 1, height: 1 };
+    const syncRect = () => {
+      const el = wrapRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect(); // event/resize path, not the rAF loop
+        rect = { left: r.left, top: r.top, width: Math.max(1, r.width), height: Math.max(1, r.height) };
+      }
+    };
+    syncRect();
+    const onResize = () => syncRect();
+    const onKeyDown = (e) => {
+      if (e.repeat) return;
+      const k = e.key.toLowerCase();
+      held.add(k);
+      if (k === "1" || k === "2" || k === "q") activeHand = "left";
+      if (k === "9" || k === "0" || k === "p" || k === "o" || k === "s") activeHand = "right";
+    };
+    const onKeyUp = (e) => held.delete(e.key.toLowerCase());
+    const onMouse = (e) => {
+      mouse.x = (e.clientX - rect.left) / rect.width;
+      mouse.y = (e.clientY - rect.top) / rect.height;
+    };
+    let raf = 0, run = true;
+    let wasActive = false;
+    const KEYS = ["1", "2", "q", "9", "0", "p", "o", "s"];
+    const tick = () => {
+      if (!run) return;
+      raf = requestAnimationFrame(tick);
+      // Only emit while a hand key is held (plus one final empty frame on
+      // release) so live vision frames are never clobbered by the driver.
+      const active = KEYS.some((k) => held.has(k));
+      if (!active) {
+        if (wasActive) { wasActive = false; emit({ t: performance.now(), left: null, right: null, source: "debug" }); }
+        return;
+      }
+      wasActive = true;
+      const touch = held.has("j") ? "index" : held.has("k") ? "middle" : held.has("l") ? "ring" : held.has(";") ? "pinky" : null;
+      const left = (held.has("1") || held.has("2") || held.has("q"))
+        ? rambleMakeDebugHand({
+            hand: "left", cx: activeHand === "left" ? mouse.x : 0.3, cy: activeHand === "left" ? mouse.y : 0.55,
+            palm: held.has("1") ? "up" : "down",
+            pinch: held.has("q"),
+            thumbTouch: activeHand === "left" ? touch : null,
+          })
+        : null;
+      const right = (held.has("9") || held.has("0") || held.has("p") || held.has("o") || held.has("s"))
+        ? rambleMakeDebugHand({
+            hand: "right", cx: activeHand === "right" ? mouse.x : 0.7, cy: activeHand === "right" ? mouse.y : 0.55,
+            palm: held.has("9") ? "up" : "down",
+            pinch: held.has("p"),
+            pose: held.has("s") ? "fist" : (held.has("o") ? "point" : undefined),
+            shake: held.has("s"),
+            thumbTouch: activeHand === "right" ? touch : null,
+          })
+        : null;
+      emit({ t: performance.now(), left, right, source: "debug" });
+    };
+    raf = requestAnimationFrame(tick);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("mousemove", onMouse);
+    window.addEventListener("resize", onResize);
+    return () => {
+      run = false;
+      cancelAnimationFrame(raf);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("mousemove", onMouse);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [enabled, wrapRef, emit]);
+}
+
+// Live tuning HUD (debug): per-hand readouts + threshold sliders bound to the
+// vision module's config. Polls handRef on an interval - no rAF, no reflow.
+function RambleHud({ handRef, visionStatus, getCtl }) {
+  const [snap, setSnap] = useState(null);
+  const [cfg, setCfg] = useState(null);
+  useEffect(() => {
+    const t = setInterval(() => {
+      const hs = handRef.current;
+      const pick = (f) => f && {
+        palm: f.palm, pose: f.pose, stale: f.stale,
+        pinch: f.pinch.active, pinchDist: f.pinch.dist,
+        touch: f.thumbTouch, shake: f.shake,
+      };
+      setSnap(hs ? { left: pick(hs.left), right: pick(hs.right), source: hs.source } : null);
+      const ctl = getCtl();
+      if (ctl && !cfg) setCfg(ctl.getConfig());
+    }, 150);
+    return () => clearInterval(t);
+  }, [cfg, getCtl, handRef]);
+  const setNum = (key, v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return;
+    setCfg((c) => ({ ...c, [key]: n }));
+    const ctl = getCtl();
+    if (ctl) ctl.setConfig({ [key]: n });
+  };
+  const flipSign = (key) => {
+    setCfg((c) => {
+      const next = { ...c, [key]: -(c[key] || 1) };
+      const ctl = getCtl();
+      if (ctl) ctl.setConfig({ [key]: next[key] });
+      return next;
+    });
+  };
+  const row = (label, f) => html`
+    <div className="ramble-hud-row" key=${"row-" + label}>
+      <span className="ramble-hud-hand">${label}</span>
+      ${f ? html`
+        <span key="palm" data-on=${f.palm === "up" ? "true" : "false"}>palm ${f.palm}</span>
+        <span key="pose">${f.pose}</span>
+        <span key="pinch" data-on=${f.pinch ? "true" : "false"}>pinch ${f.pinchDist != null ? f.pinchDist.toFixed(2) : "-"}</span>
+        <span key="touch" data-on=${f.touch ? "true" : "false"}>${f.touch || "no touch"}</span>
+        ${f.shake && html`<span key="shake" data-on="true">SHAKE</span>`}
+        ${f.stale && html`<span key="stale">stale</span>`}
+      ` : html`<span>not seen</span>`}
+    </div>`;
+  const slider = (label, key, min, max) => html`
+    <label className="ramble-hud-slider" key=${"sl-" + key}>
+      <span>${label}</span>
+      <input type="range" min=${min} max=${max} step="0.01" value=${cfg ? cfg[key] : 0}
+        onInput=${(e) => setNum(key, e.target.value)}/>
+      <span>${cfg ? Number(cfg[key]).toFixed(2) : "-"}</span>
+    </label>`;
+  return html`
+    <div className="ramble-hud">
+      <div className="ramble-hud-row"><span className="ramble-hud-hand">vision</span>
+        <span data-on=${visionStatus === "on" ? "true" : "false"}>${visionStatus}</span>
+        <span>${snap ? snap.source : "no frames"}</span>
+      </div>
+      ${row("left", snap && snap.left)}
+      ${row("right", snap && snap.right)}
+      ${cfg && html`
+        ${slider("pinch on", "pinchOn", 0.1, 1)}
+        ${slider("pinch off", "pinchOff", 0.2, 1.4)}
+        ${slider("touch on", "touchOn", 0.1, 1)}
+        ${slider("touch off", "touchOff", 0.2, 1.4)}
+        <div className="ramble-hud-row">
+          <button className="th-icon-btn" title="Flip right-hand palm sign" onClick=${() => flipSign("palmSignRight")}>R±</button>
+          <button className="th-icon-btn" title="Flip left-hand palm sign" onClick=${() => flipSign("palmSignLeft")}>L±</button>
+          <select value=${cfg.swapHandedness == null ? "auto" : (cfg.swapHandedness ? "on" : "off")}
+            onChange=${(e) => {
+              const v = e.target.value === "auto" ? null : e.target.value === "on";
+              setCfg((c) => ({ ...c, swapHandedness: v }));
+              const ctl = getCtl(); if (ctl) ctl.setConfig({ swapHandedness: v });
+            }}>
+            <option value="auto">swap: auto</option>
+            <option value="on">swap: on</option>
+            <option value="off">swap: off</option>
+          </select>
+        </div>`}
+    </div>`;
+}
+
+function RambleView({ info }) {
+  const [camState, setCamState] = useState("idle"); // idle | starting | on | error
+  const [camError, setCamError] = useState("");
+  const [devices, setDevices]   = useState([]);     // [{deviceId, label}] video inputs
+  const [deviceId, setDeviceId] = useState(() => { try { return localStorage.getItem(RAMBLE_CAMERA_KEY) || ""; } catch { return ""; } });
+  const [mirror, setMirror]     = useState(() => { try { return localStorage.getItem(RAMBLE_MIRROR_KEY) === "1"; } catch { return false; } });
+  const videoRef   = useRef(null);
+  const streamRef  = useRef(null);
+  const overlayRef = useRef(null);
+  const handRef    = useRef(null);   // latest HandState (vision module or debug driver)
+  // Screen/video geometry for landmark projection. Wrap size from a
+  // ResizeObserver, video size from loadedmetadata - never measured per frame.
+  const mapRef = useRef({ w: 1, h: 1, dpr: 1, vw: 0, vh: 0, mirror: false });
+  // Session draft (localStorage, per project): items + camera survive an
+  // accidental reload; cleared when Done saves to the canvas.
+  const draftRef = useRef(undefined);
+  if (draftRef.current === undefined) {
+    try { draftRef.current = JSON.parse(localStorage.getItem(rambleDraftKey()) || "null"); }
+    catch { draftRef.current = null; }
+  }
+  const { wrapRef, pan, zoom, setPan, setZoom } = useEndlessCanvas(
+    (draftRef.current && draftRef.current.cam) || { x: 0, y: 0, z: 1 },
+    { disableEmptyDragPan: false });
+  const debugMode = useMemo(() => {
+    try { return new URL(location.href).searchParams.get("rambledebug") === "1"; } catch { return false; }
+  }, []);
+  const [hudOpen, setHudOpen] = useState(debugMode);
+  useEffect(() => { debugModeRef.current = debugMode; }, [debugMode]);
+
+  // QA tap (debug only): live getters over the interaction internals so the
+  // harness can assert on ground truth instead of sampling the HUD DOM.
+  useEffect(() => {
+    if (!debugMode) return;
+    window.__ramble = {
+      get hand() { return handRef.current; },
+      get interact() { return interactRef.current; },
+      get cam() { return camRef.current; },
+      get map() { return mapRef.current; },
+      get items() { return itemsRef.current; },
+      hitTest: (x, y, pad) => rambleHitTest(x, y, pad == null ? 12 : pad),
+    };
+    return () => { try { delete window.__ramble; } catch {} };
+  }, [debugMode]);
+
+  useEffect(() => { mapRef.current.mirror = mirror; }, [mirror]);
+
+  // Wrap geometry. ResizeObserver is the primary source; a window resize
+  // listener is the belt-and-braces fallback (RO callbacks ride rendering
+  // opportunities, which a background/hidden document may not get).
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const sync = (w, h) => {
+      mapRef.current.w = Math.max(1, w);
+      mapRef.current.h = Math.max(1, h);
+      mapRef.current.dpr = window.devicePixelRatio || 1;
+    };
+    sync(el.offsetWidth, el.offsetHeight);
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver((entries) => {
+        const cr = entries[0] && entries[0].contentRect;
+        if (cr) sync(cr.width, cr.height);
+      });
+      ro.observe(el);
+    }
+    const onResize = () => sync(el.offsetWidth, el.offsetHeight);
+    window.addEventListener("resize", onResize);
+    return () => { if (ro) ro.disconnect(); window.removeEventListener("resize", onResize); };
+  }, []);
+
+  const stopStream = useCallback(() => {
+    const s = streamRef.current;
+    if (s) { try { s.getTracks().forEach((t) => t.stop()); } catch {} }
+    streamRef.current = null;
+  }, []);
+
+  const startCamera = useCallback(async (id) => {
+    setCamState("starting");
+    setCamError("");
+    try {
+      const constraints = {
+        audio: false,
+        video: id ? { deviceId: { exact: id } } : { width: { ideal: 1920 }, height: { ideal: 1080 } },
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      stopStream();
+      streamRef.current = stream;
+      const v = videoRef.current;
+      if (v) {
+        v.srcObject = stream;
+        try { await v.play(); } catch {}
+      }
+      setCamState("on");
+      // Labels only populate after a granted permission - refresh the picker so
+      // "Desk View Camera" (Continuity) shows up by name.
+      try {
+        const list = await navigator.mediaDevices.enumerateDevices();
+        setDevices(list.filter((d) => d.kind === "videoinput")
+          .map((d) => ({ deviceId: d.deviceId, label: d.label || "Camera" })));
+      } catch {}
+    } catch (e) {
+      stopStream();
+      setCamState("error");
+      setCamError(String((e && e.message) || e || "Camera unavailable"));
+    }
+  }, [stopStream]);
+
+  useEffect(() => () => stopStream(), [stopStream]);
+
+  // Video pixel size for the cover projection.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onMeta = () => {
+      mapRef.current.vw = v.videoWidth || 0;
+      mapRef.current.vh = v.videoHeight || 0;
+    };
+    v.addEventListener("loadedmetadata", onMeta);
+    return () => v.removeEventListener("loadedmetadata", onMeta);
+  }, []);
+
+  const pickDevice = (id) => {
+    setDeviceId(id);
+    try { localStorage.setItem(RAMBLE_CAMERA_KEY, id); } catch {}
+    startCamera(id);
+  };
+  const toggleMirror = () => {
+    setMirror((m) => {
+      const next = !m;
+      try { localStorage.setItem(RAMBLE_MIRROR_KEY, next ? "1" : "0"); } catch {}
+      return next;
+    });
+  };
+
+  // Camera (pan/zoom) mirror of the endless-canvas state, updated imperatively
+  // during gesture zoom and committed to React state on gesture end (the same
+  // imperative-first pattern useEndlessCanvas itself uses for wheel).
+  const camRef = useRef({ x: 0, y: 0, z: 1 });
+  useEffect(() => { camRef.current.x = pan.x; camRef.current.y = pan.y; }, [pan]);
+  useEffect(() => { camRef.current.z = zoom; }, [zoom]);
+  const worldElRef = useRef(null);
+  const writeWorldTransform = useCallback(() => {
+    const el = worldElRef.current;
+    if (!el) return;
+    const c = camRef.current;
+    el.style.transform = "translate(" + c.x + "px, " + c.y + "px) scale(" + c.z + ")";
+  }, []);
+
+  // Interaction state machine. Lives in a ref (mutated per hand frame at
+  // ~25fps); React state is only touched on discrete transitions. `mode` is
+  // the global exclusive state; the per-hand context lives beside it.
+  const interactRef = useRef({
+    mode: "idle",          // idle | zooming | toolPinchPending | penDrawing |
+                           // arrowDragging | textPinchPending | itemEditPinch |
+                           // itemAttrEdit | attrDial | sttListening
+    zoomPrev: null,        // { p1:{x,y}, p2:{x,y} } screen-space pinch points
+    pending: null,         // toolPinchPending payload (pen/arrow vs zoom window)
+    pen: null,             // { points:[wx,wy,...] } live stroke
+    arrow: null,           // { x1,y1,x2,y2 } live arrow
+    hold: null,            // 1s-hold payload { type|itemId, since, x, y }
+    dial: null,            // attrDial payload
+    stt: null,             // { kind, hand, trigger }
+    touchInfo: null,       // right-menu thumb-touch tracking
+    rightMenu: false,
+    _prevRightPinch: false,
+  });
+
+  // ── ramble items (the canvas content) ──────────────────────────────────
+  // wb items reuse WORKFLOW_WB_FACTORY shapes verbatim; node items (prototype /
+  // browser / asset) arrive in Phase 5. Save-compatible with the workflow doc.
+  const [items, setItems] = useState(() => {
+    const d = draftRef.current;
+    return (d && Array.isArray(d.items)) ? d.items : [];
+  });
+  const itemsRef = useRef(items);
+  useEffect(() => { itemsRef.current = items; }, [items]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(rambleDraftKey(), JSON.stringify({
+          items, cam: { x: pan.x, y: pan.y, z: zoom }, savedAt: Date.now(),
+        }));
+      } catch {}
+    }, 800);
+    return () => clearTimeout(t);
+  }, [items, pan, zoom]);
+
+  const [rightTool, setRightTool] = useState("pen");
+  const rightToolRef = useRef(rightTool);
+  useEffect(() => { rightToolRef.current = rightTool; }, [rightTool]);
+  // Per-tool attribute values, mutated by the dial (ref: read per frame).
+  const attrsRef = useRef({
+    pen: { color: "ink", size: 3 },
+    text: { color: "ink", fontSize: "md" },
+    textbox: { color: "blue", fontSize: "md" },
+    arrow: { color: "ink", size: 3 },
+  });
+
+  const addWbToRamble = useCallback((type, payload) => {
+    const wb = wbMakeItem(type, payload);
+    if (!wb) return null;
+    setItems((arr) => [...arr, { id: wb.id, kind: "wb", wb }]);
+    return wb;
+  }, []);
+  const patchRambleWb = useCallback((id, patch) => {
+    setItems((arr) => arr.map((it) => (it.id === id && it.kind === "wb") ? { ...it, wb: { ...it.wb, ...patch } } : it));
+  }, []);
+  // Shake-delete keeps a one-slot undo (surfaced as a transient chip).
+  const [undoState, setUndoState] = useState(null); // { item }
+  const undoTimerRef = useRef(0);
+  const removeRambleItem = useCallback((id) => {
+    const victim = itemsRef.current.find((it) => it.id === id);
+    if (victim) {
+      setUndoState({ item: victim });
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = setTimeout(() => setUndoState(null), 4000);
+    }
+    setItems((arr) => arr.filter((it) => it.id !== id));
+  }, []);
+  const undoDelete = useCallback(() => {
+    setUndoState((u) => {
+      if (u) setItems((arr) => [...arr, u.item]);
+      return null;
+    });
+  }, []);
+
+  // World-space hit test over the ramble items (topmost last). pad in world px.
+  const rambleHitTest = useCallback((wx, wy, pad, filter) => {
+    const arr = itemsRef.current;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const it = arr[i];
+      if (filter && !filter(it)) continue;
+      let bb = null;
+      if (it.kind === "wb") { try { bb = wbItemBBox(it.wb); } catch { bb = null; } }
+      else if (it.node) bb = { x: it.node.x, y: it.node.y, w: it.node.w || 320, h: it.node.h || 240 };
+      if (!bb) continue;
+      if (wx >= bb.x - pad && wx <= bb.x + bb.w + pad && wy >= bb.y - pad && wy <= bb.y + bb.h + pad) return it;
+    }
+    return null;
+  }, []);
+
+  // ── voice (STT) ────────────────────────────────────────────────────────
+  const [sttStatus, setSttStatus] = useState("unknown"); // unknown|local|cloud|browser|none
+  useEffect(() => {
+    let alive = true;
+    rambleEnsureVoice().then((WV) => {
+      if (!WV) { if (alive) setSttStatus("none"); return; }
+      WV.probe().then((j) => { if (alive) setSttStatus((j && j.stt) || "none"); })
+        .catch(() => { if (alive) setSttStatus("none"); });
+    });
+    return () => { alive = false; };
+  }, []);
+  const [sttUi, setSttUi] = useState(null);       // { label } while listening
+  const [sttFlash, setSttFlash] = useState(null); // { text, err } transient result
+  const flashTimerRef = useRef(0);
+  const flashStt = useCallback((text, err) => {
+    setSttFlash({ text, err });
+    clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setSttFlash(null), 2200);
+  }, []);
+
+  const sttActiveRef = useRef(null); // { ctx } while a listen session runs
+  const routeTranscriptRef = useRef(null);
+  const startStt = useCallback((ctx, label) => {
+    if (sttActiveRef.current) return;
+    sttActiveRef.current = { ctx };
+    setSttUi({ label: label || "Listening" });
+    rambleEnsureVoice().then((WV) => {
+      if (!WV || !sttActiveRef.current) return;
+      WV.listenStart().catch(() => {});
+    });
+  }, []);
+  const stopStt = useCallback(() => {
+    const act = sttActiveRef.current;
+    if (!act) return;
+    sttActiveRef.current = null;
+    setSttUi(null);
+    rambleEnsureVoice().then(async (WV) => {
+      let text = null;
+      if (WV) {
+        try {
+          const r = await WV.listenStop();
+          if (r && r.ok && r.text) text = String(r.text).trim();
+        } catch {}
+      }
+      if (routeTranscriptRef.current) routeTranscriptRef.current(act.ctx, text || null);
+    });
+  }, []);
+  // ── left-hand insert slots: prototype / browser / image ────────────────
+  const [protos, setProtos] = useState([]);
+  const protosRef = useRef([]);
+  useEffect(() => { protosRef.current = protos; }, [protos]);
+  useEffect(() => {
+    let alive = true;
+    fetch(apiUrl("/__source_prototypes"))
+      .then((r) => (r.ok ? r.json() : { prototypes: [] }))
+      .then((j) => { if (alive) setProtos((j && j.prototypes) || []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const [leftSelection, setLeftSelection] = useState(null); // { kind, ...payload }
+  const leftSelRef = useRef(null);
+  useEffect(() => { leftSelRef.current = leftSelection; }, [leftSelection]);
+
+  const defaultPrototype = useCallback(() => {
+    const list = protosRef.current;
+    const active = (typeof activePrototypeSlug === "function") ? activePrototypeSlug() : null;
+    if (active && list.some((p) => p.id === active)) return active;
+    return (list[0] && list[0].id) || active || null;
+  }, []);
+
+  const matchPrototype = useCallback((text) => {
+    const q = String(text || "").toLowerCase().trim();
+    const list = protosRef.current;
+    if (!q || !list.length) return null;
+    let best = null, bestScore = 0;
+    for (const p of list) {
+      const id = String(p.id || "").toLowerCase();
+      const label = String(p.label || "").toLowerCase();
+      let score = 0;
+      if (id === q || label === q) score = 100;
+      else if (id.startsWith(q) || label.startsWith(q)) score = 80;
+      else {
+        const toks = q.split(/\s+/).filter(Boolean);
+        const hay = id + " " + label;
+        const hit = toks.filter((t) => hay.includes(t)).length;
+        score = hit > 0 ? 40 + (hit / Math.max(1, toks.length)) * 30 : 0;
+      }
+      if (score > bestScore) { best = p; bestScore = score; }
+    }
+    return bestScore >= 40 ? best : null;
+  }, []);
+
+  // Patch an asset (pending selection AND any placed copies) by output path.
+  const patchAssetByPath = useCallback((path, patch) => {
+    setLeftSelection((sel) => (sel && sel.kind === "asset" && sel.path === path) ? { ...sel, ...patch } : sel);
+    setItems((arr) => arr.map((it) =>
+      (it.kind === "node" && it.node.kind === "asset" && it.node.path === path)
+        ? { ...it, node: { ...it.node, ...patch } } : it));
+  }, []);
+
+  const generateImage = useCallback(async (prompt) => {
+    const slug = defaultPrototype();
+    if (!slug) { flashStt("No prototype to store the image in", true); return; }
+    const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const output = "source/" + slug + "/images/ramble-" + stamp + ".png";
+    setLeftSelection({ kind: "asset", path: output, runStatus: "pending", title: prompt });
+    flashStt("Generating “" + prompt + "”");
+    try {
+      const r = await fetch(apiUrl("/__asset_generate"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skill: "generate-image", prompt, output, aspect: "1:1", medium: "raster-foreground" }),
+      });
+      const j = await r.json().catch(() => null);
+      if (r.ok && j && j.ok) {
+        patchAssetByPath(output, { runStatus: null });
+      } else {
+        patchAssetByPath(output, { runStatus: "error" });
+        flashStt((j && (j.error || j.detail)) || "Image generation failed", true);
+      }
+    } catch (e) {
+      patchAssetByPath(output, { runStatus: "error" });
+      flashStt("Image generation failed", true);
+    }
+  }, [defaultPrototype, patchAssetByPath, flashStt]);
+
+  // Tap on a left-menu finger = pick the default for that slot.
+  const tapInsertDefault = useCallback((slot) => {
+    if (slot === "prototype") {
+      const id = defaultPrototype();
+      if (!id) { flashStt("No prototypes yet", true); return; }
+      setLeftSelection({ kind: "prototype", prototype: id });
+      flashStt("Prototype: " + id);
+    } else if (slot === "browser") {
+      setLeftSelection({ kind: "browser", url: "https://www.google.com" });
+      flashStt("Browser ready");
+    } else if (slot === "image") {
+      flashStt("Hold the finger and describe the image", true);
+    }
+  }, [defaultPrototype, flashStt]);
+  const tapInsertRef = useRef(null);
+  tapInsertRef.current = tapInsertDefault;
+
+  // Drop the pending selection as a real node item centered at (wx, wy).
+  const placeSelectionRef = useRef(null);
+  placeSelectionRef.current = (sel, wx, wy) => {
+    const dims = RAMBLE_INSERT_DIMS[sel.kind === "asset" ? "asset" : sel.kind] || RAMBLE_INSERT_DIMS.asset;
+    const id = "rn" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const node = sel.kind === "prototype"
+      ? { kind: "prototype", prototype: sel.prototype }
+      : sel.kind === "browser"
+        ? { kind: "browser", url: sel.url }
+        : { kind: "asset", assetKind: "image", path: sel.path, runStatus: sel.runStatus || null, title: sel.title };
+    node.x = Math.round(wx - dims.w / 2);
+    node.y = Math.round(wy - dims.h / 2);
+    node.w = dims.w;
+    node.h = dims.h;
+    setItems((arr) => [...arr, { id, kind: "node", node }]);
+    setLeftSelection(null);
+  };
+
+  routeTranscriptRef.current = (ctx, text) => {
+    if (!text) { flashStt("Heard nothing", true); return; }
+    if (ctx.kind === "textContent") {
+      const a = attrsRef.current[ctx.type] || {};
+      addWbToRamble(ctx.type, { x: ctx.x, y: ctx.y, text, color: a.color, fontSize: a.fontSize });
+      flashStt("“" + text + "”");
+    } else if (ctx.kind === "itemUpdate") {
+      patchRambleWb(ctx.itemId, { text });
+      flashStt("“" + text + "”");
+    } else if (ctx.kind === "prototypeSearch") {
+      const p = matchPrototype(text);
+      if (p) { setLeftSelection({ kind: "prototype", prototype: p.id }); flashStt("Prototype: " + p.id); }
+      else flashStt("No prototype matches “" + text + "”", true);
+    } else if (ctx.kind === "browserQuery") {
+      const t = text.trim();
+      const urlish = /^https?:\/\//i.test(t) || (t.includes(".") && !/\s/.test(t));
+      const url = urlish ? (/^https?:\/\//i.test(t) ? t : "https://" + t)
+        : "https://www.google.com/search?q=" + encodeURIComponent(t);
+      setLeftSelection({ kind: "browser", url });
+      flashStt("Browser: " + url.replace(/^https?:\/\//, "").slice(0, 60));
+    } else if (ctx.kind === "imagePrompt") {
+      generateImage(text);
+    }
+  };
+
+  // Commit helpers for the live tools.
+  const commitPen = useCallback(() => {
+    const it = interactRef.current;
+    const pts = it.pen && it.pen.points;
+    it.pen = null;
+    if (!pts || pts.length < 4) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (let i = 0; i < pts.length; i += 2) {
+      minX = Math.min(minX, pts[i]); maxX = Math.max(maxX, pts[i]);
+      minY = Math.min(minY, pts[i + 1]); maxY = Math.max(maxY, pts[i + 1]);
+    }
+    const rel = pts.map((v, i) => (i % 2 === 0 ? v - minX : v - minY));
+    const a = attrsRef.current.pen;
+    addWbToRamble("ink", {
+      x: minX, y: minY,
+      w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY),
+      points: rel, color: a.color, size: a.size,
+    });
+  }, [addWbToRamble]);
+  const commitArrow = useCallback(() => {
+    const it = interactRef.current;
+    const ar = it.arrow;
+    it.arrow = null;
+    if (!ar) return;
+    const len = Math.hypot(ar.x2 - ar.x1, ar.y2 - ar.y1);
+    if (len < 8 / Math.max(0.1, camRef.current.z)) return;
+    const a = attrsRef.current.arrow;
+    addWbToRamble("arrow", { x1: ar.x1, y1: ar.y1, x2: ar.x2, y2: ar.y2, color: a.color, size: a.size });
+  }, [addWbToRamble]);
+
+  // Attr dial: horizontal drag steps the primary rail, vertical the secondary.
+  const applyDial = useCallback((dial, dx, dy) => {
+    const spec = RAMBLE_DIAL[dial.tool];
+    if (!spec) return;
+    const next = { ...dial.baseAttrs };
+    const stepPrimary = Math.round(dx / 56);
+    const p = spec.primary;
+    if (p.options) {
+      const base = Math.max(0, p.options.indexOf(dial.baseAttrs[p.key]));
+      const idx = ((base + stepPrimary) % p.options.length + p.options.length) % p.options.length;
+      next[p.key] = p.options[idx];
+    }
+    const s = spec.secondary;
+    const stepSecondary = Math.round(-dy / 34);
+    if (s.options) {
+      const base = Math.max(0, s.options.indexOf(dial.baseAttrs[s.key]));
+      const idx = Math.max(0, Math.min(s.options.length - 1, base + stepSecondary));
+      next[s.key] = s.options[idx];
+    } else {
+      next[s.key] = Math.max(s.min, Math.min(s.max, (dial.baseAttrs[s.key] || s.min) + stepSecondary));
+    }
+    attrsRef.current[dial.tool] = next;
+    dial.display = next;
+  }, []);
+
+  // ── screen interaction: fingertip-as-mouse over prototype/browser embeds ──
+  const rambleClipWaitersRef = useRef(new Map());
+  const screenTargetAt = useCallback((wx, wy) => {
+    const arr = itemsRef.current;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const it = arr[i];
+      if (it.kind !== "node") continue;
+      const n = it.node;
+      if (n.kind !== "prototype" && n.kind !== "browser") continue;
+      if (wx >= n.x && wx <= n.x + (n.w || 0) && wy >= n.y && wy <= n.y + (n.h || 0)) return it;
+    }
+    return null;
+  }, []);
+  // world point -> embed-local (iframe viewport) coords
+  const embedLocal = useCallback((item, wx, wy) => {
+    const n = item.node;
+    if (n.kind === "prototype") {
+      const sc = Math.min((n.w || 720) / 1440, (n.h || 480) / 900);
+      return { x: (wx - n.x) / sc, y: (wy - n.y) / sc, scale: sc };
+    }
+    return { x: wx - n.x, y: wy - n.y, scale: 1 };
+  }, []);
+  const embedFrame = useCallback((itemId) =>
+    document.querySelector('[data-ramble-item="' + itemId + '"] iframe'), []);
+  const setScreenHover = useCallback((item, localRect) => {
+    const it = interactRef.current;
+    if (!localRect) { it.screenHover = null; return; }
+    const n = item.node;
+    const sc = n.kind === "prototype" ? Math.min((n.w || 720) / 1440, (n.h || 480) / 900) : 1;
+    it.screenHover = {
+      x: n.x + localRect.x * sc, y: n.y + localRect.y * sc,
+      w: localRect.w * sc, h: localRect.h * sc,
+    };
+  }, []);
+
+  // Prototype iframes are same-origin: synthesize events directly. Browser
+  // embeds are proxied + sandboxed: message the injected overlay instead.
+  const screenDispatch = useCallback((item, lx, ly, kind) => {
+    const n = item.node;
+    const frame = embedFrame(item.id);
+    if (n.kind === "prototype") {
+      const doc = frame && frame.contentDocument;
+      if (!doc) return;
+      let tgt = null;
+      try { tgt = doc.elementFromPoint(lx, ly); } catch {}
+      tgt = tgt || doc.body;
+      if (!tgt) return;
+      const base = { bubbles: true, cancelable: true, view: doc.defaultView, clientX: lx, clientY: ly };
+      try {
+        if (kind === "click") {
+          for (const nm of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+            tgt.dispatchEvent(nm.indexOf("pointer") === 0 ? new PointerEvent(nm, base) : new MouseEvent(nm, base));
+          }
+        } else {
+          tgt.dispatchEvent(new PointerEvent("pointermove", base));
+          tgt.dispatchEvent(new MouseEvent("mousemove", base));
+        }
+      } catch {}
+      let r = null;
+      try { r = tgt.getBoundingClientRect(); } catch {}
+      setScreenHover(item, r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null);
+    } else if (frame && frame.contentWindow) {
+      try { frame.contentWindow.postMessage({ type: "th-ramble-pointer", x: lx, y: ly, kind, reqId: item.id }, "*"); } catch {}
+    }
+  }, [embedFrame, setScreenHover]);
+
+  // Proxied-browser replies (hover rects + clip results).
+  useEffect(() => {
+    const onMsg = (e) => {
+      const d = e && e.data;
+      if (!d || typeof d !== "object") return;
+      if (d.type === "th-ramble-hover") {
+        const scr = interactRef.current.screen;
+        if (!scr) return;
+        const item = itemsRef.current.find((x) => x.id === scr.itemId);
+        if (item) setScreenHover(item, d.rect ? { x: d.rect.x, y: d.rect.y, w: d.rect.w, h: d.rect.h } : null);
+      } else if (d.type === "th-ramble-clip-result") {
+        const w = rambleClipWaitersRef.current.get(d.reqId);
+        if (w) { rambleClipWaitersRef.current.delete(d.reqId); w(d.text || ""); }
+      }
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [setScreenHover]);
+
+  // Clip a world rect over an embed: harvest the covered text and paste it as
+  // a textbox just below the clipped region.
+  const screenClipFinalize = useCallback((item, wr) => {
+    const n = item.node;
+    const sc = n.kind === "prototype" ? Math.min((n.w || 720) / 1440, (n.h || 480) / 900) : 1;
+    const local = { x: (wr.x - n.x) / sc, y: (wr.y - n.y) / sc, w: wr.w / sc, h: wr.h / sc };
+    const paste = (text) => {
+      if (!text) { flashStt("Nothing to clip there", true); return; }
+      addWbToRamble("textbox", {
+        x: Math.round(wr.x), y: Math.round(wr.y + wr.h + 16),
+        w: Math.max(220, Math.round(wr.w)), h: Math.max(120, Math.round(wr.h / 2)),
+        text: text.slice(0, 1200), color: "gray", fontSize: "sm",
+      });
+      flashStt("Clipped to canvas");
+    };
+    const frame = embedFrame(item.id);
+    if (n.kind === "prototype") {
+      const doc = frame && frame.contentDocument;
+      if (!doc || !doc.body) { paste(null); return; }
+      const out = [];
+      try {
+        const els = doc.body.querySelectorAll("*");
+        for (const el of els) {
+          let r = null;
+          try { r = el.getBoundingClientRect(); } catch { continue; }
+          if (!r || !r.width || !r.height) continue;
+          // Center-in-rect: a leaf counts when its middle falls inside the
+          // clip, so edge-straddling labels still make it in.
+          const ccx = (r.left + r.right) / 2, ccy = (r.top + r.bottom) / 2;
+          if (ccx >= local.x && ccx <= local.x + local.w && ccy >= local.y &&
+              ccy <= local.y + local.h && el.children.length === 0) {
+            const t = (el.textContent || "").trim();
+            if (t) out.push(t);
+          }
+        }
+      } catch {}
+      paste(out.join("\n"));
+    } else {
+      if (!frame || !frame.contentWindow) { paste(null); return; }
+      const reqId = "clip" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      const timer = setTimeout(() => {
+        if (rambleClipWaitersRef.current.has(reqId)) {
+          rambleClipWaitersRef.current.delete(reqId);
+          paste(null);
+        }
+      }, 1500);
+      rambleClipWaitersRef.current.set(reqId, (text) => { clearTimeout(timer); paste(text); });
+      try { frame.contentWindow.postMessage({ type: "th-ramble-clip", x: local.x, y: local.y, w: local.w, h: local.h, reqId }, "*"); } catch {}
+    }
+  }, [embedFrame, addWbToRamble, flashStt]);
+
+  // Per-frame hand processing. consumeHand is identity-stable (vision + driver
+  // hold it), so the actual logic hangs off a ref refreshed every render.
+  const processRef = useRef(null);
+  const debugModeRef = useRef(false);
+  const consumeHand = useCallback((hs) => {
+    handRef.current = hs;
+    const it = interactRef.current;
+    const before = it.mode;
+    if (processRef.current) processRef.current(hs);
+    // Debug trace of mode transitions (read via window.__ramble in QA).
+    if (debugModeRef.current && it.mode !== before) {
+      if (!it.trace) it.trace = [];
+      it.trace.push({ from: before, to: it.mode, t: Math.round(hs.t) });
+      if (it.trace.length > 60) it.trace.splice(0, it.trace.length - 60);
+    }
+  }, []);
+  processRef.current = (hs) => {
+    const it = interactRef.current;
+    const m = mapRef.current;
+    const cam = camRef.current;
+    const L = hs.left, R = hs.right;
+    const toWorld = (nx, ny) => {
+      const p = rambleToScreen(m, nx, ny);
+      return { x: (p.x - cam.x) / cam.z, y: (p.y - cam.y) / cam.z };
+    };
+    const bothPinchDown =
+      L && R && !L.stale && !R.stale &&
+      L.palm === "down" && R.palm === "down" &&
+      L.pinch.active && R.pinch.active;
+    const enterZoom = () => {
+      it.mode = "zooming";
+      it.pending = null; it.pen = null; it.arrow = null; it.hold = null;
+      it.zoomPrev = {
+        p1: rambleToScreen(m, L.pinch.x, L.pinch.y),
+        p2: rambleToScreen(m, R.pinch.x, R.pinch.y),
+      };
+    };
+    const rightPinchDown = !!(R && R.palm === "down" && R.pinch.active);
+
+    switch (it.mode) {
+      case "zooming": {
+        if (!bothPinchDown) {
+          it.mode = "idle";
+          it.zoomPrev = null;
+          setPan({ x: cam.x, y: cam.y });
+          setZoom(cam.z);
+          return;
+        }
+        const p1 = rambleToScreen(m, L.pinch.x, L.pinch.y);
+        const p2 = rambleToScreen(m, R.pinch.x, R.pinch.y);
+        const prev = it.zoomPrev;
+        const dPrev = Math.max(8, Math.hypot(prev.p1.x - prev.p2.x, prev.p1.y - prev.p2.y));
+        const dNow = Math.max(8, Math.hypot(p1.x - p2.x, p1.y - p2.y));
+        const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+        const midPrev = { x: (prev.p1.x + prev.p2.x) / 2, y: (prev.p1.y + prev.p2.y) / 2 };
+        const zNext = Math.max(0.1, Math.min(3, cam.z * (dNow / dPrev)));
+        cam.x = mid.x - (mid.x - cam.x) * (zNext / cam.z) + (mid.x - midPrev.x);
+        cam.y = mid.y - (mid.y - cam.y) * (zNext / cam.z) + (mid.y - midPrev.y);
+        cam.z = zNext;
+        it.zoomPrev = { p1, p2 };
+        writeWorldTransform();
+        return;
+      }
+
+      // Arbitration window: a right palm-down pinch might be the start of a
+      // two-hand zoom. Buffer pen intent for 150ms; commit to the tool if the
+      // left pinch never arrives.
+      case "toolPinchPending": {
+        if (bothPinchDown) { enterZoom(); return; }   // buffered points discarded
+        if (!rightPinchDown) { it.mode = "idle"; it.pending = null; return; }
+        const p = toWorld(R.pinch.x, R.pinch.y);
+        if (it.pending.tool === "pen") it.pending.points.push(p.x, p.y);
+        if (hs.t - it.pending.since >= 150) {
+          if (it.pending.tool === "pen") {
+            it.mode = "penDrawing";
+            it.pen = { points: it.pending.points.slice() };
+          } else {
+            it.mode = "arrowDragging";
+            it.arrow = { x1: it.pending.x, y1: it.pending.y, x2: p.x, y2: p.y };
+          }
+          it.pending = null;
+        }
+        return;
+      }
+
+      case "penDrawing": {
+        if (!rightPinchDown) { commitPen(); it.mode = "idle"; return; }
+        const p = toWorld(R.pinch.x, R.pinch.y);
+        const pts = it.pen.points;
+        const n = pts.length;
+        const minD = 1.5 / Math.max(0.1, cam.z);
+        if (n < 2 || Math.hypot(p.x - pts[n - 2], p.y - pts[n - 1]) >= minD) pts.push(p.x, p.y);
+        if (pts.length >= 8000) { commitPen(); it.mode = "idle"; }
+        return;
+      }
+
+      case "arrowDragging": {
+        if (!rightPinchDown) { commitArrow(); it.mode = "idle"; return; }
+        const p = toWorld(R.pinch.x, R.pinch.y);
+        it.arrow.x2 = p.x; it.arrow.y2 = p.y;
+        return;
+      }
+
+      // text/textbox: 1s pinch-hold in empty space -> dictate new item text.
+      case "textPinchPending": {
+        if (bothPinchDown) { enterZoom(); return; }
+        if (!rightPinchDown) { it.mode = "idle"; it.hold = null; return; }
+        if (hs.t - it.hold.since >= 1000) {
+          const ctx = { kind: "textContent", type: it.hold.type, x: it.hold.x, y: it.hold.y };
+          it.mode = "sttListening";
+          it.stt = { hand: "right", trigger: "pinch" };
+          it.hold = null;
+          startStt(ctx, "Dictate " + (RAMBLE_TOOL_LABEL[ctx.type] || "text").toLowerCase());
+        }
+        return;
+      }
+
+      // 1s pinch-hold ON an item -> dictate replacement text; flipping the
+      // pinched hand palm-up instead -> edit its attributes on the fingertips.
+      case "itemEditPinch": {
+        if (!R || !R.pinch.active) { it.mode = "idle"; it.hold = null; return; }
+        if (R.palm === "up") {
+          const target = itemsRef.current.find((x) => x.id === it.hold.itemId);
+          const tool = target && target.kind === "wb"
+            ? (target.wb.type === "ink" ? "pen" : target.wb.type === "arrow" ? "arrow" : target.wb.type === "textbox" ? "textbox" : "text")
+            : "text";
+          it.attrEdit = { itemId: it.hold.itemId, tool };
+          it.hold = null;
+          it.mode = "itemAttrEdit";
+          return;
+        }
+        if (hs.t - it.hold.since >= 1000) {
+          const ctx = { kind: "itemUpdate", itemId: it.hold.itemId };
+          it.mode = "sttListening";
+          it.stt = { hand: "right", trigger: "pinch" };
+          it.hold = null;
+          startStt(ctx, "Update text");
+        }
+        return;
+      }
+
+      // Pinch-held item + palm-up: the item's attributes ride the dial.
+      case "itemAttrEdit": {
+        if (!R || !R.pinch.active) {
+          // Release: apply the dialed attrs to the item.
+          if (it.attrEdit && it.attrEdit.dial && it.attrEdit.dial.display) {
+            patchRambleWb(it.attrEdit.itemId, it.attrEdit.dial.display);
+          }
+          it.attrEdit = null;
+          it.mode = "idle";
+          return;
+        }
+        if (R.palm === "down") {
+          it.hold = { itemId: it.attrEdit.itemId, since: hs.t };
+          it.attrEdit = null;
+          it.mode = "itemEditPinch";
+          return;
+        }
+        const p = rambleToScreen(m, R.pinch.x, R.pinch.y);
+        if (!it.attrEdit.dial) {
+          const target = itemsRef.current.find((x) => x.id === it.attrEdit.itemId);
+          const base = target && target.kind === "wb"
+            ? { color: target.wb.color, size: target.wb.size, fontSize: target.wb.fontSize }
+            : {};
+          it.attrEdit.dial = { tool: it.attrEdit.tool, startX: p.x, startY: p.y, baseAttrs: { ...attrsRef.current[it.attrEdit.tool], ...base } };
+        } else {
+          const d = it.attrEdit.dial;
+          const save = attrsRef.current[d.tool];
+          applyDial(d, p.x - d.startX, p.y - d.startY);
+          attrsRef.current[d.tool] = save;   // item edit must not retune the tool defaults
+        }
+        return;
+      }
+
+      // Right-menu thumb-hold: drag dials the armed tool's attributes.
+      case "attrDial": {
+        if (!R || R.palm !== "up" || !R.thumbTouch) { it.mode = "idle"; it.dial = null; return; }
+        const p = rambleToScreen(m, R.tips.thumb.x, R.tips.thumb.y);
+        applyDial(it.dial, p.x - it.dial.startX, p.y - it.dial.startY);
+        return;
+      }
+
+      case "sttListening": {
+        const hand = it.stt.hand === "left" ? L : R;
+        const holdActive = it.stt.trigger === "touch"
+          ? !!(hand && hand.thumbTouch)
+          : !!(hand && hand.pinch.active);
+        if (!holdActive) { it.mode = "idle"; it.stt = null; stopStt(); }
+        return;
+      }
+
+      // Fingertip-as-mouse over an embed: index tip = cursor, dwell = click,
+      // pinch = start a clip rect.
+      case "screenInteract": {
+        const scr = it.screen;
+        const item = scr && itemsRef.current.find((x) => x.id === scr.itemId);
+        if (!L || L.palm !== "up" || !R || R.stale || !item) {
+          it.mode = "idle"; it.screen = null; it.screenHover = null; return;
+        }
+        if (R.pinch.active) {
+          const p = toWorld(R.pinch.x, R.pinch.y);
+          it.mode = "screenClip";
+          it.clip = { itemId: item.id, x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+          it.screenHover = null;
+          return;
+        }
+        if (R.pose !== "point") { it.mode = "idle"; it.screen = null; it.screenHover = null; return; }
+        const w = toWorld(R.tips.index.x, R.tips.index.y);
+        const n = item.node;
+        if (w.x < n.x - 60 || w.x > n.x + n.w + 60 || w.y < n.y - 60 || w.y > n.y + n.h + 60) {
+          const next = screenTargetAt(w.x, w.y);
+          if (next) { it.screen = { itemId: next.id, dwellX: 0, dwellY: 0, dwellSince: hs.t, clicked: false, lastDispatch: 0 }; return; }
+          it.mode = "idle"; it.screen = null; it.screenHover = null; return;
+        }
+        const loc = embedLocal(item, w.x, w.y);
+        const sp = rambleToScreen(m, R.tips.index.x, R.tips.index.y);
+        scr.cursor = { x: sp.x, y: sp.y };
+        if (hs.t - (scr.lastDispatch || 0) >= 60) {
+          scr.lastDispatch = hs.t;
+          screenDispatch(item, loc.x, loc.y, "move");
+        }
+        // Dwell click: cursor stable within 14 screen px for 500ms, once.
+        const ddx = sp.x - (scr.dwellX || 0), ddy = sp.y - (scr.dwellY || 0);
+        if (Math.hypot(ddx, ddy) > 14) {
+          scr.dwellX = sp.x; scr.dwellY = sp.y; scr.dwellSince = hs.t; scr.clicked = false;
+        } else if (!scr.clicked && hs.t - (scr.dwellSince || hs.t) >= 500) {
+          scr.clicked = true;
+          screenDispatch(item, loc.x, loc.y, "click");
+        }
+        return;
+      }
+
+      // Pinch-drag selection box over an embed; release clips the covered
+      // content onto the canvas.
+      case "screenClip": {
+        if (!R || !R.pinch.active) {
+          const c = it.clip;
+          it.clip = null;
+          it.mode = "idle";
+          if (c) {
+            const wr = {
+              x: Math.min(c.x1, c.x2), y: Math.min(c.y1, c.y2),
+              w: Math.abs(c.x2 - c.x1), h: Math.abs(c.y2 - c.y1),
+            };
+            const item = itemsRef.current.find((x) => x.id === c.itemId);
+            if (item && wr.w > 8 && wr.h > 8) screenClipFinalize(item, wr);
+          }
+          return;
+        }
+        const p = toWorld(R.pinch.x, R.pinch.y);
+        it.clip.x2 = p.x; it.clip.y2 = p.y;
+        return;
+      }
+
+      // Pending insert riding the left pinch as a ghost; release drops it.
+      case "ghostPlacing": {
+        if (!L || !L.pinch.active) {
+          if (it.ghost && leftSelRef.current) {
+            placeSelectionRef.current(leftSelRef.current, it.ghost.x, it.ghost.y);
+          }
+          it.ghost = null;
+          it.mode = "idle";
+          return;
+        }
+        if (L.palm === "up") { it.ghost = null; it.mode = "idle"; return; }   // cancel
+        const p = toWorld(L.pinch.x, L.pinch.y);
+        it.ghost = { x: p.x, y: p.y };
+        return;
+      }
+    }
+
+    // ── idle ──
+    if (bothPinchDown) { enterZoom(); return; }
+
+    // Fist shake = delete the item under the fist.
+    if (R && R.pose === "fist" && R.shake) {
+      const w = toWorld(R.wrist.x, R.wrist.y);
+      const target = rambleHitTest(w.x, w.y, 12 / Math.max(0.1, cam.z));
+      if (target) removeRambleItem(target.id);
+      return;
+    }
+
+    // Fingertip-as-mouse: left palm-up "holds the screen" while the right
+    // hand points at a prototype/browser embed. Takes precedence over the
+    // insert menu while pointing.
+    if (L && L.palm === "up" && !L.stale && R && !R.stale && R.pose === "point") {
+      const w = toWorld(R.tips.index.x, R.tips.index.y);
+      const target = screenTargetAt(w.x, w.y);
+      if (target) {
+        it.mode = "screenInteract";
+        it.screen = { itemId: target.id, dwellX: 0, dwellY: 0, dwellSince: hs.t, clicked: false, lastDispatch: 0 };
+        it.leftMenu = false;
+        it.lTouchInfo = null;
+        return;
+      }
+    }
+
+    // Left palm-up: fingertip insert menu (pinky=prototype, middle=browser,
+    // index=image). Tap = default pick; hold 600ms = voice search / prompt.
+    const leftPinchDown = !!(L && L.palm === "down" && L.pinch.active);
+    if (L && L.palm === "up" && !L.stale) {
+      it.leftMenu = true;
+      const lt = L.thumbTouch;
+      if (lt && (!it.lTouchInfo || it.lTouchInfo.finger !== lt)) {
+        it.lTouchInfo = { finger: lt, since: hs.t, acted: false };
+      } else if (lt && it.lTouchInfo && !it.lTouchInfo.acted && hs.t - it.lTouchInfo.since >= 600) {
+        const slot = RAMBLE_INSERT_FINGERS[lt];
+        if (slot) {
+          it.lTouchInfo.acted = true;
+          const ctx = slot === "prototype" ? { kind: "prototypeSearch" }
+            : slot === "browser" ? { kind: "browserQuery" } : { kind: "imagePrompt" };
+          it.mode = "sttListening";
+          it.stt = { hand: "left", trigger: "touch" };
+          startStt(ctx, slot === "prototype" ? "Say a prototype name"
+            : slot === "browser" ? "Say a site or search" : "Describe the image");
+          return;
+        }
+      } else if (!lt && it.lTouchInfo) {
+        if (!it.lTouchInfo.acted && hs.t - it.lTouchInfo.since < 600) {
+          const slot = RAMBLE_INSERT_FINGERS[it.lTouchInfo.finger];
+          if (slot && tapInsertRef.current) tapInsertRef.current(slot);
+        }
+        it.lTouchInfo = null;
+      }
+    } else {
+      it.leftMenu = false;
+      it.lTouchInfo = null;
+      // Pending selection + left palm-down pinch start = ghost placement.
+      if (leftSelRef.current && leftPinchDown && !it._prevLeftPinch) {
+        const p = toWorld(L.pinch.x, L.pinch.y);
+        it.mode = "ghostPlacing";
+        it.ghost = { x: p.x, y: p.y };
+        it._prevLeftPinch = leftPinchDown;
+        return;
+      }
+    }
+    it._prevLeftPinch = leftPinchDown;
+
+    // Right palm-up: fingertip tool menu. Thumb tap selects; holding a touch
+    // 400ms opens the attribute dial.
+    if (R && R.palm === "up") {
+      it.rightMenu = true;
+      const touch = R.thumbTouch;
+      if (touch && (!it.touchInfo || it.touchInfo.finger !== touch)) {
+        it.touchInfo = { finger: touch, since: hs.t };
+        const tool = RAMBLE_TOOL_FINGERS[touch];
+        if (tool) setRightTool(tool);
+      } else if (touch && it.touchInfo && hs.t - it.touchInfo.since >= 400) {
+        const p = rambleToScreen(m, R.tips.thumb.x, R.tips.thumb.y);
+        it.mode = "attrDial";
+        it.dial = {
+          tool: rightToolRef.current,
+          startX: p.x, startY: p.y,
+          baseAttrs: { ...attrsRef.current[rightToolRef.current] },
+          display: { ...attrsRef.current[rightToolRef.current] },
+        };
+        it.touchInfo = null;
+      } else if (!touch) {
+        it.touchInfo = null;
+      }
+      it._prevRightPinch = rightPinchDown;
+      return;
+    }
+    it.rightMenu = false;
+    it.touchInfo = null;
+
+    // Right palm-down pinch START = tool action (or item edit).
+    if (rightPinchDown && !it._prevRightPinch) {
+      const tool = rightToolRef.current;
+      const p = toWorld(R.pinch.x, R.pinch.y);
+      const pad = 12 / Math.max(0.1, cam.z);
+      const textTarget = (tool === "text" || tool === "textbox")
+        ? rambleHitTest(p.x, p.y, pad, (x) => x.kind === "wb" && (x.wb.type === "text" || x.wb.type === "textbox" || x.wb.type === "sticky"))
+        : null;
+      if (textTarget) {
+        it.mode = "itemEditPinch";
+        it.hold = { itemId: textTarget.id, since: hs.t };
+      } else if (tool === "pen" || tool === "arrow") {
+        it.mode = "toolPinchPending";
+        it.pending = { tool, since: hs.t, x: p.x, y: p.y, points: tool === "pen" ? [p.x, p.y] : null };
+      } else {
+        it.mode = "textPinchPending";
+        it.hold = { type: tool, since: hs.t, x: p.x, y: p.y };
+      }
+    }
+    it._prevRightPinch = rightPinchDown;
+  };
+  useRambleDebugDriver(debugMode, wrapRef, consumeHand);
+
+  // Hand tracking: lazy-load ramble-vision.js once the camera is live and
+  // attach it to the same <video> (it only reads frames - no second
+  // getUserMedia). Fail-soft: "failed" renders a visible hint, the debug
+  // driver and mouse pan/zoom still work.
+  const visionRef = useRef(null);
+  const [visionStatus, setVisionStatus] = useState("off"); // off | loading | on | failed
+  useEffect(() => {
+    if (camState !== "on") return;
+    let alive = true;
+    setVisionStatus("loading");
+    (async () => {
+      try {
+        const mod = await import(new URL("ramble-vision.js", location.href).toString());
+        if (!alive) return;
+        const RV = mod.RambleVision || mod.default;
+        const ctl = await RV.start({ videoEl: videoRef.current, mirror, onFrame: consumeHand });
+        if (!alive) { ctl.stop(); return; }
+        visionRef.current = ctl;
+        setVisionStatus(ctl.status());
+      } catch (e) {
+        if (alive) setVisionStatus("failed");
+      }
+    })();
+    return () => {
+      alive = false;
+      if (visionRef.current) { try { visionRef.current.stop(); } catch {} visionRef.current = null; }
+    };
+    // Restart tracking when the camera stream changes (deviceId picks restart
+    // the stream but keep camState "on", so key on deviceId too).
+  }, [camState, deviceId, consumeHand]);
+  useEffect(() => {
+    if (visionRef.current) { try { visionRef.current.setMirror(mirror); } catch {} }
+  }, [mirror]);
+
+  // Overlay: one rAF loop, screen space, DPR-aware. Draws the hand skeleton
+  // dots + pinch rings (interaction feedback grows here in later phases).
+  useEffect(() => {
+    const cvs = overlayRef.current;
+    if (!cvs) return;
+    const ctx = cvs.getContext("2d");
+    let raf = 0, run = true;
+    const HAND_TINT = { left: "rgba(120,220,140,", right: "rgba(120,170,255," };
+    const drawHand = (frame, hand, m) => {
+      if (!frame) return;
+      const tint = HAND_TINT[hand];
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < frame.landmarks.length; i++) {
+        const p = rambleToScreen(m, frame.landmarks[i].x, frame.landmarks[i].y);
+        const isTip = i === 4 || i === 8 || i === 12 || i === 16 || i === 20;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, isTip ? 4 : 2, 0, Math.PI * 2);
+        ctx.fillStyle = tint + (isTip ? "0.9)" : "0.45)");
+        ctx.fill();
+      }
+      if (frame.pinch && frame.pinch.active) {
+        const c = rambleToScreen(m, frame.pinch.x, frame.pinch.y);
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, 14, 0, Math.PI * 2);
+        ctx.strokeStyle = tint + "0.95)";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+      const w = rambleToScreen(m, frame.wrist.x, frame.wrist.y);
+      ctx.font = "10px var(--font-sans, sans-serif)";
+      ctx.fillStyle = tint + "0.9)";
+      ctx.fillText(hand + " · palm " + frame.palm + " · " + frame.pose, w.x + 10, w.y + 14);
+    };
+    const draw = () => {
+      if (!run) return;
+      raf = requestAnimationFrame(draw);
+      const m = mapRef.current;
+      const bw = Math.round(m.w * m.dpr), bh = Math.round(m.h * m.dpr);
+      if (cvs.width !== bw || cvs.height !== bh) { cvs.width = bw; cvs.height = bh; }
+      ctx.setTransform(m.dpr, 0, 0, m.dpr, 0, 0);
+      ctx.clearRect(0, 0, m.w, m.h);
+      const hs = handRef.current;
+      if (hs) { drawHand(hs.left, "left", m); drawHand(hs.right, "right", m); }
+      const now = performance.now();
+      const cam = camRef.current;
+      const it = interactRef.current;
+      const worldToScreen = (wx, wy) => ({ x: wx * cam.z + cam.x, y: wy * cam.z + cam.y });
+
+      // Right-hand fingertip tool menu (palm-up).
+      if (it.rightMenu && hs && hs.right && hs.right.palm === "up") {
+        const R = hs.right;
+        for (const finger of ["index", "middle", "ring", "pinky"]) {
+          const tool = RAMBLE_TOOL_FINGERS[finger];
+          const tp = rambleToScreen(m, R.tips[finger].x, R.tips[finger].y);
+          const bx = tp.x, by = tp.y - 30;
+          const selected = tool === rightToolRef.current;
+          ctx.beginPath();
+          ctx.arc(bx, by, 17, 0, Math.PI * 2);
+          ctx.fillStyle = selected ? "rgba(51,160,111,0.95)" : "rgba(18,20,26,0.85)";
+          ctx.fill();
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = selected ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)";
+          ctx.stroke();
+          ctx.fillStyle = "#fff";
+          ctx.font = "600 12px var(--font-sans, sans-serif)";
+          const g = RAMBLE_TOOL_GLYPH[tool];
+          ctx.fillText(g, bx - ctx.measureText(g).width / 2, by + 4);
+          // Touch hold progress toward the attribute dial.
+          if (R.thumbTouch === finger && it.touchInfo && it.touchInfo.finger === finger) {
+            const frac = Math.min(1, (now - it.touchInfo.since) / 400);
+            ctx.beginPath();
+            ctx.arc(bx, by, 21, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+            ctx.strokeStyle = "rgba(255,255,255,0.9)";
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Left-hand insert menu bubbles (palm-up).
+      if (it.leftMenu && hs && hs.left && hs.left.palm === "up") {
+        const Lh = hs.left;
+        for (const finger of ["index", "middle", "ring", "pinky"]) {
+          const slot = RAMBLE_INSERT_FINGERS[finger];
+          const tp = rambleToScreen(m, Lh.tips[finger].x, Lh.tips[finger].y);
+          const bx = tp.x, by = tp.y - 30;
+          ctx.beginPath();
+          ctx.arc(bx, by, 17, 0, Math.PI * 2);
+          ctx.fillStyle = slot ? "rgba(18,20,26,0.85)" : "rgba(18,20,26,0.35)";
+          ctx.fill();
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = slot ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.15)";
+          ctx.stroke();
+          if (slot) {
+            ctx.fillStyle = "#fff";
+            ctx.font = "600 11px var(--font-sans, sans-serif)";
+            const g = RAMBLE_INSERT_GLYPH[slot];
+            ctx.fillText(g, bx - ctx.measureText(g).width / 2, by + 4);
+            if (Lh.thumbTouch === finger && it.lTouchInfo && it.lTouchInfo.finger === finger) {
+              const frac = Math.min(1, (now - it.lTouchInfo.since) / 600);
+              ctx.beginPath();
+              ctx.arc(bx, by, 21, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+              ctx.strokeStyle = "rgba(255,255,255,0.9)";
+              ctx.lineWidth = 2.5;
+              ctx.stroke();
+            }
+          }
+        }
+      }
+
+      // Ghost of the pending insert riding the left pinch.
+      if (it.mode === "ghostPlacing" && it.ghost && leftSelRef.current) {
+        const sel = leftSelRef.current;
+        const dims = RAMBLE_INSERT_DIMS[sel.kind === "asset" ? "asset" : sel.kind] || RAMBLE_INSERT_DIMS.asset;
+        const c0 = worldToScreen(it.ghost.x - dims.w / 2, it.ghost.y - dims.h / 2);
+        const gw = dims.w * cam.z, gh = dims.h * cam.z;
+        ctx.setLineDash([8, 6]);
+        ctx.strokeStyle = "rgba(255,255,255,0.85)";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(c0.x, c0.y, gw, gh);
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(18,20,26,0.55)";
+        ctx.fillRect(c0.x, c0.y, gw, gh);
+        ctx.fillStyle = "#fff";
+        ctx.font = "600 13px var(--font-sans, sans-serif)";
+        const lbl = sel.kind === "prototype" ? "Prototype: " + sel.prototype
+          : sel.kind === "browser" ? "Browser" : (sel.runStatus === "pending" ? "Generating image..." : "Image");
+        ctx.fillText(lbl, c0.x + 12, c0.y + 24);
+      }
+
+      // Attribute dial strip (tool dial or held-item dial).
+      const dial = (it.mode === "attrDial" && it.dial) ? it.dial
+        : (it.mode === "itemAttrEdit" && it.attrEdit && it.attrEdit.dial) ? it.attrEdit.dial : null;
+      if (dial) {
+        const vals = dial.display || dial.baseAttrs || {};
+        const spec = RAMBLE_DIAL[dial.tool];
+        const cx0 = dial.startX, cy0 = dial.startY - 56;
+        const swatches = spec && spec.primary.options && spec.primary.key === "color" ? spec.primary.options
+          : (spec && spec.secondary.options && spec.secondary.key === "color" ? spec.secondary.options : null);
+        const wBox = 232, hBox = swatches ? 62 : 44;
+        ctx.fillStyle = "rgba(14,16,20,0.92)";
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(cx0 - wBox / 2, cy0 - hBox / 2, wBox, hBox, 10); else ctx.rect(cx0 - wBox / 2, cy0 - hBox / 2, wBox, hBox);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.font = "600 12px var(--font-sans, sans-serif)";
+        const label = RAMBLE_TOOL_LABEL[dial.tool] +
+          (vals.fontSize ? " · " + vals.fontSize : "") +
+          (vals.size != null ? " · " + vals.size + "px" : "");
+        ctx.fillText(label, cx0 - wBox / 2 + 12, cy0 - hBox / 2 + 18);
+        if (swatches) {
+          const sw = 18, gap = 8;
+          const total = swatches.length * sw + (swatches.length - 1) * gap;
+          let x = cx0 - total / 2 + sw / 2;
+          for (const tok of swatches) {
+            ctx.beginPath();
+            ctx.arc(x, cy0 + hBox / 2 - 20, sw / 2, 0, Math.PI * 2);
+            ctx.fillStyle = rambleWbColor(tok);
+            ctx.fill();
+            if (vals.color === tok) {
+              ctx.lineWidth = 2.5;
+              ctx.strokeStyle = "#fff";
+              ctx.stroke();
+            }
+            x += sw + gap;
+          }
+        }
+      }
+
+      // Live pen stroke preview (world space -> screen).
+      if (it.pen && it.pen.points && it.pen.points.length >= 4) {
+        const pts = it.pen.points;
+        ctx.beginPath();
+        const p0 = worldToScreen(pts[0], pts[1]);
+        ctx.moveTo(p0.x, p0.y);
+        for (let i = 2; i < pts.length; i += 2) {
+          const p = worldToScreen(pts[i], pts[i + 1]);
+          ctx.lineTo(p.x, p.y);
+        }
+        ctx.strokeStyle = rambleWbColor(attrsRef.current.pen.color);
+        ctx.lineWidth = Math.max(1, attrsRef.current.pen.size * cam.z);
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.stroke();
+      }
+
+      // Live arrow preview.
+      if (it.arrow) {
+        const a = worldToScreen(it.arrow.x1, it.arrow.y1);
+        const b2 = worldToScreen(it.arrow.x2, it.arrow.y2);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y); ctx.lineTo(b2.x, b2.y);
+        ctx.strokeStyle = rambleWbColor(attrsRef.current.arrow.color);
+        ctx.lineWidth = Math.max(1, attrsRef.current.arrow.size * cam.z);
+        ctx.stroke();
+        const ang = Math.atan2(b2.y - a.y, b2.x - a.x);
+        const ah = 10 * Math.max(0.5, cam.z);
+        ctx.beginPath();
+        ctx.moveTo(b2.x, b2.y);
+        ctx.lineTo(b2.x - ah * Math.cos(ang - 0.45), b2.y - ah * Math.sin(ang - 0.45));
+        ctx.lineTo(b2.x - ah * Math.cos(ang + 0.45), b2.y - ah * Math.sin(ang + 0.45));
+        ctx.closePath();
+        ctx.fillStyle = rambleWbColor(attrsRef.current.arrow.color);
+        ctx.fill();
+      }
+
+      // Screen interaction: cursor dot + hovered-element outline.
+      if (it.mode === "screenInteract" && it.screen && it.screen.cursor) {
+        const c = it.screen.cursor;
+        if (it.screenHover) {
+          const hp = worldToScreen(it.screenHover.x, it.screenHover.y);
+          ctx.strokeStyle = "rgba(90,170,255,0.9)";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(hp.x, hp.y, it.screenHover.w * cam.z, it.screenHover.h * cam.z);
+        }
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(90,170,255,0.95)";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, 11, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(255,255,255,0.8)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // Dwell progress toward the click.
+        if (!it.screen.clicked && it.screen.dwellSince) {
+          const frac = Math.min(1, (now - it.screen.dwellSince) / 500);
+          if (frac > 0.15) {
+            ctx.beginPath();
+            ctx.arc(c.x, c.y, 15, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+            ctx.strokeStyle = "rgba(90,170,255,0.9)";
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Clip rubber-band (marching ants).
+      if (it.mode === "screenClip" && it.clip) {
+        const c = it.clip;
+        const a = worldToScreen(Math.min(c.x1, c.x2), Math.min(c.y1, c.y2));
+        const wpx = Math.abs(c.x2 - c.x1) * cam.z, hpx = Math.abs(c.y2 - c.y1) * cam.z;
+        ctx.setLineDash([6, 5]);
+        ctx.lineDashOffset = -(now / 40) % 11;
+        ctx.strokeStyle = "rgba(255,255,255,0.95)";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(a.x, a.y, wpx, hpx);
+        ctx.setLineDash([]);
+        ctx.lineDashOffset = 0;
+        ctx.fillStyle = "rgba(90,170,255,0.12)";
+        ctx.fillRect(a.x, a.y, wpx, hpx);
+      }
+
+      // 1s hold progress rings (dictate new text / update item).
+      if ((it.mode === "textPinchPending" || it.mode === "itemEditPinch") && it.hold && hs && hs.right) {
+        const p = rambleToScreen(m, hs.right.pinch.x, hs.right.pinch.y);
+        const frac = Math.min(1, (now - it.hold.since) / 1000);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 22, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+        ctx.strokeStyle = "rgba(255,255,255,0.95)";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 22, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(255,255,255,0.25)";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+
+      // STT listening: pulsing dot riding the listening hand.
+      if (it.mode === "sttListening" && it.stt && hs) {
+        const hand = it.stt.hand === "left" ? hs.left : hs.right;
+        if (hand) {
+          const p = rambleToScreen(m, hand.pinch.x, hand.pinch.y);
+          const pulse = 6 + 2.5 * Math.sin(now / 160);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y - 34, pulse, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(229,72,77,0.95)";
+          ctx.fill();
+        }
+      }
+
+      // Two-hand zoom feedback: connecting line + rings + zoom readout.
+      if (it.mode === "zooming" && it.zoomPrev) {
+        const { p1, p2 } = it.zoomPrev;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+        ctx.strokeStyle = "rgba(255,255,255,0.55)";
+        ctx.setLineDash([6, 6]);
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        for (const p of [p1, p2]) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 18, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(255,255,255,0.9)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+        const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+        const label = Math.round(camRef.current.z * 100) + "%";
+        ctx.font = "600 12px var(--font-sans, sans-serif)";
+        const tw = ctx.measureText(label).width;
+        ctx.fillStyle = "rgba(10,12,16,0.8)";
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(mid.x - tw / 2 - 8, mid.y - 24, tw + 16, 20, 6);
+        else ctx.rect(mid.x - tw / 2 - 8, mid.y - 24, tw + 16, 20);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.fillText(label, mid.x - tw / 2, mid.y - 10);
+      }
+    };
+    raf = requestAnimationFrame(draw);
+    return () => { run = false; cancelAnimationFrame(raf); };
+  }, []);
+
+  const backToWorkflow = () => {
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set("view", "workflow");
+      thNavigate(u.toString());
+    } catch {}
+  };
+
+  // Done: pack the whole ramble canvas into a date-time-named section on the
+  // workflow canvas (section + node children via /__workflow/nodes/add, wb
+  // children with sec bindings via /__workflow/wb - section rides the first
+  // batch so the binding reconcile never sees orphans), clear the draft, and
+  // land on the canvas focused on the new section.
+  const [saving, setSaving] = useState(false);
+  const rambleSaveAsSection = useCallback(async () => {
+    const arr = itemsRef.current;
+    if (!arr.length) { backToWorkflow(); return; }
+    if (saving) return;
+    setSaving(true);
+    try {
+      // Bounding box over every item, world coords.
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const it of arr) {
+        let bb = null;
+        if (it.kind === "wb") { try { bb = wbItemBBox(it.wb); } catch {} }
+        else bb = { x: it.node.x, y: it.node.y, w: it.node.w || 320, h: it.node.h || 240 };
+        if (!bb) continue;
+        minX = Math.min(minX, bb.x); minY = Math.min(minY, bb.y);
+        maxX = Math.max(maxX, bb.x + bb.w); maxY = Math.max(maxY, bb.y + bb.h);
+      }
+      if (!isFinite(minX)) { backToWorkflow(); return; }
+      const pad = 48, titleH = 14;
+      // Place below the existing graph (absolute coords: the wb batch has no
+      // server-side placement translation, so both batches must agree).
+      let baseX = 120, baseY = 120;
+      try {
+        const r = await fetch(apiUrl("/__workflow"));
+        if (r.ok) {
+          const doc = await r.json();
+          let eMinX = Infinity, eMaxY = -Infinity;
+          for (const n of ((doc && doc.nodes) || [])) {
+            if (typeof n.x !== "number") continue;
+            eMinX = Math.min(eMinX, n.x);
+            eMaxY = Math.max(eMaxY, n.y + (n.h || 240));
+          }
+          for (const w of ((doc && doc.wb) || [])) {
+            if (w && w.type === "arrow" && typeof w.x1 === "number") {
+              eMinX = Math.min(eMinX, Math.min(w.x1, w.x2));
+              eMaxY = Math.max(eMaxY, Math.max(w.y1, w.y2));
+            } else if (w && typeof w.x === "number") {
+              eMinX = Math.min(eMinX, w.x);
+              eMaxY = Math.max(eMaxY, w.y + (w.h || 100));
+            }
+          }
+          if (isFinite(eMinX)) { baseX = Math.round(eMinX); baseY = Math.round(eMaxY + 120); }
+        }
+      } catch {}
+      const d = new Date();
+      const title = "Ramble " + d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+        + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      const secId = workflowNewNodeId();
+      const secW = Math.round((maxX - minX) + pad * 2);
+      const secH = Math.round((maxY - minY) + pad * 2 + titleH);
+      const dx = baseX + pad - minX;
+      const dy = baseY + pad + titleH - minY;
+      const addNodes = [{ id: secId, kind: "section", title, x: baseX, y: baseY, w: secW, h: secH }];
+      const addWb = [];
+      for (const it of arr) {
+        if (it.kind === "node") {
+          const n = it.node;
+          const id = workflowNewNodeId();
+          const nx = Math.round(n.x + dx), ny = Math.round(n.y + dy);
+          const base = {
+            id, x: nx, y: ny, w: n.w, h: n.h,
+            sec: { sectionId: secId, ox: nx - baseX, oy: ny - baseY },
+          };
+          if (n.kind === "prototype") addNodes.push({ ...base, kind: "prototype", prototype: n.prototype, instanceId: id });
+          else if (n.kind === "browser") addNodes.push({ ...base, kind: "browser", url: n.url });
+          else addNodes.push({ ...base, kind: "image", path: n.path, title: n.title || "Ramble image" });
+        } else {
+          const copy = { ...it.wb };
+          delete copy.id;   // server assigns fresh wb ids
+          if (copy.type === "arrow") {
+            copy.x1 = Math.round(copy.x1 + dx); copy.y1 = Math.round(copy.y1 + dy);
+            copy.x2 = Math.round(copy.x2 + dx); copy.y2 = Math.round(copy.y2 + dy);
+            if (Array.isArray(copy.mids)) copy.mids = copy.mids.map((v, i) => Math.round(v + (i % 2 === 0 ? dx : dy)));
+            const bb = wbItemBBox(it.wb);
+            copy.sec = { sectionId: secId, ox: Math.round(bb.x + dx - baseX), oy: Math.round(bb.y + dy - baseY) };
+          } else {
+            copy.x = Math.round(copy.x + dx); copy.y = Math.round(copy.y + dy);
+            copy.sec = { sectionId: secId, ox: copy.x - baseX, oy: copy.y - baseY };
+          }
+          addWb.push(copy);
+        }
+      }
+      const r1 = await fetch(apiUrl("/__workflow/nodes/add"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addNodes }),
+      });
+      if (!r1.ok) throw new Error("saving nodes failed (" + r1.status + ")");
+      if (addWb.length) {
+        const r2 = await fetch(apiUrl("/__workflow/wb"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ add: addWb }),
+        });
+        if (!r2.ok) throw new Error("saving whiteboard items failed (" + r2.status + ")");
+      }
+      try { localStorage.removeItem(rambleDraftKey()); } catch {}
+      setItems([]);
+      // Focus the new section once the canvas has loaded it (handler no-ops
+      // until then; retry a few seconds).
+      let tries = 0;
+      const focusTick = () => {
+        try { window.dispatchEvent(new CustomEvent("th:focus-node", { detail: { nodeId: secId } })); } catch {}
+        if (++tries < 20) setTimeout(focusTick, 300);
+      };
+      setTimeout(focusTick, 300);
+      backToWorkflow();
+    } catch (e) {
+      uiAlert("Saving the ramble failed: " + ((e && e.message) || e));
+    } finally {
+      setSaving(false);
+    }
+  }, [saving]);
+
+  const clearCanvas = useCallback(async () => {
+    const ok = await uiConfirm("Clear the ramble canvas? Items not saved to the workflow canvas are lost.");
+    if (!ok) return;
+    setItems([]);
+    setLeftSelection(null);
+    try { localStorage.removeItem(rambleDraftKey()); } catch {}
+  }, []);
+
+  return html`
+    <div className="ramble-view">
+      <div className="dev-view-bar ramble-bar">
+        <${ProjectHomeButton} info=${info}/>
+        <span className="toolbar-mode-label">Ramble</span>
+        <div className="ut-screen-spacer"></div>
+        ${devices.length > 0 && html`<select className="editor-proto-switch" value=${deviceId}
+          onChange=${(e) => pickDevice(e.target.value)} title="Camera" aria-label="Camera">
+          ${devices.map((d) => html`<option key=${d.deviceId} value=${d.deviceId}>${d.label}</option>`)}
+        </select>`}
+        <button className="th-icon-btn" data-active=${mirror ? "true" : "false"}
+          title=${mirror ? "Mirroring on - feed is flipped for a facing camera" : "Mirroring off - right for a top-down desk camera"}
+          onClick=${toggleMirror}><${Icon.Shuffle}/></button>
+        <button className="th-icon-btn" data-active=${hudOpen ? "true" : "false"}
+          title="Hand-tracking HUD (readouts + threshold tuning)"
+          onClick=${() => setHudOpen((v) => !v)}><${Icon.Gauge}/></button>
+        <button className="th-icon-btn" title="Clear the ramble canvas" onClick=${clearCanvas}>
+          <${Icon.Trash}/>
+        </button>
+        <button type="button" className="go-live-btn ramble-done-btn" disabled=${saving}
+          title="Save this ramble as a section on the canvas and go there"
+          onClick=${rambleSaveAsSection}>
+          <span className="go-live-label">${saving ? "Saving..." : "Done"}</span>
+        </button>
+        <${SurfaceNav}/>
+      </div>
+      <div className="ramble-body" ref=${wrapRef}>
+        <video className="ramble-video" ref=${videoRef} data-mirror=${mirror ? "true" : "false"}
+          autoPlay=${true} muted=${true} playsInline=${true}></video>
+        <div className="ramble-scrim"></div>
+        <div className="canvas ramble-world" ref=${worldElRef}>
+          ${items.map((it) => it.kind === "wb" ? html`
+            <${WorkflowWbItem} key=${it.id} item=${it.wb} selected=${false} editing=${false} zoom=${zoom}
+              onCommitText=${(t) => patchRambleWb(it.id, { text: t })}/>`
+            : html`<${RambleEmbed} key=${it.id} item=${it}/>`)}
+        </div>
+        <canvas className="ramble-overlay" ref=${overlayRef}></canvas>
+        <div className="ramble-tool-chip" data-stt=${sttStatus}>
+          <span className="ramble-tool-chip-tool">${RAMBLE_TOOL_LABEL[rightTool]}</span>
+          ${sttStatus === "none" && html`<span className="ramble-tool-chip-hint">Voice unavailable</span>`}
+        </div>
+        ${leftSelection && html`<div className="ramble-insert-chip">
+          <span>Place:</span>
+          <b>${leftSelection.kind === "prototype" ? leftSelection.prototype
+            : leftSelection.kind === "browser" ? (leftSelection.url || "").replace(/^https?:\/\//, "").slice(0, 36)
+            : (leftSelection.runStatus === "pending" ? "image (generating...)" : "image")}</b>
+          <span className="ramble-insert-chip-hint">palm down + pinch to drop</span>
+        </div>`}
+        ${sttUi && html`<div className="ramble-stt-pill"><span className="ramble-stt-dot"></span>${sttUi.label}...</div>`}
+        ${!sttUi && sttFlash && html`<div className="ramble-stt-pill" data-err=${sttFlash.err ? "true" : "false"}>${sttFlash.text}</div>`}
+        ${undoState && html`<div className="ramble-undo-chip">
+          <span>Deleted</span>
+          <button type="button" onClick=${undoDelete}>Undo</button>
+        </div>`}
+        ${hudOpen && html`<${RambleHud} handRef=${handRef} visionStatus=${visionStatus} getCtl=${() => visionRef.current}/>`}
+        ${visionStatus === "failed" && html`<div className="ramble-vision-warn">
+          Hand tracking could not load (network or model). The feed still shows; mouse pan and zoom still work.
+        </div>`}
+        ${camState !== "on" && html`
+          <div className="ramble-gate">
+            <div className="ramble-gate-card">
+              <div className="ut-screen-glyph"><${Icon.Eye}/></div>
+              <p className="ramble-gate-title">Point a camera at your desk</p>
+              <p className="sysadd-hint">
+                Aim a camera down at the table with your hands in frame, or pick the
+                macOS Desk View camera. Your hands become the cursor: palms open menus,
+                pinches place and draw, voice fills in the words.
+              </p>
+              ${camState === "error" && html`<p className="ramble-gate-error">${camError}</p>`}
+              <button className="sysadd-btn-go" disabled=${camState === "starting"}
+                onClick=${() => startCamera(deviceId)}>
+                ${camState === "starting" ? "Starting camera..." : "Enable camera"}
+              </button>
+              ${debugMode && html`<p className="sysadd-hint" style=${{ marginTop: "10px" }}>
+                Debug driver on: hold 1/2/q for the left hand, 9/0/p/o for the right, s to shake.
+              </p>`}
+            </div>
+          </div>`}
+      </div>
+    </div>
+  `;
+}
+
 function PublishButton() {
   const [open, setOpen] = useState(false);
   // Publishing has its own top-level surface (?view=development) reachable from
@@ -97948,6 +99890,15 @@ function Root() {
   if (hasProject && view === "development") return html`<${React.Fragment}>
     <${DevelopmentView} key=${"dev:" + (project || "")} info=${info}/>
     <${RightRailDock} mode="development"/>
+    <${ExportPromptHost}/>
+    <${FigmaSendPromptHost}/>
+  <//>`;
+  // Ramble - gesture-driven camera canvas, its own top-level page. The user
+  // sketches over a live desk-view camera feed with hand gestures + voice;
+  // Done saves the result as a section on the workflow canvas.
+  if (hasProject && view === "ramble") return html`<${React.Fragment}>
+    <${RambleView} key=${"ramble:" + (project || "")} info=${info}/>
+    <${RightRailDock} mode="ramble"/>
     <${ExportPromptHost}/>
     <${FigmaSendPromptHost}/>
   <//>`;
