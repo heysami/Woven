@@ -17662,9 +17662,14 @@ function ChatContextGauge({ run, events, runModel }) {
     </button>
     ${open && (() => {
       const r = btnRef.current ? btnRef.current.getBoundingClientRect() : null;
+      // Right-anchored to the gauge, but clamped so the pop's left edge
+      // (280px wide + borders) never leaves the viewport when the panel
+      // sits near the screen's left edge.
+      const POP_W = 282;
       const style = !r ? {} : {
         position: "fixed", top: (r.bottom + 6) + "px",
-        right: Math.max(8, window.innerWidth - r.right) + "px",
+        right: Math.max(8, Math.min(window.innerWidth - r.right,
+                                    window.innerWidth - POP_W - 8)) + "px",
         zIndex: 8000,
       };
       const tickPct = win ? (100000 / win) * 100 : null;

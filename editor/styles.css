@@ -32505,6 +32505,7 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 
 .chat-ctx-pop {
   width: 280px;
+  max-width: calc(100vw - 16px);
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
