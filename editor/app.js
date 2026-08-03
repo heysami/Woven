@@ -1561,7 +1561,8 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
   const [spaceHeld, setSpaceHeld] = useState(false);
   useEffect(() => {
     const onDown = (e) => {
-      if (e.code === "Space" && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT") {
+      if (e.code === "Space" && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT"
+          && !e.target.isContentEditable) {
         e.preventDefault();
         setSpaceHeld(true);
       }
