@@ -66,8 +66,11 @@ const DEFAULT_CONFIG = {
   // camera setup disagrees.
   palmSignRight: 1,
   palmSignLeft: -1,
-  // Handedness label swap. MediaPipe labels assume a mirrored (selfie) image;
-  // an unmirrored top-down feed reports them flipped. null = auto (!mirror).
+  // Handedness label swap. Detection always runs on the RAW camera frames
+  // (CSS/display flips never change the pixels), and tasks-vision 0.10 labels
+  // raw webcam feeds anatomically correctly in practice (verified on a real
+  // desk camera), so auto (null) means NO swap. Override via setConfig if a
+  // particular camera pipeline disagrees.
   swapHandedness: null,
 };
 
@@ -158,7 +161,7 @@ function trackerReset(tr) {
   tr.lastVelSign = 0;
 }
 
-function trackerUpdate(tr, rawLm, t, hand) {
+function trackerUpdate(tr, rawLm, t, hand, chiralitySign) {
   const cfg = tr.cfg;
   if (!tr.filters) {
     tr.filters = [];
@@ -183,7 +186,7 @@ function trackerUpdate(tr, rawLm, t, hand) {
   const v1 = { x: lm[5].x - wrist.x, y: lm[5].y - wrist.y };
   const v2 = { x: lm[17].x - wrist.x, y: lm[17].y - wrist.y };
   const cross = v1.x * v2.y - v1.y * v2.x;
-  const sign = hand === 'right' ? cfg.palmSignRight : cfg.palmSignLeft;
+  const sign = (hand === 'right' ? cfg.palmSignRight : cfg.palmSignLeft) * (chiralitySign || 1);
   const mag = Math.abs(cross) / (scale * scale);
   if (mag > 0.15) {   // ignore edge-on hands (near-zero cross)
     const cand = (cross * sign > 0) ? 'up' : 'down';
@@ -293,12 +296,19 @@ export const RambleVision = {
 
   /* Attach hand tracking to an already-playing <video>. The caller owns the
      camera stream (RambleView acquires it for the visible feed); this module
-     only reads frames - no second getUserMedia. */
+     only reads frames - no second getUserMedia.
+
+     flipH / flipV mirror the DISPLAY (the caller flips the <video> with CSS);
+     landmarks are emitted in that same display space, and palm chirality is
+     sign-corrected when exactly one axis is flipped (a mirror flips winding;
+     a 180-degree rotation does not). Anatomical handedness never changes with
+     display flips - it is a property of the raw frame. */
   async start(opts) {
     const videoEl = opts.videoEl;
     const onFrame = opts.onFrame || (() => {});
     const cfg = Object.assign({}, DEFAULT_CONFIG, opts.config || {});
-    let mirror = !!opts.mirror;
+    let flipH = !!(opts.flipH != null ? opts.flipH : opts.mirror);
+    let flipV = !!opts.flipV;
     let status = 'loading';
     let running = true;
 
@@ -310,7 +320,9 @@ export const RambleVision = {
     if (!landmarker) status = 'failed';
     else status = 'on';
 
-    const swapNow = () => (cfg.swapHandedness == null ? !mirror : !!cfg.swapHandedness);
+    const swapNow = () => (cfg.swapHandedness == null ? false : !!cfg.swapHandedness);
+    // Exactly one display flip inverts the winding the palm test reads.
+    const chiralityAdjust = () => (flipH !== flipV ? -1 : 1);
 
     const step = (t) => {
       if (!running) return;
@@ -332,14 +344,14 @@ export const RambleVision = {
         if (swapNow()) label = label === 'left' ? 'right' : 'left';
         if (seen[label]) continue;   // one hand per side
         seen[label] = true;
-        // Normalize into display space: flip x when the feed is mirrored so
-        // consumers always match what they see on screen.
+        // Normalize into display space: apply the same flips the caller puts
+        // on the <video> so consumers always match what they see on screen.
         const raw = lms[i].map((p) => ({
-          x: mirror ? 1 - p.x : p.x,
-          y: p.y,
+          x: flipH ? 1 - p.x : p.x,
+          y: flipV ? 1 - p.y : p.y,
           z: p.z || 0,
         }));
-        trackerUpdate(trackers[label], raw, now, label);
+        trackerUpdate(trackers[label], raw, now, label, chiralityAdjust());
       }
       // Presence grace for unseen hands.
       const out = { t: now, left: null, right: null, source: 'vision' };
@@ -373,7 +385,11 @@ export const RambleVision = {
         try { if (rvfcId && videoEl.cancelVideoFrameCallback) videoEl.cancelVideoFrameCallback(rvfcId); } catch (e) {}
         try { if (rafId) cancelAnimationFrame(rafId); } catch (e) {}
       },
-      setMirror: (m) => { mirror = !!m; },
+      setMirror: (m) => { flipH = !!m; },
+      setFlips: (f) => {
+        if (f && f.h != null) flipH = !!f.h;
+        if (f && f.v != null) flipV = !!f.v;
+      },
       setConfig: (partial) => { Object.assign(cfg, partial || {}); },
       getConfig: () => Object.assign({}, cfg),
     };

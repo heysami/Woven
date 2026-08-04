@@ -96049,7 +96049,8 @@ const DB_PROVIDERS = [
    developed and regression-tested without a camera. */
 
 const RAMBLE_CAMERA_KEY = "th.ramble.camera";
-const RAMBLE_MIRROR_KEY = "th.ramble.mirror";
+const RAMBLE_MIRROR_KEY = "th.ramble.mirror";     // horizontal (left-right) flip
+const RAMBLE_FLIPV_KEY = "th.ramble.flipv";       // vertical (top-bottom) flip
 
 // Right-hand fingertip tool menu (palm-up): finger -> whiteboard tool.
 const RAMBLE_TOOL_FINGERS = { index: "pen", middle: "text", ring: "textbox", pinky: "arrow" };
@@ -96402,14 +96403,18 @@ function RambleView({ info }) {
   const [camError, setCamError] = useState("");
   const [devices, setDevices]   = useState([]);     // [{deviceId, label}] video inputs
   const [deviceId, setDeviceId] = useState(() => { try { return localStorage.getItem(RAMBLE_CAMERA_KEY) || ""; } catch { return ""; } });
-  const [mirror, setMirror]     = useState(() => { try { return localStorage.getItem(RAMBLE_MIRROR_KEY) === "1"; } catch { return false; } });
+  // Camera orientation. Overhead/desk cameras arrive in every orientation, so
+  // both axes are user-flippable; the vision module applies the same flips to
+  // landmarks and palm winding (detection itself always sees raw frames).
+  const [flipH, setFlipH] = useState(() => { try { return localStorage.getItem(RAMBLE_MIRROR_KEY) === "1"; } catch { return false; } });
+  const [flipV, setFlipV] = useState(() => { try { return localStorage.getItem(RAMBLE_FLIPV_KEY) === "1"; } catch { return false; } });
   const videoRef   = useRef(null);
   const streamRef  = useRef(null);
   const overlayRef = useRef(null);
   const handRef    = useRef(null);   // latest HandState (vision module or debug driver)
   // Screen/video geometry for landmark projection. Wrap size from a
   // ResizeObserver, video size from loadedmetadata - never measured per frame.
-  const mapRef = useRef({ w: 1, h: 1, dpr: 1, vw: 0, vh: 0, mirror: false });
+  const mapRef = useRef({ w: 1, h: 1, dpr: 1, vw: 0, vh: 0 });
   // Session draft (localStorage, per project): items + camera survive an
   // accidental reload; cleared when Done saves to the canvas.
   const draftRef = useRef(undefined);
@@ -96441,7 +96446,6 @@ function RambleView({ info }) {
     return () => { try { delete window.__ramble; } catch {} };
   }, [debugMode]);
 
-  useEffect(() => { mapRef.current.mirror = mirror; }, [mirror]);
 
   // Wrap geometry. ResizeObserver is the primary source; a window resize
   // listener is the belt-and-braces fallback (RO callbacks ride rendering
@@ -96524,10 +96528,17 @@ function RambleView({ info }) {
     try { localStorage.setItem(RAMBLE_CAMERA_KEY, id); } catch {}
     startCamera(id);
   };
-  const toggleMirror = () => {
-    setMirror((m) => {
+  const toggleFlipH = () => {
+    setFlipH((m) => {
       const next = !m;
       try { localStorage.setItem(RAMBLE_MIRROR_KEY, next ? "1" : "0"); } catch {}
+      return next;
+    });
+  };
+  const toggleFlipV = () => {
+    setFlipV((m) => {
+      const next = !m;
+      try { localStorage.setItem(RAMBLE_FLIPV_KEY, next ? "1" : "0"); } catch {}
       return next;
     });
   };
@@ -97355,16 +97366,19 @@ function RambleView({ info }) {
     }
     it._prevLeftPinch = leftPinchDown;
 
-    // Right palm-up: fingertip tool menu. Thumb tap selects; holding a touch
-    // 400ms opens the attribute dial.
+    // Right palm-up: fingertip tool menu. A thumb tap SELECTS the tool and
+    // nothing more; the attribute dial only opens by touching-and-holding the
+    // finger of the ALREADY-selected tool (400ms). Flipping the palm down and
+    // back up always lands on this fresh menu (touch/dial state is cleared on
+    // every palm-down frame below).
     if (R && R.palm === "up") {
       it.rightMenu = true;
       const touch = R.thumbTouch;
       if (touch && (!it.touchInfo || it.touchInfo.finger !== touch)) {
-        it.touchInfo = { finger: touch, since: hs.t };
         const tool = RAMBLE_TOOL_FINGERS[touch];
+        it.touchInfo = { finger: touch, since: hs.t, wasSelected: !!tool && tool === rightToolRef.current };
         if (tool) setRightTool(tool);
-      } else if (touch && it.touchInfo && hs.t - it.touchInfo.since >= 400) {
+      } else if (touch && it.touchInfo && it.touchInfo.wasSelected && hs.t - it.touchInfo.since >= 400) {
         const p = rambleToScreen(m, R.tips.thumb.x, R.tips.thumb.y);
         it.mode = "attrDial";
         it.dial = {
@@ -97421,7 +97435,7 @@ function RambleView({ info }) {
         const mod = await import(new URL("ramble-vision.js", location.href).toString());
         if (!alive) return;
         const RV = mod.RambleVision || mod.default;
-        const ctl = await RV.start({ videoEl: videoRef.current, mirror, onFrame: consumeHand });
+        const ctl = await RV.start({ videoEl: videoRef.current, flipH, flipV, onFrame: consumeHand });
         if (!alive) { ctl.stop(); return; }
         visionRef.current = ctl;
         setVisionStatus(ctl.status());
@@ -97437,8 +97451,8 @@ function RambleView({ info }) {
     // the stream but keep camState "on", so key on deviceId too).
   }, [camState, deviceId, consumeHand]);
   useEffect(() => {
-    if (visionRef.current) { try { visionRef.current.setMirror(mirror); } catch {} }
-  }, [mirror]);
+    if (visionRef.current) { try { visionRef.current.setFlips({ h: flipH, v: flipV }); } catch {} }
+  }, [flipH, flipV]);
 
   // Overlay: one rAF loop, screen space, DPR-aware. Draws the hand skeleton
   // dots + pinch rings (interaction feedback grows here in later phases).
@@ -97507,8 +97521,9 @@ function RambleView({ info }) {
           ctx.font = "600 12px var(--font-sans, sans-serif)";
           const g = RAMBLE_TOOL_GLYPH[tool];
           ctx.fillText(g, bx - ctx.measureText(g).width / 2, by + 4);
-          // Touch hold progress toward the attribute dial.
-          if (R.thumbTouch === finger && it.touchInfo && it.touchInfo.finger === finger) {
+          // Touch hold progress toward the attribute dial - only meaningful
+          // when holding the already-selected tool's finger.
+          if (R.thumbTouch === finger && it.touchInfo && it.touchInfo.finger === finger && it.touchInfo.wasSelected) {
             const frac = Math.min(1, (now - it.touchInfo.since) / 400);
             ctx.beginPath();
             ctx.arc(bx, by, 21, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
@@ -97901,9 +97916,12 @@ function RambleView({ info }) {
           onChange=${(e) => pickDevice(e.target.value)} title="Camera" aria-label="Camera">
           ${devices.map((d) => html`<option key=${d.deviceId} value=${d.deviceId}>${d.label}</option>`)}
         </select>`}
-        <button className="th-icon-btn" data-active=${mirror ? "true" : "false"}
-          title=${mirror ? "Mirroring on - feed is flipped for a facing camera" : "Mirroring off - right for a top-down desk camera"}
-          onClick=${toggleMirror}><${Icon.Shuffle}/></button>
+        <button className="th-icon-btn" data-active=${flipH ? "true" : "false"}
+          title="Flip left-right - use when moving a hand right moves it left on screen"
+          onClick=${toggleFlipH}><${Icon.Shuffle}/></button>
+        <button className="th-icon-btn ramble-flip-v" data-active=${flipV ? "true" : "false"}
+          title="Flip top-bottom - use when the camera hangs upside down"
+          onClick=${toggleFlipV}><${Icon.Shuffle}/></button>
         <button className="th-icon-btn" data-active=${hudOpen ? "true" : "false"}
           title="Hand-tracking HUD (readouts + threshold tuning)"
           onClick=${() => setHudOpen((v) => !v)}><${Icon.Gauge}/></button>
@@ -97918,7 +97936,8 @@ function RambleView({ info }) {
         <${SurfaceNav}/>
       </div>
       <div className="ramble-body" ref=${wrapRef}>
-        <video className="ramble-video" ref=${videoRef} data-mirror=${mirror ? "true" : "false"}
+        <video className="ramble-video" ref=${videoRef}
+          data-fliph=${flipH ? "true" : "false"} data-flipv=${flipV ? "true" : "false"}
           autoPlay=${true} muted=${true} playsInline=${true}></video>
         <div className="ramble-scrim"></div>
         <div className="canvas ramble-world" ref=${worldElRef}>

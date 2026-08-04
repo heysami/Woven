@@ -31748,7 +31748,11 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: cover; background: #000;
 }
-.ramble-video[data-mirror="true"] { transform: scaleX(-1); }
+.ramble-video[data-fliph="true"] { transform: scaleX(-1); }
+.ramble-video[data-flipv="true"] { transform: scaleY(-1); }
+.ramble-video[data-fliph="true"][data-flipv="true"] { transform: scale(-1, -1); }
+/* The vertical-flip toggle reuses the shuffle glyph rotated a quarter turn. */
+.ramble-flip-v svg { transform: rotate(90deg); }
 .ramble-scrim {
   position: absolute; inset: 0; pointer-events: none;
   background: rgba(0, 0, 0, 0.35);
