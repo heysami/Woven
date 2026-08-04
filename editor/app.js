@@ -96051,6 +96051,14 @@ const DB_PROVIDERS = [
 const RAMBLE_CAMERA_KEY = "th.ramble.camera";
 const RAMBLE_MIRROR_KEY = "th.ramble.mirror";     // horizontal (left-right) flip
 const RAMBLE_FLIPV_KEY = "th.ramble.flipv";       // vertical (top-bottom) flip
+const RAMBLE_VISIONCFG_KEY = "th.ramble.visioncfg"; // persisted HUD calibration (palm signs, swap, thresholds)
+
+function rambleLoadVisionCfg() {
+  try {
+    const j = JSON.parse(localStorage.getItem(RAMBLE_VISIONCFG_KEY) || "null");
+    return (j && typeof j === "object") ? j : {};
+  } catch { return {}; }
+}
 
 // Right-hand fingertip tool menu (palm-up): finger -> whiteboard tool.
 const RAMBLE_TOOL_FINGERS = { index: "pen", middle: "text", ring: "textbox", pinky: "arrow" };
@@ -96317,7 +96325,7 @@ function useRambleDebugDriver(enabled, wrapRef, emit) {
 
 // Live tuning HUD (debug): per-hand readouts + threshold sliders bound to the
 // vision module's config. Polls handRef on an interval - no rAF, no reflow.
-function RambleHud({ handRef, visionStatus, getCtl }) {
+function RambleHud({ handRef, visionStatus, getCtl, onConfig }) {
   const [snap, setSnap] = useState(null);
   const [cfg, setCfg] = useState(null);
   useEffect(() => {
@@ -96334,18 +96342,20 @@ function RambleHud({ handRef, visionStatus, getCtl }) {
     }, 150);
     return () => clearInterval(t);
   }, [cfg, getCtl, handRef]);
+  const apply = (partial) => {
+    if (onConfig) onConfig(partial);
+    else { const ctl = getCtl(); if (ctl) ctl.setConfig(partial); }
+  };
   const setNum = (key, v) => {
     const n = Number(v);
     if (!Number.isFinite(n)) return;
     setCfg((c) => ({ ...c, [key]: n }));
-    const ctl = getCtl();
-    if (ctl) ctl.setConfig({ [key]: n });
+    apply({ [key]: n });
   };
   const flipSign = (key) => {
     setCfg((c) => {
       const next = { ...c, [key]: -(c[key] || 1) };
-      const ctl = getCtl();
-      if (ctl) ctl.setConfig({ [key]: next[key] });
+      apply({ [key]: next[key] });
       return next;
     });
   };
@@ -96388,7 +96398,7 @@ function RambleHud({ handRef, visionStatus, getCtl }) {
             onChange=${(e) => {
               const v = e.target.value === "auto" ? null : e.target.value === "on";
               setCfg((c) => ({ ...c, swapHandedness: v }));
-              const ctl = getCtl(); if (ctl) ctl.setConfig({ swapHandedness: v });
+              apply({ swapHandedness: v });
             }}>
             <option value="auto">swap: auto</option>
             <option value="on">swap: on</option>
@@ -97435,7 +97445,7 @@ function RambleView({ info }) {
         const mod = await import(new URL("ramble-vision.js", location.href).toString());
         if (!alive) return;
         const RV = mod.RambleVision || mod.default;
-        const ctl = await RV.start({ videoEl: videoRef.current, flipH, flipV, onFrame: consumeHand });
+        const ctl = await RV.start({ videoEl: videoRef.current, flipH, flipV, onFrame: consumeHand, config: rambleLoadVisionCfg() });
         if (!alive) { ctl.stop(); return; }
         visionRef.current = ctl;
         setVisionStatus(ctl.status());
@@ -97453,6 +97463,15 @@ function RambleView({ info }) {
   useEffect(() => {
     if (visionRef.current) { try { visionRef.current.setFlips({ h: flipH, v: flipV }); } catch {} }
   }, [flipH, flipV]);
+  // HUD calibration write-through: apply to the live tracker AND persist so
+  // palm-sign / swap / threshold tuning survives reloads.
+  const updateVisionConfig = useCallback((partial) => {
+    if (visionRef.current) { try { visionRef.current.setConfig(partial); } catch {} }
+    try {
+      localStorage.setItem(RAMBLE_VISIONCFG_KEY,
+        JSON.stringify({ ...rambleLoadVisionCfg(), ...partial }));
+    } catch {}
+  }, []);
 
   // Overlay: one rAF loop, screen space, DPR-aware. Draws the hand skeleton
   // dots + pinch rings (interaction feedback grows here in later phases).
@@ -97964,7 +97983,8 @@ function RambleView({ info }) {
           <span>Deleted</span>
           <button type="button" onClick=${undoDelete}>Undo</button>
         </div>`}
-        ${hudOpen && html`<${RambleHud} handRef=${handRef} visionStatus=${visionStatus} getCtl=${() => visionRef.current}/>`}
+        ${hudOpen && html`<${RambleHud} handRef=${handRef} visionStatus=${visionStatus}
+          getCtl=${() => visionRef.current} onConfig=${updateVisionConfig}/>`}
         ${visionStatus === "failed" && html`<div className="ramble-vision-warn">
           Hand tracking could not load (network or model). The feed still shows; mouse pan and zoom still work.
         </div>`}

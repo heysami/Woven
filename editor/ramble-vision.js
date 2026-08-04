@@ -61,11 +61,13 @@ const DEFAULT_CONFIG = {
   euroDCutoff: 1.0,
   // Palm chirality sign per anatomical hand, for an UNMIRRORED feed. The 2D
   // cross product of (indexMcp - wrist) x (pinkyMcp - wrist) flips sign when
-  // the palm turns; these booleans pin which sign means "palm toward camera".
-  // Verified empirically via the Phase 2 HUD; override via setConfig if a
-  // camera setup disagrees.
-  palmSignRight: 1,
-  palmSignLeft: -1,
+  // the palm turns; these pin which sign means "palm toward camera" (= palm
+  // "up" under an overhead camera). Pinned empirically on a real desk camera:
+  // when handedness labels were still swapped, the physical LEFT hand ran on
+  // palmSignRight=+1 and gated correctly, so left=+1 / right=-1 are the true
+  // anatomical signs. Override via setConfig (the HUD persists overrides).
+  palmSignRight: -1,
+  palmSignLeft: 1,
   // Handedness label swap. Detection always runs on the RAW camera frames
   // (CSS/display flips never change the pixels), and tasks-vision 0.10 labels
   // raw webcam feeds anatomically correctly in practice (verified on a real
