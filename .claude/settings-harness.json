@@ -9,6 +9,15 @@
             "command": "/Users/sami/Documents/Woven/.claude/hooks/require-orchestrator.sh"
           }
         ]
+      },
+      {
+        "matcher": "Read|mcp__claude_preview__preview_screenshot",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/sami/Documents/Woven/.claude/hooks/require-visual-delegation.py"
+          }
+        ]
       }
     ]
   }
