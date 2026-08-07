@@ -275,7 +275,23 @@ The contract has two halves and the split is load-bearing:
         // actually shows. Absent = no video provider / non-motion family; downstream falls back
         // to the prose motionBound alone.
         "path": "workflow/artdirection/motion-<surfaceId>.mp4",
-        "observedMotion": "<what the clip ACTUALLY shows, read off the frames: pacing band, energy level, camera behaviour, what moves and how - e.g. 'slow drift, one luminous focal breathing, camera static; nothing snaps'>",
+        "framesDir": "workflow/artdirection/motion-<surfaceId>-frames/",   // the 12 extracted full-res frames
+        "observed": {
+          "energyBand": "calm | gentle | lively | punchy",   // MEASURED (frame-diff over all frames), never eyeballed
+          "settleMs": 400,           // decay time after the biggest motion peak - seeds downstream easing constants
+          "loopPeriodS": 3.1,        // dominant idle periodicity; null if none
+          "peakToRestRatio": 1.2,    // impulse character: low = continuous drift, high = punchy hits
+          "cameraBehaviour": "static | drift | dolly | orbit | cut",   // read off the frames, closed vocabulary
+          "whatMoves": ["<subject-scale list, read per frame>"],
+          "frameByFrame": "<3-6 lines: how the motion progresses across the 12 frames - what changes when, where the peak lands, what the end state is>"
+        },
+        "keyframes": [
+          // 2-4 frames picked as REFERENCES - the states the motion passes through that the STILL
+          // plate does not contain (impulse peak, settled end state, mid-turn view). These are the
+          // ONLY frames downstream may use as visual references.
+          { "path": "workflow/artdirection/motion-<surfaceId>-frames/frame-07.png", "t": 2.3,
+            "why": "<one line: which state this captures + what downstream should use it for>" }
+        ],
         "promptUsed": "<the five-clause motion prompt the clip was generated from>"
       }
     }
@@ -468,7 +484,13 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/nodes/add?project=$TH_PROJECT_ID" -
 - The **prompt** follows 1V-video.md's five clauses (subject / composition / MOTION / lighting / palette), where clause 3 carries the surface's intended feel translated from the plate's DNA + the surface's `motionBound` draft: name a specific motion at a specific energy ("one soft impact ripple, slow settle, nothing snaps" / "camera slow-drifts left through the space, dust motes rise"). Generic motion phrases produce generic clips.
 - `duration: 4` always - this is a register sample, not content. Do NOT re-fire on silence (video renders take 30s-10min; re-firing double-bills). One retry on a hard error; after that, drop `motionPlate` for that surface and note it in the hand-off - never block finalize on a clip.
 
-**Inspect - never trust the prompt, read the frames.** Extract first / middle / last frames (`ffmpeg -y -i motion-<surfaceId>.mp4 -vf "select='eq(n,0)+eq(n,48)+eq(n,95)'" -vsync vsync_passthrough -frames:v 3 f-%d.png` - ffmpeg availability is in `/__capabilities`; adjust frame indices to the clip's actual length) and Read them. Write what the clip ACTUALLY shows into `surfaceContracts[<surfaceId>].motionPlate.observedMotion` - pacing band, energy, camera behaviour, what moves. If the clip's energy contradicts the intended register (arcade snap where calm was briefed), regenerate ONCE with a corrected clause 3; if still wrong, keep the better of the two and say so in `observedMotion`.
+**Convert the clip into the contract: still plate → clip → 12 frames → analysis + keyframes.** The agent never "watches" video; the clip becomes frames and numbers:
+
+1. **Extract 12 evenly spaced FULL-RES frames**: `ffmpeg -y -i motion-<surfaceId>.mp4 -vf fps=3 <framesDir>/frame-%02d.png` (3 fps over a 4s clip ≈ 12; adjust to the real clip length; ffmpeg availability is reported in `/__capabilities`). Individual full frames - NEVER a tiled contact sheet (tiling shrinks every frame and destroys detail).
+2. **Measure the motion mechanically** (PIL: consecutive-frame mean-abs-diff over ALL frames of the clip, not just the 12) → `observed.energyBand`, `settleMs`, `loopPeriodS`, `peakToRestRatio`. Quantities are always measured, never eyeballed.
+3. **Read EACH of the 12 frames in order** and analyze how the motion progresses: what moved between frame N and N+1, camera behaviour (closed vocabulary only), where the peak lands, what the end state is → `observed.frameByFrame` + `whatMoves` + `cameraBehaviour`. Where the eyeball read contradicts the numbers (frames look static, measured energy high), re-read; still contradicting → write "uncertain" for that field - the numbers win.
+4. **Pick 2-4 KEYFRAMES as references** → `keyframes[]` with `t` + `why`: the frames capturing states the still plate does NOT contain (the impulse peak, the settled end state, a mid-motion view worth matching). These become downstream visual references, so they answer the "video changes things the still never captured" gap. SKIP any frame where generation artefacts (melted UI text, warped chrome) would poison a reference - prefer frames whose UI regions are clean or out of frame; if no clean frame exists for a state, leave it out and say so in `frameByFrame`.
+5. **Conformance**: if the measured register contradicts the briefed one (asked calm, measured punchy) → regenerate ONCE with a corrected motion clause; still wrong → keep the better clip and record the miss in `frameByFrame`.
 
 **This phase runs BEFORE §4.6 writes the contract file** (generate clips right after the §4.5 crops, while the contract is still in memory), so `workflow/art-direction-contract.json` is still written ONCE, fully populated - the §4.6 "no later patch step" rule holds. Motion plates are planning artefacts under `bindingRules.plateIsNotAnAsset` exactly like the stills: the runtime never loads them; a surface that wants shipped video commissions it through its own family pipeline, i2v-conditioned on the plate.
 
