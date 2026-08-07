@@ -96053,10 +96053,25 @@ const RAMBLE_MIRROR_KEY = "th.ramble.mirror";     // horizontal (left-right) fli
 const RAMBLE_FLIPV_KEY = "th.ramble.flipv";       // vertical (top-bottom) flip
 const RAMBLE_VISIONCFG_KEY = "th.ramble.visioncfg"; // persisted HUD calibration (palm signs, swap, thresholds)
 
+// Calibration schema version. v2 = phalanx-normalized pinch/touch metric;
+// saved thresholds from the old palm-length metric are meaningless under it
+// and get dropped (palm signs and handedness swap survive - those are
+// metric-independent).
+const RAMBLE_VISIONCFG_V = 2;
 function rambleLoadVisionCfg() {
   try {
     const j = JSON.parse(localStorage.getItem(RAMBLE_VISIONCFG_KEY) || "null");
-    return (j && typeof j === "object") ? j : {};
+    if (!j || typeof j !== "object") return {};
+    if (j._v !== RAMBLE_VISIONCFG_V) {
+      const keep = {};
+      if (j.palmSignLeft != null) keep.palmSignLeft = j.palmSignLeft;
+      if (j.palmSignRight != null) keep.palmSignRight = j.palmSignRight;
+      if (j.swapHandedness !== undefined) keep.swapHandedness = j.swapHandedness;
+      return keep;
+    }
+    const out = { ...j };
+    delete out._v;
+    return out;
   } catch { return {}; }
 }
 
@@ -96397,10 +96412,10 @@ function RambleHud({ handRef, visionStatus, getCtl, onConfig }) {
       ${row("left", snap && snap.left)}
       ${row("right", snap && snap.right)}
       ${cfg && html`
-        ${slider("pinch on", "pinchOn", 0.1, 1)}
-        ${slider("pinch off", "pinchOff", 0.2, 1.4)}
-        ${slider("touch on", "touchOn", 0.1, 1)}
-        ${slider("touch off", "touchOff", 0.2, 1.4)}
+        ${slider("pinch on", "pinchOn", 0.2, 1.2)}
+        ${slider("pinch off", "pinchOff", 0.4, 1.6)}
+        ${slider("touch on", "touchOn", 0.2, 1.2)}
+        ${slider("touch off", "touchOff", 0.4, 1.6)}
         <div className="ramble-hud-row">
           <button className="th-icon-btn" title="Flip right-hand palm sign" onClick=${() => flipSign("palmSignRight")}>R±</button>
           <button className="th-icon-btn" title="Flip left-hand palm sign" onClick=${() => flipSign("palmSignLeft")}>L±</button>
@@ -96545,6 +96560,17 @@ function RambleView({ info }) {
       }
       stopStream();
       streamRef.current = stream;
+      // Continuity/USB camera streams can die under us (phone sleeps, cable
+      // wiggles, thermal shutoff). Notice it and offer recovery instead of
+      // leaving a frozen last frame that only replugging seems to fix.
+      const track = stream.getVideoTracks && stream.getVideoTracks()[0];
+      if (track) {
+        track.addEventListener("ended", () => {
+          if (streamRef.current !== stream) return;   // superseded already
+          setCamState("error");
+          setCamError("The camera stream stopped (the phone may have slept or disconnected). Reconnect it, then press Enable camera or the restart button.");
+        });
+      }
       const v = videoRef.current;
       if (v) {
         v.srcObject = stream;
@@ -97690,7 +97716,7 @@ function RambleView({ info }) {
     if (visionRef.current) { try { visionRef.current.setConfig(partial); } catch {} }
     try {
       localStorage.setItem(RAMBLE_VISIONCFG_KEY,
-        JSON.stringify({ ...rambleLoadVisionCfg(), ...partial }));
+        JSON.stringify({ ...rambleLoadVisionCfg(), ...partial, _v: RAMBLE_VISIONCFG_V }));
     } catch {}
   }, []);
 
@@ -98205,6 +98231,9 @@ function RambleView({ info }) {
           onChange=${(e) => pickDevice(e.target.value)} title="Camera" aria-label="Camera">
           ${devices.map((d) => html`<option key=${d.deviceId} value=${d.deviceId}>${d.label}</option>`)}
         </select>`}
+        ${camState === "on" && html`<button className="th-icon-btn"
+          title="Restart the camera stream (use when the feed freezes)"
+          onClick=${() => startCamera(deviceId, { fromPick: true })}><${Icon.Refresh}/></button>`}
         <button className="th-icon-btn" data-active=${flipH ? "true" : "false"}
           title="Flip left-right - use when moving a hand right moves it left on screen"
           onClick=${toggleFlipH}><${Icon.Shuffle}/></button>

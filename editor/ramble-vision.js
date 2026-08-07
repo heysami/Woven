@@ -34,12 +34,19 @@ const CDN = {
 const DETECT_INTERVAL_MS = 40;   // ~25fps inference cap (matches logicvision)
 
 const DEFAULT_CONFIG = {
-  // Pinch = thumbTip-indexTip distance / hand scale. Engage below, release above.
-  pinchOn: 0.42,
-  pinchOff: 0.62,
-  // Thumb-to-fingertip touch (menu select). Same hysteresis idea.
-  touchOn: 0.36,
-  touchOff: 0.52,
+  // Pinch = thumbTip-indexTip distance normalized by the index proximal
+  // phalanx length (MCP->PIP). That reference foreshortens together with the
+  // fingers when the hand tilts, unlike the palm length, so the relaxed vs
+  // pinched bands stay separated under real desk-camera angles:
+  // relaxed open hand ~1.2-2.0, actual pinch ~0.2-0.5.
+  pinchOn: 0.7,
+  pinchOff: 1.05,
+  // Consecutive frames under pinchOn required to engage (debounces the
+  // single-frame flickers occluded top-down hands produce).
+  pinchOnFrames: 2,
+  // Thumb-to-fingertip touch (same phalanx normalization).
+  touchOn: 0.55,
+  touchOff: 0.85,
   // Palm flip must hold this long before we latch the new orientation.
   palmLatchMs: 150,
   // Extended-finger test: tip must be this factor further from the wrist than
@@ -142,6 +149,7 @@ function makeHandTracker(cfg) {
     palm: 'down',
     palmCandidate: null,    // { value, since }
     pinchActive: false,
+    pinchOnStreak: 0,       // consecutive frames under pinchOn (debounce)
     thumbTouch: null,
     prevWrist: null,        // { x, y, t } smoothed, for velocity
     vel: { x: 0, y: 0 },
@@ -214,17 +222,25 @@ function trackerUpdate(tr, rawLm, t, hand, chiralitySign) {
   else if (extCount >= 3) pose = 'open';
   else if (extIndex && extCount === 1) pose = 'point';
 
-  // Pinch with hysteresis.
-  const pinchDist = dist2(tips.thumb, tips.index) / scale;
-  if (tr.pinchActive) { if (pinchDist > cfg.pinchOff) tr.pinchActive = false; }
-  else { if (pinchDist < cfg.pinchOn) tr.pinchActive = true; }
+  // Pinch with hysteresis + engage debounce, normalized by the index
+  // proximal phalanx (MCP 5 -> PIP 6) - see DEFAULT_CONFIG for why.
+  const phalanx = Math.max(1e-4, dist2(lm[5], lm[6]));
+  const pinchDist = dist2(tips.thumb, tips.index) / phalanx;
+  if (tr.pinchActive) {
+    if (pinchDist > cfg.pinchOff) { tr.pinchActive = false; tr.pinchOnStreak = 0; }
+  } else if (pinchDist < cfg.pinchOn) {
+    tr.pinchOnStreak += 1;
+    if (tr.pinchOnStreak >= Math.max(1, cfg.pinchOnFrames || 1)) tr.pinchActive = true;
+  } else {
+    tr.pinchOnStreak = 0;
+  }
 
   // Thumb-to-fingertip touch (nearest of the four, hysteresis on the held one).
   const touchD = {
-    index: dist2(tips.thumb, tips.index) / scale,
-    middle: dist2(tips.thumb, tips.middle) / scale,
-    ring: dist2(tips.thumb, tips.ring) / scale,
-    pinky: dist2(tips.thumb, tips.pinky) / scale,
+    index: dist2(tips.thumb, tips.index) / phalanx,
+    middle: dist2(tips.thumb, tips.middle) / phalanx,
+    ring: dist2(tips.thumb, tips.ring) / phalanx,
+    pinky: dist2(tips.thumb, tips.pinky) / phalanx,
   };
   if (tr.thumbTouch && touchD[tr.thumbTouch] <= cfg.touchOff) {
     // keep the current touch until it clearly releases
