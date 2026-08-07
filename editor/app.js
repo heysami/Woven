@@ -96498,19 +96498,44 @@ function RambleView({ info }) {
     streamRef.current = null;
   }, []);
 
-  const startCamera = useCallback(async (id) => {
+  const startCamera = useCallback(async (id, opts) => {
+    const fromPick = !!(opts && opts.fromPick);
     setCamState("starting");
     setCamError("");
     try {
       const fallbackConstraints = { audio: false, video: { width: { ideal: 1920 }, height: { ideal: 1080 } } };
       let stream = null;
       if (id) {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: { exact: id } } });
-        } catch (e) {
-          // Stored device ids rotate between sessions, and Continuity/Desk
-          // View cameras come and go - a stale id throws OverconstrainedError.
-          // Forget it and fall back to the default camera instead of failing.
+        // Continuity / Desk View iPhone cameras wake slowly: the first exact
+        // request can fail transiently. When the user actively PICKED this
+        // device, retry with patience and never silently swap cameras; only
+        // a stored id being restored at startup falls back to the default
+        // (those ids rotate between sessions and go genuinely stale).
+        const attempts = fromPick ? 3 : 1;
+        let lastErr = null;
+        for (let i = 0; i < attempts && !stream; i++) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: { exact: id } } });
+          } catch (e) {
+            lastErr = e;
+            if (i < attempts - 1) await new Promise((r) => setTimeout(r, 900));
+          }
+        }
+        if (!stream) {
+          if (fromPick) {
+            const msg = "Could not open that camera. If it is an iPhone, wake it, keep it nearby, and pick it again."
+              + (lastErr && lastErr.name ? " (" + lastErr.name + ")" : "");
+            if (streamRef.current) {
+              // The previous camera is still running - keep it and just say
+              // why the switch failed instead of dropping to the gate card.
+              setCamState("on");
+              flashStt(msg, true);
+            } else {
+              setCamState("error");
+              setCamError(msg);
+            }
+            return;
+          }
           try { localStorage.removeItem(RAMBLE_CAMERA_KEY); } catch {}
           setDeviceId("");
           stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
@@ -96584,7 +96609,7 @@ function RambleView({ info }) {
   const pickDevice = (id) => {
     setDeviceId(id);
     try { localStorage.setItem(RAMBLE_CAMERA_KEY, id); } catch {}
-    startCamera(id);
+    startCamera(id, { fromPick: true });
   };
   const toggleFlipH = () => {
     setFlipH((m) => {
