@@ -97062,12 +97062,18 @@ function RambleView({ info }) {
       patchRambleWb(ctx.itemId, { text });
       flashStt("“" + text + "”");
     } else if (ctx.kind === "browserQuery") {
-      const t = text.trim();
-      const urlish = /^https?:\/\//i.test(t) || (t.includes(".") && !/\s/.test(t));
+      // Whisper punctuates transcripts ("Stripe.") which made single words
+      // read as domains and open garbage URLs. Strip trailing punctuation and
+      // only treat REAL domain shapes (word.word[/path]) as URLs - everything
+      // else is a search.
+      const t = text.trim().replace(/[.!?,;:]+$/, "");
+      const urlish = /^https?:\/\//i.test(t)
+        || (!/\s/.test(t) && /^[a-z0-9-]+(\.[a-z0-9-]+)+([\/?#].*)?$/i.test(t));
       const url = urlish ? (/^https?:\/\//i.test(t) ? t : "https://" + t)
         : "https://www.google.com/search?q=" + encodeURIComponent(t);
       placeOrGrabRef.current({ kind: "browser", url }, ctx.x, ctx.y);
-      flashStt("Browser: " + url.replace(/^https?:\/\//, "").slice(0, 60));
+      flashStt(urlish ? "Browser: " + url.replace(/^https?:\/\//, "").slice(0, 60)
+        : "Searching: " + t.slice(0, 60));
     } else if (ctx.kind === "imagePrompt") {
       generateImage(text, ctx.x, ctx.y);
     }
