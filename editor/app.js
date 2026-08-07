@@ -96147,7 +96147,7 @@ function RambleEmbed({ item }) {
   return html`
     <div className="ramble-embed ramble-embed-asset" style=${style} data-ramble-item=${item.id}>
       ${pending ? html`<div className="workflow-skeleton workflow-skeleton-block"><span className="workflow-skeleton-label">Generating…</span></div>`
-        : err ? html`<div className="ramble-embed-error">Generation failed</div>`
+        : err ? html`<div className="ramble-embed-error">${node.runError || "Generation failed"}</div>`
         : html`<img src=${apiUrl("/" + node.path)} alt=${node.title || "Generated image"}
             style=${{ width: "100%", height: "100%", objectFit: "contain" }}/>`}
     </div>`;
@@ -96801,7 +96801,9 @@ function RambleView({ info }) {
   const flashStt = useCallback((text, err) => {
     setSttFlash({ text, err });
     clearTimeout(flashTimerRef.current);
-    flashTimerRef.current = setTimeout(() => setSttFlash(null), 2200);
+    // Errors linger longer - a missed 2s flash made real failures look like
+    // silent no-ops.
+    flashTimerRef.current = setTimeout(() => setSttFlash(null), err ? 5000 : 2200);
   }, []);
 
   // Continuity Camera tends to switch the DEFAULT system microphone to the
@@ -96997,9 +96999,32 @@ function RambleView({ info }) {
     flashStt("Placed");
   };
 
+  // /__asset_generate does NOT resolve a default provider when the field is
+  // omitted (that convenience lives in the agent-skill path) - it 400s with
+  // "no renderer for provider=''". Resolve the user's default image model
+  // from /__capabilities once and pass provider+model explicitly.
+  const imageModelRef = useRef(null);
+  const resolveImageModel = useCallback(async () => {
+    if (imageModelRef.current) return imageModelRef.current;
+    try {
+      const r = await fetch(apiUrl("/__capabilities"));
+      const j = r.ok ? await r.json() : null;
+      const d = j && j.defaultImageModel;
+      if (d && d.id && d.provider) { imageModelRef.current = { model: d.id, provider: d.provider }; return imageModelRef.current; }
+    } catch {}
+    try {
+      const models = (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [];
+      const d = models.find((x) => x.default) || models[0];
+      if (d) { imageModelRef.current = { model: d.id, provider: d.provider }; return imageModelRef.current; }
+    } catch {}
+    return null;
+  }, []);
+
   const generateImage = useCallback(async (prompt, wx, wy) => {
     const slug = defaultPrototype();
     if (!slug) { flashStt("No prototype to store the image in", true); return; }
+    const im = await resolveImageModel();
+    if (!im) { flashStt("No image model is configured (Settings)", true); return; }
     const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
     const output = "source/" + slug + "/images/ramble-" + stamp + ".png";
     placeOrGrabRef.current({ kind: "asset", path: output, runStatus: "pending", title: prompt }, wx, wy);
@@ -97008,20 +97033,24 @@ function RambleView({ info }) {
       const r = await fetch(apiUrl("/__asset_generate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ skill: "generate-image", prompt, output, aspect: "1:1", medium: "raster-foreground" }),
+        body: JSON.stringify({
+          skill: "generate-image", provider: im.provider, model: im.model,
+          prompt, output, aspect: "1:1", medium: "raster-foreground",
+        }),
       });
       const j = await r.json().catch(() => null);
       if (r.ok && j && j.ok) {
         patchAssetByPath(output, { runStatus: null });
       } else {
-        patchAssetByPath(output, { runStatus: "error" });
-        flashStt((j && (j.error || j.detail)) || "Image generation failed", true);
+        const msg = (j && (j.error || j.detail)) || ("Image generation failed (" + r.status + ")");
+        patchAssetByPath(output, { runStatus: "error", runError: String(msg).slice(0, 120) });
+        flashStt(msg, true);
       }
     } catch (e) {
-      patchAssetByPath(output, { runStatus: "error" });
+      patchAssetByPath(output, { runStatus: "error", runError: "network error" });
       flashStt("Image generation failed", true);
     }
-  }, [defaultPrototype, patchAssetByPath, flashStt]);
+  }, [defaultPrototype, resolveImageModel, patchAssetByPath, flashStt]);
 
   routeTranscriptRef.current = (ctx, text) => {
     if (!text) { flashStt("Heard nothing", true); return; }
@@ -97392,7 +97421,9 @@ function RambleView({ info }) {
         if (hs.t - it.hold.since >= 1000) {
           const ctx = { kind: "itemUpdate", itemId: it.hold.itemId };
           it.mode = "sttListening";
-          it.stt = { hand: "right", trigger: "pinch" };
+          // itemId rides the stt session so the overlay keeps the target
+          // highlighted + tethered while the user dictates.
+          it.stt = { hand: "right", trigger: "pinch", itemId: it.hold.itemId };
           it.hold = null;
           startStt(ctx, "Update text");
         }
@@ -97444,10 +97475,14 @@ function RambleView({ info }) {
           // Moving hands flap the derived signals (palm misreads, pinch
           // flicker, one-frame dropouts). A single bad frame must NOT reset
           // the menu: freeze, and only commit once the disengagement has
-          // PERSISTED - which is what a real release or flip does. Every
-          // real exit commits the highlighted entry.
-          if (!s.offSince) { s.offSince = hs.t; return; }
-          if (hs.t - s.offSince < 300) return;
+          // PERSISTED. EXCEPTION: a latched palm-down reading is already
+          // debounced by the vision layer's 150ms palm latch, so a real flip
+          // commits INSTANTLY - no laggy flip feel.
+          const confidentFlip = R && !R.stale && R.palm === "down";
+          if (!confidentFlip) {
+            if (!s.offSince) { s.offSince = hs.t; return; }
+            if (hs.t - s.offSince < 300) return;
+          }
           const tool = RAMBLE_TOOL_LIST[Math.round(s.toolIdx)];
           setRightTool(tool);
           if (s.detailed && s.draft) attrsRef.current[tool] = { ...attrsRef.current[tool], ...s.draft };
@@ -97516,10 +97551,13 @@ function RambleView({ info }) {
         const s = it.slider;
         const engaged = L && !L.stale && L.pinch.active && L.palm === "up";
         if (!engaged) {
-          // Same contract as the tool slider: flaps freeze, only persistent
-          // disengagement commits the highlighted type.
-          if (!s.offSince) { s.offSince = hs.t; return; }
-          if (hs.t - s.offSince < 300) return;
+          // Same contract as the tool slider: flaps freeze; a latched flip
+          // commits instantly; other disengagement must persist.
+          const confidentFlip = L && !L.stale && L.palm === "down";
+          if (!confidentFlip) {
+            if (!s.offSince) { s.offSince = hs.t; return; }
+            if (hs.t - s.offSince < 300) return;
+          }
           setLeftTypeRef.current(RAMBLE_TYPE_LIST[Math.round(s.idxF)]);
           it.mode = "idle"; it.slider = null; return;
         }
@@ -98090,6 +98128,47 @@ function RambleView({ info }) {
         ctx.lineDashOffset = 0;
         ctx.fillStyle = "rgba(90,170,255,0.12)";
         ctx.fillRect(a.x, a.y, wpx, hpx);
+      }
+
+      // Item-update target affordance: while pinch-holding an existing item
+      // (and while dictating its update), highlight the item and tether it to
+      // the pinch with an animated dashed line - so there is never a doubt
+      // about WHICH item is being edited.
+      const editTargetId = (it.mode === "itemEditPinch" && it.hold && it.hold.itemId)
+        || (it.mode === "sttListening" && it.stt && it.stt.itemId)
+        || (it.mode === "itemAttrEdit" && it.attrEdit && it.attrEdit.itemId) || null;
+      if (editTargetId && hs && hs.right) {
+        const target = itemsRef.current.find((x) => x.id === editTargetId);
+        let bb = null;
+        if (target) {
+          if (target.kind === "wb") { try { bb = wbItemBBox(target.wb); } catch {} }
+          else if (target.node) bb = { x: target.node.x, y: target.node.y, w: target.node.w || 320, h: target.node.h || 240 };
+        }
+        if (bb) {
+          const tl = worldToScreen(bb.x, bb.y);
+          const bw = bb.w * cam.z, bh = bb.h * cam.z;
+          const pulse = 0.55 + 0.35 * Math.sin(now / 180);
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(tl.x - 6, tl.y - 6, bw + 12, bh + 12, 10);
+          else ctx.rect(tl.x - 6, tl.y - 6, bw + 12, bh + 12);
+          ctx.strokeStyle = "rgba(51,160,111," + pulse.toFixed(2) + ")";
+          ctx.lineWidth = 3;
+          ctx.stroke();
+          // Animated tether from the pinch to the item edge.
+          const pp = rambleToScreen(m, hs.right.pinch.x, hs.right.pinch.y);
+          const cx1 = Math.max(tl.x, Math.min(tl.x + bw, pp.x));
+          const cy1 = Math.max(tl.y, Math.min(tl.y + bh, pp.y));
+          ctx.beginPath();
+          ctx.moveTo(pp.x, pp.y);
+          ctx.lineTo(cx1, cy1);
+          ctx.setLineDash([7, 6]);
+          ctx.lineDashOffset = -(now / 30) % 13;
+          ctx.strokeStyle = "rgba(51,160,111,0.9)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.lineDashOffset = 0;
+        }
       }
 
       // 1s hold progress rings (dictate new text / update item).

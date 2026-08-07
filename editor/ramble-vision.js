@@ -56,8 +56,10 @@ const DEFAULT_CONFIG = {
   // pinch lets go sooner in that orientation.
   pinchOffUpFactor: 0.72,
   // No pinch ENGAGEMENT while edge-on or this soon after a palm flip - the
-  // rotating hand's collapsed landmarks read as phantom pinches.
-  flipGuardMs: 250,
+  // rotating hand's collapsed landmarks read as phantom pinches. Kept SHORT:
+  // the edge-on state already covers the rotation itself, and a long tail
+  // reads as post-flip deadness when pinching right after a flip.
+  flipGuardMs: 100,
   // Thumb-to-fingertip touch (same phalanx normalization).
   touchOn: 0.55,
   touchOff: 0.85,
