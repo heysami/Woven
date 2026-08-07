@@ -262,7 +262,17 @@ The contract has two halves and the split is load-bearing:
       "materialDirective": "<how the surface's material reads, consistent with the chrome>",
       "motionBound": "<the surface MAY be more kinetic than the chrome, but bounded by this - e.g. 'gentle spring, soft bloom; no hard arcade snap'>",
       "registerNote": "<one line: the surface's feel as a translation of the contract, e.g. 'a calm bioluminescent care surface, not a juicy arcade game'>",
-      "compositionNote": "<how it sits in the frame: full-bleed | inset panel | behind-chrome>"
+      "compositionNote": "<how it sits in the frame: full-bleed | inset panel | behind-chrome>",
+      "motionPlate": {
+        // OPTIONAL - populated by §4.7 in the finalize dispatch, ONLY when a video provider is
+        // wired AND this surface's family is motion-benefiting (§4.7 roster). The TEMPORAL half
+        // of this surface's brief: a short i2v clip animated FROM the chosen plate, plus what it
+        // actually shows. Absent = no video provider / non-motion family; downstream falls back
+        // to the prose motionBound alone.
+        "path": "workflow/artdirection/motion-<surfaceId>.mp4",
+        "observedMotion": "<what the clip ACTUALLY shows, read off the frames: pacing band, energy level, camera behaviour, what moves and how - e.g. 'slow drift, one luminous focal breathing, camera static; nothing snaps'>",
+        "promptUsed": "<the five-clause motion prompt the clip was generated from>"
+      }
     }
     // ... one per approvedOwnsSurface entry
   },
@@ -366,6 +376,8 @@ So: **do not emit the gate. RETURN the `<direction-options>` block below verbati
 
 In your `mode: "plate"` dispatch you STOP after returning the `gateBlock`. You author NO contract and crop NOTHING - those happen only in the `mode: "finalize"` dispatch, after the pick. A single-plate set still uses `<direction-options>` (one plate `<opt>` + steer + reject) - never `<decision-request>`. Approval covers THIS build pass.
 
+**Disclose the motion-plate cost at this gate.** When `GET /__capabilities` reports a non-empty `videoModels` AND `approvedOwnsSurface` contains at least one motion-benefiting family (§4.7 roster), append one sentence to the gate's `prompt` attribute: "Picking a plate will also generate one short motion plate (~4s video) per <surface name(s)> to lock its motion feel before the build." The pick then authorizes that spend the same way it authorizes the §4.5 crops - no second gate.
+
 ## 4.5 Phase C.5 - (mode: finalize) DETECT + crop the reference regions FIRST - this is the close-read that grounds the contract
 
 Runs in the `mode: "finalize"` dispatch (the caller re-dispatched you with `chosenPlate: <n>` after the pick). **Crop BEFORE you author the contract (§4.6), not after.** Isolating the real objects IS the inspection: you cannot write an accurate `extracted` (palette ratios, composition, material, type construction) or a useful `crossSurfaceContract` from a vague overall glance - you write it from having actually cut out and examined the person, the UI, and the key items. So detect + crop here, then author the contract in §4.6 from what you found.
@@ -394,9 +406,53 @@ curl -fsS -X POST "$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID" -H "C
 
 ## 4.6 Phase C.6 - (mode: finalize) author + write the contract, GROUNDED in the §4.5 crops
 
-Now author the full contract (the §3 schema) from the chosen plate, using the crops you just took as the close-read: `extracted` palette/ratios/value/material/composition read off the real isolated regions (the UI crop tells you the component + composition truth; the subject crop tells you the human register), `typeConstruction` off the rendered display/body text, `authored` harmonised with all of it. **This is the first write to disk for the direction.** Also author `buildRegister` here from the CHOSEN plate, same derivation discipline as the rest of the contract: derive the build-brief vocabulary from the plate + each downstream slot's actual behaviour (name each thing by its craft/model, not its look), set the `cadence` the plate implies, and keep the `antiVoice` guards - ship the METHOD, never a fixed word list. This governs the language of build briefs, NOT shipped copy (that is `voice`). Set `platePath` = the chosen plate, `candidatesConsidered` = the set, and populate `itemReferences[]` from §4.5 - each `{ itemId, role: "subject"|"ui"|"item"|"decoration", refPath, matchesSlots, bboxNote }`. Write `workflow/art-direction-contract.json` ONCE, fully populated (no later patch step). Because finalize only runs after a `plate-<n>` pick, no stale contract is ever left for a steered/rejected direction.
+Now author the full contract (the §3 schema) from the chosen plate, using the crops you just took as the close-read: `extracted` palette/ratios/value/material/composition read off the real isolated regions (the UI crop tells you the component + composition truth; the subject crop tells you the human register), `typeConstruction` off the rendered display/body text, `authored` harmonised with all of it. **This is the first write to disk for the direction.** Also author `buildRegister` here from the CHOSEN plate, same derivation discipline as the rest of the contract: derive the build-brief vocabulary from the plate + each downstream slot's actual behaviour (name each thing by its craft/model, not its look), set the `cadence` the plate implies, and keep the `antiVoice` guards - ship the METHOD, never a fixed word list. This governs the language of build briefs, NOT shipped copy (that is `voice`). Set `platePath` = the chosen plate, `candidatesConsidered` = the set, and populate `itemReferences[]` from §4.5 - each `{ itemId, role: "subject"|"ui"|"item"|"decoration", refPath, matchesSlots, bboxNote }`. **When §4.7 qualifies (video provider wired + at least one motion-benefiting owns-surface), run §4.7's clip generation + inspection BEFORE this write** so each `surfaceContracts[*].motionPlate` is populated in the same single write. Write `workflow/art-direction-contract.json` ONCE, fully populated (no later patch step). Because finalize only runs after a `plate-<n>` pick, no stale contract is ever left for a steered/rejected direction.
 
 Downstream consumption is by `role`: entries with a non-empty `matchesSlots` (subject / item / recurring decoration) are i2i references - the illustration/photography enrichers copy `refPath` into the matched slot's `refImagePath`, visual-orchestrator carries it onto the skill node, raster-foreground POSTs it as `input_path`. The `role: "ui"` entry has no `matchesSlots`; the build's component/layout step and the aesthetic-lens read it as the composition ground-truth. No new plumbing.
+
+## 4.7 Phase C.7 - (mode: finalize) MOTION PLATE - animate the chosen plate for motion-bearing owns-surfaces
+
+A still plate locks composition, palette, and material - it cannot lock **pacing, energy, juice, or transition feel**, which is exactly the register the motion-bearing families commit in their research step and the user currently approves blind. This phase closes that gap: per qualifying approved owns-surface, animate the CHOSEN plate into one short clip (i2v), read what the clip actually does, and write it into that surface's `surfaceContracts` entry as the binding temporal register.
+
+**Gating - all three, else skip the phase silently (motion plates are an enhancement, never fail-closed like §1):**
+
+1. `GET /__capabilities` → `videoModels` is non-empty (a video provider is wired).
+2. `approvedOwnsSurface` contains at least one **motion-benefiting family**. The roster, and what the clip must demonstrate for each:
+   - `narrative-experience` - the emotional + pacing register: camera drifting through the place, light shifting, ambient breathing. What being there FEELS like over time.
+   - `game-experience` - the juice register: ONE action landing (impact, particle burst, screen energy) at the committed energy level - the Vlambeer-juicy vs contemplative-restraint axis in pixels.
+   - `interactive-media` - the response feel: an implied input (hand, pointer, pulse) and the visual answering it - the mapping energy (direct snap vs accumulative drift).
+   - `motion-studio` - the transition register: one scene beat moving at the intended cinematic pacing; this clip is ALSO a legal i2v reference for its concept plates downstream.
+   - `scene-3d` - the ambient idle: material under motion (glass refracting, cloth swaying) + the idle energy band.
+   Simulation and scrapbook are deliberately OFF this roster (sim registers are paradigm-driven, scrapbook motion is subtle drift a still implies fine) - do not generate clips for them.
+3. The §4 gate already disclosed the clip cost and the user picked a plate (this phase runs only in `mode: "finalize"`).
+
+**Generate - one clip per qualifying surface, i2v-conditioned on the chosen plate:**
+
+```bash
+curl -fsS -m 900 -X POST "$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID" -H "Content-Type: application/json" -d '{
+  "skill":"video-gen",
+  "prompt":"<five-clause motion prompt - see below>",
+  "output":"source/<branch>/_artdir/motion-<surfaceId>.mp4",
+  "aspect":"16:9",
+  "options":{"duration":4},
+  "input_path":"source/<branch>/_artdir/north-star-<chosen>.png"}'
+# then copy to the canonical served planning path + commit a video asset node (race-safe append):
+cp "$TH_PROJECT_ROOT/source/<branch>/_artdir/motion-<surfaceId>.mp4" "$TH_PROJECT_ROOT/workflow/artdirection/motion-<surfaceId>.mp4"
+curl -fsS -X POST "$TH_DAEMON_URL/__workflow/nodes/add?project=$TH_PROJECT_ID" -H "Content-Type: application/json" -d '{
+  "addNodes":[{"id":"ad_motion_<projectId>_<surfaceId>","kind":"asset","assetKind":"video",
+    "title":"Motion plate - <surface label>","path":"workflow/artdirection/motion-<surfaceId>.mp4",
+    "projectId":"<project>","runStatus":"done"}],
+  "addEdges":[{"from":"ad_plate_<projectId>_<chosen>","to":"ad_motion_<projectId>_<surfaceId>"},
+              {"from":"ad_motion_<projectId>_<surfaceId>","to":"ad_contract_<projectId>"}]}'
+```
+
+- `input_path` is the i2v lever: the daemon converts it to the provider's `image_url` and auto-promotes a text-only model to its image-to-video sibling, so the clip's world IS the approved plate's world. OMIT `model` - the daemon default applies (1V-video.md rules).
+- The **prompt** follows 1V-video.md's five clauses (subject / composition / MOTION / lighting / palette), where clause 3 carries the surface's intended feel translated from the plate's DNA + the surface's `motionBound` draft: name a specific motion at a specific energy ("one soft impact ripple, slow settle, nothing snaps" / "camera slow-drifts left through the space, dust motes rise"). Generic motion phrases produce generic clips.
+- `duration: 4` always - this is a register sample, not content. Do NOT re-fire on silence (video renders take 30s-10min; re-firing double-bills). One retry on a hard error; after that, drop `motionPlate` for that surface and note it in the hand-off - never block finalize on a clip.
+
+**Inspect - never trust the prompt, read the frames.** Extract first / middle / last frames (`ffmpeg -y -i motion-<surfaceId>.mp4 -vf "select='eq(n,0)+eq(n,48)+eq(n,95)'" -vsync vsync_passthrough -frames:v 3 f-%d.png` - ffmpeg availability is in `/__capabilities`; adjust frame indices to the clip's actual length) and Read them. Write what the clip ACTUALLY shows into `surfaceContracts[<surfaceId>].motionPlate.observedMotion` - pacing band, energy, camera behaviour, what moves. If the clip's energy contradicts the intended register (arcade snap where calm was briefed), regenerate ONCE with a corrected clause 3; if still wrong, keep the better of the two and say so in `observedMotion`.
+
+**This phase runs BEFORE §4.6 writes the contract file** (generate clips right after the §4.5 crops, while the contract is still in memory), so `workflow/art-direction-contract.json` is still written ONCE, fully populated - the §4.6 "no later patch step" rule holds. Motion plates are planning artefacts under `bindingRules.plateIsNotAnAsset` exactly like the stills: the runtime never loads them; a surface that wants shipped video commissions it through its own family pipeline, i2v-conditioned on the plate.
 
 ## 5. Phase D - (mode: finalize) wire the contract node into the build chain
 
@@ -475,7 +531,7 @@ There are TWO hand-off shapes, one per mode.
     "/prototype skill (step-tokens/layout/optical/components/content/motion): read art-direction-contract.json when present; it outranks the recipe template. step-tokens binds the display/body font from authored.typography.familyResolution (the construction-matched variant), not the abstract family name",
     "illustration/photography/visual/material orchestrators: read crossSurfaceContract.sharedPaletteHexes + imageryRegister + materialDirective when the contract exists",
     "illustration/photography enrichers + visual-orchestrator: when itemReferences[] is non-empty, set each matched slot's refImagePath to the item's refPath - this rides the EXISTING v3.6 reference/input_path channel (raster-foreground already POSTs input_path to the i2i edit endpoint), so no new gen plumbing is required",
-    "owns-surface orchestrators (game/sim/motion-studio/interactive-media/narrative/scrapbook/scene-3d): their research step reads surfaceContracts[<theirContainerId>] (falling back to crossSurfaceContract) and commits a register that is a TRANSLATION of it, never an independent pick - AND seeds its slot's deliverables.json from formatCommitments: every applicable entry becomes a ledger item (status=owed) alongside the routes research itself commits, so the final qa_gate audits the art contract's format promises with the same mechanical check as research's own (bindingRules.formatCommitmentsAreHard)",
+    "owns-surface orchestrators (game/sim/motion-studio/interactive-media/narrative/scrapbook/scene-3d): their research step reads surfaceContracts[<theirContainerId>] (falling back to crossSurfaceContract) and commits a register that is a TRANSLATION of it, never an independent pick - and when the entry carries a motionPlate (§4.7), observedMotion binds the TEMPORAL register (pacing/juice/response/transition/ambient energy) the same way inheritPaletteHexes binds the palette, with motionPlate.path passed into the research envelope as the motion reference - AND seeds its slot's deliverables.json from formatCommitments: every applicable entry becomes a ledger item (status=owed) alongside the routes research itself commits, so the final qa_gate audits the art contract's format promises with the same mechanical check as research's own (bindingRules.formatCommitmentsAreHard)",
     "aesthetic-lens: when a contract exists, score cross-register coherence (chrome vs imagery vs owns-surface) against it, not only per-slot conformance"
   ]
 }
@@ -510,7 +566,7 @@ The contract is only half the fix. The other half is letting `aesthetic-lens` **
 - **You do not generate the slot assets.** visual-orchestrator does, later, reading your `crossSurfaceContract`.
 - **You do not run lens trios.** You produce the contract the final lens judges against.
 - **You do not run when image generation is unavailable.** Fail closed.
-- **You do not ship the plate.** It lives in `workflow/`, never referenced by the runtime.
+- **You do not ship the plate - still or motion.** Plates and §4.7 motion plates live in `workflow/`, never referenced by the runtime. A surface that wants shipped video commissions it through its own family pipeline.
 
 ## 10. Quick reference - who commits what
 
@@ -520,7 +576,8 @@ The contract is only half the fix. The other half is letting `aesthetic-lens` **
 | §3 | per-candidate gate preview held in memory (NO file written) | YOU | plate |
 | §4 | RETURN `gateBlock` in hand-off → **CALLER emits** `<direction-options>` → user picks | CALLER emits / USER decides | plate |
 | §4.5 | DETECT + crop the reference regions FIRST (subject + UI sample + key items, NOT just text stickers) → `source/<branch>/_artdir_refs/*.png` | YOU | finalize |
-| §4.6 | author + write `workflow/art-direction-contract.json` GROUNDED in the §4.5 crops; `itemReferences[]` populated (role: subject/ui/item/decoration) | YOU | finalize |
+| §4.7 | MOTION PLATE per motion-benefiting owns-surface (video provider wired only): i2v clip from the chosen plate → `workflow/artdirection/motion-<surfaceId>.mp4` + `ad_motion_*` video node; frames inspected → `surfaceContracts[*].motionPlate` | YOU | finalize |
+| §4.6 | author + write `workflow/art-direction-contract.json` GROUNDED in the §4.5 crops (+ §4.7 motionPlate blocks when they ran); `itemReferences[]` populated (role: subject/ui/item/decoration) | YOU | finalize |
 | §5 | `ad_contract_<projectId>` image asset node, edge-wired plates→contract→prototype | YOU | finalize |
 | §6 | (hand-off envelope, one shape per mode) | YOU | both |
 | Later | `/prototype` build reads the contract | CALLER | own scope |
