@@ -97438,32 +97438,40 @@ function RambleView({ info }) {
       // value; release commits tool + dialed attributes together.
       case "toolSlider": {
         const s = it.slider;
-        if (R && R.stale && R.pinch.active) return;   // dropout: wait out the grace
         const engaged = R && !R.stale && R.pinch.active && R.palm === "up";
         if (!engaged) {
-          // EVERY exit commits the highlighted entry - release, hand-lost,
-          // and the palm flip. Top-down cameras cannot reliably see a palm-up
-          // pinch release (fingertips point at the lens), so the natural
-          // "highlight, then flip down to use the tool" motion IS the commit.
-          if (s) {
-            const tool = RAMBLE_TOOL_LIST[Math.round(s.toolIdx)];
-            setRightTool(tool);
-            if (s.detailed && s.draft) attrsRef.current[tool] = { ...attrsRef.current[tool], ...s.draft };
-          }
+          // Moving hands flap the derived signals (palm misreads, pinch
+          // flicker, one-frame dropouts). A single bad frame must NOT reset
+          // the menu: freeze, and only commit once the disengagement has
+          // PERSISTED - which is what a real release or flip does. Every
+          // real exit commits the highlighted entry.
+          if (!s.offSince) { s.offSince = hs.t; return; }
+          if (hs.t - s.offSince < 300) return;
+          const tool = RAMBLE_TOOL_LIST[Math.round(s.toolIdx)];
+          setRightTool(tool);
+          if (s.detailed && s.draft) attrsRef.current[tool] = { ...attrsRef.current[tool], ...s.draft };
           it.mode = "idle"; it.slider = null; return;
         }
+        s.offSince = 0;
         // Scrub only while the pinch is SOLID (fully closed). In the
         // hysteresis dead zone - where a palm-up release hides from a
         // top-down camera - the highlight freezes, so a hidden release can
         // never drift the selection before the commit flip.
         if (!R.pinch.solid) return;
         const p = rambleToScreen(m, R.pinch.x, R.pinch.y);
-        const wasDetailed = s.detailed;
-        s.detailed = !!(L && !L.stale && L.palm === "up");
-        if (s.detailed) {
+        // The detailed panel is likewise sticky: it opens the moment the left
+        // palm shows up, but only closes after the left palm has been
+        // confidently gone for a while - a left-hand tracking flap must not
+        // collapse the rows mid-dial.
+        const leftUp = !!(L && !L.stale && L.palm === "up");
+        if (leftUp) {
+          s.leftOffSince = 0;
+          if (!s.detailed) { s.detailed = true; s.rowAnchorY = p.y; s.curRow = 0; }
           const pc = rambleToScreen(m, L.landmarks[9].x, L.landmarks[9].y);
           s.panel = { x: pc.x, y: pc.y };
-          if (!wasDetailed) { s.rowAnchorY = p.y; s.curRow = 0; }
+        } else if (s.detailed) {
+          if (!s.leftOffSince) s.leftOffSince = hs.t;
+          else if (hs.t - s.leftOffSince > 300) { s.detailed = false; s.leftOffSince = 0; }
         }
         const curTool = RAMBLE_TOOL_LIST[Math.round(s.toolIdx)];
         const attrs = RAMBLE_TOOL_ATTRS[curTool] || [];
@@ -97505,16 +97513,16 @@ function RambleView({ info }) {
       // Left palm-up pinch: insert type slider (prototype / browser / image).
       case "typeSlider": {
         const s = it.slider;
-        if (L && L.stale && L.pinch.active) return;   // dropout: wait out the grace
         const engaged = L && !L.stale && L.pinch.active && L.palm === "up";
         if (!engaged) {
-          // Same contract as the tool slider: every exit (release, hand-lost,
-          // palm flip) commits the highlighted type.
-          if (s) {
-            setLeftTypeRef.current(RAMBLE_TYPE_LIST[Math.round(s.idxF)]);
-          }
+          // Same contract as the tool slider: flaps freeze, only persistent
+          // disengagement commits the highlighted type.
+          if (!s.offSince) { s.offSince = hs.t; return; }
+          if (hs.t - s.offSince < 300) return;
+          setLeftTypeRef.current(RAMBLE_TYPE_LIST[Math.round(s.idxF)]);
           it.mode = "idle"; it.slider = null; return;
         }
+        s.offSince = 0;
         if (!L.pinch.solid) return;   // freeze in the release dead zone
         const p = rambleToScreen(m, L.pinch.x, L.pinch.y);
         s.idxF = Math.max(0, Math.min(RAMBLE_TYPE_LIST.length - 1, s.startIdx + (p.x - s.xAnchor) / RAMBLE_SLIDER_STEP_X));
@@ -97556,11 +97564,14 @@ function RambleView({ info }) {
       case "protoSlider": {
         const s = it.slider;
         const list = protosRef.current;
-        if (L && L.stale && L.pinch.active) return;   // dropout: wait out the grace
-        if (!L || !L.pinch.active) {
-          // Release or hand-lost both pick; there is no palm-flip abort here
-          // (flipping up just means the pick lands grabbed instead of placed).
-          if (s && list.length) {
+        if (!L || !L.pinch.active || L.stale) {
+          // Release or hand-lost both pick - but only once the disengagement
+          // persists, so tracking flaps can't fire a premature pick. There is
+          // no palm-flip abort here (flipping up just means the pick lands
+          // grabbed instead of placed).
+          if (!s.offSince) { s.offSince = hs.t; return; }
+          if (hs.t - s.offSince < 300) return;
+          if (list.length) {
             const pick = list[Math.max(0, Math.min(list.length - 1, Math.round(s.idxF)))];
             const w = toWorld(s.lastNorm.x, s.lastNorm.y);
             placeOrGrabRef.current({ kind: "prototype", prototype: pick.id }, w.x, w.y);
@@ -97568,6 +97579,7 @@ function RambleView({ info }) {
           }
           it.mode = "idle"; it.slider = null; return;
         }
+        s.offSince = 0;
         if (!L.pinch.solid) return;   // freeze in the release dead zone
         const sp = rambleToScreen(m, L.pinch.x, L.pinch.y);
         s.idxF = Math.max(0, Math.min(list.length - 1, s.startIdx + (sp.x - s.xAnchor) / RAMBLE_SLIDER_STEP_X));
