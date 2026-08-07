@@ -31904,6 +31904,41 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   background: var(--accent, #33a06f); color: #fff;
   font-size: 12px; font-weight: 600;
 }
+.ramble-calib {
+  position: absolute; inset: 0; z-index: 8;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+.ramble-calib-card {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  min-width: 320px; max-width: 420px; padding: 26px 30px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 16px;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+.ramble-calib-step { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; }
+.ramble-calib-title { font-size: 20px; font-weight: 700; }
+.ramble-calib-body { font-size: 13px; opacity: 0.75; }
+.ramble-calib-count {
+  font-size: 34px; font-weight: 700; line-height: 1;
+  color: var(--accent, #33a06f); margin: 6px 0 2px;
+}
+.ramble-calib-hands { display: flex; gap: 12px; font-size: 12px; }
+.ramble-calib-hands span { opacity: 0.4; }
+.ramble-calib-hands span[data-on="true"] { opacity: 1; color: var(--accent, #33a06f); font-weight: 600; }
+.ramble-calib-cancel {
+  appearance: none; border: 1px solid var(--border); background: transparent;
+  color: var(--text); border-radius: 8px; padding: 5px 14px; margin-top: 8px;
+  cursor: pointer; font-size: 12px;
+}
+.ramble-calib-hint {
+  position: absolute; top: 46px; left: 50%; transform: translateX(-50%);
+  z-index: 6; appearance: none; cursor: pointer;
+  padding: 7px 14px; border-radius: 999px;
+  background: rgba(23, 48, 38, 0.92); color: #cdeeda;
+  border: 1px solid rgba(126, 226, 160, 0.4); font-size: 12px;
+}
 .ut-screen-titles { display: flex; flex-direction: column; gap: 1px; line-height: 1.1; }
 .ut-screen-title { font-size: 14px; font-weight: 600; }
 .ut-screen-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }

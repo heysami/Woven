@@ -324,6 +324,9 @@ function trackerUpdate(tr, rawLm, t, hand, chiralitySign) {
   tr.lastFrame = {
     landmarks: lm,
     palm: tr.palm,
+    // Raw palm signal (chirality-adjusted, BEFORE the per-hand sign): the
+    // calibration flow samples this to pin palmSignLeft/Right empirically.
+    palmCross: (cross * (chiralitySign || 1)) / (scale * scale),
     pose,
     pinch: {
       active: tr.pinchActive,

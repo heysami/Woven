@@ -96245,6 +96245,7 @@ function rambleMakeDebugHand(opts) {
   return {
     landmarks: lm,
     palm: opts.palm || "down",
+    palmCross: (opts.palm === "up" ? 0.5 : -0.5),
     pose: opts.pose || (pinchActive ? "partial" : "open"),
     pinch: {
       active: pinchActive,
@@ -96432,6 +96433,71 @@ function RambleHud({ handRef, visionStatus, getCtl, onConfig }) {
             <option value="off">swap: off</option>
           </select>
         </div>`}
+    </div>`;
+}
+
+// Guided 4-step hand calibration (~12s): samples the USER's relaxed and
+// pinched hands, palms up and down, near and far, and derives their personal
+// pinch bands + palm signs. Replaces every guessed threshold - gestures are
+// only as good as this data.
+const RAMBLE_CALIB_STEPS = [
+  { id: "upOpen", title: "Hands open, palms UP", body: "Both hands over the desk, fingers relaxed", ms: 3000 },
+  { id: "downOpen", title: "Flip palms DOWN", body: "Both hands, stay relaxed", ms: 3000 },
+  { id: "pinchFar", title: "Pinch and hold", body: "Thumb and index together, both hands, palms down", ms: 3000 },
+  { id: "pinchNear", title: "Keep pinching, raise hands", body: "Bring the pinches closer to the camera", ms: 3000 },
+];
+
+function RambleCalibration({ handRef, samplerRef, onDone, onCancel }) {
+  const [stepIdx, setStepIdx] = useState(0);
+  const [remaining, setRemaining] = useState(RAMBLE_CALIB_STEPS[0].ms);
+  const [seen, setSeen] = useState({ left: false, right: false });
+  const samplesRef = useRef({});
+  useEffect(() => {
+    const step = RAMBLE_CALIB_STEPS[stepIdx];
+    if (!step) return;
+    const bucket = samplesRef.current[step.id] = samplesRef.current[step.id] || { left: [], right: [] };
+    const started = performance.now();
+    // Samples ride the hand-frame stream itself (consumeHand calls this per
+    // frame) - aligned with the data and immune to timer throttling; the
+    // interval below only drives the countdown UI and step advancement.
+    // The first 800ms of every step is DISCARDED: people need a beat to
+    // change pose after the prompt appears, and those transition frames
+    // would poison the buckets.
+    samplerRef.current = (hs) => {
+      if (performance.now() - started < 800) return;
+      for (const hand of ["left", "right"]) {
+        const f = hs && hs[hand];
+        if (f && !f.stale) bucket[hand].push({ dist: f.pinch.dist, cross: f.palmCross || 0 });
+      }
+    };
+    const t = setInterval(() => {
+      const hs = handRef.current;
+      setSeen({ left: !!(hs && hs.left), right: !!(hs && hs.right) });
+      const left = step.ms - (performance.now() - started);
+      setRemaining(Math.max(0, left));
+      if (left <= 0) {
+        clearInterval(t);
+        samplerRef.current = null;
+        if (stepIdx + 1 < RAMBLE_CALIB_STEPS.length) setStepIdx(stepIdx + 1);
+        else onDone(samplesRef.current);
+      }
+    }, 120);
+    return () => { clearInterval(t); samplerRef.current = null; };
+  }, [stepIdx, handRef, samplerRef, onDone]);
+  const step = RAMBLE_CALIB_STEPS[stepIdx];
+  return html`
+    <div className="ramble-calib">
+      <div className="ramble-calib-card">
+        <div className="ramble-calib-step">Calibration · step ${stepIdx + 1} of ${RAMBLE_CALIB_STEPS.length}</div>
+        <div className="ramble-calib-title">${step.title}</div>
+        <div className="ramble-calib-body">${step.body}</div>
+        <div className="ramble-calib-count">${Math.ceil(remaining / 1000)}</div>
+        <div className="ramble-calib-hands">
+          <span data-on=${seen.left ? "true" : "false"}>left hand</span>
+          <span data-on=${seen.right ? "true" : "false"}>right hand</span>
+        </div>
+        <button type="button" className="ramble-calib-cancel" onClick=${onCancel}>Cancel</button>
+      </div>
     </div>`;
 }
 
@@ -96805,6 +96871,7 @@ function RambleView({ info }) {
     // silent no-ops.
     flashTimerRef.current = setTimeout(() => setSttFlash(null), err ? 5000 : 2200);
   }, []);
+
 
   // Continuity Camera tends to switch the DEFAULT system microphone to the
   // iPhone - which, propped as a desk camera, records near-silence. Prefer
@@ -97274,8 +97341,10 @@ function RambleView({ info }) {
   // hold it), so the actual logic hangs off a ref refreshed every render.
   const processRef = useRef(null);
   const debugModeRef = useRef(false);
+  const calibSamplerRef = useRef(null);   // calibration taps the frame stream
   const consumeHand = useCallback((hs) => {
     handRef.current = hs;
+    if (calibSamplerRef.current) { try { calibSamplerRef.current(hs); } catch {} }
     const it = interactRef.current;
     const before = it.mode;
     if (processRef.current) processRef.current(hs);
@@ -97838,6 +97907,59 @@ function RambleView({ info }) {
     } catch {}
   }, []);
 
+  // Guided calibration: measure THIS user's hands and derive their pinch
+  // bands + palm signs; universal defaults only exist until this runs once.
+  const [calibOpen, setCalibOpen] = useState(false);
+  const [calibrated, setCalibrated] = useState(() => !!rambleLoadVisionCfg()._calibrated);
+  const finishCalibration = useCallback((samples) => {
+    setCalibOpen(false);
+    const pctOf = (arr, p) => {
+      if (!arr.length) return null;
+      const s = [...arr].sort((a, b) => a - b);
+      return s[Math.min(s.length - 1, Math.floor(p * s.length))];
+    };
+    const dists = (ids) => {
+      const out = [];
+      for (const id of ids) {
+        const b = samples[id];
+        if (b) { out.push(...b.left.map((s) => s.dist), ...b.right.map((s) => s.dist)); }
+      }
+      return out;
+    };
+    const relaxed = dists(["upOpen", "downOpen"]);
+    const pinched = dists(["pinchFar", "pinchNear"]);
+    if (relaxed.length < 15 || pinched.length < 15) {
+      flashStt("Calibration failed - hands were not visible enough, try again", true);
+      return;
+    }
+    const pinchedHi = pctOf(pinched, 0.9);
+    const relaxedLo = pctOf(relaxed, 0.1);
+    if (!(pinchedHi < relaxedLo - 0.1)) {
+      flashStt("Calibration failed - pinched and relaxed looked the same, try again", true);
+      return;
+    }
+    const gap = relaxedLo - pinchedHi;
+    const cfg = {
+      pinchOn: Math.max(0.12, pinchedHi + gap * 0.3),
+      pinchOff: pinchedHi + gap * 0.6,
+      touchOn: Math.max(0.12, pinchedHi + gap * 0.3),
+      touchOff: pinchedHi + gap * 0.6,
+      _calibrated: true,
+    };
+    for (const hand of ["left", "right"]) {
+      const up = ((samples.upOpen || {})[hand] || []).map((s) => s.cross);
+      const down = ((samples.downOpen || {})[hand] || []).map((s) => s.cross);
+      if (up.length > 5 && down.length > 5) {
+        const d = pctOf(up, 0.5) - pctOf(down, 0.5);
+        if (Math.abs(d) > 0.05) cfg[hand === "left" ? "palmSignLeft" : "palmSignRight"] = d > 0 ? 1 : -1;
+      }
+    }
+    updateVisionConfig(cfg);
+    setCalibrated(true);
+    flashStt("Calibrated: pinch below " + cfg.pinchOn.toFixed(2) + ", release past " + cfg.pinchOff.toFixed(2));
+  }, [updateVisionConfig, flashStt]);
+
+
   // Overlay: one rAF loop, screen space, DPR-aware. Draws the hand skeleton
   // dots + pinch rings (interaction feedback grows here in later phases).
   useEffect(() => {
@@ -98390,6 +98512,12 @@ function RambleView({ info }) {
           onChange=${(e) => pickDevice(e.target.value)} title="Camera" aria-label="Camera">
           ${devices.map((d) => html`<option key=${d.deviceId} value=${d.deviceId}>${d.label}</option>`)}
         </select>`}
+        ${camState === "on" && html`<button type="button" className="go-live-btn ramble-calib-btn"
+          style=${{ background: "var(--bg)", borderColor: "var(--border)", color: "var(--text)" }}
+          title="Calibrate gestures to YOUR hands (about 12 seconds) - measures relaxed vs pinched and palm up vs down"
+          onClick=${() => setCalibOpen(true)}>
+          <span className="go-live-label">Calibrate</span>
+        </button>`}
         ${camState === "on" && html`<button className="th-icon-btn"
           title="Restart the camera stream (use when the feed freezes)"
           onClick=${() => startCamera(deviceId, { fromPick: true })}><${Icon.Refresh}/></button>`}
@@ -98446,6 +98574,12 @@ function RambleView({ info }) {
           <span>Deleted</span>
           <button type="button" onClick=${undoDelete}>Undo</button>
         </div>`}
+        ${camState === "on" && !calibrated && !calibOpen && html`
+          <button type="button" className="ramble-calib-hint" onClick=${() => setCalibOpen(true)}>
+            Gestures feel off? Calibrate to your hands - 12 seconds
+          </button>`}
+        ${calibOpen && html`<${RambleCalibration} handRef=${handRef} samplerRef=${calibSamplerRef}
+          onDone=${finishCalibration} onCancel=${() => setCalibOpen(false)}/>`}
         ${hudOpen && html`<${RambleHud} handRef=${handRef} visionStatus=${visionStatus}
           getCtl=${() => visionRef.current} onConfig=${updateVisionConfig}/>`}
         ${visionStatus === "failed" && html`<div className="ramble-vision-warn">
