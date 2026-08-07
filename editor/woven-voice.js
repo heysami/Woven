@@ -320,7 +320,13 @@
         }
         return acquire.then(function (stream) {
           recorderStream = stream;
-          recorderChunks = [];
+          // The chunk array must be captured by the ondataavailable CLOSURE,
+          // not read through the module variable: listenStop() nulls
+          // recorderChunks before MediaRecorder delivers its data (delivery
+          // happens between stop() and onstop), which made every recording
+          // upload as zero bytes ("missing audio body").
+          var chunksLocal = [];
+          recorderChunks = chunksLocal;
           recorderStartedAt = Date.now();
           try { recorderMicLabel = (stream.getAudioTracks()[0] || {}).label || ""; } catch (e) { recorderMicLabel = ""; }
           // Live input level tap so callers can SHOW whether audio is
@@ -336,7 +342,7 @@
           } catch (e) { levelCtx = null; levelAnalyser = null; levelData = null; }
           var mime = pickRecorderMime();
           recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-          recorder.ondataavailable = function (e) { if (e.data && e.data.size) recorderChunks.push(e.data); };
+          recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunksLocal.push(e.data); };
           recorder.start();
           emit("listenstart", { engine: "daemon" });
           return { ok: true, micLabel: recorderMicLabel };
