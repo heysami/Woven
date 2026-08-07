@@ -96550,6 +96550,25 @@ function RambleView({ info }) {
 
   useEffect(() => () => stopStream(), [stopStream]);
 
+  // Keep the camera picker live: Continuity / Desk View iPhone cameras appear
+  // and disappear as the phone comes in range or wakes, and the OS announces
+  // that via devicechange. Without this, the list is a one-shot snapshot from
+  // the moment the camera was enabled and a phone that arrives later never
+  // shows up.
+  useEffect(() => {
+    const md = navigator.mediaDevices;
+    if (!md || typeof md.addEventListener !== "function") return;
+    const refresh = async () => {
+      try {
+        const list = await md.enumerateDevices();
+        setDevices(list.filter((d) => d.kind === "videoinput")
+          .map((d) => ({ deviceId: d.deviceId, label: d.label || "Camera" })));
+      } catch {}
+    };
+    md.addEventListener("devicechange", refresh);
+    return () => md.removeEventListener("devicechange", refresh);
+  }, []);
+
   // Video pixel size for the cover projection.
   useEffect(() => {
     const v = videoRef.current;
