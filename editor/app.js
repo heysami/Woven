@@ -96060,10 +96060,24 @@ function rambleLoadVisionCfg() {
   } catch { return {}; }
 }
 
-// Right-hand fingertip tool menu (palm-up): finger -> whiteboard tool.
-const RAMBLE_TOOL_FINGERS = { index: "pen", middle: "text", ring: "textbox", pinky: "arrow" };
+// Right-hand pinch slider (palm-up): pinch + horizontal drag scrubs the tool
+// row; release selects. With the LEFT palm also up, the slider expands into a
+// detailed panel anchored on that palm: vertical pinch movement descends from
+// the tool row into its attribute rows, horizontal picks the value.
+const RAMBLE_TOOL_LIST = ["pen", "text", "textbox", "arrow"];
 const RAMBLE_TOOL_LABEL = { pen: "Pen", text: "Text", textbox: "Text box", arrow: "Arrow" };
-const RAMBLE_TOOL_GLYPH = { pen: "P", text: "T", textbox: "B", arrow: "A" };
+// Attribute rows per tool for the detailed panel (row 0 is always the tool row).
+const RAMBLE_TOOL_ATTRS = {
+  pen:     [{ key: "color", options: WB_COLOR_TOKENS }, { key: "size", options: [1, 2, 3, 4, 5, 6, 8, 10] }],
+  text:    [{ key: "fontSize", options: ["sm", "md", "lg", "xl"] }, { key: "color", options: WB_COLOR_TOKENS }],
+  textbox: [{ key: "color", options: WB_COLOR_TOKENS }, { key: "fontSize", options: ["sm", "md", "lg", "xl"] }],
+  arrow:   [{ key: "color", options: WB_COLOR_TOKENS }, { key: "size", options: [1, 2, 3, 4, 5, 6, 8] }],
+};
+// Left-hand pinch slider (palm-up): insert type row.
+const RAMBLE_TYPE_LIST = ["prototype", "browser", "image"];
+// Slider feel: px of horizontal pinch travel per option / vertical per row.
+const RAMBLE_SLIDER_STEP_X = 64;
+const RAMBLE_SLIDER_STEP_Y = 56;
 // Dial option rails per tool (horizontal drag = primary, vertical = secondary).
 const RAMBLE_DIAL = {
   pen:     { primary: { key: "color", options: WB_COLOR_TOKENS }, secondary: { key: "size", min: 1, max: 10 } },
@@ -96072,11 +96086,7 @@ const RAMBLE_DIAL = {
   textbox: { primary: { key: "color", options: WB_COLOR_TOKENS }, secondary: { key: "fontSize", options: ["sm", "md", "lg", "xl"] } },
 };
 
-// Left-hand fingertip insert menu (palm-up): finger -> insert slot.
-// Ring is deliberately unassigned for now.
-const RAMBLE_INSERT_FINGERS = { pinky: "prototype", middle: "browser", index: "image" };
 const RAMBLE_INSERT_LABEL = { prototype: "Prototype", browser: "Browser", image: "Image" };
-const RAMBLE_INSERT_GLYPH = { prototype: "Pr", browser: "Br", image: "Im" };
 const RAMBLE_INSERT_DIMS = {
   prototype: { w: 720, h: 480 },
   browser: { w: 720, h: 540 },
@@ -96579,19 +96589,23 @@ function RambleView({ info }) {
   // ~25fps); React state is only touched on discrete transitions. `mode` is
   // the global exclusive state; the per-hand context lives beside it.
   const interactRef = useRef({
-    mode: "idle",          // idle | zooming | toolPinchPending | penDrawing |
-                           // arrowDragging | textPinchPending | itemEditPinch |
-                           // itemAttrEdit | attrDial | sttListening
+    mode: "idle",          // idle | zooming | toolSlider | typeSlider |
+                           // leftActionPending | protoSlider | toolPinchPending |
+                           // penDrawing | arrowDragging | textPinchPending |
+                           // itemEditPinch | itemAttrEdit | sttListening |
+                           // screenInteract | screenClip
     zoomPrev: null,        // { p1:{x,y}, p2:{x,y} } screen-space pinch points
-    pending: null,         // toolPinchPending payload (pen/arrow vs zoom window)
+    pending: null,         // arbitration payloads (tool/left-action vs zoom)
     pen: null,             // { points:[wx,wy,...] } live stroke
     arrow: null,           // { x1,y1,x2,y2 } live arrow
     hold: null,            // 1s-hold payload { type|itemId, since, x, y }
-    dial: null,            // attrDial payload
-    stt: null,             // { kind, hand, trigger }
-    touchInfo: null,       // right-menu thumb-touch tracking
-    rightMenu: false,
+    stt: null,             // { hand, trigger }
+    slider: null,          // pinch-slider payload (tool/type/proto rails)
+    grab: null,            // held-item payload { itemId, w, h, heldPos, attachments }
     _prevRightPinch: false,
+    _prevRightPinchUp: false,
+    _prevLeftPinch: false,
+    _prevLeftPinchUp: false,
   });
 
   // ── ramble items (the canvas content) ──────────────────────────────────
@@ -96629,6 +96643,14 @@ function RambleView({ info }) {
     const wb = wbMakeItem(type, payload);
     if (!wb) return null;
     setItems((arr) => [...arr, { id: wb.id, kind: "wb", wb }]);
+    // Marks made while a grab is active attach to the grabbed item: remember
+    // the offset vs the held rect NOW so planting keeps the drawn formation.
+    const g = interactRef.current.grab;
+    if (g) {
+      let bb = null;
+      try { bb = wbItemBBox(wb); } catch {}
+      if (bb) g.attachments.push({ id: wb.id, relX: bb.x - g.heldPos.x, relY: bb.y - g.heldPos.y });
+    }
     return wb;
   }, []);
   const patchRambleWb = useCallback((id, patch) => {
@@ -96746,9 +96768,15 @@ function RambleView({ info }) {
     return () => { alive = false; };
   }, []);
 
-  const [leftSelection, setLeftSelection] = useState(null); // { kind, ...payload }
-  const leftSelRef = useRef(null);
-  useEffect(() => { leftSelRef.current = leftSelection; }, [leftSelection]);
+  // The insert TYPE armed on the left hand (palm-up pinch slider picks it).
+  const [leftType, setLeftType] = useState(null); // "prototype" | "browser" | "image" | null
+  const leftTypeRef = useRef(null);
+  useEffect(() => { leftTypeRef.current = leftType; }, [leftType]);
+  const setLeftTypeRef = useRef(null);
+  setLeftTypeRef.current = (t) => {
+    setLeftType(t);
+    flashStt("Insert armed: " + (RAMBLE_INSERT_LABEL[t] || t) + " - palm down + pinch to use");
+  };
 
   const defaultPrototype = useCallback(() => {
     const list = protosRef.current;
@@ -96757,42 +96785,90 @@ function RambleView({ info }) {
     return (list[0] && list[0].id) || active || null;
   }, []);
 
-  const matchPrototype = useCallback((text) => {
-    const q = String(text || "").toLowerCase().trim();
-    const list = protosRef.current;
-    if (!q || !list.length) return null;
-    let best = null, bestScore = 0;
-    for (const p of list) {
-      const id = String(p.id || "").toLowerCase();
-      const label = String(p.label || "").toLowerCase();
-      let score = 0;
-      if (id === q || label === q) score = 100;
-      else if (id.startsWith(q) || label.startsWith(q)) score = 80;
-      else {
-        const toks = q.split(/\s+/).filter(Boolean);
-        const hay = id + " " + label;
-        const hit = toks.filter((t) => hay.includes(t)).length;
-        score = hit > 0 ? 40 + (hit / Math.max(1, toks.length)) * 30 : 0;
-      }
-      if (score > bestScore) { best = p; bestScore = score; }
-    }
-    return bestScore >= 40 ? best : null;
-  }, []);
-
-  // Patch an asset (pending selection AND any placed copies) by output path.
+  // Patch generated assets (placed copies) by output path.
   const patchAssetByPath = useCallback((path, patch) => {
-    setLeftSelection((sel) => (sel && sel.kind === "asset" && sel.path === path) ? { ...sel, ...patch } : sel);
     setItems((arr) => arr.map((it) =>
       (it.kind === "node" && it.node.kind === "asset" && it.node.path === path)
         ? { ...it, node: { ...it.node, ...patch } } : it));
   }, []);
 
-  const generateImage = useCallback(async (prompt) => {
+  // Create the item for an insert and either PLACE it at (wx, wy) - the left
+  // palm is down or gone: "goes to the screen directly" - or GRAB it onto the
+  // left palm when that palm is up at completion time. A grabbed item rides
+  // the palm; whiteboard marks made while grabbed attach to it; turning the
+  // palm down plants the whole group.
+  const [grabUi, setGrabUi] = useState(false);
+  const placeOrGrabRef = useRef(null);
+  placeOrGrabRef.current = (sel, wx, wy) => {
+    const dims = RAMBLE_INSERT_DIMS[sel.kind === "asset" ? "asset" : sel.kind] || RAMBLE_INSERT_DIMS.asset;
+    const id = "rn" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const node = sel.kind === "prototype"
+      ? { kind: "prototype", prototype: sel.prototype }
+      : sel.kind === "browser"
+        ? { kind: "browser", url: sel.url }
+        : { kind: "asset", assetKind: "image", path: sel.path, runStatus: sel.runStatus || null, title: sel.title };
+    node.w = dims.w;
+    node.h = dims.h;
+    const hs = handRef.current;
+    const Lh = hs && hs.left;
+    const grabbable = !!(Lh && !Lh.stale && Lh.palm === "up" && !interactRef.current.grab);
+    if (grabbable) {
+      const m = mapRef.current, cam = camRef.current;
+      const pc = rambleToScreen(m, Lh.landmarks[9].x, Lh.landmarks[9].y);
+      const px = (pc.x - cam.x) / cam.z, py = (pc.y - cam.y) / cam.z;
+      node.x = Math.round(px - dims.w / 2);
+      node.y = Math.round(py - dims.h - 36);
+      interactRef.current.grab = {
+        itemId: id, w: dims.w, h: dims.h,
+        heldPos: { x: node.x, y: node.y },
+        attachments: [], el: null,
+      };
+      setGrabUi(true);
+      flashStt("Grabbed - annotate with the right hand, palm down to place");
+    } else {
+      node.x = Math.round(wx - dims.w / 2);
+      node.y = Math.round(wy - dims.h / 2);
+    }
+    setItems((arr) => [...arr, { id, kind: "node", node }]);
+  };
+
+  // Plant the grabbed group: item at its held position, every attachment kept
+  // in the formation it was drawn in (rel offsets captured at commit time).
+  const plantGrabRef = useRef(null);
+  plantGrabRef.current = () => {
+    const g = interactRef.current.grab;
+    if (!g) return;
+    interactRef.current.grab = null;
+    setGrabUi(false);
+    setItems((arr) => arr.map((it) => {
+      if (it.id === g.itemId && it.kind === "node") {
+        return { ...it, node: { ...it.node, x: Math.round(g.heldPos.x), y: Math.round(g.heldPos.y) } };
+      }
+      const att = g.attachments.find((a) => a.id === it.id);
+      if (att && it.kind === "wb") {
+        if (it.wb.type === "arrow") {
+          let bb = null;
+          try { bb = wbItemBBox(it.wb); } catch {}
+          if (!bb) return it;
+          const dx = Math.round(g.heldPos.x + att.relX - bb.x);
+          const dy = Math.round(g.heldPos.y + att.relY - bb.y);
+          const wb = { ...it.wb, x1: it.wb.x1 + dx, y1: it.wb.y1 + dy, x2: it.wb.x2 + dx, y2: it.wb.y2 + dy };
+          if (Array.isArray(wb.mids)) wb.mids = wb.mids.map((v, i) => v + (i % 2 === 0 ? dx : dy));
+          return { ...it, wb };
+        }
+        return { ...it, wb: { ...it.wb, x: Math.round(g.heldPos.x + att.relX), y: Math.round(g.heldPos.y + att.relY) } };
+      }
+      return it;
+    }));
+    flashStt("Placed");
+  };
+
+  const generateImage = useCallback(async (prompt, wx, wy) => {
     const slug = defaultPrototype();
     if (!slug) { flashStt("No prototype to store the image in", true); return; }
     const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
     const output = "source/" + slug + "/images/ramble-" + stamp + ".png";
-    setLeftSelection({ kind: "asset", path: output, runStatus: "pending", title: prompt });
+    placeOrGrabRef.current({ kind: "asset", path: output, runStatus: "pending", title: prompt }, wx, wy);
     flashStt("Generating “" + prompt + "”");
     try {
       const r = await fetch(apiUrl("/__asset_generate"), {
@@ -96813,41 +96889,6 @@ function RambleView({ info }) {
     }
   }, [defaultPrototype, patchAssetByPath, flashStt]);
 
-  // Tap on a left-menu finger = pick the default for that slot.
-  const tapInsertDefault = useCallback((slot) => {
-    if (slot === "prototype") {
-      const id = defaultPrototype();
-      if (!id) { flashStt("No prototypes yet", true); return; }
-      setLeftSelection({ kind: "prototype", prototype: id });
-      flashStt("Prototype: " + id);
-    } else if (slot === "browser") {
-      setLeftSelection({ kind: "browser", url: "https://www.google.com" });
-      flashStt("Browser ready");
-    } else if (slot === "image") {
-      flashStt("Hold the finger and describe the image", true);
-    }
-  }, [defaultPrototype, flashStt]);
-  const tapInsertRef = useRef(null);
-  tapInsertRef.current = tapInsertDefault;
-
-  // Drop the pending selection as a real node item centered at (wx, wy).
-  const placeSelectionRef = useRef(null);
-  placeSelectionRef.current = (sel, wx, wy) => {
-    const dims = RAMBLE_INSERT_DIMS[sel.kind === "asset" ? "asset" : sel.kind] || RAMBLE_INSERT_DIMS.asset;
-    const id = "rn" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const node = sel.kind === "prototype"
-      ? { kind: "prototype", prototype: sel.prototype }
-      : sel.kind === "browser"
-        ? { kind: "browser", url: sel.url }
-        : { kind: "asset", assetKind: "image", path: sel.path, runStatus: sel.runStatus || null, title: sel.title };
-    node.x = Math.round(wx - dims.w / 2);
-    node.y = Math.round(wy - dims.h / 2);
-    node.w = dims.w;
-    node.h = dims.h;
-    setItems((arr) => [...arr, { id, kind: "node", node }]);
-    setLeftSelection(null);
-  };
-
   routeTranscriptRef.current = (ctx, text) => {
     if (!text) { flashStt("Heard nothing", true); return; }
     if (ctx.kind === "textContent") {
@@ -96857,19 +96898,15 @@ function RambleView({ info }) {
     } else if (ctx.kind === "itemUpdate") {
       patchRambleWb(ctx.itemId, { text });
       flashStt("“" + text + "”");
-    } else if (ctx.kind === "prototypeSearch") {
-      const p = matchPrototype(text);
-      if (p) { setLeftSelection({ kind: "prototype", prototype: p.id }); flashStt("Prototype: " + p.id); }
-      else flashStt("No prototype matches “" + text + "”", true);
     } else if (ctx.kind === "browserQuery") {
       const t = text.trim();
       const urlish = /^https?:\/\//i.test(t) || (t.includes(".") && !/\s/.test(t));
       const url = urlish ? (/^https?:\/\//i.test(t) ? t : "https://" + t)
         : "https://www.google.com/search?q=" + encodeURIComponent(t);
-      setLeftSelection({ kind: "browser", url });
+      placeOrGrabRef.current({ kind: "browser", url }, ctx.x, ctx.y);
       flashStt("Browser: " + url.replace(/^https?:\/\//, "").slice(0, 60));
     } else if (ctx.kind === "imagePrompt") {
-      generateImage(text);
+      generateImage(text, ctx.x, ctx.y);
     }
   };
 
@@ -97103,6 +97140,29 @@ function RambleView({ info }) {
     };
     const rightPinchDown = !!(R && R.palm === "down" && R.pinch.active);
 
+    // Grab housekeeping runs on EVERY frame regardless of mode: the held item
+    // rides the left palm; turning that palm down plants the whole group.
+    if (it.grab && L && !L.stale) {
+      if (L.palm === "down") {
+        plantGrabRef.current();
+      } else {
+        const g = it.grab;
+        const pc = rambleToScreen(m, L.landmarks[9].x, L.landmarks[9].y);
+        g.heldPos = {
+          x: (pc.x - cam.x) / cam.z - g.w / 2,
+          y: (pc.y - cam.y) / cam.z - g.h - 36,
+        };
+        // Imperative follow - React state only syncs at plant time.
+        if (!g.el || !g.el.isConnected) {
+          g.el = document.querySelector('[data-ramble-item="' + g.itemId + '"]');
+        }
+        if (g.el) {
+          g.el.style.left = g.heldPos.x + "px";
+          g.el.style.top = g.heldPos.y + "px";
+        }
+      }
+    }
+
     switch (it.mode) {
       case "zooming": {
         if (!bothPinchDown) {
@@ -97238,11 +97298,139 @@ function RambleView({ info }) {
         return;
       }
 
-      // Right-menu thumb-hold: drag dials the armed tool's attributes.
-      case "attrDial": {
-        if (!R || R.palm !== "up" || !R.thumbTouch) { it.mode = "idle"; it.dial = null; return; }
-        const p = rambleToScreen(m, R.tips.thumb.x, R.tips.thumb.y);
-        applyDial(it.dial, p.x - it.dial.startX, p.y - it.dial.startY);
+      // Right palm-up pinch: tool slider. Horizontal pinch travel scrubs the
+      // tool row; release selects. While the LEFT palm is also up the slider
+      // expands into the detailed panel anchored on that palm: vertical pinch
+      // travel descends into the tool's attribute rows, horizontal picks the
+      // value; release commits tool + dialed attributes together.
+      case "toolSlider": {
+        const s = it.slider;
+        if (R && R.stale && R.pinch.active) return;   // dropout: wait out the grace
+        const engaged = R && !R.stale && R.pinch.active && R.palm === "up";
+        if (!engaged) {
+          // Commit on release OR hand-lost (both read as "let go"); only an
+          // explicit palm flip while still pinching aborts.
+          const aborted = R && R.pinch.active && R.palm !== "up";
+          if (!aborted && s) {
+            const tool = RAMBLE_TOOL_LIST[Math.round(s.toolIdx)];
+            setRightTool(tool);
+            if (s.detailed && s.draft) attrsRef.current[tool] = { ...attrsRef.current[tool], ...s.draft };
+          }
+          it.mode = "idle"; it.slider = null; return;
+        }
+        const p = rambleToScreen(m, R.pinch.x, R.pinch.y);
+        const wasDetailed = s.detailed;
+        s.detailed = !!(L && !L.stale && L.palm === "up");
+        if (s.detailed) {
+          const pc = rambleToScreen(m, L.landmarks[9].x, L.landmarks[9].y);
+          s.panel = { x: pc.x, y: pc.y };
+          if (!wasDetailed) { s.rowAnchorY = p.y; s.curRow = 0; }
+        }
+        const curTool = RAMBLE_TOOL_LIST[Math.round(s.toolIdx)];
+        const attrs = RAMBLE_TOOL_ATTRS[curTool] || [];
+        const rowCount = s.detailed ? 1 + attrs.length : 1;
+        s.rowF = s.detailed
+          ? Math.max(0, Math.min(rowCount - 1, (p.y - s.rowAnchorY) / RAMBLE_SLIDER_STEP_Y))
+          : 0;
+        const row = Math.round(s.rowF);
+        if (row !== s.curRow || s.curRow == null) {
+          // Entering a row: re-anchor the horizontal travel at the row's
+          // current value so nothing jumps.
+          s.curRow = row;
+          s.xAnchor = p.x;
+          if (row === 0) s.startIdx = Math.round(s.toolIdx);
+          else {
+            const a = attrs[row - 1];
+            const cur = (s.draft && s.draft[a.key] != null) ? s.draft[a.key] : attrsRef.current[curTool][a.key];
+            const ci = a.options.indexOf(cur);
+            s.startIdx = ci < 0 ? 0 : ci;
+          }
+        }
+        const idxF = s.startIdx + (p.x - s.xAnchor) / RAMBLE_SLIDER_STEP_X;
+        if (row === 0) {
+          const prevTool = Math.round(s.toolIdx);
+          s.toolIdx = Math.max(0, Math.min(RAMBLE_TOOL_LIST.length - 1, idxF));
+          if (Math.round(s.toolIdx) !== prevTool) {
+            s.draft = { ...attrsRef.current[RAMBLE_TOOL_LIST[Math.round(s.toolIdx)]] };
+          }
+        } else {
+          const a = attrs[row - 1];
+          s.valIdxF = Math.max(0, Math.min(a.options.length - 1, idxF));
+          if (!s.draft) s.draft = { ...attrsRef.current[curTool] };
+          s.draft[a.key] = a.options[Math.round(s.valIdxF)];
+        }
+        s.pos = p;
+        return;
+      }
+
+      // Left palm-up pinch: insert type slider (prototype / browser / image).
+      case "typeSlider": {
+        const s = it.slider;
+        if (L && L.stale && L.pinch.active) return;   // dropout: wait out the grace
+        const engaged = L && !L.stale && L.pinch.active && L.palm === "up";
+        if (!engaged) {
+          const aborted = L && L.pinch.active && L.palm !== "up";
+          if (!aborted && s) {
+            setLeftTypeRef.current(RAMBLE_TYPE_LIST[Math.round(s.idxF)]);
+          }
+          it.mode = "idle"; it.slider = null; return;
+        }
+        const p = rambleToScreen(m, L.pinch.x, L.pinch.y);
+        s.idxF = Math.max(0, Math.min(RAMBLE_TYPE_LIST.length - 1, s.startIdx + (p.x - s.xAnchor) / RAMBLE_SLIDER_STEP_X));
+        s.pos = p;
+        return;
+      }
+
+      // Left palm-down pinch: zoom arbitration, then the armed insert action.
+      case "leftActionPending": {
+        if (bothPinchDown) { enterZoom(); return; }
+        if (!L || !L.pinch.active || L.palm !== "down") { it.mode = "idle"; it.pending = null; return; }
+        if (hs.t - it.pending.since >= 150) {
+          it.pending = null;
+          const type = leftTypeRef.current;
+          const p = toWorld(L.pinch.x, L.pinch.y);
+          if (!type) {
+            it.mode = "idle";
+            flashStt("Palm up + pinch first to pick what to insert", true);
+            return;
+          }
+          if (type === "prototype") {
+            if (!protosRef.current.length) { it.mode = "idle"; flashStt("No prototypes yet", true); return; }
+            const sp = rambleToScreen(m, L.pinch.x, L.pinch.y);
+            it.mode = "protoSlider";
+            it.slider = { xAnchor: sp.x, startIdx: 0, idxF: 0, pos: sp, lastNorm: { x: L.pinch.x, y: L.pinch.y } };
+          } else {
+            it.mode = "sttListening";
+            it.stt = { hand: "left", trigger: "pinch" };
+            startStt(
+              type === "image" ? { kind: "imagePrompt", x: p.x, y: p.y } : { kind: "browserQuery", x: p.x, y: p.y },
+              type === "image" ? "Describe the image" : "Say a site or search");
+          }
+        }
+        return;
+      }
+
+      // Prototype list rides the pinch: slide horizontally, release picks and
+      // places (or grabs, when the palm is up by then).
+      case "protoSlider": {
+        const s = it.slider;
+        const list = protosRef.current;
+        if (L && L.stale && L.pinch.active) return;   // dropout: wait out the grace
+        if (!L || !L.pinch.active) {
+          // Release or hand-lost both pick; there is no palm-flip abort here
+          // (flipping up just means the pick lands grabbed instead of placed).
+          if (s && list.length) {
+            const pick = list[Math.max(0, Math.min(list.length - 1, Math.round(s.idxF)))];
+            const w = toWorld(s.lastNorm.x, s.lastNorm.y);
+            placeOrGrabRef.current({ kind: "prototype", prototype: pick.id }, w.x, w.y);
+            flashStt("Prototype: " + pick.id);
+          }
+          it.mode = "idle"; it.slider = null; return;
+        }
+        const sp = rambleToScreen(m, L.pinch.x, L.pinch.y);
+        s.idxF = Math.max(0, Math.min(list.length - 1, s.startIdx + (sp.x - s.xAnchor) / RAMBLE_SLIDER_STEP_X));
+        s.pos = sp;
+        s.lastNorm = { x: L.pinch.x, y: L.pinch.y };
         return;
       }
 
@@ -97318,21 +97506,6 @@ function RambleView({ info }) {
         return;
       }
 
-      // Pending insert riding the left pinch as a ghost; release drops it.
-      case "ghostPlacing": {
-        if (!L || !L.pinch.active) {
-          if (it.ghost && leftSelRef.current) {
-            placeSelectionRef.current(leftSelRef.current, it.ghost.x, it.ghost.y);
-          }
-          it.ghost = null;
-          it.mode = "idle";
-          return;
-        }
-        if (L.palm === "up") { it.ghost = null; it.mode = "idle"; return; }   // cancel
-        const p = toWorld(L.pinch.x, L.pinch.y);
-        it.ghost = { x: p.x, y: p.y };
-        return;
-      }
     }
 
     // ── idle ──
@@ -97347,91 +97520,58 @@ function RambleView({ info }) {
     }
 
     // Fingertip-as-mouse: left palm-up "holds the screen" while the right
-    // hand points at a prototype/browser embed. Takes precedence over the
-    // insert menu while pointing.
+    // hand points at a prototype/browser embed.
     if (L && L.palm === "up" && !L.stale && R && !R.stale && R.pose === "point") {
       const w = toWorld(R.tips.index.x, R.tips.index.y);
       const target = screenTargetAt(w.x, w.y);
       if (target) {
         it.mode = "screenInteract";
         it.screen = { itemId: target.id, dwellX: 0, dwellY: 0, dwellSince: hs.t, clicked: false, lastDispatch: 0 };
-        it.leftMenu = false;
-        it.lTouchInfo = null;
         return;
       }
     }
 
-    // Left palm-up: fingertip insert menu (pinky=prototype, middle=browser,
-    // index=image). Tap = default pick; hold 600ms = voice search / prompt.
     const leftPinchDown = !!(L && L.palm === "down" && L.pinch.active);
-    if (L && L.palm === "up" && !L.stale) {
-      it.leftMenu = true;
-      const lt = L.thumbTouch;
-      if (lt && (!it.lTouchInfo || it.lTouchInfo.finger !== lt)) {
-        it.lTouchInfo = { finger: lt, since: hs.t, acted: false };
-      } else if (lt && it.lTouchInfo && !it.lTouchInfo.acted && hs.t - it.lTouchInfo.since >= 600) {
-        const slot = RAMBLE_INSERT_FINGERS[lt];
-        if (slot) {
-          it.lTouchInfo.acted = true;
-          const ctx = slot === "prototype" ? { kind: "prototypeSearch" }
-            : slot === "browser" ? { kind: "browserQuery" } : { kind: "imagePrompt" };
-          it.mode = "sttListening";
-          it.stt = { hand: "left", trigger: "touch" };
-          startStt(ctx, slot === "prototype" ? "Say a prototype name"
-            : slot === "browser" ? "Say a site or search" : "Describe the image");
-          return;
-        }
-      } else if (!lt && it.lTouchInfo) {
-        if (!it.lTouchInfo.acted && hs.t - it.lTouchInfo.since < 600) {
-          const slot = RAMBLE_INSERT_FINGERS[it.lTouchInfo.finger];
-          if (slot && tapInsertRef.current) tapInsertRef.current(slot);
-        }
-        it.lTouchInfo = null;
-      }
-    } else {
-      it.leftMenu = false;
-      it.lTouchInfo = null;
-      // Pending selection + left palm-down pinch start = ghost placement.
-      if (leftSelRef.current && leftPinchDown && !it._prevLeftPinch) {
-        const p = toWorld(L.pinch.x, L.pinch.y);
-        it.mode = "ghostPlacing";
-        it.ghost = { x: p.x, y: p.y };
-        it._prevLeftPinch = leftPinchDown;
-        return;
-      }
-    }
-    it._prevLeftPinch = leftPinchDown;
+    const leftPinchUp = !!(L && L.palm === "up" && L.pinch.active && !L.stale);
+    const rightPinchUp = !!(R && R.palm === "up" && R.pinch.active && !R.stale);
 
-    // Right palm-up: fingertip tool menu. A thumb tap SELECTS the tool and
-    // nothing more; the attribute dial only opens by touching-and-holding the
-    // finger of the ALREADY-selected tool (400ms). Flipping the palm down and
-    // back up always lands on this fresh menu (touch/dial state is cleared on
-    // every palm-down frame below).
-    if (R && R.palm === "up") {
-      it.rightMenu = true;
-      const touch = R.thumbTouch;
-      if (touch && (!it.touchInfo || it.touchInfo.finger !== touch)) {
-        const tool = RAMBLE_TOOL_FINGERS[touch];
-        it.touchInfo = { finger: touch, since: hs.t, wasSelected: !!tool && tool === rightToolRef.current };
-        if (tool) setRightTool(tool);
-      } else if (touch && it.touchInfo && it.touchInfo.wasSelected && hs.t - it.touchInfo.since >= 400) {
-        const p = rambleToScreen(m, R.tips.thumb.x, R.tips.thumb.y);
-        it.mode = "attrDial";
-        it.dial = {
-          tool: rightToolRef.current,
-          startX: p.x, startY: p.y,
-          baseAttrs: { ...attrsRef.current[rightToolRef.current] },
-          display: { ...attrsRef.current[rightToolRef.current] },
-        };
-        it.touchInfo = null;
-      } else if (!touch) {
-        it.touchInfo = null;
-      }
-      it._prevRightPinch = rightPinchDown;
+    // Right palm-up pinch START -> tool slider.
+    if (rightPinchUp && !it._prevRightPinchUp) {
+      const p = rambleToScreen(m, R.pinch.x, R.pinch.y);
+      const startIdx = Math.max(0, RAMBLE_TOOL_LIST.indexOf(rightToolRef.current));
+      it.mode = "toolSlider";
+      it.slider = {
+        toolIdx: startIdx, startIdx, xAnchor: p.x,
+        curRow: 0, rowF: 0, rowAnchorY: p.y, detailed: false,
+        draft: { ...attrsRef.current[rightToolRef.current] },
+        pos: p,
+      };
+      it._prevRightPinchUp = rightPinchUp;
       return;
     }
-    it.rightMenu = false;
-    it.touchInfo = null;
+    it._prevRightPinchUp = rightPinchUp;
+
+    // Left palm-up pinch START -> insert type slider (never while grabbing:
+    // that palm is busy holding the item).
+    if (leftPinchUp && !it._prevLeftPinchUp && !it.grab) {
+      const p = rambleToScreen(m, L.pinch.x, L.pinch.y);
+      const cur = Math.max(0, RAMBLE_TYPE_LIST.indexOf(leftTypeRef.current || RAMBLE_TYPE_LIST[0]));
+      it.mode = "typeSlider";
+      it.slider = { idxF: cur, startIdx: cur, xAnchor: p.x, pos: p };
+      it._prevLeftPinchUp = leftPinchUp;
+      return;
+    }
+    it._prevLeftPinchUp = leftPinchUp;
+
+    // Left palm-down pinch START -> the armed insert action (150ms zoom
+    // arbitration happens inside leftActionPending).
+    if (leftPinchDown && !it._prevLeftPinch) {
+      it.mode = "leftActionPending";
+      it.pending = { since: hs.t };
+      it._prevLeftPinch = leftPinchDown;
+      return;
+    }
+    it._prevLeftPinch = leftPinchDown;
 
     // Right palm-down pinch START = tool action (or item edit).
     if (rightPinchDown && !it._prevRightPinch) {
@@ -97547,92 +97687,136 @@ function RambleView({ info }) {
       const it = interactRef.current;
       const worldToScreen = (wx, wy) => ({ x: wx * cam.z + cam.x, y: wy * cam.z + cam.y });
 
-      // Right-hand fingertip tool menu (palm-up).
-      if (it.rightMenu && hs && hs.right && hs.right.palm === "up") {
-        const R = hs.right;
-        for (const finger of ["index", "middle", "ring", "pinky"]) {
-          const tool = RAMBLE_TOOL_FINGERS[finger];
-          const tp = rambleToScreen(m, R.tips[finger].x, R.tips[finger].y);
-          const bx = tp.x, by = tp.y - 30;
-          const selected = tool === rightToolRef.current;
-          ctx.beginPath();
-          ctx.arc(bx, by, 17, 0, Math.PI * 2);
-          ctx.fillStyle = selected ? "rgba(51,160,111,0.95)" : "rgba(18,20,26,0.85)";
-          ctx.fill();
-          ctx.lineWidth = 1.5;
-          ctx.strokeStyle = selected ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.45)";
-          ctx.stroke();
-          ctx.fillStyle = "#fff";
-          ctx.font = "600 12px var(--font-sans, sans-serif)";
-          const g = RAMBLE_TOOL_GLYPH[tool];
-          ctx.fillText(g, bx - ctx.measureText(g).width / 2, by + 4);
-          // Touch hold progress toward the attribute dial - only meaningful
-          // when holding the already-selected tool's finger.
-          if (R.thumbTouch === finger && it.touchInfo && it.touchInfo.finger === finger && it.touchInfo.wasSelected) {
-            const frac = Math.min(1, (now - it.touchInfo.since) / 400);
+      // A horizontal option rail: dots/labels centered above an anchor point,
+      // the entry nearest idxF highlighted. Shared by every pinch slider.
+      const drawRail = (cx0, cy0, entries, idxF, opts) => {
+        const step = (opts && opts.step) || RAMBLE_SLIDER_STEP_X;
+        const sel = Math.round(idxF);
+        // Window large lists around the current index.
+        const maxShown = (opts && opts.maxShown) || 7;
+        let lo = 0, hi = entries.length - 1;
+        if (entries.length > maxShown) {
+          lo = Math.max(0, Math.min(entries.length - maxShown, sel - Math.floor(maxShown / 2)));
+          hi = lo + maxShown - 1;
+        }
+        ctx.font = "600 12px var(--font-sans, sans-serif)";
+        for (let i = lo; i <= hi; i++) {
+          const x = cx0 + (i - idxF) * step;
+          const isSel = i === sel;
+          const e = entries[i];
+          if (e && e.color) {
             ctx.beginPath();
-            ctx.arc(bx, by, 21, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
-            ctx.strokeStyle = "rgba(255,255,255,0.9)";
-            ctx.lineWidth = 2.5;
-            ctx.stroke();
+            ctx.arc(x, cy0, isSel ? 11 : 7, 0, Math.PI * 2);
+            ctx.fillStyle = rambleWbColor(e.color);
+            ctx.fill();
+            if (isSel) { ctx.lineWidth = 2.5; ctx.strokeStyle = "#fff"; ctx.stroke(); }
+          } else {
+            ctx.beginPath();
+            ctx.arc(x, cy0, isSel ? 6 : 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = isSel ? "rgba(51,160,111,0.95)" : "rgba(255,255,255,0.55)";
+            ctx.fill();
+          }
+          const label = e && e.label != null ? String(e.label) : "";
+          if (label && (isSel || step >= 56)) {
+            ctx.fillStyle = isSel ? "#fff" : "rgba(255,255,255,0.55)";
+            ctx.fillText(label, x - ctx.measureText(label).width / 2, cy0 - (isSel ? 18 : 14));
           }
         }
+      };
+      const railBackdrop = (cx0, cy0, w, h) => {
+        ctx.fillStyle = "rgba(12,14,18,0.82)";
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(cx0 - w / 2, cy0 - h / 2, w, h, 12); else ctx.rect(cx0 - w / 2, cy0 - h / 2, w, h);
+        ctx.fill();
+      };
+
+      // Right-hand tool slider (simple: one rail above the pinch).
+      if (it.mode === "toolSlider" && it.slider && !it.slider.detailed && it.slider.pos) {
+        const s = it.slider;
+        const entries = RAMBLE_TOOL_LIST.map((t) => ({ label: RAMBLE_TOOL_LABEL[t] }));
+        railBackdrop(s.pos.x, s.pos.y - 54, 300, 56);
+        drawRail(s.pos.x, s.pos.y - 46, entries, s.toolIdx);
       }
 
-      // Left-hand insert menu bubbles (palm-up).
-      if (it.leftMenu && hs && hs.left && hs.left.palm === "up") {
-        const Lh = hs.left;
-        for (const finger of ["index", "middle", "ring", "pinky"]) {
-          const slot = RAMBLE_INSERT_FINGERS[finger];
-          const tp = rambleToScreen(m, Lh.tips[finger].x, Lh.tips[finger].y);
-          const bx = tp.x, by = tp.y - 30;
-          ctx.beginPath();
-          ctx.arc(bx, by, 17, 0, Math.PI * 2);
-          ctx.fillStyle = slot ? "rgba(18,20,26,0.85)" : "rgba(18,20,26,0.35)";
-          ctx.fill();
-          ctx.lineWidth = 1.5;
-          ctx.strokeStyle = slot ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.15)";
-          ctx.stroke();
-          if (slot) {
-            ctx.fillStyle = "#fff";
-            ctx.font = "600 11px var(--font-sans, sans-serif)";
-            const g = RAMBLE_INSERT_GLYPH[slot];
-            ctx.fillText(g, bx - ctx.measureText(g).width / 2, by + 4);
-            if (Lh.thumbTouch === finger && it.lTouchInfo && it.lTouchInfo.finger === finger) {
-              const frac = Math.min(1, (now - it.lTouchInfo.since) / 600);
-              ctx.beginPath();
-              ctx.arc(bx, by, 21, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
-              ctx.strokeStyle = "rgba(255,255,255,0.9)";
-              ctx.lineWidth = 2.5;
-              ctx.stroke();
-            }
+      // Detailed panel on the left palm: tool row on top, attribute rows
+      // below; the row nearest rowF is live.
+      if (it.mode === "toolSlider" && it.slider && it.slider.detailed && it.slider.panel) {
+        const s = it.slider;
+        const curTool = RAMBLE_TOOL_LIST[Math.round(s.toolIdx)];
+        const attrs = RAMBLE_TOOL_ATTRS[curTool] || [];
+        const rows = 1 + attrs.length;
+        const panelW = 340, rowH = 46;
+        const px0 = s.panel.x, py0 = s.panel.y - 60 - rows * rowH;
+        ctx.fillStyle = "rgba(12,14,18,0.88)";
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(px0 - panelW / 2, py0, panelW, rows * rowH + 16, 14); else ctx.rect(px0 - panelW / 2, py0, panelW, rows * rowH + 16);
+        ctx.fill();
+        for (let r = 0; r < rows; r++) {
+          const cy0 = py0 + 8 + r * rowH + rowH / 2;
+          const isRow = r === Math.round(s.rowF);
+          if (isRow) {
+            ctx.fillStyle = "rgba(51,160,111,0.16)";
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(px0 - panelW / 2 + 6, cy0 - rowH / 2 + 3, panelW - 12, rowH - 6, 9); else ctx.rect(px0 - panelW / 2 + 6, cy0 - rowH / 2 + 3, panelW - 12, rowH - 6);
+            ctx.fill();
+          }
+          if (r === 0) {
+            drawRail(px0, cy0 + 8, RAMBLE_TOOL_LIST.map((t) => ({ label: RAMBLE_TOOL_LABEL[t] })), s.toolIdx, { step: 74 });
+          } else {
+            const a = attrs[r - 1];
+            const curVal = (s.draft && s.draft[a.key] != null) ? s.draft[a.key] : attrsRef.current[curTool][a.key];
+            let vIdx = a.options.indexOf(curVal); if (vIdx < 0) vIdx = 0;
+            const shownIdx = isRow && s.valIdxF != null ? s.valIdxF : vIdx;
+            const entries = a.key === "color"
+              ? a.options.map((tok) => ({ color: tok }))
+              : a.options.map((v) => ({ label: v }));
+            ctx.fillStyle = "rgba(255,255,255,0.5)";
+            ctx.font = "600 10px var(--font-sans, sans-serif)";
+            ctx.fillText(a.key, px0 - panelW / 2 + 14, cy0 + 3);
+            drawRail(px0 + 20, cy0 + 6, entries, shownIdx, { step: a.key === "color" ? 30 : 44, maxShown: 9 });
           }
         }
+        // Tether from the pinch to the live row.
+        const rowY = py0 + 8 + Math.round(s.rowF) * rowH + rowH / 2;
+        ctx.beginPath();
+        ctx.moveTo(s.pos.x, s.pos.y);
+        ctx.lineTo(px0 + panelW / 2 - 10, rowY);
+        ctx.strokeStyle = "rgba(255,255,255,0.25)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
       }
 
-      // Ghost of the pending insert riding the left pinch.
-      if (it.mode === "ghostPlacing" && it.ghost && leftSelRef.current) {
-        const sel = leftSelRef.current;
-        const dims = RAMBLE_INSERT_DIMS[sel.kind === "asset" ? "asset" : sel.kind] || RAMBLE_INSERT_DIMS.asset;
-        const c0 = worldToScreen(it.ghost.x - dims.w / 2, it.ghost.y - dims.h / 2);
-        const gw = dims.w * cam.z, gh = dims.h * cam.z;
-        ctx.setLineDash([8, 6]);
-        ctx.strokeStyle = "rgba(255,255,255,0.85)";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(c0.x, c0.y, gw, gh);
-        ctx.setLineDash([]);
-        ctx.fillStyle = "rgba(18,20,26,0.55)";
-        ctx.fillRect(c0.x, c0.y, gw, gh);
-        ctx.fillStyle = "#fff";
-        ctx.font = "600 13px var(--font-sans, sans-serif)";
-        const lbl = sel.kind === "prototype" ? "Prototype: " + sel.prototype
-          : sel.kind === "browser" ? "Browser" : (sel.runStatus === "pending" ? "Generating image..." : "Image");
-        ctx.fillText(lbl, c0.x + 12, c0.y + 24);
+      // Left-hand insert type slider.
+      if (it.mode === "typeSlider" && it.slider && it.slider.pos) {
+        const s = it.slider;
+        railBackdrop(s.pos.x, s.pos.y - 54, 300, 56);
+        drawRail(s.pos.x, s.pos.y - 46, RAMBLE_TYPE_LIST.map((t) => ({ label: RAMBLE_INSERT_LABEL[t] })), s.idxF, { step: 84 });
       }
 
-      // Attribute dial strip (tool dial or held-item dial).
-      const dial = (it.mode === "attrDial" && it.dial) ? it.dial
-        : (it.mode === "itemAttrEdit" && it.attrEdit && it.attrEdit.dial) ? it.attrEdit.dial : null;
+      // Prototype pick slider (palm-down): the project's prototype ids.
+      if (it.mode === "protoSlider" && it.slider && it.slider.pos) {
+        const s = it.slider;
+        const list = protosRef.current;
+        railBackdrop(s.pos.x, s.pos.y - 54, Math.min(m.w - 40, 90 * Math.min(5, Math.max(1, list.length)) + 60), 56);
+        drawRail(s.pos.x, s.pos.y - 46, list.map((p) => ({ label: String(p.id).slice(0, 14) })), s.idxF, { step: 90, maxShown: 5 });
+      }
+
+      // Grab: ring on the palm + hint (the held item itself follows via DOM).
+      if (it.grab && hs && hs.left && hs.left.palm === "up") {
+        const pc = rambleToScreen(m, hs.left.landmarks[9].x, hs.left.landmarks[9].y);
+        ctx.beginPath();
+        ctx.arc(pc.x, pc.y, 26 + 3 * Math.sin(now / 220), 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(51,160,111,0.9)";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.font = "600 11px var(--font-sans, sans-serif)";
+        const hint = "palm down to place";
+        ctx.fillText(hint, pc.x - ctx.measureText(hint).width / 2, pc.y + 46);
+      }
+
+      // Attribute dial strip (held-item pinch + palm-flip edit).
+      const dial = (it.mode === "itemAttrEdit" && it.attrEdit && it.attrEdit.dial) ? it.attrEdit.dial : null;
       if (dial) {
         const vals = dial.display || dial.baseAttrs || {};
         const spec = RAMBLE_DIAL[dial.tool];
@@ -97831,6 +98015,11 @@ function RambleView({ info }) {
   // land on the canvas focused on the new section.
   const [saving, setSaving] = useState(false);
   const rambleSaveAsSection = useCallback(async () => {
+    // A still-grabbed group plants where it hovers before saving.
+    if (interactRef.current.grab && plantGrabRef.current) {
+      plantGrabRef.current();
+      await new Promise((r) => setTimeout(r, 60));
+    }
     const arr = itemsRef.current;
     if (!arr.length) { backToWorkflow(); return; }
     if (saving) return;
@@ -97996,12 +98185,11 @@ function RambleView({ info }) {
           <span className="ramble-tool-chip-tool">${RAMBLE_TOOL_LABEL[rightTool]}</span>
           ${sttStatus === "none" && html`<span className="ramble-tool-chip-hint">Voice unavailable</span>`}
         </div>
-        ${leftSelection && html`<div className="ramble-insert-chip">
-          <span>Place:</span>
-          <b>${leftSelection.kind === "prototype" ? leftSelection.prototype
-            : leftSelection.kind === "browser" ? (leftSelection.url || "").replace(/^https?:\/\//, "").slice(0, 36)
-            : (leftSelection.runStatus === "pending" ? "image (generating...)" : "image")}</b>
-          <span className="ramble-insert-chip-hint">palm down + pinch to drop</span>
+        ${(leftType || grabUi) && html`<div className="ramble-insert-chip">
+          ${grabUi
+            ? html`<b>Grabbed</b><span className="ramble-insert-chip-hint">right hand annotates · left palm down places</span>`
+            : html`<span>Insert:</span><b>${RAMBLE_INSERT_LABEL[leftType]}</b>
+              <span className="ramble-insert-chip-hint">left palm down + pinch</span>`}
         </div>`}
         ${sttUi && html`<div className="ramble-stt-pill"><span className="ramble-stt-dot"></span>${sttUi.label}...</div>`}
         ${!sttUi && sttFlash && html`<div className="ramble-stt-pill" data-err=${sttFlash.err ? "true" : "false"}>${sttFlash.text}</div>`}
