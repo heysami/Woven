@@ -96502,11 +96502,22 @@ function RambleView({ info }) {
     setCamState("starting");
     setCamError("");
     try {
-      const constraints = {
-        audio: false,
-        video: id ? { deviceId: { exact: id } } : { width: { ideal: 1920 }, height: { ideal: 1080 } },
-      };
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const fallbackConstraints = { audio: false, video: { width: { ideal: 1920 }, height: { ideal: 1080 } } };
+      let stream = null;
+      if (id) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: { exact: id } } });
+        } catch (e) {
+          // Stored device ids rotate between sessions, and Continuity/Desk
+          // View cameras come and go - a stale id throws OverconstrainedError.
+          // Forget it and fall back to the default camera instead of failing.
+          try { localStorage.removeItem(RAMBLE_CAMERA_KEY); } catch {}
+          setDeviceId("");
+          stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+        }
+      } else {
+        stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+      }
       stopStream();
       streamRef.current = stream;
       const v = videoRef.current;
