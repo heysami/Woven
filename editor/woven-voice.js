@@ -54,6 +54,10 @@
   var recorderStream = null;
   var recorderChunks = null;
   var recorderStartedAt = 0;
+  var recorderMicLabel = "";
+  var levelCtx = null;
+  var levelAnalyser = null;
+  var levelData = null;
   var recorderResolve = null;
   var recorderTimer = null;
 
@@ -318,12 +322,24 @@
           recorderStream = stream;
           recorderChunks = [];
           recorderStartedAt = Date.now();
+          try { recorderMicLabel = (stream.getAudioTracks()[0] || {}).label || ""; } catch (e) { recorderMicLabel = ""; }
+          // Live input level tap so callers can SHOW whether audio is
+          // arriving (dead-mic diagnosis) - see listenLevel().
+          try {
+            levelCtx = new (window.AudioContext || window.webkitAudioContext)();
+            var lsrc = levelCtx.createMediaStreamSource(stream);
+            levelAnalyser = levelCtx.createAnalyser();
+            levelAnalyser.fftSize = 512;
+            lsrc.connect(levelAnalyser);
+            levelData = new Uint8Array(levelAnalyser.fftSize);
+            if (levelCtx.state === "suspended") { levelCtx.resume().catch(function () {}); }
+          } catch (e) { levelCtx = null; levelAnalyser = null; levelData = null; }
           var mime = pickRecorderMime();
           recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
           recorder.ondataavailable = function (e) { if (e.data && e.data.size) recorderChunks.push(e.data); };
           recorder.start();
           emit("listenstart", { engine: "daemon" });
-          return { ok: true };
+          return { ok: true, micLabel: recorderMicLabel };
         });
       }
       return Promise.reject(new Error("no daemon stt"));
@@ -340,6 +356,9 @@
       if (recorderTimer) { clearTimeout(recorderTimer); recorderTimer = null; }
       rec.onstop = function () {
         try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+        try { if (levelCtx) levelCtx.close(); } catch (e) {}
+        levelCtx = null; levelAnalyser = null; levelData = null;
+        var micLabel = recorderMicLabel;
         var mime = rec.mimeType || "audio/webm";
         var blob = new Blob(chunks, { type: mime });
         var recMs = recorderStartedAt ? Date.now() - recorderStartedAt : 0;
@@ -347,11 +366,11 @@
           .then(function (r) { return r.json(); })
           .then(function (j) {
             emit("listenend", { engine: j && j.engine, ok: !!(j && j.ok) });
-            resolve({ ok: !!(j && j.ok), text: (j && j.text) || "", engine: (j && j.engine) || "daemon", recMs: recMs, bytes: blob.size });
+            resolve({ ok: !!(j && j.ok), text: (j && j.text) || "", engine: (j && j.engine) || "daemon", recMs: recMs, bytes: blob.size, micLabel: micLabel, error: (j && j.error) || null });
           })
           .catch(function (e) {
             emit("error", { where: "stt", message: String(e && e.message || e) });
-            resolve({ ok: false, text: "", engine: "daemon", recMs: recMs, bytes: blob.size });
+            resolve({ ok: false, text: "", engine: "daemon", recMs: recMs, bytes: blob.size, micLabel: micLabel, error: String(e && e.message || e) });
           });
       };
       try { rec.stop(); } catch (e) { rec.onstop(); }
@@ -415,6 +434,20 @@
     listen: listen,
     listenStart: listenStart,
     listenStop: listenStop,
+    // Live input peak (0..1) while a listen session runs - 0 when idle.
+    // Lets callers render a level meter so a dead mic is visible instantly.
+    listenLevel: function () {
+      if (!levelAnalyser || !levelData) return 0;
+      try {
+        levelAnalyser.getByteTimeDomainData(levelData);
+        var peak = 0;
+        for (var i = 0; i < levelData.length; i++) {
+          var v = Math.abs(levelData[i] - 128) / 128;
+          if (v > peak) peak = v;
+        }
+        return peak;
+      } catch (e) { return 0; }
+    },
     setMuted: function (b) { muted = !!b; if (muted) stop(); },
     isMuted: function () { return muted; },
     setVolume: function (v) { volume = Math.max(0, Math.min(1, Number(v) || 0)); },

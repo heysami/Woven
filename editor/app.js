@@ -96783,8 +96783,19 @@ function RambleView({ info }) {
     });
     return () => { alive = false; };
   }, []);
-  const [sttUi, setSttUi] = useState(null);       // { label } while listening
+  const [sttUi, setSttUi] = useState(null);       // { label, mic } while listening
   const [sttFlash, setSttFlash] = useState(null); // { text, err } transient result
+  // Live input level while listening (0..1): the meter that makes a dead
+  // microphone visible at a glance.
+  const [sttLevel, setSttLevel] = useState(0);
+  useEffect(() => {
+    if (!sttUi) { setSttLevel(0); return; }
+    const t = setInterval(() => {
+      const WV = window.WovenVoice;
+      setSttLevel(WV && WV.listenLevel ? WV.listenLevel() : 0);
+    }, 120);
+    return () => clearInterval(t);
+  }, [sttUi]);
   const flashTimerRef = useRef(0);
   const flashStt = useCallback((text, err) => {
     setSttFlash({ text, err });
@@ -96828,7 +96839,13 @@ function RambleView({ info }) {
       if (!WV || sttActiveRef.current !== session) return;
       const micId = await resolveMicId();
       if (sttActiveRef.current !== session) return;
-      WV.listenStart(micId ? { deviceId: micId } : undefined).catch(() => {
+      WV.listenStart(micId ? { deviceId: micId } : undefined).then((r) => {
+        // Show which mic is actually recording - wrong-device problems become
+        // visible in the pill instead of silent.
+        if (r && r.micLabel && sttActiveRef.current === session) {
+          setSttUi((u) => (u ? { ...u, mic: r.micLabel } : u));
+        }
+      }).catch(() => {
         // Mic blocked / unavailable: say so NOW, while the user still holds,
         // instead of a misleading "Heard nothing" at release.
         if (sttActiveRef.current !== session) return;
@@ -96855,13 +96872,16 @@ function RambleView({ info }) {
       }
       if (!text) {
         const recMs = (res && res.recMs) || 0;
-        if (recMs < 700 || heldMs < 900) {
+        if (res && res.error) {
+          flashStt("Voice engine error: " + String(res.error).slice(0, 80), true);
+        } else if (recMs < 700 || heldMs < 900) {
           // The mic window barely opened - the words came after it closed.
           flashStt("Keep holding while you speak, release when done", true);
         } else {
-          // A real recording came back empty: say how long it was so a wrong
-          // or muted microphone is distinguishable from a quick release.
-          flashStt("Heard nothing in " + (Math.round(recMs / 100) / 10) + "s of audio - is the right mic active?", true);
+          // A real recording came back empty: say how long and from which
+          // mic, so a wrong or muted device is distinguishable from silence.
+          flashStt("Heard nothing in " + (Math.round(recMs / 100) / 10) + "s from "
+            + ((res && res.micLabel) || "the default mic"), true);
         }
         return;
       }
@@ -98316,7 +98336,13 @@ function RambleView({ info }) {
             : html`<span>Insert:</span><b>${RAMBLE_INSERT_LABEL[leftType]}</b>
               <span className="ramble-insert-chip-hint">left palm down + pinch</span>`}
         </div>`}
-        ${sttUi && html`<div className="ramble-stt-pill"><span className="ramble-stt-dot"></span>${sttUi.label}...</div>`}
+        ${sttUi && html`<div className="ramble-stt-pill">
+          <span className="ramble-stt-dot"></span>
+          <span>${sttUi.label}...</span>
+          <span className="ramble-stt-meter"><span className="ramble-stt-meter-fill"
+            style=${{ width: Math.min(100, Math.round(sttLevel * 140)) + "%" }}></span></span>
+          ${sttUi.mic && html`<span className="ramble-stt-mic">${sttUi.mic}</span>`}
+        </div>`}
         ${!sttUi && sttFlash && html`<div className="ramble-stt-pill" data-err=${sttFlash.err ? "true" : "false"}>${sttFlash.text}</div>`}
         ${undoState && html`<div className="ramble-undo-chip">
           <span>Deleted</span>

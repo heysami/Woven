@@ -49,6 +49,9 @@ const DEFAULT_CONFIG = {
   // together after a real release. Scale the release threshold down so the
   // pinch lets go sooner in that orientation.
   pinchOffUpFactor: 0.72,
+  // No pinch ENGAGEMENT while edge-on or this soon after a palm flip - the
+  // rotating hand's collapsed landmarks read as phantom pinches.
+  flipGuardMs: 250,
   // Thumb-to-fingertip touch (same phalanx normalization).
   touchOn: 0.55,
   touchOff: 0.85,
@@ -155,6 +158,7 @@ function makeHandTracker(cfg) {
     palmCandidate: null,    // { value, since }
     pinchActive: false,
     pinchOnStreak: 0,       // consecutive frames under pinchOn (debounce)
+    lastPalmFlipAt: 0,      // pinch-engage guard window after a flip
     thumbTouch: null,
     prevWrist: null,        // { x, y, t } smoothed, for velocity
     vel: { x: 0, y: 0 },
@@ -203,7 +207,8 @@ function trackerUpdate(tr, rawLm, t, hand, chiralitySign) {
   const cross = v1.x * v2.y - v1.y * v2.x;
   const sign = (hand === 'right' ? cfg.palmSignRight : cfg.palmSignLeft) * (chiralitySign || 1);
   const mag = Math.abs(cross) / (scale * scale);
-  if (mag > 0.15) {   // ignore edge-on hands (near-zero cross)
+  const edgeOn = mag <= 0.15;   // hand roughly side-on to the camera (mid-flip)
+  if (!edgeOn) {
     const cand = (cross * sign > 0) ? 'up' : 'down';
     if (cand !== tr.palm) {
       if (!tr.palmCandidate || tr.palmCandidate.value !== cand) {
@@ -211,6 +216,7 @@ function trackerUpdate(tr, rawLm, t, hand, chiralitySign) {
       } else if (t - tr.palmCandidate.since >= cfg.palmLatchMs) {
         tr.palm = cand;
         tr.palmCandidate = null;
+        tr.lastPalmFlipAt = t;
       }
     } else {
       tr.palmCandidate = null;
@@ -234,8 +240,14 @@ function trackerUpdate(tr, rawLm, t, hand, chiralitySign) {
   const offThreshold = tr.palm === 'up'
     ? cfg.pinchOff * (cfg.pinchOffUpFactor || 1)
     : cfg.pinchOff;
+  // Never ENGAGE a pinch while the hand is edge-on or fresh out of a palm
+  // flip: rotating hands collapse the landmarks and read as phantom pinches.
+  // Already-active pinches are untouched (flip-and-keep-drawing still works).
+  const flipGuard = edgeOn || (t - (tr.lastPalmFlipAt || 0) < (cfg.flipGuardMs || 250));
   if (tr.pinchActive) {
     if (pinchDist > offThreshold) { tr.pinchActive = false; tr.pinchOnStreak = 0; }
+  } else if (flipGuard) {
+    tr.pinchOnStreak = 0;
   } else if (pinchDist < cfg.pinchOn) {
     tr.pinchOnStreak += 1;
     if (tr.pinchOnStreak >= Math.max(1, cfg.pinchOnFrames || 1)) tr.pinchActive = true;

@@ -31837,6 +31837,20 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   background: #e5484d; flex: 0 0 auto;
   animation: ramble-stt-pulse 1.1s ease-in-out infinite;
 }
+.ramble-stt-meter {
+  width: 64px; height: 6px; border-radius: 3px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden; flex: 0 0 auto;
+}
+.ramble-stt-meter-fill {
+  display: block; height: 100%;
+  background: #7ee2a0;
+  transition: width 100ms linear;
+}
+.ramble-stt-mic {
+  opacity: 0.55; font-size: 11px;
+  max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 @keyframes ramble-stt-pulse {
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.45); opacity: 0.6; }
