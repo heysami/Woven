@@ -96512,6 +96512,14 @@ function RambleView({ info }) {
         setDevices(list.filter((d) => d.kind === "videoinput")
           .map((d) => ({ deviceId: d.deviceId, label: d.label || "Camera" })));
       } catch {}
+      // Pre-warm the MIC permission inside this same user gesture so the
+      // browser's prompt shows now, at Enable camera, and never interrupts a
+      // voice pinch-hold mid-gesture (a mid-hold prompt = dead recording =
+      // "Heard nothing"). The probe stream is stopped immediately.
+      try {
+        const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mic.getTracks().forEach((t) => t.stop());
+      } catch {}
     } catch (e) {
       stopStream();
       setCamState("error");
@@ -96680,22 +96688,34 @@ function RambleView({ info }) {
     flashTimerRef.current = setTimeout(() => setSttFlash(null), 2200);
   }, []);
 
-  const sttActiveRef = useRef(null); // { ctx } while a listen session runs
+  const sttActiveRef = useRef(null); // { ctx, startedAt, failed } while a listen session runs
   const routeTranscriptRef = useRef(null);
   const startStt = useCallback((ctx, label) => {
     if (sttActiveRef.current) return;
-    sttActiveRef.current = { ctx };
+    const session = { ctx, startedAt: performance.now(), failed: false };
+    sttActiveRef.current = session;
     setSttUi({ label: label || "Listening" });
     rambleEnsureVoice().then((WV) => {
-      if (!WV || !sttActiveRef.current) return;
-      WV.listenStart().catch(() => {});
+      // Only start recording if THIS session is still the active one (a very
+      // quick release may already have ended it).
+      if (!WV || sttActiveRef.current !== session) return;
+      WV.listenStart().catch(() => {
+        // Mic blocked / unavailable: say so NOW, while the user still holds,
+        // instead of a misleading "Heard nothing" at release.
+        if (sttActiveRef.current !== session) return;
+        session.failed = true;
+        setSttUi(null);
+        flashStt("Microphone unavailable - allow mic access for this site", true);
+      });
     });
-  }, []);
+  }, [flashStt]);
   const stopStt = useCallback(() => {
     const act = sttActiveRef.current;
     if (!act) return;
     sttActiveRef.current = null;
     setSttUi(null);
+    if (act.failed) return;   // mic error already surfaced
+    const heldMs = performance.now() - (act.startedAt || 0);
     rambleEnsureVoice().then(async (WV) => {
       let text = null;
       if (WV) {
@@ -96704,9 +96724,15 @@ function RambleView({ info }) {
           if (r && r.ok && r.text) text = String(r.text).trim();
         } catch {}
       }
+      if (!text && heldMs < 900) {
+        // Released almost immediately after the ring filled - odds are the
+        // words came after the mic closed.
+        flashStt("Keep holding while you speak, release when done", true);
+        return;
+      }
       if (routeTranscriptRef.current) routeTranscriptRef.current(act.ctx, text || null);
     });
-  }, []);
+  }, [flashStt]);
   // ── left-hand insert slots: prototype / browser / image ────────────────
   const [protos, setProtos] = useState([]);
   const protosRef = useRef([]);
