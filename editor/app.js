@@ -96053,11 +96053,11 @@ const RAMBLE_MIRROR_KEY = "th.ramble.mirror";     // horizontal (left-right) fli
 const RAMBLE_FLIPV_KEY = "th.ramble.flipv";       // vertical (top-bottom) flip
 const RAMBLE_VISIONCFG_KEY = "th.ramble.visioncfg"; // persisted HUD calibration (palm signs, swap, thresholds)
 
-// Calibration schema version. v2 = phalanx-normalized pinch/touch metric;
-// saved thresholds from the old palm-length metric are meaningless under it
-// and get dropped (palm signs and handedness swap survive - those are
-// metric-independent).
-const RAMBLE_VISIONCFG_V = 2;
+// Calibration schema version. v3 = depth-invariant thumb-distal-normalized
+// pinch/touch metric + relative release; saved thresholds from older metrics
+// are meaningless under it and get dropped (palm signs and handedness swap
+// survive - those are metric-independent).
+const RAMBLE_VISIONCFG_V = 3;
 function rambleLoadVisionCfg() {
   try {
     const j = JSON.parse(localStorage.getItem(RAMBLE_VISIONCFG_KEY) || "null");
@@ -96415,6 +96415,7 @@ function RambleHud({ handRef, visionStatus, getCtl, onConfig }) {
       ${cfg && html`
         ${slider("pinch on", "pinchOn", 0.2, 1.2)}
         ${slider("pinch off", "pinchOff", 0.4, 1.6)}
+        ${slider("release x", "releaseRatio", 1.2, 2.4)}
         ${slider("touch on", "touchOn", 0.2, 1.2)}
         ${slider("touch off", "touchOff", 0.4, 1.6)}
         <div className="ramble-hud-row">

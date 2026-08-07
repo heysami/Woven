@@ -34,13 +34,19 @@ const CDN = {
 const DETECT_INTERVAL_MS = 40;   // ~25fps inference cap (matches logicvision)
 
 const DEFAULT_CONFIG = {
-  // Pinch = thumbTip-indexTip distance normalized by the index proximal
-  // phalanx length (MCP->PIP). That reference foreshortens together with the
-  // fingers when the hand tilts, unlike the palm length, so the relaxed vs
-  // pinched bands stay separated under real desk-camera angles:
-  // relaxed open hand ~1.2-2.0, actual pinch ~0.2-0.5.
+  // Pinch = thumbTip-indexTip distance normalized by the thumb DISTAL segment
+  // (IP->tip, scaled x1.55 to keep familiar units), with the index proximal
+  // phalanx as an occlusion floor. The thumb's distal bone sits at the SAME
+  // DEPTH as the pinching tips, so close-to-camera perspective inflates the
+  // numerator and denominator together and the ratio stays depth-invariant
+  // (the old palm/phalanx references sat deeper and broke up close).
+  // Relaxed open hand ~1.2-2.0, actual pinch ~0.2-0.5.
   pinchOn: 0.7,
   pinchOff: 1.05,
+  // Relative release: while pinched, remember the tightest gap seen; the gap
+  // growing past (tightest x releaseRatio) is a release regardless of the
+  // absolute band - self-calibrating per pinch and per hand height.
+  releaseRatio: 1.7,
   // Consecutive frames under pinchOn required to engage (debounces the
   // single-frame flickers occluded top-down hands produce).
   pinchOnFrames: 2,
@@ -158,6 +164,7 @@ function makeHandTracker(cfg) {
     palmCandidate: null,    // { value, since }
     pinchActive: false,
     pinchOnStreak: 0,       // consecutive frames under pinchOn (debounce)
+    pinchMin: 0,            // tightest gap of the current pinch (relative release)
     lastPalmFlipAt: 0,      // pinch-engage guard window after a flip
     thumbTouch: null,
     prevWrist: null,        // { x, y, t } smoothed, for velocity
@@ -233,34 +240,46 @@ function trackerUpdate(tr, rawLm, t, hand, chiralitySign) {
   else if (extCount >= 3) pose = 'open';
   else if (extIndex && extCount === 1) pose = 'point';
 
-  // Pinch with hysteresis + engage debounce, normalized by the index
-  // proximal phalanx (MCP 5 -> PIP 6) - see DEFAULT_CONFIG for why.
+  // Pinch with hysteresis + engage debounce; depth-invariant reference - see
+  // DEFAULT_CONFIG for why the thumb distal segment is the normalizer.
   const phalanx = Math.max(1e-4, dist2(lm[5], lm[6]));
-  const pinchDist = dist2(tips.thumb, tips.index) / phalanx;
-  const offThreshold = tr.palm === 'up'
+  const thumbSeg = dist2(lm[3], lm[4]);
+  const ref = Math.max(1e-4, Math.max(thumbSeg * 1.55, phalanx * 0.6));
+  const pinchDist = dist2(tips.thumb, tips.index) / ref;
+  const absoluteOff = tr.palm === 'up'
     ? cfg.pinchOff * (cfg.pinchOffUpFactor || 1)
     : cfg.pinchOff;
+  // Release fires on EITHER the absolute band or the relative one (gap grew
+  // releaseRatio-fold past this pinch's tightest point), whichever is lower -
+  // floored near the engage band so an ultra-tight pinch cannot self-release.
+  const relativeOff = Math.max(cfg.pinchOn * 0.9, (tr.pinchMin || 1) * (cfg.releaseRatio || 1.7));
+  const offThreshold = Math.min(absoluteOff, relativeOff);
   // Never ENGAGE a pinch while the hand is edge-on or fresh out of a palm
   // flip: rotating hands collapse the landmarks and read as phantom pinches.
   // Already-active pinches are untouched (flip-and-keep-drawing still works).
   const flipGuard = edgeOn || (t - (tr.lastPalmFlipAt || 0) < (cfg.flipGuardMs || 250));
   if (tr.pinchActive) {
-    if (pinchDist > offThreshold) { tr.pinchActive = false; tr.pinchOnStreak = 0; }
+    tr.pinchMin = Math.min(tr.pinchMin || pinchDist, pinchDist);
+    if (pinchDist > offThreshold) { tr.pinchActive = false; tr.pinchOnStreak = 0; tr.pinchMin = 0; }
   } else if (flipGuard) {
     tr.pinchOnStreak = 0;
   } else if (pinchDist < cfg.pinchOn) {
     tr.pinchOnStreak += 1;
-    if (tr.pinchOnStreak >= Math.max(1, cfg.pinchOnFrames || 1)) tr.pinchActive = true;
+    if (tr.pinchOnStreak >= Math.max(1, cfg.pinchOnFrames || 1)) {
+      tr.pinchActive = true;
+      tr.pinchMin = pinchDist;
+    }
   } else {
     tr.pinchOnStreak = 0;
   }
 
-  // Thumb-to-fingertip touch (nearest of the four, hysteresis on the held one).
+  // Thumb-to-fingertip touch (nearest of the four, hysteresis on the held
+  // one), on the same depth-invariant reference.
   const touchD = {
-    index: dist2(tips.thumb, tips.index) / phalanx,
-    middle: dist2(tips.thumb, tips.middle) / phalanx,
-    ring: dist2(tips.thumb, tips.ring) / phalanx,
-    pinky: dist2(tips.thumb, tips.pinky) / phalanx,
+    index: dist2(tips.thumb, tips.index) / ref,
+    middle: dist2(tips.thumb, tips.middle) / ref,
+    ring: dist2(tips.thumb, tips.ring) / ref,
+    pinky: dist2(tips.thumb, tips.pinky) / ref,
   };
   if (tr.thumbTouch && touchD[tr.thumbTouch] <= cfg.touchOff) {
     // keep the current touch until it clearly releases
