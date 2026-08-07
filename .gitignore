@@ -24,3 +24,4 @@ __pycache__/
 
 # Vendored figma-cli (external MIT tool; install per editor/tools/figma-bridge/USING-FIGMA-CLI.md)
 editor/tools/figma-cli/
+Woven-v*.zip
