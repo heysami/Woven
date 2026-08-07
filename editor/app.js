@@ -96248,6 +96248,7 @@ function rambleMakeDebugHand(opts) {
     pose: opts.pose || (pinchActive ? "partial" : "open"),
     pinch: {
       active: pinchActive,
+      solid: pinchActive,
       dist: pinchActive ? 0.2 : 1.2,
       x: (lm[4].x + lm[8].x) / 2,
       y: (lm[4].y + lm[8].y) / 2,
@@ -97431,6 +97432,11 @@ function RambleView({ info }) {
           }
           it.mode = "idle"; it.slider = null; return;
         }
+        // Scrub only while the pinch is SOLID (fully closed). In the
+        // hysteresis dead zone - where a palm-up release hides from a
+        // top-down camera - the highlight freezes, so a hidden release can
+        // never drift the selection before the commit flip.
+        if (!R.pinch.solid) return;
         const p = rambleToScreen(m, R.pinch.x, R.pinch.y);
         const wasDetailed = s.detailed;
         s.detailed = !!(L && !L.stale && L.palm === "up");
@@ -97489,6 +97495,7 @@ function RambleView({ info }) {
           }
           it.mode = "idle"; it.slider = null; return;
         }
+        if (!L.pinch.solid) return;   // freeze in the release dead zone
         const p = rambleToScreen(m, L.pinch.x, L.pinch.y);
         s.idxF = Math.max(0, Math.min(RAMBLE_TYPE_LIST.length - 1, s.startIdx + (p.x - s.xAnchor) / RAMBLE_SLIDER_STEP_X));
         s.pos = p;
@@ -97541,6 +97548,7 @@ function RambleView({ info }) {
           }
           it.mode = "idle"; it.slider = null; return;
         }
+        if (!L.pinch.solid) return;   // freeze in the release dead zone
         const sp = rambleToScreen(m, L.pinch.x, L.pinch.y);
         s.idxF = Math.max(0, Math.min(list.length - 1, s.startIdx + (sp.x - s.xAnchor) / RAMBLE_SLIDER_STEP_X));
         s.pos = sp;

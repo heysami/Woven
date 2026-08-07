@@ -294,6 +294,11 @@ function trackerUpdate(tr, rawLm, t, hand, chiralitySign) {
     pose,
     pinch: {
       active: tr.pinchActive,
+      // solid = fingers still fully closed (below the ENGAGE band). Between
+      // solid and released lies the hysteresis dead zone where a top-down
+      // palm-up release hides; consumers freeze scrubbing there so a hidden
+      // release can never drift a selection.
+      solid: tr.pinchActive && pinchDist < cfg.pinchOn,
       dist: pinchDist,
       x: (tips.thumb.x + tips.index.x) / 2,
       y: (tips.thumb.y + tips.index.y) / 2,
