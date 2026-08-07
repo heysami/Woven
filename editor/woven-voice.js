@@ -53,6 +53,7 @@
   var recorder = null;
   var recorderStream = null;
   var recorderChunks = null;
+  var recorderStartedAt = 0;
   var recorderResolve = null;
   var recorderTimer = null;
 
@@ -296,13 +297,27 @@
     return ""; // browser default (Safari -> mp4/aac; the daemon's ffmpeg decodes it)
   }
 
-  function listenStart() {
+  function listenStart(opts) {
+    opts = opts || {};
     if (recorder) return Promise.reject(new Error("already listening"));
     return probe().then(function (p) {
       if (p.stt === "daemon" && navigator.mediaDevices && window.MediaRecorder) {
-        return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        // opts.deviceId pins a specific microphone (callers may need to dodge
+        // a bad default - e.g. Continuity Camera hijacking the system mic
+        // with the iPhone's). Falls back to the default mic if it fails.
+        var constraints = opts.deviceId
+          ? { audio: { deviceId: { exact: opts.deviceId } } }
+          : { audio: true };
+        var acquire = navigator.mediaDevices.getUserMedia(constraints);
+        if (opts.deviceId) {
+          acquire = acquire.catch(function () {
+            return navigator.mediaDevices.getUserMedia({ audio: true });
+          });
+        }
+        return acquire.then(function (stream) {
           recorderStream = stream;
           recorderChunks = [];
+          recorderStartedAt = Date.now();
           var mime = pickRecorderMime();
           recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
           recorder.ondataavailable = function (e) { if (e.data && e.data.size) recorderChunks.push(e.data); };
@@ -327,15 +342,16 @@
         try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
         var mime = rec.mimeType || "audio/webm";
         var blob = new Blob(chunks, { type: mime });
+        var recMs = recorderStartedAt ? Date.now() - recorderStartedAt : 0;
         fetch(BASE + "/stt", { method: "POST", headers: { "Content-Type": mime }, body: blob })
           .then(function (r) { return r.json(); })
           .then(function (j) {
             emit("listenend", { engine: j && j.engine, ok: !!(j && j.ok) });
-            resolve({ ok: !!(j && j.ok), text: (j && j.text) || "", engine: (j && j.engine) || "daemon" });
+            resolve({ ok: !!(j && j.ok), text: (j && j.text) || "", engine: (j && j.engine) || "daemon", recMs: recMs, bytes: blob.size });
           })
           .catch(function (e) {
             emit("error", { where: "stt", message: String(e && e.message || e) });
-            resolve({ ok: false, text: "", engine: "daemon" });
+            resolve({ ok: false, text: "", engine: "daemon", recMs: recMs, bytes: blob.size });
           });
       };
       try { rec.stop(); } catch (e) { rec.onstop(); }

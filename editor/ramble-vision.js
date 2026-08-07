@@ -44,6 +44,11 @@ const DEFAULT_CONFIG = {
   // Consecutive frames under pinchOn required to engage (debounces the
   // single-frame flickers occluded top-down hands produce).
   pinchOnFrames: 2,
+  // Palm-up release factor: with the palm toward an overhead camera the
+  // fingertips point AT the lens and their estimated positions stay glued
+  // together after a real release. Scale the release threshold down so the
+  // pinch lets go sooner in that orientation.
+  pinchOffUpFactor: 0.72,
   // Thumb-to-fingertip touch (same phalanx normalization).
   touchOn: 0.55,
   touchOff: 0.85,
@@ -226,8 +231,11 @@ function trackerUpdate(tr, rawLm, t, hand, chiralitySign) {
   // proximal phalanx (MCP 5 -> PIP 6) - see DEFAULT_CONFIG for why.
   const phalanx = Math.max(1e-4, dist2(lm[5], lm[6]));
   const pinchDist = dist2(tips.thumb, tips.index) / phalanx;
+  const offThreshold = tr.palm === 'up'
+    ? cfg.pinchOff * (cfg.pinchOffUpFactor || 1)
+    : cfg.pinchOff;
   if (tr.pinchActive) {
-    if (pinchDist > cfg.pinchOff) { tr.pinchActive = false; tr.pinchOnStreak = 0; }
+    if (pinchDist > offThreshold) { tr.pinchActive = false; tr.pinchOnStreak = 0; }
   } else if (pinchDist < cfg.pinchOn) {
     tr.pinchOnStreak += 1;
     if (tr.pinchOnStreak >= Math.max(1, cfg.pinchOnFrames || 1)) tr.pinchActive = true;

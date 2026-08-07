@@ -96791,6 +96791,29 @@ function RambleView({ info }) {
     flashTimerRef.current = setTimeout(() => setSttFlash(null), 2200);
   }, []);
 
+  // Continuity Camera tends to switch the DEFAULT system microphone to the
+  // iPhone - which, propped as a desk camera, records near-silence. Prefer
+  // the Mac's own microphone for dictation. Cache invalidates on devicechange.
+  const micIdRef = useRef(null);
+  const resolveMicId = useCallback(async () => {
+    if (micIdRef.current !== null) return micIdRef.current;
+    try {
+      const list = await navigator.mediaDevices.enumerateDevices();
+      const mics = list.filter((d) => d.kind === "audioinput");
+      const nonPhone = mics.filter((d) => !/iphone/i.test(d.label || ""));
+      const builtIn = nonPhone.find((d) => /built-in|macbook/i.test(d.label || ""));
+      micIdRef.current = ((builtIn || nonPhone[0] || mics[0] || {}).deviceId) || "";
+    } catch { micIdRef.current = ""; }
+    return micIdRef.current;
+  }, []);
+  useEffect(() => {
+    const md = navigator.mediaDevices;
+    if (!md || typeof md.addEventListener !== "function") return;
+    const invalidate = () => { micIdRef.current = null; };
+    md.addEventListener("devicechange", invalidate);
+    return () => md.removeEventListener("devicechange", invalidate);
+  }, []);
+
   const sttActiveRef = useRef(null); // { ctx, startedAt, failed } while a listen session runs
   const routeTranscriptRef = useRef(null);
   const startStt = useCallback((ctx, label) => {
@@ -96798,11 +96821,13 @@ function RambleView({ info }) {
     const session = { ctx, startedAt: performance.now(), failed: false };
     sttActiveRef.current = session;
     setSttUi({ label: label || "Listening" });
-    rambleEnsureVoice().then((WV) => {
+    rambleEnsureVoice().then(async (WV) => {
       // Only start recording if THIS session is still the active one (a very
       // quick release may already have ended it).
       if (!WV || sttActiveRef.current !== session) return;
-      WV.listenStart().catch(() => {
+      const micId = await resolveMicId();
+      if (sttActiveRef.current !== session) return;
+      WV.listenStart(micId ? { deviceId: micId } : undefined).catch(() => {
         // Mic blocked / unavailable: say so NOW, while the user still holds,
         // instead of a misleading "Heard nothing" at release.
         if (sttActiveRef.current !== session) return;
@@ -96820,17 +96845,23 @@ function RambleView({ info }) {
     if (act.failed) return;   // mic error already surfaced
     const heldMs = performance.now() - (act.startedAt || 0);
     rambleEnsureVoice().then(async (WV) => {
-      let text = null;
+      let text = null, res = null;
       if (WV) {
         try {
-          const r = await WV.listenStop();
-          if (r && r.ok && r.text) text = String(r.text).trim();
+          res = await WV.listenStop();
+          if (res && res.ok && res.text) text = String(res.text).trim();
         } catch {}
       }
-      if (!text && heldMs < 900) {
-        // Released almost immediately after the ring filled - odds are the
-        // words came after the mic closed.
-        flashStt("Keep holding while you speak, release when done", true);
+      if (!text) {
+        const recMs = (res && res.recMs) || 0;
+        if (recMs < 700 || heldMs < 900) {
+          // The mic window barely opened - the words came after it closed.
+          flashStt("Keep holding while you speak, release when done", true);
+        } else {
+          // A real recording came back empty: say how long it was so a wrong
+          // or muted microphone is distinguishable from a quick release.
+          flashStt("Heard nothing in " + (Math.round(recMs / 100) / 10) + "s of audio - is the right mic active?", true);
+        }
         return;
       }
       if (routeTranscriptRef.current) routeTranscriptRef.current(act.ctx, text || null);
@@ -97389,10 +97420,11 @@ function RambleView({ info }) {
         if (R && R.stale && R.pinch.active) return;   // dropout: wait out the grace
         const engaged = R && !R.stale && R.pinch.active && R.palm === "up";
         if (!engaged) {
-          // Commit on release OR hand-lost (both read as "let go"); only an
-          // explicit palm flip while still pinching aborts.
-          const aborted = R && R.pinch.active && R.palm !== "up";
-          if (!aborted && s) {
+          // EVERY exit commits the highlighted entry - release, hand-lost,
+          // and the palm flip. Top-down cameras cannot reliably see a palm-up
+          // pinch release (fingertips point at the lens), so the natural
+          // "highlight, then flip down to use the tool" motion IS the commit.
+          if (s) {
             const tool = RAMBLE_TOOL_LIST[Math.round(s.toolIdx)];
             setRightTool(tool);
             if (s.detailed && s.draft) attrsRef.current[tool] = { ...attrsRef.current[tool], ...s.draft };
@@ -97450,8 +97482,9 @@ function RambleView({ info }) {
         if (L && L.stale && L.pinch.active) return;   // dropout: wait out the grace
         const engaged = L && !L.stale && L.pinch.active && L.palm === "up";
         if (!engaged) {
-          const aborted = L && L.pinch.active && L.palm !== "up";
-          if (!aborted && s) {
+          // Same contract as the tool slider: every exit (release, hand-lost,
+          // palm flip) commits the highlighted type.
+          if (s) {
             setLeftTypeRef.current(RAMBLE_TYPE_LIST[Math.round(s.idxF)]);
           }
           it.mode = "idle"; it.slider = null; return;
