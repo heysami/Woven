@@ -32467,6 +32467,27 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 .wf-pal-tabs {
   display: flex; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--border);
 }
+/* Right-aligned scope switch for the Agent-chats tab (tool output on/off).
+   Rides in the tab row rather than claiming a band of its own - it belongs to
+   one tab, and the palette is already three bands tall. */
+.wf-pal-toggle {
+  margin-left: auto; display: flex; align-items: center; gap: 6px;
+  font: inherit; font-size: 11.5px; color: var(--text-faint);
+  padding: 4px 8px 4px 5px; border: 0; border-radius: 7px;
+  background: transparent; cursor: pointer;
+}
+.wf-pal-toggle:hover { background: var(--surface-2); color: var(--text-muted); }
+.wf-pal-toggle[data-on="true"] { color: var(--text-muted); }
+.wf-pal-toggle-box {
+  flex: 0 0 auto; width: 14px; height: 14px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); background: var(--surface);
+  color: transparent;
+}
+.wf-pal-toggle[data-on="true"] .wf-pal-toggle-box {
+  border-color: var(--success); background: var(--success); color: #fff;
+}
+.wf-pal-toggle-box svg { width: 11px; height: 11px; }
 .wf-pal-tab {
   font: inherit; font-size: 12px; font-weight: 600;
   padding: 5px 11px; border: 0; border-radius: 7px;

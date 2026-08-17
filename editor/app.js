@@ -40022,8 +40022,18 @@ const WF_PAL_TABS = ["text", "nodes", "runs"];
 // Badge glyph per transcript-hit role. Same register as the catalog glyphs
 // above - a mono mark, never an emoji.
 const PAL_ROLE_BADGE = {
-  you: "Y", assistant: "A", thinking: "T", tool: "⌗", summary: "≡",
+  you: "Y", assistant: "A", thinking: "T", tool: "⌗", toolresult: "⌸", summary: "≡",
 };
+// Whether transcript search also reads TOOL OUTPUT. Off by default: a tool
+// result is a file dump or a page of command output, so on any common word it
+// wins the newest-first race and buries the conversation the user is actually
+// looking for. Tool CALLS are searched either way - they are one line, and
+// "which command touched styles.css" is a fair query. Sticky across sessions
+// (a preference, not thread state), same convention as the chat view mode.
+const PAL_TOOLRESULTS_KEY = "th-chat-search-toolresults";
+function loadPalToolResults() {
+  try { return localStorage.getItem(PAL_TOOLRESULTS_KEY) === "1"; } catch { return false; }
+}
 // Split `text` on every case-insensitive occurrence of `q`, wrapping the hits
 // in <mark> so a snippet shows WHY it matched. Returns the plain string when
 // there's nothing to mark, keeping the common rows allocation-free.
@@ -40071,6 +40081,16 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
   const [chatRes, setChatRes] = useState(null);     // null = nothing fetched yet
   const [chatBusy, setChatBusy] = useState(false);
   const [chatErr, setChatErr] = useState(null);
+  // Tool OUTPUT is off by default - see PAL_TOOLRESULTS_KEY. Flipping it is a
+  // fresh query, not a client-side filter: the daemon drops those rows before
+  // they count against its match cap, so excluding them buys the search DEPTH
+  // (older, more relevant conversations) rather than just hiding rows.
+  const [toolRes, setToolRes] = useState(loadPalToolResults);
+  const changeToolRes = (on) => {
+    setToolRes(on);
+    try { localStorage.setItem(PAL_TOOLRESULTS_KEY, on ? "1" : "0"); } catch {}
+    try { inputRef.current && inputRef.current.focus(); } catch {}
+  };
   const chatReqRef = useRef(0);
   useEffect(() => {
     if (!open || tab !== "runs") return;
@@ -40084,7 +40104,8 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
     setChatBusy(true);
     const t = setTimeout(async () => {
       try {
-        const r = await fetch(apiUrl("/__chat_search?q=" + encodeURIComponent(term)));
+        const r = await fetch(apiUrl("/__chat_search?q=" + encodeURIComponent(term)
+                                     + (toolRes ? "&toolresults=1" : "")));
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
         if (seq !== chatReqRef.current) return;     // superseded
@@ -40097,7 +40118,7 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
       }
     }, 280);
     return () => clearTimeout(t);
-  }, [open, tab, query, q]);
+  }, [open, tab, query, q, toolRes]);
 
   const results = useMemo(() => {
     if (!open) return [];
@@ -40222,7 +40243,8 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
     if (query.length < 2) return "Type at least 2 characters to search every agent conversation in this project.";
     if (chatBusy) return null;                      // the spinner speaks for it
     if (chatRes && chatRes.unsearchable) return "That query is all punctuation - add a word to search for.";
-    return `Nothing in this project's conversations matches "${q.trim()}".`;
+    return `Nothing in this project's conversations matches "${q.trim()}".`
+         + (toolRes ? "" : " Turn on Tool output to search file dumps and command output too.");
   };
 
   return createPortal(html`
@@ -40248,6 +40270,22 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
           <button className="wf-pal-tab" role="tab" data-active=${tab === "text" ? "true" : "false"} onClick=${() => setTab("text")}>Canvas text</button>
           <button className="wf-pal-tab" role="tab" data-active=${tab === "nodes" ? "true" : "false"} onClick=${() => setTab("nodes")}>Nodes & navigation</button>
           <button className="wf-pal-tab" role="tab" data-active=${tab === "runs" ? "true" : "false"} onClick=${() => setTab("runs")}>Agent chats</button>
+          ${tab === "runs" && html`
+            <button
+              type="button"
+              role="switch"
+              aria-checked=${toolRes ? "true" : "false"}
+              className="wf-pal-toggle"
+              data-on=${toolRes ? "true" : "false"}
+              title=${toolRes
+                ? "Tool output is being searched. Turn it off to keep results to the conversation - file dumps and command output bury it otherwise."
+                : "Also search tool OUTPUT - file dumps, command output, page reads. Noisy, but it is where paths and errors live. Tool calls are always searched."}
+              onClick=${() => changeToolRes(!toolRes)}
+            >
+              <span className="wf-pal-toggle-box" aria-hidden="true">${toolRes ? html`<${Icon.Check}/>` : null}</span>
+              <span>Tool output</span>
+            </button>
+          `}
         </div>
         <div className="wf-pal-list" ref=${listRef}>
           ${tab === "runs" && chatBusy && results.length === 0 && html`
@@ -40283,7 +40321,8 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
           `)}
           ${tab === "runs" && chatRes && chatRes.truncated && results.length > 0 && html`
             <div className="wf-pal-more">
-              Showing the newest ${chatRes.totalMatches} matches - narrow the query to reach older ones.
+              Showing the newest ${chatRes.totalMatches} matches - narrow the query${toolRes
+                ? ", or turn off Tool output," : ""} to reach older ones.
             </div>
           `}
         </div>

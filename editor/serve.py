@@ -10098,7 +10098,12 @@ def _chat_search_token(q: str) -> str:
 def _chat_search_row_text(rec):
     """(role, label, text) for one transcript row - the human-readable part a
     search should look at - or None for rows that are pure machinery (usage
-    counters, SDK status chatter, lifecycle markers)."""
+    counters, SDK status chatter, lifecycle markers).
+
+    `toolresult` is its own role rather than part of `tool`: a tool CALL is a
+    short line of intent (which file, which command) and belongs in a default
+    search, while its OUTPUT is a file dump that would otherwise drown every
+    query. The endpoint filters on that split; see `tools` in _chat_search."""
     t = rec.get("type")
     d = rec.get("data")
     if not isinstance(d, dict):
@@ -10138,7 +10143,7 @@ def _chat_search_row_text(rec):
                            if isinstance(p, dict) and p.get("type") == "text")
         else:
             body = ""
-        return ("tool", "Tool result", body)
+        return ("toolresult", "Tool result", body)
     if dt == "status":
         r = d.get("result")
         return ("assistant", "Result", str(r)) if r else None
@@ -10159,12 +10164,14 @@ def _chat_search_snippet(text: str, idx: int, qlen: int) -> str:
 
 
 def _chat_search_scan(path: str, token: str, query_low: str, max_hits: int,
-                      deadline: float):
+                      deadline: float, skip_roles=()):
     """Backwards byte scan of one transcript.
 
     Returns ([hit, …], truncated, scanned_bytes) with hits NEWEST FIRST.
     `truncated` is True when we stopped on the hit cap or the time budget with
-    bytes still unread - i.e. older matches may exist that this answer omits."""
+    bytes still unread - i.e. older matches may exist that this answer omits.
+    `skip_roles` drops matched rows by role BEFORE they count against the cap,
+    so excluding tool output buys the query depth rather than just hiding rows."""
     if max_hits <= 0:
         return [], True, 0
     try:
@@ -10229,6 +10236,8 @@ def _chat_search_scan(path: str, token: str, query_low: str, max_hits: int,
                 if not got:
                     continue
                 role, label, text = got
+                if role in skip_roles:
+                    continue
                 if not text:
                     continue
                 if len(text) > _CHAT_SEARCH_MAX_TEXT:
@@ -31814,11 +31823,18 @@ class H(http.server.SimpleHTTPRequestHandler):
             out["omittedRows"] = omitted
         return self._reply(200, out)
 
-    # GET /__chat_search?q=<text>[&project=<id>]
+    # GET /__chat_search?q=<text>[&project=<id>][&toolresults=1]
     #   Full-text search across every run's transcript in this project, for
     #   the canvas search palette's "Agent chats" tab. Answers newest-first,
     #   grouped by run. See _chat_search_scan for why this never parses a
     #   transcript it doesn't have to.
+    #
+    #   Tool OUTPUT is excluded unless `toolresults=1`. A tool result is a
+    #   file dump or a page of command output, so on any common word it wins
+    #   the newest-first race and buries the actual conversation; the palette
+    #   surfaces the switch and defaults it off. Tool CALLS stay in either
+    #   way - "which command touched styles.css" is a fair thing to search
+    #   for, and a call is one line, not a page.
     _CHAT_SEARCH_MAX_HITS    = 300   # rows collected before we stop scanning
     _CHAT_SEARCH_MAX_PER_RUN = 6     # matches surfaced per conversation
     _CHAT_SEARCH_MAX_RUNS    = 40
@@ -31838,6 +31854,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         if len(token) < 2:
             return self._reply(200, dict(base, unsearchable=True))
         q_low = q.lower()
+        want_results = (_qs_get(qs, "toolresults") or "").strip() in ("1", "true", "yes")
+        skip_roles = () if want_results else ("toolresult",)
         deadline = time.monotonic() + _CHAT_SEARCH_BUDGET
         t0 = time.time()
         groups, order = {}, []
@@ -31853,7 +31871,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 metas = {}
             hits, more, nbytes = _chat_search_scan(
-                path, token, q_low, self._CHAT_SEARCH_MAX_HITS - total, deadline)
+                path, token, q_low, self._CHAT_SEARCH_MAX_HITS - total, deadline,
+                skip_roles)
             scanned += nbytes
             truncated = truncated or more
             for h in hits:
@@ -31923,6 +31942,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {
             "q": q, "runs": [groups[r] for r in order],
             "totalMatches": total, "truncated": truncated,
+            "toolResults": want_results,
             "scannedBytes": scanned,
             "elapsedMs": int((time.time() - t0) * 1000),
         })
