@@ -34663,26 +34663,98 @@ function workflowGroupPaintOrder(nodes, wb) {
   const all = [];
   (nodes || []).forEach((n, i) => { if (n && n.id) all.push({ o: n, i, fam: WF_PAINT_FAMILY[wfPaintFamily(n)] || 0 }); });
   (wb || []).forEach((it, i) => { if (it && it.id) all.push({ o: it, i, fam: WF_PAINT_FAMILY.wb }); });
-  const units = new Map();            // unit key -> { key, fam, i, members[] }
+
+  // ── Frames are PSEUDO-GROUPS ───────────────────────────────────────────
+  // A section or table carries whatever sits on it through the stack: send
+  // the frame to the back and its contents go with it, or the frame lands
+  // behind its own children and they hang in mid-air over whatever is now
+  // underneath. Membership is the same rule that decides whether the frame
+  // CARRIES a thing when it moves (explicit sec/cell binding, or unbound
+  // with its centre inside), so "moves together" and "layers together"
+  // never disagree.
+  //
+  // wfFrameCanHold is called WITHOUT a ladder here on purpose: the ladder is
+  // what we are computing, and passing a half-built one back into the
+  // ownership test would be circular. The z+family fallback is the same
+  // answer for everything that isn't already inside a frame.
+  const frames = (nodes || []).filter(n => n && (n.kind === "section" || n.kind === "table"));
+  const frameById = new Map(frames.map(f => [f.id, f]));
+  const ownerOf = new Map();          // member id -> frame id
+  if (frames.length) {
+    for (const e of all) {
+      const o = e.o;
+      if (frameById.has(o.id)) continue;             // a frame is its own base
+      const host = workflowBoundTo(o);
+      if (host && frameById.has(host)) { ownerOf.set(o.id, host); continue; }
+      if (host) continue;                            // bound elsewhere - hands off
+      const bb = o.kind
+        ? { x: o.x || 0, y: o.y || 0, ...workflowNodeDrawnSize(o) }
+        : wbItemBBox(o);
+      const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
+      let best = null, bestZ = -Infinity;
+      for (const f of frames) {
+        const fw = f.w || (f.kind === "table" ? 0 : 880);
+        const fh = f.h || (f.kind === "table" ? 0 : 560);
+        if (cx < f.x || cx > f.x + fw || cy < f.y || cy > f.y + fh) continue;
+        if (!wfFrameCanHold(f, o)) continue;         // frame paints OVER it
+        const fz = wfPaintZ(f);
+        if (fz >= bestZ) { bestZ = fz; best = f; }   // innermost = topmost frame
+      }
+      if (best) ownerOf.set(o.id, best.id);
+    }
+  }
+  // Walk to the OUTERMOST frame so a table on a section (and the table's own
+  // cell contents) all land in the section's band, and record the depth so
+  // the band can be ordered frame-under-contents.
+  const rootOf = (id) => {
+    let cur = id, depth = 0;
+    const seen = new Set();
+    while (depth < 8) {
+      const nxt = ownerOf.get(cur);
+      if (!nxt || seen.has(nxt)) break;
+      seen.add(nxt); cur = nxt; depth++;
+    }
+    return { root: cur, depth };
+  };
+
+  const units = new Map();            // unit key -> { z, fam, i, members[] }
   for (const e of all) {
     const gid = workflowGroupIdOf(e.o);
-    const k = gid || ("~" + e.o.id);  // "~" can't collide with a group id
+    const { root, depth } = rootOf(e.o.id);
+    // The frame LEADS its own band, so it keys on itself - not on "~id", or
+    // it would sit in a different unit from the contents it is supposed to
+    // carry, which is the whole point.
+    const bandRoot = frameById.has(root) ? root : null;
+    e.depth = bandRoot && root !== e.o.id ? depth : 0;
+    // An explicit group wins over frame membership - it is the more
+    // deliberate statement about what belongs with what.
+    const k = gid || (bandRoot ? ("#" + bandRoot) : ("~" + e.o.id));
     let u = units.get(k);
-    if (!u) { u = { z: -Infinity, fam: -1, i: Infinity, members: [] }; units.set(k, u); }
+    if (!u) { u = { z: -Infinity, fam: -1, i: Infinity, members: [], frame: null }; units.set(k, u); }
     u.members.push(e);
-    // The unit rides its TOPMOST member, so a group sits where its highest
-    // thing sat before it was grouped.
-    const z = wfPaintZ(e.o);
-    if (z > u.z || (z === u.z && e.fam > u.fam)) { u.z = z; u.fam = e.fam; }
+    if (!gid && frameById.has(e.o.id) && e.o.id === root) u.frame = e;
     if (e.i < u.i) u.i = e.i;
+  }
+  for (const u of units.values()) {
+    // A frame's band rides the FRAME's own z - that is the thing the user
+    // restacked. Every other unit rides its topmost member, so grouping
+    // never moves anything.
+    const lead = u.frame ? [u.frame] : u.members;
+    for (const m of lead) {
+      const z = wfPaintZ(m.o);
+      if (z > u.z || (z === u.z && m.fam > u.fam)) { u.z = z; u.fam = m.fam; }
+    }
   }
   const ordered = [...units.values()].sort((a, b) =>
     (a.z - b.z) || (a.fam - b.fam) || (a.i - b.i));
   const out = new Map();
   let slot = 0;
   for (const u of ordered) {
-    // Inside a unit, members keep their own relative order.
-    u.members.sort((a, b) => (wfPaintZ(a.o) - wfPaintZ(b.o)) || (a.fam - b.fam) || (a.i - b.i));
+    // Inside a unit: shallower first, so a frame sits UNDER its contents and
+    // a nested frame under its own; then each level keeps its own order.
+    u.members.sort((a, b) =>
+      ((a.depth || 0) - (b.depth || 0)) ||
+      (wfPaintZ(a.o) - wfPaintZ(b.o)) || (a.fam - b.fam) || (a.i - b.i));
     for (const m of u.members) out.set(m.o.id, slot++);
   }
   return out;
@@ -40425,7 +40497,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // Drives the pre-click preview (where this endpoint lands + where the ones
   // already on that side slide to). Null whenever the arrow tool is off, the
   // pointer is deep inside a shape, or the no-snap modifier is held.
-  const [layersOpen, setLayersOpen] = useState(false);
   const [groupResizeRect, setGroupResizeRect] = useState(null);   // live rect while a group handle is dragged
   const [wbArrowSnap, setWbArrowSnap] = useState(null);
   const wbArrowSnapRef = useRef(null); wbArrowSnapRef.current = wbArrowSnap;
@@ -54642,6 +54713,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           <div className="workflow-nav-rail-sep"/>
           <${HoverTip}
             placement="right"
+            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && leftPanel === "layers" ? " is-active" : "")}
+            ariaLabel="Layers"
+            tip="Layers - stacking order and groups"
+            onClick=${() => onRailPanel("layers")}
+          ><${Icon.Layers}/><//>
+          <${HoverTip}
+            placement="right"
             className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "library" ? " is-active" : "")}
             ariaLabel="Local library"
             tip="Local library - saved prompts + blocks"
@@ -54663,7 +54741,22 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           ><${Icon.Image}/><//>
         </nav>
         <div className="workflow-library-col">
-          ${wbMode ? html`
+          ${leftPanel === "layers" ? html`
+            <${WorkflowLayersPanel}
+              nodes=${data.nodes || []}
+              wb=${wbItems}
+              paintOrder=${paintOrder}
+              selectedNodeIds=${selectedNodeIds}
+              selectedWbIds=${selectedWbIds}
+              canGroup=${selectionGroupState.canGroup}
+              canUngroup=${selectionGroupState.canUngroup}
+              onGroup=${groupSelection}
+              onUngroup=${ungroupSelection}
+              onSelectOne=${selectLayerRow}
+              onSelectGroup=${selectWholeGroup}
+              onRename=${renameGroup}
+            />
+          ` : wbMode ? html`
             <${WorkflowWhiteboardTools}
               tool=${wbTool}
               onTool=${setWbTool}
@@ -56460,24 +56553,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               />
             `)}
             <${WorkflowAgentBadgeLayer} nodes=${data.nodes || []} zoom=${zoom} pan=${pan} wrapRef=${wrapRef} tetherHost=${agentTetherRef} chatBusy=${chatBusy} activeProto=${data?.meta?.activePrototype || ""} workingPaths=${workingPaths} />
-            ${layersOpen && createPortal(html`<${WorkflowLayersPanel}
+            ${leftPanel === "layers" && createPortal(html`<${WorkflowLayerOptions}
               nodes=${data.nodes || []}
               wb=${wbItems}
-              paintOrder=${paintOrder}
               selectedNodeIds=${selectedNodeIds}
               selectedWbIds=${selectedWbIds}
               activeGroup=${activeGroup}
-              canGroup=${selectionGroupState.canGroup}
-              canUngroup=${selectionGroupState.canUngroup}
-              onGroup=${groupSelection}
-              onUngroup=${ungroupSelection}
-              onSelectOne=${selectLayerRow}
-              onSelectGroup=${selectWholeGroup}
               onLayer=${(mode) => { layerSelectedNodes(mode); layerSelectedWbItems(mode); }}
               onConstrain=${(patch) => setMemberConstraint(
                 new Set([...selectedNodeIds, ...selectedWbIds]), patch)}
-              onRename=${renameGroup}
-              onClose=${() => setLayersOpen(false)}
             />`, document.body)}
             ${activeGroup && html`<${WorkflowGroupFrame}
               bbox=${groupResizeRect || activeGroup.bbox}
@@ -56593,13 +56677,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         </div>
         ${protoViewerMounted && html`<${WorkflowProtoViewer} active=${mainView === "proto"} awaitingFirstProto=${awaitingFirstProto && !hasProtoNode} onEditTab=${openZoomForViewerTab} onActivePathChange=${setProtoViewerPath}/>`}
         <${RightNavRail}
-          extra=${html`<${HoverTip}
-            placement="left"
-            className=${"th-right-rail-btn" + (layersOpen ? " is-active" : "")}
-            ariaLabel="Layers"
-            tip="Layers - stacking order, groups, and how a group's contents resize"
-            onClick=${() => setLayersOpen(v => !v)}
-          ><${Icon.Layers}/><//>`}
           onOpenRun=${onReopenRun}
           onStartNewChat=${onOpenNewChat}
           onStartChatWithPrompt=${onStartChatWithPrompt}
@@ -92417,9 +92494,8 @@ function workflowLayerLabel(o) {
   return (o.type || "item").replace(/^\w/, c => c.toUpperCase());
 }
 function WorkflowLayersPanel({
-  nodes, wb, paintOrder, selectedNodeIds, selectedWbIds, activeGroup,
-  onSelectOne, onSelectGroup, onGroup, onUngroup, onLayer, onConstrain,
-  onRename, canGroup, canUngroup, onClose,
+  nodes, wb, paintOrder, selectedNodeIds, selectedWbIds,
+  onSelectOne, onSelectGroup, onGroup, onUngroup, onRename, canGroup, canUngroup,
 }) {
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [renaming, setRenaming] = useState(null);
@@ -92449,26 +92525,8 @@ function WorkflowLayersPanel({
       <span className="workflow-layers-label">${workflowLayerLabel(o)}</span>
       ${o.locked && html`<span className="workflow-layers-lock" title="Locked"><${Icon.Lock}/></span>`}
     </div>`;
-  const seg = (label, opts, cur, onPick) => html`
-    <div className="workflow-layers-constraint">
-      <span className="workflow-layers-constraint-label">${label}</span>
-      <div className="workflow-wb-seg">
-        ${opts.map(o => html`
-          <button key=${o} type="button"
-            className=${"workflow-wb-seg-btn" + (cur === o ? " is-active" : "")}
-            title=${o} onClick=${() => onPick(o)}>${o[0].toUpperCase() + o.slice(1)}</button>`)}
-      </div>
-    </div>`;
-  // The constraint editor points at whatever single member is selected inside
-  // a group; with the whole group selected there is nothing to constrain
-  // (the group IS the frame), so it explains itself instead.
-  const selInGroup = (() => {
-    const all = [...(nodes || []), ...(wb || [])].filter(o => o && isSel(o));
-    if (all.length !== 1) return null;
-    return workflowGroupIdOf(all[0]) ? all[0] : null;
-  })();
   return html`
-    <div className="workflow-layers-panel" onMouseDown=${(e) => e.stopPropagation()}>
+    <div className="workflow-layers-panel">
       <div className="workflow-layers-head">
         <span>Layers</span>
         <span className="workflow-layers-actions">
@@ -92476,7 +92534,6 @@ function WorkflowLayersPanel({
             title="Group the selection (⌘G)" onClick=${onGroup}>Group</button>
           <button type="button" className="workflow-vector-mini-btn" disabled=${!canUngroup}
             title="Ungroup (⇧⌘G)" onClick=${onUngroup}>Ungroup</button>
-          <button type="button" className="workflow-layers-close" title="Hide layers" onClick=${onClose}>×</button>
         </span>
       </div>
       <div className="workflow-layers-list">
@@ -92506,24 +92563,52 @@ function WorkflowLayersPanel({
             </div>`;
         })}
       </div>
-      ${(selectedNodeIds.size + selectedWbIds.size) > 0 && html`
-        <div className="workflow-layers-foot">
-          <div className="workflow-layers-sublabel">Stacking</div>
-          <div className="workflow-wb-seg">
-            <button type="button" className="workflow-wb-seg-btn" title="Bring to front (⇧])" onClick=${() => onLayer("front")}>Front</button>
-            <button type="button" className="workflow-wb-seg-btn" title="Bring forward (])" onClick=${() => onLayer("forward")}>+</button>
-            <button type="button" className="workflow-wb-seg-btn" title="Send backward ([)" onClick=${() => onLayer("backward")}>−</button>
-            <button type="button" className="workflow-wb-seg-btn" title="Send to back (⇧[)" onClick=${() => onLayer("back")}>Back</button>
-          </div>
-          ${selInGroup ? html`
-            <div className="workflow-layers-sublabel">When the group resizes</div>
-            ${seg("Horizontal", WF_CONSTRAIN_H, workflowConstrainOf(selInGroup).h, (v) => onConstrain({ h: v }))}
-            ${seg("Vertical", WF_CONSTRAIN_V, workflowConstrainOf(selInGroup).v, (v) => onConstrain({ v: v }))}
-          ` : activeGroup ? html`
-            <div className="workflow-layers-hint">Pick one thing inside the group to set how it behaves when the group resizes.</div>
-          ` : null}
+    </div>`;
+}
+
+/* The selected layer's OPTIONS, on the right. Split from the list on purpose:
+   the list is a place you browse (left, with the other browsers), the options
+   are properties of what you picked (right, where node settings already
+   live). Renders nothing without a selection - an empty properties pane is
+   just furniture. */
+function WorkflowLayerOptions({ nodes, wb, selectedNodeIds, selectedWbIds, activeGroup, onLayer, onConstrain }) {
+  const isSel = (o) => o.kind ? selectedNodeIds.has(o.id) : selectedWbIds.has(o.id);
+  const picked = [...(nodes || []), ...(wb || [])].filter(o => o && isSel(o));
+  if (!picked.length) return null;
+  const selInGroup = picked.length === 1 && workflowGroupIdOf(picked[0]) ? picked[0] : null;
+  const seg = (label, opts, cur, onPick) => html`
+    <div className="workflow-layers-constraint">
+      <span className="workflow-layers-constraint-label">${label}</span>
+      <div className="workflow-wb-seg">
+        ${opts.map(o => html`
+          <button key=${o} type="button"
+            className=${"workflow-wb-seg-btn" + (cur === o ? " is-active" : "")}
+            title=${o} onClick=${() => onPick(o)}>${o[0].toUpperCase() + o.slice(1)}</button>`)}
+      </div>
+    </div>`;
+  const title = picked.length > 1
+    ? picked.length + " selected"
+    : workflowLayerLabel(picked[0]);
+  return html`
+    <div className="workflow-layeropts-panel" onMouseDown=${(e) => e.stopPropagation()}>
+      <div className="workflow-layers-head"><span>Layer</span></div>
+      <div className="workflow-layeropts-body">
+        <div className="workflow-layeropts-name" title=${title}>${title}</div>
+        <div className="workflow-layers-sublabel">Stacking</div>
+        <div className="workflow-wb-seg">
+          <button type="button" className="workflow-wb-seg-btn" title="Bring to front (⇧])" onClick=${() => onLayer("front")}>Front</button>
+          <button type="button" className="workflow-wb-seg-btn" title="Bring forward (])" onClick=${() => onLayer("forward")}>+</button>
+          <button type="button" className="workflow-wb-seg-btn" title="Send backward ([)" onClick=${() => onLayer("backward")}>−</button>
+          <button type="button" className="workflow-wb-seg-btn" title="Send to back (⇧[)" onClick=${() => onLayer("back")}>Back</button>
         </div>
-      `}
+        ${selInGroup ? html`
+          <div className="workflow-layers-sublabel">When the group resizes</div>
+          ${seg("Horizontal", WF_CONSTRAIN_H, workflowConstrainOf(selInGroup).h, (v) => onConstrain({ h: v }))}
+          ${seg("Vertical", WF_CONSTRAIN_V, workflowConstrainOf(selInGroup).v, (v) => onConstrain({ v: v }))}
+        ` : activeGroup ? html`
+          <div className="workflow-layers-hint">Pick one thing inside the group to set how it behaves when the group resizes.</div>
+        ` : null}
+      </div>
     </div>`;
 }
 
