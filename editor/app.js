@@ -971,6 +971,7 @@ const Icon = {
   Search:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="7" cy="7" r="4.2"/><path d="M10 10l3.5 3.5"/></svg>`,
   Shield:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 1.8l5 1.8v3.6c0 3.4-2.3 5.4-5 6.5-2.7-1.1-5-3.1-5-6.5V3.6z"/><path d="M6 8l1.4 1.4L10.5 6.3"/></svg>`,
   Lock:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>`,
+  Layers:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 1.8L1.8 5 8 8.2 14.2 5z"/><path d="M1.8 8.4L8 11.6l6.2-3.2"/><path d="M1.8 11.6L8 14.8l6.2-3.2"/></svg>`,
   Unlock:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 014.9-.6"/></svg>`,
   Scissors: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="4" r="1.8"/><circle cx="4" cy="12" r="1.8"/><path d="M5.5 5.2L13 12M5.5 10.8L13 4"/></svg>`,
   Eye:      () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>`,
@@ -12104,7 +12105,10 @@ function LeftRunsPopover({ onOpenRun, onStartNewChat, onClose }) {
 /* RightNavRail - right-edge icon nav rail. The agent-runs entry moved LEFT
    (the left chat panel's runs overlay); this rail now holds only the
    tiling-dock panel openers - tasks & subagents, comments, git. */
-function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpenWindow, onOpenUserTesting, openKinds, hidden, statusArea }) {
+function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpenWindow, onOpenUserTesting, openKinds, hidden, statusArea, extra }) {
+  // `extra` is an optional slot for buttons only ONE surface has (the canvas
+  // Layers toggle). Keeps the rail shared without teaching it about panels
+  // the editor and viewer surfaces don't own.
   // Let any caller open a dock panel by name via a CustomEvent, without
   // lifting state up. (The old "runs" overlay moved to the left chat panel.)
   useEffect(() => {
@@ -12120,6 +12124,7 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
 
   return html`<${React.Fragment}>
     <nav className="th-right-rail" aria-label="Panels">
+      ${extra || null}
       <${HoverTip}
         placement="left"
         className=${"th-right-rail-btn" + (openKinds?.includes("tasks") ? " is-active" : "")}
@@ -32901,9 +32906,15 @@ function wbDistToSeg(px, py, x1, y1, x2, y2) {
 // the context menu can still offer Unlock on the thing under the cursor.
 function wbHitTest(items, wx, wy, zoom, opts) {
   const includeLocked = !!(opts && opts.includeLocked);
+  // `opts.order` is the canvas paint ladder (group-aware). Picking MUST agree
+  // with painting: grouping makes a band contiguous, which can lift a member
+  // above something its raw z sits under, and a raw-z sort would then hand
+  // the click to whatever is visibly behind.
+  const order = opts && opts.order;
+  const zOf = order ? (it) => (order.get(it.id) ?? (it.z || 0)) : (it) => (it.z || 0);
   const sorted = (items || [])
     .filter(it => it && (includeLocked || !it.locked))
-    .sort((a, b) => (b.z || 0) - (a.z || 0));
+    .sort((a, b) => zOf(b) - zOf(a));
   const zTol = 6 / Math.max(zoom || 1, 0.1);
   for (const it of sorted) {
     const bb = wbItemBBox(it);
@@ -34504,6 +34515,177 @@ function workflowChainHasContainer(byId, start, containerId) {
   }
   return false;
 }
+/* ────────── GROUPS ──────────
+   A group is a plain SET, not a container: every member (whiteboard item or
+   node - both families) carries `groupId`, and that is the whole persisted
+   model. Nothing new lands at the top level of workflow.json, because the
+   daemon rebuilds that doc as a fixed {nodes, edges, wb} literal and would
+   drop any key it doesn't know - a new `groups` array would be silently
+   erased on the next save. Members pass arbitrary fields through, so
+   groupId / groupName / constrain survive with no daemon change at all.
+
+   The group's own stacking position is NOT stored either. A group occupies a
+   CONTIGUOUS BAND in the one z order the canvas already has, so "the group's
+   z" is just where that band sits, and "z inside the group" is the members'
+   own order within it. Restacking a group slides the whole band; restacking a
+   member moves it inside the band only. Same shape the vector editor already
+   uses for its layer groups (see _vecSegments).
+
+   `collapsed` is view state and lives in React, never on disk. */
+function workflowGroupIdOf(o) {
+  return (o && typeof o.groupId === "string" && o.groupId) ? o.groupId : null;
+}
+function workflowNewGroupId() {
+  return "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+// Grow a selection so it holds WHOLE groups: touching one member selects all
+// of them, in both families at once (a group can mix nodes and wb items).
+// Returns null when nothing changed, so callers can skip a state write.
+function workflowExpandSelectionToGroups(nodes, wb, nodeIds, wbIds) {
+  const gids = new Set();
+  const scan = (list, ids) => {
+    for (const o of list || []) {
+      if (o && ids.has(o.id)) { const g = workflowGroupIdOf(o); if (g) gids.add(g); }
+    }
+  };
+  scan(nodes, nodeIds); scan(wb, wbIds);
+  if (!gids.size) return null;
+  const nextNodes = new Set(nodeIds), nextWb = new Set(wbIds);
+  let grew = false;
+  for (const n of nodes || []) {
+    if (n && gids.has(workflowGroupIdOf(n)) && !nextNodes.has(n.id)) { nextNodes.add(n.id); grew = true; }
+  }
+  for (const it of wb || []) {
+    if (it && gids.has(workflowGroupIdOf(it)) && !nextWb.has(it.id)) { nextWb.add(it.id); grew = true; }
+  }
+  return grew ? { nodeIds: nextNodes, wbIds: nextWb } : null;
+}
+
+/* ────────── Group RESIZE CONSTRAINTS ──────────
+   Per-member `constrain: { h, v }`, the Figma vocabulary. Horizontal:
+     left    pinned to the group's left edge, keeps its width
+     right   pinned to the right edge, keeps its width
+     both    pinned to BOTH edges, so it stretches
+     center  keeps its centre at the same fraction across, keeps its width
+     scale   scales with the group (the default - a group resize is a scale)
+   Vertical is the same with top/bottom. Missing = "scale", so anything drawn
+   before constraints existed behaves exactly as it did. */
+const WF_CONSTRAIN_H = ["scale", "left", "right", "both", "center"];
+const WF_CONSTRAIN_V = ["scale", "top", "bottom", "both", "center"];
+function workflowConstrainOf(o) {
+  const c = (o && o.constrain) || {};
+  return {
+    h: WF_CONSTRAIN_H.includes(c.h) ? c.h : "scale",
+    v: WF_CONSTRAIN_V.includes(c.v) ? c.v : "scale",
+  };
+}
+// One axis of one member. `p` is its start coord, `len` its size, g0/g1 the
+// group's before/after origin+size on that axis. Returns [p', len'].
+function workflowConstrainAxis(mode, p, len, g0, g0len, g1, g1len) {
+  const before = p - g0;                       // gap to the low edge
+  const after = (g0 + g0len) - (p + len);      // gap to the high edge
+  const s = g0len === 0 ? 1 : g1len / g0len;
+  switch (mode) {
+    case "left":   return [g1 + before, len];
+    case "right":  return [g1 + g1len - after - len, len];
+    case "both":   return [g1 + before, Math.max(1, g1len - before - after)];
+    case "center": {
+      const f = g0len === 0 ? 0.5 : ((p + len / 2) - g0) / g0len;
+      return [g1 + f * g1len - len / 2, len];
+    }
+    default:       return [g1 + before * s, Math.max(1, len * s)];   // scale
+  }
+}
+// Resize one member from the group's old rect to its new one. Arrows carry
+// endpoints instead of a box, so their two points are mapped through the same
+// axis rule (as zero-length spans) rather than a width being stretched.
+function workflowResizeInGroup(o, g0, g1) {
+  const { h, v } = workflowConstrainOf(o);
+  if (o && o.type === "arrow") {
+    const pt = (x, y) => {
+      const [nx] = workflowConstrainAxis(h, x, 0, g0.x, g0.w, g1.x, g1.w);
+      const [ny] = workflowConstrainAxis(v, y, 0, g0.y, g0.h, g1.y, g1.h);
+      return [nx, ny];
+    };
+    const [x1, y1] = pt(o.x1, o.y1);
+    const [x2, y2] = pt(o.x2, o.y2);
+    const next = { x1: Math.round(x1), y1: Math.round(y1), x2: Math.round(x2), y2: Math.round(y2) };
+    if (Array.isArray(o.mids) && o.mids.length) {
+      next.mids = o.mids.map((val, i) => {
+        const [m] = i % 2 === 0
+          ? workflowConstrainAxis(h, val, 0, g0.x, g0.w, g1.x, g1.w)
+          : workflowConstrainAxis(v, val, 0, g0.y, g0.h, g1.y, g1.h);
+        return Math.round(m);
+      });
+    }
+    return next;
+  }
+  const bb = (o && o.type) ? wbItemBBox(o) : { x: o.x || 0, y: o.y || 0, w: o.w || 0, h: o.h || 0 };
+  const [nx, nw] = workflowConstrainAxis(h, bb.x, bb.w, g0.x, g0.w, g1.x, g1.w);
+  const [ny, nh] = workflowConstrainAxis(v, bb.y, bb.h, g0.y, g0.h, g1.y, g1.h);
+  const out = { x: Math.round(nx), y: Math.round(ny) };
+  // Only write a size back when this axis actually resizes it - a text item's
+  // height is measured, not stored, and ink owns its own point cloud.
+  if (o && o.type === "ink") return out;
+  if (Math.round(nw) !== Math.round(bb.w)) out.w = Math.max(1, Math.round(nw));
+  if (Math.round(nh) !== Math.round(bb.h) && !(o && o.type === "text")) out.h = Math.max(1, Math.round(nh));
+  return out;
+}
+// Union bbox of a set of members (both families).
+function workflowGroupBBox(nodes, wb, ids) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const eat = (x, y, w, h) => {
+    if (x < minX) minX = x; if (y < minY) minY = y;
+    if (x + w > maxX) maxX = x + w; if (y + h > maxY) maxY = y + h;
+  };
+  for (const n of nodes || []) {
+    if (!n || !ids.has(n.id) || typeof n.x !== "number") continue;
+    const d = workflowNodeDrawnSize(n);
+    eat(n.x, n.y, d.w, d.h);
+  }
+  for (const it of wb || []) {
+    if (!it || !ids.has(it.id)) continue;
+    const b = wbItemBBox(it);
+    eat(b.x, b.y, b.w, b.h);
+  }
+  return Number.isFinite(minX) ? { x: minX, y: minY, w: maxX - minX, h: maxY - minY } : null;
+}
+
+// Paint order for the WHOLE canvas as one dense z ladder, honouring groups.
+// Returns Map(id -> integer). Top-level units are ungrouped entities and
+// whole groups; a unit's sort key is its topmost member's z, so grouping
+// things never changes where they sit in the stack. Ties fall back to family
+// order (sections under nodes under wb items) then array order, matching how
+// the canvas actually paints when nothing carries an explicit z.
+function workflowGroupPaintOrder(nodes, wb) {
+  const all = [];
+  (nodes || []).forEach((n, i) => { if (n && n.id) all.push({ o: n, i, fam: WF_PAINT_FAMILY[wfPaintFamily(n)] || 0 }); });
+  (wb || []).forEach((it, i) => { if (it && it.id) all.push({ o: it, i, fam: WF_PAINT_FAMILY.wb }); });
+  const units = new Map();            // unit key -> { key, fam, i, members[] }
+  for (const e of all) {
+    const gid = workflowGroupIdOf(e.o);
+    const k = gid || ("~" + e.o.id);  // "~" can't collide with a group id
+    let u = units.get(k);
+    if (!u) { u = { z: -Infinity, fam: -1, i: Infinity, members: [] }; units.set(k, u); }
+    u.members.push(e);
+    // The unit rides its TOPMOST member, so a group sits where its highest
+    // thing sat before it was grouped.
+    const z = wfPaintZ(e.o);
+    if (z > u.z || (z === u.z && e.fam > u.fam)) { u.z = z; u.fam = e.fam; }
+    if (e.i < u.i) u.i = e.i;
+  }
+  const ordered = [...units.values()].sort((a, b) =>
+    (a.z - b.z) || (a.fam - b.fam) || (a.i - b.i));
+  const out = new Map();
+  let slot = 0;
+  for (const u of ordered) {
+    // Inside a unit, members keep their own relative order.
+    u.members.sort((a, b) => (wfPaintZ(a.o) - wfPaintZ(b.o)) || (a.fam - b.fam) || (a.i - b.i));
+    for (const m of u.members) out.set(m.o.id, slot++);
+  }
+  return out;
+}
+
 // ── Paint order across the canvas's TWO object families ───────────────────
 // Nodes (sections + everything else) and whiteboard items live in ONE CSS
 // stacking context (.workflow-canvas), so their `z` values are directly
@@ -34522,15 +34704,21 @@ function wfPaintZ(o) { return (o && typeof o.z === "number") ? o.z : 0; }
 // holds what sits ON it, and a thing painted UNDER the frame is not on it,
 // it's behind it. Without this test a frame adopts (and then drags / reflows)
 // items it visually covers, which is never what the user meant.
-function wfPaintsAbove(a, b) {
+// `order` (the group-aware paint ladder) is authoritative when supplied; the
+// z + family comparison is the fallback for callers that don't have it.
+function wfPaintsAbove(a, b, order) {
+  if (order && a && b) {
+    const az = order.get(a.id), bz = order.get(b.id);
+    if (typeof az === "number" && typeof bz === "number") return az > bz;
+  }
   const az = wfPaintZ(a), bz = wfPaintZ(b);
   if (az !== bz) return az > bz;
   return (WF_PAINT_FAMILY[wfPaintFamily(a)] || 0) > (WF_PAINT_FAMILY[wfPaintFamily(b)] || 0);
 }
 // A frame captures / carries `thing` only when the frame paints BELOW it.
-function wfFrameCanHold(frame, thing) {
+function wfFrameCanHold(frame, thing, order) {
   if (!thing) return true;            // no context - legacy callers
-  return !wfPaintsAbove(frame, thing);
+  return !wfPaintsAbove(frame, thing, order);
 }
 
 // Pick the container that would capture a thing dropped with bbox `bb`:
@@ -34546,6 +34734,7 @@ function wfFrameCanHold(frame, thing) {
 function workflowPickDropContainer(nodes, bb, excludeIds, opts) {
   const allowCell = !opts || opts.allowCell !== false;
   const self = opts && opts.self;
+  const order = opts && opts.order;
   const byId = new Map((nodes || []).map(n => [n.id, n]));
   const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
   const excluded = (n) => {
@@ -34580,7 +34769,7 @@ function workflowPickDropContainer(nodes, bb, excludeIds, opts) {
   (nodes || []).forEach((n, idx) => {
     if (!n || (n.kind !== "table" && n.kind !== "section")) return;
     if (excluded(n)) return;
-    if (!wfFrameCanHold(n, self)) return;   // frame paints OVER the thing
+    if (!wfFrameCanHold(n, self, order)) return;   // frame paints OVER the thing
     const w = n.w || (n.kind === "table" ? 0 : 880);
     const h = n.h || (n.kind === "table" ? 0 : 560);
     if (cx < n.x || cy < n.y || cx > n.x + w || cy > n.y + h) return;
@@ -38896,7 +39085,7 @@ function WorkflowGroupAlignBar({ onAlign, onSaveGroup }) {
   }, []);
   if (!rect) return null;
   const BTN = 32, GAP = 4, SEP_W = 9; // separator: 1px line + margins
-  // The trailing "Save group" affordance (when wired) is one separator + one
+  // The trailing "Save block" affordance (when wired) is one separator + one
   // button wider than the align actions alone.
   const extraBtn = onSaveGroup ? 1 : 0, extraSep = onSaveGroup ? 1 : 0;
   const btnCount = WORKFLOW_ALIGN_ACTIONS.filter(a => !a.separator).length + extraBtn;
@@ -38946,11 +39135,11 @@ function WorkflowGroupAlignBar({ onAlign, onSaveGroup }) {
             className="workflow-node-top-action"
             onMouseDown=${(e) => e.stopPropagation()}
             onClick=${(e) => { e.stopPropagation(); onSaveGroup(); }}
-            onMouseEnter=${(e) => showTip("save-group", e.currentTarget, "Save selection as a node group → Local library")}
+            onMouseEnter=${(e) => showTip("save-group", e.currentTarget, "Save selection as a block → Local library")}
             onMouseLeave=${clearTip}
-            onFocus=${(e) => showTip("save-group", e.currentTarget, "Save selection as a node group → Local library")}
+            onFocus=${(e) => showTip("save-group", e.currentTarget, "Save selection as a block → Local library")}
             onBlur=${clearTip}
-            aria-label="Save selection as a node group"
+            aria-label="Save selection as a block"
           ><${Icon.Save}/></button>
         ` : null}
       </div>
@@ -39314,7 +39503,7 @@ function WorkflowPickOpToast({ state }) {
    the canvas's transform / clipping context, then positioned via fixed
    coords from the original click. Closes on outside-click, Escape, or
    when the user picks an action. */
-function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDelete, onClose, onBringToFront, onBringForward, onSendBackward, onSendToBack, locked, onToggleLock, hasLocked, onUnlockAll }) {
+function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDelete, onClose, onBringToFront, onBringForward, onSendBackward, onSendToBack, locked, onToggleLock, hasLocked, onUnlockAll, canGroup, canUngroup, onGroup, onUngroup }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     const onDown = (e) => {
@@ -39370,6 +39559,19 @@ function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDe
           disabled=${!hasSelection}
           onClick=${onSendToBack}
         ><span>Send to back</span><span className="canvas-ctxmenu-shortcut">⇧[</span></button>
+      `}
+      ${onGroup && html`
+        <div className="canvas-ctxmenu-divider"/>
+        <button
+          className=${itemCls(!canGroup)}
+          disabled=${!canGroup}
+          onClick=${onGroup}
+        ><span>Group</span><span className="canvas-ctxmenu-shortcut">⌘G</span></button>
+        <button
+          className=${itemCls(!canUngroup)}
+          disabled=${!canUngroup}
+          onClick=${onUngroup}
+        ><span>Ungroup</span><span className="canvas-ctxmenu-shortcut">⇧⌘G</span></button>
       `}
       ${onToggleLock && html`
         <div className="canvas-ctxmenu-divider"/>
@@ -40136,6 +40338,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // Drives the pre-click preview (where this endpoint lands + where the ones
   // already on that side slide to). Null whenever the arrow tool is off, the
   // pointer is deep inside a shape, or the no-snap modifier is held.
+  const [layersOpen, setLayersOpen] = useState(false);
+  const [groupResizeRect, setGroupResizeRect] = useState(null);   // live rect while a group handle is dragged
   const [wbArrowSnap, setWbArrowSnap] = useState(null);
   const wbArrowSnapRef = useRef(null); wbArrowSnapRef.current = wbArrowSnap;
   const wbItems = data.wb || [];
@@ -40616,7 +40820,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       body: "Sketch and annotate on the whiteboard, or drag buildable nodes (browser, prompt, agent) and app nodes (vector editor, composer) straight onto the canvas." },
     { targets: ['.workflow-nav-rail [aria-label="Local library"]', '.workflow-nav-rail [aria-label="Prototypes & HTML"]', '.workflow-nav-rail [aria-label="Visual assets"]'],
       title: "Outputs",
-      body: "Everything the builds produce lands here: saved prompts + node groups, prototypes + HTML pages, and every visual asset (images, SVG, video, scenes)." },
+      body: "Everything the builds produce lands here: saved prompts + blocks, prototypes + HTML pages, and every visual asset (images, SVG, video, scenes)." },
     { targets: ['.th-right-rail [aria-label="Open tasks & subagents"]', '.th-right-rail [aria-label="Open comments"]', '.th-right-rail [aria-label="Open git & GitHub"]'],
       title: "Agents, comments & git",
       body: "Watch every agent task and subagent as it runs, read reviewer + guest comments, and commit / push / pull with git - each opens as a side panel." },
@@ -41143,7 +41347,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (v === "none") return null;
       // "outputs" is split into two panels ("protos" + "visual"); a
       // persisted legacy "outputs" key migrates to the prototypes panel.
-      // "library" is the saved-prompts + node-groups panel.
+      // "library" is the saved-prompts + blocks panel.
       if (v === "outputs" || v === "protos") return "protos";
       if (v === "visual") return "visual";
       if (v === "library") return "library";
@@ -42003,7 +42207,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // ── select ── unified: wb items first (they draw on top), then nodes,
     // then the unified marquee that selects BOTH kinds.
     if (tool === "select") {
-      const hitId = wbHitTest(wbItemsRef.current, wp.x, wp.y, zoomRef.current);
+      const hitId = wbHitTest(wbItemsRef.current, wp.x, wp.y, zoomRef.current, { order: paintOrderRef.current });
       if (hitId) { wbSelectPointerDown(e, hitId); return; }
       // Resolve the node under the pointer. Geometry (nodeHitAt) first; then fall
       // back to the DOM ancestor's data-node-id - which catches a SECTION dragged
@@ -42557,7 +42761,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const dragged = new Set([...(nodeIds || [])]);
       const strip = (o) => { const { cell, sec, ...rest } = o; return rest; };
       const rebind = (o, bb, allowCell) => {
-        const hit = workflowPickDropContainer(nodes, bb, dragged, { allowCell, self: o });
+        const hit = workflowPickDropContainer(nodes, bb, dragged, { allowCell, self: o, order: paintOrderRef.current });
         if (hit && hit.cell) {
           const cur = o.cell;
           if (cur && cur.tableId === hit.cell.tableId && cur.r === hit.cell.r && cur.c === hit.cell.c
@@ -43426,6 +43630,222 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return sel.size;
   }, [layerWbItems]);
 
+  // ── Group / ungroup ───────────────────────────────────────────────────────
+  // A group is a set, not a container: every member just carries `groupId`.
+  // Nothing else is stored - the band it occupies in the stack IS its z, and
+  // the members' own z is the order inside it (see workflowGroupPaintOrder).
+  // Grouping never moves anything; it only makes the stack contiguous.
+  const groupSelection = useCallback(() => {
+    const nSel = selectedNodeIdsRef.current || new Set();
+    const wSel = selectedWbIdsRef.current || new Set();
+    if (nSel.size + wSel.size < 2) return 0;      // one thing is not a group
+    const gid = workflowNewGroupId();
+    // Nested groups aren't a thing here: grouping a selection that already
+    // spans groups RE-groups the lot into one flat set, which is what the
+    // gesture reads as ("put these together") and keeps the band maths one
+    // level deep.
+    let n = 0;
+    setData(d => ({
+      ...d,
+      nodes: (d.nodes || []).map(o => {
+        if (!o || !nSel.has(o.id) || o.locked) return o;
+        n++; return { ...o, groupId: gid };
+      }),
+      wb: (Array.isArray(d.wb) ? d.wb : []).map(o => {
+        if (!o || !wSel.has(o.id) || o.locked) return o;
+        n++; return { ...o, groupId: gid };
+      }),
+    }));
+    return nSel.size + wSel.size;
+  }, [setData]);
+
+  const ungroupSelection = useCallback(() => {
+    const nSel = selectedNodeIdsRef.current || new Set();
+    const wSel = selectedWbIdsRef.current || new Set();
+    // Every group the selection touches dissolves whole - ungrouping half a
+    // group would leave a band with a hole in it.
+    const gids = new Set();
+    for (const o of (dataNodesRef.current || [])) if (o && nSel.has(o.id) && o.groupId) gids.add(o.groupId);
+    for (const o of (wbItemsRef.current || [])) if (o && wSel.has(o.id) && o.groupId) gids.add(o.groupId);
+    if (!gids.size) return 0;
+    const strip = (o) => {
+      if (!o || !gids.has(o.groupId)) return o;
+      const { groupId, groupName, constrain, ...rest } = o;
+      return rest;
+    };
+    setData(d => ({
+      ...d,
+      nodes: (d.nodes || []).map(strip),
+      wb: (Array.isArray(d.wb) ? d.wb : []).map(strip),
+    }));
+    return gids.size;
+  }, [setData]);
+
+  // Does the live selection support each action? (drives menu/bar enablement)
+  const selectionGroupState = useMemo(() => {
+    const nodes = (data.nodes || []).filter(o => o && selectedNodeIds.has(o.id));
+    const items = (Array.isArray(data.wb) ? data.wb : []).filter(o => o && selectedWbIds.has(o.id));
+    const all = [...nodes, ...items];
+    const gids = new Set(all.map(o => o.groupId).filter(Boolean));
+    return {
+      count: all.length,
+      canGroup: all.length >= 2 && !(gids.size === 1 && all.every(o => o.groupId)),
+      canUngroup: gids.size > 0,
+      groupIds: gids,
+    };
+  }, [data.nodes, data.wb, selectedNodeIds, selectedWbIds]);
+
+  // The ONE group the selection currently is (all of it, nothing else), with
+  // its live bbox. Null for a mixed / partial / ungrouped selection - a frame
+  // round half a group would invite a resize that means nothing.
+  const activeGroup = useMemo(() => {
+    if (selectionGroupState.groupIds.size !== 1) return null;
+    const gid = [...selectionGroupState.groupIds][0];
+    const members = [
+      ...(data.nodes || []).filter(o => o && o.groupId === gid),
+      ...(Array.isArray(data.wb) ? data.wb : []).filter(o => o && o.groupId === gid),
+    ];
+    if (!members.length) return null;
+    // Every member selected, and nothing outside the group in the selection.
+    const selCount = selectedNodeIds.size + selectedWbIds.size;
+    if (selCount !== members.length) return null;
+    const ids = new Set(members.map(o => o.id));
+    const bbox = workflowGroupBBox(data.nodes, data.wb, ids);
+    if (!bbox) return null;
+    return {
+      id: gid, ids, members, bbox,
+      name: (members.find(o => o.groupName) || {}).groupName || "Group",
+      locked: members.some(o => o.locked),
+    };
+  }, [selectionGroupState, data.nodes, data.wb, selectedNodeIds, selectedWbIds]);
+  const activeGroupRef = useRef(activeGroup); activeGroupRef.current = activeGroup;
+
+  // Drag a group handle: recompute the group rect, then push every member
+  // through its own constraint. The whole gesture is ONE geometry pass from
+  // the ORIGINAL rect each frame (never incremental), so rounding can't
+  // accumulate over a long drag and drift the layout.
+  const groupResizeStart = useCallback((e, corner) => {
+    const g = activeGroupRef.current;
+    if (!g || g.locked) return;
+    const g0 = { ...g.bbox };
+    // The frame follows the HANDLE, not the members' union. Those diverge the
+    // moment a member is pinned: a left/right-pinned thing holds the union
+    // still while the rest scale, so a union-derived frame would stick to the
+    // cursor's start and every later frame would compute against a rect the
+    // user can't see. The drag owns the rect; the union takes over on release.
+    setGroupResizeRect(g0);
+    const originals = new Map(g.members.map(o => [o.id, o]));
+    const sx = e.clientX, sy = e.clientY;
+    const west = corner.includes("w"), east = corner.includes("e");
+    const north = corner.includes("n"), south = corner.includes("s");
+    setNodeDragging(true);
+    const onMove = (ev) => {
+      if (isReleasedDuringMove(ev)) { onUp(); return; }
+      const z = Math.max(zoomRef.current, 0.1);
+      const dx = (ev.clientX - sx) / z, dy = (ev.clientY - sy) / z;
+      const g1 = { ...g0 };
+      if (west)  { g1.x = g0.x + dx; g1.w = g0.w - dx; }
+      if (east)  { g1.w = g0.w + dx; }
+      if (north) { g1.y = g0.y + dy; g1.h = g0.h - dy; }
+      if (south) { g1.h = g0.h + dy; }
+      // Never invert: a group flipped through itself has no useful meaning.
+      if (g1.w < 8) { g1.w = 8; if (west) g1.x = g0.x + g0.w - 8; }
+      if (g1.h < 8) { g1.h = 8; if (north) g1.y = g0.y + g0.h - 8; }
+      setGroupResizeRect(g1);
+      setData(d => ({
+        ...d,
+        nodes: (d.nodes || []).map(n => {
+          const o = originals.get(n.id);
+          return o && !n.locked ? { ...n, ...workflowResizeInGroup(o, g0, g1) } : n;
+        }),
+        wb: (Array.isArray(d.wb) ? d.wb : []).map(it => {
+          const o = originals.get(it.id);
+          return o && !it.locked ? { ...it, ...workflowResizeInGroup(o, g0, g1) } : it;
+        }),
+      }));
+    };
+    const onUp = () => {
+      setNodeDragging(false);
+      setGroupResizeRect(null);      // union takes over again
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
+  }, [setData]);
+
+  // Set a constraint on the members the layers panel is pointing at.
+  const setMemberConstraint = useCallback((ids, patch) => {
+    const set = ids instanceof Set ? ids : new Set(ids || []);
+    if (!set.size) return;
+    const apply = (o) => {
+      if (!o || !set.has(o.id)) return o;
+      return { ...o, constrain: { ...workflowConstrainOf(o), ...patch } };
+    };
+    setData(d => ({
+      ...d,
+      nodes: (d.nodes || []).map(apply),
+      wb: (Array.isArray(d.wb) ? d.wb : []).map(apply),
+    }));
+  }, [setData]);
+
+  // Rename a group - the name is denormalised onto every member, because
+  // there is nowhere else to put it that survives a daemon save.
+  const renameGroup = useCallback((gid, name) => {
+    if (!gid) return;
+    const put = (o) => (o && o.groupId === gid) ? { ...o, groupName: name } : o;
+    setData(d => ({
+      ...d,
+      nodes: (d.nodes || []).map(put),
+      wb: (Array.isArray(d.wb) ? d.wb : []).map(put),
+    }));
+  }, [setData]);
+
+  // Panel-driven "reach inside a group": while set, the group-expansion
+  // effect stands down so a single member can stay selected. Any canvas
+  // pointer-down clears it, which is what makes the escape one-shot rather
+  // than a mode the user has to remember to leave.
+  const [memberFocus, setMemberFocus] = useState(false);
+  const memberFocusRef = useRef(false); memberFocusRef.current = memberFocus;
+
+  // Touching one member selects the whole group. Runs as an effect so EVERY
+  // selection path is covered at once - click, marquee, shift-add, spawn -
+  // instead of patching the same rule into each of them and missing one.
+  useEffect(() => {
+    if (memberFocus) return;
+    const grown = workflowExpandSelectionToGroups(
+      data.nodes, data.wb, selectedNodeIds, selectedWbIds);
+    if (!grown) return;
+    setSelectedNodeIds(grown.nodeIds);
+    setSelectedWbIds(grown.wbIds);
+  }, [data.nodes, data.wb, selectedNodeIds, selectedWbIds, memberFocus]);
+
+  // Select exactly one thing from the layers panel, group or not.
+  const selectLayerRow = useCallback((o, additive) => {
+    setMemberFocus(!!workflowGroupIdOf(o));
+    const isNode = !!o.kind;
+    setSelectedNodeIds(prev => {
+      if (!isNode) return additive ? prev : new Set();
+      const n = new Set(additive ? prev : []);
+      if (additive && n.has(o.id)) n.delete(o.id); else n.add(o.id);
+      return n;
+    });
+    setSelectedWbIds(prev => {
+      if (isNode) return additive ? prev : new Set();
+      const n = new Set(additive ? prev : []);
+      if (additive && n.has(o.id)) n.delete(o.id); else n.add(o.id);
+      return n;
+    });
+  }, []);
+  // Select a whole group from its header row.
+  const selectWholeGroup = useCallback((gid) => {
+    setMemberFocus(false);
+    setSelectedNodeIds(new Set((dataNodesRef.current || []).filter(n => n && n.groupId === gid).map(n => n.id)));
+    setSelectedWbIds(new Set((wbItemsRef.current || []).filter(it => it && it.groupId === gid).map(it => it.id)));
+  }, []);
+
   // ── Lock / unlock ─────────────────────────────────────────────────────────
   // A locked thing stays visible and keeps taking part in layout (a locked
   // section still frames its contents), but the pointer looks straight
@@ -43495,25 +43915,33 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return all.length > 0 && all.every(o => o.locked);
   })();
 
-  // Reflect each node's `z` onto its DOM element's z-index. We write it
+  // THE canvas stacking answer: one dense ladder over both families with
+  // groups kept contiguous. Everything that needs to know "what is on top" -
+  // painting, hit-testing, frame ownership - reads this, so the three can
+  // never disagree (they would if grouping reordered paint but not picking).
+  const paintOrder = useMemo(
+    () => workflowGroupPaintOrder(data.nodes, data.wb),
+    [data.nodes, data.wb]);
+  const paintOrderRef = useRef(paintOrder); paintOrderRef.current = paintOrder;
+
+  // Reflect each node's derived z onto its DOM element's z-index. We write it
   // imperatively (not through the style prop) so it survives the many
   // per-kind render passes without threading a `z` prop through ~two dozen
   // node components; preact never manages z-index, so our value isn't
   // clobbered on re-render. Scoped to the canvas's direct children so nodes
   // nested inside an expanded custom-app subgraph are left alone.
   const _zSig = (data.nodes || [])
-    .map(n => n.id + ":" + (typeof n.z === "number" ? n.z : ""))
+    .map(n => n.id + ":" + (paintOrder.get(n.id) ?? ""))
     .join(",");
   useLayoutEffect(() => {
     const wrap = wrapRef.current;
     const canvas = wrap && wrap.querySelector(".workflow-canvas");
     if (!canvas) return;
-    const zById = new Map((data.nodes || []).map(n => [n.id, n.z]));
     const els = canvas.querySelectorAll(
       ":scope > .workflow-node[data-node-id], :scope > .workflow-node-section[data-node-id]"
     );
     els.forEach(el => {
-      const z = zById.get(el.getAttribute("data-node-id"));
+      const z = paintOrderRef.current.get(el.getAttribute("data-node-id"));
       el.style.zIndex = (typeof z === "number") ? String(z) : "";
     });
   }, [_zSig, wrapRef]);
@@ -43645,7 +44073,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const y1 = sec.y + (sec.h || 0);
       for (const n of nodes) {
         if (!n || movedNodes.has(n.id) || workflowBoundTo(n)) continue;
-        if (!wfFrameCanHold(sec, n)) continue;
+        if (!wfFrameCanHold(sec, n, paintOrderRef.current)) continue;
         if (n.kind === "section") {
           const sw = n.w || 880, sh = n.h || 560;
           if ((n.x || 0) >= x0 && (n.y || 0) >= y0
@@ -43662,7 +44090,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // double-shift them.
       for (const it of wb) {
         if (!it || movedWb.has(it.id) || wbSel.has(it.id) || workflowBoundTo(it)) continue;
-        if (!wfFrameCanHold(sec, it)) continue;
+        if (!wfFrameCanHold(sec, it, paintOrderRef.current)) continue;
         const bb = wbItemBBox(it);
         const cx = bb.x + (bb.w / 2);
         const cy = bb.y + (bb.h / 2);
@@ -44456,7 +44884,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // workflow/groups/. Snapshots the selected nodes + the edges internal to
   // the selection (same shape as the copy clipboard), then POSTs it so it
   // shows up in Library → Local library on every session. Returns true on
-  // success. Bound to the "Save group" button on the selection bar.
+  // success. Bound to the "Save block" button on the selection bar.
   const saveSelectionAsGroup = useCallback(async () => {
     const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
     const picked = (data.nodes || []).filter(n => sel.has(n.id));
@@ -47373,6 +47801,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         if (moved > 0) e.preventDefault();
         return;
       }
+      // ── Group / ungroup the selection (⌘G / ⇧⌘G, as everywhere else).
+      if (cmd && (e.key === "g" || e.key === "G")) {
+        const n = e.shiftKey ? ungroupSelection() : groupSelection();
+        if (n > 0) e.preventDefault();
+        return;
+      }
       // ── Lock / unlock the whole selection (Figma's ⇧⌘L). Toggles: a
       // selection with anything unlocked in it locks; an all-locked one
       // unlocks. Locked things drop out of hit-testing, so the way back for
@@ -47436,7 +47870,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [copySelectedNodes, pasteNodesFromClipboard, pastePickedElement, deleteSelectedNodes, duplicateSelectedNodes, duplicateSelectedWbItems, removeWbItems, pickModeNodeId, layerSelectedNodes, layerSelectedWbItems, setSelectionLocked]);
+  }, [copySelectedNodes, pasteNodesFromClipboard, pastePickedElement, deleteSelectedNodes, duplicateSelectedNodes, duplicateSelectedWbItems, removeWbItems, pickModeNodeId, layerSelectedNodes, layerSelectedWbItems, setSelectionLocked, groupSelection, ungroupSelection]);
 
   // Walk edges that TERMINATE at nodeId.in - collect upstream prompt texts
   // and asset references. Skill nodes read this to assemble the actual API call.
@@ -52182,7 +52616,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       bb = { x: n.x || 0, y: n.y || 0, w: n.w || 0, h: n.h || 0 };
       self = n;
     }
-    const hit = workflowPickDropContainer(nodes, bb, dragged, { allowCell, self });
+    const hit = workflowPickDropContainer(nodes, bb, dragged, { allowCell, self, order: paintOrder });
     if (!hit) return null;
     if (hit.cell) return { kind: "cell", tableId: hit.cell.tableId, r: hit.cell.r, c: hit.cell.c };
     return { kind: "sec", sectionId: hit.sec.sectionId };
@@ -54102,7 +54536,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             placement="right"
             className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "library" ? " is-active" : "")}
             ariaLabel="Local library"
-            tip="Local library - saved prompts + node groups"
+            tip="Local library - saved prompts + blocks"
             onClick=${() => onRailPanel("library")}
           ><${Icon.Library}/><//>
           <${HoverTip}
@@ -54213,7 +54647,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             if (wbMode) {
               // includeLocked: right-click is how you reach a locked item to
               // unlock it, so it stays targetable here (and only here).
-              const hitId = wbHitTest(wbItems, worldX, worldY, zoom, { includeLocked: true });
+              const hitId = wbHitTest(wbItems, worldX, worldY, zoom, { includeLocked: true, order: paintOrder });
               if (hitId && !selectedWbIds.has(hitId)) setSelectedWbIds(new Set([hitId]));
               setCtxMenu({ vpX: e.clientX, vpY: e.clientY, worldX, worldY, onNode: false, wb: true });
               return;
@@ -54225,7 +54659,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             } else {
               // Build mode, no node under the click → wb items are still
               // right-clickable (they're selectable in both modes).
-              const wbHitId = wbHitTest(wbItems, worldX, worldY, zoom, { includeLocked: true });
+              const wbHitId = wbHitTest(wbItems, worldX, worldY, zoom, { includeLocked: true, order: paintOrder });
               if (wbHitId) {
                 if (!selectedWbIds.has(wbHitId)) setSelectedWbIds(new Set([wbHitId]));
                 if (selectedNodeIds.size) setSelectedNodeIds(new Set());
@@ -54251,7 +54685,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             const r = e.currentTarget.getBoundingClientRect();
             const wx = (e.clientX - r.left - pan.x) / zoom;
             const wy = (e.clientY - r.top  - pan.y) / zoom;
-            const hitId = wbHitTest(wbItemsRef.current, wx, wy, zoom);
+            const hitId = wbHitTest(wbItemsRef.current, wx, wy, zoom, { order: paintOrderRef.current });
             if (!hitId) return;
             const it = (wbItemsRef.current || []).find(i => i.id === hitId);
             if (!it || (it.type !== "text" && it.type !== "textbox" && it.type !== "sticky")) return;
@@ -54260,6 +54694,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             setEditingWbId(hitId);
           }}
           onMouseDownCapture=${(e) => {
+            // A canvas press always leaves the layers panel's "reach inside a
+            // group" state - that escape is one click, never a mode.
+            if (memberFocusRef.current) setMemberFocus(false);
             // SINGLE SOURCE OF TRUTH for node selection on the workflow
             // canvas. Capture-phase runs BEFORE child onMouseDown handlers,
             // so this fires regardless of what the node does internally.
@@ -54278,7 +54715,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             if (!e.target || !e.target.closest) return;
             // Whiteboard resize/endpoint handles own their events in BOTH
             // modes (they're visible whenever a wb item is selected).
-            if (e.target.closest(".workflow-wb-handle")) return;
+            if (e.target.closest(".workflow-wb-handle, .workflow-group-handle")) return;
             // ── Whiteboard mode - route to the active wb tool and NEVER run
             // the node selection/marquee logic. Pan still wins for space /
             // alt / middle / meta exactly like the node-mode rule below.
@@ -54330,7 +54767,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               // modes (routing them to wbPointerDown moved the node instead).
               // .workflow-edge-hit: the fat invisible wire stroke - clicking
               // a wire selects it in whiteboard mode like in build mode.
-              if (e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-wb-table-hit, .workflow-wb-table-colgrip, .workflow-wb-table-rowgrip, .workflow-node-section-resize, .workflow-node-resize-corner, .workflow-port-zone, .workflow-edge-hit")) return;
+              if (e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-group-handle, .workflow-wb-table-hit, .workflow-wb-table-colgrip, .workflow-wb-table-rowgrip, .workflow-node-section-resize, .workflow-node-resize-corner, .workflow-port-zone, .workflow-edge-hit")) return;
               wbPointerDownRef.current && wbPointerDownRef.current(e);
               return;
             }
@@ -54352,9 +54789,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             // unselectable outside whiteboard mode. Pan gestures + form
             // controls keep priority (the exemptions above already returned).
             if (e.button === 0 && !e.altKey && !e.metaKey && !e.ctrlKey && !spaceHeld
-                && !e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-node-section-resize, .workflow-node-resize-corner, .workflow-port-zone, .workflow-edge-hit")) {
+                && !e.target.closest("input, textarea, select, [contenteditable], button, .workflow-wb-handle, .workflow-group-handle, .workflow-node-section-resize, .workflow-node-resize-corner, .workflow-port-zone, .workflow-edge-hit")) {
               const wpGrab = screenToWorld(e.clientX, e.clientY);
-              const wbGrabId = wbHitTest(wbItemsRef.current, wpGrab.x, wpGrab.y, zoom);
+              const wbGrabId = wbHitTest(wbItemsRef.current, wpGrab.x, wpGrab.y, zoom, { order: paintOrderRef.current });
               if (wbGrabId) {
                 // Stop the capture DESCENT: in build mode the DOM target is
                 // the node underneath (items are pointer-events:none), so the
@@ -54448,7 +54885,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             // so this only fires on canvas that has no node under it.
             // Geometric hit (the wb layer is pointer-events:none in build
             // mode, so DOM targets can't tell us).
-            const wbHitId = wbHitTest(wbItemsRef.current, wp.x, wp.y, zoom);
+            const wbHitId = wbHitTest(wbItemsRef.current, wp.x, wp.y, zoom, { order: paintOrderRef.current });
             if (wbHitId) {
               wbSelectPointerDown(e, wbHitId);
               return;
@@ -54482,7 +54919,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             if (wbMode) return;
             if (e.target.closest && e.target.closest("input, textarea, select, [contenteditable], button")) return;
             const wp = screenToWorld(e.clientX, e.clientY);
-            const id = wbHitTest(wbItemsRef.current, wp.x, wp.y, zoom);
+            const id = wbHitTest(wbItemsRef.current, wp.x, wp.y, zoom, { order: paintOrderRef.current });
             if (!id) return;
             const it = (wbItemsRef.current || []).find(i => i && i.id === id);
             if (it && (it.type === "text" || it.type === "textbox" || it.type === "sticky")) {
@@ -55901,6 +56338,30 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               />
             `)}
             <${WorkflowAgentBadgeLayer} nodes=${data.nodes || []} zoom=${zoom} pan=${pan} wrapRef=${wrapRef} tetherHost=${agentTetherRef} chatBusy=${chatBusy} activeProto=${data?.meta?.activePrototype || ""} workingPaths=${workingPaths} />
+            ${layersOpen && createPortal(html`<${WorkflowLayersPanel}
+              nodes=${data.nodes || []}
+              wb=${wbItems}
+              paintOrder=${paintOrder}
+              selectedNodeIds=${selectedNodeIds}
+              selectedWbIds=${selectedWbIds}
+              activeGroup=${activeGroup}
+              canGroup=${selectionGroupState.canGroup}
+              canUngroup=${selectionGroupState.canUngroup}
+              onGroup=${groupSelection}
+              onUngroup=${ungroupSelection}
+              onSelectOne=${selectLayerRow}
+              onSelectGroup=${selectWholeGroup}
+              onLayer=${(mode) => { layerSelectedNodes(mode); layerSelectedWbItems(mode); }}
+              onConstrain=${(patch) => setMemberConstraint(
+                new Set([...selectedNodeIds, ...selectedWbIds]), patch)}
+              onRename=${renameGroup}
+              onClose=${() => setLayersOpen(false)}
+            />`, document.body)}
+            ${activeGroup && html`<${WorkflowGroupFrame}
+              bbox=${groupResizeRect || activeGroup.bbox}
+              zoom=${zoom}
+              locked=${activeGroup.locked}
+              onResizeStart=${groupResizeStart}/>`}
             <${WorkflowWhiteboardLayer}
               items=${wbItems}
               selectedWbIds=${selectedWbIds}
@@ -55909,6 +56370,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               zoom=${zoom}
               ghost=${wbGhost}
               arrowSnap=${wbArrowSnap}
+              paintOrder=${paintOrder}
               liveStrokeRef=${wbLiveStrokeRef}
               onCommitText=${(id, text, h) => {
                 const patch = { text };
@@ -56007,6 +56469,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         </div>
         ${protoViewerMounted && html`<${WorkflowProtoViewer} active=${mainView === "proto"} awaitingFirstProto=${awaitingFirstProto && !hasProtoNode} onEditTab=${openZoomForViewerTab} onActivePathChange=${setProtoViewerPath}/>`}
         <${RightNavRail}
+          extra=${html`<${HoverTip}
+            placement="left"
+            className=${"th-right-rail-btn" + (layersOpen ? " is-active" : "")}
+            ariaLabel="Layers"
+            tip="Layers - stacking order, groups, and how a group's contents resize"
+            onClick=${() => setLayersOpen(v => !v)}
+          ><${Icon.Layers}/><//>`}
           onOpenRun=${onReopenRun}
           onStartNewChat=${onOpenNewChat}
           onStartChatWithPrompt=${onStartChatWithPrompt}
@@ -56079,6 +56548,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         hasLocked=${hasLocked}
         onToggleLock=${() => { setSelectionLocked(undefined); setCtxMenu(null); }}
         onUnlockAll=${() => { unlockAll(); setCtxMenu(null); }}
+        canGroup=${selectionGroupState.canGroup}
+        canUngroup=${selectionGroupState.canUngroup}
+        onGroup=${() => { groupSelection(); setCtxMenu(null); }}
+        onUngroup=${() => { ungroupSelection(); setCtxMenu(null); }}
         onDelete=${() => { removeWbItems(selectedWbIds); setCtxMenu(null); }}
         onClose=${() => setCtxMenu(null)}
       />`}
@@ -56105,6 +56578,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         hasLocked=${hasLocked}
         onToggleLock=${() => { setSelectionLocked(undefined); setCtxMenu(null); }}
         onUnlockAll=${() => { unlockAll(); setCtxMenu(null); }}
+        canGroup=${selectionGroupState.canGroup}
+        canUngroup=${selectionGroupState.canUngroup}
+        onGroup=${() => { groupSelection(); setCtxMenu(null); }}
+        onUngroup=${() => { ungroupSelection(); setCtxMenu(null); }}
         onDelete=${() => { deleteSelectedNodes(); setCtxMenu(null); }}
         onClose=${() => setCtxMenu(null)}
       />`}
@@ -57438,7 +57915,7 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
 // `tab` is controlled by the workflow nav rail. One of:
 //   "nodes"   - buildable node templates
 //   "app-nodes" - embedded app/editor nodes
-//   "library" - Local library: saved prompts + saved node groups
+//   "library" - Local library: saved prompts + saved blocks
 //   "protos"  - Prototypes & HTML (sub-tabs: prototypes&designs / other HTMLs)
 //   "visual"  - Visual assets (image / svg / video / scenes)
 // (Persisted legacy "outputs" keys map to "protos" - see the tab-key
@@ -57871,7 +58348,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
     return n;
   };
   const deleteGroup = async (slug) => {
-    if (!await uiConfirm(`Delete saved node group "${slug}"?\nGroups already placed on a canvas are unaffected.`)) return;
+    if (!await uiConfirm(`Delete saved block "${slug}"?\nBlocks already placed on a canvas are unaffected.`)) return;
     try {
       const r = await fetch(apiUrl(`/__groups/${encodeURIComponent(slug)}/delete`), { method: "POST" });
       if (!r.ok) { const j = await r.json().catch(() => ({})); uiAlert("Delete failed: " + (j.error || r.status)); return; }
@@ -59073,9 +59550,9 @@ function WorkflowLibrary({ tab = "nodes" }) {
             </div>`}
       </div>
       <div className="workflow-library-section">
-        <div className="workflow-library-section-head">Node groups</div>
+        <div className="workflow-library-section-head">Blocks</div>
         ${savedGroups.length === 0
-          ? html`<div className="workflow-library-empty">No node groups yet. Select two or more nodes on the canvas, then click <strong>Save group</strong> on the selection bar to store the cluster (nodes + their internal wires). Drag a group back onto the canvas to drop a fresh copy.</div>`
+          ? html`<div className="workflow-library-empty">No blocks yet. Select two or more nodes on the canvas, then click <strong>Save block</strong> on the selection bar to store the cluster (nodes + their internal wires). Drag a block back onto the canvas to drop a fresh copy.</div>`
           : html`<div className="workflow-library-list">
               ${savedGroups.map(g => html`
                 <div
@@ -59087,7 +59564,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
                     e.dataTransfer.setData("application/x-th-workflow",
                       JSON.stringify({ kind: "node-group", slug: g.slug }));
                   }}
-                  title=${"Drag onto canvas - node group \"" + g.title + "\" (" + g.nodeCount + " node" + (g.nodeCount === 1 ? "" : "s") + ")"}
+                  title=${"Drag onto canvas - block \"" + g.title + "\" (" + g.nodeCount + " node" + (g.nodeCount === 1 ? "" : "s") + ")"}
                 >
                   <span className="workflow-library-item-glyph"><${Icon.Grid}/></span>
                   <span className="workflow-library-item-label">${g.title}</span>
@@ -91507,9 +91984,12 @@ function WorkflowEdgesLayer({ nodes, edges, orphanMap, pendingEdge, selectedEdge
 // clipped by the item's bbox-sized svg.
 const WB_SVG_PAD = 24;
 
-function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onCommitText, onCommitLabel, onLabelDown, onEditDone }) {
+function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, paintZ, onCommitText, onCommitLabel, onLabelDown, onEditDone }) {
   const c = wbColorCSS(item.color);
-  const z = Math.round(item.z || 0);
+  // Derived ladder position when the canvas supplied one (group-aware), else
+  // the item's own z - the layer is also rendered from places that have no
+  // group context, and an item must never paint at z "undefined".
+  const z = Math.round(typeof paintZ === "number" ? paintZ : (item.z || 0));
   const sel = selected ? "true" : "false";
   // Whiteboard items always render upright (no lean/tilt).
   const rotStyle = null;
@@ -91770,6 +92250,163 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onComm
   return null;
 }
 
+/* Canvas LAYERS panel. Same shape as the vector editor's layers section
+   (workflow-vector-layers-section) so the two read as one idea: top-level
+   rows in paint order with the TOP of the stack first, groups expandable to
+   their members, and the stacking + constraint controls for whatever is
+   selected. Clicking a member row is the only way to reach a single thing
+   inside a group - on canvas a group selects as a unit. */
+const WF_LAYER_ICON = {
+  sticky: "▪", textbox: "▭", text: "T", shape: "◇", image: "▨", sticker: "☆",
+  arrow: "↗", ink: "✎", marker: "◉", table: "▦",
+};
+function workflowLayerLabel(o) {
+  if (!o) return "";
+  if (o.kind) return (o.title || o.kind).slice(0, 40);
+  const txt = (o.text || "").trim().replace(/\s+/g, " ");
+  if (txt) return txt.slice(0, 40);
+  if (o.type === "sticker") return o.emoji || "Sticker";
+  return (o.type || "item").replace(/^\w/, c => c.toUpperCase());
+}
+function WorkflowLayersPanel({
+  nodes, wb, paintOrder, selectedNodeIds, selectedWbIds, activeGroup,
+  onSelectOne, onSelectGroup, onGroup, onUngroup, onLayer, onConstrain,
+  onRename, canGroup, canUngroup, onClose,
+}) {
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const [renaming, setRenaming] = useState(null);
+  // Top of the stack reads first, like every layers list.
+  const units = useMemo(() => {
+    const all = [...(nodes || []), ...(wb || [])].filter(o => o && o.id);
+    const byGroup = new Map();
+    const out = [];
+    for (const o of all) {
+      const gid = workflowGroupIdOf(o);
+      if (!gid) { out.push({ kind: "one", o, z: paintOrder.get(o.id) ?? 0 }); continue; }
+      let g = byGroup.get(gid);
+      if (!g) { g = { kind: "group", gid, members: [], z: -Infinity, name: "Group" }; byGroup.set(gid, g); out.push(g); }
+      g.members.push(o);
+      if (o.groupName) g.name = o.groupName;
+      g.z = Math.max(g.z, paintOrder.get(o.id) ?? 0);
+    }
+    for (const g of byGroup.values()) g.members.sort((a, b) => (paintOrder.get(b.id) ?? 0) - (paintOrder.get(a.id) ?? 0));
+    return out.sort((a, b) => b.z - a.z);
+  }, [nodes, wb, paintOrder]);
+  const isSel = (o) => o.kind ? selectedNodeIds.has(o.id) : selectedWbIds.has(o.id);
+  const row = (o, member) => html`
+    <div key=${o.id}
+      className=${"workflow-layers-row" + (isSel(o) ? " is-active" : "") + (member ? " is-member" : "")}
+      onClick=${(e) => { e.stopPropagation(); onSelectOne(o, e.shiftKey); }}>
+      <span className="workflow-layers-icon">${o.kind ? "◧" : (WF_LAYER_ICON[o.type] || "▪")}</span>
+      <span className="workflow-layers-label">${workflowLayerLabel(o)}</span>
+      ${o.locked && html`<span className="workflow-layers-lock" title="Locked"><${Icon.Lock}/></span>`}
+    </div>`;
+  const seg = (label, opts, cur, onPick) => html`
+    <div className="workflow-layers-constraint">
+      <span className="workflow-layers-constraint-label">${label}</span>
+      <div className="workflow-wb-seg">
+        ${opts.map(o => html`
+          <button key=${o} type="button"
+            className=${"workflow-wb-seg-btn" + (cur === o ? " is-active" : "")}
+            title=${o} onClick=${() => onPick(o)}>${o[0].toUpperCase() + o.slice(1)}</button>`)}
+      </div>
+    </div>`;
+  // The constraint editor points at whatever single member is selected inside
+  // a group; with the whole group selected there is nothing to constrain
+  // (the group IS the frame), so it explains itself instead.
+  const selInGroup = (() => {
+    const all = [...(nodes || []), ...(wb || [])].filter(o => o && isSel(o));
+    if (all.length !== 1) return null;
+    return workflowGroupIdOf(all[0]) ? all[0] : null;
+  })();
+  return html`
+    <div className="workflow-layers-panel" onMouseDown=${(e) => e.stopPropagation()}>
+      <div className="workflow-layers-head">
+        <span>Layers</span>
+        <span className="workflow-layers-actions">
+          <button type="button" className="workflow-vector-mini-btn" disabled=${!canGroup}
+            title="Group the selection (⌘G)" onClick=${onGroup}>Group</button>
+          <button type="button" className="workflow-vector-mini-btn" disabled=${!canUngroup}
+            title="Ungroup (⇧⌘G)" onClick=${onUngroup}>Ungroup</button>
+          <button type="button" className="workflow-layers-close" title="Hide layers" onClick=${onClose}>×</button>
+        </span>
+      </div>
+      <div className="workflow-layers-list">
+        ${units.length === 0 && html`<div className="workflow-vector-hint">Nothing on the canvas yet.</div>`}
+        ${units.map(u => {
+          if (u.kind === "one") return row(u.o, false);
+          const open = !collapsed.has(u.gid);
+          const groupSel = u.members.every(isSel);
+          return html`
+            <div key=${u.gid} className="workflow-layers-group">
+              <div className=${"workflow-layers-row workflow-layers-grouphead" + (groupSel ? " is-active" : "")}
+                onClick=${(e) => { e.stopPropagation(); onSelectGroup(u.gid); }}>
+                <button type="button" className="workflow-layers-twist"
+                  title=${open ? "Collapse" : "Expand"}
+                  onClick=${(e) => { e.stopPropagation(); setCollapsed(p => { const n = new Set(p); n.has(u.gid) ? n.delete(u.gid) : n.add(u.gid); return n; }); }}
+                >${open ? "▾" : "▸"}</button>
+                ${renaming === u.gid
+                  ? html`<input className="workflow-layers-rename" autoFocus defaultValue=${u.name}
+                      onClick=${(e) => e.stopPropagation()}
+                      onBlur=${(e) => { onRename(u.gid, e.target.value.trim() || "Group"); setRenaming(null); }}
+                      onKeyDown=${(e) => { if (e.key === "Enter" || e.key === "Escape") e.target.blur(); }}/>`
+                  : html`<span className="workflow-layers-label" title="Double-click to rename"
+                      onDblClick=${(e) => { e.stopPropagation(); setRenaming(u.gid); }}>${u.name}</span>`}
+                <span className="workflow-layers-count">${u.members.length}</span>
+              </div>
+              ${open && html`<div className="workflow-layers-members">${u.members.map(m => row(m, true))}</div>`}
+            </div>`;
+        })}
+      </div>
+      ${(selectedNodeIds.size + selectedWbIds.size) > 0 && html`
+        <div className="workflow-layers-foot">
+          <div className="workflow-layers-sublabel">Stacking</div>
+          <div className="workflow-wb-seg">
+            <button type="button" className="workflow-wb-seg-btn" title="Bring to front (⇧])" onClick=${() => onLayer("front")}>Front</button>
+            <button type="button" className="workflow-wb-seg-btn" title="Bring forward (])" onClick=${() => onLayer("forward")}>+</button>
+            <button type="button" className="workflow-wb-seg-btn" title="Send backward ([)" onClick=${() => onLayer("backward")}>−</button>
+            <button type="button" className="workflow-wb-seg-btn" title="Send to back (⇧[)" onClick=${() => onLayer("back")}>Back</button>
+          </div>
+          ${selInGroup ? html`
+            <div className="workflow-layers-sublabel">When the group resizes</div>
+            ${seg("Horizontal", WF_CONSTRAIN_H, workflowConstrainOf(selInGroup).h, (v) => onConstrain({ h: v }))}
+            ${seg("Vertical", WF_CONSTRAIN_V, workflowConstrainOf(selInGroup).v, (v) => onConstrain({ v: v }))}
+          ` : activeGroup ? html`
+            <div className="workflow-layers-hint">Pick one thing inside the group to set how it behaves when the group resizes.</div>
+          ` : null}
+        </div>
+      `}
+    </div>`;
+}
+
+/* Group frame: one dashed box round the whole group with eight resize
+   handles. Lives as a direct child of .workflow-canvas (world coords, same
+   as nodes) rather than inside the whiteboard layer, because a group spans
+   BOTH families and the wb layer is pointer-inert in build mode - handles
+   have to work in both. Handles set pointer-events explicitly for the same
+   reason. Sizes divide by zoom so the chrome stays constant on screen. */
+const WF_GROUP_HANDLES = [
+  { k: "nw", x: 0,   y: 0   }, { k: "n", x: 0.5, y: 0   }, { k: "ne", x: 1, y: 0   },
+  { k: "w",  x: 0,   y: 0.5 },                             { k: "e",  x: 1, y: 0.5 },
+  { k: "sw", x: 0,   y: 1   }, { k: "s", x: 0.5, y: 1   }, { k: "se", x: 1, y: 1   },
+];
+function WorkflowGroupFrame({ bbox, zoom, locked, onResizeStart }) {
+  if (!bbox) return null;
+  const z = Math.max(zoom, 0.1);
+  const bw = 1.5 / z, hs = 9 / z;
+  return html`
+    <div className="workflow-group-frame"
+      style=${{ left: bbox.x + "px", top: bbox.y + "px", width: bbox.w + "px", height: bbox.h + "px",
+                borderWidth: bw + "px" }}>
+      ${!locked && WF_GROUP_HANDLES.map(h => html`
+        <div key=${h.k} className=${"workflow-group-handle workflow-group-handle-" + h.k}
+          style=${{ left: (bbox.w * h.x - hs / 2) + "px", top: (bbox.h * h.y - hs / 2) + "px",
+                    width: hs + "px", height: hs + "px" }}
+          onMouseDown=${(e) => { e.preventDefault(); e.stopPropagation(); onResizeStart && onResizeStart(e, h.k); }}/>
+      `)}
+    </div>`;
+}
+
 // Selection outlines + resize handles for the whiteboard layer. Rendered
 // above all items. Outline width divides by zoom so it stays 1.5px visually.
 function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown }) {
@@ -91921,10 +92558,12 @@ function WorkflowTableMenu({ menu, table, onOp, onClose }) {
   `, document.body);
 }
 
-function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, editingWbLabelIdx, zoom, ghost, arrowSnap, liveStrokeRef, onCommitText, onCommitLabel, onLabelDown, onEditDone, onHandleDown, onItemDoubleClick, tableSel, onTableOp, onTableCellSelect, onTableCellMenu }) {
+function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, editingWbLabelIdx, zoom, ghost, arrowSnap, paintOrder, liveStrokeRef, onCommitText, onCommitLabel, onLabelDown, onEditDone, onHandleDown, onItemDoubleClick, tableSel, onTableOp, onTableCellSelect, onTableCellMenu }) {
+  const zOf = useCallback((it) =>
+    (paintOrder && paintOrder.get(it.id)) ?? (it.z || 0), [paintOrder]);
   const sorted = useMemo(() => {
     const list = (items || []).slice();
-    list.sort((a, b) => (a.z || 0) - (b.z || 0));
+    list.sort((a, b) => zOf(a) - zOf(b));
     return list;
   }, [items]);
   return html`
@@ -91953,6 +92592,7 @@ function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, editingWbL
             key=${it.id}
             item=${it}
             zoom=${zoom}
+            paintZ=${paintOrder ? paintOrder.get(it.id) : undefined}
             selected=${selectedWbIds ? selectedWbIds.has(it.id) : false}
             editing=${editingWbId === it.id}
             editingLabelIdx=${editingWbId === it.id ? editingWbLabelIdx : null}

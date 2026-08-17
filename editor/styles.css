@@ -9439,6 +9439,104 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer * {
   pointer-events: auto;
 }
+/* ── Canvas layers panel ──────────────────────────────────────────────────
+   Right-edge panel, clear of the icon rail. Same vocabulary as the vector
+   editor's layers section so the two read as one idea. */
+.workflow-layers-panel {
+  position: fixed;
+  top: 56px;
+  right: 52px;
+  bottom: 16px;
+  width: 244px;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.12);
+  overflow: hidden;
+}
+.workflow-layers-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 8px 8px 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font: 600 11px var(--font-mono);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.workflow-layers-actions { display: flex; align-items: center; gap: 4px; }
+.workflow-layers-close {
+  width: 20px; height: 20px; border: 0; background: transparent;
+  color: var(--text-faint); font-size: 15px; line-height: 1; cursor: pointer;
+  border-radius: 4px;
+}
+.workflow-layers-close:hover { background: var(--surface-2); color: var(--text); }
+.workflow-layers-list { flex: 1; overflow: auto; padding: 4px; }
+.workflow-layers-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; border-radius: 5px; cursor: default;
+  font: 12px var(--font-sans); color: var(--text);
+  white-space: nowrap;
+}
+.workflow-layers-row:hover { background: var(--surface-2); }
+.workflow-layers-row.is-active {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--text);
+}
+.workflow-layers-row.is-member { padding-left: 20px; }
+.workflow-layers-icon { width: 13px; text-align: center; color: var(--text-faint); flex: 0 0 auto; }
+.workflow-layers-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.workflow-layers-lock { display: inline-flex; color: var(--accent); flex: 0 0 auto; }
+.workflow-layers-count { color: var(--text-faint); font: 10px var(--font-mono); flex: 0 0 auto; }
+.workflow-layers-twist {
+  width: 14px; border: 0; background: transparent; padding: 0;
+  color: var(--text-faint); cursor: pointer; font-size: 10px; flex: 0 0 auto;
+}
+.workflow-layers-grouphead { font-weight: 600; }
+.workflow-layers-rename {
+  flex: 1; min-width: 0; border: 1px solid var(--accent); border-radius: 4px;
+  background: var(--surface); color: var(--text);
+  font: 12px var(--font-sans); padding: 1px 4px;
+}
+.workflow-layers-foot {
+  border-top: 1px solid var(--border);
+  padding: 8px; display: flex; flex-direction: column; gap: 6px;
+}
+.workflow-layers-sublabel {
+  font: 600 10px var(--font-mono); text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted);
+}
+.workflow-layers-constraint { display: flex; flex-direction: column; gap: 3px; }
+.workflow-layers-constraint-label { font: 10px var(--font-sans); color: var(--text-faint); }
+.workflow-layers-hint { font: 11px/1.5 var(--font-sans); color: var(--text-faint); }
+
+/* ── Group frame ──────────────────────────────────────────────────────────
+   One dashed box round a whole selected group plus its eight resize handles.
+   A direct child of .workflow-canvas (world coords, like nodes) because a
+   group spans BOTH families and the whiteboard layer is pointer-inert in
+   build mode - the handles must work in either. z sits above every node but
+   below the whiteboard overlay, so item handles still win when both show. */
+.workflow-group-frame {
+  position: absolute;
+  z-index: 99000;
+  pointer-events: none;
+  border: 1px dashed var(--accent);
+  border-radius: 2px;
+}
+.workflow-group-handle {
+  position: absolute;
+  pointer-events: auto;
+  background: var(--surface);
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+.workflow-group-handle-nw, .workflow-group-handle-se { cursor: nwse-resize; }
+.workflow-group-handle-ne, .workflow-group-handle-sw { cursor: nesw-resize; }
+.workflow-group-handle-n,  .workflow-group-handle-s  { cursor: ns-resize; }
+.workflow-group-handle-e,  .workflow-group-handle-w  { cursor: ew-resize; }
+
 /* Overlays the user draws THROUGH, never at. Descendants are listed too: the
    `.workflow-wb-layer *` rule above turns every child back to `auto`, so a
    parent-only `none` would still leave the shapes inside grabbing the press
