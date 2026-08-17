@@ -8693,6 +8693,19 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
      nodes cleanly paint above the section + its ports. */
   isolation: isolate;
 }
+/* Section edge = grab handle. The body stays pointer-events:none (click and
+   marquee pass through), but the border strip is live, so a section can be
+   selected without hunting for its title bar. Thickness comes inline,
+   counter-scaled by zoom, so it stays a constant ~10 screen px. */
+.workflow-node-section-edge {
+  position: absolute;
+  pointer-events: auto;
+  cursor: move;
+}
+.workflow-node-section-edge-top    { left: 0; right: 0; top: 0; }
+.workflow-node-section-edge-bottom { left: 0; right: 0; bottom: 0; }
+.workflow-node-section-edge-left   { top: 0; bottom: 0; left: 0; }
+.workflow-node-section-edge-right  { top: 0; bottom: 0; right: 0; }
 .workflow-node-section[data-selected="true"] {
   outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent);
   outline-offset: -2px;
@@ -8872,8 +8885,11 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   background: color-mix(in oklab, var(--accent) 12%, transparent);
 }
 /* A locked frame keeps its outline but stops advertising drag affordances:
-   the bar is not a handle any more, and nothing inside it is grabbable. */
-.workflow-node-section[data-locked="true"] { cursor: default; }
+   the bar is not a handle any more, and nothing inside it is grabbable. The
+   dashed border is the tell - on a big section the title-bar lock chip is
+   often scrolled off screen, and without a mark on the frame itself "why
+   won't this select" has no visible answer. */
+.workflow-node-section[data-locked="true"] { cursor: default; border-style: dashed; }
 .workflow-node-section[data-locked="true"] > .workflow-node-section-bar,
 .workflow-node-table[data-locked="true"] > .workflow-node-section-bar { cursor: default; }
 .workflow-node-section[data-locked="true"] > .workflow-node-section-bar

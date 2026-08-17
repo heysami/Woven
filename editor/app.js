@@ -972,6 +972,8 @@ const Icon = {
   Shield:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 1.8l5 1.8v3.6c0 3.4-2.3 5.4-5 6.5-2.7-1.1-5-3.1-5-6.5V3.6z"/><path d="M6 8l1.4 1.4L10.5 6.3"/></svg>`,
   Lock:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></svg>`,
   Layers:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 1.8L1.8 5 8 8.2 14.2 5z"/><path d="M1.8 8.4L8 11.6l6.2-3.2"/><path d="M1.8 11.6L8 14.8l6.2-3.2"/></svg>`,
+  Group:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M1.8 4.5v-2.7h2.7M11.5 1.8h2.7v2.7M14.2 11.5v2.7h-2.7M4.5 14.2H1.8v-2.7" /><rect x="4.6" y="4.6" width="3.4" height="3.4" rx="0.6"/><rect x="8" y="8" width="3.4" height="3.4" rx="0.6"/></svg>`,
+  Ungroup:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M1.8 4.5v-2.7h2.7M14.2 11.5v2.7h-2.7"/><rect x="2.6" y="6.6" width="4.2" height="4.2" rx="0.6"/><rect x="9.2" y="4.4" width="4.2" height="4.2" rx="0.6"/></svg>`,
   Unlock:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 014.9-.6"/></svg>`,
   Scissors: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="4" r="1.8"/><circle cx="4" cy="12" r="1.8"/><path d="M5.5 5.2L13 12M5.5 10.8L13 4"/></svg>`,
   Eye:      () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>`,
@@ -39059,7 +39061,7 @@ function WorkflowCompressModal({ scope, rasters, videos, onRun, onClose }) {
   `, document.body);
 }
 
-function WorkflowGroupAlignBar({ onAlign, onSaveGroup }) {
+function WorkflowGroupAlignBar({ onAlign, onSaveGroup, onGroup, onUngroup, canGroup, canUngroup }) {
   const [rect, setRect] = useState(null);
   const [tipState, setTipState] = useState(null);
   useEffect(() => {
@@ -39087,7 +39089,9 @@ function WorkflowGroupAlignBar({ onAlign, onSaveGroup }) {
   const BTN = 32, GAP = 4, SEP_W = 9; // separator: 1px line + margins
   // The trailing "Save block" affordance (when wired) is one separator + one
   // button wider than the align actions alone.
-  const extraBtn = onSaveGroup ? 1 : 0, extraSep = onSaveGroup ? 1 : 0;
+  const groupBtns = (canGroup ? 1 : 0) + (canUngroup ? 1 : 0);
+  const extraBtn = (onSaveGroup ? 1 : 0) + groupBtns;
+  const extraSep = (onSaveGroup || groupBtns) ? 1 : 0;
   const btnCount = WORKFLOW_ALIGN_ACTIONS.filter(a => !a.separator).length + extraBtn;
   const sepCount = WORKFLOW_ALIGN_ACTIONS.filter(a => a.separator).length + extraSep;
   const totalW = btnCount * BTN + (btnCount + sepCount - 1) * GAP + sepCount * SEP_W;
@@ -39129,6 +39133,31 @@ function WorkflowGroupAlignBar({ onAlign, onSaveGroup }) {
               aria-label=${a.tip}
             >${a.icon}</button>
           `)}
+        ${(canGroup || canUngroup) ? html`<div className="workflow-align-sep"/>` : null}
+        ${canGroup ? html`
+          <button
+            className="workflow-node-top-action"
+            onMouseDown=${(e) => e.stopPropagation()}
+            onClick=${(e) => { e.stopPropagation(); onGroup && onGroup(); }}
+            onMouseEnter=${(e) => showTip("group", e.currentTarget, "Group selection (\u2318G)")}
+            onMouseLeave=${clearTip}
+            onFocus=${(e) => showTip("group", e.currentTarget, "Group selection (\u2318G)")}
+            onBlur=${clearTip}
+            aria-label="Group selection"
+          ><${Icon.Group}/></button>
+        ` : null}
+        ${canUngroup ? html`
+          <button
+            className="workflow-node-top-action"
+            onMouseDown=${(e) => e.stopPropagation()}
+            onClick=${(e) => { e.stopPropagation(); onUngroup && onUngroup(); }}
+            onMouseEnter=${(e) => showTip("ungroup", e.currentTarget, "Ungroup (\u21e7\u2318G)")}
+            onMouseLeave=${clearTip}
+            onFocus=${(e) => showTip("ungroup", e.currentTarget, "Ungroup (\u21e7\u2318G)")}
+            onBlur=${clearTip}
+            aria-label="Ungroup"
+          ><${Icon.Ungroup}/></button>
+        ` : null}
         ${onSaveGroup ? html`
           <div className="workflow-align-sep"/>
           <button
@@ -39520,13 +39549,32 @@ function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDe
       window.removeEventListener("mousedown", onDown, true);
     };
   }, [onClose]);
-  // Clamp inside viewport so the menu doesn't render off-screen.
+  // Clamp inside the viewport using the menu's MEASURED size. The old fixed
+  // 180x140 guess was already wrong for the longest menu and got wronger as
+  // entries were added (layering, group, lock), so the bottom of the menu ran
+  // off the screen. Measured after layout, and re-measured whenever the
+  // content changes, so it can never be stale against the real height.
+  const menuRef = useRef(null);
+  const [size, setSize] = useState({ w: 190, h: 150 });
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const w = Math.ceil(r.width), h = Math.ceil(r.height);
+    if (w !== size.w || h !== size.h) setSize({ w, h });
+  });
   const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
-  const left = clamp(x, 6, window.innerWidth - 180);
-  const top  = clamp(y, 6, window.innerHeight - 140);
+  const PAD = 8;
+  // Prefer opening down-right of the cursor; flip to the other side when there
+  // isn't room, and only then clamp - a flip keeps the cursor outside the menu,
+  // where a clamp alone would drop it underneath and swallow the next click.
+  const fitsDown = y + size.h + PAD <= window.innerHeight;
+  const fitsRight = x + size.w + PAD <= window.innerWidth;
+  const left = clamp(fitsRight ? x : x - size.w, PAD, Math.max(PAD, window.innerWidth - size.w - PAD));
+  const top  = clamp(fitsDown ? y : y - size.h, PAD, Math.max(PAD, window.innerHeight - size.h - PAD));
   const itemCls = (disabled) => "canvas-ctxmenu-item" + (disabled ? " is-disabled" : "");
   return createPortal(html`
-    <div className="canvas-ctxmenu" style=${{ left: left + "px", top: top + "px" }}>
+    <div ref=${menuRef} className="canvas-ctxmenu" style=${{ left: left + "px", top: top + "px" }}>
       <button
         className=${itemCls(!hasSelection)}
         disabled=${!hasSelection}
@@ -41949,7 +41997,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // Geometric node hit-test (the wb layer swallows DOM events in whiteboard
   // mode, so node clicks there can't be resolved from e.target). Non-section
   // nodes win over sections; later array order wins within a kind.
-  const nodeHitAt = (wx, wy) => {
+  const nodeHitAt = (wx, wy, opts) => {
+    const includeLocked = !!(opts && opts.includeLocked);
     // Rank overlapping hits like the RENDER paints them: non-sections above
     // sections, and within each class deeper binding-chain first (bound inner
     // containers paint on top of their hosts), then array order.
@@ -41970,7 +42019,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     let hit = null, hitKey = -Infinity, hitSection = null, hitSectionKey = -Infinity;
     all.forEach((n, idx) => {
       if (!n || typeof n.x !== "number" || typeof n.y !== "number") return;
-      if (n.locked) return;                       // locked = pointer-invisible
+      if (n.locked && !includeLocked) return;     // locked = pointer-invisible
       const w = n.w || 200, h = n.h || 120;
       if (wx < n.x || wx > n.x + w || wy < n.y || wy > n.y + h) return;
       const key = depth(n) * 1000000 + idx;
@@ -43695,6 +43744,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     };
   }, [data.nodes, data.wb, selectedNodeIds, selectedWbIds]);
 
+  // Context menus are anchored to the CANVAS POINT they were opened on, not
+  // frozen at a viewport pixel: pan or zoom and the menu travels with the
+  // thing it acts on instead of hanging over unrelated content. Falls back to
+  // the raw click point for any menu opened without a world anchor.
+  const menuScreenPos = useCallback((m) => {
+    if (!m) return null;
+    const el = wrapRef.current;
+    if (!el || typeof m.worldX !== "number") return { x: m.vpX, y: m.vpY };
+    const r = el.getBoundingClientRect();
+    return { x: r.left + pan.x + m.worldX * zoom, y: r.top + pan.y + m.worldY * zoom };
+  }, [pan, zoom]);
+
   // The ONE group the selection currently is (all of it, nothing else), with
   // its live bbox. Null for a mixed / partial / ungrouped selection - a frame
   // round half a group would invite a resize that means nothing.
@@ -43719,6 +43780,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     };
   }, [selectionGroupState, data.nodes, data.wb, selectedNodeIds, selectedWbIds]);
   const activeGroupRef = useRef(activeGroup); activeGroupRef.current = activeGroup;
+  // When a WHOLE group is selected, the group's frame is the selection
+  // indicator - the members must not each draw their own outline and chrome
+  // on top of it, or a five-item group reads as five selections rather than
+  // one. Members stay selected for every OTHER purpose (move, delete, layer);
+  // this only suppresses the visual.
+  const groupChromeHidden = activeGroup ? activeGroup.ids : null;
+  const chromeSelected = (id) =>
+    selectedNodeIds.has(id) && !(groupChromeHidden && groupChromeHidden.has(id));
 
   // Drag a group handle: recompute the group rect, then push every member
   // through its own constraint. The whole gesture is ONE geometry pass from
@@ -54672,7 +54741,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               // selected - every layering / lock / delete entry greyed out,
               // which read as "I can't send a section to the back". Resolve it
               // geometrically instead, the same way the select tool does.
-              const secHit = nodeHitAt(worldX, worldY);
+              const secHit = nodeHitAt(worldX, worldY, { includeLocked: true });
               if (secHit) {
                 if (!selectedNodeIds.has(secHit)) selectNodeId(secHit);
                 if (selectedWbIdsRef.current.size) setSelectedWbIds(new Set());
@@ -54983,7 +55052,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 dropHint=${!!(dropTarget && dropTarget.kind === "sec" && dropTarget.sectionId === n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveSection(n.id, dx, dy))}
@@ -55050,7 +55119,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 dropCell=${dropTarget && dropTarget.kind === "cell" && dropTarget.tableId === n.id
                   ? { r: dropTarget.r, c: dropTarget.c } : null}
                 tableSel=${tableSel}
@@ -55079,7 +55148,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                     range = { r0: r, c0: c, r1: r, c1: c };
                     setTableSel({ tableId, r0: r, c0: c, r1: r, c1: c });
                   }
-                  setTableMenu({ tableId, r, c, range, vpX, vpY });
+                  const wp = screenToWorld(vpX, vpY);
+                  setTableMenu({ tableId, r, c, range, vpX, vpY, worldX: wp.x, worldY: wp.y });
                 }}
                 onCellEdit=${(tableId, r, c) => editTableCellText(tableId, r, c)}
                 onToggleLock=${(want) => setLocked([n.id], [], want)}
@@ -55092,7 +55162,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55129,7 +55199,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55148,7 +55218,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55167,7 +55237,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55186,7 +55256,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55205,7 +55275,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55224,7 +55294,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55243,7 +55313,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55262,7 +55332,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.id]}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55280,7 +55350,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
                 orphaned=${!!orphanMap[n.boundTo?.node]}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 replaceTarget=${assetReplaceMap[n.id] || null}
                 onReplace=${() => replaceAssetOutput(n.id)}
@@ -55640,7 +55710,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   key=${n.id}
                   node=${n}
                   zoom=${zoom}
-                  selected=${selectedNodeIds.has(n.id)}
+                  selected=${chromeSelected(n.id)}
                   onSelect=${() => setSelectedNodeId(n.id)}
                   derivedSummary=${summary}
                   onPatchNode=${updateNode}
@@ -55664,7 +55734,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   ...workflowPromptAttachedAssets(n.id, data.nodes || [], data.edges || []).map(workflowAssetFileName),
                   ...workflowPromptAttachedPrompts(n.id, data.nodes || [], data.edges || []).map(workflowPromptTokenName),
                 ])}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55722,7 +55792,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   key=${n.id}
                   node=${n}
                   zoom=${zoom}
-                  selected=${selectedNodeIds.has(n.id)}
+                  selected=${chromeSelected(n.id)}
                   onSelect=${() => setSelectedNodeId(n.id)}
                   onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                   onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55758,7 +55828,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   key=${n.id}
                   node=${n}
                   zoom=${zoom}
-                  selected=${selectedNodeIds.has(n.id)}
+                  selected=${chromeSelected(n.id)}
                   onSelect=${() => setSelectedNodeId(n.id)}
                   onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                   onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55778,7 +55848,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55794,7 +55864,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55812,7 +55882,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55847,7 +55917,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55867,7 +55937,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55926,7 +55996,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55971,7 +56041,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -55988,7 +56058,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -56009,7 +56079,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -56057,7 +56127,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onDeselect=${() => setSelectedNodeIds(new Set())}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -56102,7 +56172,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -56125,7 +56195,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 node=${n}
                 zoom=${zoom}
                 lodVisible=${lodVisibleFor(n)}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onDeselect=${() => setSelectedNodeIds(new Set())}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -56149,7 +56219,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
                 onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
@@ -56167,7 +56237,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -56185,7 +56255,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -56203,7 +56273,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -56221,7 +56291,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 seedText=${_assistantCollectText(resolveUpstreamInputs(n, data.nodes, data.edges, { wb: data.wb }))}
@@ -56240,7 +56310,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -56258,7 +56328,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -56276,7 +56346,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -56294,7 +56364,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -56314,7 +56384,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -56332,7 +56402,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 key=${n.id}
                 node=${n}
                 zoom=${zoom}
-                selected=${selectedNodeIds.has(n.id)}
+                selected=${chromeSelected(n.id)}
                 onSelect=${() => setSelectedNodeId(n.id)}
                 runState=${runStates[n.id]}
                 onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
@@ -56418,13 +56488,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   range = { r0: r, c0: c, r1: r, c1: c };
                   setTableSel({ tableId, r0: r, c0: c, r1: r, c1: c });
                 }
-                setTableMenu({ tableId, r, c, range, vpX, vpY });
+                const wp2 = screenToWorld(vpX, vpY);
+                setTableMenu({ tableId, r, c, range, vpX, vpY, worldX: wp2.x, worldY: wp2.y });
               }}
             />
             ${(wbMode || selectedWbIds.size > 0) && html`
               <${WorkflowWbSelectionOverlay}
                 items=${wbItems}
                 selectedWbIds=${selectedWbIds}
+                hideOutlineIds=${groupChromeHidden}
                 zoom=${zoom}
                 onHandleDown=${(e, id, handle) => wbHandleDown(e, id, handle)}
               />
@@ -56532,15 +56604,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         />
       `}
       ${tableMenu && html`<${WorkflowTableMenu}
-        menu=${tableMenu}
+        menu=${(() => { const p = menuScreenPos(tableMenu); return p ? { ...tableMenu, vpX: p.x, vpY: p.y } : tableMenu; })()}
         table=${(data.nodes || []).find(n => n.id === tableMenu.tableId && n.kind === "table")}
         onOp=${tableOp}
         onLayer=${(tid, mode) => layerNodes(new Set([tid]), mode)}
         onClose=${() => setTableMenu(null)}
       />`}
       ${ctxMenu && ctxMenu.wb && html`<${CanvasContextMenu}
-        x=${ctxMenu.vpX}
-        y=${ctxMenu.vpY}
+        x=${(menuScreenPos(ctxMenu) || ctxMenu).x ?? ctxMenu.vpX}
+        y=${(menuScreenPos(ctxMenu) || ctxMenu).y ?? ctxMenu.vpY}
         hasSelection=${selectedWbIds.size > 0}
         canPaste=${!!(wbClipboardRef.current && wbClipboardRef.current.items && wbClipboardRef.current.items.length)}
         onCopy=${() => {
@@ -56570,8 +56642,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         onClose=${() => setCtxMenu(null)}
       />`}
       ${ctxMenu && !ctxMenu.wb && html`<${CanvasContextMenu}
-        x=${ctxMenu.vpX}
-        y=${ctxMenu.vpY}
+        x=${(menuScreenPos(ctxMenu) || ctxMenu).x ?? ctxMenu.vpX}
+        y=${(menuScreenPos(ctxMenu) || ctxMenu).y ?? ctxMenu.vpY}
         hasSelection=${selectedNodeIds.size > 0}
         canPaste=${hasNodeClipboard()}
         onCopy=${() => { copySelectedNodes(); setCtxMenu(null); }}
@@ -56600,7 +56672,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         onClose=${() => setCtxMenu(null)}
       />`}
       ${(selectedNodeIds.size + selectedWbIds.size) > 1 && html`
-        <${WorkflowGroupAlignBar} onAlign=${alignSelection} onSaveGroup=${saveSelectionAsGroup}/>
+        <${WorkflowGroupAlignBar}
+          onAlign=${alignSelection}
+          onSaveGroup=${saveSelectionAsGroup}
+          canGroup=${selectionGroupState.canGroup}
+          canUngroup=${selectionGroupState.canUngroup}
+          onGroup=${groupSelection}
+          onUngroup=${ungroupSelection}/>
       `}
       ${convertSel && html`
         <${WorkflowConvertBar}
@@ -90240,6 +90318,23 @@ function WorkflowSectionNode({ node, zoom, selected, dropHint, onSelect, onMove,
         >×</button>
         `}
       </div>
+      ${/* EDGE GRAB. A section's body is pointer-events:none so you can click
+           and marquee straight THROUGH it - which is right, but it left the
+           title bar as the only way to select one, and on a big section that
+           bar is often scrolled off screen. Then nothing is selected and every
+           command that acts on a selection (send to back, lock, delete) looks
+           broken. The border itself is now a handle, like a Figma frame edge:
+           it selects and drags, and the body stays click-through. Rendered
+           BEFORE the resize corner and the ports so those still win the
+           press where they overlap. */ ""}
+      ${locked ? null : ["top", "right", "bottom", "left"].map(side => html`
+        <div key=${"edge-" + side}
+          className=${"workflow-node-section-edge workflow-node-section-edge-" + side}
+          title="Drag to move this section"
+          style=${{ [(side === "top" || side === "bottom") ? "height" : "width"]:
+                    (10 / Math.max(zoom || 1, 0.1)) + "px" }}
+          onMouseDown=${onHandleDown}/>
+      `)}
       ${locked ? null : html`
       <div
         className="workflow-node-section-resize"
@@ -92423,15 +92518,20 @@ function WorkflowGroupFrame({ bbox, zoom, locked, onResizeStart }) {
 
 // Selection outlines + resize handles for the whiteboard layer. Rendered
 // above all items. Outline width divides by zoom so it stays 1.5px visually.
-function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown }) {
+function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown, hideOutlineIds }) {
   const sel = (items || []).filter(it => selectedWbIds.has(it.id));
+  // Members of a fully-selected group are drawn round by the group frame, so
+  // they skip their own outline (and their handles - the group resizes as a
+  // unit, per-item handles inside it would fight the constraints).
+  const boxed = hideOutlineIds ? sel.filter(it => !hideOutlineIds.has(it.id)) : sel;
   if (sel.length === 0) return null;
+  // (boxed may be empty while sel is not - a whole group selected.)
   const bw = 1.5 / Math.max(zoom, 0.1);
   const hs = 8 / Math.max(zoom, 0.1); // handle size in world px
-  const single = sel.length === 1 ? sel[0] : null;
+  const single = boxed.length === 1 ? boxed[0] : null;
   return html`
     <div className="workflow-wb-overlay" style=${{ zIndex: 100000 }}>
-      ${sel.map(it => {
+      ${boxed.map(it => {
         // Tables draw their own rounded accent outline (node treatment) via
         // CSS [data-selected], so skip the square overlay outline for them.
         if (it.type === "table") return null;
@@ -92529,9 +92629,23 @@ function WorkflowTableMenu({ menu, table, onOp, onClose, onLayer }) {
   const m = wbTableMergeAt(table, r, c);
   const isMergeAnchor = !!m && m.r === r && m.c === c;
   const ncols = wbTableCols(table).length, nrows = wbTableRows(table).length;
+  // Measured clamp, same reasoning as CanvasContextMenu: this menu grew a
+  // layering block and the old fixed 380 guess put its tail off-screen.
+  const menuRef = useRef(null);
+  const [size, setSize] = useState({ w: 190, h: 380 });
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const w = Math.ceil(r.width), h = Math.ceil(r.height);
+    if (w !== size.w || h !== size.h) setSize({ w, h });
+  });
   const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
-  const left = clamp(menu.vpX, 6, window.innerWidth - 190);
-  const top  = clamp(menu.vpY, 6, window.innerHeight - 380);
+  const PAD = 8;
+  const fitsDown = menu.vpY + size.h + PAD <= window.innerHeight;
+  const fitsRight = menu.vpX + size.w + PAD <= window.innerWidth;
+  const left = clamp(fitsRight ? menu.vpX : menu.vpX - size.w, PAD, Math.max(PAD, window.innerWidth - size.w - PAD));
+  const top  = clamp(fitsDown ? menu.vpY : menu.vpY - size.h, PAD, Math.max(PAD, window.innerHeight - size.h - PAD));
   const run = (op, args) => { onOp && onOp(tableId, op, args); onClose && onClose(); };
   const Item = (label, op, args, disabled, danger) => html`
     <button type="button"
@@ -92541,7 +92655,7 @@ function WorkflowTableMenu({ menu, table, onOp, onClose, onLayer }) {
   const Sep = () => html`<div className="canvas-ctxmenu-divider"/>`;
   const setFill = (fill) => { onOp && onOp(tableId, "setCellFill", { ...range, fill }); onClose && onClose(); };
   return createPortal(html`
-    <div className="canvas-ctxmenu" style=${{ left: left + "px", top: top + "px" }}>
+    <div ref=${menuRef} className="canvas-ctxmenu" style=${{ left: left + "px", top: top + "px" }}>
       <div className="canvas-ctxmenu-label">Cell colour</div>
       <div className="canvas-ctxmenu-swatches">
         ${/* White is a palette token now, so it rides the loop below - only
