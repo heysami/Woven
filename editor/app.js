@@ -54666,6 +54666,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 setCtxMenu({ vpX: e.clientX, vpY: e.clientY, worldX, worldY, onNode: false, wb: true });
                 return;
               }
+              // A SECTION's body is pointer-events:none (that is what lets you
+              // click the things sitting on it), so the DOM never reports one
+              // as the right-click target and the menu opened with nothing
+              // selected - every layering / lock / delete entry greyed out,
+              // which read as "I can't send a section to the back". Resolve it
+              // geometrically instead, the same way the select tool does.
+              const secHit = nodeHitAt(worldX, worldY);
+              if (secHit) {
+                if (!selectedNodeIds.has(secHit)) selectNodeId(secHit);
+                if (selectedWbIdsRef.current.size) setSelectedWbIds(new Set());
+                setCtxMenu({ vpX: e.clientX, vpY: e.clientY, worldX, worldY, onNode: true });
+                return;
+              }
             }
             setCtxMenu({
               vpX: e.clientX,
@@ -56522,6 +56535,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         menu=${tableMenu}
         table=${(data.nodes || []).find(n => n.id === tableMenu.tableId && n.kind === "table")}
         onOp=${tableOp}
+        onLayer=${(tid, mode) => layerNodes(new Set([tid]), mode)}
         onClose=${() => setTableMenu(null)}
       />`}
       ${ctxMenu && ctxMenu.wb && html`<${CanvasContextMenu}
@@ -92495,7 +92509,7 @@ function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown }
 /* Right-click menu for a table cell / cell-range. Fixed-positioned in
    viewport coords. Acts on the clicked cell (r,c) and, for merge, the live
    range. */
-function WorkflowTableMenu({ menu, table, onOp, onClose }) {
+function WorkflowTableMenu({ menu, table, onOp, onClose, onLayer }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     const onDown = (e) => {
@@ -92554,6 +92568,25 @@ function WorkflowTableMenu({ menu, table, onOp, onClose }) {
       ${Sep()}
       ${Item("Delete row", "deleteRow", { r }, nrows <= 1, true)}
       ${Item("Delete column", "deleteCol", { c }, ncols <= 1, true)}
+      ${/* A table owns its right-click for cell ops, which meant the canvas
+           menu never opened on one and its stacking commands were simply
+           unreachable. They live here instead, acting on the table itself
+           rather than on whatever happens to be selected. */ ""}
+      ${onLayer && html`
+        ${Sep()}
+        <button type="button" className="canvas-ctxmenu-item"
+          onClick=${() => { onLayer(tableId, "front"); onClose && onClose(); }}
+        ><span>Bring to front</span><span className="canvas-ctxmenu-shortcut">⇧]</span></button>
+        <button type="button" className="canvas-ctxmenu-item"
+          onClick=${() => { onLayer(tableId, "forward"); onClose && onClose(); }}
+        ><span>Bring forward</span><span className="canvas-ctxmenu-shortcut">]</span></button>
+        <button type="button" className="canvas-ctxmenu-item"
+          onClick=${() => { onLayer(tableId, "backward"); onClose && onClose(); }}
+        ><span>Send backward</span><span className="canvas-ctxmenu-shortcut">[</span></button>
+        <button type="button" className="canvas-ctxmenu-item"
+          onClick=${() => { onLayer(tableId, "back"); onClose && onClose(); }}
+        ><span>Send to back</span><span className="canvas-ctxmenu-shortcut">⇧[</span></button>
+      `}
     </div>
   `, document.body);
 }
