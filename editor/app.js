@@ -39597,6 +39597,75 @@ function WorkflowPickOpToast({ state }) {
   `, document.body);
 }
 
+/* Canvas-anchored menu positioning.
+
+   The menu follows the canvas point it was opened on. Doing that from React
+   state made it LAG: every pan commit re-rendered the whole WorkflowSurface
+   tree just to move one menu, and a mouse-drag pan only commits `pan` on
+   mouseup, so the menu sat still and then jumped.
+
+   So position it imperatively instead. The pan gesture writes the canvas's
+   transform every frame; we parse that string (a style read - no layout, no
+   forced reflow) and write left/top straight onto the element. The wrap's
+   own offset is measured ONCE per open and on resize, never per frame.
+
+   Returns true while it owns the element's position, so the caller knows to
+   leave left/top out of its style prop - React would otherwise reset them on
+   the next render. */
+function wfReadCanvasTransform(el) {
+  const t = el && el.style && el.style.transform;
+  if (!t) return null;
+  const m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)\s*scale\(([-\d.]+)\)/.exec(t);
+  return m ? { x: +m[1], y: +m[2], z: +m[3] } : null;
+}
+const WF_MENU_PAD = 8;
+// Clamp + flip, shared by the live loop and the static fallback so an
+// anchored menu and a plain one land in exactly the same place.
+function wfMenuPlace(px, py, w, h) {
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const P = WF_MENU_PAD;
+  const fitsDown = py + h + P <= window.innerHeight;
+  const fitsRight = px + w + P <= window.innerWidth;
+  return {
+    left: clamp(fitsRight ? px : px - w, P, Math.max(P, window.innerWidth - w - P)),
+    top:  clamp(fitsDown ? py : py - h, P, Math.max(P, window.innerHeight - h - P)),
+  };
+}
+function useCanvasAnchoredMenu(menuRef, anchor, wrapRef, sizeRef) {
+  const wx = anchor && typeof anchor.worldX === "number" ? anchor.worldX : null;
+  const wy = anchor && typeof anchor.worldY === "number" ? anchor.worldY : null;
+  const live = wx !== null && !!(wrapRef && wrapRef.current);
+  // useLayoutEffect + a synchronous first placement: with a plain effect the
+  // menu paints once at its CSS default before the first rAF tick lands, which
+  // reads as a flash in the wrong corner.
+  useLayoutEffect(() => {
+    if (!live) return;
+    const el = menuRef.current, wrap = wrapRef.current;
+    if (!el || !wrap) return;
+    const canvas = wrap.querySelector(".workflow-canvas");
+    let wrapRect = wrap.getBoundingClientRect();
+    const remeasure = () => { wrapRect = wrap.getBoundingClientRect(); };
+    window.addEventListener("resize", remeasure);
+    let raf = 0, lastL = NaN, lastT = NaN;
+    const place = () => {
+      const t = wfReadCanvasTransform(canvas);
+      if (!t) return;
+      const s = sizeRef.current;
+      const { left, top } = wfMenuPlace(
+        wrapRect.left + t.x + wx * t.z, wrapRect.top + t.y + wy * t.z, s.w, s.h);
+      if (left !== lastL || top !== lastT) {
+        el.style.left = left + "px"; el.style.top = top + "px";
+        lastL = left; lastT = top;
+      }
+    };
+    place();                                   // before the browser paints
+    const tick = () => { raf = requestAnimationFrame(tick); place(); };
+    raf = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", remeasure); };
+  }, [live, wx, wy]);
+  return live;
+}
+
 /* Right-click context menu for the workflow canvas.
    Three actions: Copy (active when ≥1 node is selected), Paste (active
    when the in-session clipboard has something), Delete (active when
@@ -39604,7 +39673,7 @@ function WorkflowPickOpToast({ state }) {
    the canvas's transform / clipping context, then positioned via fixed
    coords from the original click. Closes on outside-click, Escape, or
    when the user picks an action. */
-function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDelete, onClose, onBringToFront, onBringForward, onSendBackward, onSendToBack, locked, onToggleLock, hasLocked, onUnlockAll, canGroup, canUngroup, onGroup, onUngroup }) {
+function CanvasContextMenu({ x, y, anchor, wrapRef, hasSelection, canPaste, onCopy, onPaste, onDelete, onClose, onBringToFront, onBringForward, onSendBackward, onSendToBack, locked, onToggleLock, hasLocked, onUnlockAll, canGroup, canUngroup, onGroup, onUngroup }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     const onDown = (e) => {
@@ -39628,6 +39697,8 @@ function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDe
   // content changes, so it can never be stale against the real height.
   const menuRef = useRef(null);
   const [size, setSize] = useState({ w: 190, h: 150 });
+  // The rAF loop needs the size without re-rendering to read it.
+  const sizeRef = useRef(size); sizeRef.current = size;
   useLayoutEffect(() => {
     const el = menuRef.current;
     if (!el) return;
@@ -39635,18 +39706,14 @@ function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDe
     const w = Math.ceil(r.width), h = Math.ceil(r.height);
     if (w !== size.w || h !== size.h) setSize({ w, h });
   });
-  const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
-  const PAD = 8;
-  // Prefer opening down-right of the cursor; flip to the other side when there
-  // isn't room, and only then clamp - a flip keeps the cursor outside the menu,
-  // where a clamp alone would drop it underneath and swallow the next click.
-  const fitsDown = y + size.h + PAD <= window.innerHeight;
-  const fitsRight = x + size.w + PAD <= window.innerWidth;
-  const left = clamp(fitsRight ? x : x - size.w, PAD, Math.max(PAD, window.innerWidth - size.w - PAD));
-  const top  = clamp(fitsDown ? y : y - size.h, PAD, Math.max(PAD, window.innerHeight - size.h - PAD));
+  // While anchored, the loop owns left/top - leave them OUT of the style prop
+  // or React resets the element's position on every re-render.
+  const live = useCanvasAnchoredMenu(menuRef, anchor, wrapRef, sizeRef);
+  const { left, top } = wfMenuPlace(x, y, size.w, size.h);
   const itemCls = (disabled) => "canvas-ctxmenu-item" + (disabled ? " is-disabled" : "");
   return createPortal(html`
-    <div ref=${menuRef} className="canvas-ctxmenu" style=${{ left: left + "px", top: top + "px" }}>
+    <div ref=${menuRef} className="canvas-ctxmenu"
+      style=${live ? null : { left: left + "px", top: top + "px" }}>
       <button
         className=${itemCls(!hasSelection)}
         disabled=${!hasSelection}
@@ -43853,18 +43920,6 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       groupIds: gids,
     };
   }, [data.nodes, data.wb, selectedNodeIds, selectedWbIds]);
-
-  // Context menus are anchored to the CANVAS POINT they were opened on, not
-  // frozen at a viewport pixel: pan or zoom and the menu travels with the
-  // thing it acts on instead of hanging over unrelated content. Falls back to
-  // the raw click point for any menu opened without a world anchor.
-  const menuScreenPos = useCallback((m) => {
-    if (!m) return null;
-    const el = wrapRef.current;
-    if (!el || typeof m.worldX !== "number") return { x: m.vpX, y: m.vpY };
-    const r = el.getBoundingClientRect();
-    return { x: r.left + pan.x + m.worldX * zoom, y: r.top + pan.y + m.worldY * zoom };
-  }, [pan, zoom]);
 
   // The ONE group the selection currently is (all of it, nothing else), with
   // its live bbox. Null for a mixed / partial / ungrouped selection - a frame
@@ -56720,15 +56775,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         />
       `}
       ${tableMenu && html`<${WorkflowTableMenu}
-        menu=${(() => { const p = menuScreenPos(tableMenu); return p ? { ...tableMenu, vpX: p.x, vpY: p.y } : tableMenu; })()}
+        menu=${tableMenu}
+        wrapRef=${wrapRef}
         table=${(data.nodes || []).find(n => n.id === tableMenu.tableId && n.kind === "table")}
         onOp=${tableOp}
         onLayer=${(tid, mode) => layerNodes(new Set([tid]), mode)}
         onClose=${() => setTableMenu(null)}
       />`}
       ${ctxMenu && ctxMenu.wb && html`<${CanvasContextMenu}
-        x=${(menuScreenPos(ctxMenu) || ctxMenu).x ?? ctxMenu.vpX}
-        y=${(menuScreenPos(ctxMenu) || ctxMenu).y ?? ctxMenu.vpY}
+        x=${ctxMenu.vpX}
+        y=${ctxMenu.vpY}
+        anchor=${ctxMenu}
+        wrapRef=${wrapRef}
         hasSelection=${selectedWbIds.size > 0}
         canPaste=${!!(wbClipboardRef.current && wbClipboardRef.current.items && wbClipboardRef.current.items.length)}
         onCopy=${() => {
@@ -56758,8 +56816,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         onClose=${() => setCtxMenu(null)}
       />`}
       ${ctxMenu && !ctxMenu.wb && html`<${CanvasContextMenu}
-        x=${(menuScreenPos(ctxMenu) || ctxMenu).x ?? ctxMenu.vpX}
-        y=${(menuScreenPos(ctxMenu) || ctxMenu).y ?? ctxMenu.vpY}
+        x=${ctxMenu.vpX}
+        y=${ctxMenu.vpY}
+        anchor=${ctxMenu}
+        wrapRef=${wrapRef}
         hasSelection=${selectedNodeIds.size > 0}
         canPaste=${hasNodeClipboard()}
         onCopy=${() => { copySelectedNodes(); setCtxMenu(null); }}
@@ -92733,7 +92793,7 @@ function WorkflowWbSelectionOverlay({ items, selectedWbIds, zoom, onHandleDown, 
 /* Right-click menu for a table cell / cell-range. Fixed-positioned in
    viewport coords. Acts on the clicked cell (r,c) and, for merge, the live
    range. */
-function WorkflowTableMenu({ menu, table, onOp, onClose, onLayer }) {
+function WorkflowTableMenu({ menu, table, onOp, onClose, onLayer, wrapRef }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     const onDown = (e) => {
@@ -92757,6 +92817,7 @@ function WorkflowTableMenu({ menu, table, onOp, onClose, onLayer }) {
   // layering block and the old fixed 380 guess put its tail off-screen.
   const menuRef = useRef(null);
   const [size, setSize] = useState({ w: 190, h: 380 });
+  const sizeRef = useRef(size); sizeRef.current = size;
   useLayoutEffect(() => {
     const el = menuRef.current;
     if (!el) return;
@@ -92764,12 +92825,8 @@ function WorkflowTableMenu({ menu, table, onOp, onClose, onLayer }) {
     const w = Math.ceil(r.width), h = Math.ceil(r.height);
     if (w !== size.w || h !== size.h) setSize({ w, h });
   });
-  const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
-  const PAD = 8;
-  const fitsDown = menu.vpY + size.h + PAD <= window.innerHeight;
-  const fitsRight = menu.vpX + size.w + PAD <= window.innerWidth;
-  const left = clamp(fitsRight ? menu.vpX : menu.vpX - size.w, PAD, Math.max(PAD, window.innerWidth - size.w - PAD));
-  const top  = clamp(fitsDown ? menu.vpY : menu.vpY - size.h, PAD, Math.max(PAD, window.innerHeight - size.h - PAD));
+  const live = useCanvasAnchoredMenu(menuRef, menu, wrapRef, sizeRef);
+  const { left, top } = wfMenuPlace(menu.vpX, menu.vpY, size.w, size.h);
   const run = (op, args) => { onOp && onOp(tableId, op, args); onClose && onClose(); };
   const Item = (label, op, args, disabled, danger) => html`
     <button type="button"
@@ -92779,7 +92836,8 @@ function WorkflowTableMenu({ menu, table, onOp, onClose, onLayer }) {
   const Sep = () => html`<div className="canvas-ctxmenu-divider"/>`;
   const setFill = (fill) => { onOp && onOp(tableId, "setCellFill", { ...range, fill }); onClose && onClose(); };
   return createPortal(html`
-    <div ref=${menuRef} className="canvas-ctxmenu" style=${{ left: left + "px", top: top + "px" }}>
+    <div ref=${menuRef} className="canvas-ctxmenu"
+      style=${live ? null : { left: left + "px", top: top + "px" }}>
       <div className="canvas-ctxmenu-label">Cell colour</div>
       <div className="canvas-ctxmenu-swatches">
         ${/* White is a palette token now, so it rides the loop below - only
