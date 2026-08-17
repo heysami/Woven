@@ -24339,6 +24339,37 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   color: var(--text);
   font-size: 12.5px;
 }
+/* The message the canvas search palette jumped to. A soft, decaying wash so
+   the eye lands on it without the row looking permanently flagged. */
+.chat-row-hit {
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 6px color-mix(in oklab, var(--success) 16%, transparent);
+  background: color-mix(in oklab, var(--success) 16%, transparent);
+  animation: chat-row-hit-fade 2.6s ease-out forwards;
+}
+@keyframes chat-row-hit-fade {
+  0%, 55% { opacity: 1; }
+  100% { box-shadow: 0 0 0 6px transparent; background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-row-hit { animation: none; }
+}
+/* Search jumped to a message older than the tail the editor loads. */
+.chat-focus-miss {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 10px; margin-bottom: 4px;
+  border: 1px dashed var(--border); border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-muted); font-size: 11.5px; line-height: 1.45;
+}
+.chat-focus-miss strong { color: var(--text); font-weight: 600; }
+.chat-focus-miss button {
+  flex: 0 0 auto; margin-left: auto; display: flex;
+  border: 0; background: transparent; cursor: pointer;
+  color: var(--text-faint); padding: 2px; border-radius: 5px;
+}
+.chat-focus-miss button:hover { background: var(--surface); color: var(--text); }
+.chat-focus-miss svg { width: 13px; height: 13px; }
 .chat-row-tag {
   display: inline-block;
   font-family: var(--font-mono);
@@ -32352,13 +32383,59 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 .wf-pal-row[data-kind="nav"] .wf-pal-row-badge {
   background: color-mix(in oklab, var(--accent) 18%, var(--surface)); color: var(--accent);
 }
+/* Agent-chats tab: a conversation header row, then its matching messages
+   indented beneath it. The header carries the thread; the message rows carry
+   the snippet that matched. */
+.wf-pal-row[data-kind="run"] { margin-top: 6px; }
+.wf-pal-row[data-kind="run"] .wf-pal-row-label { font-weight: 600; }
+.wf-pal-row[data-kind="run"] .wf-pal-row-badge {
+  background: color-mix(in oklab, var(--accent) 18%, var(--surface)); color: var(--accent);
+}
+.wf-pal-row[data-kind="hit"] { padding-left: 26px; align-items: flex-start; }
+.wf-pal-row[data-kind="hit"] .wf-pal-row-badge { margin-top: 1px; }
+.wf-pal-row[data-kind="hit"] .wf-pal-row-label { font-size: 11px; color: var(--text-faint); }
+.wf-pal-row[data-kind="hit"] .wf-pal-row-meta { margin-top: 1px; }
+.wf-pal-row-main {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
 .wf-pal-row-label {
-  flex: 1 1 auto; min-width: 0; font-size: 13.5px; color: var(--text);
+  min-width: 0; font-size: 13.5px; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wf-pal-row-snippet {
+  min-width: 0; font-size: 12px; line-height: 1.4; color: var(--text-muted);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.wf-pal-mark {
+  background: color-mix(in oklab, var(--success) 30%, transparent);
+  color: inherit; border-radius: 3px; padding: 0 1px;
 }
 .wf-pal-row-meta {
   flex: 0 0 auto; font-size: 11px; color: var(--text-faint);
   max-width: 45%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Transcript search is a real round trip against files that reach hundreds of
+   megabytes, so it gets a visible loading state - in the search bar while
+   results are still on screen, and as a full row when there are none yet. */
+.wf-pal-loading {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  padding: 26px 16px; color: var(--text-faint); font-size: 13px;
+}
+.wf-pal-more {
+  padding: 8px 12px 4px; text-align: center;
+  font-size: 11px; color: var(--text-faint);
+}
+.wf-pal-spinner {
+  flex: 0 0 auto; width: 13px; height: 13px; border-radius: 50%;
+  border: 2px solid color-mix(in oklab, var(--text-faint) 35%, transparent);
+  border-top-color: var(--text-muted);
+  animation: wf-pal-spin 0.7s linear infinite;
+}
+@keyframes wf-pal-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .wf-pal-spinner { animation-duration: 2.4s; }
 }
 .wf-pal-foot {
   display: flex; gap: 14px; padding: 8px 12px; border-top: 1px solid var(--border);

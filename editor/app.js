@@ -16093,6 +16093,55 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     return out;
   }, [blocks, viewMode, status, processEnded]);
 
+  // ── Jump to a transcript-search hit ────────────────────────────────────
+  // The canvas search palette's "Agent chats" tab opens a run with the query
+  // stamped onto the run object. We can't address the message by seq - blocks
+  // coalesce many events and each kind renders its own root - so once the
+  // transcript is on screen we find the first .chat-row carrying the query,
+  // scroll it into view and flash it. Sticky-scroll is released first, or the
+  // auto-scroll effect would yank the view straight back to the bottom. A hit
+  // inside tool / thinking activity is not in the DOM at all under the "auto"
+  // view, so that case switches this thread to the expanded view (without
+  // touching the stored preference). focusTick makes a second jump into the
+  // SAME thread re-fire.
+  const focusQuery = (run && run.focusQuery) || "";
+  const focusRole  = (run && run.focusRole)  || "";
+  const focusTick  = (run && run.focusTick)  || 0;
+  const focusDoneRef = useRef(0);
+  const [focusMiss, setFocusMiss] = useState(false);
+  useEffect(() => {
+    if (!focusTick) return;
+    setFocusMiss(false);
+    if (focusRole === "tool" || focusRole === "thinking") setViewMode("always");
+  }, [focusTick, focusRole]);
+  useLayoutEffect(() => {
+    if (!focusQuery || !focusTick || focusDoneRef.current === focusTick) return;
+    const el = bodyRef.current;
+    if (!el) return;
+    const needle = focusQuery.toLowerCase();
+    let target = null;
+    for (const row of el.querySelectorAll(".chat-row")) {
+      if ((row.textContent || "").toLowerCase().includes(needle)) { target = row; break; }
+    }
+    if (!target) {
+      // History may still be streaming in - retry on the next batch. Only
+      // once the thread has settled do we admit the miss, rather than leave
+      // the user staring at a transcript that looks like it ignored them.
+      if (status === "done" || status === "fail" || status === "error") {
+        focusDoneRef.current = focusTick;
+        setFocusMiss(true);
+      }
+      return;
+    }
+    focusDoneRef.current = focusTick;
+    stickRef.current = false;
+    try { target.scrollIntoView({ block: "center", behavior: "smooth" }); }
+    catch { el.scrollTop = Math.max(0, target.offsetTop - el.clientHeight / 2); }
+    target.classList.add("chat-row-hit");
+    const t = setTimeout(() => { try { target.classList.remove("chat-row-hit"); } catch {} }, 2600);
+    return () => clearTimeout(t);
+  }, [focusQuery, focusTick, displayBlocks, status]);
+
   // The single most-recent tool call, surfaced as a temporary card above the
   // composer in auto view (it replaces the now-hidden inline tool cards). Only
   // while the turn is live; vanishes when the run goes quiet. AskUserQuestion is
@@ -16325,6 +16374,13 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             </div>
           `}
           ${!isNew && events.length === 0 && status === "connecting" && html`<div className="chat-empty">Loading conversation…</div>`}
+          ${focusMiss && html`
+            <div className="chat-focus-miss" role="status">
+              <span>The message matching <strong>"${focusQuery}"</strong> is older than the part of
+              this transcript the editor loads. Everything after it is below.</span>
+              <button type="button" onClick=${() => setFocusMiss(false)} aria-label="Dismiss"><${Icon.X}/></button>
+            </div>
+          `}
           ${displayBlocks.map((bl) => html`<${ChatBlock}
                 key=${bl.key}
                 block=${bl}
@@ -39630,13 +39686,22 @@ function WorkflowEmptyComposer({ onStartChatWithPrompt }) {
 }
 
 // ── Cmd+F / Cmd+K canvas search palette ──────────────────────────────────
-// One overlay, two tabs that the user flips with the Tab key:
+// One overlay, three tabs that the user flips with the Tab key:
 //   "Canvas text"        (Cmd+F) - find ANY text on the canvas: whiteboard
 //                        text / textbox / sticky items + node titles + prompt
 //                        node bodies. Picking a hit pans+selects it.
 //   "Nodes & navigation" (Cmd+K) - jump to an existing node, jump to a
 //                        section (a "navigation" on this canvas), or ADD a
 //                        new node of a chosen kind at the viewport centre.
+//   "Agent chats"        (Cmd+Shift+F) - find anything ever said in an agent
+//                        run: your messages, the agent's replies, its
+//                        thinking, its tool calls and their output. Unlike
+//                        the other two this cannot answer from memory - the
+//                        transcripts live in the daemon's chat JSONL, which
+//                        runs to hundreds of megabytes - so it is a debounced
+//                        fetch against /__chat_search with its own loading
+//                        state. Picking a hit opens that run's thread and
+//                        scrolls to the matching message.
 // ↑/↓ move the highlight, ↵ activates, Esc closes. Mirrors the spotlight /
 // command-palette pattern; rendered via createPortal so it floats over all.
 // The "add a node" catalog for the Cmd+K tab - mirrors the left library rail
@@ -39702,7 +39767,36 @@ function paletteFirstLine(s, max = 90) {
   return t.length > max ? t.slice(0, max) + "…" : t;
 }
 
-function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNode, onFocusWb, onAddNode }) {
+// The palette's tab ladder, in Tab-cycle order.
+const WF_PAL_TABS = ["text", "nodes", "runs"];
+// Badge glyph per transcript-hit role. Same register as the catalog glyphs
+// above - a mono mark, never an emoji.
+const PAL_ROLE_BADGE = {
+  you: "Y", assistant: "A", thinking: "T", tool: "⌗", summary: "≡",
+};
+// Split `text` on every case-insensitive occurrence of `q`, wrapping the hits
+// in <mark> so a snippet shows WHY it matched. Returns the plain string when
+// there's nothing to mark, keeping the common rows allocation-free.
+function palMark(text, q) {
+  const s = String(text || "");
+  if (!q || q.length < 2) return s;
+  const hay = s.toLowerCase(), needle = q.toLowerCase();
+  let at = hay.indexOf(needle);
+  if (at < 0) return s;
+  const out = [];
+  let from = 0, n = 0;
+  while (at >= 0 && n < 40) {
+    if (at > from) out.push(s.slice(from, at));
+    out.push(html`<mark key=${"m" + n} className="wf-pal-mark">${s.slice(at, at + q.length)}</mark>`);
+    from = at + q.length;
+    at = hay.indexOf(needle, from);
+    n++;
+  }
+  if (from < s.length) out.push(s.slice(from));
+  return out;
+}
+
+function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNode, onFocusWb, onAddNode, onOpenRun }) {
   const [tab, setTab] = useState(initialTab || "text");
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
@@ -39718,6 +39812,43 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
   }, [open, initialTab]);
 
   const query = q.trim().toLowerCase();
+
+  // ── Agent-chats tab: the one tab that can't answer from memory ──────────
+  // The transcripts live in the daemon's chat JSONL (hundreds of MB on a real
+  // project), so this is a real round trip: debounced so a typed word is ONE
+  // request rather than eight, and sequence-stamped so a slow reply for an
+  // earlier query can never paint over the answer to the one now in the box.
+  const [chatRes, setChatRes] = useState(null);     // null = nothing fetched yet
+  const [chatBusy, setChatBusy] = useState(false);
+  const [chatErr, setChatErr] = useState(null);
+  const chatReqRef = useRef(0);
+  useEffect(() => {
+    if (!open || tab !== "runs") return;
+    if (query.length < 2) {
+      chatReqRef.current++;                         // drop anything in flight
+      setChatRes(null); setChatBusy(false); setChatErr(null);
+      return;
+    }
+    const term = q.trim();
+    const seq = ++chatReqRef.current;
+    setChatBusy(true);
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(apiUrl("/__chat_search?q=" + encodeURIComponent(term)));
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
+        if (seq !== chatReqRef.current) return;     // superseded
+        setChatRes(j); setChatErr(null);
+      } catch (e) {
+        if (seq !== chatReqRef.current) return;
+        setChatRes(null); setChatErr(e.message || String(e));
+      } finally {
+        if (seq === chatReqRef.current) setChatBusy(false);
+      }
+    }, 280);
+    return () => clearTimeout(t);
+  }, [open, tab, query, q]);
+
   const results = useMemo(() => {
     if (!open) return [];
     const out = [];
@@ -39754,6 +39885,34 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
       }
       return out.slice(0, 60);
     }
+    if (tab === "runs") {
+      // Server-shaped: one header row per conversation, then its matching
+      // messages beneath. Both open the run; the header lands on its newest
+      // match, a message row on itself.
+      if (!chatRes) return [];
+      for (const r of (chatRes.runs || [])) {
+        const ms = r.matches || [];
+        out.push({
+          key: "run:" + r.runId, kind: "run", badge: "✶",
+          // Spawn titles are the user's first message verbatim - multi-line
+          // and long. Same one-line collapse the canvas rows get.
+          label: paletteFirstLine(r.title) || r.kind || "Agent run",
+          meta: `${r.matchCount} match${r.matchCount === 1 ? "" : "es"}`
+                + (r.updatedAt ? " · " + formatRunAge(r.updatedAt) : ""),
+          run: () => onOpenRun && onOpenRun(r, ms[0], q.trim()),
+        });
+        ms.forEach((m, i) => {
+          out.push({
+            key: "hit:" + r.runId + ":" + i, kind: "hit",
+            badge: PAL_ROLE_BADGE[m.role] || "·",
+            label: m.label || "Message", snippet: m.snippet || "",
+            meta: m.ts ? formatRunAge(m.ts) : "",
+            run: () => onOpenRun && onOpenRun(r, m, q.trim()),
+          });
+        });
+      }
+      return out;
+    }
     // tab === "nodes": sections (navigations) first, then other nodes already
     // on the canvas, then "Add <kind>" entries from the library catalog.
     for (const s of ns) {
@@ -39776,18 +39935,44 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
       }
     }
     return out.slice(0, 60);
-  }, [open, tab, query, nodes, wb, onFocusNode, onFocusWb, onAddNode]);
+  }, [open, tab, query, q, nodes, wb, chatRes, onFocusNode, onFocusWb, onAddNode, onOpenRun]);
 
   useEffect(() => { setActive(0); }, [tab, query]);
+  // Keep the highlight on a row that still exists as async results land.
+  useEffect(() => {
+    setActive(i => (i < results.length ? i : Math.max(0, results.length - 1)));
+  }, [results.length]);
+  // Follow the arrow keys down the list. Matters most on the runs tab, where
+  // a broad query fills the list far past the visible height.
+  const listRef = useRef(null);
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const row = el.querySelectorAll(".wf-pal-row")[active];
+    if (row) row.scrollIntoView({ block: "nearest" });
+  }, [active, results]);
 
   if (!open) return null;
   const activate = (r) => { if (!r) return; try { r.run(); } catch {} onClose(); };
+  const cycleTab = (dir) => setTab(t => {
+    const i = WF_PAL_TABS.indexOf(t);
+    return WF_PAL_TABS[((i < 0 ? 0 : i) + dir + WF_PAL_TABS.length) % WF_PAL_TABS.length];
+  });
   const onKeyDown = (e) => {
-    if (e.key === "Tab") { e.preventDefault(); setTab(t => (t === "text" ? "nodes" : "text")); return; }
+    if (e.key === "Tab") { e.preventDefault(); cycleTab(e.shiftKey ? -1 : 1); return; }
     if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
     if (e.key === "ArrowDown") { e.preventDefault(); setActive(i => Math.min(results.length - 1, i + 1)); return; }
     if (e.key === "ArrowUp") { e.preventDefault(); setActive(i => Math.max(0, i - 1)); return; }
     if (e.key === "Enter") { e.preventDefault(); activate(results[active]); return; }
+  };
+  // The runs tab owns its own empty/loading/error copy - it is the only tab
+  // whose "nothing here" can mean four different things.
+  const runsNote = () => {
+    if (chatErr) return "Could not reach the daemon: " + chatErr;
+    if (query.length < 2) return "Type at least 2 characters to search every agent conversation in this project.";
+    if (chatBusy) return null;                      // the spinner speaks for it
+    if (chatRes && chatRes.unsearchable) return "That query is all punctuation - add a word to search for.";
+    return `Nothing in this project's conversations matches "${q.trim()}".`;
   };
 
   return createPortal(html`
@@ -39799,22 +39984,34 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
             ref=${inputRef}
             className="wf-pal-input"
             type="text"
-            placeholder=${tab === "text" ? "Find text on the canvas…" : "Go to a node / section, or add a node…"}
+            placeholder=${tab === "text" ? "Find text on the canvas…"
+                        : tab === "runs" ? "Search everything said in your agent runs…"
+                        : "Go to a node / section, or add a node…"}
             value=${q}
             spellcheck="false"
             onInput=${(e) => setQ(e.target.value)}
           />
+          ${tab === "runs" && chatBusy && html`<span className="wf-pal-spinner" aria-label="Searching"/>`}
           <button className="wf-pal-x" onClick=${onClose} aria-label="Close"><${Icon.X}/></button>
         </div>
         <div className="wf-pal-tabs" role="tablist">
           <button className="wf-pal-tab" role="tab" data-active=${tab === "text" ? "true" : "false"} onClick=${() => setTab("text")}>Canvas text</button>
           <button className="wf-pal-tab" role="tab" data-active=${tab === "nodes" ? "true" : "false"} onClick=${() => setTab("nodes")}>Nodes & navigation</button>
+          <button className="wf-pal-tab" role="tab" data-active=${tab === "runs" ? "true" : "false"} onClick=${() => setTab("runs")}>Agent chats</button>
         </div>
-        <div className="wf-pal-list">
-          ${results.length === 0 && html`
+        <div className="wf-pal-list" ref=${listRef}>
+          ${tab === "runs" && chatBusy && results.length === 0 && html`
+            <div className="wf-pal-loading">
+              <span className="wf-pal-spinner" aria-hidden="true"/>
+              <span>Reading every conversation in this project…</span>
+            </div>
+          `}
+          ${results.length === 0 && !(tab === "runs" && chatBusy) && html`
             <div className="wf-pal-empty">
               ${tab === "text"
                 ? (query ? "No matching text on the canvas." : "Type to find any text on the canvas.")
+                : tab === "runs"
+                ? runsNote()
                 : (query ? "No matches - keep typing to add a node." : "Type to jump to a node or section, or add one.")}
             </div>
           `}
@@ -39827,15 +40024,23 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
               onClick=${() => activate(r)}
             >
               <span className="wf-pal-row-badge">${r.badge}</span>
-              <span className="wf-pal-row-label">${r.label}</span>
+              <span className="wf-pal-row-main">
+                <span className="wf-pal-row-label">${palMark(r.label, q.trim())}</span>
+                ${r.snippet && html`<span className="wf-pal-row-snippet">${palMark(r.snippet, q.trim())}</span>`}
+              </span>
               <span className="wf-pal-row-meta">${r.meta}</span>
             </button>
           `)}
+          ${tab === "runs" && chatRes && chatRes.truncated && results.length > 0 && html`
+            <div className="wf-pal-more">
+              Showing the newest ${chatRes.totalMatches} matches - narrow the query to reach older ones.
+            </div>
+          `}
         </div>
         <div className="wf-pal-foot">
           <span><kbd>Tab</kbd> switch tab</span>
           <span><kbd>↑</kbd><kbd>↓</kbd> move</span>
-          <span><kbd>↵</kbd> go</span>
+          <span><kbd>↵</kbd> ${tab === "runs" ? "open thread" : "go"}</span>
           <span><kbd>esc</kbd> close</span>
         </div>
       </div>
@@ -40358,7 +40563,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   }, [data.nodes, wrapRef, setPan, zoom, setData, setSelectedNodeIds, setSelectedWbIds]);
 
   // ── Cmd+F / Cmd+K search palette ──────────────────────────────────────
-  // Cmd+F opens the palette on the "find text on the canvas" tab; Cmd+K on
+  // Cmd+F opens the palette on the "find text on the canvas" tab; Cmd+Shift+F
+  // on the "agent chats" tab (same find gesture, the other haystack); Cmd+K on
   // the "nodes & navigation" tab. Capture-phase + preventDefault so we beat
   // the browser's native find. The palette itself owns Tab/arrow/Enter/Esc.
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -40367,12 +40573,29 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const onKey = (e) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
       const k = (e.key || "").toLowerCase();
-      if (k === "f") { e.preventDefault(); setPaletteTab("text"); setPaletteOpen(true); }
+      if (k === "f") { e.preventDefault(); setPaletteTab(e.shiftKey ? "runs" : "text"); setPaletteOpen(true); }
       else if (k === "k") { e.preventDefault(); setPaletteTab("nodes"); setPaletteOpen(true); }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
+  // Palette → chat: open the matched run's thread and hand the drawer the
+  // query so it can scroll to (and flash) the message that matched. The focus
+  // fields ride ON the run object because that is what reopenWorkflowRun
+  // stores; focusTick makes a second jump into the SAME run re-fire.
+  const paletteOpenRun = useCallback((run, match, query) => {
+    if (!run || !onReopenRun) return;
+    // `matches` is palette-only; everything else on the row is already the
+    // /__runs shape the drawer expects (notably `historical`, which picks the
+    // one-shot /__chat hydration over a live SSE subscribe).
+    const { matches, matchCount, ...meta } = run;
+    onReopenRun({
+      ...meta,
+      focusQuery: query || "",
+      focusRole: (match && match.role) || "",
+      focusTick: Date.now(),
+    });
+  }, [onReopenRun]);
 
   // ── First-run guided tour, canvas leg ──
   // Picks up the "canvas" stage the landing leg parked in localStorage right
@@ -53777,6 +54000,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         onFocusNode=${paletteFocusNode}
         onFocusWb=${paletteFocusWb}
         onAddNode=${paletteAddNode}
+        onOpenRun=${paletteOpenRun}
       />
       ${tourIdx >= 0 && tourIdx < tourSteps.length && html`<${GuideTour}
         step=${tourSteps[tourIdx]}

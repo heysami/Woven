@@ -10049,6 +10049,214 @@ def _chat_rows_tail(path: str, max_rows: int, max_bytes: int):
     return out, max(0, total - len(out))
 
 
+# ── Transcript full-text search ────────────────────────────────────────────
+# Backs GET /__chat_search - the "Agent chats" tab of the canvas search
+# palette, which finds any text the user or an agent ever wrote, across every
+# run of the project.
+#
+# Transcripts are the biggest files the daemon owns (suss-cal's
+# editor/chat.jsonl is 356 MB), so json.loads-ing them is not on the table: a
+# full parse of that one file measures ~1.1s, and the palette issues a query
+# per keystroke. This scans BYTES instead and parses only the lines that can
+# possibly match:
+#   1. Pick ONE prefilter token from the query - the longest run of characters
+#      that survives JSON encoding unchanged. A token carrying a quote or a
+#      backslash is stored ESCAPED in the file, so scanning for it raw would
+#      silently find nothing; the full query is confirmed later anyway.
+#   2. Walk the file BACKWARDS in windows, so the newest conversations answer
+#      first and a common word stops long before byte zero. bytes.find is
+#      memchr-fast: on that 356 MB file, a token that is not there anywhere
+#      (the whole-file worst case) measured 434ms; a token that is, 19ms.
+#   3. json.loads ONLY the lines the token landed in, then confirm the FULL
+#      query against the row's extracted human text - which drops the hits
+#      where the token matched an id, a base64 blob, or a neighbouring field.
+_CHAT_SEARCH_BLOCK    = 4 << 20     # bytes per backwards window
+_CHAT_SEARCH_BUDGET   = 4.0         # seconds; over budget answers partial
+_CHAT_SEARCH_MAX_LINE = 2 << 20     # skip absurd rows (inlined media payloads)
+_CHAT_SEARCH_MAX_TEXT = 400_000     # chars of one row we bother matching in
+_CHAT_SEARCH_SNIPPET  = 200         # chars of context around the hit
+
+
+def _chat_search_token(q: str) -> str:
+    """The substring of `q` safe to scan for at the byte level: the longest run
+    of characters json.dumps writes through unchanged. Everything else (quotes,
+    backslashes, newlines, tabs) is escaped on disk and would never match."""
+    best = ""
+    cur = ""
+    for ch in q:
+        if ch in "\"\\" or ord(ch) < 0x20:
+            if len(cur) > len(best):
+                best = cur
+            cur = ""
+        else:
+            cur += ch
+    if len(cur) > len(best):
+        best = cur
+    return best.strip()
+
+
+def _chat_search_row_text(rec):
+    """(role, label, text) for one transcript row - the human-readable part a
+    search should look at - or None for rows that are pure machinery (usage
+    counters, SDK status chatter, lifecycle markers)."""
+    t = rec.get("type")
+    d = rec.get("data")
+    if not isinstance(d, dict):
+        d = {}
+    if t == "user_message":
+        return ("you", "You", d.get("text") or "")
+    if t == "tool_answer":
+        c = d.get("content")
+        return ("you", "You · answer",
+                c if isinstance(c, str) else json.dumps(c, ensure_ascii=False))
+    if t != "agent":
+        return None
+    dt = d.get("type")
+    if dt == "text_delta":
+        return ("assistant", "Agent", d.get("delta") or "")
+    if dt == "thinking_delta":
+        return ("thinking", "Thinking", d.get("delta") or "")
+    if dt == "compact":
+        return ("summary", "Compacted summary", d.get("summary") or "")
+    if dt == "tool_use":
+        inp = d.get("input")
+        if isinstance(inp, dict):
+            body = inp.get("prompt") or inp.get("text") or inp.get("command")
+            if not isinstance(body, str):
+                body = json.dumps(inp, ensure_ascii=False)
+        else:
+            body = "" if inp is None else str(inp)
+        return ("tool", "Tool · " + str(d.get("name") or "tool"), body)
+    if dt == "tool_result":
+        # _normalize_frame flattens content to a string; raw pass-through
+        # frames still carry the list-of-parts shape. Handle both.
+        parts = d.get("content")
+        if isinstance(parts, str):
+            body = parts
+        elif isinstance(parts, list):
+            body = "".join(p.get("text") or "" for p in parts
+                           if isinstance(p, dict) and p.get("type") == "text")
+        else:
+            body = ""
+        return ("tool", "Tool result", body)
+    if dt == "status":
+        r = d.get("result")
+        return ("assistant", "Result", str(r)) if r else None
+    return None
+
+
+def _chat_search_snippet(text: str, idx: int, qlen: int) -> str:
+    """One line of context around the hit, whitespace collapsed, ellipsised."""
+    half = max(12, (_CHAT_SEARCH_SNIPPET - qlen) // 2)
+    s = max(0, idx - half)
+    e = min(len(text), idx + qlen + half)
+    out = re.sub(r"\s+", " ", text[s:e]).strip()
+    if s > 0:
+        out = "…" + out
+    if e < len(text):
+        out = out + "…"
+    return out
+
+
+def _chat_search_scan(path: str, token: str, query_low: str, max_hits: int,
+                      deadline: float):
+    """Backwards byte scan of one transcript.
+
+    Returns ([hit, …], truncated, scanned_bytes) with hits NEWEST FIRST.
+    `truncated` is True when we stopped on the hit cap or the time budget with
+    bytes still unread - i.e. older matches may exist that this answer omits."""
+    if max_hits <= 0:
+        return [], True, 0
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return [], False, 0
+    tok = token.lower().encode("utf-8")
+    if not tok:
+        return [], False, 0
+    qlen = len(query_low)
+    hits = []
+    # A turn's closing `status.result` repeats the text the assistant already
+    # streamed as text_delta, so the same sentence would otherwise land twice
+    # under two labels. Collapse on (run, snippet).
+    seen = set()
+    scanned = 0
+    end = size
+    try:
+        f = open(path, "rb")
+    except OSError:
+        return [], False, 0
+    with f:
+        while end > 0:
+            if len(hits) >= max_hits or time.monotonic() > deadline:
+                break
+            start = max(0, end - _CHAT_SEARCH_BLOCK)
+            if start > 0:
+                # Align the window to a row boundary so every line we hand to
+                # json.loads is whole. A row longer than one window walks back
+                # a window at a time until its start comes into range.
+                f.seek(start)
+                f.readline()
+                start = f.tell()
+                if start >= end:
+                    end = max(0, end - _CHAT_SEARCH_BLOCK)
+                    continue
+            f.seek(start)
+            chunk = f.read(end - start)
+            scanned += len(chunk)
+            end = start
+            low = chunk.lower()
+            # Row spans the token landed in, in file order; at most one per row.
+            spans = []
+            pos = low.find(tok)
+            while pos != -1:
+                ls = low.rfind(b"\n", 0, pos) + 1
+                le = low.find(b"\n", pos)
+                if le == -1:
+                    le = len(low)
+                spans.append((ls, le))
+                pos = low.find(tok, le + 1)
+            for ls, le in reversed(spans):          # newest first within window
+                if le - ls > _CHAT_SEARCH_MAX_LINE:
+                    continue
+                try:
+                    rec = json.loads(chunk[ls:le].decode("utf-8", "replace"))
+                except Exception:
+                    continue
+                if not isinstance(rec, dict):
+                    continue
+                got = _chat_search_row_text(rec)
+                if not got:
+                    continue
+                role, label, text = got
+                if not text:
+                    continue
+                if len(text) > _CHAT_SEARCH_MAX_TEXT:
+                    text = text[:_CHAT_SEARCH_MAX_TEXT]
+                at = text.lower().find(query_low)
+                if at < 0:
+                    continue                        # token hit, full query did not
+                snippet = _chat_search_snippet(text, at, qlen)
+                dedupe = (rec.get("runId") or "", snippet)
+                if dedupe in seen:
+                    continue
+                seen.add(dedupe)
+                hits.append({
+                    "runId":   rec.get("runId") or "",
+                    "title":   rec.get("title") or "",
+                    "kind":    rec.get("kind") or "freeform",
+                    "agentId": rec.get("agentId") or "claude",
+                    "seq":     rec.get("seq"),
+                    "ts":      rec.get("ts") or 0,
+                    "role":    role,
+                    "label":   label,
+                    "snippet": snippet,
+                })
+                if len(hits) >= max_hits:
+                    break
+    return hits, end > 0, scanned
+
+
 def _rehydrate_system_run(run_id: str):
     """v3.12 - rehydrate a workspace system thread after daemon restart.
     Scans .system-chats/*.jsonl instead of a project's chat.jsonl."""
@@ -14525,6 +14733,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._system_runs_list(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__chat":
             return self._chat_history(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__chat_search":
+            return self._chat_search(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__doc":
             return self._branch_doc(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__screenshot/jobs":
@@ -31603,6 +31813,119 @@ class H(http.server.SimpleHTTPRequestHandler):
             out["truncated"] = True
             out["omittedRows"] = omitted
         return self._reply(200, out)
+
+    # GET /__chat_search?q=<text>[&project=<id>]
+    #   Full-text search across every run's transcript in this project, for
+    #   the canvas search palette's "Agent chats" tab. Answers newest-first,
+    #   grouped by run. See _chat_search_scan for why this never parses a
+    #   transcript it doesn't have to.
+    _CHAT_SEARCH_MAX_HITS    = 300   # rows collected before we stop scanning
+    _CHAT_SEARCH_MAX_PER_RUN = 6     # matches surfaced per conversation
+    _CHAT_SEARCH_MAX_RUNS    = 40
+
+    def _chat_search(self, qs):
+        q = (_qs_get(qs, "q") or "").strip()
+        base = {"q": q, "runs": [], "totalMatches": 0, "truncated": False}
+        if len(q) < 2:
+            return self._reply(200, dict(base, tooShort=True))
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        # A query made entirely of characters that JSON escapes has no byte
+        # pattern to scan for; say so rather than sweeping every transcript.
+        token = _chat_search_token(q)
+        if len(token) < 2:
+            return self._reply(200, dict(base, unsearchable=True))
+        q_low = q.lower()
+        deadline = time.monotonic() + _CHAT_SEARCH_BUDGET
+        t0 = time.time()
+        groups, order = {}, []
+        total = scanned = 0
+        truncated = False
+        for path, _slug in _chat_jsonl_candidate_files(project_root):
+            if not os.path.isfile(path):
+                continue
+            try:
+                idx = _chat_index(path)
+                with idx.lock:
+                    metas = {rid: dict(m) for rid, m in idx.metas.items()}
+            except Exception:
+                metas = {}
+            hits, more, nbytes = _chat_search_scan(
+                path, token, q_low, self._CHAT_SEARCH_MAX_HITS - total, deadline)
+            scanned += nbytes
+            truncated = truncated or more
+            for h in hits:
+                rid = h.get("runId")
+                # A deleted run's lines are moved to .chat-trash.jsonl, but a
+                # delete raced by an in-flight append can leave one behind.
+                if not rid or rid in _DELETED_RUN_IDS:
+                    continue
+                g = groups.get(rid)
+                if g is None:
+                    meta = metas.get(rid) or {}
+                    g = groups[rid] = {
+                        "runId":      rid,
+                        "title":      meta.get("title") or h.get("title") or "",
+                        "kind":       meta.get("kind") or h.get("kind") or "freeform",
+                        "agentId":    meta.get("agentId") or h.get("agentId") or "claude",
+                        "branch":     meta.get("branch") or "main",
+                        "tier":       meta.get("tier"),
+                        "startedAt":  meta.get("startedAt") or 0,
+                        "updatedAt":  meta.get("updatedAt") or h.get("ts") or 0,
+                        # Overwritten below for runs the daemon still holds.
+                        "done":       True,
+                        "turnDone":   True,
+                        "turnsCompleted": meta.get("turnsCompleted") or 0,
+                        "lastSeq":    meta.get("lastSeq", -1),
+                        "historical": True,
+                        "matchCount": 0,
+                        "matches":    [],
+                    }
+                    order.append(rid)
+                g["matchCount"] += 1
+                total += 1
+                if len(g["matches"]) < self._CHAT_SEARCH_MAX_PER_RUN:
+                    g["matches"].append({
+                        "seq":     h.get("seq"),
+                        "ts":      h.get("ts"),
+                        "role":    h.get("role"),
+                        "label":   h.get("label"),
+                        "snippet": h.get("snippet"),
+                    })
+            if total >= self._CHAT_SEARCH_MAX_HITS or time.monotonic() > deadline:
+                truncated = True
+                break
+        # `order` is hit order, and hits arrive newest-first, so the run the
+        # user was last talking in leads without a re-sort.
+        if len(order) > self._CHAT_SEARCH_MAX_RUNS:
+            truncated = True
+            order = order[:self._CHAT_SEARCH_MAX_RUNS]
+        # Rows the palette hands to the chat drawer must describe the run the
+        # same way /__runs does, or the drawer picks the wrong hydration path:
+        # `historical` decides one-shot /__chat vs live SSE, and `done` decides
+        # whether replying is allowed. Anything still in the registry wins.
+        with RUNS_LOCK:
+            states = {rid: RUNS[rid] for rid in order if rid in RUNS}
+        for rid, s in states.items():
+            with s.lock:
+                last_seq = s.events[-1]["seq"] if s.events else -1
+            groups[rid].update({
+                "done":           s.done,
+                "turnDone":       s.turn_done,
+                "turnsCompleted": s.turns_completed,
+                "exitCode":       s.exit_code,
+                "stopReason":     s.stop_reason,
+                "lastSeq":        last_seq,
+                "historical":     False,
+            })
+        return self._reply(200, {
+            "q": q, "runs": [groups[r] for r in order],
+            "totalMatches": total, "truncated": truncated,
+            "scannedBytes": scanned,
+            "elapsedMs": int((time.time() - t0) * 1000),
+        })
 
     # GET /__doc?branch=<slug>&name=<NOTES.md|brand-spec.md>[&project=<id>]
     #   Phase 5a - bounded doc fetch for the toolbar Notes / Brand-spec
