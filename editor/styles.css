@@ -11478,6 +11478,17 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 .workflow-node-asset-iframe-scale > .workflow-node-asset-iframe {
   position: absolute;
   top: 0; left: 0;
+  /* The scaled iframe also carries .workflow-node-asset-thumb, whose
+     `max-width/max-height: 100%` would CLAMP the inline device-class viewport
+     (1440x900 / 390x844 / 1280x800) down to the wrap box before the transform
+     runs - and a max-* declaration beats an inline `width`, so the inline
+     style could not win. The card then scaled an already-card-sized iframe by
+     the fit factor a SECOND time (640x400 box -> 284x178 painted at 0.44),
+     leaving --surface-2 grey along the right and bottom edges. Opting the
+     scale branch out of the clamp is what makes `cover` actually cover. The
+     "fill" branch keeps the clamp - there the iframe IS the card box. */
+  max-width: none;
+  max-height: none;
 }
 /* Inline-SVG thumb: container holds an injected <svg> element via
    dangerouslySetInnerHTML. Force the child svg to scale-to-fit because
