@@ -32833,8 +32833,14 @@ function wbDistToSeg(px, py, x1, y1, x2, y2) {
 // types hit on their bbox; arrows + ink hit within stroke distance; hollow
 // shapes hit near their border only (so a big outline box doesn't swallow
 // clicks on items inside it). Tolerances are screen-space ÷ zoom.
-function wbHitTest(items, wx, wy, zoom) {
-  const sorted = (items || []).slice().sort((a, b) => (b.z || 0) - (a.z || 0));
+// LOCKED items are invisible to the pointer (that IS the lock) - the one
+// exception is the right-click path, which passes { includeLocked: true } so
+// the context menu can still offer Unlock on the thing under the cursor.
+function wbHitTest(items, wx, wy, zoom, opts) {
+  const includeLocked = !!(opts && opts.includeLocked);
+  const sorted = (items || [])
+    .filter(it => it && (includeLocked || !it.locked))
+    .sort((a, b) => (b.z || 0) - (a.z || 0));
   const zTol = 6 / Math.max(zoom || 1, 0.1);
   for (const it of sorted) {
     const bb = wbItemBBox(it);
@@ -34358,6 +34364,35 @@ function workflowChainHasContainer(byId, start, containerId) {
   }
   return false;
 }
+// ── Paint order across the canvas's TWO object families ───────────────────
+// Nodes (sections + everything else) and whiteboard items live in ONE CSS
+// stacking context (.workflow-canvas), so their `z` values are directly
+// comparable z-index values. When two things carry the same z the DOM order
+// decides, and that order is fixed by the render: sections first, then the
+// other nodes, then the whiteboard layer last.
+const WF_PAINT_FAMILY = { section: 0, node: 1, wb: 2 };
+function wfPaintFamily(o) {
+  if (!o) return "node";
+  if (o.kind === "section") return "section";
+  return o.kind ? "node" : "wb";      // wb items carry `type`, never `kind`
+}
+function wfPaintZ(o) { return (o && typeof o.z === "number") ? o.z : 0; }
+// True when `a` paints ABOVE `b` - i.e. `a` covers `b` on screen where they
+// overlap. This is the OWNERSHIP rule for frames: a section / table only
+// holds what sits ON it, and a thing painted UNDER the frame is not on it,
+// it's behind it. Without this test a frame adopts (and then drags / reflows)
+// items it visually covers, which is never what the user meant.
+function wfPaintsAbove(a, b) {
+  const az = wfPaintZ(a), bz = wfPaintZ(b);
+  if (az !== bz) return az > bz;
+  return (WF_PAINT_FAMILY[wfPaintFamily(a)] || 0) > (WF_PAINT_FAMILY[wfPaintFamily(b)] || 0);
+}
+// A frame captures / carries `thing` only when the frame paints BELOW it.
+function wfFrameCanHold(frame, thing) {
+  if (!thing) return true;            // no context - legacy callers
+  return !wfPaintsAbove(frame, thing);
+}
+
 // Pick the container that would capture a thing dropped with bbox `bb`:
 // the VISUALLY TOPMOST table or section under the bbox center. Tables paint
 // above sections (nodes layer vs sections layer), so any table under the
@@ -34365,9 +34400,12 @@ function workflowChainHasContainer(byId, start, containerId) {
 // then z) wins - which is exactly what "bring to front" changes, so capture
 // always follows what the user SEES on top. `excludeIds` = the dragged ids;
 // containers nested inside any of them are skipped too (cycle guard).
+// `opts.self` = the thing being dropped; a frame that paints ABOVE it never
+// captures it (the frame covers it, so it is behind the frame, not on it).
 // Returns { cell:{tableId,r,c,ox,oy} } | { sec:{sectionId,ox,oy} } | null.
 function workflowPickDropContainer(nodes, bb, excludeIds, opts) {
   const allowCell = !opts || opts.allowCell !== false;
+  const self = opts && opts.self;
   const byId = new Map((nodes || []).map(n => [n.id, n]));
   const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
   const excluded = (n) => {
@@ -34402,6 +34440,7 @@ function workflowPickDropContainer(nodes, bb, excludeIds, opts) {
   (nodes || []).forEach((n, idx) => {
     if (!n || (n.kind !== "table" && n.kind !== "section")) return;
     if (excluded(n)) return;
+    if (!wfFrameCanHold(n, self)) return;   // frame paints OVER the thing
     const w = n.w || (n.kind === "table" ? 0 : 880);
     const h = n.h || (n.kind === "table" ? 0 : 560);
     if (cx < n.x || cy < n.y || cx > n.x + w || cy > n.y + h) return;
@@ -34447,9 +34486,11 @@ function _workflowSortByBindingDepth(list, allNodes) {
 
 // Section containment - OWNERSHIP-AWARE. A node belongs to a section when it
 // is explicitly bound to it (sec binding), or - legacy fallback - when it is
-// UNBOUND and its center lies inside the rect. A node bound to a DIFFERENT
-// container never counts, even when it geometrically overlaps this frame
-// (that's the "new section dropped over my text doesn't steal it" rule).
+// UNBOUND, its center lies inside the rect AND it paints ABOVE the frame. A
+// node bound to a DIFFERENT container never counts, even when it geometrically
+// overlaps this frame (that's the "new section dropped over my text doesn't
+// steal it" rule); a node the frame PAINTS OVER doesn't count either - it sits
+// behind the section, not on it.
 function workflowSectionContainedNodes(section, nodes) {
   if (!section) return [];
   const x0 = section.x, y0 = section.y;
@@ -34458,6 +34499,7 @@ function workflowSectionContainedNodes(section, nodes) {
     if (!n || n.id === section.id || n.kind === "section" || n.kind === "table") return false;
     const host = workflowBoundTo(n);
     if (host) return host === section.id;
+    if (!wfFrameCanHold(section, n)) return false;
     const cx = (n.x || 0) + (n.w || 280) / 2;
     const cy = (n.y || 0) + (n.h || 200) / 2;
     return cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1;
@@ -39116,7 +39158,7 @@ function WorkflowPickOpToast({ state }) {
    the canvas's transform / clipping context, then positioned via fixed
    coords from the original click. Closes on outside-click, Escape, or
    when the user picks an action. */
-function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDelete, onClose, onBringToFront, onBringForward, onSendBackward, onSendToBack }) {
+function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDelete, onClose, onBringToFront, onBringForward, onSendBackward, onSendToBack, locked, onToggleLock, hasLocked, onUnlockAll }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     const onDown = (e) => {
@@ -39173,10 +39215,22 @@ function CanvasContextMenu({ x, y, hasSelection, canPaste, onCopy, onPaste, onDe
           onClick=${onSendToBack}
         ><span>Send to back</span><span className="canvas-ctxmenu-shortcut">⇧[</span></button>
       `}
+      ${onToggleLock && html`
+        <div className="canvas-ctxmenu-divider"/>
+        <button
+          className=${itemCls(!hasSelection)}
+          disabled=${!hasSelection}
+          onClick=${onToggleLock}
+        ><span>${locked ? "Unlock" : "Lock"}</span><span className="canvas-ctxmenu-shortcut">⇧⌘L</span></button>
+        ${hasLocked && html`<button
+          className=${itemCls(false)}
+          onClick=${onUnlockAll}
+        ><span>Unlock all</span></button>`}
+      `}
       <div className="canvas-ctxmenu-divider"/>
       <button
-        className=${itemCls(!hasSelection) + " canvas-ctxmenu-danger"}
-        disabled=${!hasSelection}
+        className=${itemCls(!hasSelection || locked) + " canvas-ctxmenu-danger"}
+        disabled=${!hasSelection || locked}
         onClick=${onDelete}
       ><span>Delete</span><span className="canvas-ctxmenu-shortcut">⌫</span></button>
     </div>
@@ -39859,6 +39913,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const removeWbItems = useCallback((ids) => {
     const set = new Set(ids instanceof Set ? ids : ids);
     for (const id of Array.from(set)) if (exitingIdsRef.current.has(id)) set.delete(id);
+    // Locked items survive Delete - unlock first. (They can't normally BE in
+    // a selection, but right-click targets them so the menu can unlock.)
+    for (const it of (wbItemsRef.current || [])) if (it && it.locked) set.delete(it.id);
     if (set.size === 0) return;
     if (_wfxReduce.matches) { commitRemoveWbItems(set); return; }
     let any = false;
@@ -39880,7 +39937,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setData(d => ({
       ...d,
       wb: (Array.isArray(d.wb) ? d.wb : []).map(it => {
-        if (!set.has(it.id)) return it;
+        if (!set.has(it.id) || it.locked) return it;   // locked never rides a drag
         if (it.type === "arrow") return wbShiftArrow(it, dx, dy);
         return { ...it, x: (it.x || 0) + dx, y: (it.y || 0) + dy };
       }),
@@ -39970,7 +40027,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setData(d => ({
       ...d,
       nodes: (d.nodes || []).map(n =>
-        set.has(n.id) ? { ...n, x: (n.x || 0) + dx, y: (n.y || 0) + dy } : n
+        (set.has(n.id) && !n.locked) ? { ...n, x: (n.x || 0) + dx, y: (n.y || 0) + dy } : n
       ),
     }));
   }, [setData]);
@@ -40541,6 +40598,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const hit = new Set();
     for (const n of (data.nodes || [])) {
       if (!n || typeof n.x !== "number" || typeof n.y !== "number") continue;
+      if (n.locked) continue;                     // locked = not marquee-able
       const nx0 = n.x, ny0 = n.y;
       const nx1 = n.x + (n.w || 200);
       const ny1 = n.y + (n.h || 120);
@@ -40559,6 +40617,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     const yMin = Math.min(m.y0, m.y1), yMax = Math.max(m.y0, m.y1);
     const hit = new Set();
     for (const it of (wbItemsRef.current || [])) {
+      if (!it || it.locked) continue;             // locked = not marquee-able
       const bb = wbItemBBox(it);
       if (bb.x + bb.w < xMin || bb.x > xMax || bb.y + bb.h < yMin || bb.y > yMax) continue;
       hit.add(it.id);
@@ -41378,6 +41437,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     let hit = null, hitKey = -Infinity, hitSection = null, hitSectionKey = -Infinity;
     all.forEach((n, idx) => {
       if (!n || typeof n.x !== "number" || typeof n.y !== "number") return;
+      if (n.locked) return;                       // locked = pointer-invisible
       const w = n.w || 200, h = n.h || 120;
       if (wx < n.x || wx > n.x + w || wy < n.y || wy > n.y + h) return;
       const key = depth(n) * 1000000 + idx;
@@ -41549,7 +41609,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!nHit && e.target && e.target.closest) {
         const domEl = e.target.closest("[data-node-id]");
         const did = domEl && domEl.getAttribute("data-node-id");
-        if (did && (dataNodesRef.current || []).some(n => n && n.id === did)) nHit = did;
+        // Locked nodes are skipped here too - otherwise a locked section's
+        // title bar (which sits outside the AABB nodeHitAt tests) stayed
+        // grabbable and the lock would read as broken.
+        if (did && (dataNodesRef.current || []).some(n => n && n.id === did && !n.locked)) nHit = did;
       }
       if (nHit) { e.stopPropagation(); nodeSelectPointerDown(e, nHit); return; }
       setMarquee({
@@ -42055,7 +42118,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const dragged = new Set([...(nodeIds || [])]);
       const strip = (o) => { const { cell, sec, ...rest } = o; return rest; };
       const rebind = (o, bb, allowCell) => {
-        const hit = workflowPickDropContainer(nodes, bb, dragged, { allowCell });
+        const hit = workflowPickDropContainer(nodes, bb, dragged, { allowCell, self: o });
         if (hit && hit.cell) {
           const cur = o.cell;
           if (cur && cur.tableId === hit.cell.tableId && cur.r === hit.cell.r && cur.c === hit.cell.c
@@ -42355,6 +42418,58 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const nextNodes = nt === t ? (d.nodes || []) : (d.nodes || []).map(n => n.id === tableId ? nt : n);
       return { ...d, wb: next, nodes: nextNodes };
     });
+  }, [setData]);
+
+  // Double-click a table cell → write in it. Edits the text carrier already
+  // living in that cell (the topmost one, so a cell holding a stack of reply
+  // boxes edits the one the user actually sees), or mints an empty text item
+  // bound to the cell and drops the caret straight into it. The cell-bound
+  // reconcile then keeps it pinned through every row/column edit, exactly
+  // like the items the agent-populated tables create.
+  const editTableCellText = useCallback((tableId, r, c) => {
+    const nodes = dataNodesRef.current || [];
+    const t = nodes.find(n => n && n.id === tableId && n.kind === "table");
+    if (!t || t.locked) return;
+    const m = wbTableMergeAt(t, r, c);
+    const ar = m ? m.r : r, ac = m ? m.c : c;
+    const rect = wbTableCellRect(t, ar, ac);
+    // What's already written here? Cell-BOUND carriers first (the contract
+    // agent-populated tables use), then any unowned carrier sitting inside the
+    // cell rect - hand-placed text and older tables never got a binding, and
+    // double-clicking visible text has to edit THAT text, not stack a second
+    // item on top of it. Editing never re-owns: the binding is left alone.
+    const inCell = (wbItemsRef.current || []).filter(it => {
+      if (!it || it.locked || !WORKFLOW_WB_TEXTLIKE.has(it.type)) return false;
+      if (it.cell) {
+        return it.cell.tableId === tableId && it.cell.r === ar && it.cell.c === ac;
+      }
+      if (it.sec) return false;                 // owned by another frame
+      const bb = wbItemBBox(it);
+      const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
+      return cx >= rect.x && cx <= rect.x + rect.w && cy >= rect.y && cy <= rect.y + rect.h;
+    });
+    if (inCell.length) {
+      const top = inCell.reduce((a, b) => ((b.z || 0) >= (a.z || 0) ? b : a));
+      setSelectedNodeIds(new Set());
+      setSelectedWbIds(new Set([top.id]));
+      setEditingWbId(top.id);
+      return;
+    }
+    const cols = wbTableCols(t);
+    const it = wbMakeItem("text", {
+      text: "", x: rect.x + 6, y: rect.y + 6,
+      w: Math.max(40, (cols[ac] || 200) - 12),
+      fontSize: "sm", align: "left", color: "ink",
+    });
+    if (!it) return;
+    it.cell = { tableId, r: ar, c: ac, ox: 6, oy: 6 };
+    setData(d => {
+      const list = Array.isArray(d.wb) ? d.wb : [];
+      return { ...d, wb: [...list, { ...it, z: wbMaxZ(list) + 1 }] };
+    });
+    setSelectedNodeIds(new Set());
+    setSelectedWbIds(new Set([it.id]));
+    setEditingWbId(it.id);
   }, [setData]);
 
   // Drop a real reusable node (color-palette / typography / asset / folder) into
@@ -42783,6 +42898,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   //   "backward" - lower one layer (just below the nearest node below it)
   // Neighbours for the single-step moves are computed against the NON-selected
   // nodes so a multi-node selection moves as a block.
+  // The neighbour pool is BOTH families: nodes and whiteboard items share one
+  // stacking context, so "front" has to mean above the items too. Comparing
+  // against nodes alone made "bring to front" a lie for a section (it landed
+  // at z=1, still under every wb item), and stacking is what decides frame
+  // OWNERSHIP (wfFrameCanHold), so a lying front/back left the user unable to
+  // stop a section from carrying the things it covers.
   const layerNodes = useCallback((ids, mode) => {
     const idSet = ids instanceof Set ? ids : new Set(ids || []);
     if (!idSet.size) return;
@@ -42791,7 +42912,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!nodes.some(n => idSet.has(n.id))) return d;
       const ez = (n) => (typeof n.z === "number" ? n.z : 0);
       const sel = nodes.filter(n => idSet.has(n.id));
-      const others = nodes.filter(n => !idSet.has(n.id));
+      const others = [...nodes, ...(Array.isArray(d.wb) ? d.wb : [])].filter(o => o && !idSet.has(o.id));
       const zmap = new Map();
       if (mode === "front") {
         const base = others.length ? Math.max(...others.map(ez)) : 0;
@@ -42835,7 +42956,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (!list.some(it => idSet.has(it.id))) return d;
       const ez = (it) => (typeof it.z === "number" ? it.z : 0);
       const sel = list.filter(it => idSet.has(it.id));
-      const others = list.filter(it => !idSet.has(it.id));
+      // Same both-families pool as layerNodes - one stacking context.
+      const others = [...list, ...(d.nodes || [])].filter(o => o && !idSet.has(o.id));
       const zmap = new Map();
       if (mode === "front") {
         const base = others.length ? Math.max(...others.map(ez)) : 0;
@@ -42864,6 +42986,75 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     layerWbItems(sel, mode);
     return sel.size;
   }, [layerWbItems]);
+
+  // ── Lock / unlock ─────────────────────────────────────────────────────────
+  // A locked thing stays visible and keeps taking part in layout (a locked
+  // section still frames its contents), but the pointer looks straight
+  // through it: no select, no drag, no resize, no marquee, no delete. Both
+  // families carry the same `locked` flag; the ONE way back is right-click
+  // (which still targets locked things) or the lock chip on a section /
+  // table bar. `want` = true lock, false unlock, undefined toggle.
+  const setLocked = useCallback((nodeIds, wbIds, want) => {
+    const nSet = nodeIds instanceof Set ? nodeIds : new Set(nodeIds || []);
+    const wSet = wbIds instanceof Set ? wbIds : new Set(wbIds || []);
+    if (!nSet.size && !wSet.size) return 0;
+    // Toggle reads the CURRENT state off the refs (never inside the updater,
+    // which must stay a pure function of `d`): if anything in the set is
+    // unlocked, the whole set locks, so one gesture has a predictable end.
+    const next = (want === undefined)
+      ? ((dataNodesRef.current || []).some(n => n && nSet.has(n.id) && !n.locked)
+      || (wbItemsRef.current || []).some(it => it && wSet.has(it.id) && !it.locked))
+      : !!want;
+    const flip = (o, inSet) => {
+      if (!o || !inSet) return o;
+      if (!!o.locked === next) return o;
+      if (next) return { ...o, locked: true };
+      const { locked, ...rest } = o;              // unlocked = field absent
+      return rest;
+    };
+    setData(d => ({
+      ...d,
+      nodes: (d.nodes || []).map(n => flip(n, nSet.has(n.id))),
+      wb: (Array.isArray(d.wb) ? d.wb : []).map(it => flip(it, wSet.has(it.id))),
+    }));
+    // Locking drops the things out of the selection: a locked thing that
+    // stayed selected would still ride a mixed group-drag, which is the exact
+    // accident the lock exists to stop.
+    if (next) {
+      setSelectedNodeIds(prev => [...prev].some(id => nSet.has(id))
+        ? new Set([...prev].filter(id => !nSet.has(id))) : prev);
+      setSelectedWbIds(prev => [...prev].some(id => wSet.has(id))
+        ? new Set([...prev].filter(id => !wSet.has(id))) : prev);
+    }
+    return nSet.size + wSet.size;
+  }, [setData]);
+  // Lock/unlock whatever is selected (mixed selections included).
+  const setSelectionLocked = useCallback((want) => {
+    const n = selectedNodeIdsRef.current || new Set();
+    const w = selectedWbIdsRef.current || new Set();
+    return setLocked(n, w, want);
+  }, [setLocked]);
+  // Escape hatch when a lock was applied to something with no visible chip.
+  const unlockAll = useCallback(() => {
+    setData(d => {
+      const nodes = d.nodes || [];
+      const list = Array.isArray(d.wb) ? d.wb : [];
+      if (!nodes.some(n => n && n.locked) && !list.some(it => it && it.locked)) return d;
+      const strip = (o) => { if (!o || !o.locked) return o; const { locked, ...rest } = o; return rest; };
+      return { ...d, nodes: nodes.map(strip), wb: list.map(strip) };
+    });
+  }, [setData]);
+  const hasLocked = (data.nodes || []).some(n => n && n.locked)
+    || (Array.isArray(data.wb) ? data.wb : []).some(it => it && it.locked);
+  // Is the current selection locked? (drives the menu's Lock ↔ Unlock label)
+  const selectionLocked = (() => {
+    const n = selectedNodeIds, w = selectedWbIds;
+    if (!(n && n.size) && !(w && w.size)) return false;
+    const nodes = (data.nodes || []).filter(x => x && n && n.has(x.id));
+    const items = (Array.isArray(data.wb) ? data.wb : []).filter(x => x && w && w.has(x.id));
+    const all = [...nodes, ...items];
+    return all.length > 0 && all.every(o => o.locked);
+  })();
 
   // Reflect each node's `z` onto its DOM element's z-index. We write it
   // imperatively (not through the style prop) so it survives the many
@@ -43007,12 +43198,15 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           if (workflowBoundTo(it) === host) movedWb.add(it.id);
         }
       }
-      // 2) Legacy geometric fallback - UNBOUND things only.
+      // 2) Legacy geometric fallback - UNBOUND things only, and only things
+      // the section paints UNDER. Anything the frame covers on screen is
+      // BEHIND it, not on it, so dragging the section must leave it alone.
       const x0 = sec.x, y0 = sec.y;
       const x1 = sec.x + (sec.w || 0);
       const y1 = sec.y + (sec.h || 0);
       for (const n of nodes) {
         if (!n || movedNodes.has(n.id) || workflowBoundTo(n)) continue;
+        if (!wfFrameCanHold(sec, n)) continue;
         if (n.kind === "section") {
           const sw = n.w || 880, sh = n.h || 560;
           if ((n.x || 0) >= x0 && (n.y || 0) >= y0
@@ -43029,6 +43223,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // double-shift them.
       for (const it of wb) {
         if (!it || movedWb.has(it.id) || wbSel.has(it.id) || workflowBoundTo(it)) continue;
+        if (!wfFrameCanHold(sec, it)) continue;
         const bb = wbItemBBox(it);
         const cx = bb.x + (bb.w / 2);
         const cy = bb.y + (bb.h / 2);
@@ -43273,8 +43468,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const deleteSelectedNodes = useCallback(() => {
     const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
     if (!sel.size) return 0;
+    // Locked nodes survive Delete - unlock first.
+    const lockedIds = new Set((dataNodesRef.current || []).filter(n => n && n.locked).map(n => n.id));
     let count = 0;
-    for (const id of Array.from(sel)) { removeNode(id); count++; }
+    for (const id of Array.from(sel)) { if (lockedIds.has(id)) continue; removeNode(id); count++; }
     return count;
   }, [selectionRef, removeNode]);
 
@@ -46737,6 +46934,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         if (moved > 0) e.preventDefault();
         return;
       }
+      // ── Lock / unlock the whole selection (Figma's ⇧⌘L). Toggles: a
+      // selection with anything unlocked in it locks; an all-locked one
+      // unlocks. Locked things drop out of hit-testing, so the way back for
+      // a lone locked item is right-click → Unlock (or its bar's lock chip).
+      if (cmd && e.shiftKey && (e.key === "l" || e.key === "L")) {
+        if (setSelectionLocked(undefined) > 0) e.preventDefault();
+        return;
+      }
       // ── Unified selection: Delete + Cmd+D act on the WHOLE selection -
       // nodes and whiteboard items together (mixed selections allowed in
       // both modes). Cmd+C/V for wb items ride the native copy/paste
@@ -46792,7 +46997,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [copySelectedNodes, pasteNodesFromClipboard, pastePickedElement, deleteSelectedNodes, duplicateSelectedNodes, duplicateSelectedWbItems, removeWbItems, pickModeNodeId, layerSelectedNodes, layerSelectedWbItems]);
+  }, [copySelectedNodes, pasteNodesFromClipboard, pastePickedElement, deleteSelectedNodes, duplicateSelectedNodes, duplicateSelectedWbItems, removeWbItems, pickModeNodeId, layerSelectedNodes, layerSelectedWbItems, setSelectionLocked]);
 
   // Walk edges that TERMINATE at nodeId.in - collect upstream prompt texts
   // and asset references. Skill nodes read this to assemble the actual API call.
@@ -51526,18 +51731,19 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // A fresh drag's selection commit is deferred to mouseup - the ref knows
     // which node the gesture started on (recomputed every mousemove anyway).
     if (nodeDragging && lastDragNodeIdRef.current) dragged.add(lastDragNodeIdRef.current);
-    let bb = null, allowCell = true;
+    let bb = null, allowCell = true, self = null;
     if (selectedWbIds.size) {
       const it = (data.wb || []).find(i => i && selectedWbIds.has(i.id));
-      if (it) bb = wbItemBBox(it);
+      if (it) { bb = wbItemBBox(it); self = it; }
     }
     if (!bb) {
       const n = nodes.find(nn => nn && dragged.has(nn.id));
       if (!n) return null;
       if (n.kind === "section") allowCell = false;
       bb = { x: n.x || 0, y: n.y || 0, w: n.w || 0, h: n.h || 0 };
+      self = n;
     }
-    const hit = workflowPickDropContainer(nodes, bb, dragged, { allowCell });
+    const hit = workflowPickDropContainer(nodes, bb, dragged, { allowCell, self });
     if (!hit) return null;
     if (hit.cell) return { kind: "cell", tableId: hit.cell.tableId, r: hit.cell.r, c: hit.cell.c };
     return { kind: "sec", sectionId: hit.sec.sectionId };
@@ -53549,7 +53755,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             // Whiteboard mode → right-click targets wb items (geometric
             // hit, same as the select tool); the node path never runs.
             if (wbMode) {
-              const hitId = wbHitTest(wbItems, worldX, worldY, zoom);
+              // includeLocked: right-click is how you reach a locked item to
+              // unlock it, so it stays targetable here (and only here).
+              const hitId = wbHitTest(wbItems, worldX, worldY, zoom, { includeLocked: true });
               if (hitId && !selectedWbIds.has(hitId)) setSelectedWbIds(new Set([hitId]));
               setCtxMenu({ vpX: e.clientX, vpY: e.clientY, worldX, worldY, onNode: false, wb: true });
               return;
@@ -53561,7 +53769,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             } else {
               // Build mode, no node under the click → wb items are still
               // right-clickable (they're selectable in both modes).
-              const wbHitId = wbHitTest(wbItems, worldX, worldY, zoom);
+              const wbHitId = wbHitTest(wbItems, worldX, worldY, zoom, { includeLocked: true });
               if (wbHitId) {
                 if (!selectedWbIds.has(wbHitId)) setSelectedWbIds(new Set([wbHitId]));
                 if (selectedNodeIds.size) setSelectedNodeIds(new Set());
@@ -53712,7 +53920,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               return;
             }
             const nodeEl = e.target.closest("[data-node-id]");
-            if (nodeEl) {
+            const nodeElLocked = nodeEl && (dataNodesRef.current || [])
+              .some(n => n && n.id === nodeEl.getAttribute("data-node-id") && n.locked);
+            if (nodeEl && !nodeElLocked) {
               const id = nodeEl.getAttribute("data-node-id");
               if (e.shiftKey) {
                 // Shift-toggle commits on mousedown so the user sees the
@@ -53747,6 +53957,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 setSelectedWbIds(new Set());
               }
               return;
+            }
+            if (nodeElLocked) {
+              // Locked node: swallow the capture descent so the node's own
+              // onMouseDown (select) and its title-bar drag never run, then
+              // fall through to the empty-canvas path - a locked thing is
+              // click-through, so a marquee started over it still works.
+              e.stopPropagation();
             }
             // Empty-canvas mousedown. Pan still wins for space/alt/middle -
             // we only initiate marquee for plain left-click.
@@ -53868,6 +54085,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                 onDragStart=${() => startNodeDrag(n.id)}
                 onDragEnd=${() => setNodeDragging(false)}
                 onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                onToggleLock=${(want) => setLocked([n.id], [], want)}
               />
             `)}
             ${convertCfg && html`<${ConvertSectionModal}
@@ -53950,6 +54168,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
                   }
                   setTableMenu({ tableId, r, c, range, vpX, vpY });
                 }}
+                onCellEdit=${(tableId, r, c) => editTableCellText(tableId, r, c)}
+                onToggleLock=${(want) => setLocked([n.id], [], want)}
               />
             `)}
             ${(data.nodes || []).filter(n => n.kind === "prototype").map(n => html`
@@ -55391,6 +55611,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         onBringForward=${() => { layerSelectedWbItems("forward"); setCtxMenu(null); }}
         onSendBackward=${() => { layerSelectedWbItems("backward"); setCtxMenu(null); }}
         onSendToBack=${() => { layerSelectedWbItems("back"); setCtxMenu(null); }}
+        locked=${selectionLocked}
+        hasLocked=${hasLocked}
+        onToggleLock=${() => { setSelectionLocked(undefined); setCtxMenu(null); }}
+        onUnlockAll=${() => { unlockAll(); setCtxMenu(null); }}
         onDelete=${() => { removeWbItems(selectedWbIds); setCtxMenu(null); }}
         onClose=${() => setCtxMenu(null)}
       />`}
@@ -55413,6 +55637,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         onBringForward=${() => { layerSelectedNodes("forward"); setCtxMenu(null); }}
         onSendBackward=${() => { layerSelectedNodes("backward"); setCtxMenu(null); }}
         onSendToBack=${() => { layerSelectedNodes("back"); setCtxMenu(null); }}
+        locked=${selectionLocked}
+        hasLocked=${hasLocked}
+        onToggleLock=${() => { setSelectionLocked(undefined); setCtxMenu(null); }}
+        onUnlockAll=${() => { unlockAll(); setCtxMenu(null); }}
         onDelete=${() => { deleteSelectedNodes(); setCtxMenu(null); }}
         onClose=${() => setCtxMenu(null)}
       />`}
@@ -88430,7 +88658,8 @@ function formatDirectionForPrompt(d) {
    with section-style left/right connector ports. Reuses the .workflow-node card
    treatment (glow + selected outline) and the .workflow-wb-table-* cell CSS.
    Geometry lives on the node (node.cols / node.rows / node.merges). */
-function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onOp, onCellSelect, onCellMenu, onCellSpawn, tableSel, dropCell }) {
+function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onOp, onCellSelect, onCellMenu, onCellSpawn, onCellEdit, onToggleLock, tableSel, dropCell }) {
+  const locked = !!node.locked;
   const cols = wbTableCols(node), rows = wbTableRows(node);
   // Per-cell fill: node.cellFills["r,c"] overrides the table default node.fill.
   // The line colour is AUTOMATIC from each cell's fill (clean light grey for
@@ -88469,7 +88698,7 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
 
   // Move the whole node by dragging the grip.
   const onGripDown = useCallback((e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || locked) return;
     e.preventDefault(); e.stopPropagation();
     let lx = e.clientX, ly = e.clientY;
     setCanvasDraggingSync(true); onDragStart && onDragStart();
@@ -88483,11 +88712,11 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
       window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); window.removeEventListener("blur", up);
     };
     window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); window.addEventListener("blur", up);
-  }, [zoom, onMove, onDragStart, onDragEnd]);
+  }, [zoom, onMove, onDragStart, onDragEnd, locked]);
 
   // Rubber-band a cell range (table must be selected).
   const onCellDown = (e) => {
-    if (!selected || e.button !== 0) return;
+    if (!selected || e.button !== 0 || locked) return;
     e.stopPropagation(); e.preventDefault();
     const rect = rootRef.current.getBoundingClientRect();
     const a = cellAtClient(e.clientX, e.clientY, rect);
@@ -88499,6 +88728,7 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
 
   // Drag a row/column boundary to resize it.
   const onBoundaryDown = (e, axis, index) => {
+    if (locked) return;
     e.stopPropagation(); e.preventDefault();
     const sx = e.clientX, sy = e.clientY;
     const orig = axis === "col" ? cols[index] : rows[index];
@@ -88512,7 +88742,7 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
 
   // Whole-table resize (bottom-right): scale every column/row proportionally.
   const onResizeDown = useCallback((e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || locked) return;
     e.preventDefault(); e.stopPropagation();
     const sx = e.clientX, sy = e.clientY;
     const oc = wbTableCols(node).slice(), or = wbTableRows(node).slice();
@@ -88531,7 +88761,7 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
       window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); window.removeEventListener("blur", up);
     };
     window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); window.addEventListener("blur", up);
-  }, [zoom, node, onChange, onDragStart, onDragEnd]);
+  }, [zoom, node, onChange, onDragStart, onDragEnd, locked]);
 
   const selRange = (selected && tableSel && tableSel.tableId === node.id) ? wbTableNormRange(tableSel) : null;
 
@@ -88586,6 +88816,7 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
   return html`
     <div ref=${rootRef} className="workflow-node workflow-node-table" data-node-id=${node.id}
       data-selected=${selected ? "true" : "false"}
+      data-locked=${locked ? "true" : "false"}
       style=${{ left: node.x + "px", top: node.y + "px", width: totalW + "px", height: totalH + "px",
         /* The section-style title tab and the +row/+col buttons counter-scale
            by 1/zoom, so their LOCAL footprint grows as the canvas zooms out -
@@ -88594,10 +88825,29 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
            Sections never clip their tab; match that by growing the margin
            with the counter-scaled chrome (40 screen-px of headroom). */
         overflowClipMargin: Math.max(110, Math.ceil(40 / Math.max(zoom || 1, 0.1))) + "px" }}
-      onMouseDown=${(e) => { onSelect && onSelect(); }}
+      onMouseDown=${(e) => { if (!locked) onSelect && onSelect(); }}
       onMouseMove=${onRootMouseMove}
       onMouseLeave=${() => setHoverCell(null)}
+      onDoubleClick=${(e) => {
+        // Double-click a CELL → write in it. Resolves the merge anchor, then
+        // hands off to the canvas, which edits the cell's existing text item
+        // or mints one bound to that cell. stopPropagation keeps the wrap's
+        // own dblclick (which edits whatever wb item is under the cursor)
+        // from racing this one - the cell path already covers that case.
+        if (locked || !onCellEdit || !rootRef.current) return;
+        if (e.target && e.target.closest
+            && e.target.closest("input, textarea, button, .workflow-node-section-bar")) return;
+        const rect = rootRef.current.getBoundingClientRect();
+        const cc = cellAtClient(e.clientX, e.clientY, rect);
+        const m = wbTableMergeAt(node, cc.r, cc.c);
+        e.preventDefault(); e.stopPropagation();
+        onCellEdit(node.id, m ? m.r : cc.r, m ? m.c : cc.c);
+      }}
       onContextMenu=${(e) => {
+        // Locked: don't open the cell menu (it edits the grid structure).
+        // Falling through hands the click to the canvas menu, which is where
+        // Unlock lives - so right-click is still the way back out.
+        if (locked) return;
         e.preventDefault(); e.stopPropagation();
         const rect = rootRef.current.getBoundingClientRect();
         const cc = cellAtClient(e.clientX, e.clientY, rect);
@@ -88642,7 +88892,7 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
       <div className="workflow-node-section-bar"
         style=${{ transform: `scale(${invZoom})`, transformOrigin: "0 100%", maxWidth: (totalW / invZoom) + "px" }}
         onMouseDown=${onGripDown}
-        onDoubleClick=${(e) => { e.stopPropagation(); setEditingTitle(true); setTimeout(() => titleInputRef.current && titleInputRef.current.focus(), 0); }}>
+        onDoubleClick=${(e) => { if (locked) return; e.stopPropagation(); setEditingTitle(true); setTimeout(() => titleInputRef.current && titleInputRef.current.focus(), 0); }}>
         ${editingTitle
           ? html`<input ref=${titleInputRef} className="workflow-node-section-title-input"
               value=${node.title || ""}
@@ -88650,12 +88900,18 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
               onBlur=${() => setEditingTitle(false)}
               onKeyDown=${(e) => { if (e.key === "Enter" || e.key === "Escape") setEditingTitle(false); }}
               onMouseDown=${(e) => e.stopPropagation()}/>`
-          : html`<span className="workflow-node-section-title" title="Double-click to rename">${node.title || "Table"}</span>`}
-        <button className="workflow-node-section-close" data-tip="Remove table"
+          : html`<span className="workflow-node-section-title" title=${locked ? "Locked - click the lock to edit" : "Double-click to rename"}>${node.title || "Table"}</span>`}
+        ${/* Same lock chip as a section - the only control a locked bar keeps. */ ""}
+        <button className=${"workflow-node-section-tidy workflow-node-section-lock" + (locked ? " is-on" : "")}
+          data-tip=${locked ? "Unlock table" : "Lock table (stops it being selected or dragged)"}
+          aria-label=${locked ? "Unlock this table" : "Lock this table so it stops being selected or dragged"}
+          onClick=${(e) => { e.stopPropagation(); onToggleLock && onToggleLock(!locked); }}
+          onMouseDown=${(e) => e.stopPropagation()}><${Icon.Lock}/></button>
+        ${locked ? null : html`<button className="workflow-node-section-close" data-tip="Remove table"
           onClick=${(e) => { e.stopPropagation(); onRemove && onRemove(); }}
-          onMouseDown=${(e) => e.stopPropagation()}>×</button>
+          onMouseDown=${(e) => e.stopPropagation()}>×</button>`}
       </div>
-      ${selected && html`<div className="workflow-node-section-resize" title="Drag to resize"
+      ${selected && !locked && html`<div className="workflow-node-section-resize" title="Drag to resize"
         style=${{ width: px(14) + "px", height: px(14) + "px", borderBottomRightRadius: px(14) + "px" }}
         onMouseDown=${onResizeDown}/>`}
       <div className="workflow-port-zone workflow-port-zone-in" data-port-node=${node.id} data-port-side="in"
@@ -88761,7 +89017,8 @@ function WorkflowTableNode({ node, zoom, selected, onSelect, onMove, onRemove, o
     </div>`;
 }
 
-function WorkflowSectionNode({ node, zoom, selected, dropHint, onSelect, onMove, onResize, onRemove, onChange, onTidy, hasContents, hasEditorNode, onSaveToLibrary, onConvertToApp, onDragStart, onDragEnd, onStartEdge }) {
+function WorkflowSectionNode({ node, zoom, selected, dropHint, onSelect, onMove, onResize, onRemove, onChange, onTidy, hasContents, hasEditorNode, onSaveToLibrary, onConvertToApp, onDragStart, onDragEnd, onStartEdge, onToggleLock }) {
+  const locked = !!node.locked;
   const [dragging, setDragging] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -88773,6 +89030,7 @@ function WorkflowSectionNode({ node, zoom, selected, dropHint, onSelect, onMove,
 
   const onHandleDown = useCallback((e) => {
     if (e.button !== 0) return;
+    if (locked) return;         // locked: the bar is not a drag handle
     if (editingTitle) return;   // let title input handle clicks
     e.preventDefault();
     e.stopPropagation();
@@ -88798,10 +89056,11 @@ function WorkflowSectionNode({ node, zoom, selected, dropHint, onSelect, onMove,
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
     window.addEventListener("blur", onUp);
-  }, [zoom, onMove, onDragStart, onDragEnd, editingTitle]);
+  }, [zoom, onMove, onDragStart, onDragEnd, editingTitle, locked]);
 
   const onResizeDown = useCallback((e) => {
     if (e.button !== 0) return;
+    if (locked) return;
     e.preventDefault();
     e.stopPropagation();
     let lastX = e.clientX, lastY = e.clientY;
@@ -88824,22 +89083,23 @@ function WorkflowSectionNode({ node, zoom, selected, dropHint, onSelect, onMove,
     window.addEventListener("mousemove", onMv);
     window.addEventListener("mouseup", onUp);
     window.addEventListener("blur", onUp);
-  }, [zoom, onResize, onDragStart, onDragEnd]);
+  }, [zoom, onResize, onDragStart, onDragEnd, locked]);
 
   return html`
     <div
       className="workflow-node-section"
       data-dragging=${dragging ? "true" : "false"}
       data-selected=${selected ? "true" : "false"}
+      data-locked=${locked ? "true" : "false"}
       data-drop-hint=${dropHint ? "true" : "false"}
       data-node-id=${node.id} style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
-      onMouseDown=${(e) => { onSelect && onSelect(); }}
+      onMouseDown=${(e) => { if (!locked) onSelect && onSelect(); }}
     >
       <div
         className="workflow-node-section-bar"
         style=${{ transform: `scale(${invZoom})`, transformOrigin: "0 100%", maxWidth: (w / invZoom) + "px" }}
         onMouseDown=${onHandleDown}
-        onDoubleClick=${(e) => { e.stopPropagation(); setEditingTitle(true); setTimeout(() => titleInputRef.current?.focus(), 0); }}
+        onDoubleClick=${(e) => { if (locked) return; e.stopPropagation(); setEditingTitle(true); setTimeout(() => titleInputRef.current?.focus(), 0); }}
       >
         ${editingTitle
           ? html`<input
@@ -88851,7 +89111,17 @@ function WorkflowSectionNode({ node, zoom, selected, dropHint, onSelect, onMove,
               onKeyDown=${(e) => { if (e.key === "Enter" || e.key === "Escape") setEditingTitle(false); }}
               onMouseDown=${(e) => e.stopPropagation()}
             />`
-          : html`<span className="workflow-node-section-title" title="Double-click to rename">${node.title || "Section"}</span>`}
+          : html`<span className="workflow-node-section-title" title=${locked ? "Locked - click the lock to edit" : "Double-click to rename"}>${node.title || "Section"}</span>`}
+        ${/* Lock chip: the ONLY control left on a locked bar, so a section
+             locked out of the pointer always has a visible way back. */ ""}
+        <button
+          className=${"workflow-node-section-tidy workflow-node-section-lock" + (locked ? " is-on" : "")}
+          data-tip=${locked ? "Unlock section" : "Lock section (stops it being selected or dragged)"}
+          aria-label=${locked ? "Unlock this section" : "Lock this section so it stops being selected or dragged"}
+          onClick=${(e) => { e.stopPropagation(); onToggleLock && onToggleLock(!locked); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        ><${Icon.Lock}/></button>
+        ${locked ? null : html`
         ${hasContents ? html`<button
           className=${"workflow-node-section-savelib" + (saved ? " is-saved" : "")}
           data-tip=${"Save to Local library"}
@@ -88885,7 +89155,9 @@ function WorkflowSectionNode({ node, zoom, selected, dropHint, onSelect, onMove,
           onClick=${(e) => { e.stopPropagation(); onRemove && onRemove(); }}
           onMouseDown=${(e) => e.stopPropagation()}
         >×</button>
+        `}
       </div>
+      ${locked ? null : html`
       <div
         className="workflow-node-section-resize"
         title="Drag to resize"
@@ -88914,6 +89186,7 @@ function WorkflowSectionNode({ node, zoom, selected, dropHint, onSelect, onMove,
         <div className="workflow-port-dot"/>
         <span className="workflow-port-label workflow-port-label-right">contents</span>
       </div>
+      `}
     </div>
   `;
 }
@@ -90696,7 +90969,7 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onComm
   if (item.type === "text") {
     const fs = wbFontPx(item.fontSize, WB_FONT_SIZES.md);
     return html`
-      <div className="workflow-wb-item workflow-wb-text" data-wb-id=${item.id} data-selected=${sel} data-editing=${editing ? "true" : "false"}
+      <div className="workflow-wb-item workflow-wb-text" data-wb-id=${item.id} data-selected=${sel} data-locked=${item.locked ? "true" : "false"} data-editing=${editing ? "true" : "false"}
         style=${{ left: item.x + "px", top: item.y + "px", width: item.w + "px", zIndex: z, ...rotStyle }}>
         ${textBody("", {
           fontSize: fs + "px",
@@ -90720,7 +90993,7 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onComm
                   : wbColorCSS(item.stroke || item.color);
     const fillPct = Math.round(Math.max(0, Math.min(1, item.fillOpacity ?? 0.16)) * 100);
     return html`
-      <div className="workflow-wb-item workflow-wb-textbox" data-wb-id=${item.id} data-selected=${sel} data-editing=${editing ? "true" : "false"}
+      <div className="workflow-wb-item workflow-wb-textbox" data-wb-id=${item.id} data-selected=${sel} data-locked=${item.locked ? "true" : "false"} data-editing=${editing ? "true" : "false"}
         style=${{
           left: item.x + "px", top: item.y + "px",
           width: item.w + "px", height: item.h + "px", zIndex: z,
@@ -90742,7 +91015,7 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onComm
   }
   if (item.type === "sticky") {
     return html`
-      <div className="workflow-wb-item workflow-wb-sticky" data-wb-id=${item.id} data-selected=${sel} data-editing=${editing ? "true" : "false"}
+      <div className="workflow-wb-item workflow-wb-sticky" data-wb-id=${item.id} data-selected=${sel} data-locked=${item.locked ? "true" : "false"} data-editing=${editing ? "true" : "false"}
         style=${{
           left: item.x + "px", top: item.y + "px",
           width: item.w + "px", height: item.h + "px", zIndex: z,
@@ -90759,7 +91032,7 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onComm
   if (item.type === "sticker") {
     const sz = Math.max(12, Math.min(item.w || 72, item.h || 72) * 0.8);
     return html`
-      <div className="workflow-wb-item workflow-wb-sticker" data-wb-id=${item.id} data-selected=${sel}
+      <div className="workflow-wb-item workflow-wb-sticker" data-wb-id=${item.id} data-selected=${sel} data-locked=${item.locked ? "true" : "false"}
         style=${{
           left: item.x + "px", top: item.y + "px",
           width: (item.w || 72) + "px", height: (item.h || 72) + "px", zIndex: z,
@@ -90773,7 +91046,7 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onComm
     // click-through on the item itself: selecting / dragging a marker must
     // never teleport the canvas.
     return html`
-      <div className="workflow-wb-item workflow-wb-marker" data-wb-id=${item.id} data-selected=${sel}
+      <div className="workflow-wb-item workflow-wb-marker" data-wb-id=${item.id} data-selected=${sel} data-locked=${item.locked ? "true" : "false"}
         title=${"Insight " + (item.n ?? "")}
         style=${{
           left: item.x + "px", top: item.y + "px",
@@ -90783,7 +91056,7 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onComm
   }
   if (item.type === "ink") {
     return html`
-      <svg className="workflow-wb-item workflow-wb-ink" data-wb-id=${item.id} data-selected=${sel}
+      <svg className="workflow-wb-item workflow-wb-ink" data-wb-id=${item.id} data-selected=${sel} data-locked=${item.locked ? "true" : "false"}
         style=${{
           left: (item.x - WB_SVG_PAD) + "px", top: (item.y - WB_SVG_PAD) + "px",
           width: ((item.w || 1) + WB_SVG_PAD * 2) + "px",
@@ -90803,7 +91076,7 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onComm
                 : item.fill && item.fill !== "none" ? wbColorCSS(item.fill) : "none";
     const fillOp = fillC === "none" ? 0 : Math.max(0, Math.min(1, item.fillOpacity ?? 0.16));
     return html`
-      <svg className="workflow-wb-item workflow-wb-shape" data-wb-id=${item.id} data-selected=${sel}
+      <svg className="workflow-wb-item workflow-wb-shape" data-wb-id=${item.id} data-selected=${sel} data-locked=${item.locked ? "true" : "false"}
         style=${{
           left: item.x + "px", top: item.y + "px",
           width: item.w + "px", height: item.h + "px",
@@ -90839,7 +91112,7 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onComm
     const n = lp.length;
     const labels = Array.isArray(item.labels) ? item.labels : [];
     return html`
-      <div className="workflow-wb-item workflow-wb-arrowwrap" data-wb-id=${item.id} data-selected=${sel}
+      <div className="workflow-wb-item workflow-wb-arrowwrap" data-wb-id=${item.id} data-selected=${sel} data-locked=${item.locked ? "true" : "false"}
         data-editing=${editing ? "true" : "false"}
         style=${{
           left: (bb.x - WB_SVG_PAD) + "px", top: (bb.y - WB_SVG_PAD) + "px",
@@ -90893,7 +91166,7 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, onComm
   }
   if (item.type === "image") {
     return html`
-      <div className="workflow-wb-item workflow-wb-image" data-wb-id=${item.id} data-selected=${sel}
+      <div className="workflow-wb-item workflow-wb-image" data-wb-id=${item.id} data-selected=${sel} data-locked=${item.locked ? "true" : "false"}
         style=${{
           left: item.x + "px", top: item.y + "px",
           width: item.w + "px", height: item.h + "px", zIndex: z, ...rotStyle,
@@ -91070,6 +91343,7 @@ function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, editingWbL
         if (!el) return;
         const id = el.getAttribute("data-wb-id");
         const it = (items || []).find(i => i.id === id);
+        if (it && it.locked) return;              // locked = nothing to edit
         if (it && (it.type === "text" || it.type === "textbox" || it.type === "sticky")) {
           onItemDoubleClick(id);
         }

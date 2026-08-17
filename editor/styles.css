@@ -8857,6 +8857,37 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   opacity: 1;
   color: var(--success, #16A34A);
 }
+/* Lock chip - same chrome as tidy, holds the inline Lock icon. While the
+   frame is locked it is the ONLY control left on the bar and stays fully
+   opaque (hover-reveal would hide the one way back out of the lock). */
+.workflow-node-section-lock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.workflow-node-section-lock svg { width: 13px; height: 13px; }
+.workflow-node-section-lock.is-on {
+  opacity: 1;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+/* A locked frame keeps its outline but stops advertising drag affordances:
+   the bar is not a handle any more, and nothing inside it is grabbable. */
+.workflow-node-section[data-locked="true"] { cursor: default; }
+.workflow-node-section[data-locked="true"] > .workflow-node-section-bar,
+.workflow-node-table[data-locked="true"] > .workflow-node-section-bar { cursor: default; }
+.workflow-node-section[data-locked="true"] > .workflow-node-section-bar
+  .workflow-node-section-lock,
+.workflow-node-table[data-locked="true"] > .workflow-node-section-bar
+  .workflow-node-section-lock { opacity: 1; }
+/* Locked whiteboard items are pointer-inert in whiteboard mode too, so the
+   layer's delegated handlers (double-click to edit) can never reach them.
+   Selection routing is geometric and already skips them; right-click is the
+   deliberate exception and runs off geometry, not the DOM. */
+.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer
+  .workflow-wb-item[data-locked="true"],
+.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer
+  .workflow-wb-item[data-locked="true"] * { pointer-events: none; }
 /* ── custom-app node (packaged section → reusable mini-app) ───────────────── */
 .workflow-node-customapp {
   position: absolute;
