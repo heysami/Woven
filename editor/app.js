@@ -47060,6 +47060,17 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       try { flashPickOp("error", "Edit can't be saved: this iframe isn't showing a source/ file (version view?) - switch to the live version and redo the edit"); } catch {}
       return;
     }
+    // Belt to the navigation pin's braces. The pin bounces a wandered draft back
+    // within half a second, but an edit staged INSIDE that window would resolve
+    // its path from the live location and write into whatever page the draft had
+    // wandered to. A draft's file is always the dot-prefixed clone, so anything
+    // else means "not on the draft right now" - refuse rather than write to a
+    // file the user never chose.
+    if (ifr.hasAttribute && ifr.hasAttribute("data-draft-id")
+        && !/(^|\/)\.draft-[^/]*\.html?$/i.test(path)) {
+      try { flashPickOp("error", "This draft navigated off its own screen - the edit wasn't staged. It's on its way back; try again."); } catch {}
+      return;
+    }
     const nodeId = wfPickHostId(ifr);
     setPendingInspectorEdits(prev => {
       const next = new Map(prev);
@@ -48046,11 +48057,20 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       dropDraftAnnotations(det.nodeId, det.frameId);
     };
 
+    const onPinned = () => {
+      try {
+        flashPickOp("error",
+          "A draft stays on its own screen - use Preview to click through the flow.");
+      } catch {}
+    };
+
     window.addEventListener("th:frame-draft-apply", onApply);
     window.addEventListener("th:frame-draft-ended", onEnded);
+    window.addEventListener("th:frame-draft-pinned", onPinned);
     return () => {
       window.removeEventListener("th:frame-draft-apply", onApply);
       window.removeEventListener("th:frame-draft-ended", onEnded);
+      window.removeEventListener("th:frame-draft-pinned", onPinned);
     };
   }, [commitInspectorEdits, onStartChatWithPrompt, removeWbItems, flashPickOp]);
 
@@ -67981,6 +68001,49 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     timer = setTimeout(tick, 200);
     return () => { stop = true; clearTimeout(timer); teardown(); };
   }, [draftFrameId, lodLive, nonce]);
+
+  // Pin the draft to its own file. A drafted page is a REAL page, so its links
+  // work - and pick mode is not always armed, so a click goes to the page. Follow
+  // one link and the draft iframe is showing a DIFFERENT file, at which point the
+  // two halves of the flow disagree in the worst way: the staged-edit path
+  // resolver reads the iframe's LIVE location, so edits would be written into
+  // that other page directly, while Apply reads the draft's RECORDED path and
+  // would copy the untouched draft over the real screen - throwing the user's
+  // work away and touching a file they never meant to edit. So navigating away
+  // bounces straight back; following links is what the Preview surface is for.
+  useEffect(() => {
+    if (!activeDraft || !draftFrameId || !lodLive) return;
+    const want = activeDraft.path;
+    let stop = false, timer = 0, warned = false;
+    const tick = () => {
+      if (stop) return;
+      try {
+        const doc = iframeRef.current && iframeRef.current.contentDocument;
+        const esc = (window.CSS && CSS.escape) ? CSS.escape(draftFrameId) : draftFrameId;
+        const ifr = doc && doc.querySelector('.frame[data-frame-id="' + esc + '"] iframe[data-draft-id]');
+        if (ifr) {
+          let here = "";
+          try { here = String(ifr.contentWindow.location.pathname || "").replace(/^\/+/, ""); } catch { here = ""; }
+          // Empty means mid-load (about:blank) - not a navigation, leave it be.
+          if (here && here !== want) {
+            const back = ifr.getAttribute("src");
+            // replace(), not assignment: a bounce must not pile up history the
+            // user can walk back into.
+            if (back) { try { ifr.contentWindow.location.replace(back); } catch {} }
+            if (!warned) {
+              warned = true;
+              window.dispatchEvent(new CustomEvent("th:frame-draft-pinned", {
+                detail: { nodeId: node.id, frameId: draftFrameId },
+              }));
+            }
+          }
+        }
+      } catch { /* embed mid-reload - the next tick retries */ }
+      timer = setTimeout(tick, 500);
+    };
+    timer = setTimeout(tick, 500);
+    return () => { stop = true; clearTimeout(timer); };
+  }, [activeDraft && activeDraft.path, draftFrameId, lodLive, node.id]);
 
   // Which file does this frame actually render? The live iframe's own location
   // is authoritative (it follows in-page navigation); a frame culled by the
