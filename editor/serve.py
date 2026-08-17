@@ -9751,101 +9751,302 @@ def _system_chat_scan(section: str = None) -> dict:
     return out
 
 
-# (paths tuple) -> (signature, {rid: meta}). Same rationale as
-# _JSONL_ROWS_CACHE: /__runs polls this scan while the runs panel is open and
-# the files grow without bound. Callers mutate the returned metas (e.g.
-# forcing done=True), so cache hits hand out per-meta copies.
-_CHAT_SCAN_CACHE: dict = {}
-_CHAT_SCAN_CACHE_LOCK = threading.Lock()
-_CHAT_SCAN_CACHE_MAX = 64
+# path -> _ChatFileIndex. /__runs used to rebuild its whole answer by parsing
+# every byte of every chat JSONL on each request, behind a (mtime, size) cache
+# that any append invalidated. On a real project that is not viable: suss-cal's
+# editor/chat.jsonl is 339 MB / 120k rows / 74 runs, and a full scan measured
+# 1.08s. Worse, the cache lookup released its lock before scanning, so the
+# frontend's several independent /__runs pollers (1500ms working-paths, 2000ms
+# agent-busy lock, 2000ms runs list, 4000ms rail) all missed together and all
+# scanned together - and since json.loads holds the GIL, four concurrent
+# pollers measured 4.80s wall with every one of them waiting the full 4.80s.
+# That is the "the chat list opens slowly" report.
+#
+# The file is append-only in normal operation (_chat_jsonl_append), and the one
+# path that rewrites it (_chat_jsonl_purge_run) lands via os.replace, i.e. a
+# NEW inode. So we keep a byte watermark per file and parse only what arrived
+# since the last poll, rebuilding from zero whenever the identity check fails.
+# Same 339 MB file: 1.08s -> 0.4ms for a typical 8 KB append.
+_CHAT_INDEX: dict = {}
+_CHAT_INDEX_LOCK = threading.Lock()
+_CHAT_INDEX_MAX = 64
+# Row types _chat_tail_budget refuses to drop no matter how old they are: the
+# drawer replays past `[decision:<id>]` user messages to keep answered gate
+# cards answered. The index records their byte offsets so a tail-seek can go
+# back and fetch them instead of re-reading the file to find them. They are
+# rare and small - 662 rows / 966 KB out of suss-cal's 120k rows.
+_CHAT_PRESERVED_TYPES = ("user_message", "tool_answer")
+
+
+class _ChatFileIndex:
+    """Incremental index over one append-only chat JSONL.
+
+    Holds the per-run metadata /__runs needs, plus the byte offsets /__chat
+    needs to read a slice instead of the whole file. Every field is derived
+    purely from the bytes below `offset`, so refresh() only ever has to look
+    at what was appended after it."""
+
+    __slots__ = ("path", "lock", "ino", "dev", "offset", "rows",
+                 "metas", "preserved_spans", "run_spans")
+
+    def __init__(self, path):
+        self.path = path
+        # Per-file lock, held across refresh(). This is the single-flight that
+        # collapses the poller herd: concurrent callers queue here and the
+        # losers find the index already current, instead of each re-scanning.
+        self.lock = threading.Lock()
+        self._reset()
+
+    def _reset(self):
+        self.ino = -1
+        self.dev = -1
+        self.offset = 0          # bytes already folded into the fields below
+        self.rows = 0            # total parseable rows seen
+        self.metas = {}          # runId -> meta dict (the /__runs row)
+        self.preserved_spans = []   # [(offset, length)] of _CHAT_PRESERVED_TYPES
+        self.run_spans = {}      # runId -> [first_offset, end_offset]
+
+    def refresh(self):
+        """Fold any newly appended bytes into the index. Caller holds self.lock."""
+        try:
+            st = os.stat(self.path)
+        except OSError:
+            self._reset()
+            return
+        if (st.st_ino != self.ino or st.st_dev != self.dev
+                or st.st_size < self.offset):
+            # New file, or _chat_jsonl_purge_run swapped a rewritten one in
+            # under us (os.replace => new inode), or a truncation. Either way
+            # the watermark describes bytes that no longer exist.
+            self._reset()
+            self.ino, self.dev = st.st_ino, st.st_dev
+        if st.st_size == self.offset:
+            return                              # nothing appended
+        start = self.offset
+        try:
+            with open(self.path, "rb") as f:
+                f.seek(start)
+                chunk = f.read(st.st_size - start)
+        except OSError:
+            return
+        # A writer may be mid-append, so stop at the last complete line and
+        # leave the partial tail for the next refresh.
+        cut = chunk.rfind(b"\n")
+        if cut == -1:
+            return
+        chunk = chunk[:cut + 1]
+        pos = start
+        for raw in chunk.split(b"\n"):
+            here = pos
+            pos += len(raw) + 1
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                rec = json.loads(raw.decode("utf-8", "replace"))
+            except Exception:
+                continue
+            self.rows += 1
+            if rec.get("type") in _CHAT_PRESERVED_TYPES:
+                self.preserved_spans.append((here, len(raw)))
+            rid = rec.get("runId")
+            if not rid:
+                continue
+            span = self.run_spans.get(rid)
+            if span is None:
+                self.run_spans[rid] = [here, pos]
+            else:
+                span[1] = pos
+            meta = self.metas.get(rid)
+            if meta is None:
+                meta = {
+                    "runId":          rid,
+                    "agentId":        rec.get("agentId") or "claude",
+                    "branch":         rec.get("branch") or "main",
+                    "kind":           rec.get("kind") or "freeform",
+                    "tier":           rec.get("tier"),
+                    "title":          rec.get("title") or "",
+                    "startedAt":      rec.get("startedAt") or rec.get("ts") or 0,
+                    # last line seen for this run wins - the runs list
+                    # orders by updatedAt, not by when the run started.
+                    "updatedAt":      rec.get("ts") or rec.get("startedAt") or 0,
+                    "done":           False,
+                    "turnDone":       False,
+                    "turnsCompleted": 0,
+                    "exitCode":       None,
+                    "lastSeq":        -1,
+                    "modifying":      False,
+                    "historical":     True,
+                    # present on system-thread lines only.
+                    "section":        rec.get("section"),
+                }
+                self.metas[rid] = meta
+            ts_v = rec.get("ts")
+            if isinstance(ts_v, (int, float)) and ts_v > (meta.get("updatedAt") or 0):
+                meta["updatedAt"] = ts_v
+            # Track lifecycle terminators
+            if rec.get("type") == "__finish":
+                meta["done"] = True
+                ec = (rec.get("data") or {}).get("exitCode")
+                if ec is not None:
+                    meta["exitCode"] = ec
+            # Track "turn done" - claude-code emits status:done at end
+            # of each agent turn. Useful so the UI dot picks "waiting"
+            # over "live" when reopening.
+            if (rec.get("type") == "agent"
+                    and isinstance(rec.get("data"), dict)
+                    and rec["data"].get("type") == "status"
+                    and rec["data"].get("label") == "done"):
+                meta["turnDone"] = True
+                meta["turnsCompleted"] = int(meta.get("turnsCompleted") or 0) + 1
+            # Track the highest seq so the UI can compute "after"
+            seq_v = rec.get("seq")
+            if isinstance(seq_v, int) and seq_v > meta["lastSeq"]:
+                meta["lastSeq"] = seq_v
+        self.offset = start + len(chunk)
+
+
+def _chat_index(path: str) -> "_ChatFileIndex":
+    """The refreshed index for `path`. Returns with the index current; callers
+    must re-take `idx.lock` before reading its fields."""
+    with _CHAT_INDEX_LOCK:
+        idx = _CHAT_INDEX.get(path)
+        if idx is None:
+            if len(_CHAT_INDEX) >= _CHAT_INDEX_MAX:
+                _CHAT_INDEX.clear()
+            idx = _CHAT_INDEX[path] = _ChatFileIndex(path)
+    with idx.lock:
+        idx.refresh()
+    return idx
 
 
 def _scan_chat_jsonl_records(candidates: list) -> dict:
     """Shared scan body for project chat history AND system-thread history.
     candidates: [(abs_path, slug)] - slug is a branch for project files and
     a section name for system files (recorded on the meta as `section` when
-    the line carries one)."""
-    sig = []
-    for path, slug in candidates:
-        try:
-            st = os.stat(path)
-            sig.append((path, slug, st.st_mtime_ns, st.st_size))
-        except OSError:
-            sig.append((path, slug, 0, -1))
-    sig = tuple(sig)
-    key = tuple(p for p, _s in candidates)
-    with _CHAT_SCAN_CACHE_LOCK:
-        hit = _CHAT_SCAN_CACHE.get(key)
-        if hit is not None and hit[0] == sig:
-            return {rid: dict(meta) for rid, meta in hit[1].items()}
+    the line carries one).
+
+    Now a merge over the per-file incremental indexes rather than a re-read of
+    every byte: see _ChatFileIndex for why. Callers mutate the metas they get
+    back (forcing done=True, stamping project), so hand out copies."""
     out: dict = {}
     for path, _branch_slug in candidates:
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                for raw in f:
-                    raw = raw.strip()
-                    if not raw:
-                        continue
-                    try:
-                        rec = json.loads(raw)
-                    except Exception:
-                        continue
-                    rid = rec.get("runId")
-                    if not rid:
-                        continue
-                    meta = out.get(rid)
-                    if meta is None:
-                        meta = {
-                            "runId":          rid,
-                            "agentId":        rec.get("agentId") or "claude",
-                            "branch":         rec.get("branch") or "main",
-                            "kind":           rec.get("kind") or "freeform",
-                            "tier":           rec.get("tier"),
-                            "title":          rec.get("title") or "",
-                            "startedAt":      rec.get("startedAt") or rec.get("ts") or 0,
-                            # last line seen for this run wins - the runs list
-                            # orders by updatedAt, not by when the run started.
-                            "updatedAt":      rec.get("ts") or rec.get("startedAt") or 0,
-                            "done":           False,
-                            "turnDone":       False,
-                            "turnsCompleted": 0,
-                            "exitCode":       None,
-                            "lastSeq":        -1,
-                            "modifying":      False,
-                            "historical":     True,
-                            # present on system-thread lines only.
-                            "section":        rec.get("section"),
-                        }
-                        out[rid] = meta
-                    ts_v = rec.get("ts")
-                    if isinstance(ts_v, (int, float)) and ts_v > (meta.get("updatedAt") or 0):
-                        meta["updatedAt"] = ts_v
-                    # Track lifecycle terminators
-                    if rec.get("type") == "__finish":
-                        meta["done"] = True
-                        ec = (rec.get("data") or {}).get("exitCode")
-                        if ec is not None:
-                            meta["exitCode"] = ec
-                    # Track "turn done" - claude-code emits status:done at end
-                    # of each agent turn. Useful so the UI dot picks "waiting"
-                    # over "live" when reopening.
-                    if (rec.get("type") == "agent"
-                            and isinstance(rec.get("data"), dict)
-                            and rec["data"].get("type") == "status"
-                            and rec["data"].get("label") == "done"):
-                        meta["turnDone"] = True
-                        meta["turnsCompleted"] = int(meta.get("turnsCompleted") or 0) + 1
-                    # Track the highest seq so the UI can compute "after"
-                    seq_v = rec.get("seq")
-                    if isinstance(seq_v, int) and seq_v > meta["lastSeq"]:
-                        meta["lastSeq"] = seq_v
-        except OSError:
-            continue
-    with _CHAT_SCAN_CACHE_LOCK:
-        if len(_CHAT_SCAN_CACHE) >= _CHAT_SCAN_CACHE_MAX:
-            _CHAT_SCAN_CACHE.clear()
-        _CHAT_SCAN_CACHE[key] = (sig, {rid: dict(meta) for rid, meta in out.items()})
+        idx = _chat_index(path)
+        with idx.lock:
+            metas = {rid: dict(meta) for rid, meta in idx.metas.items()}
+        for rid, meta in metas.items():
+            cur = out.get(rid)
+            if cur is None:
+                out[rid] = meta
+                continue
+            # A runId in more than one candidate file is not expected (the
+            # flat chat.jsonl superseded the per-branch files), but the old
+            # single-pass scan folded such a run into ONE meta, so match it.
+            if (meta.get("updatedAt") or 0) > (cur.get("updatedAt") or 0):
+                cur["updatedAt"] = meta["updatedAt"]
+            if (meta.get("lastSeq") or -1) > (cur.get("lastSeq") or -1):
+                cur["lastSeq"] = meta["lastSeq"]
+            if meta.get("done"):
+                cur["done"] = True
+            if meta.get("turnDone"):
+                cur["turnDone"] = True
+            cur["turnsCompleted"] = ((cur.get("turnsCompleted") or 0)
+                                     + (meta.get("turnsCompleted") or 0))
+            if cur.get("exitCode") is None and meta.get("exitCode") is not None:
+                cur["exitCode"] = meta["exitCode"]
+            if not cur.get("section") and meta.get("section"):
+                cur["section"] = meta["section"]
     return out
+
+
+def _chat_parse_window(path: str, start: int, length: int, drop_partial: bool):
+    """Parse [start, start+length) of a JSONL into [(byte_offset, row)].
+
+    drop_partial skips the first line when `start` landed mid-row (true for a
+    tail read, false when start is a known row boundary)."""
+    if length <= 0:
+        return []
+    try:
+        with open(path, "rb") as f:
+            f.seek(start)
+            chunk = f.read(length)
+    except OSError:
+        return []
+    if drop_partial:
+        nl = chunk.find(b"\n")
+        if nl == -1:
+            return []
+        start += nl + 1
+        chunk = chunk[nl + 1:]
+    out = []
+    pos = start
+    for raw in chunk.split(b"\n"):
+        here = pos
+        pos += len(raw) + 1
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            out.append((here, len(raw), json.loads(raw.decode("utf-8", "replace"))))
+        except Exception:
+            continue
+    return out
+
+
+def _chat_rows_for_run(path: str, run_id: str):
+    """Every row of one run, read from the run's recorded byte span instead of
+    from the whole file. Falls back to a full read when the run predates the
+    index (it cannot, in practice - the index is built from byte zero - but a
+    missing span must never mean a silently empty transcript)."""
+    idx = _chat_index(path)
+    with idx.lock:
+        span = idx.run_spans.get(run_id)
+        span = list(span) if span else None
+    if span is None:
+        return [r for r in _read_jsonl_rows(path) if r.get("runId") == run_id]
+    rows = _chat_parse_window(path, span[0], span[1] - span[0], False)
+    return [rec for _off, _ln, rec in rows if rec.get("runId") == run_id]
+
+
+def _chat_rows_tail(path: str, max_rows: int, max_bytes: int):
+    """Newest-tail slice of a whole transcript WITHOUT parsing the whole file.
+
+    Same contract as ChatHandler._chat_tail_budget - and the same load-bearing
+    exception: user-authored rows older than the cutoff are preserved anyway,
+    because the drawer replays past `[decision:<id>]` messages to keep answered
+    gate cards answered, and dropping one resurrects its gate as unanswered.
+    Here they come from the index's recorded offsets rather than from having
+    read every byte. Returns (rows, omitted_count)."""
+    idx = _chat_index(path)
+    with idx.lock:
+        total = idx.rows
+        size = idx.offset
+        spans = list(idx.preserved_spans)
+    if total <= 200:
+        return _read_jsonl_rows(path), 0
+    # Read a byte window generous enough to cover the row budget, then trim.
+    window = min(size, max_bytes + (2 << 20))
+    tail = _chat_parse_window(path, size - window, window, window < size)
+    keep = []
+    size_acc = 0
+    for off, ln, rec in reversed(tail):
+        if len(keep) >= max_rows or size_acc > max_bytes:
+            break
+        size_acc += ln
+        keep.append((off, rec))
+    keep.reverse()
+    if len(keep) >= total:
+        return [rec for _off, rec in keep], 0
+    cutoff_off = keep[0][0] if keep else size
+    preserved = []
+    for off, ln in spans:
+        if off >= cutoff_off:
+            break                                   # spans are in file order
+        got = _chat_parse_window(path, off, ln, False)
+        if got:
+            preserved.append(got[0][2])
+    out = preserved + [rec for _off, rec in keep]
+    return out, max(0, total - len(out))
 
 
 def _rehydrate_system_run(run_id: str):
@@ -31386,12 +31587,17 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not SLUG_OK.match(branch):
             return self._reply(400, {"error": "invalid branch slug", "slug": branch})
         run_filter = (_qs_get(qs, "runId") or "").strip()
-        all_rows = _chat_jsonl_read_branch(project_root, branch)
+        # Both branches read a SLICE of the transcript via the index rather
+        # than parsing all of it and throwing most away. On suss-cal's 339 MB
+        # chat.jsonl the old full read measured 2.98s and retained 562 MB of
+        # parsed dicts in _JSONL_ROWS_CACHE (which holds up to 64 files before
+        # clearing) - all to answer with at most 4000 rows / 15 MB.
+        path = _chat_jsonl_path(project_root, branch)
         if run_filter:
-            rows = [r for r in all_rows if r.get("runId") == run_filter]
+            rows, omitted = self._chat_tail_budget(_chat_rows_for_run(path, run_filter))
         else:
-            rows = all_rows
-        rows, omitted = self._chat_tail_budget(rows)
+            rows, omitted = _chat_rows_tail(
+                path, self._CHAT_TAIL_MAX_ROWS, self._CHAT_TAIL_MAX_BYTES)
         out = {"branch": branch, "events": rows}
         if omitted:
             out["truncated"] = True
