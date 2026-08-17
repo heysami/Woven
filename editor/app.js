@@ -32414,7 +32414,11 @@ function wbNewId() {
   return "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
-const WB_COLOR_TOKENS = ["ink", "gray", "blue", "green", "yellow", "pink", "purple", "orange"];
+// Neutrals run dark → light (ink, gray, white), then the hues. `white` is a
+// full palette token, not just a table-cell fill, so every surface that
+// paints from the palette can use it: pen, text, sticky, shape, arrow, and a
+// text box's fill / outline / text.
+const WB_COLOR_TOKENS = ["ink", "gray", "white", "blue", "green", "yellow", "pink", "purple", "orange"];
 
 function wbColorCSS(color) {
   if (WB_COLOR_TOKENS.includes(color)) return `var(--wb-${color})`;
@@ -33150,6 +33154,83 @@ function wbShiftArrow(it, dx, dy) {
     next.mids = it.mids.map((v, i) => i % 2 === 0 ? v + dx : v + dy);
   }
   return next;
+}
+
+/* ────────── Arrow SIDE PORTS ──────────
+   An arrow endpoint can bind to a target two ways:
+     free  - { t, id, ox, oy }        the classic offset-from-top-left pin
+     port  - { t, id, ox, oy, side }  snapped to the middle of one SIDE
+   A port's exact position is not stored: it's DERIVED from how many endpoints
+   share that side, so the anchors stay evenly spread as arrows come and go.
+   One endpoint sits at the side's centre; two split the side in half and each
+   sits in the middle of its half; three take sixths, and so on. The ox/oy stay
+   on the bind as the fallback for a target that vanishes mid-resolve. */
+const WB_ARROW_SNAP_BAND = 22;   // screen px inside an edge that reads as "the edge"
+
+// Point on `rect`'s `side` at fraction t (0..1, left→right / top→bottom).
+function wbSidePoint(rect, side, t) {
+  const { x, y, w, h } = rect;
+  const f = Math.max(0, Math.min(1, t));
+  if (side === "top")    return { x: x + w * f, y };
+  if (side === "bottom") return { x: x + w * f, y: y + h };
+  if (side === "left")   return { x, y: y + h * f };
+  return { x: x + w, y: y + h * f };
+}
+// The i-th of n endpoints owns the i-th equal segment and sits at its middle.
+function wbSideFraction(index, count) {
+  const n = Math.max(1, count | 0);
+  const i = Math.max(0, Math.min(n - 1, index | 0));
+  return (i + 0.5) / n;
+}
+// World rect of a bind target. Nodes measure by their DRAWN size (stored w/h
+// can be under the kind's floor), wb items by their bbox.
+function wbBindRect(bind, nodeById, wbById) {
+  if (!bind) return null;
+  if (bind.t === "n") {
+    const n = nodeById && nodeById.get(bind.id);
+    if (!n) return null;
+    const { w, h } = workflowNodeDrawnSize(n);
+    return { x: n.x || 0, y: n.y || 0, w, h };
+  }
+  const it = wbById && wbById.get(bind.id);
+  if (!it) return null;
+  return wbItemBBox(it);
+}
+// Every side-ported endpoint on the board, grouped by "<t>:<id>:<side>" and
+// ordered by arrow id - which is minted from the clock, so the order along a
+// side is creation order. Deliberately NOT ordered by where the far end sits:
+// that reads better on a static board but makes anchors swap places mid-drag.
+function wbCollectSidePorts(list) {
+  const groups = new Map();
+  const add = (bind, arrowId, end) => {
+    if (!bind || !bind.side) return;
+    const k = bind.t + ":" + bind.id + ":" + bind.side;
+    let g = groups.get(k);
+    if (!g) { g = []; groups.set(k, g); }
+    g.push({ arrowId, end });
+  };
+  for (const it of list || []) {
+    if (!it || it.type !== "arrow") continue;
+    add(it.startBind, it.id, "start");
+    add(it.endBind, it.id, "end");
+  }
+  for (const g of groups.values()) {
+    g.sort((a, b) => (a.arrowId < b.arrowId ? -1 : a.arrowId > b.arrowId ? 1
+                    : a.end < b.end ? -1 : a.end > b.end ? 1 : 0));
+  }
+  return groups;
+}
+function wbSidePortKey(bind) {
+  return bind && bind.side ? bind.t + ":" + bind.id + ":" + bind.side : null;
+}
+// Cheap equality for the hover preview, so a mousemove that resolves to the
+// same port doesn't churn a re-render of the whole canvas on every pixel.
+function wbSnapSame(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.t === b.t && a.id === b.id && a.side === b.side
+    && Math.round(a.x) === Math.round(b.x) && Math.round(a.y) === Math.round(b.y)
+    && (a.others || []).length === (b.others || []).length;
 }
 
 // kind → (payload) => node body (no id / x / y - the caller positions it).
@@ -39846,6 +39927,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // hand-dragging an item directly, NOT for the table moving under it).
   const tableDragRef = useRef(false);
   const wbLiveStrokeRef = useRef(null);             // <svg> for the imperative in-progress pen path
+  // Arrow tool hover: the side port the pointer is currently over, if any.
+  // Drives the pre-click preview (where this endpoint lands + where the ones
+  // already on that side slide to). Null whenever the arrow tool is off, the
+  // pointer is deep inside a shape, or the no-snap modifier is held.
+  const [wbArrowSnap, setWbArrowSnap] = useState(null);
+  const wbArrowSnapRef = useRef(null); wbArrowSnapRef.current = wbArrowSnap;
   const wbItems = data.wb || [];
   const wbItemsRef = useRef(wbItems); wbItemsRef.current = wbItems;
   const dataNodesRef = useRef([]); dataNodesRef.current = data.nodes || [];
@@ -41489,6 +41576,83 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     return null;
   };
 
+  // The bind target under a world point, as { t, id, rect } - same precedence
+  // as wbDetectBindAt (wb items paint above nodes, so they win) but measured
+  // for SIDE snapping, which needs the whole rect rather than one offset.
+  const wbSnapTargetAt = (wx, wy, excludeId, pad) => {
+    const p = pad || 0;
+    let best = null, bestZ = -Infinity;
+    for (const it of (wbItemsRef.current || [])) {
+      if (!it || it.id === excludeId || it.locked || !WB_BIND_TARGETS.has(it.type)) continue;
+      const bb = wbItemBBox(it);
+      // Padded so the band reaches a little OUTSIDE the edge too - aiming at a
+      // border from the outside is the natural way to point at it.
+      if (wx < bb.x - p || wx > bb.x + bb.w + p || wy < bb.y - p || wy > bb.y + bb.h + p) continue;
+      if ((it.z || 0) >= bestZ) { bestZ = it.z || 0; best = { t: "w", id: it.id, rect: bb }; }
+    }
+    if (best) return best;
+    const nid = nodeHitAt(wx, wy);
+    if (nid) {
+      const n = (dataNodesRef.current || []).find(nn => nn.id === nid);
+      if (n) {
+        const { w, h } = workflowNodeDrawnSize(n);
+        return { t: "n", id: nid, rect: { x: n.x || 0, y: n.y || 0, w, h } };
+      }
+    }
+    return null;
+  };
+
+  // Where an arrow endpoint dropped at (wx,wy) would SNAP: the nearest side of
+  // the thing under the pointer, but only while the pointer is inside that
+  // side's band. Deep inside the shape there is no snap - that region is how
+  // you pin an endpoint anywhere on a target, which is the old behaviour and
+  // still the right one for "attach roughly here".
+  //
+  // Returns { t, id, side, ox, oy, x, y, others[] } or null. `x,y` is where
+  // THIS endpoint lands once it joins the side, and `others` is where the
+  // endpoints already there slide to - the preview draws both, so the
+  // redistribution is visible before the click rather than after it.
+  const wbArrowSnapAt = useCallback((wx, wy, excludeArrowId, excludeEnd) => {
+    const zoom = Math.max(zoomRef.current, 0.1);
+    const band = WB_ARROW_SNAP_BAND / zoom;
+    const hit = wbSnapTargetAt(wx, wy, null, 8 / zoom);
+    if (!hit) return null;
+    const r = hit.rect;
+    if (r.w <= 0 || r.h <= 0) return null;
+    // Nearest edge wins, so a corner resolves to whichever side is closer.
+    // Clamped at 0 so a point just OUTSIDE the rect still reads as "on" the
+    // nearest edge rather than going negative and beating every other side.
+    const dL = Math.max(0, wx - r.x), dR = Math.max(0, r.x + r.w - wx);
+    const dT = Math.max(0, wy - r.y), dB = Math.max(0, r.y + r.h - wy);
+    const m = Math.min(dL, dR, dT, dB);
+    if (m > band) return null;                       // middle of the shape - no snap
+    const side = m === dT ? "top" : m === dB ? "bottom" : m === dL ? "left" : "right";
+    // Who is already on this side? The endpoint being re-dragged doesn't count
+    // against itself, or dragging along one side would keep making room for a
+    // ghost of the arrow you are holding.
+    const key = hit.t + ":" + hit.id + ":" + side;
+    const groups = wbCollectSidePorts(wbItemsRef.current || []);
+    const existing = (groups.get(key) || [])
+      .filter(p => !(p.arrowId === excludeArrowId && (!excludeEnd || p.end === excludeEnd)));
+    const total = existing.length + 1;
+    // A new arrow's id is minted later than every existing one, so it sorts
+    // last; a re-drag keeps its place. Either way it takes the final slot for
+    // preview purposes, which is where it will actually land.
+    const mine = wbSidePoint(r, side, wbSideFraction(existing.length, total));
+    const others = existing.map((_, i) => wbSidePoint(r, side, wbSideFraction(i, total)));
+    return {
+      t: hit.t, id: hit.id, side,
+      ox: mine.x - r.x, oy: mine.y - r.y,
+      x: mine.x, y: mine.y, others,
+    };
+  }, []);
+  const wbArrowSnapAtRef = useRef(wbArrowSnapAt); wbArrowSnapAtRef.current = wbArrowSnapAt;
+  // The preview belongs to the arrow tool alone - switching tool or leaving
+  // whiteboard mode must not leave a dot stranded on the canvas.
+  useEffect(() => {
+    if (!(wbMode && wbTool === "arrow") && wbArrowSnapRef.current) setWbArrowSnap(null);
+  }, [wbMode, wbTool]);
+
   // Node click resolved geometrically (whiteboard-mode select tool). Same
   // semantics as the wrap's DOM-based node branch, but the drag is a
   // window-listener gesture that moves the node selection + any selected
@@ -41766,12 +41930,31 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (tool === "shape" || tool === "textbox" || tool === "arrow" || tool === "section" || tool === "table") {
       e.preventDefault();
       const color = wbToolColor(tool);
-      const x0 = wp.x, y0 = wp.y;
+      const pressX = wp.x, pressY = wp.y;
+      let x0 = wp.x, y0 = wp.y;
+      // Arrow START: take the side port the hover preview was already showing,
+      // so the line begins exactly where the dot promised. Meta/ctrl at press
+      // means "no snapping at all" - the tool lets that modifier through
+      // instead of panning (see the whiteboard branch of the wrap's capture).
+      let startSnap = null;
+      if (tool === "arrow" && !(e.metaKey || e.ctrlKey)) {
+        startSnap = wbArrowSnapAtRef.current(x0, y0, null, null);
+        if (startSnap) { x0 = startSnap.x; y0 = startSnap.y; }
+      }
+      if (tool === "arrow") setWbArrowSnap(null);
       let lastWp = wp;
+      let endSnap = null;
       const onMove = (ev) => {
         lastWp = screenToWorld(ev.clientX, ev.clientY);
         if (tool === "arrow") {
-          setWbGhost({ type: "arrow", x1: x0, y1: y0, x2: lastWp.x, y2: lastWp.y, color, size: wbFmtRef.current.size || 3 });
+          // Same rule for the endpoint being dragged: snap unless the no-snap
+          // modifier is down RIGHT NOW, so it can be toggled mid-drag.
+          endSnap = (ev.metaKey || ev.ctrlKey)
+            ? null : wbArrowSnapAtRef.current(lastWp.x, lastWp.y, null, null);
+          const ex = endSnap ? endSnap.x : lastWp.x;
+          const ey = endSnap ? endSnap.y : lastWp.y;
+          setWbArrowSnap(prev => wbSnapSame(prev, endSnap) ? prev : endSnap);
+          setWbGhost({ type: "arrow", x1: x0, y1: y0, x2: ex, y2: ey, color, size: wbFmtRef.current.size || 3 });
         } else {
           setWbGhost({
             type: tool,
@@ -41785,7 +41968,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         window.removeEventListener("mouseup", onUp);
         wbCancelGestureRef.current = null;
         setWbGhost(null);
-        const dragged = Math.hypot(lastWp.x - x0, lastWp.y - y0) >= 4;
+        setWbArrowSnap(null);
+        // Measured from the RAW press point, never the snapped one - a snap
+        // can shift the start by most of the band, which would read a plain
+        // click as a drag and skip the click-to-place default size.
+        const dragged = Math.hypot(lastWp.x - pressX, lastWp.y - pressY) >= 4;
         const F = wbFmtRef.current;
         let item;
         if (tool === "section") {
@@ -41835,16 +42022,22 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           return;
         }
         if (tool === "arrow") {
-          const ex = dragged ? lastWp.x : x0 + 140;
-          const ey = dragged ? lastWp.y : y0;
+          const ex = dragged ? (endSnap ? endSnap.x : lastWp.x) : x0 + 140;
+          const ey = dragged ? (endSnap ? endSnap.y : lastWp.y) : y0;
           // Pin each endpoint to whatever node / box-like wb item it lands on,
-          // so the arrow tracks them when they move.
+          // so the arrow tracks them when they move. A SIDE PORT (snapped to
+          // an edge) carries `side`, and its exact spot is re-derived from how
+          // many endpoints share that side - so this arrow joining the side
+          // slides the ones already there over to make room.
+          const bindFor = (snap, fx, fy) => snap
+            ? { t: snap.t, id: snap.id, ox: snap.ox, oy: snap.oy, side: snap.side }
+            : wbDetectBindAt(fx, fy, null);
           const arrowProps = {
             color, size: F.size || 3,
             arrowStart: F.arrowStart, arrowEnd: F.arrowEnd, dash: F.dash,
             route: F.route || "straight",
-            startBind: wbDetectBindAt(x0, y0, null),
-            endBind: wbDetectBindAt(ex, ey, null),
+            startBind: bindFor(startSnap, x0, y0),
+            endBind: bindFor(dragged ? endSnap : null, ex, ey),
           };
           item = wbMakeItem("arrow", { x1: x0, y1: y0, x2: ex, y2: ey, ...arrowProps });
         } else {
@@ -41888,6 +42081,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         window.removeEventListener("mouseup", onUp);
         wbCancelGestureRef.current = null;
         setWbGhost(null);
+        setWbArrowSnap(null);
       };
       return;
     }
@@ -42015,28 +42209,31 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const list = Array.isArray(d.wb) ? d.wb : [];
       const nodeById = new Map((d.nodes || []).map(n => [n.id, n]));
       const wbById = new Map(list.map(it => [it.id, it]));
-      const resolve = (bind) => {
+      // Side ports are DERIVED, not stored: every endpoint sharing a side is
+      // re-spread here, so adding or removing one arrow slides its neighbours
+      // over without anyone editing them.
+      const portGroups = wbCollectSidePorts(list);
+      const resolve = (bind, arrowId, end) => {
         if (!bind) return { ok: true, xy: null };
-        if (bind.t === "n") {
-          const n = nodeById.get(bind.id);
-          if (!n) return { ok: false };           // target gone - drop bind
-          return { ok: true, xy: { x: (n.x || 0) + bind.ox, y: (n.y || 0) + bind.oy } };
+        const rect = wbBindRect(bind, nodeById, wbById);
+        if (!rect) return { ok: false };           // target gone - drop bind
+        if (bind.side) {
+          const g = portGroups.get(wbSidePortKey(bind)) || [];
+          const i = g.findIndex(p => p.arrowId === arrowId && p.end === end);
+          return { ok: true, xy: wbSidePoint(rect, bind.side, wbSideFraction(i < 0 ? 0 : i, g.length || 1)) };
         }
-        const it = wbById.get(bind.id);
-        if (!it) return { ok: false };
-        const bb = wbItemBBox(it);
-        return { ok: true, xy: { x: bb.x + bind.ox, y: bb.y + bind.oy } };
+        return { ok: true, xy: { x: rect.x + bind.ox, y: rect.y + bind.oy } };
       };
       let changed = false;
       const next = list.map(it => {
         if (!it || it.type !== "arrow" || (!it.startBind && !it.endBind)) return it;
         let patch = null;
-        const s = resolve(it.startBind);
+        const s = resolve(it.startBind, it.id, "start");
         if (!s.ok) { patch = { ...(patch || {}), startBind: null }; }
         else if (s.xy && (Math.round(s.xy.x) !== Math.round(it.x1) || Math.round(s.xy.y) !== Math.round(it.y1))) {
           patch = { ...(patch || {}), x1: Math.round(s.xy.x), y1: Math.round(s.xy.y) };
         }
-        const en = resolve(it.endBind);
+        const en = resolve(it.endBind, it.id, "end");
         if (!en.ok) { patch = { ...(patch || {}), endBind: null }; }
         else if (en.xy && (Math.round(en.xy.x) !== Math.round(it.x2) || Math.round(en.xy.y) !== Math.round(it.y2))) {
           patch = { ...(patch || {}), x2: Math.round(en.xy.x), y2: Math.round(en.xy.y) };
@@ -53756,15 +53953,27 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             // Track cursor in world coords for "paste under cursor"
             // placement. The wrap element is the canvas viewport; pan/zoom
             // map screen → world the same way the marquee code does.
-            if (!lastCanvasCursorRef || !lastCanvasCursorRef.current) return;
             const r = e.currentTarget.getBoundingClientRect();
-            const sx = e.clientX - r.left;
-            const sy = e.clientY - r.top;
-            const worldX = (sx - pan.x) / zoom;
-            const worldY = (sy - pan.y) / zoom;
-            lastCanvasCursorRef.current.x = worldX;
-            lastCanvasCursorRef.current.y = worldY;
+            const worldX = (e.clientX - r.left - pan.x) / zoom;
+            const worldY = (e.clientY - r.top  - pan.y) / zoom;
+            if (lastCanvasCursorRef && lastCanvasCursorRef.current) {
+              lastCanvasCursorRef.current.x = worldX;
+              lastCanvasCursorRef.current.y = worldY;
+            }
+            // Arrow tool: preview the side port under the pointer BEFORE the
+            // click, so "where will this arrow start" is answered by looking
+            // rather than by drawing one and undoing it. Meta/ctrl is the
+            // no-snap override, matching alt-disables-snap on item drags.
+            if (wbModeRef.current && wbToolRef.current === "arrow"
+                && !wbDraggingRef.current && !e.buttons) {
+              const snap = (e.metaKey || e.ctrlKey)
+                ? null : wbArrowSnapAtRef.current(worldX, worldY, null, null);
+              setWbArrowSnap(prev => wbSnapSame(prev, snap) ? prev : snap);
+            } else if (wbArrowSnapRef.current) {
+              setWbArrowSnap(null);
+            }
           }}
+          onMouseLeave=${() => { if (wbArrowSnapRef.current) setWbArrowSnap(null); }}
           onContextMenu=${(e) => {
             // Right-click context menu. If the user right-clicks on
             // a node and that node isn't already in the selection, replace
@@ -53852,7 +54061,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             // Editables (in-place text editing), buttons (left-panel tools,
             // bar) and resize handles own their events.
             if (wbModeRef.current) {
-              if (e.button !== 0 || e.altKey || e.metaKey || e.ctrlKey || spaceHeld) return;
+              // Meta/ctrl normally falls through to the pan handler. The arrow
+              // tool is the one exception: meta is its "no snapping at all"
+              // modifier, and that has to work at PRESS time (where the line
+              // starts), not just mid-drag. Space / alt / middle-drag still
+              // pan while the arrow tool is armed.
+              const arrowNoSnap = wbToolRef.current === "arrow"
+                && (e.metaKey || e.ctrlKey) && !e.altKey && !spaceHeld && e.button === 0;
+              if (!arrowNoSnap && (e.button !== 0 || e.altKey || e.metaKey || e.ctrlKey || spaceHeld)) return;
               // Click-out of an active text edit: commit the text, select
               // the item, and CONSUME the click (FigJam convention - the
               // first click outside an editor never draws or marquees).
@@ -55468,6 +55684,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               editingWbLabelIdx=${editingWbLabelIdx}
               zoom=${zoom}
               ghost=${wbGhost}
+              arrowSnap=${wbArrowSnap}
               liveStrokeRef=${wbLiveStrokeRef}
               onCommitText=${(id, text, h) => {
                 const patch = { text };
@@ -91452,9 +91669,12 @@ function WorkflowTableMenu({ menu, table, onOp, onClose }) {
     <div className="canvas-ctxmenu" style=${{ left: left + "px", top: top + "px" }}>
       <div className="canvas-ctxmenu-label">Cell colour</div>
       <div className="canvas-ctxmenu-swatches">
-        <button type="button" className="workflow-wb-swatch workflow-wb-swatch-white" title="White" onClick=${() => setFill("white")}/>
+        ${/* White is a palette token now, so it rides the loop below - only
+             "none" still needs a hand-placed swatch. */ ""}
         <button type="button" className="workflow-wb-swatch workflow-wb-swatch-none" title="None" onClick=${() => setFill("none")}/>
-        ${WB_COLOR_TOKENS.map(tok => html`<button key=${tok} type="button" className="workflow-wb-swatch" title=${tok} style=${{ background: `var(--wb-${tok})` }} onClick=${() => setFill(tok)}/>`)}
+        ${WB_COLOR_TOKENS.map(tok => html`<button key=${tok} type="button"
+          className=${"workflow-wb-swatch" + (tok === "white" ? " workflow-wb-swatch-white" : "")}
+          title=${tok} style=${{ background: `var(--wb-${tok})` }} onClick=${() => setFill(tok)}/>`)}
       </div>
       ${Item("Reset cell colour", "setCellFill", { ...range, fill: "default" })}
       ${Sep()}
@@ -91477,7 +91697,7 @@ function WorkflowTableMenu({ menu, table, onOp, onClose }) {
   `, document.body);
 }
 
-function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, editingWbLabelIdx, zoom, ghost, liveStrokeRef, onCommitText, onCommitLabel, onLabelDown, onEditDone, onHandleDown, onItemDoubleClick, tableSel, onTableOp, onTableCellSelect, onTableCellMenu }) {
+function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, editingWbLabelIdx, zoom, ghost, arrowSnap, liveStrokeRef, onCommitText, onCommitLabel, onLabelDown, onEditDone, onHandleDown, onItemDoubleClick, tableSel, onTableOp, onTableCellSelect, onTableCellMenu }) {
   const sorted = useMemo(() => {
     const list = (items || []).slice();
     list.sort((a, b) => (a.z || 0) - (b.z || 0));
@@ -91535,6 +91755,24 @@ function WorkflowWhiteboardLayer({ items, selectedWbIds, editingWbId, editingWbL
             zIndex: 100001,
           }}/>
       `}
+      ${arrowSnap && (() => {
+        // Arrow side-port preview. The FILLED dot is where this endpoint
+        // lands; the hollow ones are where the endpoints already on that side
+        // slide to once it joins them. Radii divide by zoom so the dots stay a
+        // constant size on screen at any zoom.
+        const z = Math.max(zoom, 0.1);
+        const r = 5 / z, rOther = 3.5 / z, sw = 1.5 / z;
+        return html`
+          <svg className="workflow-wb-arrowsnap"
+            style=${{ overflow: "visible", position: "absolute", left: 0, top: 0, width: "1px", height: "1px", zIndex: 100003, pointerEvents: "none" }}>
+            ${(arrowSnap.others || []).map((p, i) => html`
+              <circle key=${"o" + i} cx=${p.x} cy=${p.y} r=${rOther}
+                      fill="none" stroke="var(--accent)" strokeWidth=${sw} opacity="0.55"/>
+            `)}
+            <circle cx=${arrowSnap.x} cy=${arrowSnap.y} r=${r}
+                    fill="var(--accent)" stroke="var(--surface)" strokeWidth=${sw}/>
+          </svg>`;
+      })()}
       <svg className="workflow-wb-livestroke" ref=${liveStrokeRef}
         style=${{ overflow: "visible", position: "absolute", left: 0, top: 0, width: "1px", height: "1px", zIndex: 100002, pointerEvents: "none" }}>
         <path d="" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
@@ -91613,7 +91851,9 @@ function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, s
   // Tables get their own Cell-fill row (the grid line derives from it), so keep
   // them out of the generic Color row.
   const showGenericColors = showColors && ((!hasBox && !hasTable) || hasOtherColorable);
-  const swatchRow = (cur, onPick, allowNone, leadingWhite) => html`
+  // `white` used to be a hand-placed leading swatch here (cell fill only); it
+  // is a palette token now, so it rides the loop and every row gets it.
+  const swatchRow = (cur, onPick, allowNone) => html`
     <div className="workflow-wb-swatches">
       ${allowNone && html`
         <button type="button"
@@ -91621,15 +91861,10 @@ function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, s
           title="None"
           onClick=${() => onPick("none")}/>
       `}
-      ${leadingWhite && html`
-        <button type="button"
-          className=${"workflow-wb-swatch workflow-wb-swatch-white" + (cur === "white" ? " is-active" : "")}
-          title="White"
-          onClick=${() => onPick("white")}/>
-      `}
       ${WB_COLOR_TOKENS.map(tok => html`
         <button key=${tok} type="button"
-          className=${"workflow-wb-swatch" + (cur === tok ? " is-active" : "")}
+          className=${"workflow-wb-swatch" + (tok === "white" ? " workflow-wb-swatch-white" : "")
+            + (cur === tok ? " is-active" : "")}
           title=${tok}
           style=${{ background: `var(--wb-${tok})` }}
           onClick=${() => onPick(tok)}/>
@@ -91727,7 +91962,8 @@ function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, s
           <div className="workflow-wb-swatches">
             ${WB_COLOR_TOKENS.map(tok => html`
               <button key=${tok} type="button"
-                className=${"workflow-wb-swatch" + (!hasColorableSel && pickedColor === tok ? " is-active" : "")}
+                className=${"workflow-wb-swatch" + (tok === "white" ? " workflow-wb-swatch-white" : "")
+                  + (!hasColorableSel && pickedColor === tok ? " is-active" : "")}
                 title=${tok}
                 style=${{ background: `var(--wb-${tok})` }}
                 onClick=${() => {
@@ -91744,7 +91980,7 @@ function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, s
           ${swatchRow(
             (first && first.fill) || F.fill || "white",
             (v) => { if (onFmt) onFmt({ fill: v }); if (sel.length && onPatchSelection) onPatchSelection({ fill: v }); },
-            true, true)}
+            true)}
         </div>
       `}
       ${showText && html`

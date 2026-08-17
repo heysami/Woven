@@ -9409,6 +9409,10 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
      cell tints (mixed lighter still). */
   --wb-ink:    oklch(34% 0.022 264);
   --wb-gray:   oklch(72% 0.013 264);
+  /* Paint white, not surface white: it stays literal in dark mode like the
+     hues do (ink/gray flip because they're the READING colours). Wanted for
+     text over a dark image, knocked-out labels, and plain white stickies. */
+  --wb-white:  oklch(100% 0 0);
   --wb-blue:   oklch(64% 0.146 242);
   --wb-green:  oklch(68% 0.142 158);
   --wb-yellow: oklch(85% 0.135 92);
@@ -9435,8 +9439,17 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer * {
   pointer-events: auto;
 }
+/* Overlays the user draws THROUGH, never at. Descendants are listed too: the
+   `.workflow-wb-layer *` rule above turns every child back to `auto`, so a
+   parent-only `none` would still leave the shapes inside grabbing the press
+   that was meant for the canvas - which for the arrow-snap dots means the
+   click that should start the arrow lands on its own preview. */
 .workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer .workflow-wb-ghost,
-.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer .workflow-wb-livestroke {
+.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer .workflow-wb-ghost *,
+.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer .workflow-wb-livestroke,
+.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer .workflow-wb-livestroke *,
+.workflow-wb-layer .workflow-wb-arrowsnap,
+.workflow-wb-layer .workflow-wb-arrowsnap * {
   pointer-events: none;
 }
 /* In build mode the wb layer is click-through, but the ONE item being
@@ -9489,10 +9502,13 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
     linear-gradient(to top right, transparent 44%, var(--danger) 46%, var(--danger) 54%, transparent 56%),
     var(--surface) !important;
 }
-.workflow-wb-swatch-white {
-  background: #fff !important;
-  border-color: oklch(0% 0 0 / 0.22);
-}
+/* A white swatch needs a stronger rim than the rest or it reads as a hole in
+   the row. Two classes so it beats `.workflow-wb-swatch`'s `border` shorthand,
+   which is declared LATER in this file and would otherwise reset the colour.
+   The background comes from the --wb-white token inline; this is the fallback
+   for any use that doesn't set one. */
+.workflow-wb-swatch-white { background: #fff; }
+.workflow-wb-swatch.workflow-wb-swatch-white { border-color: oklch(0% 0 0 / 0.28); }
 .workflow-wb-sticky {
   background: color-mix(in oklab, var(--wb-c, var(--wb-yellow)) 34%, oklch(99% 0.004 95));
   box-shadow: 0 1px 2px oklch(0% 0 0 / 0.08), 0 4px 12px oklch(0% 0 0 / 0.07);
