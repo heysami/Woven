@@ -23559,6 +23559,17 @@ a.ds-badge:hover, button.ds-badge:hover {
   cursor: pointer;
 }
 .runs-row:hover { background: var(--surface-2); }
+/* Unread bar. The list is ordered by CREATION time so rows hold still, which
+   means a thread no longer advertises new activity by jumping to the top -
+   this bar is what says "something happened in here" instead. An inset shadow
+   rather than a real border-left so the row's grid columns and 8px padding
+   stay exactly where they are and nothing shifts when the bar appears. */
+.runs-row[data-unread="true"] {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.runs-row[data-unread="true"] .runs-row-title {
+  font-weight: 650;
+}
 .runs-row-del {
   flex: 0 0 auto;
   display: inline-flex;

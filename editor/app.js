@@ -11873,6 +11873,62 @@ function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onOpenTas
   `;
 }
 
+/* ── runs-list read state ──────────────────────────────────────────────────
+   The list is ordered by CREATION time, so a thread no longer jumps to the top
+   the moment an agent replies to it. That ordering is stable and easy to build
+   a mental map of, but it costs the one thing activity-ordering gave for free:
+   "something happened over here". The unread bar carries that instead.
+
+   A run is unread when its `lastSeq` (from /__runs) has moved past the
+   watermark stored the last time the user actually looked at it. Watermarks
+   live per project in localStorage as { runId: seq }.
+
+   The map is SEEDED on first sight of a project, so an install that predates
+   this doesn't open with every historical run screaming unread. Only activity
+   from here on lights a row. */
+const RUNS_READ_PREFIX = "th.runs.read.";
+function runsReadKey() {
+  try { return RUNS_READ_PREFIX + (activeProjectId() || ""); }
+  catch { return RUNS_READ_PREFIX; }
+}
+function loadRunsRead() {
+  try { return JSON.parse(localStorage.getItem(runsReadKey()) || "{}") || {}; }
+  catch { return {}; }
+}
+/* Watermark every run we can currently see, but ONLY if this project has no
+   stored map at all. getItem returning null (not "{}") is precisely the
+   "never looked at this project since the feature shipped" signal. */
+function seedRunsReadIfUnseen(runs) {
+  try { if (localStorage.getItem(runsReadKey()) != null) return; } catch { return; }
+  const map = {};
+  for (const r of runs || []) {
+    if (r && r.runId) map[r.runId] = Number.isFinite(r.lastSeq) ? r.lastSeq : -1;
+  }
+  try { localStorage.setItem(runsReadKey(), JSON.stringify(map)); } catch {}
+}
+/* Stamp a run as read up to `seq`. Never moves the watermark BACKWARDS: the
+   open drawer stamps on a timer and the list stamps on click, and those two
+   carry different snapshots of the same run. Writes a fresh object (not a
+   mutation) so a `read` state holding the old one re-renders. */
+function markRunRead(runId, seq) {
+  if (!runId) return;
+  const n = Number.isFinite(seq) ? seq : -1;
+  const prev = loadRunsRead();
+  if ((prev[runId] ?? -1) >= n) return;
+  const next = { ...prev, [runId]: n };
+  try { localStorage.setItem(runsReadKey(), JSON.stringify(next)); } catch {}
+  // Lets a runs list that is on screen alongside the open thread (the
+  // popover) clear its bar without waiting for its own 2s poll.
+  try { window.dispatchEvent(new CustomEvent("woven:runs-read", { detail: { runId, seq: n } })); } catch {}
+}
+function forgetRunRead(runId) {
+  const prev = loadRunsRead();
+  if (!(runId in prev)) return;
+  const next = { ...prev };
+  delete next[runId];
+  try { localStorage.setItem(runsReadKey(), JSON.stringify(next)); } catch {}
+}
+
 /* LeftChatRunsList - the agent-runs history list (the right rail's old runs
    panel, relocated left). "+ New chat" on top, then the run rows with status
    dot / age / delete. Rendered INLINE as the left chat panel's resting state
@@ -11882,6 +11938,7 @@ function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onOpenTas
 function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
   const [runs, setRuns] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [read, setRead] = useState(loadRunsRead);
   const reload = useCallback(async () => {
     try {
       const r = await fetch(apiUrl("/__runs"));
@@ -11889,18 +11946,29 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
       const j = await r.json();
       // Filter to the active project - the daemon returns runs from every one.
       const proj = activeProjectId();
-      setRuns((j.runs || []).filter(rn => !proj || !rn.project || rn.project === proj));
+      const mine = (j.runs || []).filter(rn => !proj || !rn.project || rn.project === proj);
+      seedRunsReadIfUnseen(mine);
+      setRead(loadRunsRead());
+      setRuns(mine);
     } catch {
       setRuns([]);
     } finally {
       setLoaded(true);
     }
   }, []);
+  // The open drawer stamps its own watermark on a timer; pick that up straight
+  // away when this list is visible at the same time (the popover case).
+  useEffect(() => {
+    const on = () => setRead(loadRunsRead());
+    window.addEventListener("woven:runs-read", on);
+    return () => window.removeEventListener("woven:runs-read", on);
+  }, []);
   // Delete a run - stop it if live, then purge its chat history server-side.
   const deleteRun = useCallback(async (r) => {
     const label = r.title || r.kind || "this run";
     if (!(await uiConfirm(`Delete run "${label}"?\nThis stops it if running and removes its chat history.`))) return;
     setRuns(prev => prev.filter(x => x.runId !== r.runId));
+    forgetRunRead(r.runId);           // don't leave a watermark for a dead run
     try {
       const resp = await fetch(apiUrl(`/__run/${r.runId}/delete`), { method: "POST" });
       if (!resp.ok) {
@@ -11919,6 +11987,14 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
     const t = setInterval(reload, 2000);
     return () => clearInterval(t);
   }, [reload]);
+  // CREATION order, newest thread first. Deliberately not updatedAt: ordering
+  // by activity reshuffled the list under the user every time any agent
+  // replied, so a row was never twice in the same place. Creation order holds
+  // still; the unread bar is what says "something happened in here".
+  const ordered = useMemo(
+    () => (runs || []).slice().sort(
+      (a, b) => (b.startedAt || b.updatedAt || 0) - (a.startedAt || a.updatedAt || 0)),
+    [runs]);
   return html`
     <div className="left-chat-runs-list">
       ${onStartNewChat && html`
@@ -11935,7 +12011,11 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
       ${runs.length === 0 && html`
         <div className="runs-empty">${loaded ? "No runs yet. Click + New chat above." : "Loading…"}</div>
       `}
-      ${runs.map(r => {
+      ${ordered.map(r => {
+        // Unread = this run has produced events past the watermark we stored
+        // the last time it was on screen. A run we have never seen at all has
+        // no entry, so anything it has ever emitted counts as new.
+        const unread = (Number.isFinite(r.lastSeq) ? r.lastSeq : -1) > (read[r.runId] ?? -1);
         const isLive    = !r.done && !r.turnDone;
         const isWaiting = !r.done &&  r.turnDone;
         const intentionalStop = r.stopReason === "completed-orchestrator"
@@ -11949,7 +12029,16 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
           <div className="runs-row-wrap" key=${r.runId}>
             <button
               className="runs-row"
-              onClick=${() => { onAfterPick && onAfterPick(); onOpenRun && onOpenRun(r); }}
+              data-unread=${unread ? "true" : "false"}
+              onClick=${() => {
+                // Clear on open. The drawer keeps stamping while the thread
+                // stays on screen, so a run that keeps talking while you read
+                // it does not come back marked unread.
+                markRunRead(r.runId, r.lastSeq);
+                setRead(loadRunsRead());
+                onAfterPick && onAfterPick();
+                onOpenRun && onOpenRun(r);
+              }}
               onMouseEnter=${(e) => {
                 // Tooltip = the FULL TITLE only, and only when the title span
                 // is ellipsis-truncated - measured live so it tracks panel
@@ -15464,6 +15553,21 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // High-water mark of consumed seq ids. Persists across sseEpoch bumps so
   // re-opening the SSE doesn't replay events we've already shown.
   const lastIdRef = useRef(-1);
+  // Keep the runs-list unread watermark level with what the user has actually
+  // seen. Now that the list is ordered by creation time, the unread bar is the
+  // only "something happened here" signal, so it has to clear while a thread
+  // is being READ, not just when it is opened - otherwise a long streaming
+  // reply leaves its own row lit the moment you go back. Stamped on mount,
+  // once a second while mounted, and on the way out; lastIdRef moves on every
+  // SSE batch and is not worth a localStorage write per batch.
+  useEffect(() => {
+    const rid = run && run.runId;
+    if (!rid) return;
+    const stamp = () => markRunRead(rid, lastIdRef.current);
+    stamp();
+    const t = setInterval(stamp, 1000);
+    return () => { stamp(); clearInterval(t); };
+  }, [run && run.runId]);
   // Set of seq ids already rendered, so the hydrate-then-tail flow
   // (history fetch + live SSE) can dedupe if the jsonl flushed concurrently
   // with our read and the SSE replays an overlapping seq. Reset on cold mount.
