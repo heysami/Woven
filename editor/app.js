@@ -54817,7 +54817,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           <div className="workflow-nav-rail-sep"/>
           <${HoverTip}
             placement="right"
-            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && leftPanel === "layers" ? " is-active" : "")}
+            className=${"workflow-nav-rail-btn" + (mainView === "canvas" && !wbMode && leftPanel === "layers" ? " is-active" : "")}
             ariaLabel="Layers"
             tip="Layers - stacking order and groups"
             onClick=${() => onRailPanel("layers")}
@@ -54845,7 +54845,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           ><${Icon.Image}/><//>
         </nav>
         <div className="workflow-library-col">
-          ${leftPanel === "layers" ? html`
+          ${/* Whiteboard mode OWNS this column - its tool strip is the only way
+              to pick a tool, so it outranks every panel. Layers used to be
+              tested first, so entering whiteboard mode with Layers open flipped
+              the mode (and the rail icon) while the column kept showing Layers:
+              the whiteboard looked like it never switched, with no tool strip to
+              reach. leftPanel is deliberately left alone, so leaving whiteboard
+              mode drops back onto Layers. */ ""}
+          ${!wbMode && leftPanel === "layers" ? html`
             <${WorkflowLayersPanel}
               nodes=${data.nodes || []}
               wb=${wbItems}
@@ -55319,6 +55326,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               onConfirm=${() => convertSectionToCustomApp(convertCfg)}
             />`}
             ${(() => {
+              // Canvas-only: another position:fixed body portal, so without the
+              // mainView gate the expand session's bar floated over the
+              // prototype viewer in Preview. The session itself survives the
+              // view switch - the bar comes back with the canvas.
+              if (mainView !== "canvas") return null;
               const ex = (data.nodes || []).find(n => n.kind === "custom-app" && n._expandedSectionId);
               if (!ex) return null;
               return createPortal(html`
@@ -56663,7 +56675,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               />
             `)}
             <${WorkflowAgentBadgeLayer} nodes=${data.nodes || []} zoom=${zoom} pan=${pan} wrapRef=${wrapRef} tetherHost=${agentTetherRef} chatBusy=${chatBusy} activeProto=${data?.meta?.activePrototype || ""} workingPaths=${workingPaths} />
-            ${leftPanel === "layers" && createPortal(html`<${WorkflowLayerOptions}
+            ${/* Gated on the Layers panel being VISIBLE, not merely remembered.
+                This is a position:fixed body portal, so on leftPanel alone it
+                floated over the prototype viewer in Preview (same leak as the
+                node chrome in #wf-chrome-layer) and hung around in whiteboard
+                mode with no Layers panel beneath it. */ ""}
+            ${mainView === "canvas" && !wbMode && leftPanel === "layers" && createPortal(html`<${WorkflowLayerOptions}
               nodes=${data.nodes || []}
               wb=${wbItems}
               selectedNodeIds=${selectedNodeIds}
