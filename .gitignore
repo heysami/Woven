@@ -9,9 +9,12 @@ __pycache__/
 .trash/
 **/.trash/
 
-# Draft-mode page clones, written by the canvas-frames node's Draft button.
-# Throwaway working copies of a real screen; the dot-prefix also keeps them out
-# of hosted-share snapshots and the daemon's file watcher.
+# Draft-mode working files, written by the canvas-frames node's Draft button.
+# The page CLONE is a dot-prefixed sibling of the page it clones (same directory,
+# so the page's relative CSS / JS / images still resolve); the apply artefacts
+# (annotated raster + note payload) live in .drafts/. Both dot-prefixed forms are
+# also skipped by hosted-share snapshots and the daemon's file watcher.
+**/.draft-*.html
 **/.drafts/
 
 # Local machine-specific Claude settings

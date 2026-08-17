@@ -68025,11 +68025,26 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
         + "Discard it and draft this screen instead? Its unsaved edits are lost.");
       if (!ok) return;
     }
-    // Deterministic name, overwritten on each re-draft. Deliberate: there is no
-    // file-delete endpoint, so a stamped name would leave a new orphan behind
-    // every time. One file per screen in a gitignored dot-dir is bounded.
-    const safe = String(frameId).replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 80) || "screen";
-    const path = `source/${protoSlug}/.drafts/${safe}.html`;
+    // The clone lives in the SAME DIRECTORY as the page it clones, as a
+    // dot-prefixed sibling. This is load-bearing, not cosmetic: a page's
+    // stylesheets, scripts and images are almost always RELATIVE, so a clone one
+    // directory deeper (the obvious `.drafts/<name>.html`) resolves every one of
+    // them to a 404 and renders as unstyled text with broken images. Same
+    // directory means the bytes that render the real page render the clone, with
+    // no rewriting - and the same bytes are what Apply copies back.
+    //
+    // The dot prefix still buys what the dot-DIR did: hosted-share snapshots skip
+    // dot-prefixed FILES too, and so does the daemon's file watcher, so draft
+    // writes neither leak to a share nor strobe the node.
+    //
+    // Named after the FILE, not the frame, so the sibling rule holds however the
+    // prototype is laid out. Deterministic and overwritten on each re-draft:
+    // there is no file-delete endpoint, so a stamped name would orphan a file
+    // every time.
+    const slash = from.lastIndexOf("/");
+    const dir = from.slice(0, slash + 1);
+    const base = from.slice(slash + 1).replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 80) || "screen.html";
+    const path = `${dir}.draft-${base}`;
     let src = "";
     try {
       const u = apiUrl("/" + from);
