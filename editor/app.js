@@ -10497,6 +10497,38 @@ function shouldSkipHistoryShortcut(e) {
   return false;
 }
 
+/* clearLingeringTextSelection - collapse a text selection the browser would
+   normally have collapsed for us.
+
+   Every "click on empty canvas" path calls e.preventDefault() (to start a
+   marquee, or to consume the first click out of an inline editor). That ALSO
+   suppresses the browser's default mousedown behaviour, which is where the
+   old text selection normally dies. So text the user selected while editing a
+   whiteboard text / sticky / arrow label / doc node keeps its highlight after
+   the edit ends, and no amount of clicking on empty canvas clears it. Same
+   family as the explicit activeElement.blur() the marquee path already does.
+
+   `scopeEl` limits the clear to a selection that actually lives inside that
+   element - used when committing ONE editor, so a selection elsewhere on the
+   page is left alone. Without it the caller is the empty-canvas path, which
+   has already blurred whatever was focused; the activeElement guard is the
+   belt for that brace. */
+function clearLingeringTextSelection(scopeEl) {
+  try {
+    const s = window.getSelection();
+    if (!s || s.rangeCount === 0 || s.isCollapsed) return;
+    if (scopeEl) {
+      if (!scopeEl.contains(s.anchorNode) && !scopeEl.contains(s.focusNode)) return;
+    } else {
+      // Never nuke a selection the user is actively making inside a field.
+      const ae = document.activeElement;
+      const tag = ae ? (ae.tagName || "").toUpperCase() : "";
+      if (ae && (tag === "INPUT" || tag === "TEXTAREA" || ae.isContentEditable)) return;
+    }
+    s.removeAllRanges();
+  } catch {}
+}
+
 // Attach Cmd/Ctrl-Z (undo) and Cmd/Ctrl-Shift-Z / Cmd/Ctrl-Y (redo) globally.
 // Returns the cleanup that the calling useEffect should return.
 function attachHistoryShortcuts({ undo, redo }) {
@@ -40815,6 +40847,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         if (host && host.offsetHeight) patch.h = host.offsetHeight;
         updateWbItem(id, patch);
       }
+      // The click that got us here preventDefaults (marquee / consumed
+      // click-out), so the browser never collapses the selection the user
+      // made inside this editor. React reuses the same <div> when the
+      // contentEditable unmounts, so the highlight would survive the commit
+      // and read as "the text is still selected and won't let go".
+      clearLingeringTextSelection(el);
     }
     setEditingWbId(null);
     setEditingWbLabelIdx(null);
@@ -41626,8 +41664,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // .workflow-canvas-wrap catches every layout that moves the column edges
   // (panel open/close/resize, chat column, dock reserve, window resize -
   // all of them change the wrap's SIZE, which is what RO fires on).
+  //
+  // The same effect is the ONE chokepoint that hides that chrome outside the
+  // canvas. Preview only sets `visibility: hidden` on .workflow-canvas-wrap,
+  // so every node rect the chrome anchors to stays valid and the whole
+  // portaled family (top-action strips, select badges, asset action bars,
+  // asset control / inputs panels, the ⊕ connector-spawn buttons, the group
+  // align + convert + marker bars) kept floating over the prototype viewer.
+  // Hiding the layer covers node AND whiteboard chrome at once - the
+  // alternative is an allowlist that goes stale every time a new bar lands.
   useEffect(() => {
     const host = wfChromeHost();
+    host.style.display = mainView === "canvas" ? "" : "none";
     const sync = () => {
       const wrap = document.querySelector(".workflow-canvas-wrap");
       if (!wrap) { host.style.clipPath = ""; return; }
@@ -41647,6 +41695,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (ro) ro.disconnect();
       window.removeEventListener("resize", sync);
       host.style.clipPath = "";
+      host.style.display = "";
     };
   }, [mainView]);
   // A chat spawn / reopen (chatOpenTick bump from WorkflowCanvas) opens the
@@ -55166,6 +55215,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
             // explicitly - the deselect must end editing too.
             const ae = document.activeElement;
             if (ae && ae !== document.body && typeof ae.blur === "function") ae.blur();
+            // Same hazard one level down: preventDefault also skips the
+            // browser's default "collapse the text selection", so a
+            // just-finished inline edit (wb text / sticky / arrow label / a
+            // doc node's contentEditable) keeps its blue highlight and empty
+            // canvas clicks can never clear it. Blur alone doesn't do it.
+            clearLingeringTextSelection();
             // Stash starting coords in WORLD space. mousemove will compute
             // the rect; mouseup commits BOTH kinds (unified marquee).
             setMarquee({

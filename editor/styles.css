@@ -6061,11 +6061,20 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   margin: 0;
   overflow: hidden;
 }
-/* Body-portal'd canvas chrome (stage pill, pick toast) anchors against
-   .workflow-canvas-wrap rects, which stay valid under visibility:hidden -
-   hide them while the prototype viewer is up so they can't float over it. */
+/* Body-portal'd canvas chrome anchors against .workflow-canvas-wrap rects,
+   which stay valid under visibility:hidden - hide it while the prototype
+   viewer is up so it can't float over the preview.
+   #wf-chrome-layer is the chokepoint for everything node-anchored (top-action
+   strips, select badges, asset action bars + control/inputs panels, the ⊕
+   connector-spawn buttons, the group align / convert / marker bars): one rule
+   instead of a per-bar allowlist. WorkflowSurface hides the same layer from
+   JS on the mainView flip; this is the belt for that brace. The rest are the
+   full-viewport overlays that deliberately do NOT live in the layer. */
+body:has(.workflow-body[data-view="proto"]) #wf-chrome-layer,
 body:has(.workflow-body[data-view="proto"]) .workflow-node-stage-pill,
-body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
+body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast,
+body:has(.workflow-body[data-view="proto"]) .workflow-bulk-bar,
+body:has(.workflow-body[data-view="proto"]) .canvas-ctxmenu {
   display: none !important;
 }
 
