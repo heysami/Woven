@@ -7061,7 +7061,10 @@ function applyEditToFrame(edit) {
     const next = (typeof edit.newText === "string") ? edit.newText
                : (typeof edit.text === "string") ? edit.text
                : null;
-    if (next != null) { el.textContent = next; return true; }
+    // Via thTextSlot, so an input's value / a select's option label / an img's
+    // alt land where they belong. A blind `el.textContent = next` here was a
+    // no-op on a form control and wiped a <select>'s options.
+    if (next != null) { thTextSlot(el).set(next); return true; }
   }
   // comment - no DOM mutation; the edit is metadata only
   return true;
@@ -35545,9 +35548,25 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '    if(st){for(var k in op.styles){if(/(Mode|Fixed)$/.test(k))continue;var p=k.replace(/[A-Z]/g,function(m){return "-"+m.toLowerCase();});try{st.style.setProperty(p,op.styles[k]);}catch(_){}}}',
     '    return;',
     '  }',
+    // `op.prop` says WHERE this element's visible text lives (see thTextSlot).
+    // Absent means textContent, which is what every op recorded before this
+    // existed meant, so old edits.json keeps replaying unchanged.
     '  if(op.type==="text"){',
     '    var tt=resolveTarget(op);',
-    '    if(tt&&typeof op.text==="string"&&tt.textContent!==op.text)tt.textContent=op.text;',
+    '    if(tt&&typeof op.text==="string"){',
+    '      var pr=op.prop||"text";',
+    '      var tg=(tt.tagName||"").toLowerCase();',
+    '      if(pr==="value"){if(tt.value!==op.text){tt.value=op.text;try{tt.setAttribute("value",op.text);}catch(_){}}',
+    '        if(tg==="textarea"){try{tt.textContent=op.text;}catch(_){}}}',
+    '      else if(pr==="placeholder"){try{tt.setAttribute("placeholder",op.text);}catch(_){}}',
+    '      else if(pr==="alt"){try{tt.setAttribute("alt",op.text);}catch(_){}}',
+    '      else if(pr==="option"){var oo=tt.options&&tt.options[tt.selectedIndex>=0?tt.selectedIndex:0];',
+    '        if(oo&&oo.textContent!==op.text)oo.textContent=op.text;}',
+    // Hard guard, not just an else: writing textContent to a <select> DELETES
+    // every <option>. A legacy op recorded against a select carries no `prop`,
+    // so without this it would still empty the dropdown on replay.
+    '      else if(tg!=="select"&&tg!=="input"&&tt.textContent!==op.text)tt.textContent=op.text;',
+    '    }',
     '    return;',
     '  }',
     '  var el=$(op.selector);if(!el)return;',
@@ -52533,7 +52552,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           zoomBeginInlineEdit(el, () => {
             try {
               api.stageInspectorEdit(ifr, doc, Object.assign({
-                type: "text", selector: preSel, text: el.textContent || "",
+                type: "text", selector: preSel,
+                // Read back from the SAME slot the edit was written to, and
+                // record which one, so the replay does not fall back to
+                // textContent on an input / select.
+                text: thTextSlot(el).get(), prop: thTextSlot(el).prop,
               }, preMeta || {}));
               api.flashPickOp && api.flashPickOp("ok", "Text edited - Save to persist");
             } catch {}
@@ -60417,7 +60440,8 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
         const preSel  = elementPatchSelector(el);
         zoomBeginInlineEdit(el, () => {
           recordOp("Updated text (unsaved)", editSnap, Object.assign({
-            type: "text", selector: preSel, text: el.textContent || "",
+            type: "text", selector: preSel,
+            text: thTextSlot(el).get(), prop: thTextSlot(el).prop,
           }, preMeta));
         });
       };
@@ -62039,11 +62063,70 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   `, document.body);
 }
 
+/* Edit text that does NOT live in textContent - see thTextSlot. Two shapes,
+   because there are only two honest ones:
+
+     • input / textarea - the control is already a text editor, so drive it
+       directly (focus, select-all, commit on blur) instead of flipping
+       contenteditable, which such a control ignores. For a placeholder slot
+       the field is prefilled with the current placeholder and the committed
+       text is written back to the placeholder, not left as a value, so the
+       field goes back to reading as empty.
+     • select / img - nothing about a rendered <select> or <img> can be typed
+       into, so ask for the new label through the app's own prompt.
+
+   Same contract as zoomBeginInlineEdit: onCommitSave() fires only when the
+   text actually changed, and Escape restores. */
+function zoomBeginSlotEdit(el, slot, onCommitSave) {
+  const tag = (el.tagName || "").toLowerCase();
+  const before = slot.get();
+  if (tag === "input" || tag === "textarea") {
+    const hadValue = el.value;
+    if (slot.prop === "placeholder") el.value = before;   // tweak, don't retype
+    try { el.focus(); el.select && el.select(); } catch {}
+    let cancelled = false;
+    const cleanup = () => {
+      el.removeEventListener("blur", onBlur);
+      el.removeEventListener("keydown", onKey);
+    };
+    const onBlur = () => {
+      cleanup();
+      const typed = el.value;
+      if (slot.prop === "placeholder") el.value = hadValue;  // never strand a value
+      if (cancelled) { if (slot.prop !== "placeholder") el.value = hadValue; return; }
+      if (typed === before) return;
+      slot.set(typed);
+      onCommitSave && onCommitSave();
+    };
+    const onKey = (ke) => {
+      if (ke.key === "Escape") { cancelled = true; el.blur(); }
+      // A textarea keeps Enter for newlines; a single-line input commits on it.
+      if (ke.key === "Enter" && !ke.shiftKey && tag === "input") { ke.preventDefault(); el.blur(); }
+    };
+    el.addEventListener("blur", onBlur);
+    el.addEventListener("keydown", onKey);
+    return;
+  }
+  const label = slot.prop === "option" ? "Edit the selected option's label:"
+              : slot.prop === "alt"    ? "Edit the image's alt text:"
+              : "Edit text:";
+  (async () => {
+    let next;
+    try { next = await uiPrompt(label, before); } catch { next = null; }
+    if (next == null || next === before) return;
+    slot.set(next);
+    onCommitSave && onCommitSave();
+  })();
+}
+
 /* Inline-text editing helper. Flips contenteditable on the picked element,
    wires blur/Enter commits and Escape cancel. Restores the original text on
-   cancel; calls onCommit(newText) on save. */
+   cancel; calls onCommit(newText) on save. Elements whose visible text is not
+   textContent are handed to zoomBeginSlotEdit above. */
 function zoomBeginInlineEdit(el, onCommitSave) {
   if (!el) return;
+  const slot = thTextSlot(el);
+  if (slot.prop !== "text") return zoomBeginSlotEdit(el, slot, onCommitSave);
   const original = el.innerHTML;
   el.setAttribute("contenteditable", "true");
   el.setAttribute("spellcheck", "false");
@@ -62084,6 +62167,68 @@ function zoomBeginInlineEdit(el, onCommitSave) {
    reverted on the next React render). When it doesn't, the text is a hardcoded
    literal and the caller drops into inline contenteditable. */
 function thNormText(s) { return (s || "").replace(/\s+/g, " ").trim(); }
+
+/* Where an element's VISIBLE text actually lives.
+
+   For most elements that is textContent, but a form control renders its
+   `value` (or, when the field is empty, its `placeholder`), a <select> renders
+   the selected <option>'s label, and an <img> renders its `alt`. The text
+   tooling used to read and write textContent unconditionally, which made every
+   one of those un-editable in three separate places: thNeedleFor returned ""
+   so the double-click gate bailed before opening an editor, zoomBeginInlineEdit
+   flipped contenteditable on a control that ignores it (so typing moved .value,
+   innerHTML never changed, and the commit was silently dropped on blur), and
+   the durable replay wrote textContent - a no-op on an input, and destructive
+   on a <select>, where it deletes every <option>.
+
+   Returns { prop, get, set }. `prop` rides along on the recorded text op so the
+   replay writes back to the same place it was read from; ops with no `prop`
+   predate this and mean "textContent", which keeps old edits.json working. */
+const TH_TEXTUAL_INPUT_TYPES = new Set([
+  "", "text", "search", "email", "url", "tel", "password", "number",
+  "date", "time", "month", "week", "datetime-local",
+]);
+function thTextSlot(el) {
+  const plain = {
+    prop: "text",
+    get: () => (el && el.textContent) || "",
+    set: (v) => { if (el) el.textContent = v; },
+  };
+  if (!el || !el.tagName) return plain;
+  const tag = el.tagName.toLowerCase();
+  if (tag === "textarea") {
+    // Set BOTH: .value is what the control shows once it is dirty, textContent
+    // is what outerHTML serializes into the saved source.
+    return { prop: "value", get: () => el.value || "",
+             set: (v) => { el.value = v; try { el.textContent = v; } catch {} } };
+  }
+  if (tag === "input") {
+    const type = (el.getAttribute("type") || "").toLowerCase();
+    // checkbox / radio / file / range / color / submit have no editable text.
+    if (!TH_TEXTUAL_INPUT_TYPES.has(type)) return plain;
+    if ((el.value || "") !== "" || !el.getAttribute("placeholder")) {
+      // Set the attribute too, else the edit is invisible to outerHTML and
+      // does not survive being written back to source.
+      return { prop: "value", get: () => el.value || "",
+               set: (v) => { el.value = v; try { el.setAttribute("value", v); } catch {} } };
+    }
+    // Empty field: the placeholder IS the visible text, so that is what an
+    // edit should change.
+    return { prop: "placeholder", get: () => el.getAttribute("placeholder") || "",
+             set: (v) => { try { el.setAttribute("placeholder", v); } catch {} } };
+  }
+  if (tag === "select") {
+    const opt = () => (el.options || [])[el.selectedIndex >= 0 ? el.selectedIndex : 0];
+    return { prop: "option",
+             get: () => { const o = opt(); return o ? (o.textContent || "") : ""; },
+             set: (v) => { const o = opt(); if (o) o.textContent = v; } };
+  }
+  if (tag === "img") {
+    return { prop: "alt", get: () => el.getAttribute("alt") || "",
+             set: (v) => { try { el.setAttribute("alt", v); } catch {} } };
+  }
+  return plain;
+}
 function thEscapeRegExp(s) { return (s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
 // Tightest meaningful text for the clicked element - prefer the element's own
@@ -62095,6 +62240,12 @@ function thNeedleFor(el) {
   try { for (const n of el.childNodes) if (n.nodeType === 3) direct += n.nodeValue; } catch {}
   direct = thNormText(direct);
   if (direct.length >= 2) return direct;
+  // A form control has no child text at all, and a <select>'s textContent is
+  // every option run together ("AccountancyFinance"). Ask thTextSlot where the
+  // visible text really is before concluding there is none - returning "" here
+  // is what made the double-click gate ignore inputs entirely.
+  const slot = thTextSlot(el);
+  if (slot.prop !== "text") return thNormText(slot.get()).slice(0, 240);
   return thNormText(el.textContent).slice(0, 240);
 }
 
