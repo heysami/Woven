@@ -1511,19 +1511,32 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
       if (!doc || installed.has(doc)) return;
       const onWheel = (e) => {
         if (!(e.ctrlKey || e.metaKey)) return;
-        const win = doc.defaultView;
-        const frame = win && win.frameElement;
-        if (!frame) return;
-        const fr = frame.getBoundingClientRect();
-        // Inner→host coord conversion. The iframe may be CSS-scaled by
-        // its parent (workflow node's scale-to-fit transform), so derive
-        // the scale from rendered-width / layout-width.
-        const cw = frame.clientWidth || frame.offsetWidth || fr.width || 1;
-        const ch = frame.clientHeight || frame.offsetHeight || fr.height || 1;
-        const sx = fr.width  > 0 ? fr.width  / cw : 1;
-        const sy = fr.height > 0 ? fr.height / ch : 1;
-        const clientX = fr.left + e.clientX * sx;
-        const clientY = fr.top  + e.clientY * sy;
+        // Inner→host coord conversion, one hop per iframe boundary. The frame
+        // may be CSS-scaled by its parent (a workflow node's scale-to-fit
+        // transform, or the whole workflow canvas transform), so each hop
+        // derives its scale from rendered-width / layout-width. Looping to the
+        // window that owns `wrap` is what makes a gesture inside a NESTED doc
+        // (an editor frame inside the canvas-frames embed) land on the right
+        // world point instead of anchoring the zoom somewhere else entirely.
+        const hostWin = wrap.ownerDocument && wrap.ownerDocument.defaultView;
+        let clientX = e.clientX, clientY = e.clientY;
+        let w = doc.defaultView;
+        try {
+          let hops = 0;
+          while (w && w !== hostWin && hops++ < 4) {
+            const frame = w.frameElement;
+            if (!frame) return;
+            const fr = frame.getBoundingClientRect();
+            const cw = frame.clientWidth || frame.offsetWidth || fr.width || 1;
+            const ch = frame.clientHeight || frame.offsetHeight || fr.height || 1;
+            const sx = fr.width  > 0 ? fr.width  / cw : 1;
+            const sy = fr.height > 0 ? fr.height / ch : 1;
+            clientX = fr.left + clientX * sx;
+            clientY = fr.top  + clientY * sy;
+            w = frame.ownerDocument && frame.ownerDocument.defaultView;
+          }
+        } catch { return; }
+        if (w !== hostWin) return;
         e.preventDefault();
         e.stopPropagation();
         wrap.dispatchEvent(new WheelEvent("wheel", {
@@ -1536,20 +1549,35 @@ function useEndlessCanvas(initial = { x: 80, y: 80, z: 0.45 }, { letSelectedScro
       try { doc.addEventListener("wheel", onWheel, { passive: false }); } catch { return; }
       installed.set(doc, onWheel);
     };
+    const attach = (f) => {
+      let doc; try { doc = f.contentDocument; } catch { return null; }
+      if (doc) installOn(doc);
+      // Re-attach on every (re)load - iframe swaps its contentDocument
+      // when src changes, and the new doc has no listener yet.
+      if (!f.__thWheelForward) {
+        f.__thWheelForward = () => {
+          let d; try { d = f.contentDocument; } catch { return; }
+          installOn(d);
+        };
+        f.addEventListener("load", f.__thWheelForward);
+      }
+      return doc;
+    };
     const scanFrames = () => {
       const frames = wrap.querySelectorAll("iframe");
       for (const f of frames) {
-        let doc; try { doc = f.contentDocument; } catch { continue; }
-        if (doc) installOn(doc);
-        // Re-attach on every (re)load - iframe swaps its contentDocument
-        // when src changes, and the new doc has no listener yet.
-        if (!f.__thWheelForward) {
-          f.__thWheelForward = () => {
-            let d; try { d = f.contentDocument; } catch { return; }
-            installOn(d);
-          };
-          f.addEventListener("load", f.__thWheelForward);
-        }
+        const doc = attach(f);
+        // One level DEEPER, for the surfaces that nest an iframe inside an
+        // iframe - the canvas-frames node embeds the whole editor, whose own
+        // frames are iframes again. A zoom gesture over one of those has to
+        // climb out through BOTH boundaries or it dies inside the embed and
+        // the workflow canvas reads as frozen. Same-origin only (the try in
+        // attach swallows anything else), and only one level: that is the
+        // depth the editor actually nests to.
+        if (!doc) continue;
+        let inner = [];
+        try { inner = Array.from(doc.querySelectorAll("iframe")); } catch { inner = []; }
+        for (const g of inner) attach(g);
       }
     };
     scanFrames();
@@ -1691,7 +1719,7 @@ function useDsProposalIndex() {
 }
 
 /* ────────── Frame ────────── */
-function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onStartArrow, arrowFromId, onCompleteArrow, edits, strokes, onAddStroke, rearrangeDrag, onRearrangeMouseDown, gridMeta, rearrangeSelected, auditCount, sectionShift, live = true }) {
+function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onStartArrow, arrowFromId, onCompleteArrow, edits, strokes, onAddStroke, rearrangeDrag, onRearrangeMouseDown, gridMeta, rearrangeSelected, auditCount, sectionShift, live = true, draft = null }) {
   const captureActive = !!tool && tool !== "draw" && tool !== "rearrange";  // draw / rearrange use their own overlays
   const drawActive = tool === "draw";
   const rearrangeActive = tool === "rearrange";
@@ -1802,6 +1830,7 @@ function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onSta
     <div
       className="frame"
       data-frame-id=${frame.id}
+      data-draft=${draft ? "true" : undefined}
       data-selected=${selected}
       data-dimmed=${dimmed}
       data-rearrangeable=${rearrangeActive}
@@ -1855,12 +1884,25 @@ function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onSta
           ? html`<div className="frame-body-dormant" aria-hidden="true"></div>`
           : html`<iframe
               ref=${iframeRef}
-              src=${withProjectQuery(resolveEntry(frame.entry), "t=" + EDITOR_SESSION) + hashOf(frame.hash)}
+              src=${draft
+                // Draft mode: this frame shows its own editable CLONE, not the
+                // real page. `draft.path` is project-root-relative (that's what
+                // /__html_save and /__component_export take); the editor doc
+                // lives at editor/index.html, so "../" lands it back at the
+                // project root. withProjectQuery makes it absolute + carries
+                // ?project=, and resolveIframePath reads it straight back off
+                // contentWindow.location - so the whole staged-ops → Save chain
+                // targets the draft file with no extra plumbing.
+                ? withProjectQuery("../" + draft.path, "t=" + EDITOR_SESSION)
+                : withProjectQuery(resolveEntry(frame.entry), "t=" + EDITOR_SESSION) + hashOf(frame.hash)}
+              data-draft-id=${draft ? draft.id : undefined}
               title=${frame.label}
               sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock"
-              style=${{ pointerEvents: selected && !rearrangeActive ? "auto" : "none" }}
+              style=${{ pointerEvents: draft || (selected && !rearrangeActive) ? "auto" : "none" }}
             />`}
-        ${HAS_SOURCE && !selected && !captureActive && !rearrangeActive && html`
+        ${/* A drafted frame is the one surface in the embed the user edits
+            directly, so nothing may sit over its iframe. */ ""}
+        ${HAS_SOURCE && !draft && !selected && !captureActive && !rearrangeActive && html`
           <div className="frame-click-target" onClick=${(e) => {
             e.stopPropagation();
             if (arrowFromId) { onCompleteArrow && onCompleteArrow(frame.id); return; }
@@ -7405,6 +7447,22 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
       setLiveFrameIds(Array.isArray(ids) ? new Set(ids) : null);
     return () => { try { delete window.__wovenSetFrameVisibility; } catch { window.__wovenSetFrameVisibility = undefined; } };
   }, [_embedNoInteract]);
+  // ── Draft mode (Canvas-frames embed only) ────────────────────────────
+  // A drafted frame shows an editable CLONE of its page instead of the real
+  // page: the user picks / edits / pastes inside it and annotates it from the
+  // outer whiteboard, then Apply pushes the result at the real screen. The
+  // embed has no toolbar (embedMode strips it), so draft state is owned by the
+  // OUTER canvas-frames node and pushed in here over the same same-origin RPC
+  // channel the virtualizer uses. Shape: { frameId: { id, path } } where `id`
+  // is "<nodeId>:<frameId>" (the pick-mode host key) and `path` is the clone's
+  // project-relative path. `null` = nothing drafted, the default.
+  const [draftFrames, setDraftFrames] = useState(null);
+  useEffect(() => {
+    if (!_embedNoInteract) return;
+    window.__wovenSetDraftFrames = (map) =>
+      setDraftFrames(map && typeof map === "object" && Object.keys(map).length ? map : null);
+    return () => { try { delete window.__wovenSetDraftFrames; } catch { window.__wovenSetDraftFrames = undefined; } };
+  }, [_embedNoInteract]);
   const [popoverAt, setPopoverAt] = useState(null);
   // Live grid metrics - pulled from the *model* so size + gap edits flow
   // through immediately. Every gridXY/snapToCell/gridCellSize call below
@@ -8091,7 +8149,9 @@ function CanvasView({ model, tool, setTool, edits, setEdits, layoutEdits, setLay
           <${Frame}
             key=${f.id}
             frame=${f}
-            live=${!liveFrameIds || liveFrameIds.has(f.id) || selected === f.id}
+            draft=${(draftFrames && draftFrames[f.id]) || null}
+            ${/* A drafted frame is never culled - it holds unsaved edits. */ ""}
+            live=${!liveFrameIds || liveFrameIds.has(f.id) || selected === f.id || !!(draftFrames && draftFrames[f.id])}
             selected=${selected === f.id}
             dimmed=${connectedFrames && !connectedFrames.has(f.id)}
             tool=${tool}
@@ -34532,7 +34592,24 @@ async function workflowCaptureProtoRaster(protoId) {
 function workflowBoundTo(o) {
   if (o && o.sec && o.sec.sectionId) return o.sec.sectionId;
   if (o && o.cell && o.cell.tableId) return o.cell.tableId;
+  // A draft binding names the PAGE, but the thing that moves on the canvas is
+  // the canvas-frames node the page is embedded in - so that node is the host.
+  // This is what makes annotations ride along when the node is dragged, and
+  // what the cycle guard walks.
+  if (o && o.draft && o.draft.nodeId) return o.draft.nodeId;
   return null;
+}
+/* Live world rect of a drafted page, keyed "<nodeId>:<frameId>". Registered by
+   the canvas-frames node from a MEASUREMENT through its embed - a draft is not
+   a node, so its rect exists nowhere in the persisted doc and can't be derived
+   from it. Absent while the node is LOD-veiled or the embed is still booting,
+   which callers must read as "unknown", never as "gone". */
+function workflowDraftRect(binding) {
+  if (!binding || !binding.nodeId || !binding.frameId) return null;
+  try {
+    const m = window.__thDraftRects;
+    return (m && m.get(binding.nodeId + ":" + binding.frameId)) || null;
+  } catch { return null; }
 }
 // True when `containerId` appears anywhere up `start`'s binding chain - the
 // cycle guard that keeps A-inside-B-inside-A unrepresentable, and lets the
@@ -34843,6 +34920,24 @@ function workflowPickDropContainer(nodes, bb, excludeIds, opts) {
   const order = opts && opts.order;
   const byId = new Map((nodes || []).map(n => [n.id, n]));
   const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
+  // A DRAFTED PAGE outranks every other container. It is drawn inside a
+  // canvas-frames node's body, so anything dropped over it is unambiguously on
+  // top of that page - and the whole point of drawing on a draft is that the
+  // mark belongs to the screen, not to whatever band the node happens to sit
+  // in. Checked first and returned immediately for that reason.
+  for (const n of (nodes || [])) {
+    if (!n || n.kind !== "frames" || !n.drafts) continue;
+    if (excludeIds && excludeIds.has(n.id)) continue;
+    for (const frameId of Object.keys(n.drafts)) {
+      const r = workflowDraftRect({ nodeId: n.id, frameId });
+      if (!r) continue;                       // not measured yet - not "absent"
+      if (cx < r.x || cy < r.y || cx > r.x + r.w || cy > r.y + r.h) continue;
+      return { draft: {
+        nodeId: n.id, frameId,
+        ox: Math.round(bb.x - r.x), oy: Math.round(bb.y - r.y),
+      } };
+    }
+  }
   const excluded = (n) => {
     if (excludeIds && excludeIds.has(n.id)) return true;
     if (excludeIds) {
@@ -35489,6 +35584,119 @@ function scanIframeAssets(doc, opts) {
    Iframe must be same-origin (the daemon serves source/<slug>/ files
    from its own origin, so prototype iframes qualify). For sandboxed
    iframes with allow-same-origin we read contentDocument directly. */
+/* ── Pick-mode host resolution ────────────────────────────────────────────
+   Pick mode installs into iframes carrying an owner attribute. Three of those
+   (`data-prototype-id`, `data-asset-id`, `data-browser-id`) sit in the TOP
+   document, one level of nesting deep. The fourth (`data-draft-id`, a drafted
+   page inside a canvas-frames node) sits TWO levels deep - inside the embedded
+   editor's own document - so a plain `document.querySelector` cannot see it and
+   a raw getBoundingClientRect on it is in the EMBED's viewport, not the screen.
+   These three helpers are the single place that knows the difference; every
+   discovery sweep, host lookup and chrome-positioning tick goes through them
+   instead of re-spelling the selector inline. */
+const WF_PICK_HOST_SELECTOR =
+  'iframe[data-prototype-id], iframe[data-asset-id], iframe[data-browser-id], iframe[data-draft-id]';
+
+function wfPickHostIframes() {
+  const out = Array.from(document.querySelectorAll(WF_PICK_HOST_SELECTOR));
+  // One level deeper, for drafted pages living inside a canvas-frames embed.
+  for (const embed of document.querySelectorAll("iframe.workflow-node-iframe")) {
+    let doc;
+    try { doc = embed.contentDocument; } catch { continue; }   // cross-origin
+    if (!doc) continue;
+    try { out.push(...doc.querySelectorAll("iframe[data-draft-id]")); } catch {}
+  }
+  return out;
+}
+
+function wfPickHostId(ifr) {
+  if (!ifr || !ifr.getAttribute) return "";
+  return ifr.getAttribute("data-prototype-id")
+      || ifr.getAttribute("data-asset-id")
+      || ifr.getAttribute("data-browser-id")
+      || ifr.getAttribute("data-draft-id")
+      || "";
+}
+
+function wfFindPickHost(id) {
+  if (!id) return null;
+  const esc = (window.CSS && CSS.escape) ? CSS.escape(id) : id;
+  const sel = `iframe[data-prototype-id="${esc}"], iframe[data-asset-id="${esc}"], `
+            + `iframe[data-browser-id="${esc}"], iframe[data-draft-id="${esc}"]`;
+  const top = document.querySelector(sel);
+  if (top) return top;
+  for (const embed of document.querySelectorAll("iframe.workflow-node-iframe")) {
+    let doc;
+    try { doc = embed.contentDocument; } catch { continue; }
+    if (!doc) continue;
+    try {
+      const hit = doc.querySelector(sel);
+      if (hit) return hit;
+    } catch {}
+  }
+  return null;
+}
+
+/* Cheap FNV-1a over a string. Only ever compared against itself - the draft
+   flow uses it to answer "did the file this draft was forked from change". */
+function wfHashText(s) {
+  let h = 0x811c9dc5;
+  const str = String(s || "");
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h.toString(16);
+}
+
+/* Is this pick host still usable? `document.body.contains(ifr)` was the old
+   test, and it is FALSE for a nested draft iframe purely because that iframe
+   lives in the embed's document - which made every recovery path treat a
+   perfectly live draft as detached. `isConnected` asks the right question (am I
+   in MY OWN document's tree) at every nesting level. */
+function wfPickHostAlive(ifr) {
+  if (!ifr || !ifr.isConnected) return false;
+  try { return !!ifr.contentDocument; } catch { return false; }
+}
+
+/* Screen rect of a pick host, composing every iframe boundary between it and
+   the top document (offset + CSS scale per hop). For a top-level host this is
+   getBoundingClientRect unchanged; for a nested draft it is the difference
+   between chrome landing on the page and chrome landing somewhere else
+   entirely. Returns null when the chain can't be walked (cross-origin, or the
+   iframe was detached mid-tick) so callers hide their chrome rather than
+   drawing it at a wrong place. */
+function wfPickHostRect(ifr) {
+  if (!ifr) return null;
+  let box;
+  try {
+    const r = ifr.getBoundingClientRect();
+    box = { left: r.left, top: r.top, width: r.width, height: r.height };
+  } catch { return null; }
+  try {
+    let w = ifr.ownerDocument && ifr.ownerDocument.defaultView;
+    let hops = 0;
+    while (w && w !== window && hops++ < 4) {
+      const frame = w.frameElement;
+      if (!frame) return null;
+      const fr = frame.getBoundingClientRect();
+      const cw = frame.clientWidth || fr.width || 1;
+      const ch = frame.clientHeight || fr.height || 1;
+      const sx = fr.width  > 0 ? fr.width  / cw : 1;
+      const sy = fr.height > 0 ? fr.height / ch : 1;
+      box = {
+        left:   fr.left + box.left * sx,
+        top:    fr.top  + box.top  * sy,
+        width:  box.width  * sx,
+        height: box.height * sy,
+      };
+      w = frame.ownerDocument && frame.ownerDocument.defaultView;
+    }
+    if (w !== window) return null;
+  } catch { return null; }
+  return { ...box, right: box.left + box.width, bottom: box.top + box.height };
+}
+
 function installPickOverlay(iframeEl, onPick) {
   if (!iframeEl) return null;
   let doc;
@@ -37748,10 +37956,11 @@ function WorkflowPickedElementActionBar({ pickedElement, pickerIframeRef, picked
     if (!hostNodeId) { setRect(null); return; }
     let raf = 0; let last = null;
     const tick = () => {
-      const sel = 'iframe[data-prototype-id="' + hostNodeId + '"], iframe[data-asset-id="' + hostNodeId + '"], iframe[data-browser-id="' + hostNodeId + '"]';
-      const ifr = document.querySelector(sel);
-      if (ifr) {
-        const r = ifr.getBoundingClientRect();
+      // wfPickHostRect, not getBoundingClientRect: a drafted page inside a
+      // canvas-frames node is two iframes deep, and its own rect is in the
+      // EMBED's viewport - using it raw would park this bar off the page.
+      const r = wfPickHostRect(wfFindPickHost(hostNodeId));
+      if (r) {
         if (!last || last.top !== r.top || last.left !== r.left
             || last.width !== r.width || last.height !== r.height) {
           last = { top: r.top, left: r.left, width: r.width, height: r.height,
@@ -38065,8 +38274,13 @@ function WorkflowNodeStagePill({ nodeId }) {
     if (pendingCount <= 0) { setRect(null); return; }
     let raf = 0;
     let last = null;
+    // A drafted page's host id is "<nodeId>:<frameId>" - there is no node
+    // element by that name, so anchor to the canvas-frames node that owns the
+    // draft. Without this the pill falls back to the wrap's corner, which is
+    // reachable but reads as unrelated to the page being edited.
+    const anchorId = nodeId.includes(":") ? nodeId.split(":")[0] : nodeId;
     const tick = () => {
-      const node = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
+      const node = document.querySelector('.workflow-node[data-node-id="' + anchorId + '"]');
       if (node) {
         const r = node.getBoundingClientRect();
         if (!last || last.top !== r.top || last.right !== r.right
@@ -38566,9 +38780,8 @@ function runSendToFigmaForNode(nodeId, nodeLabel, opts) {
 
 function findRenderedNodeIframe(nodeId) {
   const esc = (window.CSS && CSS.escape) ? CSS.escape(nodeId) : nodeId;
-  return document.querySelector(
-    `iframe[data-prototype-id="${esc}"], iframe[data-asset-id="${esc}"], .frame[data-frame-id="${esc}"] iframe`
-  );
+  return wfFindPickHost(nodeId)
+    || document.querySelector(`.frame[data-frame-id="${esc}"] iframe`);
 }
 
 function FigmaSendModal({ nodeId, nodeLabel, selector, onClose }) {
@@ -40562,6 +40775,23 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   }, [wbMode]);
   const [wbTool, setWbTool] = useState("select");   // select|text|textbox|sticky|sticker|pen|shape|arrow
   const wbToolRef = useRef("select"); wbToolRef.current = wbTool;
+  // Mirror the armed drawing tool onto <body> so decoupled surfaces can read it
+  // without prop plumbing (same convention as data-canvas-interacting and
+  // data-wf-multi-select). The canvas-frames node needs it for one decision:
+  // a DRAFTED page is pointer-interactive so it can be edited, which means it
+  // also swallows every pointer event the whiteboard tools need. With a drawing
+  // tool armed the draft steps out of the way so the mark lands on the canvas
+  // and binds to the page; with the select tool it takes the pointer back.
+  useEffect(() => {
+    const armed = wbMode && wbTool && wbTool !== "select" ? wbTool : "";
+    try {
+      if (armed) document.body.setAttribute("data-wf-wb-tool", armed);
+      else document.body.removeAttribute("data-wf-wb-tool");
+      window.__thWbTool = armed;
+      window.dispatchEvent(new CustomEvent("th:wb-tool-changed", { detail: { tool: armed } }));
+    } catch {}
+    return () => { try { document.body.removeAttribute("data-wf-wb-tool"); window.__thWbTool = ""; } catch {} };
+  }, [wbMode, wbTool]);
   // Current emoji for the sticker tool (FigJam-style stamp). Click an emoji in
   // the tools palette to arm it; the next canvas click drops that sticker.
   const [wbStickerEmoji, setWbStickerEmoji] = useState("⭐");
@@ -42951,6 +43181,17 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // Strip a cell binding off a wb item / node (returns a fresh object).
   const wbStripCell = (o) => { const { cell, ...rest } = o; return rest; };
 
+  // A draft rect can be RE-MEASURED without the doc changing at all (the embed
+  // re-fit, the frame grid moved, the node came back from LOD). data.wb and
+  // data.nodes are identical then, so the reconcile below would never fire and
+  // annotations would sit at the page's old place. This tick is its wake-up.
+  const [draftRectTick, setDraftRectTick] = useState(0);
+  useEffect(() => {
+    const on = () => setDraftRectTick(t => t + 1);
+    window.addEventListener("th:draft-rects-changed", on);
+    return () => window.removeEventListener("th:draft-rects-changed", on);
+  }, []);
+
   // Cell-binding reconcile. Whenever wb items / nodes change, re-pin every
   // cell-bound entity to its table cell's top-left + stored (ox,oy). This is
   // what slides "surrounding cells' items" when a row/column is resized,
@@ -42961,8 +43202,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   useEffect(() => {
     const nodes = data.nodes;
     if (!Array.isArray(nodes)) return;
-    const hasBound = (data.wb || []).some(it => it && (it.cell || it.sec))
-      || nodes.some(n => n && (n.cell || n.sec));
+    const hasBound = (data.wb || []).some(it => it && (it.cell || it.sec || it.draft))
+      || nodes.some(n => n && (n.cell || n.sec || n.draft));
     if (!hasBound) return;
     setData(d => {
       const list = Array.isArray(d.wb) ? d.wb : [];
@@ -42972,6 +43213,22 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // binding whose section was deleted.
       const sById = new Map((d.nodes || []).filter(n => n.kind === "section").map(s => [s.id, s]));
       const stripSec = (o) => { const { sec, ...rest } = o; return rest; };
+      // Draft bindings. The AUTHORITY for "does this draft still exist" is the
+      // persisted node.drafts map, never the measured rect registry: the rect
+      // is absent whenever the node is LOD-veiled or its embed is mid-reload,
+      // and clearing on that would silently throw away the user's annotations.
+      // The rect is used only to RE-PIN, and only when it is actually known.
+      const stripDraft = (o) => { const { draft, ...rest } = o; return rest; };
+      const draftLives = (b) => {
+        if (!b || !b.nodeId || !b.frameId) return false;
+        const host = (d.nodes || []).find(n => n && n.id === b.nodeId && n.kind === "frames");
+        return !!(host && host.drafts && host.drafts[b.frameId]);
+      };
+      const draftTarget = (b) => {
+        const r = workflowDraftRect(b);
+        if (!r) return undefined;              // unknown, so leave it where it is
+        return { x: Math.round(r.x + (b.ox || 0)), y: Math.round(r.y + (b.oy || 0)) };
+      };
       // Skip items being HAND-dragged (so reconcile doesn't fight them). But
       // when a TABLE is the thing being dragged, its bound items must follow
       // even if they happen to be selected - so don't skip then.
@@ -42998,6 +43255,13 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const nextWb = list.map(it => {
         if (!it) return it;
         if (it.sec && !sById.has(it.sec.sectionId)) { changed = true; it = stripSec(it); }
+        if (it.draft) {
+          if (!draftLives(it.draft)) { changed = true; it = stripDraft(it); }
+          else if (!(skipWb && skipWb.has(it.id))) {
+            const tg = draftTarget(it.draft);
+            if (tg && (it.x !== tg.x || it.y !== tg.y)) { changed = true; it = { ...it, x: tg.x, y: tg.y }; }
+          }
+        }
         if (!it.cell) return it;
         if (skipWb && skipWb.has(it.id)) return it;
         if (!tById.has(it.cell.tableId)) { changed = true; return wbStripCell(it); }
@@ -43008,6 +43272,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const nextNodes = (d.nodes || []).map(n => {
         if (!n) return n;
         if (n.sec && !sById.has(n.sec.sectionId)) { changed = true; n = stripSec(n); }
+        // Nodes do not bind to drafts by design (a workflow node parked on a
+        // page has no meaning in the apply payload), but a stale binding from a
+        // hand-edited doc is cleared rather than left to confuse the reconcile.
+        if (n.draft) { changed = true; n = stripDraft(n); }
         if (!n.cell) return n;
         if (n.id === activeDragId) return n;
         if (skipNode && skipNode.has(n.id)) return n;
@@ -43018,7 +43286,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       });
       return changed ? { ...d, wb: nextWb, nodes: nextNodes } : d;
     });
-  }, [data.wb, data.nodes, setData]);
+  }, [data.wb, data.nodes, draftRectTick, setData]);
 
   // (Re)bind DROPPED wb items + nodes to the visually-topmost container now
   // under their centre - a table cell or a section frame - or unbind them if
@@ -43029,27 +43297,34 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setData(d => {
       const list = Array.isArray(d.wb) ? d.wb : [];
       const nodes = d.nodes || [];
-      if (!nodes.some(n => n && (n.kind === "table" || n.kind === "section"))) return d;
+      if (!nodes.some(n => n && (n.kind === "table" || n.kind === "section"
+            || (n.kind === "frames" && n.drafts && Object.keys(n.drafts).length)))) return d;
       // Everything in the dragged set is excluded as a candidate container
       // (plus containers nested inside them, via the chain guard) so a group
       // drop can't bind into itself.
       const dragged = new Set([...(nodeIds || [])]);
-      const strip = (o) => { const { cell, sec, ...rest } = o; return rest; };
+      const strip = (o) => { const { cell, sec, draft, ...rest } = o; return rest; };
       const rebind = (o, bb, allowCell) => {
         const hit = workflowPickDropContainer(nodes, bb, dragged, { allowCell, self: o, order: paintOrderRef.current });
+        if (hit && hit.draft) {
+          const cur = o.draft;
+          if (cur && cur.nodeId === hit.draft.nodeId && cur.frameId === hit.draft.frameId
+              && cur.ox === hit.draft.ox && cur.oy === hit.draft.oy) return o;
+          return { ...strip(o), draft: hit.draft };
+        }
         if (hit && hit.cell) {
           const cur = o.cell;
           if (cur && cur.tableId === hit.cell.tableId && cur.r === hit.cell.r && cur.c === hit.cell.c
-              && cur.ox === hit.cell.ox && cur.oy === hit.cell.oy && !o.sec) return o;
+              && cur.ox === hit.cell.ox && cur.oy === hit.cell.oy && !o.sec && !o.draft) return o;
           return { ...strip(o), cell: hit.cell };
         }
         if (hit && hit.sec) {
           const cur = o.sec;
           if (cur && cur.sectionId === hit.sec.sectionId
-              && cur.ox === hit.sec.ox && cur.oy === hit.sec.oy && !o.cell) return o;
+              && cur.ox === hit.sec.ox && cur.oy === hit.sec.oy && !o.cell && !o.draft) return o;
           return { ...strip(o), sec: hit.sec };
         }
-        return (o.cell || o.sec) ? strip(o) : o;
+        return (o.cell || o.sec || o.draft) ? strip(o) : o;
       };
       let changed = false;
       const nextWb = list.map(it => {
@@ -46375,15 +46650,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // Best-effort match across iframes; ignore any that can't be reached
     // (cross-origin, contentDocument null) - they simply won't participate
     // in pick mode this session.
-    const findEligible = () => Array.from(
-      document.querySelectorAll('iframe[data-prototype-id], iframe[data-asset-id], iframe[data-browser-id]')
-    );
+    const findEligible = () => wfPickHostIframes();
     const installOn = (ifr) => {
       if (cancelled || teardowns.has(ifr)) return;
-      const owningId = ifr.getAttribute("data-prototype-id")
-                    || ifr.getAttribute("data-asset-id")
-                    || ifr.getAttribute("data-browser-id")
-                    || "";
+      const owningId = wfPickHostId(ifr);
       const tryInstall = () => {
         if (cancelled) return;
         try {
@@ -46481,7 +46751,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // stick at "+" inside that iframe even after pick-mode exited. This
       // sweep is idempotent and cheap (querySelectorAll over iframes).
       try {
-        document.querySelectorAll('iframe[data-prototype-id], iframe[data-asset-id], iframe[data-browser-id]').forEach((ifr) => {
+        wfPickHostIframes().forEach((ifr) => {
           let doc;
           try { doc = ifr.contentDocument; } catch { return; }
           if (!doc) return;
@@ -46611,10 +46881,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // doc - so the prior null-check passed and we read stale bytes.
       // `document.body.contains(ifr)` is the truth: only a live, attached
       // iframe wins. Detached → fall through to the by-nodeId lookup.
-      if (!ifr || !ifr.contentDocument || !document.body.contains(ifr)) {
+      if (!wfPickHostAlive(ifr)) {
         try {
-          const sel = 'iframe[data-prototype-id="' + pickedElement.nodeId + '"], iframe[data-asset-id="' + pickedElement.nodeId + '"], iframe[data-browser-id="' + pickedElement.nodeId + '"]';
-          const live = document.querySelector(sel);
+          const live = wfFindPickHost(pickedElement.nodeId);
           if (live) { ifr = live; pickerIframeRef.current = live; }
         } catch {}
       }
@@ -46791,9 +47060,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       try { flashPickOp("error", "Edit can't be saved: this iframe isn't showing a source/ file (version view?) - switch to the live version and redo the edit"); } catch {}
       return;
     }
-    const nodeId = ifr.getAttribute("data-prototype-id")
-                || ifr.getAttribute("data-asset-id")
-                || "";
+    const nodeId = wfPickHostId(ifr);
     setPendingInspectorEdits(prev => {
       const next = new Map(prev);
       const existing = next.get(path);
@@ -46827,10 +47094,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // happen between picking the target and pressing Cmd+V.
       // also reject detached iframes (see copyPickedElement).
       let ifrLive = ifr;
-      if (!ifrLive || !ifrLive.contentDocument || !document.body.contains(ifrLive)) {
+      if (!wfPickHostAlive(ifrLive)) {
         try {
-          const sel = 'iframe[data-prototype-id="' + (pickedElement && pickedElement.nodeId) + '"], iframe[data-asset-id="' + (pickedElement && pickedElement.nodeId) + '"]';
-          const found = document.querySelector(sel);
+          const found = wfFindPickHost(pickedElement && pickedElement.nodeId);
           if (found) { ifrLive = found; pickerIframeRef.current = found; }
         } catch {}
       }
@@ -46857,9 +47123,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         let liveOuter = clip.outerHTML;
         if (clip.sourceNodeId && clip.path) {
           try {
-            const sourceSel = 'iframe[data-prototype-id="' + clip.sourceNodeId + '"], iframe[data-asset-id="' + clip.sourceNodeId + '"]';
-            const sourceIfr = document.querySelector(sourceSel);
-            if (sourceIfr && document.body.contains(sourceIfr) && sourceIfr.contentDocument) {
+            const sourceIfr = wfFindPickHost(clip.sourceNodeId);
+            if (wfPickHostAlive(sourceIfr)) {
               const liveSrcEl = sourceIfr.contentDocument.querySelector(clip.path);
               if (liveSrcEl) {
                 const clean = liveSrcEl.cloneNode(true);
@@ -47120,10 +47385,9 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const project = activeProjectId();
       const ifr = pickerIframeRef.current;
       let ifrLive = ifr;
-      if (!ifrLive || !ifrLive.contentDocument || !document.body.contains(ifrLive)) {
+      if (!wfPickHostAlive(ifrLive)) {
         try {
-          const sel = 'iframe[data-prototype-id="' + (pickedElement && pickedElement.nodeId) + '"], iframe[data-asset-id="' + (pickedElement && pickedElement.nodeId) + '"]';
-          const found = document.querySelector(sel);
+          const found = wfFindPickHost(pickedElement && pickedElement.nodeId);
           if (found) { ifrLive = found; pickerIframeRef.current = found; }
         } catch {}
       }
@@ -47147,9 +47411,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         let liveOuter = clip.outerHTML;
         if (clip.sourceNodeId && clip.path) {
           try {
-            const sourceSel = 'iframe[data-prototype-id="' + clip.sourceNodeId + '"], iframe[data-asset-id="' + clip.sourceNodeId + '"]';
-            const sourceIfr = document.querySelector(sourceSel);
-            if (sourceIfr && document.body.contains(sourceIfr) && sourceIfr.contentDocument) {
+            const sourceIfr = wfFindPickHost(clip.sourceNodeId);
+            if (wfPickHostAlive(sourceIfr)) {
               const liveSrcEl = sourceIfr.contentDocument.querySelector(clip.path);
               if (liveSrcEl) {
                 const clean = liveSrcEl.cloneNode(true);
@@ -47503,6 +47766,293 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       window.removeEventListener("th:staged-inspector-revert", onRevert);
     };
   }, [commitInspectorEdits, revertInspectorEdits]);
+
+  /* ── Draft apply ────────────────────────────────────────────────────────
+     A drafted page carries two KINDS of change, and they want different
+     treatment:
+
+       • Direct edits (text, delete, replace, duplicate, move, style) are
+         already literal and unambiguous, so they are WRITTEN to the real
+         screen - draft bytes over the real file, ops block included, exactly
+         what the Save pill does for a prototype node today.
+
+       • Whiteboard annotations bound to the draft are instructions, not
+         changes. Those go to an agent scoped to that one page, as an
+         annotated raster plus their text.
+
+     If the page carries no annotations, the agent is skipped entirely and
+     Apply is just the direct write. */
+  useEffect(() => {
+    const ANNOT = "oklch(56% 0.18 25)";
+    // Whiteboard items bound to this draft, in PAGE coordinates. The draft
+    // renders 1:1 in world units inside its frame body, but the scale is
+    // derived rather than assumed so a frame sized differently from its page's
+    // viewport still lands the marks in the right place.
+    const boundItems = (nodeId, frameId, rect, innerW, innerH) => {
+      const sx = (rect && rect.w > 0 && innerW > 0) ? innerW / rect.w : 1;
+      const sy = (rect && rect.h > 0 && innerH > 0) ? innerH / rect.h : 1;
+      const out = [];
+      for (const it of (wbItemsRef.current || [])) {
+        if (!it || !it.draft) continue;
+        if (it.draft.nodeId !== nodeId || it.draft.frameId !== frameId) continue;
+        const px = (wx) => (wx - rect.x) * sx;
+        const py = (wy) => (wy - rect.y) * sy;
+        const e = {
+          id: it.id, type: it.type, color: it.color || "",
+          text: typeof it.text === "string" ? it.text : "",
+          x: Math.round(px(it.x || 0)), y: Math.round(py(it.y || 0)),
+          w: Math.round((it.w || 0) * sx), h: Math.round((it.h || 0) * sy),
+        };
+        if (it.type === "arrow") {
+          e.x1 = Math.round(px(it.x1 || 0)); e.y1 = Math.round(py(it.y1 || 0));
+          e.x2 = Math.round(px(it.x2 || 0)); e.y2 = Math.round(py(it.y2 || 0));
+          if (Array.isArray(it.labels)) e.labels = it.labels.map(l => (l && l.text) || "").filter(Boolean);
+        }
+        if (it.type === "ink" && Array.isArray(it.points)) {
+          const pts = [];
+          for (let i = 0; i + 1 < it.points.length; i += 2) {
+            pts.push(Math.round(px((it.x || 0) + it.points[i])),
+                     Math.round(py((it.y || 0) + it.points[i + 1])));
+          }
+          e.points = pts;
+        }
+        if (it.type === "shape") e.shape = it.shape || "rect";
+        out.push(e);
+      }
+      return out;
+    };
+    // Burn the marks onto the raster so the agent sees WHERE each note points,
+    // not just what it says. Same idea (and same red) as the editor canvas's
+    // annotation capture.
+    const burn = (canvas, items, innerW, innerH) => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const kx = innerW > 0 ? canvas.width / innerW : 1;
+      const ky = innerH > 0 ? canvas.height / innerH : 1;
+      ctx.save();
+      ctx.scale(kx, ky);
+      ctx.strokeStyle = ANNOT;
+      ctx.fillStyle = ANNOT;
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.font = "600 14px system-ui, sans-serif";
+      for (const it of items) {
+        if (it.type === "ink" && it.points && it.points.length >= 4) {
+          ctx.beginPath();
+          ctx.moveTo(it.points[0], it.points[1]);
+          for (let i = 2; i + 1 < it.points.length; i += 2) ctx.lineTo(it.points[i], it.points[i + 1]);
+          ctx.stroke();
+          continue;
+        }
+        if (it.type === "arrow") {
+          ctx.beginPath();
+          ctx.moveTo(it.x1, it.y1);
+          ctx.lineTo(it.x2, it.y2);
+          ctx.stroke();
+          const a = Math.atan2(it.y2 - it.y1, it.x2 - it.x1);
+          const head = 12;
+          ctx.beginPath();
+          ctx.moveTo(it.x2, it.y2);
+          ctx.lineTo(it.x2 - head * Math.cos(a - 0.4), it.y2 - head * Math.sin(a - 0.4));
+          ctx.lineTo(it.x2 - head * Math.cos(a + 0.4), it.y2 - head * Math.sin(a + 0.4));
+          ctx.closePath();
+          ctx.fill();
+          continue;
+        }
+        if (it.w > 0 && it.h > 0) {
+          ctx.strokeRect(it.x, it.y, it.w, it.h);
+        }
+        if (it.text) {
+          const line = it.text.split("\n")[0].slice(0, 60);
+          const tw = ctx.measureText(line).width + 10;
+          ctx.fillRect(it.x, Math.max(0, it.y - 20), tw, 18);
+          ctx.save();
+          ctx.fillStyle = "#fff";
+          ctx.fillText(line, it.x + 5, Math.max(13, it.y - 6));
+          ctx.restore();
+        }
+      }
+      ctx.restore();
+    };
+
+    const dropDraftAnnotations = (nodeId, frameId) => {
+      const gone = (wbItemsRef.current || [])
+        .filter(it => it && it.draft && it.draft.nodeId === nodeId && it.draft.frameId === frameId)
+        .map(it => it.id);
+      if (gone.length) removeWbItems(new Set(gone));
+    };
+
+    const onApply = async (e) => {
+      const det = (e && e.detail) || {};
+      const { nodeId, frameId, draftId, path, from, label, worldRect } = det;
+      if (!nodeId || !frameId || !path || !from) {
+        uiAlert("This draft is missing its file bookkeeping - discard it and draft the screen again.");
+        return;
+      }
+      const project = activeProjectId();
+      // 1. Flush anything still staged so the draft file on disk is what the
+      //    user is actually looking at. Save is idempotent when nothing is
+      //    pending, so this costs nothing in the common case.
+      try { await commitInspectorEdits(); } catch {}
+
+      const ifr = wfFindPickHost(draftId);
+      let innerDoc = null, innerW = 0, innerH = 0;
+      try {
+        innerDoc = ifr && ifr.contentDocument;
+        innerW = (ifr && ifr.clientWidth) || 0;
+        innerH = (ifr && ifr.clientHeight) || 0;
+      } catch { innerDoc = null; }
+
+      // 2. Read the draft's bytes + the real page's current bytes. If the real
+      //    page moved under us (an agent run, a hand edit) say so BEFORE
+      //    overwriting it - the draft was forked from an older version.
+      const readFile = async (rel) => {
+        const u = apiUrl("/" + rel);
+        const r = await fetch(u + (u.includes("?") ? "&" : "?") + "_a=" + Date.now(), { cache: "no-store" });
+        if (!r.ok) throw new Error(`${rel}: HTTP ${r.status}`);
+        return await r.text();
+      };
+      let draftHtml = "", realHtml = "";
+      try {
+        draftHtml = await readFile(path);
+        realHtml = await readFile(from);
+      } catch (err) {
+        uiAlert(`Couldn't read the files to apply: ${(err && err.message) || err}`);
+        return;
+      }
+      if (det.fromHash && wfHashText(realHtml) !== det.fromHash) {
+        const ok = await uiConfirm(
+          `${from} has changed since this draft was created. Applying overwrites those changes with the draft. Continue?`);
+        if (!ok) return;
+      }
+
+      // 3. Collect the annotations before anything is written, so a failed
+      //    write leaves the draft (and its notes) intact.
+      const rect = worldRect || workflowDraftRect({ nodeId, frameId });
+      const items = rect ? boundItems(nodeId, frameId, rect, innerW, innerH) : [];
+
+      // 4. Direct write: the draft IS the real page plus the user's edits, so
+      //    its bytes go straight over the real file. The draft carries its own
+      //    merged data-th-patch block, which is what keeps the edits from
+      //    reverting on a React re-mount.
+      try {
+        if (!window.__thInspectorSelfSavedPaths) window.__thInspectorSelfSavedPaths = new Set();
+        window.__thInspectorSelfSavedPaths.add(from);
+      } catch {}
+      try {
+        const apiU = apiUrl("/__html_save");
+        const u = apiU + (apiU.includes("?") ? "&" : "?") + "_t=" + Date.now();
+        const resp = await fetch(u, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: from, html: draftHtml, project }),
+        });
+        if (!resp.ok) {
+          const j = await resp.json().catch(() => ({}));
+          throw new Error(j.error || `HTTP ${resp.status}`);
+        }
+      } catch (err) {
+        uiAlert(`Couldn't write ${from}: ${(err && err.message) || err}\n\nThe draft is untouched - fix the problem and apply again.`);
+        return;
+      }
+
+      // 5. Annotations → an agent scoped to this one page. No annotations means
+      //    no agent: the direct write above was the whole change.
+      let rasterPath = "";
+      if (items.length) {
+        try {
+          if (innerDoc && innerDoc.body && typeof window.html2canvas === "function") {
+            const cv = await window.html2canvas(innerDoc.body, {
+              backgroundColor: "#ffffff", useCORS: true, allowTaint: true,
+              logging: false, scale: 1,
+              width: innerW || undefined, height: innerH || undefined,
+            });
+            if (cv && cv.toDataURL) {
+              burn(cv, items, innerW || cv.width, innerH || cv.height);
+              rasterPath = `source/${det.prototype}/.drafts/${frameId.replace(/[^a-zA-Z0-9._-]+/g, "-")}.annotated.png`;
+              const wr = await fetch(apiUrl("/__write_binary"), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ path: rasterPath, dataUrl: cv.toDataURL("image/png"), project }),
+              });
+              if (!wr.ok) rasterPath = "";
+            }
+          }
+        } catch (err) {
+          console.warn("[draft-apply] annotation raster failed", err);
+          rasterPath = "";
+        }
+        const notePath = `source/${det.prototype}/.drafts/${frameId.replace(/[^a-zA-Z0-9._-]+/g, "-")}.apply.json`;
+        const payload = {
+          screen: { frameId, label: label || frameId, file: from },
+          appliedAt: new Date().toISOString(),
+          annotatedRaster: rasterPath || null,
+          annotations: items,
+        };
+        try {
+          await fetch(apiUrl("/__component_export"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: notePath, content: JSON.stringify(payload, null, 2), overwrite: true, project }),
+          });
+        } catch {}
+        const lines = [
+          `Update ONE screen of the prototype from a reviewed draft: ${from}`,
+          ``,
+          `The user drafted "${label || frameId}" on the canvas. Their direct edits (text,`,
+          `deletions, replacements, moves, styles) are ALREADY WRITTEN to ${from} - do not`,
+          `redo them. What is left are ${items.length} annotation${items.length === 1 ? "" : "s"} they drew over the page,`,
+          `which are instructions for you.`,
+          ``,
+          rasterPath
+            ? `Annotated screenshot (Read this image first - it shows where each note points): ${rasterPath}`
+            : `No screenshot was captured; work from the coordinates below.`,
+          `Annotation data (page coordinates, origin at the screen's top-left): ${notePath}`,
+          ``,
+          `The notes, in order:`,
+          ...items.map((it, i) => {
+            const where = it.type === "arrow"
+              ? `arrow ${it.x1},${it.y1} → ${it.x2},${it.y2}`
+              : `${it.type} at ${it.x},${it.y}${it.w ? ` (${it.w}x${it.h})` : ""}`;
+            return `${i + 1}. [${where}] ${it.text || (it.labels || []).join(" / ") || "(no text - read the drawing in the screenshot)"}`;
+          }),
+          ``,
+          `Scope: edit ${from} only. Do not touch other screens, and do not restructure`,
+          `the prototype. If a note is ambiguous, say what you assumed rather than guessing silently.`,
+        ];
+        try { onStartChatWithPrompt && onStartChatWithPrompt(lines.join("\n")); }
+        catch (err) { console.error("[draft-apply]", err); }
+      }
+
+      // 6. Reset. The annotations were instructions and have been delivered, so
+      //    they come off the canvas with the draft; the node flips its frame
+      //    back to the real page, which now carries the edits.
+      dropDraftAnnotations(nodeId, frameId);
+      window.dispatchEvent(new CustomEvent("th:frame-draft-reset", { detail: { nodeId, frameId } }));
+      try {
+        flashPickOp("done", items.length
+          ? `Applied to ${from} - agent is working the ${items.length} annotation${items.length === 1 ? "" : "s"}`
+          : `Applied to ${from}`);
+      } catch {}
+    };
+
+    // Discarding a draft takes its annotations with it - they described a page
+    // state that no longer exists, and leaving them stranded on open canvas
+    // would be worse than dropping them.
+    const onEnded = (e) => {
+      const det = (e && e.detail) || {};
+      if (!det.nodeId || !det.frameId) return;
+      dropDraftAnnotations(det.nodeId, det.frameId);
+    };
+
+    window.addEventListener("th:frame-draft-apply", onApply);
+    window.addEventListener("th:frame-draft-ended", onEnded);
+    return () => {
+      window.removeEventListener("th:frame-draft-apply", onApply);
+      window.removeEventListener("th:frame-draft-ended", onEnded);
+    };
+  }, [commitInspectorEdits, onStartChatWithPrompt, removeWbItems, flashPickOp]);
 
   // Resolve the live DOM node for the picked element, re-querying via
   // pickedElement.path if pickedDomRef has gone stale (iframe re-mounted
@@ -66328,10 +66878,9 @@ function WorkflowPickedInspectorDock({
     // the same recovery here so what the user SEES is also what they
     // can EDIT.
     let ifr = pickerIframeRef.current;
-    if (!ifr || !ifr.isConnected) {
+    if (!wfPickHostAlive(ifr)) {
       const hostId = (pickedElement && pickedElement.nodeId) || node.id;
-      const sel = 'iframe[data-prototype-id="' + hostId + '"], iframe[data-asset-id="' + hostId + '"]';
-      const live = document.querySelector(sel);
+      const live = wfFindPickHost(hostId);
       if (live) { ifr = live; pickerIframeRef.current = live; }
     }
     const doc = ifr && ifr.contentDocument;
@@ -66997,6 +67546,68 @@ const PROTOTYPE_VIEW_FIT = {
 // section scope is for (`node.section`), not a bigger rectangle.
 const VIEW_FIT_MAX = 20000;
 
+/* Per-page draft affordances for a canvas-frames node.
+
+   Rendered INSIDE the node body rather than portaled to #wf-chrome-layer, on
+   purpose: these are per-page controls living in the embed's own coordinate
+   space (the sibling of the frame-label's Connect / Clone buttons, which are
+   also in-frame), so they should clip to the node and travel with the frames
+   they belong to. The only thing pan/zoom costs us is apparent size, and one
+   counter-scale fixes that - no rAF rect tracking, no clip-sync, which is what
+   the chrome layer exists to solve for chrome that must ESCAPE a node.
+
+   Geometry arrives pre-measured in embed px (= body-local px = world units). */
+function WorkflowFrameDraftChrome({ frameGeom, zoom, selected, draftFrameId, onStartDraft, onApplyDraft, onDiscardDraft }) {
+  if (!frameGeom || !frameGeom.list || !frameGeom.list.length) return null;
+  // Counter-scale so a pill keeps a constant on-screen size through canvas
+  // zoom. Clamped: past these bounds the node is either LOD-veiled or the pill
+  // would be bigger than the page it belongs to.
+  const k = Math.max(0.4, Math.min(8, 1 / (zoom || 1)));
+  return html`<${React.Fragment}>
+    ${frameGeom.list.map(f => {
+      const isDraft = draftFrameId === f.id;
+      if (!isDraft && !selected) return null;
+      return html`
+        <div
+          key=${"draftbox-" + f.id}
+          className="wf-frame-draft-box"
+          data-drafting=${isDraft ? "true" : "false"}
+          style=${{ left: f.bx + "px", top: f.by + "px", width: f.bw + "px", height: f.bh + "px" }}
+        >
+          <div
+            className="wf-frame-draft-bar"
+            style=${{ transform: `scale(${k})` }}
+            onMouseDown=${(e) => e.stopPropagation()}
+          >
+            ${isDraft ? html`<${React.Fragment}>
+              <span className="wf-frame-draft-tag">Draft</span>
+              <button
+                type="button"
+                className="wf-frame-draft-btn is-primary"
+                title=${"Apply this draft to " + f.label + ". Your direct edits are written to the real screen; whiteboard notes bound to the draft go to the agent."}
+                onClick=${(e) => { e.stopPropagation(); onApplyDraft && onApplyDraft(); }}
+              ><${Icon.Check}/><span>Apply</span></button>
+              <button
+                type="button"
+                className="wf-frame-draft-btn"
+                title="Discard this draft. The real screen is untouched."
+                onClick=${(e) => { e.stopPropagation(); onDiscardDraft && onDiscardDraft(); }}
+              ><${Icon.X}/><span>Discard</span></button>
+            <//>` : html`
+              <button
+                type="button"
+                className="wf-frame-draft-btn"
+                title=${"Draft " + f.label + " - edit an editable clone of this screen here, annotate it from the whiteboard, then apply it back."}
+                onClick=${(e) => { e.stopPropagation(); onStartDraft && onStartDraft(f.id); }}
+              ><${Icon.Pen}/><span>Draft</span></button>
+            `}
+          </div>
+        </div>
+      `;
+    })}
+  <//>`;
+}
+
 function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onRegenerate, lodVisible }) {
   const [dragging, setDragging] = useState(false);
   const [nonce, setNonce] = useState(0);
@@ -67143,6 +67754,381 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
       uiAlert("Could not save the frame size: " + String((err && err.message) || err));
     }
   }, [protoSlug]);
+
+  // ── Draft mode ───────────────────────────────────────────────────────
+  // A drafted page shows an editable CLONE of itself inside the embed: the
+  // user picks / edits / pastes into it with the normal select-mode tools and
+  // annotates it from the outer whiteboard, then Apply pushes the result at
+  // the real screen and the draft resets to it.
+  //
+  // `node.drafts` is keyed by frame id (the shape CanvasView's RPC takes), but
+  // the UI keeps it to ONE entry at a time: the interaction shield below is the
+  // COMPLEMENT of the drafted frame, and the complement of N rectangles stops
+  // being expressible as four rectangles. Keeping the map shape means lifting
+  // that limit later needs no data migration.
+  const drafts = (node.kind === "frames" && node.drafts && typeof node.drafts === "object")
+    ? node.drafts : null;
+  const draftFrameId = drafts ? (Object.keys(drafts)[0] || null) : null;
+  const activeDraft = draftFrameId ? drafts[draftFrameId] : null;
+  const draftsRef = useRef(drafts);
+  draftsRef.current = drafts;
+  // Is a whiteboard drawing tool armed? While one is, the draft must NOT hold
+  // the pointer - otherwise the page swallows every stroke and the one surface
+  // built for annotating cannot be annotated. Mirrored onto <body> by the
+  // surface; read here rather than prop-drilled, like the other body flags.
+  const [wbToolArmed, setWbToolArmed] = useState(() => {
+    try { return !!window.__thWbTool; } catch { return false; }
+  });
+  useEffect(() => {
+    const on = (e) => setWbToolArmed(!!(e && e.detail && e.detail.tool));
+    window.addEventListener("th:wb-tool-changed", on);
+    try { setWbToolArmed(!!window.__thWbTool); } catch {}
+    return () => window.removeEventListener("th:wb-tool-changed", on);
+  }, []);
+  // The draft is pointer-live only when nothing is armed to draw over it.
+  const draftInteractive = !!activeDraft && !wbToolArmed;
+  // Push draft state over the same same-origin channel the virtualizer uses.
+  // Polled on arm because the embed boots asynchronously and the RPC hook may
+  // not exist yet when the user clicks Draft.
+  const pushDrafts = useCallback(() => {
+    try {
+      const win = iframeRef.current && iframeRef.current.contentWindow;
+      if (!win || typeof win.__wovenSetDraftFrames !== "function") return false;
+      win.__wovenSetDraftFrames(draftsRef.current || {});
+      return true;
+    } catch { /* embed mid-reload - the retry below covers it */ }
+    return false;
+  }, []);
+  useEffect(() => {
+    if (node.kind !== "frames" || !lodLive) return;
+    let tries = 0, timer = 0, stop = false;
+    const tick = () => {
+      if (stop) return;
+      if (pushDrafts() || ++tries >= 14) return;
+      timer = setTimeout(tick, 400);
+    };
+    timer = setTimeout(tick, 80);
+    return () => { stop = true; clearTimeout(timer); };
+  }, [node.kind, lodLive, nonce, drafts, pushDrafts]);
+
+  // Per-frame geometry, measured through the embed in EMBED PX - which are the
+  // node body's own layout px, and therefore world units 1:1 (the iframe is
+  // 100%x100% of an untransformed body, and the outer workflow transform
+  // scales node and iframe together). So one measurement serves BOTH
+  //   - CSS offsets for chrome rendered inside the body, and
+  //   - world coords, once offset by the node's x/y + the body's inset,
+  // which is what the whiteboard binding needs. Measured on load / draft
+  // change rather than per frame: nothing here moves during pan or zoom.
+  const [frameGeom, setFrameGeom] = useState(null);
+  const readFrameGeom = useCallback(() => {
+    try {
+      const embed = iframeRef.current;
+      const doc = embed && embed.contentDocument;
+      if (!doc || !embed.clientWidth) return null;
+      const els = doc.querySelectorAll(".frame[data-frame-id]");
+      if (!els.length) return null;
+      // Scale of ONE hop out of the embed, derived from the element itself
+      // rather than the `zoom` prop so a mid-gesture read can't go stale.
+      const nodeEl = embed.closest(".workflow-node");
+      const eb = embed.getBoundingClientRect();
+      const nb = nodeEl ? nodeEl.getBoundingClientRect() : eb;
+      const s = eb.width / embed.clientWidth;
+      if (!(s > 0)) return null;
+      const list = [];
+      for (const el of els) {
+        const id = el.getAttribute("data-frame-id");
+        if (!id) continue;
+        const r = el.getBoundingClientRect();
+        if (!(r.width > 0 && r.height > 0)) continue;
+        const bodyEl = el.querySelector(".frame-body");
+        const br = bodyEl ? bodyEl.getBoundingClientRect() : r;
+        const spans = el.querySelectorAll(".frame-label > span");
+        list.push({
+          id,
+          label: ((spans && spans[1] && spans[1].textContent) || id).trim(),
+          x: r.left, y: r.top, w: r.width, h: r.height,
+          bx: br.left, by: br.top, bw: br.width, bh: br.height,
+        });
+      }
+      if (!list.length) return null;
+      return {
+        list,
+        embedW: embed.clientWidth,
+        embedH: embed.clientHeight,
+        insetX: (eb.left - nb.left) / s,
+        insetY: (eb.top  - nb.top)  / s,
+      };
+    } catch { /* embed mid-reload - the retry below covers it */ }
+    return null;
+  }, []);
+  useEffect(() => {
+    if (node.kind !== "frames" || !lodLive) { setFrameGeom(null); return; }
+    let tries = 0, timer = 0, stop = false;
+    const tick = () => {
+      if (stop) return;
+      const g = readFrameGeom();
+      if (g) { setFrameGeom(g); return; }
+      if (++tries >= 14) return;
+      timer = setTimeout(tick, 450);
+    };
+    timer = setTimeout(tick, 320);
+    return () => { stop = true; clearTimeout(timer); };
+  }, [node.kind, lodLive, nonce, node.section, drafts, readFrameGeom]);
+
+  // World rect of the drafted page. Registered globally (not prop-drilled)
+  // because the consumer is the whiteboard DROP resolver, which runs deep
+  // inside the surface's pointer handlers and has no path to this node.
+  const draftGeomEntry = (frameGeom && draftFrameId)
+    ? frameGeom.list.find(f => f.id === draftFrameId) : null;
+  const draftWorldRect = draftGeomEntry ? {
+    x: node.x + frameGeom.insetX + draftGeomEntry.bx,
+    y: node.y + frameGeom.insetY + draftGeomEntry.by,
+    w: draftGeomEntry.bw,
+    h: draftGeomEntry.bh,
+  } : null;
+  const dwx = draftWorldRect ? draftWorldRect.x : null;
+  const dwy = draftWorldRect ? draftWorldRect.y : null;
+  const dww = draftWorldRect ? draftWorldRect.w : null;
+  const dwh = draftWorldRect ? draftWorldRect.h : null;
+  useEffect(() => {
+    if (!draftFrameId || dwx == null) return;
+    const key = node.id + ":" + draftFrameId;
+    const rect = { nodeId: node.id, frameId: draftFrameId, x: dwx, y: dwy, w: dww, h: dwh };
+    try {
+      if (!window.__thDraftRects) window.__thDraftRects = new Map();
+      window.__thDraftRects.set(key, rect);
+      window.dispatchEvent(new CustomEvent("th:draft-rects-changed"));
+    } catch {}
+    return () => {
+      try {
+        window.__thDraftRects && window.__thDraftRects.delete(key);
+        window.dispatchEvent(new CustomEvent("th:draft-rects-changed"));
+      } catch {}
+    };
+  }, [node.id, draftFrameId, dwx, dwy, dww, dwh]);
+
+  // Keyboard bridge. Pick-mode's shortcuts (⌘C / ⌘V / ⌘R / ⌘D, arrows, Delete)
+  // are bound on the TOP window, but a keystroke typed while focus sits inside
+  // the draft page fires in the DRAFT's document and never reaches them - so
+  // copy / paste / replace would silently do nothing on the one surface built
+  // for them. Re-dispatch the relevant keys upward. Guarded on the draft's own
+  // focus: while the user is in a field or contenteditable inside the page,
+  // ⌘C means "copy this text" and Backspace means "delete this character", so
+  // only Escape is forwarded.
+  useEffect(() => {
+    if (!draftFrameId || !lodLive) return;
+    let stop = false, tries = 0, timer = 0;
+    let boundDoc = null, boundHandler = null;
+    const teardown = () => {
+      if (boundDoc && boundHandler) {
+        try { boundDoc.removeEventListener("keydown", boundHandler, true); } catch {}
+      }
+      boundDoc = null; boundHandler = null;
+    };
+    const install = () => {
+      let inner = null;
+      try {
+        const doc = iframeRef.current && iframeRef.current.contentDocument;
+        const esc = (window.CSS && CSS.escape) ? CSS.escape(draftFrameId) : draftFrameId;
+        const ifr = doc && doc.querySelector('.frame[data-frame-id="' + esc + '"] iframe[data-draft-id]');
+        inner = ifr && ifr.contentDocument;
+      } catch { inner = null; }
+      if (!inner) return false;
+      if (inner === boundDoc) return true;
+      teardown();
+      const isEditing = () => {
+        try {
+          const a = inner.activeElement;
+          if (!a) return false;
+          const tag = (a.tagName || "").toLowerCase();
+          return tag === "input" || tag === "textarea" || tag === "select" || !!a.isContentEditable;
+        } catch { return false; }
+      };
+      const handler = (e) => {
+        const cmd = e.metaKey || e.ctrlKey;
+        const nav = e.key === "ArrowUp" || e.key === "ArrowDown"
+                 || e.key === "ArrowLeft" || e.key === "ArrowRight"
+                 || e.key === "Delete" || e.key === "Backspace";
+        if (e.key !== "Escape") {
+          if (!cmd && !nav) return;
+          if (isEditing()) return;
+        }
+        try {
+          const ev = new KeyboardEvent("keydown", {
+            key: e.key, code: e.code,
+            ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, altKey: e.altKey,
+            bubbles: false, cancelable: true,
+          });
+          const notCancelled = window.dispatchEvent(ev);
+          // The top-window handler preventDefaults whatever it consumed;
+          // mirror that here so the draft page doesn't ALSO act on the key
+          // (a Backspace both deleting the picked node and navigating back).
+          if (!notCancelled) { e.preventDefault(); e.stopPropagation(); }
+        } catch {}
+      };
+      inner.addEventListener("keydown", handler, true);
+      boundDoc = inner; boundHandler = handler;
+      return true;
+    };
+    // The draft iframe loads asynchronously and reloads on every save, so keep
+    // re-checking: a cheap identity probe re-binds whenever the doc is swapped.
+    const tick = () => {
+      if (stop) return;
+      const ok = install();
+      if (!ok && ++tries >= 20) return;
+      timer = setTimeout(tick, ok ? 1200 : 400);
+    };
+    timer = setTimeout(tick, 200);
+    return () => { stop = true; clearTimeout(timer); teardown(); };
+  }, [draftFrameId, lodLive, nonce]);
+
+  // Which file does this frame actually render? The live iframe's own location
+  // is authoritative (it follows in-page navigation); a frame culled by the
+  // virtualizer has no iframe, so fall back to the embed's data - `sourceRoot`
+  // is editor-relative ("../source/x/"), and dropping the hop out of editor/
+  // gives the project-relative form every write endpoint takes.
+  const readFrameRealPath = useCallback((frameId) => {
+    const ok = (p) => (typeof p === "string" && p.startsWith("source/") && /\.html?$/i.test(p)) ? p : null;
+    try {
+      const doc = iframeRef.current && iframeRef.current.contentDocument;
+      const win = iframeRef.current && iframeRef.current.contentWindow;
+      const esc = (window.CSS && CSS.escape) ? CSS.escape(frameId) : frameId;
+      const ifr = doc && doc.querySelector('.frame[data-frame-id="' + esc + '"] iframe');
+      if (ifr) {
+        let p = "";
+        try { p = String((ifr.contentWindow.location.pathname) || "").replace(/^\/+/, ""); } catch {}
+        if (p.endsWith("/")) p += "index.html";
+        if (ok(p)) return p;
+      }
+      const ed = win && win.EDITOR_DATA;
+      const fr = (ed && Array.isArray(ed.frames)) ? ed.frames.find(f => f && f.id === frameId) : null;
+      const root = String((ed && ed.meta && ed.meta.sourceRoot) || "")
+        .replace(/^(?:\.\.\/)+/, "").replace(/\/*$/, "/");
+      const entry = String((fr && fr.entry) || (ed && ed.meta && ed.meta.sourceEntry) || "").trim();
+      if (!root || !entry || /^(?:https?:)?\/\//.test(entry)) return null;
+      return ok(entry.startsWith("source/") ? entry : root + entry.replace(/^\.\//, ""));
+    } catch {}
+    return null;
+  }, []);
+
+  const startDraft = useCallback(async (frameId) => {
+    if (!onChange) return;
+    const from = readFrameRealPath(frameId);
+    if (!from) {
+      uiAlert("Couldn't work out which file this screen renders. Open the editor from this node's title bar and check the frame's entry.");
+      return;
+    }
+    if (draftFrameId && draftFrameId !== frameId) {
+      const prev = (frameGeom && frameGeom.list.find(f => f.id === draftFrameId));
+      const ok = await uiConfirm(
+        `A draft is already open on "${(prev && prev.label) || draftFrameId}". `
+        + "Discard it and draft this screen instead? Its unsaved edits are lost.");
+      if (!ok) return;
+    }
+    // Deterministic name, overwritten on each re-draft. Deliberate: there is no
+    // file-delete endpoint, so a stamped name would leave a new orphan behind
+    // every time. One file per screen in a gitignored dot-dir is bounded.
+    const safe = String(frameId).replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 80) || "screen";
+    const path = `source/${protoSlug}/.drafts/${safe}.html`;
+    let src = "";
+    try {
+      const u = apiUrl("/" + from);
+      const r = await fetch(u + (u.includes("?") ? "&" : "?") + "_d=" + Date.now(), { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      src = await r.text();
+    } catch (err) {
+      uiAlert(`Couldn't read ${from}: ${(err && err.message) || err}`);
+      return;
+    }
+    try {
+      const r = await fetch(apiUrl("/__component_export"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, html: src, overwrite: true, project: activeProjectId() }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${r.status}`);
+      }
+    } catch (err) {
+      uiAlert(`Couldn't create the draft: ${(err && err.message) || err}`);
+      return;
+    }
+    onChange({ drafts: { [frameId]: {
+      id: `${node.id}:${frameId}`, path, from,
+      // Fingerprint of what the draft was forked FROM. Apply compares it
+      // against the file on disk so an agent run (or a hand edit) landing on
+      // this screen mid-draft is surfaced instead of silently overwritten.
+      fromHash: wfHashText(src),
+      createdAt: new Date().toISOString(),
+    } } });
+    // Arm select mode on the draft. Draft mode IS select mode on a clone -
+    // making the user hunt for a badge afterwards would be a needless second
+    // step, and the frames node has no badge of its own to hunt for. The guard
+    // matters because th:enter-pick-mode TOGGLES: re-drafting the same screen
+    // while its pick mode was still armed would turn it off.
+    try {
+      const draftId = `${node.id}:${frameId}`;
+      if (window.__thPickModeNodeId !== draftId) {
+        window.dispatchEvent(new CustomEvent("th:enter-pick-mode", { detail: { nodeId: draftId } }));
+      }
+    } catch {}
+  }, [onChange, readFrameRealPath, draftFrameId, frameGeom, protoSlug, node.id]);
+
+  const discardDraft = useCallback(async () => {
+    if (!onChange || !draftFrameId) return;
+    const ok = await uiConfirm(
+      "Discard this draft? Edits staged on it are lost, along with any whiteboard notes bound to it. The real screen is untouched.");
+    if (!ok) return;
+    window.dispatchEvent(new CustomEvent("th:frame-draft-ended", {
+      detail: { nodeId: node.id, frameId: draftFrameId },
+    }));
+    try {
+      if (window.__thPickModeNodeId === `${node.id}:${draftFrameId}`) {
+        window.dispatchEvent(new CustomEvent("th:exit-pick-mode"));
+      }
+    } catch {}
+    onChange({ drafts: {} });
+  }, [onChange, draftFrameId, node.id]);
+
+  const applyDraft = useCallback(() => {
+    if (!activeDraft || !draftFrameId) return;
+    // The surface owns the whiteboard array, the raster helpers and the chat
+    // dispatch, so Apply is a request, not the work. Same event-seam shape as
+    // th:asset-quick-refine.
+    window.dispatchEvent(new CustomEvent("th:frame-draft-apply", {
+      detail: {
+        nodeId: node.id,
+        frameId: draftFrameId,
+        draftId: activeDraft.id,
+        path: activeDraft.path,
+        from: activeDraft.from,
+        label: (draftGeomEntry && draftGeomEntry.label) || draftFrameId,
+        fromHash: activeDraft.fromHash || "",
+        worldRect: draftWorldRect,
+        prototype: protoSlug,
+      },
+    }));
+  }, [activeDraft, draftFrameId, node.id, draftGeomEntry, dwx, dwy, dww, dwh, protoSlug]);
+
+  // The surface clears the draft once Apply has landed, so the frame flips back
+  // to the real page - which now carries the edits. Changing `drafts` to {} is
+  // all it takes: CanvasView re-renders the frame without a draft src and the
+  // iframe reloads itself.
+  useEffect(() => {
+    const onReset = (e) => {
+      const d = e && e.detail;
+      if (!d || d.nodeId !== node.id) return;
+      try {
+        if (window.__thPickModeNodeId === `${node.id}:${d.frameId}`) {
+          window.dispatchEvent(new CustomEvent("th:exit-pick-mode"));
+        }
+      } catch {}
+      if (onChange) onChange({ drafts: {} });
+    };
+    window.addEventListener("th:frame-draft-reset", onReset);
+    return () => window.removeEventListener("th:frame-draft-reset", onReset);
+  }, [node.id, onChange]);
 
   // ── Fit to content ───────────────────────────────────────────────────
   // Every one of these embeds is locked: the canvas view runs with
@@ -67336,6 +68322,11 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
       const assetChanged = inScope.filter(p => !/\.html?$/i.test(p));
       const reloadList = [];
       for (const fr of inner) {
+        // A drafted page is a user-owned working copy that may be holding
+        // unsaved staged edits. Some unrelated write touching a stylesheet it
+        // happens to load must not reload it out from under the user - the same
+        // hazard the prototype node guards against before its own nonce bumps.
+        if (fr.hasAttribute && fr.hasAttribute("data-draft-id")) continue;
         let pathname = "";
         try { pathname = new URL(fr.getAttribute("src") || "", win.location.href).pathname; } catch {}
         // 1) this frame's own page (HTML entry) changed
@@ -67698,8 +68689,8 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
                body clips to the node bounds. */
             width:  "100%",
             height: "100%",
-            /* ALWAYS pointer-events: none on the canvas-frames
-               iframe. The embedded editor's own pan/zoom is disabled
+            /* pointer-events: none on the canvas-frames iframe UNLESS a
+               draft is open. The embedded editor's own pan/zoom is disabled
                (CanvasView reads ?embed=1 → useEndlessCanvas interactive:
                false), so when the iframe captured wheel/drag while
                selected the events died inside it and the workflow canvas
@@ -67707,17 +68698,64 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
                events fall straight through to the workflow canvas wrap
                restores native pan/zoom on the outer surface. The user
                drives via the "Open in editor" bar button if they want to
-               click into a frame. */
-            pointerEvents: "none",
+               click into a frame.
+               Draft mode is the one exception: the drafted page has to be
+               clickable to be editable. The shield below re-blocks
+               everything around it (so only that one rectangle is live),
+               and useEndlessCanvas's iframe wheel forwarder now climbs BOTH
+               iframe boundaries, so a zoom gesture over the draft still
+               reaches the workflow canvas instead of dying inside. */
+            pointerEvents: draftInteractive ? "auto" : "none",
           }}
         />
-        ${!selected && html`
+        ${/* The body-drag overlay stopPropagations mousedown, so while a
+            whiteboard tool is armed it would eat the stroke the user is trying
+            to draw over this node - including over a drafted page, which is
+            the whole point of drafting. Armed tool wins; the node is still
+            draggable by its title bar. */ ""}
+        ${!draftInteractive && !selected && !wbToolArmed && html`
           <div
             className="workflow-node-frames-bodydrag"
             onMouseDown=${onHandleDown}
             title="Drag to move · click to select · once selected, the embedded canvas is navigable."
           />
         `}
+        ${draftInteractive && draftGeomEntry && (() => {
+          // Interaction shield - the drafted page's COMPLEMENT. Four rects in
+          // body-local px (which are the embed's px 1:1) keep the rest of the
+          // embed as inert as it always was, and keep dragging the node by its
+          // body working exactly as the bodydrag above does.
+          const g = draftGeomEntry;
+          const W = frameGeom.embedW, H = frameGeom.embedH;
+          const x0 = Math.max(0, g.bx), y0 = Math.max(0, g.by);
+          const x1 = Math.min(W, g.bx + g.bw), y1 = Math.min(H, g.by + g.bh);
+          const bands = [
+            { k: "t", left: 0,  top: 0,  width: W,      height: y0 },
+            { k: "b", left: 0,  top: y1, width: W,      height: H - y1 },
+            { k: "l", left: 0,  top: y0, width: x0,     height: y1 - y0 },
+            { k: "r", left: x1, top: y0, width: W - x1, height: y1 - y0 },
+          ].filter(b => b.width > 0.5 && b.height > 0.5);
+          return html`<${React.Fragment}>
+            ${bands.map(b => html`
+              <div
+                key=${"shield-" + b.k}
+                className="workflow-node-frames-shield"
+                style=${{ left: b.left + "px", top: b.top + "px", width: b.width + "px", height: b.height + "px" }}
+                onMouseDown=${onHandleDown}
+                title="Drag to move. A draft is open - only the drafted screen is editable."
+              />
+            `)}
+          <//>`;
+        })()}
+        ${node.kind === "frames" && lodLive && frameGeom && html`<${WorkflowFrameDraftChrome}
+          frameGeom=${frameGeom}
+          zoom=${zoom}
+          selected=${selected}
+          draftFrameId=${draftFrameId}
+          onStartDraft=${startDraft}
+          onApplyDraft=${applyDraft}
+          onDiscardDraft=${discardDraft}
+        />`}
         ${node.kind === "frames" && lodLive && fitClamp && html`
           ${/* Standing truncation warning. The embed can't pan, so the part
               that didn't fit isn't merely off-screen - it's unreachable, and
@@ -67749,6 +68787,10 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
         label=${cfg.label + " · " + protoSlug}
         mode="body"
       />`}
+      ${/* Save / Revert for edits staged on the drafted page. Pending edits are
+          keyed by the pick host id, which for a draft is "<nodeId>:<frameId>" -
+          so the pill has to be mounted under THAT id, not the node's. */ ""}
+      ${activeDraft && html`<${WorkflowNodeStagePill} nodeId=${activeDraft.id}/>`}
       <div
         className="workflow-node-resize-corner"
         onMouseDown=${onResizeDown}
