@@ -34592,22 +34592,34 @@ async function workflowCaptureProtoRaster(protoId) {
 function workflowBoundTo(o) {
   if (o && o.sec && o.sec.sectionId) return o.sec.sectionId;
   if (o && o.cell && o.cell.tableId) return o.cell.tableId;
-  // A draft binding names the PAGE, but the thing that moves on the canvas is
-  // the canvas-frames node the page is embedded in - so that node is the host.
-  // This is what makes annotations ride along when the node is dragged, and
-  // what the cycle guard walks.
+  // A frame / draft binding names the PAGE, but the thing that moves on the
+  // canvas is the canvas-frames node the page is embedded in - so that node is
+  // the host. This is what makes annotations ride along when the node is
+  // dragged, and what the cycle guard walks.
   if (o && o.draft && o.draft.nodeId) return o.draft.nodeId;
+  if (o && o.frame && o.frame.nodeId) return o.frame.nodeId;
   return null;
 }
-/* Live world rect of a drafted page, keyed "<nodeId>:<frameId>". Registered by
-   the canvas-frames node from a MEASUREMENT through its embed - a draft is not
-   a node, so its rect exists nowhere in the persisted doc and can't be derived
-   from it. Absent while the node is LOD-veiled or the embed is still booting,
-   which callers must read as "unknown", never as "gone". */
-function workflowDraftRect(binding) {
+/* The binding that names a screen, whichever kind it is. `draft:` and `frame:`
+   are the same shape ({nodeId, frameId, ox, oy}) and differ only in lifetime:
+   a `draft:` note is an instruction for the draft in flight and leaves with it,
+   a `frame:` note is a durable annotation on the screen itself. */
+function workflowScreenBinding(o) {
+  if (o && o.draft && o.draft.nodeId && o.draft.frameId) return o.draft;
+  if (o && o.frame && o.frame.nodeId && o.frame.frameId) return o.frame;
+  return null;
+}
+/* Live world rect of ONE screen inside a canvas-frames node, keyed
+   "<nodeId>:<frameId>". Registered by the node from a MEASUREMENT through its
+   embed - a frame is not a node, so its rect exists nowhere in the persisted doc
+   and cannot be derived from it. Absent while the node is LOD-veiled or the
+   embed is still booting, which callers must read as "unknown", never as "gone".
+   Entries also carry `drafted` + `label`, which is how the drop resolver knows
+   which binding kind a new mark should get. */
+function workflowFrameRect(binding) {
   if (!binding || !binding.nodeId || !binding.frameId) return null;
   try {
-    const m = window.__thDraftRects;
+    const m = window.__thFrameRects;
     return (m && m.get(binding.nodeId + ":" + binding.frameId)) || null;
   } catch { return null; }
 }
@@ -34920,22 +34932,36 @@ function workflowPickDropContainer(nodes, bb, excludeIds, opts) {
   const order = opts && opts.order;
   const byId = new Map((nodes || []).map(n => [n.id, n]));
   const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
-  // A DRAFTED PAGE outranks every other container. It is drawn inside a
-  // canvas-frames node's body, so anything dropped over it is unambiguously on
-  // top of that page - and the whole point of drawing on a draft is that the
-  // mark belongs to the screen, not to whatever band the node happens to sit
-  // in. Checked first and returned immediately for that reason.
-  for (const n of (nodes || [])) {
-    if (!n || n.kind !== "frames" || !n.drafts) continue;
-    if (excludeIds && excludeIds.has(n.id)) continue;
-    for (const frameId of Object.keys(n.drafts)) {
-      const r = workflowDraftRect({ nodeId: n.id, frameId });
-      if (!r) continue;                       // not measured yet - not "absent"
-      if (cx < r.x || cy < r.y || cx > r.x + r.w || cy > r.y + r.h) continue;
-      return { draft: {
-        nodeId: n.id, frameId,
-        ox: Math.round(bb.x - r.x), oy: Math.round(bb.y - r.y),
-      } };
+  // A SCREEN inside a canvas-frames node outranks every other container. It is
+  // drawn inside that node's body, so anything dropped over it is unambiguously
+  // on top of that page - and the whole point of marking up a screen is that the
+  // mark belongs to the screen, not to whatever band the node happens to sit in.
+  // Checked first and returned immediately for that reason.
+  //
+  // Candidates come from the measured registry rather than the doc, because
+  // frames live in the editor data file, not in workflow.json. A DRAFTED frame
+  // wins over a plain one (the draft is painted on top of the page it clones);
+  // among peers the later-registered node wins, matching paint order.
+  {
+    let best = null, bestKey = -Infinity;
+    let rects = null;
+    try { rects = window.__thFrameRects; } catch { rects = null; }
+    const order = new Map((nodes || []).map((n, i) => [n && n.id, i]));
+    if (rects) {
+      for (const r of rects.values()) {
+        if (!r || !r.nodeId || !r.frameId) continue;
+        if (excludeIds && excludeIds.has(r.nodeId)) continue;
+        if (cx < r.x || cy < r.y || cx > r.x + r.w || cy > r.y + r.h) continue;
+        const key = (r.drafted ? 1e6 : 0) + (order.has(r.nodeId) ? order.get(r.nodeId) : -1);
+        if (key > bestKey) { best = r; bestKey = key; }
+      }
+    }
+    if (best) {
+      const bind = {
+        nodeId: best.nodeId, frameId: best.frameId,
+        ox: Math.round(bb.x - best.x), oy: Math.round(bb.y - best.y),
+      };
+      return best.drafted ? { draft: bind } : { frame: bind };
     }
   }
   const excluded = (n) => {
@@ -35607,6 +35633,22 @@ function wfPickHostIframes() {
     try { out.push(...doc.querySelectorAll("iframe[data-draft-id]")); } catch {}
   }
   return out;
+}
+
+/* The iframe rendering ONE screen inside a canvas-frames node's embed. Unlike a
+   drafted page it carries no owner attribute (it is the plain read-only frame),
+   so it is addressed through its node's embed by frame id. Used to rasterise a
+   screen for the notes-only path, which never clones anything. */
+function wfFindEmbedFrameIframe(nodeId, frameId) {
+  if (!nodeId || !frameId) return null;
+  const esc = (v) => ((window.CSS && CSS.escape) ? CSS.escape(v) : v);
+  const embed = document.querySelector(
+    `.workflow-node[data-node-id="${esc(nodeId)}"] iframe.workflow-node-iframe`);
+  if (!embed) return null;
+  try {
+    const doc = embed.contentDocument;
+    return doc ? doc.querySelector(`.frame[data-frame-id="${esc(frameId)}"] iframe`) : null;
+  } catch { return null; }
 }
 
 function wfPickHostId(ifr) {
@@ -43181,15 +43223,33 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // Strip a cell binding off a wb item / node (returns a fresh object).
   const wbStripCell = (o) => { const { cell, ...rest } = o; return rest; };
 
-  // A draft rect can be RE-MEASURED without the doc changing at all (the embed
+  // Per-screen note counts, published for the canvas-frames chrome. The node
+  // renders the per-frame pills but has no path to data.wb, so the count arrives
+  // the same way the pending-edit digest does: a window event plus a snapshot on
+  // window for late mounters.
+  useEffect(() => {
+    const counts = {};
+    for (const it of (data.wb || [])) {
+      const b = workflowScreenBinding(it);
+      if (!b) continue;
+      const key = b.nodeId + ":" + b.frameId;
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    try {
+      window.__thScreenNoteCounts = counts;
+      window.dispatchEvent(new CustomEvent("th:screen-notes-changed", { detail: { counts } }));
+    } catch {}
+  }, [data.wb]);
+
+  // A frame rect can be RE-MEASURED without the doc changing at all (the embed
   // re-fit, the frame grid moved, the node came back from LOD). data.wb and
   // data.nodes are identical then, so the reconcile below would never fire and
   // annotations would sit at the page's old place. This tick is its wake-up.
   const [draftRectTick, setDraftRectTick] = useState(0);
   useEffect(() => {
     const on = () => setDraftRectTick(t => t + 1);
-    window.addEventListener("th:draft-rects-changed", on);
-    return () => window.removeEventListener("th:draft-rects-changed", on);
+    window.addEventListener("th:frame-rects-changed", on);
+    return () => window.removeEventListener("th:frame-rects-changed", on);
   }, []);
 
   // Cell-binding reconcile. Whenever wb items / nodes change, re-pin every
@@ -43202,8 +43262,8 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   useEffect(() => {
     const nodes = data.nodes;
     if (!Array.isArray(nodes)) return;
-    const hasBound = (data.wb || []).some(it => it && (it.cell || it.sec || it.draft))
-      || nodes.some(n => n && (n.cell || n.sec || n.draft));
+    const hasBound = (data.wb || []).some(it => it && (it.cell || it.sec || it.draft || it.frame))
+      || nodes.some(n => n && (n.cell || n.sec || n.draft || n.frame));
     if (!hasBound) return;
     setData(d => {
       const list = Array.isArray(d.wb) ? d.wb : [];
@@ -43213,19 +43273,31 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       // binding whose section was deleted.
       const sById = new Map((d.nodes || []).filter(n => n.kind === "section").map(s => [s.id, s]));
       const stripSec = (o) => { const { sec, ...rest } = o; return rest; };
-      // Draft bindings. The AUTHORITY for "does this draft still exist" is the
-      // persisted node.drafts map, never the measured rect registry: the rect
-      // is absent whenever the node is LOD-veiled or its embed is mid-reload,
-      // and clearing on that would silently throw away the user's annotations.
-      // The rect is used only to RE-PIN, and only when it is actually known.
+      // Screen bindings (draft: and frame:). The AUTHORITY for "does this still
+      // exist" is the persisted doc, never the measured rect registry: a rect is
+      // absent whenever the node is LOD-veiled or its embed is mid-reload, and
+      // clearing on that would silently throw away the user's annotations. The
+      // rect is used only to RE-PIN, and only when it is actually known.
+      //
+      // The two kinds differ in what "exists" means. A DRAFT exists only while
+      // node.drafts still lists it, so a draft that ended takes its notes with
+      // it. A FRAME note only needs its host NODE: the frame list lives in the
+      // editor data file, not in workflow.json, so a frame that an agent regen
+      // renamed away leaves a stale binding - and leaving the note parked where
+      // it is beats deleting the user's writing on a guess.
       const stripDraft = (o) => { const { draft, ...rest } = o; return rest; };
+      const stripFrame = (o) => { const { frame, ...rest } = o; return rest; };
       const draftLives = (b) => {
         if (!b || !b.nodeId || !b.frameId) return false;
         const host = (d.nodes || []).find(n => n && n.id === b.nodeId && n.kind === "frames");
         return !!(host && host.drafts && host.drafts[b.frameId]);
       };
-      const draftTarget = (b) => {
-        const r = workflowDraftRect(b);
+      const frameHostLives = (b) => {
+        if (!b || !b.nodeId) return false;
+        return (d.nodes || []).some(n => n && n.id === b.nodeId && n.kind === "frames");
+      };
+      const screenTarget = (b) => {
+        const r = workflowFrameRect(b);
         if (!r) return undefined;              // unknown, so leave it where it is
         return { x: Math.round(r.x + (b.ox || 0)), y: Math.round(r.y + (b.oy || 0)) };
       };
@@ -43258,7 +43330,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         if (it.draft) {
           if (!draftLives(it.draft)) { changed = true; it = stripDraft(it); }
           else if (!(skipWb && skipWb.has(it.id))) {
-            const tg = draftTarget(it.draft);
+            const tg = screenTarget(it.draft);
+            if (tg && (it.x !== tg.x || it.y !== tg.y)) { changed = true; it = { ...it, x: tg.x, y: tg.y }; }
+          }
+        }
+        if (it.frame) {
+          if (!frameHostLives(it.frame)) { changed = true; it = stripFrame(it); }
+          else if (!(skipWb && skipWb.has(it.id))) {
+            const tg = screenTarget(it.frame);
             if (tg && (it.x !== tg.x || it.y !== tg.y)) { changed = true; it = { ...it, x: tg.x, y: tg.y }; }
           }
         }
@@ -43272,10 +43351,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       const nextNodes = (d.nodes || []).map(n => {
         if (!n) return n;
         if (n.sec && !sById.has(n.sec.sectionId)) { changed = true; n = stripSec(n); }
-        // Nodes do not bind to drafts by design (a workflow node parked on a
+        // Nodes do not bind to screens by design (a workflow node parked on a
         // page has no meaning in the apply payload), but a stale binding from a
         // hand-edited doc is cleared rather than left to confuse the reconcile.
         if (n.draft) { changed = true; n = stripDraft(n); }
+        if (n.frame) { changed = true; n = stripFrame(n); }
         if (!n.cell) return n;
         if (n.id === activeDragId) return n;
         if (skipNode && skipNode.has(n.id)) return n;
@@ -43297,13 +43377,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     setData(d => {
       const list = Array.isArray(d.wb) ? d.wb : [];
       const nodes = d.nodes || [];
-      if (!nodes.some(n => n && (n.kind === "table" || n.kind === "section"
-            || (n.kind === "frames" && n.drafts && Object.keys(n.drafts).length)))) return d;
+      if (!nodes.some(n => n && (n.kind === "table" || n.kind === "section" || n.kind === "frames"))) return d;
       // Everything in the dragged set is excluded as a candidate container
       // (plus containers nested inside them, via the chain guard) so a group
       // drop can't bind into itself.
       const dragged = new Set([...(nodeIds || [])]);
-      const strip = (o) => { const { cell, sec, draft, ...rest } = o; return rest; };
+      const strip = (o) => { const { cell, sec, draft, frame, ...rest } = o; return rest; };
       const rebind = (o, bb, allowCell) => {
         const hit = workflowPickDropContainer(nodes, bb, dragged, { allowCell, self: o, order: paintOrderRef.current });
         if (hit && hit.draft) {
@@ -43312,19 +43391,25 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               && cur.ox === hit.draft.ox && cur.oy === hit.draft.oy) return o;
           return { ...strip(o), draft: hit.draft };
         }
+        if (hit && hit.frame) {
+          const cur = o.frame;
+          if (cur && cur.nodeId === hit.frame.nodeId && cur.frameId === hit.frame.frameId
+              && cur.ox === hit.frame.ox && cur.oy === hit.frame.oy) return o;
+          return { ...strip(o), frame: hit.frame };
+        }
         if (hit && hit.cell) {
           const cur = o.cell;
           if (cur && cur.tableId === hit.cell.tableId && cur.r === hit.cell.r && cur.c === hit.cell.c
-              && cur.ox === hit.cell.ox && cur.oy === hit.cell.oy && !o.sec && !o.draft) return o;
+              && cur.ox === hit.cell.ox && cur.oy === hit.cell.oy && !o.sec && !o.draft && !o.frame) return o;
           return { ...strip(o), cell: hit.cell };
         }
         if (hit && hit.sec) {
           const cur = o.sec;
           if (cur && cur.sectionId === hit.sec.sectionId
-              && cur.ox === hit.sec.ox && cur.oy === hit.sec.oy && !o.cell && !o.draft) return o;
+              && cur.ox === hit.sec.ox && cur.oy === hit.sec.oy && !o.cell && !o.draft && !o.frame) return o;
           return { ...strip(o), sec: hit.sec };
         }
-        return (o.cell || o.sec || o.draft) ? strip(o) : o;
+        return (o.cell || o.sec || o.draft || o.frame) ? strip(o) : o;
       };
       let changed = false;
       const nextWb = list.map(it => {
@@ -47799,13 +47884,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // renders 1:1 in world units inside its frame body, but the scale is
     // derived rather than assumed so a frame sized differently from its page's
     // viewport still lands the marks in the right place.
-    const boundItems = (nodeId, frameId, rect, innerW, innerH) => {
+    const boundItems = (nodeId, frameId, rect, innerW, innerH) => {   // both kinds
       const sx = (rect && rect.w > 0 && innerW > 0) ? innerW / rect.w : 1;
       const sy = (rect && rect.h > 0 && innerH > 0) ? innerH / rect.h : 1;
       const out = [];
       for (const it of (wbItemsRef.current || [])) {
-        if (!it || !it.draft) continue;
-        if (it.draft.nodeId !== nodeId || it.draft.frameId !== frameId) continue;
+        const bind = workflowScreenBinding(it);
+        if (!bind) continue;
+        if (bind.nodeId !== nodeId || bind.frameId !== frameId) continue;
         const px = (wx) => (wx - rect.x) * sx;
         const py = (wy) => (wy - rect.y) * sy;
         const e = {
@@ -47887,6 +47973,60 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       ctx.restore();
     };
 
+    // Rasterise a screen and burn its marks in, then write the PNG. Shared by
+    // Apply (which shoots the drafted clone) and Send notes (which shoots the
+    // real frame) - the only difference is which iframe comes in.
+    const writeAnnotatedRaster = async (ifr, items, prototype, frameId, project) => {
+      let innerDoc = null, innerW = 0, innerH = 0;
+      try {
+        innerDoc = ifr && ifr.contentDocument;
+        innerW = (ifr && ifr.clientWidth) || 0;
+        innerH = (ifr && ifr.clientHeight) || 0;
+      } catch { innerDoc = null; }
+      if (!innerDoc || !innerDoc.body || typeof window.html2canvas !== "function") return "";
+      try {
+        const cv = await window.html2canvas(innerDoc.body, {
+          backgroundColor: "#ffffff", useCORS: true, allowTaint: true,
+          logging: false, scale: 1,
+          width: innerW || undefined, height: innerH || undefined,
+        });
+        if (!cv || !cv.toDataURL) return "";
+        burn(cv, items, innerW || cv.width, innerH || cv.height);
+        const path = `source/${prototype}/.drafts/${String(frameId).replace(/[^a-zA-Z0-9._-]+/g, "-")}.annotated.png`;
+        const wr = await fetch(apiUrl("/__write_binary"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path, dataUrl: cv.toDataURL("image/png"), project }),
+        });
+        return wr.ok ? path : "";
+      } catch (err) {
+        console.warn("[screen-notes] raster failed", err);
+        return "";
+      }
+    };
+
+    // The note list, as the agent reads it: one line per mark, with where it
+    // points, because a drawing with no text is still an instruction.
+    const noteLines = (items) => items.map((it, i) => {
+      const where = it.type === "arrow"
+        ? `arrow ${it.x1},${it.y1} → ${it.x2},${it.y2}`
+        : `${it.type} at ${it.x},${it.y}${it.w ? ` (${it.w}x${it.h})` : ""}`;
+      return `${i + 1}. [${where}] ${it.text || (it.labels || []).join(" / ")
+        || "(no text - read the drawing in the screenshot)"}`;
+    });
+
+    const writeNotePayload = async (prototype, frameId, payload, project) => {
+      const path = `source/${prototype}/.drafts/${String(frameId).replace(/[^a-zA-Z0-9._-]+/g, "-")}.apply.json`;
+      try {
+        await fetch(apiUrl("/__component_export"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path, content: JSON.stringify(payload, null, 2), overwrite: true, project }),
+        });
+      } catch {}
+      return path;
+    };
+
     const dropDraftAnnotations = (nodeId, frameId) => {
       const gone = (wbItemsRef.current || [])
         .filter(it => it && it.draft && it.draft.nodeId === nodeId && it.draft.frameId === frameId)
@@ -47908,12 +48048,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       try { await commitInspectorEdits(); } catch {}
 
       const ifr = wfFindPickHost(draftId);
-      let innerDoc = null, innerW = 0, innerH = 0;
+      let innerW = 0, innerH = 0;
       try {
-        innerDoc = ifr && ifr.contentDocument;
         innerW = (ifr && ifr.clientWidth) || 0;
         innerH = (ifr && ifr.clientHeight) || 0;
-      } catch { innerDoc = null; }
+      } catch {}
 
       // 2. Read the draft's bytes + the real page's current bytes. If the real
       //    page moved under us (an agent run, a hand edit) say so BEFORE
@@ -47940,7 +48079,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
 
       // 3. Collect the annotations before anything is written, so a failed
       //    write leaves the draft (and its notes) intact.
-      const rect = worldRect || workflowDraftRect({ nodeId, frameId });
+      const rect = worldRect || workflowFrameRect({ nodeId, frameId });
       const items = rect ? boundItems(nodeId, frameId, rect, innerW, innerH) : [];
 
       // 4. Direct write: the draft IS the real page plus the user's edits, so
@@ -47970,44 +48109,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
 
       // 5. Annotations → an agent scoped to this one page. No annotations means
       //    no agent: the direct write above was the whole change.
-      let rasterPath = "";
       if (items.length) {
-        try {
-          if (innerDoc && innerDoc.body && typeof window.html2canvas === "function") {
-            const cv = await window.html2canvas(innerDoc.body, {
-              backgroundColor: "#ffffff", useCORS: true, allowTaint: true,
-              logging: false, scale: 1,
-              width: innerW || undefined, height: innerH || undefined,
-            });
-            if (cv && cv.toDataURL) {
-              burn(cv, items, innerW || cv.width, innerH || cv.height);
-              rasterPath = `source/${det.prototype}/.drafts/${frameId.replace(/[^a-zA-Z0-9._-]+/g, "-")}.annotated.png`;
-              const wr = await fetch(apiUrl("/__write_binary"), {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ path: rasterPath, dataUrl: cv.toDataURL("image/png"), project }),
-              });
-              if (!wr.ok) rasterPath = "";
-            }
-          }
-        } catch (err) {
-          console.warn("[draft-apply] annotation raster failed", err);
-          rasterPath = "";
-        }
-        const notePath = `source/${det.prototype}/.drafts/${frameId.replace(/[^a-zA-Z0-9._-]+/g, "-")}.apply.json`;
-        const payload = {
+        const rasterPath = await writeAnnotatedRaster(ifr, items, det.prototype, frameId, project);
+        const notePath = await writeNotePayload(det.prototype, frameId, {
           screen: { frameId, label: label || frameId, file: from },
           appliedAt: new Date().toISOString(),
           annotatedRaster: rasterPath || null,
           annotations: items,
-        };
-        try {
-          await fetch(apiUrl("/__component_export"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ path: notePath, content: JSON.stringify(payload, null, 2), overwrite: true, project }),
-          });
-        } catch {}
+        }, project);
         const lines = [
           `Update ONE screen of the prototype from a reviewed draft: ${from}`,
           ``,
@@ -48022,12 +48131,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
           `Annotation data (page coordinates, origin at the screen's top-left): ${notePath}`,
           ``,
           `The notes, in order:`,
-          ...items.map((it, i) => {
-            const where = it.type === "arrow"
-              ? `arrow ${it.x1},${it.y1} → ${it.x2},${it.y2}`
-              : `${it.type} at ${it.x},${it.y}${it.w ? ` (${it.w}x${it.h})` : ""}`;
-            return `${i + 1}. [${where}] ${it.text || (it.labels || []).join(" / ") || "(no text - read the drawing in the screenshot)"}`;
-          }),
+          ...noteLines(items),
           ``,
           `Scope: edit ${from} only. Do not touch other screens, and do not restructure`,
           `the prototype. If a note is ambiguous, say what you assumed rather than guessing silently.`,
@@ -48051,10 +48155,104 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // Discarding a draft takes its annotations with it - they described a page
     // state that no longer exists, and leaving them stranded on open canvas
     // would be worse than dropping them.
+    // Drafting a screen ADOPTS the durable notes already on it, so Apply sweeps
+    // them up with everything drawn during the draft - one kind of annotation per
+    // page state, which is the whole reason to re-home rather than collect two
+    // kinds. `rehomed` remembers where each one came from so Discard can put it
+    // back: those notes predate the draft and describe the real screen, so
+    // throwing away a draft must not throw them away too.
+    const onStarted = (e) => {
+      const det = (e && e.detail) || {};
+      if (!det.nodeId || !det.frameId) return;
+      const ids = new Set((wbItemsRef.current || [])
+        .filter(it => it && it.frame && it.frame.nodeId === det.nodeId && it.frame.frameId === det.frameId)
+        .map(it => it.id));
+      if (!ids.size) return;
+      setData(d => ({
+        ...d,
+        wb: (d.wb || []).map(it => {
+          if (!ids.has(it.id) || !it.frame) return it;
+          const { frame, ...rest } = it;
+          return { ...rest, draft: { ...frame, rehomed: true } };
+        }),
+      }));
+    };
+
+    // Ending a draft: notes drawn FOR the draft go with it; re-homed ones return
+    // to being durable notes on the screen.
     const onEnded = (e) => {
       const det = (e && e.detail) || {};
       if (!det.nodeId || !det.frameId) return;
-      dropDraftAnnotations(det.nodeId, det.frameId);
+      const mine = (wbItemsRef.current || []).filter(it => it && it.draft
+        && it.draft.nodeId === det.nodeId && it.draft.frameId === det.frameId);
+      const restore = new Set(mine.filter(it => it.draft.rehomed).map(it => it.id));
+      const drop = mine.filter(it => !it.draft.rehomed).map(it => it.id);
+      if (restore.size) {
+        setData(d => ({
+          ...d,
+          wb: (d.wb || []).map(it => {
+            if (!restore.has(it.id) || !it.draft) return it;
+            const { draft, ...rest } = it;
+            const { rehomed, ...bind } = draft;
+            return { ...rest, frame: bind };
+          }),
+        }));
+      }
+      if (drop.length) removeWbItems(new Set(drop));
+    };
+
+    // Notes-only send: no clone, no direct write, nothing touched on disk except
+    // the annotation artefacts. The cheap path for "here is what I think about
+    // this screen" when you do not want to hand-edit it first.
+    const onSendNotes = async (e) => {
+      const det = (e && e.detail) || {};
+      const { nodeId, frameId, from, label, prototype } = det;
+      if (!nodeId || !frameId || !from) {
+        uiAlert("Couldn't work out which file this screen renders - open the editor and check the frame's entry.");
+        return;
+      }
+      const ifr = wfFindEmbedFrameIframe(nodeId, frameId);
+      let innerW = 0, innerH = 0;
+      try { innerW = (ifr && ifr.clientWidth) || 0; innerH = (ifr && ifr.clientHeight) || 0; } catch {}
+      const rect = det.worldRect || workflowFrameRect({ nodeId, frameId });
+      const items = rect ? boundItems(nodeId, frameId, rect, innerW, innerH) : [];
+      if (!items.length) {
+        uiAlert("There are no notes on this screen yet. Draw on it with a whiteboard tool first.");
+        return;
+      }
+      const ok = await uiConfirm(
+        `Send ${items.length} note${items.length === 1 ? "" : "s"} on "${label || frameId}" to an agent?\n\n`
+        + `It will edit ${from} and nothing else. The notes come off the canvas once they are sent.`);
+      if (!ok) return;
+      const project = activeProjectId();
+      const rasterPath = await writeAnnotatedRaster(ifr, items, prototype, frameId, project);
+      const notePath = await writeNotePayload(prototype, frameId, {
+        screen: { frameId, label: label || frameId, file: from },
+        sentAt: new Date().toISOString(),
+        annotatedRaster: rasterPath || null,
+        annotations: items,
+      }, project);
+      const lines = [
+        `Update ONE screen of the prototype from the user's review notes: ${from}`,
+        ``,
+        `The user marked up "${label || frameId}" on the canvas with ${items.length} note${items.length === 1 ? "" : "s"}.`,
+        `Nothing has been changed yet - every edit is yours to make.`,
+        ``,
+        rasterPath
+          ? `Annotated screenshot (Read this image first - it shows where each note points): ${rasterPath}`
+          : `No screenshot was captured; work from the coordinates below.`,
+        `Annotation data (page coordinates, origin at the screen's top-left): ${notePath}`,
+        ``,
+        `The notes, in order:`,
+        ...noteLines(items),
+        ``,
+        `Scope: edit ${from} only. Do not touch other screens, and do not restructure`,
+        `the prototype. If a note is ambiguous, say what you assumed rather than guessing silently.`,
+      ];
+      try { onStartChatWithPrompt && onStartChatWithPrompt(lines.join("\n")); }
+      catch (err) { console.error("[screen-notes]", err); }
+      removeWbItems(new Set(items.map(it => it.id)));
+      try { flashPickOp("done", `Sent ${items.length} note${items.length === 1 ? "" : "s"} on ${label || frameId}`); } catch {}
     };
 
     const onPinned = () => {
@@ -48065,14 +48263,18 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     };
 
     window.addEventListener("th:frame-draft-apply", onApply);
+    window.addEventListener("th:frame-draft-started", onStarted);
     window.addEventListener("th:frame-draft-ended", onEnded);
     window.addEventListener("th:frame-draft-pinned", onPinned);
+    window.addEventListener("th:frame-notes-send", onSendNotes);
     return () => {
       window.removeEventListener("th:frame-draft-apply", onApply);
+      window.removeEventListener("th:frame-draft-started", onStarted);
       window.removeEventListener("th:frame-draft-ended", onEnded);
       window.removeEventListener("th:frame-draft-pinned", onPinned);
+      window.removeEventListener("th:frame-notes-send", onSendNotes);
     };
-  }, [commitInspectorEdits, onStartChatWithPrompt, removeWbItems, flashPickOp]);
+  }, [commitInspectorEdits, onStartChatWithPrompt, removeWbItems, setData, flashPickOp]);
 
   // Resolve the live DOM node for the picked element, re-querying via
   // pickedElement.path if pickedDomRef has gone stale (iframe re-mounted
@@ -67577,21 +67779,27 @@ const VIEW_FIT_MAX = 20000;
    the chrome layer exists to solve for chrome that must ESCAPE a node.
 
    Geometry arrives pre-measured in embed px (= body-local px = world units). */
-function WorkflowFrameDraftChrome({ frameGeom, zoom, selected, draftFrameId, onStartDraft, onApplyDraft, onDiscardDraft }) {
+function WorkflowFrameDraftChrome({ frameGeom, nodeId, zoom, selected, draftFrameId, noteCounts, onStartDraft, onApplyDraft, onDiscardDraft, onSendNotes }) {
   if (!frameGeom || !frameGeom.list || !frameGeom.list.length) return null;
   // Counter-scale so a pill keeps a constant on-screen size through canvas
   // zoom. Clamped: past these bounds the node is either LOD-veiled or the pill
   // would be bigger than the page it belongs to.
   const k = Math.max(0.4, Math.min(8, 1 / (zoom || 1)));
+  const counts = noteCounts || {};
   return html`<${React.Fragment}>
     ${frameGeom.list.map(f => {
       const isDraft = draftFrameId === f.id;
-      if (!isDraft && !selected) return null;
+      const notes = counts[nodeId + ":" + f.id] || 0;
+      // A screen carrying notes shows its chrome even when the node is not
+      // selected - otherwise the only way to send them would be to remember
+      // they are there.
+      if (!isDraft && !selected && !notes) return null;
       return html`
         <div
           key=${"draftbox-" + f.id}
           className="wf-frame-draft-box"
           data-drafting=${isDraft ? "true" : "false"}
+          data-noted=${!isDraft && notes ? "true" : "false"}
           style=${{ left: f.bx + "px", top: f.by + "px", width: f.bw + "px", height: f.bh + "px" }}
         >
           <div
@@ -67613,14 +67821,25 @@ function WorkflowFrameDraftChrome({ frameGeom, zoom, selected, draftFrameId, onS
                 title="Discard this draft. The real screen is untouched."
                 onClick=${(e) => { e.stopPropagation(); onDiscardDraft && onDiscardDraft(); }}
               ><${Icon.X}/><span>Discard</span></button>
-            <//>` : html`
-              <button
-                type="button"
-                className="wf-frame-draft-btn"
-                title=${"Draft " + f.label + " - edit an editable clone of this screen here, annotate it from the whiteboard, then apply it back."}
-                onClick=${(e) => { e.stopPropagation(); onStartDraft && onStartDraft(f.id); }}
-              ><${Icon.Pen}/><span>Draft</span></button>
-            `}
+            <//>` : html`<${React.Fragment}>
+              ${notes > 0 && html`
+                <button
+                  type="button"
+                  className="wf-frame-draft-btn is-primary"
+                  title=${"Send the " + notes + " note" + (notes === 1 ? "" : "s") + " on " + f.label
+                    + " to an agent. It edits this screen only - nothing changes until it runs."}
+                  onClick=${(e) => { e.stopPropagation(); onSendNotes && onSendNotes(f.id); }}
+                ><${Icon.Send}/><span>Send ${notes} note${notes === 1 ? "" : "s"}</span></button>
+              `}
+              ${selected && html`
+                <button
+                  type="button"
+                  className="wf-frame-draft-btn"
+                  title=${"Draft " + f.label + " - edit an editable clone of this screen here, annotate it from the whiteboard, then apply it back."}
+                  onClick=${(e) => { e.stopPropagation(); onStartDraft && onStartDraft(f.id); }}
+                ><${Icon.Pen}/><span>Draft</span></button>
+              `}
+            <//>`}
           </div>
         </div>
       `;
@@ -67895,9 +68114,11 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     return () => { stop = true; clearTimeout(timer); };
   }, [node.kind, lodLive, nonce, node.section, drafts, readFrameGeom]);
 
-  // World rect of the drafted page. Registered globally (not prop-drilled)
-  // because the consumer is the whiteboard DROP resolver, which runs deep
-  // inside the surface's pointer handlers and has no path to this node.
+  // World rect of the drafted page, and of EVERY other screen in this node.
+  // Registered globally (not prop-drilled) because the consumer is the
+  // whiteboard DROP resolver, which runs deep inside the surface's pointer
+  // handlers and has no path to this node. Publishing all of them is what lets a
+  // note be attached to any screen, not only a drafted one.
   const draftGeomEntry = (frameGeom && draftFrameId)
     ? frameGeom.list.find(f => f.id === draftFrameId) : null;
   const draftWorldRect = draftGeomEntry ? {
@@ -67910,22 +68131,37 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
   const dwy = draftWorldRect ? draftWorldRect.y : null;
   const dww = draftWorldRect ? draftWorldRect.w : null;
   const dwh = draftWorldRect ? draftWorldRect.h : null;
+  // Signature of the whole published set, so the effect re-runs when the node
+  // moves / re-fits / re-measures but NOT on every unrelated render.
+  const frameRectSig = frameGeom
+    ? `${node.x}|${node.y}|${frameGeom.insetX}|${frameGeom.insetY}|${draftFrameId || ""}|`
+      + frameGeom.list.map(f => `${f.id},${f.bx},${f.by},${f.bw},${f.bh}`).join(";")
+    : "";
   useEffect(() => {
-    if (!draftFrameId || dwx == null) return;
-    const key = node.id + ":" + draftFrameId;
-    const rect = { nodeId: node.id, frameId: draftFrameId, x: dwx, y: dwy, w: dww, h: dwh };
+    if (!frameGeom || node.kind !== "frames") return;
+    const keys = [];
     try {
-      if (!window.__thDraftRects) window.__thDraftRects = new Map();
-      window.__thDraftRects.set(key, rect);
-      window.dispatchEvent(new CustomEvent("th:draft-rects-changed"));
+      if (!window.__thFrameRects) window.__thFrameRects = new Map();
+      for (const f of frameGeom.list) {
+        const key = node.id + ":" + f.id;
+        keys.push(key);
+        window.__thFrameRects.set(key, {
+          nodeId: node.id, frameId: f.id, label: f.label,
+          drafted: f.id === draftFrameId,
+          x: node.x + frameGeom.insetX + f.bx,
+          y: node.y + frameGeom.insetY + f.by,
+          w: f.bw, h: f.bh,
+        });
+      }
+      window.dispatchEvent(new CustomEvent("th:frame-rects-changed"));
     } catch {}
     return () => {
       try {
-        window.__thDraftRects && window.__thDraftRects.delete(key);
-        window.dispatchEvent(new CustomEvent("th:draft-rects-changed"));
+        for (const key of keys) window.__thFrameRects && window.__thFrameRects.delete(key);
+        window.dispatchEvent(new CustomEvent("th:frame-rects-changed"));
       } catch {}
     };
-  }, [node.id, draftFrameId, dwx, dwy, dww, dwh]);
+  }, [node.id, node.kind, frameRectSig]);
 
   // Keyboard bridge. Pick-mode's shortcuts (⌘C / ⌘V / ⌘R / ⌘D, arrows, Delete)
   // are bound on the TOP window, but a keystroke typed while focus sits inside
@@ -68151,6 +68387,11 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
         window.dispatchEvent(new CustomEvent("th:enter-pick-mode", { detail: { nodeId: draftId } }));
       }
     } catch {}
+    // Durable notes already on this screen are adopted by the draft, so Apply
+    // sweeps them up with anything drawn during it.
+    window.dispatchEvent(new CustomEvent("th:frame-draft-started", {
+      detail: { nodeId: node.id, frameId },
+    }));
   }, [onChange, readFrameRealPath, draftFrameId, frameGeom, protoSlug, node.id]);
 
   const discardDraft = useCallback(async () => {
@@ -68188,6 +68429,34 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
       },
     }));
   }, [activeDraft, draftFrameId, node.id, draftGeomEntry, dwx, dwy, dww, dwh, protoSlug]);
+
+  const sendFrameNotes = useCallback((frameId) => {
+    const from = readFrameRealPath(frameId);
+    if (!from) {
+      uiAlert("Couldn't work out which file this screen renders. Open the editor from this node's title bar and check the frame's entry.");
+      return;
+    }
+    const g = frameGeom && frameGeom.list.find(f => f.id === frameId);
+    window.dispatchEvent(new CustomEvent("th:frame-notes-send", {
+      detail: {
+        nodeId: node.id, frameId, from,
+        label: (g && g.label) || frameId,
+        prototype: protoSlug,
+        worldRect: workflowFrameRect({ nodeId: node.id, frameId }),
+      },
+    }));
+  }, [readFrameRealPath, frameGeom, node.id, protoSlug]);
+
+  // Per-screen note counts, published by the surface (which owns data.wb).
+  const [noteCounts, setNoteCounts] = useState(() => {
+    try { return window.__thScreenNoteCounts || {}; } catch { return {}; }
+  });
+  useEffect(() => {
+    const on = (e) => setNoteCounts((e && e.detail && e.detail.counts) || {});
+    window.addEventListener("th:screen-notes-changed", on);
+    try { setNoteCounts(window.__thScreenNoteCounts || {}); } catch {}
+    return () => window.removeEventListener("th:screen-notes-changed", on);
+  }, []);
 
   // The surface clears the draft once Apply has landed, so the frame flips back
   // to the real page - which now carries the edits. Changing `drafts` to {} is
@@ -68827,12 +69096,15 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
         })()}
         ${node.kind === "frames" && lodLive && frameGeom && html`<${WorkflowFrameDraftChrome}
           frameGeom=${frameGeom}
+          nodeId=${node.id}
           zoom=${zoom}
           selected=${selected}
           draftFrameId=${draftFrameId}
+          noteCounts=${noteCounts}
           onStartDraft=${startDraft}
           onApplyDraft=${applyDraft}
           onDiscardDraft=${discardDraft}
+          onSendNotes=${sendFrameNotes}
         />`}
         ${node.kind === "frames" && lodLive && fitClamp && html`
           ${/* Standing truncation warning. The embed can't pan, so the part

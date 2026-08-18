@@ -11012,6 +11012,12 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* A screen carrying durable notes but NOT drafted. Quieter than the draft ring:
+   it marks "there is something to read here", not "this is the live surface". */
+.wf-frame-draft-box[data-noted="true"] {
+  outline: 1px dashed var(--accent);
+  outline-offset: 2px;
+}
 .wf-frame-draft-bar {
   position: absolute;
   right: 0;
