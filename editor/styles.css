@@ -23834,25 +23834,51 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .runs-row-wrap .runs-row { flex: 1 1 auto; min-width: 0; }
 .runs-row {
+  /* Square. A run row is a full-bleed list line, not a card - rounding it made
+     each row read as its own floating object and fought the flush hairlines of
+     the panel it sits in. */
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 8px;
   padding: 8px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   text-align: left;
   font: inherit;
   color: var(--text);
   cursor: pointer;
 }
 .runs-row:hover { background: var(--surface-2); }
-/* Unread bar. The list is ordered by CREATION time so rows hold still, which
-   means a thread no longer advertises new activity by jumping to the top -
-   this bar is what says "something happened in here" instead. An inset shadow
-   rather than a real border-left so the row's grid columns and 8px padding
-   stay exactly where they are and nothing shifts when the bar appears. */
-.runs-row[data-unread="true"] {
-  box-shadow: inset 2px 0 0 var(--accent);
+/* The thread you are LOOKING AT. A filled background rather than an edge mark,
+   so "where am I" is answered by the shape of the whole row and can never be
+   confused with the unread dot on the trailing edge. Wins over :hover, which
+   would otherwise make the open row indistinguishable from whatever the cursor
+   is passing over. */
+.runs-row[data-open="true"],
+.runs-row[data-open="true"]:hover {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.runs-row[data-open="true"] .runs-row-title {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+/* Unread marker. The list is ordered by CREATION time so rows hold still,
+   which means a thread no longer advertises new activity by jumping to the
+   top - this dot is what says "something happened in here" instead. It sits on
+   the TRAILING edge because the leading edge already carries the status dot,
+   and it keeps its grid cell whether or not it is showing, so a row going
+   read/unread never reflows the title. */
+.runs-row-new {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: transparent;
+  flex-shrink: 0;
+}
+.runs-row[data-unread="true"] .runs-row-new {
+  background: var(--warning);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--warning) 25%, transparent);
 }
 .runs-row[data-unread="true"] .runs-row-title {
   font-weight: 650;

@@ -12061,6 +12061,18 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
     window.addEventListener("woven:runs-read", on);
     return () => window.removeEventListener("woven:runs-read", on);
   }, []);
+  // Which thread is currently open, published by the drawer. Matters most in
+  // the popover, which floats OVER an open thread - the list is otherwise only
+  // shown when nothing is open, so nothing would be marked.
+  const [openRunId, setOpenRunId] = useState(() => {
+    try { return window.__thOpenRunId || null; } catch { return null; }
+  });
+  useEffect(() => {
+    const on = (e) => setOpenRunId((e && e.detail && e.detail.runId) || null);
+    window.addEventListener("woven:open-run-changed", on);
+    try { setOpenRunId(window.__thOpenRunId || null); } catch {}
+    return () => window.removeEventListener("woven:open-run-changed", on);
+  }, []);
   // Delete a run - stop it if live, then purge its chat history server-side.
   const deleteRun = useCallback(async (r) => {
     const label = r.title || r.kind || "this run";
@@ -12128,6 +12140,8 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
             <button
               className="runs-row"
               data-unread=${unread ? "true" : "false"}
+              data-open=${r.runId === openRunId ? "true" : "false"}
+              aria-current=${r.runId === openRunId ? "true" : undefined}
               onClick=${() => {
                 // Clear on open. The drawer keeps stamping while the thread
                 // stays on screen, so a run that keeps talking while you read
@@ -12150,6 +12164,12 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
               <span className="runs-row-dot" data-status=${status}/>
               <span className="runs-row-title">${r.title || r.kind}</span>
               <span className="runs-row-age">${formatRunAge(r.updatedAt || r.startedAt)}</span>
+              ${/* Unread marker. A dot on the TRAILING edge rather than a bar on
+                  the leading one: the leading edge already carries the status
+                  dot, so two marks on the same side read as one noisy cluster.
+                  Always in the DOM (hidden when read) so the grid columns never
+                  reflow as rows go read/unread. */ ""}
+              <span className="runs-row-new" aria-label=${unread ? "New activity" : undefined}/>
             </button>
             <button
               className="runs-row-del"
@@ -15592,6 +15612,30 @@ function chatStatusReducer(prev, ev) {
 // surface-specific layout. Workflow mode passes "dock" so the panel docks
 // BELOW the workflow bar instead of overlaying the full viewport height.
 function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onPermissionModeChange, onStartNewChat, preamble, selectionCount, onResizeStart, variant, targetBar }) {
+  // Publish WHICH thread is open, so the runs list can mark that row as the one
+  // you are looking at. Done from the drawer rather than prop-drilled: the
+  // drawer is the single component that knows, and it is hosted by four
+  // different surfaces (app left chat, workflow left chat, popover, dock) that
+  // each hold the run in a different shape. Same window+event convention as the
+  // other cross-surface UI signals.
+  const openRunId = run && run.runId;
+  useEffect(() => {
+    if (!openRunId) return;
+    try {
+      window.__thOpenRunId = openRunId;
+      window.dispatchEvent(new CustomEvent("woven:open-run-changed", { detail: { runId: openRunId } }));
+    } catch {}
+    return () => {
+      try {
+        // Only clear if we are still the thread on screen - a swap to another
+        // run mounts the next drawer before this one tears down.
+        if (window.__thOpenRunId === openRunId) {
+          window.__thOpenRunId = null;
+          window.dispatchEvent(new CustomEvent("woven:open-run-changed", { detail: { runId: null } }));
+        }
+      } catch {}
+    };
+  }, [openRunId]);
   const [events, setEvents] = useState([]);
   const [status, setStatus] = useState("connecting");   // connecting | streaming | done | fail | error
   const [error, setError] = useState(null);
