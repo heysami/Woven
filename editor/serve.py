@@ -10544,6 +10544,11 @@ class RunState:
                  # initialise, "scoped" = cheap iterate); None for node-agent /
                  # system runs. Surfaced to the UI for the thread-kind badge.
                  "tier",
+                 # per-thread check toggles from the chat's Checks dropdown
+                 # ({visual, dsGuard}); None = defaults. __init__ sets it, so it
+                 # MUST have a slot - without one every RunState construction
+                 # raises AttributeError and no run can spawn at all.
+                 "guards",
                  # prototype slug the chat's scoped preamble was built for
                  # (body.prototype at spawn, falling back to branch). Stored so
                  # /resume can rebuild the SAME system prompt - a different
