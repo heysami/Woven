@@ -609,7 +609,7 @@ VISUAL_DELEGATION_DISCIPLINE = """
 
 ### Visual verification + bulk retrieval - ALWAYS delegate to a subagent (mandatory procedure)
 Images and bulk tool payloads ingested into THIS conversation poison its prompt cache later (each image past the harness's ~10-image cap forces a full re-upload of the conversation; bulk dumps rush the context ceiling). You cannot know at ingest time whether this thread stays short, so these rules are unconditional - no session-length judgment call, ever:
-  - VISUAL VERIFICATION: you MUST NOT take a browser screenshot or Read an image file to check or judge work yourself - not once, not "just a quick look". Whenever you need to LOOK at anything (browser state after an edit, `/__qa/run` idleFrames, a rendered page, before/after comparisons, generated plates or candidates), dispatch a `Task` subagent to do the whole look-loop (the `visual-verifier` agent type exists for exactly this; on runtimes without a Task tool, dispatch type `visual-verifier` through the planner-dispatch bridge). It screenshots as freely as QA needs in its own throwaway context and returns a text verdict; your context keeps only the verdict. The subagent does NOT get this preamble, so write a SELF-CONTAINED brief: the exact URL(s) or file paths, what must be true visually, which interactions to try, and that it must report pass/fail with specifics. Visual QA rigor is unchanged - same checks, same screenshots, different context.
+  - VISUAL VERIFICATION: you MUST NOT take a browser screenshot or Read an image file to check or judge work yourself - not once, not "just a quick look". Whenever you need to LOOK at anything (browser state after an edit, `/__qa/run` idleFrames, a rendered page, THE WORKFLOW CANVAS after you created or rearranged nodes, before/after comparisons, generated plates or candidates), dispatch a `Task` subagent to do the whole look-loop (the `visual-verifier` agent type exists for exactly this; on runtimes without a Task tool, dispatch type `visual-verifier` through the planner-dispatch bridge). It screenshots as freely as QA needs in its own throwaway context and returns a text verdict; your context keeps only the verdict. The subagent does NOT get this preamble, so write a SELF-CONTAINED brief: the exact URL(s) or file paths, what must be true visually, which interactions to try, and that it must report pass/fail with specifics. Visual QA rigor is unchanged - same checks, same screenshots, different context.
   - FIGMA / BULK RETRIEVAL: you MUST NOT call Figma MCP document/node-dump tools (or any tool returning a bulk single-use payload - large API responses, log dumps) directly in this chat. Dispatch a `Task` subagent that fetches the payload, extracts exactly what the task needs (tokens, measurements, component structure, layout spec), and returns it as structured text. If you later need a detail the brief missed, re-dispatch - never hold the raw dump here.
   - USER-PASTED images are the one exception physics forces: they are already in your context before you act. View each ONCE, write down what you concluded, and never Read that image again - your recorded observation is durable, the pixels are dead weight."""
 
@@ -671,6 +671,49 @@ HOW:
   3. ALL INTACT -> present the gate as normal and say nothing extra. Do NOT ask the user to re-confirm content that did not change: a reflex confirmation on every gate trains the user to stop reading gates.
   4. ANY reinterpretation / merge / drop / clash -> the gate MUST open with a **Content changes from your request** section, one plain line per divergence stating what they asked for, what the concept does instead, and why (e.g. "you asked for 'extremely futuristic' as the final era; this concept renders it as the OLDEST stone form under a sourceless light - conceptually future, visually ancient", or "you said 'drag each object to rotate it'; this concept is scroll-driven with no per-object drag"). Offer the resolution explicitly: keep the concept's version / restore the literal content / adjust. Never bury the delta inside the concept prose - the user must see it without reading the docs.
   5. RECORD the user's resolution in the decision's `detail.steers` (`POST $TH_DAEMON_URL/__decision/<gate-id>?project=$TH_PROJECT_ID`, same shape as the direction lock), so the build thread and every later gate inherit it as committed intent. A divergence the user resolved is committed; a divergence discovered later that was NEVER surfaced and resolved (e.g. at the final gate's PROMISED diff against the ledger `brief`) is a gate FAILURE that routes back to the responsible step, not a footnote."""
+
+
+# ── Per-thread guard toggles ────────────────────────────────────────────
+# The chat composer's "Checks" dropdown (editor/app.js ChatGuardsPicker) lets
+# the user drop either MANDATORY gate for one thread. Both default ON - the
+# gates exist because self-certified "done" and silent DS drift are the two
+# failures that cost the most rework - so the toggles are an escape hatch for
+# the threads where the gate is pure overhead (a copy tweak, a docs pass, a
+# question), never the normal way to work.
+#
+# A toggle changes the PREAMBLE the spawn carries, so it is fixed at spawn
+# time like the tier: flipping it applies to the next chat, and /resume
+# rebuilds the same prompt from the persisted flags (a resume that rebuilt a
+# different preamble would cache-bust the whole session - see
+# serve.py _run_resume).
+GUARD_DEFAULTS = {"visual": True, "dsGuard": True}
+
+
+def normalize_guards(raw) -> dict:
+    """Coerce whatever the client sent onto the two known boolean flags.
+    Missing / malformed -> the gate stays ON: a guard must never be dropped
+    by an absent field, only by an explicit false."""
+    out = dict(GUARD_DEFAULTS)
+    if isinstance(raw, dict):
+        for k in out:
+            if k in raw:
+                out[k] = bool(raw[k])
+    return out
+
+
+# Header of the mandatory visual gate, stripped when the user turns the check
+# off (the whole section, so its ~1.5K of QA protocol goes too).
+_VISUAL_GATE_HEADER = "## Verify your visual work before you tell the user it is done (hard rule)"
+
+# What replaces it. Deliberately short, and it still NAMES the endpoint: the
+# user turned off the obligation, not the capability - an agent that answers
+# "I can't check that" because the section is gone is a worse outcome than
+# the gate it replaced.
+VISUAL_GUARD_OFF_STUB = """
+
+### Visual verification - turned OFF for this thread (by the user)
+The user has switched the mandatory visual-verification gate off for this chat, so you are NOT required to render, screenshot, or QA what you build before reporting it, and you should NOT spend a subagent dispatch on a look-loop unless asked. Say plainly what you changed and that you did not verify it visually; never claim a visual result you did not see.
+The tooling stays available for when the user DOES ask to check something: `GET $TH_DAEMON_URL/__qa/run?project=$TH_PROJECT_ID&page=<slug>` (composed page) or `&node=<nodeId>` (one baked interactive piece), plus the `mcp__claude_preview__*` browser tools. Screenshots you take land in THIS conversation, so take the fewest that answer the question."""
 
 
 # design goal is skim-proofing: a leaf's correct default is to PROCEED (not to
@@ -1077,7 +1120,8 @@ def _orchestrator_roster_block(project_root: Optional[str] = None) -> str:
     return "\n".join(out)
 
 
-def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full", prototype: Optional[str] = None) -> str:
+def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full", prototype: Optional[str] = None,
+                          guards: Optional[dict] = None) -> str:
     """A compact summary to inject into every spawn's system prompt. Includes
     the names + one-line purposes - not the full catalog - so the agent
     knows what EXISTS without burning 3KB of tokens. For details the agent
@@ -1091,6 +1135,10 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
         and appends LEAF_ROUTER_STUB, which proceeds-by-default and gates
         escalation on a closed checklist + a `?section=orchestrators` fetch.
         App-capabilities + verify gates are kept (a leaf needs those).
+
+    `guards` carries the chat composer's per-thread check toggles
+    ({"visual": bool, "dsGuard": bool}, both default True). A false flag drops
+    that gate's blocks from the preamble entirely - see normalize_guards.
 
     `project_root` lets the preamble respect the project's orchestrator
     disable list (`.orchestrators-disabled.json`). Hard-rule blocks for disabled
@@ -1652,6 +1700,7 @@ You CANNOT see what you built by reading the source you wrote. "I wrote the HTML
 Pick the target:
 - **`&page=<slug>`** (or `&page=<slug>/<file>.html`) - the COMPOSED page/app surface as the user sees it: chrome + design-system shells + every piece in place. Defaults to `mode=render`: it passes a correctly painted page, and FAILS `blank` if the page rendered an unstyled flat wash (the classic broken-`?project`-stamping / 404'd-DS-imports bug). **This is the realistic view** - it serves through the daemon at the same `/source/...?project=` URL the editor iframe loads, NOT a raw `file://` or a separate sandbox that misses the design-system imports.
 - **`&node=<nodeId>`** - ONE baked interactive piece in isolation. Defaults to `mode=interactive`: it captures an idle timeline AND simulates input (pointer / click / drag / scroll / key), so it tells `static` (nothing moves) and `no-reaction` (ignores input) apart from a real `pass`. Bake the node first (the bake stamps `node.bakedPath`).
+- **Canvas creations** - when the thing you made lives ON THE WORKFLOW CANVAS (nodes, whiteboard items, a section, a table, an app node - anything you committed through `/__workflow` or a node run), the same rule holds: you CANNOT see it by re-reading `workflow.json`. Before you say it is done, LOOK at the canvas as the user sees it - `$TH_DAEMON_URL/?project=$TH_PROJECT_ID&view=workflow` - and check what actually landed: did every node you created appear at all, is each the KIND you intended, is it placed where you meant (not stacked on an existing node, not off-screen, not overlapping the piece it belongs next to), and are the wires you drew attached to the ports you meant? Then verify each node's OWN output by its own target above (`&node=<id>` for a baked interactive piece, `&page=<slug>` for a section/prototype node, and for a generated image / video node the asset file the node points at). Report what you SAW, not what you wrote.
 
 CAMERA / VISION pieces ARE verifiable - the QA injects a SYNTHETIC camera (a stock hand + face that MediaPipe detects, moving) in place of the real webcam, auto-grants camera/mic permission, and warms up for the model to load. So NEVER say "I can't verify a webcam/camera/mouse piece without a real camera or a human" - run the QA. The report has `cameraMock` (the fixture fed in) and `cameraUsed` (did the piece actually call getUserMedia). KEY DIAGNOSTIC: if `cameraUsed` is false/absent while `cameraMock` is set, the camera fed in fine but YOUR PIECE never requested it - the camera input is not wired (often a stock `placeholder` content layer that a slot-author never customised). That is a `static` because the piece is incomplete, NOT a QA limitation - finish wiring the camera, re-bake, re-run. (Optional `&camera=hand|face|both|off`.)
 
@@ -2866,6 +2915,20 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     # is None - see the import-failure fallback above).
     if enabled_orchestrators is not None:
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, enabled_orchestrators)
+    # Per-thread guard toggles. `_visual_block` is what rides at the end of
+    # every interactive tier: the delegation discipline when the gate is on,
+    # the short "it's off" note when the user turned it off. Turning the gate
+    # off ALSO strips the mandatory verify section - leaving it in while the
+    # discipline is gone would tell the agent to verify but not how to keep
+    # the pixels out of this thread.
+    _g = normalize_guards(guards)
+    _visual_block = VISUAL_DELEGATION_DISCIPLINE
+    if not _g["visual"]:
+        _preamble = _strip_sections_by_header(_preamble, [_VISUAL_GATE_HEADER])
+        _visual_block = VISUAL_GUARD_OFF_STUB
+    # The DS drift gate is per-prototype (empty string when no DS is bound),
+    # and the user can drop it for this thread the same way.
+    _ds_block = _ds_guard_stub(project_root, prototype) if _g["dsGuard"] else ""
     # Accept the legacy cost-name aliases full/slim for the setup/leaf paths.
     if tier == "full":
         tier = "setup"
@@ -2887,7 +2950,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + _ds_guard_stub(project_root, prototype) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + _ds_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
     # NORMAL path: the project's everyday chat, the untargeted default. Same
     # routing strip as scoped (routing is fetched on demand only when the user
     # asks for a genuine new build), but NOT bound to one prototype - a general
@@ -2895,13 +2958,13 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "normal":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _normal_general_stub() + _ds_guard_stub(project_root, prototype) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+        return _preamble + _normal_general_stub() + _ds_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
     # SETUP path (default): a new prototype build. Keeps the full routing
     # catalog. Append manifest-carried hard rules for orchestrators added
     # after ship time (not covered by the static prose above). Appended AFTER
     # the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
-    return _preamble + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+    return _preamble + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
 
 
 def orchestrator_routing_text(project_root: Optional[str] = None) -> str:

@@ -23347,6 +23347,44 @@ a.ds-badge:hover, button.ds-badge:hover {
   line-height: 1.4;
 }
 
+/* Agent-checks picker - same shell as the permission / view pickers, but its
+   rows are independent checkboxes (visual verification, DS guard) rather than
+   a single-choice list, so the tick carries the state instead of a row fill.
+   The trigger goes amber when any gate is off: a dropped check is a thing the
+   user should notice from the closed state, not only on open. */
+.chat-composer-toolbar .guards-picker { position: relative; margin-left: 5px; }
+.chat-composer-toolbar .guards-picker::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+}
+.guards-picker .perm-trigger[data-off="true"] { color: var(--warning); }
+.guards-picker .perm-trigger[data-off="true"]:hover { border-color: var(--warning); }
+.guard-check {
+  width: 15px; height: 15px;
+  margin-top: 1px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--accent-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, border-color 0.12s;
+}
+.guard-check[data-on="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.guard-check svg { width: 11px; height: 11px; }
+
 /* Compact read-only mode chip in the chat drawer header */
 .chat-mode-chip {
   display: inline-flex;

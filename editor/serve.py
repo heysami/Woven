@@ -10336,6 +10336,7 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
         # routing rules mid-thread.
         permission_mode = None
         tier = first.get("tier")   # stamped on every persisted line
+        guards = None
         prototype = None
         model = None
         chain = None
@@ -10357,6 +10358,8 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
                     tier = data["tier"]
                 if data.get("prototype") and prototype is None:
                     prototype = data["prototype"]
+                if isinstance(data.get("guards"), dict) and guards is None:
+                    guards = data["guards"]
                 if data.get("model") and model is None:
                     model = data["model"]
                 if data.get("chain") and chain is None:
@@ -10399,6 +10402,10 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
         state.permission_mode = permission_mode or AGENT_DEFS.get(agent_id, {}).get("permission_default")
         state.tier = tier or None
         state.prototype = prototype or None
+        # Runs spawned before the toggles existed carry no `guards` - they
+        # rehydrate as None, which _normalize_chat_guards turns back into
+        # "both gates on", i.e. exactly what they were spawned with.
+        state.guards = guards or None
         state.model = model or None
         state.chain_rest = list(chain) if chain else []
         # A daemon restart mid build-chain loses the auto-dispatch of the
@@ -10570,6 +10577,7 @@ class RunState:
         # node-agent / system runs (their badge comes from `kind`). Surfaced to
         # the UI so the chat header can badge Setup vs Subagent vs (scoped=none).
         self.tier = None
+        self.guards = None   # per-thread check toggles (visual / dsGuard)
         # prototype slug the scoped preamble was built for; set by _run_create.
         self.prototype = None
         # Chosen default model (Settings > Agent model); set by _run_create.
@@ -13457,7 +13465,8 @@ def _chat_ds_scope_note(project_root: str, branch: str) -> str:
         return ""
 
 
-def _chat_system_prompt(project_root: str, branch: str, tier: str, prototype: str) -> str:
+def _chat_system_prompt(project_root: str, branch: str, tier: str, prototype: str,
+                        guards: dict = None) -> str:
     """System prompt for an interactive project chat on the claude runtime.
 
     Used by BOTH the initial spawn (_run_create) and /resume (_run_resume) so
@@ -13493,7 +13502,7 @@ def _chat_system_prompt(project_root: str, branch: str, tier: str, prototype: st
     # features that ARE integrated. See kinds/capabilities.py.
     try:
         from kinds.capabilities import capabilities_preamble
-        sys_prompt = sys_prompt + "\n\n" + capabilities_preamble(project_root=project_root, tier=tier, prototype=prototype)
+        sys_prompt = sys_prompt + "\n\n" + capabilities_preamble(project_root=project_root, tier=tier, prototype=prototype, guards=guards)
     except Exception:
         pass
     if _mcp_config_spawn_args():
@@ -13507,7 +13516,8 @@ def _chat_system_prompt(project_root: str, branch: str, tier: str, prototype: st
 
 
 def _codex_chat_preamble(agent_id: str, project_root: str, project_id: str,
-                         branch: str, tier: str, prototype: str) -> str:
+                         branch: str, tier: str, prototype: str,
+                         guards: dict = None) -> str:
     """Harness preamble body for the argv-prompt runtimes (codex / opencode),
     which have no --append-system-prompt flag: the caller prepends this to
     the user prompt. Shared by the initial spawn (_run_create) AND the fake
@@ -13531,7 +13541,7 @@ def _codex_chat_preamble(agent_id: str, project_root: str, project_id: str,
         )
     try:
         from kinds.capabilities import capabilities_preamble
-        bits.append(capabilities_preamble(project_root=project_root, tier=tier, prototype=prototype))
+        bits.append(capabilities_preamble(project_root=project_root, tier=tier, prototype=prototype, guards=guards))
     except Exception:
         pass
     bits.append(
@@ -13615,6 +13625,38 @@ def _normalize_chat_tier(raw) -> str:
     if t not in ("setup", "normal", "scoped", "leaf"):
         t = "normal"
     return t
+
+
+def _normalize_chat_guards(raw) -> dict:
+    """The chat composer's per-thread check toggles ({"visual", "dsGuard"},
+    both default True) coerced onto plain booleans. Kept as a thin wrapper so
+    an import failure of kinds.capabilities (which every preamble call already
+    tolerates) still yields a usable dict rather than exploding a spawn."""
+    try:
+        from kinds.capabilities import normalize_guards
+        return normalize_guards(raw)
+    except Exception:
+        out = {"visual": True, "dsGuard": True}
+        if isinstance(raw, dict):
+            for k in out:
+                if k in raw:
+                    out[k] = bool(raw[k])
+        return out
+
+
+def _apply_guard_env(env: dict, guards: dict) -> dict:
+    """Mirror the visual check onto the child env so the PreToolUse hook
+    (.claude/hooks/require-visual-delegation.py) agrees with the preamble.
+    Only the OFF case is stamped; absent var = the gate is on, which keeps
+    every other spawn (node agents, planners, older callers) unchanged."""
+    try:
+        if guards and not guards.get("visual", True):
+            env["TH_VISUAL_GUARD"] = "0"
+        else:
+            env.pop("TH_VISUAL_GUARD", None)
+    except Exception:
+        pass
+    return env
 
 
 # System agent threads (landing → System tab → Orchestrators /
@@ -32702,6 +32744,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Falls back to branch so a scoped handoff (which carries branch=slug)
         # still names the right prototype.
         _chat_proto = (body.get("prototype") or branch or "main").strip() or "main"
+        # Per-thread check toggles from the composer's "Checks" dropdown
+        # ({"visual", "dsGuard"}, both ON unless the user unticked them).
+        # They shape the preamble, so they are fixed at spawn time like the
+        # tier - and persisted on the spawn event so /resume rebuilds the
+        # SAME prompt instead of cache-busting the session.
+        _chat_guards = _normalize_chat_guards(body.get("guards"))
         spawn_args = list(defs["args"])
         # Claude Code 2.1.163 split the bypass into TWO
         # flags. --dangerously-skip-permissions alone no longer skips
@@ -32767,7 +32815,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         if agent_id == "claude":
             # Shared with /resume via _chat_system_prompt so a resumed chat
             # rebuilds this byte-identically (see that helper's docstring).
-            sys_prompt = _chat_system_prompt(project_root, branch, _chat_tier, _chat_proto)
+            sys_prompt = _chat_system_prompt(project_root, branch, _chat_tier, _chat_proto,
+                                             guards=_chat_guards)
             spawn_args += ["--append-system-prompt", sys_prompt]
         elif agent_id in ("codex", "opencode"):
             # Codex chats get the SAME capabilities preamble as Claude
@@ -32788,7 +32837,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             # --append-system-prompt equivalent. Shared with _run_resume_codex
             # via _codex_chat_preamble (a resume without it loses every rule).
             codex_preamble = _codex_chat_preamble(
-                agent_id, project_root, project_id, branch, _chat_tier, _chat_proto)
+                agent_id, project_root, project_id, branch, _chat_tier, _chat_proto,
+                guards=_chat_guards)
             prompt_text = (
                 "===== HARNESS PREAMBLE =====\n"
                 + codex_preamble
@@ -32824,6 +32874,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         env = _build_child_env(agent_id, run_id,
                                project_root=project_root, project_id=project_id,
                                main_thread=True)
+        # The visual gate is enforced twice: by the preamble (prose) and by
+        # the PreToolUse hook that denies main-thread screenshots / image
+        # Reads. Turning the check off has to release BOTH, or the agent is
+        # told it may look and then blocked from looking.
+        _apply_guard_env(env, _chat_guards)
 
         try:
             proc = subprocess.Popen(
@@ -32847,6 +32902,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.permission_mode = permission_mode or None
         state.tier = _chat_tier   # "setup" | "normal" | "scoped"
         state.prototype = _chat_proto   # scoped-preamble target; re-used on resume
+        state.guards = _chat_guards     # per-thread check toggles; re-used on resume
         state.model = agent_model or None   # Settings > Agent model; re-applied on resume
         # ── History snapshot - BEFORE state ──────────────────────────────
         # The subprocess is running but hasn't received its prompt yet (we
@@ -32885,6 +32941,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # the SAME spawn: same preamble tier + scope, same model.
             "tier": _chat_tier,
             "prototype": _chat_proto,
+            "guards": _chat_guards,
             "model": agent_model or None,
             "promptPreview": prompt_text[:240],
         })
@@ -33441,6 +33498,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         env = _build_child_env(state.agent_id, run_id,
                                project_root=state.project_root, project_id=state.project_id,
                                main_thread=True)
+        _apply_guard_env(env, _normalize_chat_guards(getattr(state, "guards", None)))
         resume_sid = None
         if (state.agent_id == "codex"
                 and os.environ.get("WOVEN_CODEX_EXEC_RESUME", "").lower() not in ("0", "off", "false")
@@ -33497,7 +33555,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             state.agent_id, state.project_root, state.project_id,
             state.branch,
             _normalize_chat_tier(getattr(state, "tier", None)),
-            (getattr(state, "prototype", None) or state.branch or "main"))
+            (getattr(state, "prototype", None) or state.branch or "main"),
+            guards=_normalize_chat_guards(getattr(state, "guards", None)))
         # Compose the resume prompt. Frame it explicitly so codex knows the
         # prior conversation is context, not instructions to repeat.
         if transcript:
@@ -33720,7 +33779,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             # restored by _rehydrate_run_from_jsonl after a daemon restart.
             _tier = _normalize_chat_tier(getattr(state, "tier", None))
             _proto = (getattr(state, "prototype", None) or state.branch or "main")
-            sys_prompt = _chat_system_prompt(state.project_root, state.branch, _tier, _proto)
+            _guards = _normalize_chat_guards(getattr(state, "guards", None))
+            sys_prompt = _chat_system_prompt(state.project_root, state.branch, _tier, _proto,
+                                             guards=_guards)
             spawn_args += ["--append-system-prompt", sys_prompt]
         if state.session_id:
             spawn_args += ["--resume", state.session_id]
@@ -33737,6 +33798,9 @@ class H(http.server.SimpleHTTPRequestHandler):
 
         env = _build_child_env(state.agent_id, run_id,
                                project_root=state.project_root, project_id=state.project_id)
+        # Same-guards-as-spawn: the hook must not re-arm on a resumed thread
+        # whose preamble says the visual check is off.
+        _apply_guard_env(env, _normalize_chat_guards(getattr(state, "guards", None)))
         # A resumed node-agent run keeps its leaf identity: re-stamp the
         # leaf-delegation discriminator so the territory hard-gate in
         # require-orchestrator.sh still recognises it after resume (the

@@ -27,6 +27,7 @@ heredoc replaces stdin, so the payload is lost and every call fails open.
 This must stay a real script file that reads the payload from stdin.
 """
 import json
+import os
 import sys
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff")
@@ -38,6 +39,14 @@ def main():
     except Exception:
         print("{}")
         return  # unparseable - fail open, never brick the session
+
+    # The chat's "Checks" dropdown can turn the visual gate off for one
+    # thread; serve.py stamps TH_VISUAL_GUARD=0 on that spawn's env (see
+    # _apply_guard_env). The preamble then tells the agent it may look
+    # inline, so the hook must not contradict it. Absent var = gate on.
+    if (os.environ.get("TH_VISUAL_GUARD") or "").strip() == "0":
+        print("{}")
+        return
 
     # Inside a Task subagent: full visual rights.
     if payload.get("agent_type"):

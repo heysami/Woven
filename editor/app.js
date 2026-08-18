@@ -10186,7 +10186,7 @@ function buildLottieSrcDoc(fileUrl, withDiagnostics) {
     '})();</script></body></html>';
 }
 
-async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, tier, prototype }) {
+async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, tier, prototype, guards }) {
   const project = activeProjectId();
   // Default the runtime from the user's agent-capability pick when the caller
   // didn't pass one - the server would otherwise fall back to its own
@@ -10203,7 +10203,7 @@ async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, t
   const res = await fetch(apiUrl("/__run"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ branch, agentId: effAgentId, kind, prompt, title, meta, project, model: effModel, tier, prototype }),
+    body: JSON.stringify({ branch, agentId: effAgentId, kind, prompt, title, meta, project, model: effModel, tier, prototype, guards }),
   });
   let body = null;
   try { body = await res.json(); } catch {}
@@ -11790,6 +11790,99 @@ function ChatViewModePicker({ value, onChange, openUp }) {
   `;
 }
 
+/* Per-thread agent checks - the two MANDATORY gates the preamble carries,
+   which the user can drop for a thread where they are pure overhead (a copy
+   tweak, a docs pass, a question):
+     - visual   the visual-verification gate: render + look (delegated to a
+                visual-verifier subagent) before claiming a visual or canvas
+                deliverable is done. Off also releases the PreToolUse hook
+                that blocks main-thread screenshots (serve.py _apply_guard_env),
+                so the agent can glance inline instead of being told it may
+                look and then denied.
+     - dsGuard  the DS-drift gate: the ds-guardian dispatch after any markup /
+                CSS edit on a DS-bound page. No-op on projects with no design
+                system bound - the preamble emits nothing there either way.
+   Both default ON. They shape the SPAWN's system prompt, so like the
+   permission mode they apply to the next run, not the one already streaming.
+   Persisted in the shared editor settings blob (a sticky user preference). */
+const CHAT_GUARD_OPTIONS = [
+  { key: "visual",  label: "Visual verification", hint: "Agent renders and looks at what it built (via a throwaway verifier subagent) before saying it is done - including anything it creates on the canvas. Off: it reports without checking, and may glance inline." },
+  { key: "dsGuard", label: "Design system guard", hint: "After any markup / CSS edit on a design-system-bound page, the agent runs the DS-drift linter and autofixes local forks. Off: no drift check. Projects with no design system are unaffected." },
+];
+function loadChatGuards() {
+  const raw = loadSettings().chatGuards;
+  const out = {};
+  for (const o of CHAT_GUARD_OPTIONS) {
+    out[o.key] = (raw && typeof raw === "object" && o.key in raw) ? !!raw[o.key] : true;
+  }
+  return out;
+}
+function saveChatGuards(next) {
+  saveSettings({ chatGuards: next });
+  return next;
+}
+function chatGuardsSummary(g) {
+  const off = CHAT_GUARD_OPTIONS.filter(o => !g[o.key]);
+  if (!off.length) return "Checks: on";
+  if (off.length === CHAT_GUARD_OPTIONS.length) return "Checks: off";
+  return `Checks: ${CHAT_GUARD_OPTIONS.length - off.length}/${CHAT_GUARD_OPTIONS.length}`;
+}
+
+/* Same skeleton + CSS family as PermissionModePicker / ChatViewModePicker, so
+   the footer dropdowns read as siblings - but the rows are CHECKBOXES (the
+   two gates are independent), not a single-choice list. */
+function ChatGuardsPicker({ value, onChange, openUp }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const off = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", off);
+    return () => document.removeEventListener("mousedown", off);
+  }, [open]);
+  const anyOff = CHAT_GUARD_OPTIONS.some(o => !value[o.key]);
+  return html`
+    <div className="perm-picker guards-picker" ref=${ref} data-up=${!!openUp}>
+      <button
+        className="perm-trigger"
+        data-open=${open}
+        data-off=${anyOff}
+        title="Which mandatory checks the agent runs before it calls work done"
+        onClick=${() => setOpen(o => !o)}
+      >
+        <span className="perm-trigger-label">${chatGuardsSummary(value)}</span>
+        <span className="perm-chev">${openUp ? "▴" : "▾"}</span>
+      </button>
+      ${open && html`
+        <div className="perm-menu">
+          <div className="perm-menu-head">Checks before "done"</div>
+          ${CHAT_GUARD_OPTIONS.map(opt => html`
+            <button
+              key=${opt.key}
+              className="perm-item"
+              role="menuitemcheckbox"
+              aria-checked=${!!value[opt.key]}
+              title=${opt.hint}
+              onClick=${() => onChange({ ...value, [opt.key]: !value[opt.key] })}
+            >
+              <span className="guard-check" data-on=${!!value[opt.key]} aria-hidden="true">
+                ${value[opt.key] ? html`<${Icon.Check}/>` : null}
+              </span>
+              <span className="perm-item-body">
+                <span className="perm-item-label">${opt.label}</span>
+                <span className="perm-item-hint">${opt.hint}</span>
+              </span>
+            </button>
+          `)}
+          <div className="perm-menu-foot">
+            On by default. Unticking one drops it from the agent's instructions, so it applies to the next chat - the current run keeps what it was spawned with.
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
 function AgentPicker({ agents, value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -12550,6 +12643,9 @@ function RightRailDock({ mode }) {
       prompt: wrappedPrompt, title, permissionMode,
       model: agentDefault && agentDefault.model || undefined,
       tier: (scoped && scoped.tier) || undefined,
+      // The composer's "Checks" toggles shape the spawn's preamble, so they
+      // are read fresh at send time (the footer control persists them).
+      guards: loadChatGuards(),
     });
     setChatRun(run);
     setChatRunFinished(false);
@@ -15670,6 +15766,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     setViewMode(v);
     try { localStorage.setItem(CHAT_VIEW_MODE_KEY, v); } catch {}
   };
+  // Per-thread agent checks (visual verification / DS guard). Also a sticky
+  // preference: the spawn sites read it straight from settings at send time,
+  // so this state only drives the footer control's own rendering.
+  const [chatGuards, setChatGuards] = useState(loadChatGuards);
+  const changeChatGuards = (g) => { setChatGuards(g); saveChatGuards(g); };
   const [answers, setAnswers] = useState({});   // { toolUseId: [{ question, answer }, …] }
   // A clicked DecisionRequestCard sends a user-message shaped
   // `[decision:<id>] <v1>[,v2,…] - <label1>[; label2;…]`.
@@ -16624,6 +16725,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             value=${permissionMode}
             onChange=${onPermissionModeChange}
             compact=${true}
+            openUp=${true}
+          />
+          <${ChatGuardsPicker}
+            value=${chatGuards}
+            onChange=${changeChatGuards}
             openUp=${true}
           />
         `}
@@ -29939,6 +30045,7 @@ function WorkflowCanvas() {
       model: agentDefault && agentDefault.model || undefined,
       tier: targetSlug ? "scoped" : "normal",
       prototype: targetSlug || undefined,
+      guards: loadChatGuards(),
     });
     setChatRun(run);
     setChatRunFinished(false);
