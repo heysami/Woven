@@ -12026,6 +12026,7 @@ function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onOpenTas
     if (w.kind === "tasks")    return html`<${TasksSubagentsPanel} embedded=${true} runs=${runs} onOpenRun=${onOpenRun} onOpenSubagent=${onOpenSubagent} onOpenTask=${onOpenTask} />`;
     if (w.kind === "comments") return html`<${CommentsPanel} embedded=${true} onStartChatWithPrompt=${onStartChatWithPrompt} />`;
     if (w.kind === "git")      return html`<${GitPanel} embedded=${true} onStartChatWithPrompt=${onStartChatWithPrompt} />`;
+    if (w.kind === "scratch")  return html`<${ScratchPanel} />`;
     return null;
   };
 
@@ -12309,6 +12310,293 @@ function LeftRunsPopover({ onOpenRun, onStartNewChat, onClose }) {
   `;
 }
 
+/* ── Scratchpads ───────────────────────────────────────────────────────────
+   A scratchpad is a THROWAWAY canvas: same doc shape as workflow.json
+   ({nodes, edges, wb, pan, zoom}), same surface rendering it, same tools -
+   but stored in <project>/workflow/scratch/<id>.json, which the daemon keeps
+   in .gitignore. Thinking space that never reaches a commit or a
+   collaborator's pull.
+
+   Because the doc shape matches, copy/paste between the main canvas and a
+   scratchpad (and between two scratchpads) is a straight node/item transfer
+   through the shared clipboards - see _wfNodeClipboard / _wfWbClipboard.
+
+   Scratch nodes are NOT runnable: /__workflow/node/<id>/* only ever resolves
+   workflow.json, so Run and the authoring chrome are suppressed in embedded
+   mode. Content-bearing kinds (prototype / html / frames / image) still
+   render live, because those read files off disk rather than the graph. */
+const scratchApi = {
+  list:   ()             => fetch(apiUrl("/__scratch")).then(r => r.json()).then(j => j.pads || []),
+  get:    (id)           => fetch(apiUrl("/__scratch/" + id)).then(r => (r.ok ? r.json() : null)),
+  create: (name, from)   => fetch(apiUrl("/__scratch"), {
+                              method: "POST", headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ op: "create", name, from }),
+                            }).then(r => r.json()).then(j => j.pad || null),
+  rename: (id, name)     => fetch(apiUrl("/__scratch"), {
+                              method: "POST", headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ op: "rename", id, name }),
+                            }).then(r => r.json()),
+  remove: (id)           => fetch(apiUrl("/__scratch"), {
+                              method: "POST", headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ op: "delete", id }),
+                            }).then(r => r.json()),
+  save:   (id, doc)      => fetch(apiUrl("/__scratch/" + id), {
+                              method: "POST", headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify(doc),
+                            }).then(r => r.json()),
+};
+
+/* Which scratchpad the dock tile currently has open, remembered per project
+   so reopening the panel lands back where you were rather than on the list. */
+function scratchOpenKey() { try { return "th.scratch.open." + (activeProjectId() || ""); } catch { return "th.scratch.open."; } }
+
+/* ScratchPanel - the dock tile. Two states: the LIST (every pad in the
+   project, newest-touched first) and one OPEN pad rendering the real canvas
+   surface in embedded mode. Mirrors the agent-runs shape the user already
+   knows: a list you pick from, plus a button that makes a new one. */
+function ScratchPanel({ onAttachToChat }) {
+  const [pads, setPads]   = useState([]);
+  const [openId, setOpenId] = useState(() => { try { return localStorage.getItem(scratchOpenKey()) || null; } catch { return null; } });
+  const [loading, setLoading] = useState(true);
+  const refresh = useCallback(() => scratchApi.list().then(p => { setPads(p); setLoading(false); })
+                                                    .catch(() => setLoading(false)), []);
+  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    try { if (openId) localStorage.setItem(scratchOpenKey(), openId); else localStorage.removeItem(scratchOpenKey()); } catch {}
+  }, [openId]);
+
+  const onNew = useCallback(async () => {
+    const pad = await scratchApi.create("Scratchpad " + (pads.length + 1));
+    if (pad) { await refresh(); setOpenId(pad.id); }
+  }, [pads.length, refresh]);
+
+  const onRename = useCallback(async (pad) => {
+    const name = await uiPrompt("Rename scratchpad", pad.name, { title: "Rename" });
+    if (name == null || !name.trim()) return;
+    await scratchApi.rename(pad.id, name.trim());
+    refresh();
+  }, [refresh]);
+
+  const onDuplicate = useCallback(async (pad) => {
+    const copy = await scratchApi.create(pad.name + " copy", pad.id);
+    if (copy) refresh();
+  }, [refresh]);
+
+  const onDelete = useCallback(async (pad) => {
+    const ok = await uiConfirm(`Delete "${pad.name}"? Scratchpads aren't in git, so this can't be undone.`, { title: "Delete scratchpad" });
+    if (!ok) return;
+    await scratchApi.remove(pad.id);
+    setOpenId(cur => (cur === pad.id ? null : cur));
+    refresh();
+  }, [refresh]);
+
+  if (openId) {
+    return html`<${ScratchBoard}
+      key=${openId}
+      padId=${openId}
+      onBack=${() => { setOpenId(null); refresh(); }}
+      onRenamed=${refresh}
+      onAttachToChat=${onAttachToChat}
+    />`;
+  }
+
+  return html`
+    <div className="scratch-panel">
+      <div className="scratch-panel-head">
+        <span className="scratch-panel-title">Scratchpads</span>
+        <span className="scratch-panel-note">not saved to git</span>
+        <button className="scratch-new-btn" onClick=${onNew} title="New scratchpad">
+          <${Icon.Plus}/><span>New</span>
+        </button>
+      </div>
+      ${loading ? html`<div className="scratch-empty">Loading…</div>`
+        : !pads.length ? html`
+          <div className="scratch-empty">
+            <div className="scratch-empty-title">No scratchpads yet</div>
+            <div className="scratch-empty-desc">A scratchpad is a throwaway canvas with the same tools as the main one. Copy nodes and notes in and out; nothing here is committed.</div>
+          </div>
+        ` : html`
+          <div className="scratch-list">
+            ${pads.map(p => html`
+              <div className="scratch-row" key=${p.id} onClick=${() => setOpenId(p.id)} role="button" tabIndex=${0}
+                onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenId(p.id); } }}>
+                <span className="scratch-row-icon"><${Icon.NotesDoc}/></span>
+                <span className="scratch-row-name" title=${p.name}>${p.name}</span>
+                <span className="scratch-row-meta">${p.nodes + p.items || 0} item${(p.nodes + p.items) === 1 ? "" : "s"}</span>
+                <span className="scratch-row-age">${formatRunAge(Math.floor((p.updated || 0) / 1000))}</span>
+                <span className="scratch-row-actions">
+                  <button title="Rename" aria-label="Rename" onClick=${(e) => { e.stopPropagation(); onRename(p); }}><${Icon.PencilTool}/></button>
+                  <button title="Duplicate" aria-label="Duplicate" onClick=${(e) => { e.stopPropagation(); onDuplicate(p); }}><${Icon.Copy}/></button>
+                  <button title="Delete" aria-label="Delete" onClick=${(e) => { e.stopPropagation(); onDelete(p); }}><${Icon.Trash}/></button>
+                </span>
+              </div>
+            `)}
+          </div>
+        `}
+    </div>
+  `;
+}
+
+/* uploadDataUriAttachment - POST a data URI to the shared attachment store
+   (project-level attachments/, the same place chat images and pasted
+   whiteboard images land). Module-level so the scratchpad snapshot can use
+   it without duplicating the component-local uploaders. Returns
+   { path, fullPath, mime }. */
+async function uploadDataUriAttachment(dataUri, name) {
+  const resp = await fetch(apiUrl("/__attachment"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name || "attachment.png", data_uri: dataUri }),
+  });
+  const j = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(j.error || `HTTP ${resp.status}`);
+  return { path: j.path, fullPath: j.path, mime: j.mime, size: j.size };
+}
+
+/* ScratchBoard - ONE open scratchpad. Owns the doc + a debounced whole-file
+   save, and hands the doc to the real canvas surface in embedded mode.
+
+   The save is deliberately dumber than the main canvas's: no dirty-field
+   tracking, no merge, no history brackets, no SSE. A scratchpad has exactly
+   one writer (this tile), so a whole-doc atomic replace is both correct and
+   the entire protocol. */
+function ScratchBoard({ padId, onBack, onRenamed, onAttachToChat }) {
+  const [doc, setDoc]   = useState(null);
+  const [name, setName] = useState("");
+  const [err, setErr]   = useState(null);
+  const [attaching, setAttaching] = useState(false);
+  // Fresh per-board refs: the surface writes deleted ids into these for the
+  // main canvas's incremental save protocol. A scratchpad replaces the whole
+  // file every time, so they're accepted and ignored.
+  const deletedIdsRef   = useRef(new Set());
+  const deletedWbIdsRef = useRef(new Set());
+  const selectionRef    = useRef({ selectedIds: new Set(), selectedWbIds: new Set() });
+  const rootRef         = useRef(null);
+  const dirtyRef        = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    scratchApi.get(padId).then(j => {
+      if (cancelled) return;
+      if (!j) { setErr("This scratchpad is gone."); return; }
+      setDoc({ pan: j.pan, zoom: j.zoom, nodes: j.nodes || [], edges: j.edges || [], wb: j.wb || [] });
+      setName(j.name || "Untitled");
+    }).catch(e => { if (!cancelled) setErr(String(e)); });
+    return () => { cancelled = true; };
+  }, [padId]);
+
+  // Debounced save. dirtyRef gates the initial load from POSTing straight
+  // back what it just read.
+  useEffect(() => {
+    if (!doc || !dirtyRef.current) return;
+    const t = setTimeout(() => { scratchApi.save(padId, { ...doc, name }).catch(() => {}); }, 400);
+    return () => clearTimeout(t);
+  }, [doc, name, padId]);
+
+  const setData = useCallback((updater) => {
+    setDoc(prev => {
+      const next = (typeof updater === "function" ? updater(prev) : updater);
+      // Only a REAL change arms the save. The surface calls setData on every
+      // pan/zoom tick and returns the same object when nothing moved (see the
+      // viewport sync effect); arming on the call rather than on the result
+      // would save the board on load and on every idle mouse move.
+      if (next !== prev) dirtyRef.current = true;
+      return next;
+    });
+  }, []);
+
+  const commitName = useCallback(async (next) => {
+    const v = (next || "").trim();
+    if (!v || v === name) return;
+    setName(v);
+    await scratchApi.rename(padId, v);
+    onRenamed && onRenamed();
+  }, [name, padId, onRenamed]);
+
+  // Attach this board to the focused agent chat: a rendered PNG of the
+  // board (so the agent SEES the layout) plus the pad's on-disk path (so it
+  // can read exact text + geometry, and write back). The composer picks the
+  // event up - see the scratchpad chip in ChatDrawer.
+  const onAttach = useCallback(async () => {
+    setAttaching(true);
+    try {
+      const png = await scratchCaptureBoard(rootRef.current);
+      let shot = null;
+      if (png) {
+        try { shot = await uploadDataUriAttachment(png, "scratchpad-" + padId + ".png"); }
+        catch (e) { console.error("[scratchpad] snapshot upload failed:", e); }
+      }
+      const detail = {
+        id: padId, name,
+        path: "workflow/scratch/" + padId + ".json",
+        image: shot ? (shot.fullPath || shot.path) : null,
+        nodes: (doc?.nodes || []).length, items: (doc?.wb || []).length,
+      };
+      window.dispatchEvent(new CustomEvent("th:attach-scratchpad", { detail }));
+      if (onAttachToChat) onAttachToChat(detail);
+    } finally { setAttaching(false); }
+  }, [padId, name, doc, onAttachToChat]);
+
+  if (err)  return html`<div className="scratch-panel"><div className="scratch-empty">${err}<button className="scratch-new-btn" onClick=${onBack}>Back</button></div></div>`;
+  if (!doc) return html`<div className="scratch-panel"><div className="scratch-empty">Loading…</div></div>`;
+
+  return html`
+    <div className="scratch-panel scratch-panel-board" ref=${rootRef}>
+      <div className="scratch-panel-head">
+        <button className="scratch-back-btn" onClick=${onBack} title="All scratchpads" aria-label="All scratchpads">
+          <${Icon.Back}/>
+        </button>
+        <input
+          className="scratch-name-input"
+          value=${name}
+          title="Rename this scratchpad"
+          onChange=${(e) => setName(e.target.value)}
+          onBlur=${(e) => commitName(e.target.value)}
+          onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }}
+        />
+        <button className="scratch-attach-btn" onClick=${onAttach} disabled=${attaching}
+          title="Attach this board to the open chat - sends a snapshot plus the board's file path">
+          <${Icon.Clip}/><span>${attaching ? "Attaching…" : "Attach to chat"}</span>
+        </button>
+      </div>
+      <div className="scratch-board-canvas">
+        <${WorkflowSurface}
+          embedded=${true}
+          data=${doc}
+          setData=${setData}
+          deletedIdsRef=${deletedIdsRef}
+          deletedWbIdsRef=${deletedWbIdsRef}
+          history=${null}
+          selectionRef=${selectionRef}
+          fullscreen=${false}
+          setFullscreen=${() => {}}
+          openKinds=${[]}
+        />
+      </div>
+    </div>
+  `;
+}
+
+/* scratchCaptureBoard - rasterise the open board for the chat attachment.
+   html2canvas over the embedded canvas layer, same engine the section
+   capture uses. Returns a PNG data URI, or null when html2canvas isn't
+   loaded (the attachment then degrades to path-only rather than failing). */
+async function scratchCaptureBoard(rootEl) {
+  try {
+    if (!rootEl || typeof window.html2canvas !== "function") return null;
+    const wrap = rootEl.querySelector(".workflow-canvas-wrap");
+    if (!wrap) return null;
+    const canvas = await window.html2canvas(wrap, {
+      backgroundColor: getComputedStyle(document.body).getPropertyValue("--surface-2") || "#ffffff",
+      scale: 1, logging: false, useCORS: true,
+    });
+    return canvas.toDataURL("image/png");
+  } catch (e) {
+    console.error("[scratchpad] capture failed:", e);
+    return null;
+  }
+}
+
 /* RightNavRail - right-edge icon nav rail. The agent-runs entry moved LEFT
    (the left chat panel's runs overlay); this rail now holds only the
    tiling-dock panel openers - tasks & subagents, comments, git. */
@@ -12321,7 +12609,7 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
   useEffect(() => {
     const onOpen = (e) => {
       const which = e?.detail?.panel;
-      if (which === "tasks" || which === "comments" || which === "git") onOpenWindow && onOpenWindow(which);
+      if (which === "tasks" || which === "comments" || which === "git" || which === "scratch") onOpenWindow && onOpenWindow(which);
     };
     window.addEventListener("th:open-rail-panel", onOpen);
     return () => window.removeEventListener("th:open-rail-panel", onOpen);
@@ -12352,6 +12640,17 @@ function RightNavRail({ onOpenRun, onStartNewChat, onStartChatWithPrompt, onOpen
       >
         <span className="th-right-rail-icon-wrap">
           <${Icon.CommentDots}/>
+        </span>
+      <//>
+      <${HoverTip}
+        placement="left"
+        className=${"th-right-rail-btn" + (openKinds?.includes("scratch") ? " is-active" : "")}
+        ariaLabel="Open scratchpads"
+        tip="Scratchpads - throwaway canvases with the same tools; never committed to git"
+        onClick=${() => { onOpenWindow && onOpenWindow("scratch"); }}
+      >
+        <span className="th-right-rail-icon-wrap">
+          <${Icon.NotesDoc}/>
         </span>
       <//>
       <${HoverTip}
@@ -16941,6 +17240,10 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const [attachments, setAttachments] = useState([]);   // [{ path, mime, size }]
   const [uploads,     setUploads]     = useState([]);   // [{ name, path, mime, bytes }]
   const [fileRefs,    setFileRefs]    = useState([]);   // [{ path, name, size, rel }]
+  //   • scratchpads - BOARDS attached from the scratchpad dock tile. Each
+  //     carries a rendered PNG (so the agent SEES the board) plus the pad's
+  //     on-disk path (so it can read exact text + geometry, or write back).
+  const [scratchpads, setScratchpads] = useState([]);   // [{ id, name, path, image, nodes, items }]
   const [attachBusy, setAttachBusy] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [pickBusy,   setPickBusy]   = useState(false);
@@ -17106,8 +17409,21 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // as args (rather than reading state) so a queued envelope can re-use
   // exactly the files the user staged at enqueue time, even if the live
   // composer state has since changed.
-  const composeWithAttachments = (body, atts = attachments, ups = uploads, refs = fileRefs) => {
-    if (!atts.length && !ups.length && !refs.length) return body;
+  useEffect(() => {
+    const onAttachPad = (e) => {
+      const d = e && e.detail;
+      if (!d || !d.id) return;
+      // Re-attaching the same board REPLACES its chip - the snapshot is only
+      // as good as the moment it was taken, so the newest one wins rather
+      // than stacking two contradictory pictures of one board.
+      setScratchpads(prev => [...prev.filter(p => p.id !== d.id), d]);
+    };
+    window.addEventListener("th:attach-scratchpad", onAttachPad);
+    return () => window.removeEventListener("th:attach-scratchpad", onAttachPad);
+  }, []);
+
+  const composeWithAttachments = (body, atts = attachments, ups = uploads, refs = fileRefs, pads = scratchpads) => {
+    if (!atts.length && !ups.length && !refs.length && !pads.length) return body;
     const lines = [];
     if (atts.length) {
       lines.push("User attached " + atts.length + " image" + (atts.length === 1 ? "" : "s") + " for vision:");
@@ -17125,6 +17441,21 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       lines.push("User referenced " + refs.length + " local file" + (refs.length === 1 ? "" : "s") + " by absolute path (picked in the OS file browser; NOT copied into the project):");
       for (const r of refs) lines.push("  • " + r.path + (r.size ? " (" + r.size + " bytes)" : ""));
       lines.push("Read them in place with the Read tool at those exact absolute paths. They live outside the project tree; only copy one into the project if the task itself needs a project-local copy.");
+    }
+    if (pads.length) {
+      if (lines.length) lines.push("");
+      lines.push("User attached " + pads.length + " scratchpad board" + (pads.length === 1 ? "" : "s")
+        + " (throwaway canvases under workflow/scratch/, deliberately gitignored):");
+      for (const p of pads) {
+        lines.push("  \u2022 \"" + p.name + "\" - " + p.path
+          + " (" + p.nodes + " node" + (p.nodes === 1 ? "" : "s")
+          + ", " + p.items + " whiteboard item" + (p.items === 1 ? "" : "s") + ")"
+          + (p.image ? "; snapshot: " + p.image : ""));
+      }
+      lines.push("Read the snapshot image(s) to SEE the board, and the .json for exact text, geometry and node kinds"
+        + " (same schema as workflow/workflow.json: nodes / edges / wb). These boards are thinking space, not the"
+        + " build: treat them as input unless the user asks you to change one. To edit a board, write its .json"
+        + " back whole - it has no merge protocol and no history, and it must stay out of git.");
     }
     lines.push("");
     return lines.join("\n") + body;
@@ -17200,7 +17531,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // is still active and the click ENQUEUES the message into the local
   // `queue` (Claude-Code-style). `wouldQueue` is the disambiguator used by
   // the button label / tooltip.
-  const canSend = (!!text.trim() || attachments.length > 0 || fileRefs.length > 0) && !busy
+  const canSend = (!!text.trim() || attachments.length > 0 || fileRefs.length > 0 || scratchpads.length > 0) && !busy
                   && (isNew ? !!onStartNewChat : !!runId);
   // isNew always has disabled=false (parent gates `disabled` on
   // `!isNew && (streaming || connecting)`), so queueing only ever applies
@@ -17215,7 +17546,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // decides whether to requeue).
   const dispatch = async (envelope) => {
     if (!runId) return false;
-    const body = composeWithAttachments(envelope.text, envelope.attachments, envelope.uploads, envelope.fileRefs || []);
+    const body = composeWithAttachments(envelope.text, envelope.attachments, envelope.uploads, envelope.fileRefs || [], envelope.scratchpads || []);
     setBusy(true); setError(null);
     try {
       // Two endpoints, each with its own "wrong endpoint" failure mode. We try
@@ -17323,9 +17654,10 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         attachments: attachments.slice(),
         uploads: uploads.slice(),
         fileRefs: fileRefs.slice(),
+        scratchpads: scratchpads.slice(),
       };
       setQueue(prev => [...prev, env]);
-      setText(""); setAttachments([]); setUploads([]); setFileRefs([]);
+      setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]);
       return;
     }
     // isNew shell - spawn a brand-new run via the parent. Never queued
@@ -17335,7 +17667,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       setBusy(true); setError(null);
       try {
         await onStartNewChat(body);
-        setText(""); setAttachments([]); setUploads([]); setFileRefs([]);
+        setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]);
         if (onSent) onSent(body);
       } catch (e) {
         setError(e.message || String(e));
@@ -17351,9 +17683,10 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       attachments: attachments.slice(),
       uploads: uploads.slice(),
       fileRefs: fileRefs.slice(),
+      scratchpads: scratchpads.slice(),
     };
     const ok = await dispatch(env);
-    if (ok) { setText(""); setAttachments([]); setUploads([]); setFileRefs([]); }
+    if (ok) { setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]); }
   };
 
   // External programmatic send - a Refine / Fork / regen action targeting the
@@ -17366,7 +17699,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     const onInject = (e) => {
       const t = (((e && e.detail) || {}).text || "").trim();
       if (!t || isNew || !runId) return;
-      const env = { id: ++queueIdRef.current, text: t, attachments: [], uploads: [], fileRefs: [] };
+      const env = { id: ++queueIdRef.current, text: t, attachments: [], uploads: [], fileRefs: [], scratchpads: [] };
       if (disabled) { setQueue(prev => [...prev, env]); return; }
       dispatchRef.current(env);
     };
@@ -17411,6 +17744,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     setAttachments(prev => [...prev, ...env.attachments]);
     setUploads(prev => [...prev, ...env.uploads]);
     setFileRefs(prev => [...prev, ...(env.fileRefs || [])]);
+    setScratchpads(prev => [...prev, ...(env.scratchpads || [])]);
     if (taRef.current) {
       try { taRef.current.focus(); } catch { /* fine */ }
     }
@@ -17714,7 +18048,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           })}
         </div>
       `}
-      ${(attachments.length > 0 || uploads.length > 0 || fileRefs.length > 0) && html`
+      ${(attachments.length > 0 || uploads.length > 0 || fileRefs.length > 0 || scratchpads.length > 0) && html`
         <div className="chat-composer-attachments">
           ${attachments.map((a, i) => html`
             <span key=${"a"+i} className="chat-composer-attachment" title=${a.path}>
@@ -17745,6 +18079,14 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
               <span className="chat-composer-attachment-icon"><${Icon.Clip}/></span>
               <span className="chat-composer-attachment-name">${r.name || r.path.split("/").pop()}</span>
               <button className="chat-composer-attachment-rm" onClick=${() => setFileRefs(prev => prev.filter((_, j) => j !== i))} title="Remove reference (file stays on disk)">×</button>
+            </span>
+          `)}
+          ${scratchpads.map((p, i) => html`
+            <span key=${"s"+p.id} className="chat-composer-attachment chat-composer-scratchpad"
+              title=${p.path + " · " + p.nodes + " nodes, " + p.items + " items" + (p.image ? " · snapshot attached" : " · no snapshot")}>
+              <span className="chat-composer-attachment-icon"><${Icon.NotesDoc}/></span>
+              <span className="chat-composer-attachment-name">${p.name}</span>
+              <button className="chat-composer-attachment-rm" onClick=${() => setScratchpads(prev => prev.filter(q => q.id !== p.id))} title="Remove board">×</button>
             </span>
           `)}
         </div>
@@ -37212,6 +37554,20 @@ function useTrackedNodeRect(nodeId, active) {
     let raf = 0, last = null;
     const tick = () => {
       const el = document.querySelector('.workflow-node[data-node-id="' + nodeId + '"]');
+      // A node on an EMBEDDED board (a scratchpad in the dock) gets NO
+      // floating chrome. All of it - action bars, run buttons, connector
+      // spawns, asset panels - portals to the one body-level chrome layer,
+      // which is clip-synced to the MAIN canvas and would render this node's
+      // controls against the wrong geometry. Scratchpads are visual space
+      // (nothing there is runnable: the node/run endpoints only ever resolve
+      // workflow.json), so returning no anchor rect is both the correct
+      // behaviour and the single seam that enforces it - every chrome
+      // component already treats a null rect as "don't render".
+      if (el && el.closest('.workflow-root[data-embedded="true"]')) {
+        if (last) { last = null; setRect(null); }
+        raf = requestAnimationFrame(tick);
+        return;
+      }
       if (el) {
         const r = el.getBoundingClientRect();
         if (!last || last.top !== r.top || last.left !== r.left || last.width !== r.width || last.height !== r.height) {
@@ -40914,7 +41270,49 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
   `, document.body);
 }
 
-function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, chatBusy, fullscreen, setFullscreen, onOpenNewChat, onStartChatWithPrompt, onReopenRun, onOpenWindow, openKinds, selectionRef, onSelectionCountChange, onActivePreviewChange, onLibResizeStart, chatPanel, chatOpenTick, chatExists }) {
+/* ── Canvas input arbiter ──────────────────────────────────────────────────
+   Two canvas surfaces can be on screen at once: the main workflow canvas and
+   an embedded scratchpad in the right dock. Both mount the SAME
+   WorkflowSurface, so both attach the same window/document-level keyboard and
+   clipboard listeners - and without an owner, one Cmd+C would copy on both
+   boards and one Delete would delete on both.
+
+   Exactly one surface owns keyboard + clipboard at a time. Ownership follows
+   the pointer: whichever surface you last pressed into is the one that hears
+   the keystrokes. That also gives cross-canvas copy/paste its meaning - copy
+   with the pointer on the main canvas, click into the scratchpad, paste, and
+   the payload lands there. */
+/* Canvas clipboards are MODULE-level, not component-level, so a copy on one
+   board can be pasted on another: main canvas → scratchpad, scratchpad →
+   main canvas, or between two scratchpads. (Whiteboard items also ride the
+   native clipboard as application/x-th-wb; this mirror is what the context
+   menu's "Paste here" reads, since it can't read the system clipboard
+   synchronously.) Paste always re-mints ids, so the same payload can be
+   dropped on several boards without collision. */
+const _wfNodeClipboard = { current: null };
+const _wfWbClipboard   = { current: null };
+
+let _wfActiveSurface = "main";
+function wfClaimSurface(id) { _wfActiveSurface = id || "main"; }
+function wfOwnsInput(idRef) {
+  const id = (idRef && idRef.current) || "main";
+  return id === _wfActiveSurface;
+}
+/* A surface that unmounts hands ownership back to the main canvas, so closing
+   the scratchpad tile never leaves the keyboard pointed at a dead board. */
+function wfReleaseSurface(id) { if (_wfActiveSurface === id) _wfActiveSurface = "main"; }
+
+function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, chatBusy, fullscreen, setFullscreen, onOpenNewChat, onStartChatWithPrompt, onReopenRun, onOpenWindow, openKinds, selectionRef, onSelectionCountChange, onActivePreviewChange, onLibResizeStart, chatPanel, chatOpenTick, chatExists }) {
+  // Input-arbiter identity for THIS surface instance (see wfClaimSurface).
+  // The main canvas is the default owner; an embedded board claims ownership
+  // when the pointer goes down inside it and hands it back on unmount.
+  const surfaceIdRef = useRef(embedded ? "wfs_" + Math.random().toString(36).slice(2, 10) : "main");
+  useEffect(() => {
+    const id = surfaceIdRef.current;
+    if (!embedded) wfClaimSurface(id);
+    return () => wfReleaseSurface(id);
+  }, [embedded]);
+
   const { wrapRef, pan, zoom, setPan, setZoom, panning, spaceHeld } = useEndlessCanvas(
     { x: data.pan?.x ?? 0, y: data.pan?.y ?? 0, z: data.zoom ?? 1 },
     { letSelectedScroll: true, disableEmptyDragPan: true },
@@ -40960,12 +41358,14 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // (nodes are inert for selection/drag while whiteboarding); exit clears
   // wb selection/tool.
   const [wbMode, setWbMode] = useState(() => {
+    if (embedded) return true;
     try { return localStorage.getItem("th-workflow-wb-mode") !== "0"; } catch { return true; }
   });
   const wbModeRef = useRef(false); wbModeRef.current = wbMode;
   useEffect(() => {
+    if (embedded) return;
     try { localStorage.setItem("th-workflow-wb-mode", wbMode ? "1" : "0"); } catch {}
-  }, [wbMode]);
+  }, [wbMode, embedded]);
   const [wbTool, setWbTool] = useState("select");   // select|text|textbox|sticky|sticker|pen|shape|arrow
   const wbToolRef = useRef("select"); wbToolRef.current = wbTool;
   // Mirror the armed drawing tool onto <body> so decoupled surfaces can read it
@@ -40977,6 +41377,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // and binds to the page; with the select tool it takes the pointer back.
   useEffect(() => {
     const armed = wbMode && wbTool && wbTool !== "select" ? wbTool : "";
+    if (embedded && !armed) return;   // don't clear the main canvas's armed tool
     try {
       if (armed) document.body.setAttribute("data-wf-wb-tool", armed);
       else document.body.removeAttribute("data-wf-wb-tool");
@@ -40984,7 +41385,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       window.dispatchEvent(new CustomEvent("th:wb-tool-changed", { detail: { tool: armed } }));
     } catch {}
     return () => { try { document.body.removeAttribute("data-wf-wb-tool"); window.__thWbTool = ""; } catch {} };
-  }, [wbMode, wbTool]);
+  }, [wbMode, wbTool, embedded]);
   // Current emoji for the sticker tool (FigJam-style stamp). Click an emoji in
   // the tools palette to arm it; the next canvas click drops that sticker.
   const [wbStickerEmoji, setWbStickerEmoji] = useState("⭐");
@@ -41461,6 +41862,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   const [paletteTab, setPaletteTab] = useState("text");
   useEffect(() => {
     const onKey = (e) => {
+      if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
       const k = (e.key || "").toLowerCase();
       if (k === "f") { e.preventDefault(); setPaletteTab(e.shiftKey ? "runs" : "text"); setPaletteOpen(true); }
@@ -41495,7 +41897,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // then DEMONSTRATES the two power shortcuts by driving the real UI through
   // each step's enter()/leave() - the search palette actually opens, the
   // canvas actually goes fullscreen. Skip or Done stamps the stage "done".
-  const [tourIdx, setTourIdx] = useState(() => (!viewIsEmbed() && guideTourStage() === "canvas" ? 0 : -1));
+  const [tourIdx, setTourIdx] = useState(() => (!embedded && !viewIsEmbed() && guideTourStage() === "canvas" ? 0 : -1));
   const endTour = useCallback(() => { setTourIdx(-1); setGuideTourStage("done"); }, []);
   const tourSteps = useMemo(() => [
     { targets: [".workflow-nav-rail-btn-chat"],
@@ -41751,8 +42153,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // group align bar takes over). Body attribute because those components
     // render through createPortal and share no props with the surface.
     try {
-      document.body.setAttribute("data-wf-multi-select",
-        (selectedNodeIds.size + selectedWbIds.size) > 1 ? "true" : "false");
+      if (!embedded) {
+        document.body.setAttribute("data-wf-multi-select",
+          (selectedNodeIds.size + selectedWbIds.size) > 1 ? "true" : "false");
+      }
     } catch {}
   }, [selectedNodeIds, selectedWbIds, wbMode, data?.nodes, data?.wb, selectionRef, onSelectionCountChange]);
 
@@ -41782,6 +42186,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     if (selectedNodeIds.size === 0 && selectedWbIds.size === 0) return;
     if (wbMode) return;  // the wb keydown effect owns Esc in whiteboard mode
     const onKey = (e) => {
+      if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
       if (e.key !== "Escape") return;
       const t = e.target;
       const tag = t && t.tagName ? t.tagName.toUpperCase() : "";
@@ -41900,7 +42305,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // Esc cancels an in-progress marquee outright (no commit) - the user's
     // instinct when a drag feels stuck. blur ends it cleanly if the window
     // loses focus mid-drag (alt-tab, devtools) where the mouseup goes elsewhere.
-    const onEsc = (e) => { if (e.key === "Escape") setMarquee(null); };
+    const onEsc = (e) => {
+      if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
+      if (e.key === "Escape") setMarquee(null);
+    };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     window.addEventListener("blur", onUp);
@@ -42005,6 +42413,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     // modes share one muscle-memory binding. Skip when focus is inside a
     // text field so the user can still type a period.
     const onKey = (e) => {
+      if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
       if (fullscreen && e.key === "Escape") { setFullscreen(false); return; }
       if ((e.metaKey || e.ctrlKey) && e.key === ".") {
         const t = e.target;
@@ -42047,6 +42456,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
     } catch { return "nodes"; }
   });
   const [mainView, setMainView] = useState(() => {
+    if (embedded) return "canvas";
     try { return localStorage.getItem("th-workflow-main-view") === "proto" ? "proto" : "canvas"; } catch { return "canvas"; }
   });
   // The viewer mounts lazily on first activation and then STAYS mounted
@@ -42054,9 +42464,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // hops back to the canvas - like real browser tabs.
   const [protoViewerMounted, setProtoViewerMounted] = useState(() => mainView === "proto");
   useEffect(() => {
+    if (embedded) return;
     try { localStorage.setItem("th-workflow-left-panel", leftPanel || "none"); } catch {}
-  }, [leftPanel]);
+  }, [leftPanel, embedded]);
   useEffect(() => {
+    if (embedded) return;
     try { localStorage.setItem("th-workflow-main-view", mainView); } catch {}
     // Broadcast so the top SurfaceNav (rendered outside this component) reflects
     // canvas↔proto changes made here (rail, zoom flows, etc.).
@@ -42078,9 +42490,12 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       }
       setMainView(v);
     };
+    // Embedded boards ignore the top SurfaceNav entirely - switching the main
+    // surface to Preview must not turn a scratchpad into a prototype viewer.
+    if (embedded) return;
     window.addEventListener("th:wf-mainview", h);
     return () => window.removeEventListener("th:wf-mainview", h);
-  }, []);
+  }, [embedded]);
   // Keep the shared chrome layer's clip-path in lockstep with the canvas
   // column (see wfChromeHost). Clip-path - not width/left - so the fixed
   // chrome inside keeps plain viewport coordinates. A ResizeObserver on
@@ -42097,6 +42512,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // Hiding the layer covers node AND whiteboard chrome at once - the
   // alternative is an allowlist that goes stale every time a new bar lands.
   useEffect(() => {
+    // The chrome layer is a single body-level host owned by the MAIN canvas.
+    // An embedded board must not touch it: it renders no chrome of its own
+    // (see useTrackedNodeRect), and re-clipping the host to the dock tile's
+    // rect would crop the main canvas's chrome to a corner of the screen.
+    if (embedded) return;
     const host = wfChromeHost();
     host.style.display = mainView === "canvas" ? "" : "none";
     const sync = () => {
@@ -42120,7 +42540,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       host.style.clipPath = "";
       host.style.display = "";
     };
-  }, [mainView]);
+  }, [mainView, embedded]);
   // A chat spawn / reopen (chatOpenTick bump from WorkflowCanvas) opens the
   // LEFT chat panel - the chat's home after the move off the right dock.
   // Mirrors onRailPanel's "asking for the panel" semantics: always opens,
@@ -44069,6 +44489,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return false;
     };
     const onKey = (e) => {
+      if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
       if (e.key === "Escape") {
         // Ladder: cancel gesture → commit + exit text edit → revert to
         // select → clear selection. The edit commit reads the DOM directly
@@ -45180,7 +45601,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // reads it on demand. Payload shape: { nodes: [...], edges: [...] }
   // where edges only include those internal to the selection (both
   // endpoints in the copied set).
-  const nodeClipboardRef = useRef(null);
+  const nodeClipboardRef = _wfNodeClipboard;
   const lastCanvasCursorRef = useRef({ x: 200, y: 200 });
   const _freshNodeId = () => "n" + Math.random().toString(36).slice(2, 10);
   // Section → custom-app conversion modal config (null when closed). Shape:
@@ -45209,7 +45630,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
      item in whiteboard mode or an asset node in build mode. The internal
      mirror (wbClipboardRef) backs the context menu's "Paste here", which
      can't read the system clipboard synchronously. */
-  const wbClipboardRef = useRef(null);
+  const wbClipboardRef = _wfWbClipboard;
 
   // FileReader → data-URI → POST /__attachment. Returns { relPath, fullPath,
   // mime } where fullPath is project-relative ("attachments/…")
@@ -45314,6 +45735,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       t.closest(".chat-drawer, .workflow-empty-composer"));
 
     const onCopy = (e) => {
+      if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
       // wb items are selectable in both modes - copy follows the selection,
       // not the mode. With no wb selection this no-ops and the node Cmd+C
       // keydown path proceeds as before.
@@ -45331,6 +45753,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       e.preventDefault();
     };
     const onCut = (e) => {
+      if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
       if (!wbModeRef.current && !selectedWbIdsRef.current.size) return;
       if (isEditingTarget(e.target) || ownsItsPaste(e.target)) return;
       const sel = selectedWbIdsRef.current;
@@ -45339,6 +45762,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       if (e.defaultPrevented) removeWbItems(new Set(sel));
     };
     const onPaste = (e) => {
+      if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
       if (isEditingTarget(e.target) || ownsItsPaste(e.target)) return;
       const cd = e.clipboardData;
       if (!cd) return;
@@ -46101,7 +46525,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       setPickedElement(null);
     };
     const onExit = () => { setPickModeNodeId(null); setPickedElement(null); };
-    const onKey = (e) => { if (e.key === "Escape" && pickModeNodeId) { setPickModeNodeId(null); setPickedElement(null); } };
+    const onKey = (e) => {
+      if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
+      if (e.key === "Escape" && pickModeNodeId) { setPickModeNodeId(null); setPickedElement(null); }
+    };
     window.addEventListener("th:enter-pick-mode", onEnter);
     window.addEventListener("th:exit-pick-mode", onExit);
     window.addEventListener("keydown", onKey);
@@ -46285,6 +46712,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // propagation so the prototype Cmd+V handler doesn't also run.
   useEffect(() => {
     const onKey = (e) => {
+      if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
       const meta = e.metaKey || e.ctrlKey;
       if (!meta || (e.key !== "v" && e.key !== "V")) return;
       const pid = window.__thPickModeNodeId;
@@ -48869,6 +49297,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   useEffect(() => {
     if (!pickModeNodeId) return;
     const onKey = (e) => {
+      if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
       const tag = (e.target && e.target.tagName || "").toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
       const cmd = e.metaKey || e.ctrlKey;
@@ -48990,6 +49419,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
       return false;
     };
     const onKey = (e) => {
+      if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
       if (isEditingTarget(e.target)) return;
       const cmd = e.metaKey || e.ctrlKey;
       // ── Layering: [ / ] restack the selected nodes one layer at a time;
@@ -51116,6 +51546,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // response (the daemon may spawn + persist the run yet drop the reply -
   // restart window), and records the runId. Throws on real failure.
   const dispatchAssistantRun = useCallback(async (nodeId, body, label) => {
+    // Scratchpads are visual space, not a build surface: the daemon's
+    // node-run endpoints only ever resolve workflow.json, so a run dispatched
+    // from an embedded board would target an id that doesn't exist there.
+    // Refuse at the entry point rather than firing a 404 the user can't read.
+    if (embedded) { uiAlert("Scratchpads are visual space - nodes here can't be run. Copy the node onto the main canvas to run it."); return; }
     const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
     await new Promise(r => setTimeout(r, 1200));
     const proj = activeProjectId(), slug = activePrototypeSlug();
@@ -51278,6 +51713,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // mid-run rebuild) so numbered insight-marker targets never go stale; the
   // floating result panel is the live progress view during the run.
   const setupStrategy = useCallback(async (nodeId, gateArg) => {
+    // Scratchpads are visual space, not a build surface: the daemon's
+    // node-run endpoints only ever resolve workflow.json, so a run dispatched
+    // from an embedded board would target an id that doesn't exist there.
+    // Refuse at the entry point rather than firing a 404 the user can't read.
+    if (embedded) { uiAlert("Scratchpads are visual space - nodes here can't be run. Copy the node onto the main canvas to run it."); return; }
     const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
     const node = (data.nodes || []).find(n => n.id === nodeId);
     if (!node) return null;
@@ -51916,6 +52356,11 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   // DRIVES them in order - each part runs with both gates skipped and the
   // previous parts' summaries as grounding - and settles a chain summary.
   const setupStrategyChain = useCallback(async (nodeId, gateArg) => {
+    // Scratchpads are visual space, not a build surface: the daemon's
+    // node-run endpoints only ever resolve workflow.json, so a run dispatched
+    // from an embedded board would target an id that doesn't exist there.
+    // Refuse at the entry point rather than firing a 404 the user can't read.
+    if (embedded) { uiAlert("Scratchpads are visual space - nodes here can't be run. Copy the node onto the main canvas to run it."); return; }
     const setRun = (state) => setRunStates(s => ({ ...s, [nodeId]: { ...(s[nodeId] || {}), ...state } }));
     const node = (data.nodes || []).find(n => n.id === nodeId);
     if (!node) return;
@@ -53647,6 +54092,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   useEffect(() => {
     if (selectedEdge == null) return;
     const onKey = (e) => {
+      if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
       if (e.key !== "Delete" && e.key !== "Backspace") return;
       if (e.target && (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT" || e.target.isContentEditable)) return;
       e.preventDefault();
@@ -55616,8 +56062,10 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
   };
 
   return html`
-    <div className="workflow-root" data-fullscreen=${fullscreen ? "true" : "false"}>
-      <div className="workflow-bar">
+    <div className="workflow-root" data-fullscreen=${fullscreen ? "true" : "false"}
+      data-embedded=${embedded ? "true" : "false"}
+      onPointerDownCapture=${() => wfClaimSurface(surfaceIdRef.current)}>
+      ${!embedded && html`<div className="workflow-bar">
         <button className="project-home-btn" onClick=${backToProjects} title="Back to projects">
           <span className="project-home-arrow">←</span>
           <span>Projects</span>
@@ -55630,7 +56078,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
         <${PublishButton}/>
         <${ShareMenuButton}/>
         <${SurfaceNav}/>
-      </div>
+      </div>`}
       <${WorkflowSearchPalette}
         open=${paletteOpen}
         initialTab=${paletteTab}
@@ -55807,7 +56255,7 @@ function WorkflowSurface({ data, setData, deletedIdsRef, deletedWbIdsRef, histor
               onEyedrop=${runEyedropper}
               lastEyedrop=${lastEyedrop}
             />
-          ` : html`
+          ` : embedded ? null : html`
             <div className=${"workflow-left-chat" + (leftPanel === "chat" ? "" : " is-hidden")}>
               <div className="left-chat-thread">
                 ${chatExists

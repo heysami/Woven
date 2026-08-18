@@ -151,6 +151,7 @@ WOVEN_SYNC_VERSION = 1
 # 100MB-per-file limit.
 _GITIGNORE_LOCAL = [
     "workflow/viewport.json",   # per-machine camera pan/zoom only (see _workflow_save); node position/size sync in workflow.json
+    "workflow/scratch/",        # scratchpad canvases - deliberate thinking space, never synced (see _scratch_list)
     "workflow/runs/",           # generated run artifacts (assets/thumbnails) - GBs
     "workflow/views/",          # generated per-version prototype snapshots - GBs
     "editor/chat.jsonl",        # local chat transcript - large, machine-local, never sync
@@ -14342,6 +14343,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._figma_map(qs)
             if parsed.path == "/__workflow":
                 return self._workflow_save(qs)
+            if parsed.path == "/__scratch":
+                return self._scratch_ops(qs)
+            m_sp = re.match(r"^/__scratch/(sp_[A-Za-z0-9]{4,32})$", parsed.path)
+            if m_sp:
+                return self._scratch_save(m_sp.group(1), qs)
             if parsed.path == "/__workflow/nodes/add":
                 return self._workflow_nodes_add(qs)
             if parsed.path == "/__design_system":
@@ -14797,6 +14803,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._screenshot_poll(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__workflow":
             return self._workflow_get(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__scratch":
+            return self._scratch_list(urllib.parse.parse_qs(parsed.query))
+        m_sp = re.match(r"^/__scratch/(sp_[A-Za-z0-9]{4,32})$", url_path)
+        if m_sp:
+            return self._scratch_get(m_sp.group(1), urllib.parse.parse_qs(parsed.query))
         if url_path == "/__design_system":
             return self._design_system_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__ds_bootstrap":
@@ -16368,6 +16379,187 @@ class H(http.server.SimpleHTTPRequestHandler):
         finally:
           _sem.release()
 
+    # ── Scratchpads - throwaway canvases that never reach git ────────────
+    # A scratchpad is a full canvas doc ({nodes, edges, wb, pan, zoom}) that
+    # lives in <project_root>/workflow/scratch/<id>.json. Same schema as
+    # workflow.json so the SAME canvas surface renders it and copy/paste
+    # between the two is a straight node/item transfer - but deliberately
+    # OUTSIDE the synced tree (workflow/scratch/ rides _GITIGNORE_LOCAL), so
+    # thinking-space never lands in a commit or a collaborator's pull.
+    #
+    # No index file: the list is derived by scanning the directory, so two
+    # windows creating pads at once can't corrupt a shared manifest. No
+    # merge machinery, no dirty-field tracking, no history brackets - a save
+    # is a whole-doc atomic replace. Scratch nodes are NOT runnable (the
+    # /__workflow/node/<id>/* endpoints only ever resolve workflow.json);
+    # content-bearing kinds (html / prototype / frames) still render because
+    # they read files off disk, not the graph.
+    _SCRATCH_ID_RE = re.compile(r"^sp_[A-Za-z0-9]{4,32}$")
+
+    def _scratch_dir(self, project_root):
+        return os.path.join(project_root, "workflow", "scratch")
+
+    def _scratch_path(self, project_root, pad_id):
+        """Resolve <id> to its file, or None when the id is malformed. The
+        regex is the ONLY gate - it admits no dot, slash or separator, so a
+        traversal ("../../etc/passwd") can never reach os.path.join."""
+        if not isinstance(pad_id, str) or not self._SCRATCH_ID_RE.match(pad_id):
+            return None
+        return os.path.join(self._scratch_dir(project_root), pad_id + ".json")
+
+    def _scratch_read(self, path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                doc = json.load(f)
+            return doc if isinstance(doc, dict) else None
+        except Exception:
+            return None
+
+    def _scratch_write(self, path, doc):
+        """Atomic whole-doc replace (tmp + os.replace), so a reader never
+        sees a half-written pad and a crash mid-write can't truncate one."""
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(doc, f, indent=2)
+        os.replace(tmp, path)
+
+    # GET /__scratch - list every pad in the project (newest-touched first).
+    def _scratch_list(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e), "hint": "append ?project=$TH_PROJECT_ID to the URL"})
+        d = self._scratch_dir(project_root)
+        pads = []
+        try:
+            names = sorted(os.listdir(d))
+        except Exception:
+            names = []
+        for fn in names:
+            if not fn.endswith(".json") or fn.endswith(".tmp"):
+                continue
+            pad_id = fn[:-5]
+            if not self._SCRATCH_ID_RE.match(pad_id):
+                continue
+            doc = self._scratch_read(os.path.join(d, fn))
+            if doc is None:
+                continue
+            pads.append({
+                "id": pad_id,
+                "name": doc.get("name") or "Untitled",
+                "created": doc.get("created") or 0,
+                "updated": doc.get("updated") or 0,
+                "nodes": len(doc.get("nodes") or []),
+                "items": len(doc.get("wb") or []),
+            })
+        pads.sort(key=lambda p: p.get("updated") or 0, reverse=True)
+        return self._reply(200, {"pads": pads})
+
+    # GET /__scratch/<id> - one pad's full doc.
+    def _scratch_get(self, pad_id, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e), "hint": "append ?project=$TH_PROJECT_ID to the URL"})
+        path = self._scratch_path(project_root, pad_id)
+        if not path:
+            return self._reply(400, {"error": "bad scratchpad id"})
+        doc = self._scratch_read(path)
+        if doc is None:
+            return self._reply(404, {"error": "scratchpad not found", "id": pad_id})
+        doc.setdefault("id", pad_id)
+        doc.setdefault("name", "Untitled")
+        doc.setdefault("pan", {"x": 0, "y": 0})
+        doc.setdefault("zoom", 1)
+        doc.setdefault("nodes", [])
+        doc.setdefault("edges", [])
+        doc.setdefault("wb", [])
+        return self._reply(200, doc)
+
+    # POST /__scratch - lifecycle ops: {op: "create"|"rename"|"delete"}.
+    def _scratch_ops(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        body = self._read_json_body(max_bytes=64 * 1024) or {}
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        op = body.get("op") or "create"
+        now = int(time.time() * 1000)
+        if op == "create":
+            name = (body.get("name") or "").strip() or "Scratchpad"
+            pad_id = "sp_" + uuid.uuid4().hex[:12]
+            path = self._scratch_path(project_root, pad_id)
+            doc = {
+                "id": pad_id, "name": name[:120],
+                "created": now, "updated": now,
+                "pan": {"x": 0, "y": 0}, "zoom": 1,
+                "nodes": [], "edges": [], "wb": [],
+            }
+            # Seed from another pad when asked - "duplicate this scratchpad".
+            src_id = body.get("from")
+            if src_id:
+                src_path = self._scratch_path(project_root, src_id)
+                src = self._scratch_read(src_path) if src_path else None
+                if src:
+                    for k in ("nodes", "edges", "wb", "pan", "zoom"):
+                        if src.get(k) is not None:
+                            doc[k] = src[k]
+            self._scratch_write(path, doc)
+            return self._reply(200, {"ok": True, "pad": doc})
+        pad_id = body.get("id")
+        path = self._scratch_path(project_root, pad_id)
+        if not path:
+            return self._reply(400, {"error": "bad scratchpad id"})
+        if op == "rename":
+            doc = self._scratch_read(path)
+            if doc is None:
+                return self._reply(404, {"error": "scratchpad not found", "id": pad_id})
+            name = (body.get("name") or "").strip()
+            if not name:
+                return self._reply(400, {"error": "name required"})
+            doc["name"] = name[:120]
+            doc["updated"] = now
+            self._scratch_write(path, doc)
+            return self._reply(200, {"ok": True, "id": pad_id, "name": doc["name"]})
+        if op == "delete":
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                return self._reply(500, {"error": "delete failed", "detail": str(e)})
+            return self._reply(200, {"ok": True, "id": pad_id})
+        return self._reply(400, {"error": "unknown op", "op": op})
+
+    # POST /__scratch/<id> - whole-doc save (the canvas's debounced write).
+    def _scratch_save(self, pad_id, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        path = self._scratch_path(project_root, pad_id)
+        if not path:
+            return self._reply(400, {"error": "bad scratchpad id"})
+        body = self._read_json_body(max_bytes=MAX_BYTES) or {}
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        prev = self._scratch_read(path) or {}
+        doc = {
+            "id": pad_id,
+            "name": (body.get("name") or prev.get("name") or "Untitled")[:120],
+            "created": prev.get("created") or int(time.time() * 1000),
+            "updated": int(time.time() * 1000),
+            "pan": body.get("pan") if isinstance(body.get("pan"), dict) else {"x": 0, "y": 0},
+            "zoom": body.get("zoom") if isinstance(body.get("zoom"), (int, float)) else 1,
+            "nodes": body.get("nodes") if isinstance(body.get("nodes"), list) else [],
+            "edges": body.get("edges") if isinstance(body.get("edges"), list) else [],
+            "wb": body.get("wb") if isinstance(body.get("wb"), list) else [],
+        }
+        self._scratch_write(path, doc)
+        return self._reply(200, {"ok": True, "id": pad_id, "updated": doc["updated"]})
     # ── POST /__workflow/nodes/add - race-safe append ─────────────
     # Append nodes + edges to workflow.json WITHOUT a read-modify-write of
     # the whole graph from the caller. Unlike POST /__workflow (which

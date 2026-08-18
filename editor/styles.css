@@ -33274,3 +33274,194 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+
+/* ── Scratchpads ───────────────────────────────────────────────────────────
+   The dock tile that lists throwaway canvases and hosts one when opened.
+   Rows follow the compact single-line list pattern the rest of the app uses:
+   name grows, meta + age stay right, actions reveal on hover. */
+.scratch-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--surface);
+}
+.scratch-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 34px 8px 10px;   /* right pad clears the tile's × button */
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.scratch-panel-title { font-size: 12px; font-weight: 600; color: var(--text); }
+.scratch-panel-note  { font-size: 11px; color: var(--text-3); margin-right: auto; }
+.scratch-new-btn, .scratch-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+.scratch-new-btn:hover, .scratch-attach-btn:hover:not(:disabled) { background: var(--surface-3); }
+.scratch-attach-btn:disabled { opacity: 0.6; cursor: default; }
+.scratch-new-btn svg, .scratch-attach-btn svg { width: 12px; height: 12px; }
+.scratch-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.scratch-back-btn:hover { background: var(--surface-3); color: var(--text); }
+.scratch-back-btn svg { width: 12px; height: 12px; }
+.scratch-name-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.scratch-name-input:hover  { border-color: var(--border); }
+.scratch-name-input:focus  { border-color: var(--accent, var(--border)); background: var(--surface-2); outline: none; }
+.scratch-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.scratch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  height: 32px;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  cursor: pointer;
+  color: var(--text);
+}
+.scratch-row:hover { background: var(--surface-2); }
+.scratch-row-icon { display: flex; color: var(--text-3); flex: 0 0 auto; }
+.scratch-row-icon svg { width: 13px; height: 13px; }
+.scratch-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scratch-row-meta,
+.scratch-row-age { font-size: 11px; color: var(--text-3); flex: 0 0 auto; }
+.scratch-row-actions { display: none; gap: 2px; flex: 0 0 auto; }
+.scratch-row:hover .scratch-row-actions { display: flex; }
+.scratch-row:hover .scratch-row-meta,
+.scratch-row:hover .scratch-row-age  { display: none; }
+.scratch-row-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.scratch-row-actions button:hover { background: var(--surface-3); color: var(--text); }
+.scratch-row-actions svg { width: 12px; height: 12px; }
+.scratch-empty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.scratch-empty-title { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.scratch-empty-desc  { max-width: 320px; line-height: 1.45; }
+.scratch-board-canvas { position: relative; flex: 1 1 auto; min-height: 0; }
+
+/* Embedded canvas surface. The workflow root is normally position:fixed and
+   owns the viewport; inside a dock tile it becomes an ordinary block that
+   fills its container, with the top bar row collapsed and the shell columns
+   (nav rail, library, right rail) zeroed - leaving the canvas column and,
+   in whiteboard mode, the tool strip. */
+.workflow-root[data-embedded="true"] {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  grid-template-rows: 1fr;
+}
+.workflow-root[data-embedded="true"] .workflow-body {
+  grid-template-columns: 0 var(--workflow-lib-width, 240px) 0 1fr 0;
+}
+.workflow-root[data-embedded="true"] .workflow-body[data-left-panel="none"],
+.workflow-root[data-embedded="true"] .workflow-body[data-left-panel="chat"] {
+  grid-template-columns: 0 0 0 1fr 0;
+}
+/* The tool strip is the one panel an embedded board keeps, and it must not
+   eat the tile: cap it well under the main canvas's 240px default. */
+.workflow-root[data-embedded="true"] .workflow-body[data-left-panel="whiteboard"] {
+  grid-template-columns: 0 46px 0 1fr 0;
+}
+/* The tool strip goes ICON-ONLY in a dock tile: same tools, same order, same
+   shortcuts - just without the labels and key chips, which would eat a third
+   of the board's width. The title, hint text, colour swatches and minimap all
+   belong to a full-width column and are dropped rather than squashed. */
+/* The nav rail and the library resize handle stay in the DOM - .workflow-body
+   auto-places its children, so removing one slides the canvas into the wrong
+   track (the same reason the collapsed-library rules use visibility, not
+   display:none). Zero them here instead. */
+.workflow-root[data-embedded="true"] .workflow-nav-rail,
+.workflow-root[data-embedded="true"] .workflow-resize-handle-lib {
+  visibility: hidden;
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+}
+.workflow-root[data-embedded="true"] .workflow-wb-tools { padding: 8px 6px; gap: 8px; }
+.workflow-root[data-embedded="true"] .workflow-wb-tool-btn {
+  justify-content: center;
+  gap: 0;
+  padding: 7px 0;
+}
+.workflow-root[data-embedded="true"] .workflow-wb-tool-label,
+.workflow-root[data-embedded="true"] .workflow-wb-tool-key,
+.workflow-root[data-embedded="true"] .workflow-wb-tools-title,
+.workflow-root[data-embedded="true"] .workflow-wb-tools-hint,
+.workflow-root[data-embedded="true"] .workflow-wb-tools-sublabel,
+.workflow-root[data-embedded="true"] .workflow-minimap { display: none; }
+.workflow-root[data-embedded="true"] .workflow-wb-swatches { gap: 4px; justify-content: center; }
+.workflow-root[data-embedded="true"] .workflow-wb-swatch { width: 14px; height: 14px; }
+
+/* Scratchpad chip in the chat composer - a board attached from the dock
+   tile. Distinguished from image / upload / file-ref chips by its accent
+   edge, because what it carries is a whole canvas, not one file. */
+.chat-composer-scratchpad {
+  border-color: var(--accent, var(--border));
+}
+.chat-composer-scratchpad .chat-composer-attachment-name {
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-2, var(--text-faint));
+}
+.chat-composer-scratchpad .chat-composer-attachment-icon svg { width: 12px; height: 12px; }
