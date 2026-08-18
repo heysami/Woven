@@ -7047,6 +7047,32 @@ def _history_sweep_orphans(project_root: str) -> int:
         removed += 1
     return removed
 
+def _history_blocking_runs(project_root: str) -> list:
+    """Runs that must block undo/redo for THIS project.
+
+    Only a run that is ACTIVELY mid-turn counts (alive AND its current turn
+    hasn't finished) - such a run is about to land an atomic history entry,
+    so stepping would race it. A run that finished its turn and is idle
+    waiting for the user's reply (turnDone=True, done=False) is the normal
+    resting state of every open chat and must NOT block: a project with four
+    open threads would otherwise have undo greyed out forever.
+
+    Scoped to the project so another project's run never blocks this one.
+    GET /__history and POST /__history/(undo|redo) MUST use this same
+    predicate - when they disagreed, the buttons were disabled while the
+    endpoint would happily have stepped.
+    """
+    this_project = os.path.basename(project_root.rstrip("/"))
+    try:
+        with RUNS_LOCK:
+            return [
+                s for s in RUNS.values()
+                if (getattr(s, "project_id", None) in (None, this_project))
+                and not s.done and not getattr(s, "turn_done", False)
+            ]
+    except Exception:
+        return []
+
 # Leaked automation-browser guard. Every test/verify path launches a real
 # browser through some driver: chrome-devtools-mcp (puppeteer), Playwright
 # (bundled chromium OR system Chrome via channel=chrome), preview_mcp.py.
@@ -34067,12 +34093,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": str(e)})
         with HISTORY_LOCK:
             idx = _history_load_index(project_root)
-        run_active = False
-        try:
-            with RUNS_LOCK:
-                run_active = any(not s.done for s in RUNS.values())
-        except Exception:
-            run_active = False
+        run_active = bool(_history_blocking_runs(project_root))
         return self._reply(200, {
             "entries": idx["entries"],
             "cursor":  idx["cursor"],
@@ -34098,13 +34119,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # a single idle chat permanently block undo. Scope to the active
         # project so another project's run doesn't block this one.
         try:
-            this_project = os.path.basename(project_root.rstrip("/"))
-            with RUNS_LOCK:
-                active_runs = [
-                    s for s in RUNS.values()
-                    if (getattr(s, "project_id", None) in (None, this_project))
-                    and not s.done and not getattr(s, "turn_done", False)
-                ]
+            active_runs = _history_blocking_runs(project_root)
             if active_runs:
                 return self._reply(409, {
                     "error": "a run is mid-turn; undo/redo locked until it finishes its turn",
