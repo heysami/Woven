@@ -23365,6 +23365,18 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .guards-picker .perm-trigger[data-off="true"] { color: var(--warning); }
 .guards-picker .perm-trigger[data-off="true"]:hover { border-color: var(--warning); }
+/* Locked = a thread is already running, so its checks are baked into the
+   system prompt it was spawned with and there is nothing to change. The chip
+   stays legible (it still REPORTS what this thread runs with) but reads as
+   inert: no hover affordance, no chevron, faded. */
+.guards-picker .perm-trigger:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.guards-picker .perm-trigger:disabled:hover {
+  border-color: transparent;
+  background: transparent;
+}
 .guard-check {
   width: 15px; height: 15px;
   margin-top: 1px;

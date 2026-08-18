@@ -11809,6 +11809,10 @@ const CHAT_GUARD_OPTIONS = [
   { key: "visual",  label: "Visual verification", hint: "Agent renders and looks at what it built (via a throwaway verifier subagent) before saying it is done - including anything it creates on the canvas. Off: it reports without checking, and may glance inline." },
   { key: "dsGuard", label: "Design system guard", hint: "After any markup / CSS edit on a design-system-bound page, the agent runs the DS-drift linter and autofixes local forks. Off: no drift check. Projects with no design system are unaffected." },
 ];
+// What a thread runs with when its spawn event carries no `guards` (spawned
+// before the toggles shipped, or by a caller that passes none): both gates on,
+// which is exactly what the daemon defaults such a spawn to.
+const GUARD_DEFAULTS_ALL = Object.fromEntries(CHAT_GUARD_OPTIONS.map(o => [o.key, true]));
 function loadChatGuards() {
   const raw = loadSettings().chatGuards;
   const out = {};
@@ -11831,7 +11835,7 @@ function chatGuardsSummary(g) {
 /* Same skeleton + CSS family as PermissionModePicker / ChatViewModePicker, so
    the footer dropdowns read as siblings - but the rows are CHECKBOXES (the
    two gates are independent), not a single-choice list. */
-function ChatGuardsPicker({ value, onChange, openUp }) {
+function ChatGuardsPicker({ value, onChange, openUp, locked }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -11840,20 +11844,30 @@ function ChatGuardsPicker({ value, onChange, openUp }) {
     document.addEventListener("mousedown", off);
     return () => document.removeEventListener("mousedown", off);
   }, [open]);
+  // A live thread already carries its checks in the system prompt it was
+  // spawned with, so there is nothing here to change: the control locks and
+  // reports what THIS thread is running with. Editable only on an empty
+  // thread, where the next send is the spawn the value actually reaches.
+  useEffect(() => { if (locked) setOpen(false); }, [locked]);
   const anyOff = CHAT_GUARD_OPTIONS.some(o => !value[o.key]);
+  const lockedTitle = locked
+    ? `This thread is running with ${CHAT_GUARD_OPTIONS.map(o => `${o.label.toLowerCase()} ${value[o.key] ? "on" : "off"}`).join(", ")}. Checks are fixed when a thread starts - start a new chat to change them.`
+    : "Which mandatory checks the agent runs before it calls work done";
   return html`
-    <div className="perm-picker guards-picker" ref=${ref} data-up=${!!openUp}>
+    <div className="perm-picker guards-picker" ref=${ref} data-up=${!!openUp} data-locked=${!!locked}>
       <button
         className="perm-trigger"
         data-open=${open}
         data-off=${anyOff}
-        title="Which mandatory checks the agent runs before it calls work done"
-        onClick=${() => setOpen(o => !o)}
+        disabled=${!!locked}
+        aria-disabled=${!!locked}
+        title=${lockedTitle}
+        onClick=${() => { if (!locked) setOpen(o => !o); }}
       >
         <span className="perm-trigger-label">${chatGuardsSummary(value)}</span>
-        <span className="perm-chev">${openUp ? "▴" : "▾"}</span>
+        ${!locked && html`<span className="perm-chev">${openUp ? "▴" : "▾"}</span>`}
       </button>
-      ${open && html`
+      ${open && !locked && html`
         <div className="perm-menu">
           <div className="perm-menu-head">Checks before "done"</div>
           ${CHAT_GUARD_OPTIONS.map(opt => html`
@@ -11875,7 +11889,7 @@ function ChatGuardsPicker({ value, onChange, openUp }) {
             </button>
           `)}
           <div className="perm-menu-foot">
-            On by default. Unticking one drops it from the agent's instructions, so it applies to the next chat - the current run keeps what it was spawned with.
+            On by default. Unticking one drops it from the agent's instructions for the thread this message starts. Once a thread is running its checks are fixed - start a new chat to change them.
           </div>
         </div>
       `}
@@ -16873,6 +16887,23 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     return null;
   }, [events]);
 
+  // Same idea for the per-thread checks: the spawn event carries the guards
+  // the system prompt was actually built with. Threads spawned before the
+  // toggles existed carry none - they ran with both gates on, which is what
+  // loadChatGuards-shaped defaults give us.
+  const runGuards = useMemo(() => {
+    for (const ev of events) {
+      if (ev.event === "agent" && ev.data?.type === "raw") continue;
+      const g = ev.data && ev.data.guards;
+      if (g && typeof g === "object") {
+        const out = {};
+        for (const o of CHAT_GUARD_OPTIONS) out[o.key] = (o.key in g) ? !!g[o.key] : true;
+        return out;
+      }
+    }
+    return null;
+  }, [events]);
+
   // Current model - set by Claude Code's `system/init` frame, then echoed on
   // every status frame. Display in the footer chip instead of the "done"
   // line so it's a steady label, not noise repeated on every turn end.
@@ -17026,11 +17057,14 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             compact=${true}
             openUp=${true}
           />
-          <${ChatGuardsPicker}
-            value=${chatGuards}
-            onChange=${changeChatGuards}
-            openUp=${true}
-          />
+${variant !== "system" && html`
+            <${ChatGuardsPicker}
+              value=${isNew ? chatGuards : (runGuards || GUARD_DEFAULTS_ALL)}
+              onChange=${changeChatGuards}
+              openUp=${true}
+              locked=${!isNew}
+            />
+          `}
         `}
         toolbarRight=${html`
           ${runModel && html`
@@ -98763,6 +98797,7 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     const run = await triggerRun({
       branch, agentId: pickAgentIdForChat(), kind: "freeform",
       prompt: fullPrompt, title, permissionMode,
+      guards: loadChatGuards(),
     });
     setChatRun(run);
     onChange && onChange({ runId: run.runId, lastRunId: run.runId });
@@ -103780,6 +103815,7 @@ function App() {
       prompt: wrappedPrompt,
       title,
       permissionMode,
+      guards: loadChatGuards(),
     });
     setChatRun(run);
     setLastRun(run);
