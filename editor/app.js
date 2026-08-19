@@ -47535,10 +47535,13 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   // the same two events, so there is still exactly one owner of the
   // one-pick-mode-at-a-time invariant.
   //
-  // Turning it ON needs a target node. A selected node with a pickable iframe
-  // wins; failing that, a canvas holding exactly ONE pickable iframe is
-  // unambiguous enough to use it. Anything else is a miss, and says so rather
-  // than silently arming pick mode on a node the user wasn't looking at.
+  // Turning it ON needs an originator node, but NOT a selected one: the
+  // overlay installs into every eligible iframe on the canvas regardless, so
+  // the originator only decides which badge lights up and which node the
+  // toggle-off is attributed to. A selected pickable node wins; with nothing
+  // selected we take the pickable iframe closest to the middle of the
+  // viewport, i.e. the one the user is looking at. Only a canvas with no
+  // pickable iframe at all is a real miss.
   const togglePickMode = useCallback(() => {
     let on = false;
     try { on = !!window.__thPickModeNodeId; } catch {}
@@ -47549,11 +47552,21 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     const selected = Array.from((selectedNodeIdsRef.current || new Set()));
     let target = selected.find(id => wfFindPickHost(id));
     if (!target) {
-      const hosts = Array.from(new Set(wfPickHostIframes().map(wfPickHostId).filter(Boolean)));
-      if (hosts.length === 1) target = hosts[0];
+      // wfPickHostRect, not getBoundingClientRect: a drafted page lives inside
+      // a canvas-frames embed, so its raw rect is in the EMBED's viewport.
+      const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+      let bestD = Infinity;
+      for (const ifr of wfPickHostIframes()) {
+        const id = wfPickHostId(ifr);
+        if (!id) continue;
+        const r = wfPickHostRect(ifr);
+        if (!r || !(r.width > 0) || !(r.height > 0)) continue;
+        const d = Math.hypot(r.left + r.width / 2 - cx, r.top + r.height / 2 - cy);
+        if (d < bestD) { bestD = d; target = id; }
+      }
     }
     if (!target) {
-      flashPickOp("error", "Selection mode (`): select a prototype or HTML node first.");
+      flashPickOp("error", "Selection mode (`): this canvas has no prototype or HTML node to pick in.");
       return;
     }
     window.dispatchEvent(new CustomEvent("th:enter-pick-mode", { detail: { nodeId: target } }));

@@ -10946,25 +10946,11 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   overflow: hidden;
   min-height: 0;
 }
-/* At rest, prompt + formatted-text read as centered cards (content centred both
-   axes); editing layout returns the moment the node is hovered or selected. */
-body:not([data-wf-no-simplify]) .workflow-node-prompt[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-node-prompt-render {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
-body:not([data-wf-no-simplify]) .workflow-node-prompt[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-node-prompt-text {
-  text-align: center;
-}
-body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-fmttext-editor {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
+/* Bare mode collapses the CHROME and nothing else. It used to also re-centre
+   prompt + formatted-text content at rest, which overrode the alignment the
+   text actually has: a prompt reads left, and formatted text follows whatever
+   its typobar set per block. Text keeps its own alignment in every state now,
+   so a node does not reflow its copy under the cursor on hover. */
 
 /* ─── Canvas-frames body-drag overlay ─────────────────────────────────
    When the frames node is NOT selected, this layer floats above the
