@@ -36439,6 +36439,22 @@ function installPickOverlay(iframeEl, onPick) {
     clearInspectOverlays();
   };
   const onBlurClear = () => { cmdHeld = false; clearInspectOverlays(); };
+  // ` / ~ exits selection mode from INSIDE the iframe too. A keydown in a
+  // same-origin child document never reaches the editor window's listener,
+  // so without this the toggle would be one-way whenever focus had drifted
+  // into the page (the editor-side handler owns the ON direction).
+  const onExitKey = (e) => {
+    if (e.key !== "`" && e.key !== "~") return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    const tag = (t && t.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    if (t && t.isContentEditable) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try { window.dispatchEvent(new CustomEvent("th:exit-pick-mode")); } catch {}
+  };
+  doc.addEventListener("keydown", onExitKey, true);
   doc.addEventListener("keydown", onKeyDown, true);
   doc.addEventListener("keyup", onKeyUp, true);
   if (win) win.addEventListener("blur", onBlurClear);
@@ -36450,6 +36466,7 @@ function installPickOverlay(iframeEl, onPick) {
       doc.removeEventListener("mousemove", onMove, true);
       doc.removeEventListener("click",    onClick, true);
       doc.removeEventListener("mousedown", onMouseDown, true);
+      doc.removeEventListener("keydown",   onExitKey, true);
       doc.removeEventListener("keydown",   onKeyDown, true);
       doc.removeEventListener("keyup",     onKeyUp,   true);
       if (win) win.removeEventListener("blur", onBlurClear);
@@ -39035,8 +39052,8 @@ function WorkflowNodeSelectBadge({ nodeId, selected }) {
   // Cmd+C copy · Cmd+V paste · Cmd+R replace · Cmd+D duplicate · ←↑→↓
   // reorder/nudge · Delete · Esc / click any badge to exit.
   const tipText = active
-    ? "Pick · Cmd+C copy · Cmd+V paste · Cmd+R replace · Cmd+D duplicate · ←↑→↓ move · Delete · Esc to exit"
-    : "Pick to copy · paste · replace · duplicate · move · delete";
+    ? "Pick · Cmd+C copy · Cmd+V paste · Cmd+R replace · Cmd+D duplicate · ←↑→↓ move · Delete · ` or Esc to exit"
+    : "Pick to copy · paste · replace · duplicate · move · delete  (`)";
   // Tooltip placement - auto-flip below if no headroom (same threshold as
   // HoverTip uses for the top-nav case). The badge anchors at top: rect.top
   // - 40 with height 32; bubble sits 6px above its top (or 6px below its
@@ -46582,6 +46599,10 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         path:      det.path || "",
         outerHTML: det.outerHTML || "",
         tagName:   det.tagName || "",
+        // Carried through to the code-panel locate effect below. Strings
+        // only - by the time this envelope is read the live element may
+        // have been replaced by an iframe reload.
+        needles:   Array.isArray(det.needles) ? det.needles : [],
       });
     };
     window.addEventListener("th:element-picked", onPicked);
@@ -47371,6 +47392,12 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
                 path:      elementCssPath(el),
                 outerHTML: el.outerHTML || "",
                 tagName:   (el.tagName || "").toLowerCase(),
+                // Source-locate candidates for the code panel (see
+                // thSourceNeedles). Computed here, at the moment of the
+                // pick, because this is the only place the LIVE element is
+                // in hand - the envelope that survives into state carries
+                // strings, not a DOM reference that can go stale.
+                needles:   thSourceNeedles(el),
               },
             }));
           });
@@ -47501,6 +47528,36 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     const dwell = phase === "error" ? 4500 : 2400;
     pickOpTimerRef.current = setTimeout(() => setPickOpState(null), dwell);
   }, []);
+
+  // Keyboard twin of the node's select badge: the ` / ~ key toggles selection
+  // mode without hunting for the chip. Reads the canonical on/off state from
+  // the window mirror (the same one badges mounting late read) and dispatches
+  // the same two events, so there is still exactly one owner of the
+  // one-pick-mode-at-a-time invariant.
+  //
+  // Turning it ON needs a target node. A selected node with a pickable iframe
+  // wins; failing that, a canvas holding exactly ONE pickable iframe is
+  // unambiguous enough to use it. Anything else is a miss, and says so rather
+  // than silently arming pick mode on a node the user wasn't looking at.
+  const togglePickMode = useCallback(() => {
+    let on = false;
+    try { on = !!window.__thPickModeNodeId; } catch {}
+    if (on) {
+      window.dispatchEvent(new CustomEvent("th:exit-pick-mode"));
+      return;
+    }
+    const selected = Array.from((selectedNodeIdsRef.current || new Set()));
+    let target = selected.find(id => wfFindPickHost(id));
+    if (!target) {
+      const hosts = Array.from(new Set(wfPickHostIframes().map(wfPickHostId).filter(Boolean)));
+      if (hosts.length === 1) target = hosts[0];
+    }
+    if (!target) {
+      flashPickOp("error", "Selection mode (`): select a prototype or HTML node first.");
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("th:enter-pick-mode", { detail: { nodeId: target } }));
+  }, [flashPickOp]);
 
   // ── Whiteboard eyedropper ──
   // Native EyeDropper (Chromium) → sRGB hex → the chosen CSS syntax →
@@ -49456,6 +49513,15 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
       if (isEditingTarget(e.target)) return;
       const cmd = e.metaKey || e.ctrlKey;
+      // ── Selection mode: ` / ~ toggles element picking on the selected
+      // node (same toggle as its select badge). Bare key, no modifier, so
+      // it never collides with the Cmd shortcuts below; the shifted twin is
+      // accepted because ` and ~ are one physical key.
+      if (!cmd && !e.altKey && (e.key === "`" || e.key === "~")) {
+        e.preventDefault();
+        togglePickMode();
+        return;
+      }
       // ── Layering: [ / ] restack the selected nodes one layer at a time;
       // Shift sends them all the way ({ = to back, } = to front). Matches
       // the bracket convention from Figma / Illustrator. No modifier beyond
@@ -49540,7 +49606,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [copySelectedNodes, pasteNodesFromClipboard, pastePickedElement, deleteSelectedNodes, duplicateSelectedNodes, duplicateSelectedWbItems, removeWbItems, pickModeNodeId, layerSelectedNodes, layerSelectedWbItems, setSelectionLocked, groupSelection, ungroupSelection]);
+  }, [copySelectedNodes, pasteNodesFromClipboard, pastePickedElement, deleteSelectedNodes, duplicateSelectedNodes, duplicateSelectedWbItems, removeWbItems, pickModeNodeId, layerSelectedNodes, layerSelectedWbItems, setSelectionLocked, groupSelection, ungroupSelection, togglePickMode]);
 
   // Walk edges that TERMINATE at nodeId.in - collect upstream prompt texts
   // and asset references. Skill nodes read this to assemble the actual API call.
@@ -55040,6 +55106,31 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     setCodePanelFocus({ token: ++codeFocusTokenRef.current, nodeId, path, needle });
   }, []);
 
+  // ── Pick an element → highlight it in the open source panel ─────────────
+  // Selection mode and the </> source panel are independent toggles; when
+  // BOTH are on for the same node, every pick drives the panel to the line
+  // that renders the picked element (right file tab, text selected,
+  // scrolled into view). Deliberately does NOT open the panel - locating is
+  // a bonus for a user who already asked to see source, not a surprise
+  // panel appearing under a click meant for the inspector.
+  //
+  // `path` is the page the iframe is CURRENTLY showing (sub-page navigation
+  // included), which is only the first place the panel looks: the search
+  // walks the rest of the prototype's files after it, so a data-bound
+  // string still lands on data.js.
+  useEffect(() => {
+    if (!pickedElement || !pickedElement.nodeId) return;
+    if (codePanelNodeId !== pickedElement.nodeId) return;
+    const needles = pickedElement.needles || [];
+    if (!needles.length) return;
+    setCodePanelFocus({
+      token:  ++codeFocusTokenRef.current,
+      nodeId: pickedElement.nodeId,
+      path:   resolveIframePath() || null,
+      needles,
+    });
+  }, [pickedElement, codePanelNodeId, resolveIframePath]);
+
   // ── Double-click data-bound text → code panel (workflow canvas) ──────────
   // While a prototype/asset node is selected its iframe is interactive
   // (pointer-events:auto). Double-clicking text there checks whether the
@@ -57052,11 +57143,18 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
                   onClose=${() => setCodePanelNodeId(null)}
                 />`;
               }
+              // Both docks anchor to the node's right edge. When the
+              // inspector is up on the SAME node, step the source panel out
+              // past it (WORKFLOW_INSPECTOR_DOCK_W + a gutter) so the two
+              // read side by side instead of the inspector covering the code.
+              const inspectorSameNode = !!(pickedShownElement
+                && pickedShownElement.nodeId === host.id);
               return html`<${WorkflowCodePanel}
                 key=${"codepanel-" + host.id}
                 node=${host}
                 zoom=${zoom}
                 closing=${codePanelClosing}
+                offsetX=${inspectorSameNode ? WORKFLOW_INSPECTOR_DOCK_W + 8 : 0}
                 focus=${codePanelFocus && codePanelFocus.nodeId === host.id ? codePanelFocus : null}
                 onClose=${() => { setCodePanelNodeId(null); setCodePanelFocus(null); }}
               />`;
@@ -64912,6 +65010,62 @@ function thNeedleFor(el) {
   return thNormText(el.textContent).slice(0, 240);
 }
 
+/* Ordered list of strings that are likely to pin ONE picked element down in
+   the source bytes, best first. Fed to the code panel's locate pass (pick an
+   element with the source open and the panel jumps to the line that renders
+   it), so every candidate must be something an author would actually have
+   typed: an id, the element's own visible text, a media/link target, its class
+   attribute. Runtime-only classes the pick overlay itself adds are stripped -
+   they exist in the live DOM and never in the file.
+
+   Direct text nodes only. Falling back to textContent (the way thNeedleFor
+   does) would hand back a container's whole subtree run together, which never
+   matches source anyway because the tags in between are gone. */
+function thSourceNeedles(el) {
+  if (!el || !el.tagName) return [];
+  const out = [];
+  const push = (s) => {
+    const v = thNormText(s);
+    if (v.length >= 3 && !out.includes(v)) out.push(v);
+  };
+  const attr = (name) => {
+    try { return el.getAttribute(name) || ""; } catch { return ""; }
+  };
+  // 1. id - the one attribute authors give an element to name it.
+  //    Framework-generated ids (React useId ":r3:", radix-*) never appear in
+  //    source, so they are skipped rather than sending the search on a
+  //    guaranteed miss.
+  const id = attr("id");
+  if (id && !/^(:r|react-|radix-|headlessui-|mui-|:R)/.test(id)) push(`id="${id}"`);
+  // 2. The element's OWN visible text. Also the candidate that usefully
+  //    misses index.html and hits data.js when the string is data-bound.
+  let direct = "";
+  try { for (const n of el.childNodes) if (n.nodeType === 3) direct += n.nodeValue; } catch {}
+  direct = thNormText(direct);
+  if (direct.length >= 3) push(direct.slice(0, 120));
+  else {
+    const slot = thTextSlot(el);
+    if (slot.prop !== "text") push(thNormText(slot.get()).slice(0, 120));
+  }
+  // 3. Targets + labels that are written literally in the markup.
+  for (const a of ["data-testid", "src", "href", "alt", "placeholder", "name", "aria-label"]) {
+    const v = attr(a);
+    if (v && v.length >= 3) push(`${a}="${v}"`);
+  }
+  // 4. The class attribute, whole then head token. Whole first because it is
+  //    an exact match when nothing added classes at runtime; the single token
+  //    is the fallback for when something did.
+  const cls = attr("class").split(/\s+/)
+    .filter(c => c && !c.startsWith("th-pick-") && !c.startsWith("th-inspect-"))
+    .join(" ");
+  if (cls) {
+    push(`class="${cls}"`);
+    const head = cls.split(" ")[0];
+    if (head && head.length >= 4) push(head);
+  }
+  return out;
+}
+
 // First index of `needle` in `text`, tolerant of whitespace differences
 // between the rendered DOM (collapsed) and the source literal. -1 if absent.
 function thFindNeedle(text, needle) {
@@ -67089,7 +67243,11 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt, clo
   `;
 }
 
-function WorkflowCodePanel({ node, onClose, zoom, focus, closing }) {
+/* `offsetX` pushes the panel further out from the node's right edge. The
+   picked-element inspector docks against that same edge, so when both are
+   open on one node the surface passes the inspector's width through here and
+   the source panel steps aside instead of being covered by it. */
+function WorkflowCodePanel({ node, onClose, zoom, focus, closing, offsetX }) {
   const [files, setFiles] = useState([]);          // [{ path, label }]
   const [activeIdx, setActiveIdx] = useState(0);
   const [focusFlash, setFocusFlash] = useState(false); // brief pulse on programmatic focus
@@ -67101,6 +67259,11 @@ function WorkflowCodePanel({ node, onClose, zoom, focus, closing }) {
   const [saveFlash, setSaveFlash] = useState(null);// "saved" pulse after success
   const resizingRef = useRef(null);
   const textareaRef = useRef(null);
+  // Highlight band for a located line - { path, line } (1-based), painted as
+  // an absolutely-positioned strip over the textarea rather than as a text
+  // selection, so locating never steals keyboard focus. See syncHitBand.
+  const [hitLine, setHitLine] = useState(null);
+  const hitBandRef = useRef(null);
   const isProto = node.kind === "prototype";
   const branch = isProto ? nodePrototype(node) : "";
 
@@ -67342,44 +67505,146 @@ function WorkflowCodePanel({ node, onClose, zoom, focus, closing }) {
     }
   };
 
-  // Programmatic focus (double-click-on-data-text). When the caller opens the
-  // panel pointed at a specific file, switch to that tab…
+  // ── Programmatic focus ────────────────────────────────────────────────
+  // Two callers land here. Double-click-on-data-text names BOTH the file and
+  // the exact string (`focus.path` + `focus.needle`). Selection mode's pick
+  // locate names candidate strings (`focus.needles`, best first) and only a
+  // STARTING file - which file actually renders the picked element is what
+  // the search below works out.
+  //
+  // Both resolve into one `focusHit` = { token, path, needle, select } that
+  // the two effects after it act on: switch to that tab, then reveal the
+  // match. `select` separates the two callers' endings - see below.
+  const [focusHit, setFocusHit] = useState(null);
+  const bodiesRef = useRef(bodies);         bodiesRef.current = bodies;
+  const draftsRef = useRef(drafts);         draftsRef.current = drafts;
+  const filesRef  = useRef(files);          filesRef.current  = files;
+  const activePathRef = useRef(activePath); activePathRef.current = activePath;
   useEffect(() => {
-    if (!focus || !focus.path) return;
-    const idx = files.findIndex(f => f.path === focus.path || f.savePath === focus.path);
+    if (!focus || !focus.token) return;
+    const needles = (focus.needles && focus.needles.length)
+      ? focus.needles
+      : (focus.needle ? [focus.needle] : []);
+    const token = focus.token;
+    // `select` is true only for the caller that named its string outright.
+    // The pick path must NOT pull keyboard focus into the textarea: the user
+    // is mid-selection-mode, where arrows nudge the picked element and
+    // Delete removes it - both of which the pick-mode key handler drops the
+    // moment a textarea owns focus. It gets the highlight band instead.
+    const select = !(focus.needles && focus.needles.length);
+    if (!needles.length) {
+      if (focus.path) setFocusHit({ token, path: focus.path, needle: null, select });
+      return;
+    }
+    let alive = true;
+    // Search order: the caller's starting file, then whatever tab is already
+    // open, then the rest of the panel's list (index.html sorts first where
+    // `files` is built). Capped so one pick inside a large prototype can
+    // never turn into a hundred fetches.
+    const order = [];
+    const pushPath = (pp) => { if (pp && !order.includes(pp)) order.push(pp); };
+    pushPath(focus.path);
+    pushPath(activePathRef.current);
+    (filesRef.current || []).forEach(f => pushPath(f.path));
+    (async () => {
+      for (const path of order.slice(0, 40)) {
+        let text = null;
+        // Prefer what the user is actually looking at: an unsaved draft,
+        // else the cached clean bytes, else fetch.
+        if (Object.prototype.hasOwnProperty.call(draftsRef.current, path)) {
+          text = draftsRef.current[path];
+        } else {
+          const cached = bodiesRef.current[path];
+          if (cached && !cached.loading && !cached.error) text = cached.text || "";
+        }
+        if (text == null) {
+          try {
+            const u = apiUrl("/" + path);
+            const r = await fetch(u + (u.includes("?") ? "&" : "?") + "_c=" + Date.now());
+            text = r.ok ? await r.text() : null;
+          } catch { text = null; }
+          if (!alive) return;
+        }
+        if (text == null) continue;
+        for (const n of needles) {
+          if (thFindNeedle(text, n) >= 0) {
+            setFocusHit({ token, path, needle: n, select });
+            return;
+          }
+        }
+      }
+      // Nothing matched anywhere. Still honour an explicit file request so
+      // the panel at least lands on the right tab; drop any stale band.
+      if (alive) setFocusHit(focus.path ? { token, path: focus.path, needle: null, select } : null);
+    })();
+    return () => { alive = false; };
+  }, [focus && focus.token]);
+
+  // Switch to the resolved file's tab…
+  useEffect(() => {
+    if (!focusHit || !focusHit.path) return;
+    const idx = files.findIndex(f => f.path === focusHit.path || f.savePath === focusHit.path);
     if (idx >= 0 && idx !== activeIdx) setActiveIdx(idx);
-  }, [focus && focus.token, files]);
-  // …then, once that tab's bytes are loaded, select + scroll to the match and
-  // flash the panel so the user sees where the string lives in the source.
+  }, [focusHit, files]);
+  // …then, once that tab's bytes are loaded, reveal the match: scroll it into
+  // view, paint the highlight band, flash the panel frame. The double-click
+  // caller additionally focuses + selects the range so the user can type
+  // straight over it.
   useEffect(() => {
-    if (!focus || !focus.path || !focus.needle) return;
-    if (activePath !== focus.path) return;
+    if (!focusHit || !focusHit.needle) { setHitLine(null); return; }
+    if (activePath !== focusHit.path) return;
     if (!cur || cur.loading || cur.error) return;
     const ta = textareaRef.current;
     if (!ta) return;
-    const i = thFindNeedle(displayText, focus.needle);
-    if (i < 0) return;
-    const len = thNormText(focus.needle).length;
+    const i = thFindNeedle(displayText, focusHit.needle);
+    if (i < 0) { setHitLine(null); return; }
+    const len = thNormText(focusHit.needle).length;
+    const line = displayText.slice(0, i).split("\n").length;   // 1-based
     const raf = requestAnimationFrame(() => {
       try {
-        ta.focus();
-        ta.setSelectionRange(i, i + len);
-        const line = displayText.slice(0, i).split("\n").length;
         const lineH = parseFloat(getComputedStyle(ta).lineHeight) || 18;
         ta.scrollTop = Math.max(0, (line - 4) * lineH);
+        if (focusHit.select) { ta.focus(); ta.setSelectionRange(i, i + len); }
       } catch {}
+      setHitLine({ path: focusHit.path, line });
     });
     setFocusFlash(true);
     const t = setTimeout(() => setFocusFlash(false), 900);
     return () => { cancelAnimationFrame(raf); clearTimeout(t); };
-  }, [focus && focus.token, activePath, cur && cur.loading, cur && cur.error]);
+  }, [focusHit, activePath, cur && cur.loading, cur && cur.error]);
+
+  // Keep the highlight band glued to its line as the textarea scrolls.
+  // Written straight to the DOM rather than through state - a scroll
+  // handler that re-renders the whole panel (with the file's bytes in a
+  // textarea) drops frames on big files.
+  const syncHitBand = useCallback(() => {
+    const band = hitBandRef.current, ta = textareaRef.current;
+    if (!band || !ta) return;
+    if (!hitLine || hitLine.path !== activePathRef.current) { band.style.display = "none"; return; }
+    const cs = getComputedStyle(ta);
+    const lineH = parseFloat(cs.lineHeight) || 18;
+    const padT  = parseFloat(cs.paddingTop) || 0;
+    const y = padT + (hitLine.line - 1) * lineH - ta.scrollTop;
+    band.style.display = (y < -lineH || y > ta.clientHeight) ? "none" : "block";
+    band.style.top = y + "px";
+    band.style.height = lineH + "px";
+  }, [hitLine]);
+  useEffect(() => { syncHitBand(); }, [syncHitBand, activePath, displayText]);
 
   return html`
     <div
       className=${"workflow-code-panel" + (focusFlash ? " is-focusing" : "") + (closing ? " is-closing" : "")}
       data-host-node-id=${node.id}
       data-scroll-internally="true"
-      style=${{ left: left + "px", top: top + "px", width: panelW + "px", height: height + "px" }}
+      style=${{
+        left: left + "px", top: top + "px",
+        width: panelW + "px", height: height + "px",
+        // Step-aside offset rides on `transform`, NOT on `left`: `left`
+        // tracks the host node and must stay instant while the node is
+        // dragged, and the panel's enter/exit keyframes already own the
+        // separate `translate` property.
+        transform: offsetX ? `translateX(${offsetX}px)` : "none",
+      }}
       onMouseDown=${(e) => e.stopPropagation()}
       onWheel=${(e) => e.stopPropagation()}
     >
@@ -67473,8 +67738,12 @@ function WorkflowCodePanel({ node, onClose, zoom, focus, closing }) {
                     if (saveError) setSaveError(null);
                   }}
                   onKeyDown=${onTextareaKeyDown}
+                  onScroll=${syncHitBand}
                 />`
         }
+        ${hitLine && hitLine.path === activePath && html`
+          <div ref=${hitBandRef} className="workflow-code-panel-hit" aria-hidden="true"/>
+        `}
       </div>
       ${saveError && html`
         <div className="workflow-code-panel-savebar">
@@ -67490,6 +67759,12 @@ function WorkflowCodePanel({ node, onClose, zoom, focus, closing }) {
     </div>
   `;
 }
+
+/* Width of the picked-element inspector dock, in canvas (pre-zoom) px.
+   Shared with WorkflowCodePanel's `offsetX`: both docks anchor to the host
+   node's right edge, and the source panel steps out by exactly this much
+   (plus a gutter) when the inspector is open on the same node. */
+const WORKFLOW_INSPECTOR_DOCK_W = 240;
 
 /* WorkflowPickedInspectorDock ─────────────────────────────────
    Docked property inspector for workflow-mode pick-mode. Sits to the
@@ -67813,6 +68088,7 @@ function WorkflowPickedInspectorDock({
           path:      elementCssPath(targetEl),
           outerHTML: targetEl.outerHTML || "",
           tagName:   (targetEl.tagName || "").toLowerCase(),
+          needles:   thSourceNeedles(targetEl),
         },
       });
       window.dispatchEvent(evt);
@@ -67863,7 +68139,7 @@ function WorkflowPickedInspectorDock({
   const left   = (node.x || 0) + hostRectW;
   const top    = (node.y || 0);
   const height = hostRectH;
-  const panelW = 240;
+  const panelW = WORKFLOW_INSPECTOR_DOCK_W;
   const titleText = (pickedElement && pickedElement.tagName)
     ? `<${pickedElement.tagName}>`
     : "(no selection)";

@@ -25866,6 +25866,14 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 }
 /* Brief pulse when the panel is opened pointed at a specific line
    (double-click-on-data-text), so the eye lands on the revealed source. */
+/* The step-aside offset (see WorkflowCodePanel's `offsetX`) animates so the
+   panel visibly slides out from under the inspector rather than teleporting.
+   Only `transform` transitions - `left` must stay instant so the panel does
+   not lag behind its node during a drag. */
+.workflow-code-panel { transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .workflow-code-panel { transition: none; }
+}
 .workflow-code-panel.is-focusing {
   animation: workflow-code-panel-focus 0.9s ease-out;
 }
@@ -26070,6 +26078,28 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   box-sizing: border-box;
 }
 .workflow-code-panel-editor:focus { outline: 0; }
+/* Located-line highlight. Painted over the textarea (the body is the
+   positioned ancestor) instead of using a text selection, so picking an
+   element in selection mode can reveal its source line without pulling
+   keyboard focus away from the picked element. JS owns top/height/display -
+   see syncHitBand. */
+.workflow-code-panel-hit {
+  position: absolute;
+  display: none;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-left: 2px solid var(--accent);
+  animation: workflow-code-panel-hit-in 0.5s ease-out;
+}
+@keyframes workflow-code-panel-hit-in {
+  0%   { background: color-mix(in srgb, var(--accent) 42%, transparent); }
+  100% { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workflow-code-panel-hit { animation: none; }
+}
 .workflow-code-panel-dirty {
   display: inline-block;
   margin-left: 6px;
