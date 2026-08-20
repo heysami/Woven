@@ -58935,17 +58935,26 @@ const PV_ASSET_KIND_GLYPH = {
   viz:    () => html`<${Icon.Chart}/>`,
 };
 
-// Reveal a project-relative path in Finder via the daemon (macOS `open -R`).
-// Same endpoint the folder node's row actions use; fire-and-forget.
-function pvRevealInFinder(path) {
-  if (!path) return;
+// Reveal a project-relative (or absolute) path in Finder via the daemon
+// (macOS `open -R`, which selects the file inside its parent folder). Shared by
+// the preview viewer's asset rows and the library's card menus. Not
+// fire-and-forget: the endpoint 404s a path that has moved and 501s off macOS,
+// and a reveal that silently does nothing reads as a broken button.
+async function revealInFinder(path) {
+  if (!path) return false;
   try {
-    fetch(apiUrl("/__fs_reveal"), {
+    const r = await fetch(apiUrl("/__fs_reveal"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path }),
-    }).catch(() => {});
-  } catch {}
+    });
+    if (r.ok) return true;
+    const j = await r.json().catch(() => ({}));
+    uiAlert((j.error || `HTTP ${r.status}`) + "\n\n" + path, { title: "Could not reveal in Finder" });
+  } catch (e) {
+    uiAlert((e.message || String(e)) + "\n\n" + path, { title: "Could not reveal in Finder" });
+  }
+  return false;
 }
 
 /* Source-editor pane for a preview-viewer CODE tab (tab.kind === "code",
@@ -59226,7 +59235,7 @@ function PreviewAssetsPanel({ activePath, onClose }) {
                       }}><${Icon.Code}/></button>
                   `}
                   <button type="button" className="pv-rowbtn" title="Reveal in Finder" aria-label="Reveal in Finder"
-                    onClick=${(e) => { e.stopPropagation(); pvRevealInFinder(item.path); }}><${Icon.External}/></button>
+                    onClick=${(e) => { e.stopPropagation(); revealInFinder(item.path); }}><${Icon.External}/></button>
                 </span>
               `}
               <div className="pv-asset-kind">${glyphFor(item.kind)}</div>
@@ -59357,7 +59366,7 @@ function PreviewFilesPanel({ activePath, onClose }) {
                         { detail: { path: f.path, label: f.path.split("/").pop() || f.label, kind: "code" } }));
                     }}><${Icon.Code}/></button>
                   <button type="button" className="pv-rowbtn" title="Reveal in Finder" aria-label="Reveal in Finder"
-                    onClick=${(e) => { e.stopPropagation(); pvRevealInFinder(f.path); }}><${Icon.External}/></button>
+                    onClick=${(e) => { e.stopPropagation(); revealInFinder(f.path); }}><${Icon.External}/></button>
                 </span>
               </div>
             `)}
@@ -60392,6 +60401,9 @@ function WorkflowLibrary({ tab = "nodes" }) {
         on: isThumb, onClick: () => setProjectThumbnail(isThumb ? "" : p.id) },
       { icon: html`<${Icon.Star}/>`, label: starred ? "Unstar" : "Star",
         on: starred, onClick: () => togglePrototypeStar(p.id, !starred) },
+      // Reveals index.html, which opens its prototype folder with the file
+      // selected - the useful landing spot for "show me this on disk".
+      { icon: html`<${Icon.Folder}/>`, label: "Reveal in Finder", onClick: () => revealInFinder(p.path) },
     ];
     if (!isDeep) {
       items.push({ icon: html`<${Icon.Copy}/>`,  label: "Duplicate", onClick: () => duplicatePrototype(p) });
@@ -60408,6 +60420,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
     const items = [
       { icon: html`<${Icon.Image}/>`, label: isThumb ? "Clear thumbnail" : "Set as thumbnail",
         on: isThumb, onClick: () => setProjectThumbnail(isThumb ? "" : p.path) },
+      { icon: html`<${Icon.Folder}/>`, label: "Reveal in Finder", onClick: () => revealInFinder(p.path) },
       { icon: html`<${Icon.Trash}/>`, label: "Delete", danger: true, onClick: () => deleteHtml(p.path) },
     ];
     return renderCardMenu("html:" + p.path, corner, { items, hasState: isThumb, title: "Page actions" });
@@ -60485,6 +60498,19 @@ function WorkflowLibrary({ tab = "nodes" }) {
   // wrapping <div onMouseEnter/Leave + a ref/postMessage handler). HTML
   // scenes keep their own animation since we can't pause their internal
   // rAF loops generically.
+  // Visual-asset cards used to carry a bare trash pill in the corner. Reveal
+  // needed a home, and a second corner pill is exactly the overlap that pushed
+  // the prototype cards into an overflow menu in the first place - so assets
+  // now use the same ⋯ menu as the prototype + HTML sections. Delete moves
+  // inside it; bulk delete (the checkbox + floating bar) is untouched.
+  const renderAssetMenu = (a, corner) => renderCardMenu("asset:" + a.path, corner, {
+    title: "Asset actions",
+    items: [
+      { icon: html`<${Icon.Folder}/>`, label: "Reveal in Finder", onClick: () => revealInFinder(a.path) },
+      { icon: html`<${Icon.Trash}/>`, label: "Delete", danger: true, onClick: () => deleteAsset(a.path) },
+    ],
+  });
+
   const renderAssetItem = (a, view) => {
     const glyph = glyphForAssetKind(a.kind);
     const fileUrl = "/" + a.path + location.search;
@@ -60528,14 +60554,9 @@ function WorkflowLibrary({ tab = "nodes" }) {
             </label>
             <div className="workflow-library-card-thumb">
               ${renderThumb()}
+              ${renderAssetMenu(a, true)}
             </div>
             <div className="workflow-library-card-label">${a.name}</div>
-            <button
-              className="workflow-library-card-del"
-              title=${"Delete " + a.path + " from disk"}
-              onClick=${(ev) => { ev.stopPropagation(); deleteAsset(a.path); }}
-              onMouseDown=${(ev) => ev.stopPropagation()}
-            ><${Icon.Trash}/></button>
           </div>
         `
       : html`
@@ -60558,12 +60579,9 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph">${glyph}</span>
             <span className="workflow-library-item-label">${a.name}</span>
             <span className="workflow-library-item-id">${a.branch}</span>
-            <button
-              className="workflow-library-item-del"
-              title=${"Delete " + a.path + " from disk"}
-              onClick=${(ev) => { ev.stopPropagation(); deleteAsset(a.path); }}
-              onMouseDown=${(ev) => ev.stopPropagation()}
-            ><${Icon.Trash}/></button>
+            <div className="workflow-library-item-actions">
+              ${renderAssetMenu(a, false)}
+            </div>
           </div>
         `;
   };

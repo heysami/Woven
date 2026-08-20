@@ -3949,7 +3949,9 @@ select.sysadd-input {
 /* Hover-reveal, but stay visible while the menu is open OR the prototype carries
    persistent state (is thumbnail / starred) so that state reads at scan distance. */
 .workflow-library-item-generated .workflow-library-menu-btn,
-.workflow-library-card-generated .workflow-library-menu-btn {
+.workflow-library-card-generated .workflow-library-menu-btn,
+.workflow-library-item-deletable .workflow-library-menu-btn,
+.workflow-library-card-deletable .workflow-library-menu-btn {
   opacity: 0;
   transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
@@ -3957,6 +3959,10 @@ select.sysadd-input {
 .workflow-library-item-generated:focus-within .workflow-library-menu-btn,
 .workflow-library-card-generated:hover .workflow-library-menu-btn,
 .workflow-library-card-generated:focus-within .workflow-library-menu-btn,
+.workflow-library-item-deletable:hover .workflow-library-menu-btn,
+.workflow-library-item-deletable:focus-within .workflow-library-menu-btn,
+.workflow-library-card-deletable:hover .workflow-library-menu-btn,
+.workflow-library-card-deletable:focus-within .workflow-library-menu-btn,
 .workflow-library-menu-btn.is-open,
 .workflow-library-menu-btn.has-state { opacity: 1; }
 
