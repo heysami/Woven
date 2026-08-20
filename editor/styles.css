@@ -15898,6 +15898,381 @@ a.ds-badge:hover, button.ds-badge:hover {
   to { transform: rotate(360deg); }
 }
 
+/* DS drift report - the Validate action's read-only findings list. Sits under
+   the action row inside the DS node body, dismissable, never edits a page. */
+.workflow-node-ds-action-validate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* The build button's spinner is white-on-accent; on the outline actions it has
+   to ride the button's own text colour or it disappears. */
+.workflow-node-ds-action-validate .workflow-node-ds-spinner {
+  border-color: color-mix(in oklab, currentColor 35%, transparent);
+  border-top-color: currentColor;
+}
+.workflow-node-ds-lint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-2, var(--surface));
+  max-height: 220px;
+  overflow-y: auto;
+}
+.workflow-node-ds-lint[data-tone="ok"] {
+  border-color: color-mix(in oklab, oklch(58% 0.15 174) 40%, var(--border));
+}
+.workflow-node-ds-lint[data-tone="warn"] {
+  border-color: color-mix(in oklab, oklch(72% 0.16 78) 45%, var(--border));
+}
+.workflow-node-ds-lint[data-tone="bad"] {
+  border-color: color-mix(in oklab, oklch(58% 0.19 25) 45%, var(--border));
+}
+.workflow-node-ds-lint-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text);
+  padding-bottom: 4px;
+}
+.workflow-node-ds-lint-meta,
+.workflow-node-ds-lint-note {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.workflow-node-ds-lint-note {
+  padding: 3px 0;
+  line-height: 1.4;
+}
+.workflow-node-ds-lint-close {
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.workflow-node-ds-lint-close:hover { color: var(--text); }
+.workflow-node-ds-lint-row {
+  display: grid;
+  grid-template-columns: 108px 92px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0 4px 7px;
+  border-left: 2px solid transparent;
+  font-size: 10px;
+  line-height: 1.45;
+  border-top: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+}
+.workflow-node-ds-lint-row[data-sev="error"] {
+  border-left-color: oklch(58% 0.19 25);
+}
+.workflow-node-ds-lint-row[data-sev="warn"] {
+  border-left-color: oklch(72% 0.16 78);
+}
+.workflow-node-ds-lint-row[data-sev="info"] {
+  border-left-color: color-mix(in oklab, var(--text-faint) 60%, transparent);
+}
+.workflow-node-ds-lint-rule {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-node-ds-lint-where {
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-node-ds-lint-detail { color: var(--text); }
+
+/* User story map node. A table of the project's user stories joined to where
+   each one lives in the prototype. Story columns are read-only (the .xlsx owns
+   them); location columns are inputs. Rows carrying findings get a severity
+   stripe on the left edge. */
+.workflow-node-sm {
+  display: grid;
+  grid-template-rows: 32px 1fr;
+}
+.workflow-node-sm-bar {
+  background: transparent;
+  gap: 8px;
+}
+.workflow-node-sm-glyph {
+  font-size: 13px;
+  color: var(--accent);
+  width: 14px;
+  text-align: center;
+}
+.workflow-node-sm-title {
+  font: 500 11px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.workflow-node-sm-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 9px;
+  font: 600 10px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.workflow-node-sm-badge[data-tone="ok"] {
+  background: color-mix(in oklab, oklch(58% 0.15 174) 14%, var(--surface));
+  border-color: color-mix(in oklab, oklch(58% 0.15 174) 40%, var(--border));
+  color: oklch(38% 0.12 174);
+}
+.workflow-node-sm-badge[data-tone="warn"] {
+  background: color-mix(in oklab, oklch(72% 0.16 78) 16%, var(--surface));
+  border-color: color-mix(in oklab, oklch(72% 0.16 78) 45%, var(--border));
+  color: oklch(42% 0.13 78);
+}
+.workflow-node-sm-badge[data-tone="bad"] {
+  background: color-mix(in oklab, oklch(58% 0.19 25) 14%, var(--surface));
+  border-color: color-mix(in oklab, oklch(58% 0.19 25) 45%, var(--border));
+  color: oklch(45% 0.17 25);
+}
+.workflow-node-sm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 22px;      /* bottom padding clears the corner-resize handle */
+  background: var(--surface);
+  min-height: 0;
+}
+.workflow-node-sm-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.workflow-node-sm-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.08s, border-color 0.08s, color 0.08s;
+}
+.workflow-node-sm-action:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.workflow-node-sm-action[disabled],
+.workflow-node-sm-action[data-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.workflow-node-sm-action-check {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg, white);
+}
+.workflow-node-sm-action-check:hover {
+  background: color-mix(in oklab, var(--accent) 80%, black 10%);
+  color: var(--accent-fg, white);
+}
+.workflow-node-sm-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid color-mix(in oklab, white 60%, transparent);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: workflow-node-ds-spin 0.7s linear infinite;
+}
+.workflow-node-sm-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.workflow-node-sm-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.workflow-node-sm-stat { white-space: nowrap; }
+.workflow-node-sm-stat b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.workflow-node-sm-stat-when { margin-left: auto; }
+.workflow-node-sm-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 7px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: help;
+}
+/* The high-severity finding kinds - a mapping that points at something that is
+   not there any more, or a sheet whose IDs cannot be trusted. */
+.workflow-node-sm-chip[data-kind="missing-page"],
+.workflow-node-sm-chip[data-kind="missing-element"],
+.workflow-node-sm-chip[data-kind="orphan-mapping"],
+.workflow-node-sm-chip[data-kind="duplicate-id"],
+.workflow-node-sm-chip[data-kind="blank-id"] {
+  background: color-mix(in oklab, oklch(58% 0.19 25) 12%, var(--surface));
+  border-color: color-mix(in oklab, oklch(58% 0.19 25) 40%, var(--border));
+  color: oklch(45% 0.17 25);
+}
+.workflow-node-sm-chip[data-kind="unmapped"],
+.workflow-node-sm-chip[data-kind="stale"],
+.workflow-node-sm-chip[data-kind="no-id-column"] {
+  background: color-mix(in oklab, oklch(72% 0.16 78) 14%, var(--surface));
+  border-color: color-mix(in oklab, oklch(72% 0.16 78) 42%, var(--border));
+  color: oklch(42% 0.13 78);
+}
+.workflow-node-sm-err {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in oklab, oklch(58% 0.19 25) 45%, var(--border));
+  background: color-mix(in oklab, oklch(58% 0.19 25) 10%, var(--surface));
+  color: oklch(45% 0.17 25);
+}
+.workflow-node-sm-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 18px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  text-align: center;
+}
+.workflow-node-sm-empty b { color: var(--text-muted); font-weight: 600; }
+.workflow-node-sm-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg, var(--surface));
+}
+.workflow-node-sm-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 11px;
+  table-layout: fixed;
+}
+.workflow-node-sm-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font: 600 10px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  background: var(--surface);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.workflow-node-sm-table td {
+  padding: 0 4px;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  vertical-align: middle;
+  overflow: hidden;
+}
+.workflow-node-sm-table td[data-mono="true"] { font-family: var(--font-mono); }
+/* The severity stripe rides the first cell so it survives the sticky header
+   and the horizontal scroll of a wide table. */
+.workflow-node-sm-table tbody tr td:first-child {
+  border-left: 2px solid transparent;
+  padding-left: 6px;
+}
+.workflow-node-sm-table tbody tr[data-sev="high"] td:first-child {
+  border-left-color: oklch(58% 0.19 25);
+}
+.workflow-node-sm-table tbody tr[data-sev="medium"] td:first-child {
+  border-left-color: oklch(72% 0.16 78);
+}
+.workflow-node-sm-table tbody tr[data-sev="low"] td:first-child {
+  border-left-color: color-mix(in oklab, var(--text-faint) 55%, transparent);
+}
+.workflow-node-sm-table tbody tr:hover td {
+  background: color-mix(in oklab, var(--accent) 5%, transparent);
+}
+/* A map row whose story ID is gone from the sheet: shown so it can be cleared,
+   dimmed so it does not read as a real story. */
+.workflow-node-sm-table tbody tr[data-orphan="true"] .workflow-node-sm-cell {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.workflow-node-sm-cell {
+  display: block;
+  padding: 5px 4px;
+  color: var(--text);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-node-sm-input {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  padding: 4px 4px;
+  border-radius: 3px;
+}
+.workflow-node-sm-input::placeholder { color: var(--text-faint); opacity: 0.7; }
+.workflow-node-sm-input:hover { border-color: var(--border); }
+.workflow-node-sm-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+
 /* Phase 8 - Iterator nodes (Repeater / Remix / Blend / Refiner). */
 .workflow-node-iter { display: grid; grid-template-rows: 32px 1fr; }
 .workflow-node-iter-bar {

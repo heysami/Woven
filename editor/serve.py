@@ -99,6 +99,8 @@ import usertesting_gate as _ut_gate  # user testing gate delegate (/t/ testee, /
 import git_ops as _gitops    # git/GitHub backbone - deliberate commit/publish + fork/PR
 import providers as _providers  # host-side connect store for backend/db providers (Supabase, ...)
 import voicekit as _voicekit  # runtime voice core (dynamic TTS/STT) - daemon + share gate
+import stories as _stories  # user-story sheet (docs/user-stories.xlsx) + prototype location map
+import xlsx_io as _xlsx_io  # dependency-free .xlsx read/write (user-story sheet)
 
 
 def _pick_port() -> int:
@@ -909,6 +911,9 @@ PROJECTS_DIR = os.path.join(WORKSPACE_DIR, "projects") if WORKSPACE_DIR else Non
 
 NAME_OK = re.compile(r"^[A-Za-z0-9._-]+$")
 SLUG_OK = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
+# Prototype slugs are looser than project ids - they carry dots, underscores
+# and case (see _default_prototype_slug).
+_PROTO_SLUG_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,60}$")
 PROJECT_ID_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 ALLOWED_NAMES = {
     # branches deprecated. MERGES.md / FORK_REQUEST.md no longer allowed.
@@ -14378,6 +14383,16 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._workflow_nodes_add(qs)
             if parsed.path == "/__design_system":
                 return self._design_system_save(qs)
+            if parsed.path == "/__stories/upload":
+                return self._stories_upload(qs)
+            if parsed.path == "/__stories/template":
+                return self._stories_template(qs)
+            if parsed.path == "/__stories/map":
+                return self._stories_map_save(qs)
+            if parsed.path == "/__stories/validate":
+                return self._stories_validate(qs)
+            if parsed.path == "/__ds/validate":
+                return self._ds_validate(qs)
             if parsed.path == "/__ds_proposals":
                 return self._ds_proposals_save(qs)
             if parsed.path == "/__upload_font":
@@ -14784,6 +14799,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._qa_resolve(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__qa/run":
             return self._qa_run(urllib.parse.parse_qs(parsed.query))
+        # User stories + prototype story map (editor/stories.py).
+        if url_path == "/__stories":
+            return self._stories_get(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__stories/download":
+            return self._stories_download(urllib.parse.parse_qs(parsed.query))
         # Live Session - host-side presence (the host's own editor sees guest
         # cursors). SSE stream + the injected cursor script.
         if url_path == "/__live_events":
@@ -25572,6 +25592,234 @@ class H(http.server.SimpleHTTPRequestHandler):
         report["mode"] = mode
         report["exitCode"] = proc.returncode
         report["outDir"] = out_dir
+        return self._reply(200, report)
+
+    # ── User stories + prototype story map ────────────────────────────────
+    # Two artefacts per project, both plain files on disk (editor/stories.py):
+    #   docs/user-stories.xlsx   the stories, authored in Excel, keyed by ID
+    #   docs/story-map.json      story ID -> where it lives in the prototype
+    # The story-map canvas node reads /__stories and re-runs /__stories/validate
+    # to surface the drift between the two.
+
+    def _stories_prototype(self, qs, project_root):
+        """Explicit ?prototype wins, then the slug the map was recorded
+        against, then the project default."""
+        slug = (qs.get("prototype") or qs.get("branch") or [""])[0].strip()
+        if slug and _PROTO_SLUG_OK.match(slug):
+            return slug
+        recorded = (_stories.load_map(project_root).get("prototype") or "").strip()
+        if recorded and _PROTO_SLUG_OK.match(recorded):
+            return recorded
+        return self._default_prototype_slug(project_root) or "main"
+
+    def _stories_page_list(self, project_root, prototype, cap=400):
+        """Every page a mapping could point at: *.html under source/<slug>/,
+        one level deep, dot-prefixed drafts and clones excluded."""
+        base = os.path.join(project_root, "source", prototype or "")
+        out = []
+        if not os.path.isdir(base):
+            return out
+        for entry in sorted(os.listdir(base)):
+            if entry.startswith("."):
+                continue
+            full = os.path.join(base, entry)
+            if os.path.isfile(full) and entry.lower().endswith(".html"):
+                out.append(entry)
+            elif os.path.isdir(full):
+                for sub in sorted(os.listdir(full)):
+                    if sub.startswith(".") or not sub.lower().endswith(".html"):
+                        continue
+                    if os.path.isfile(os.path.join(full, sub)):
+                        out.append(entry + "/" + sub)
+            if len(out) >= cap:
+                break
+        return out[:cap]
+
+    # GET /__stories?project=<id>[&prototype=<slug>]
+    def _stories_get(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        proto = self._stories_prototype(qs, project_root)
+        try:
+            payload = _stories.rows_for_display(project_root, proto)
+        except Exception as e:
+            return self._reply(500, {"error": "story map read failed: %s" % e})
+        payload["ok"] = True
+        payload["pages"] = self._stories_page_list(project_root, proto)
+        payload["fieldLabels"] = _stories.FIELD_LABELS
+        payload["findingKinds"] = _stories.FINDING_KINDS
+        return self._reply(200, payload)
+
+    # GET /__stories/download?project=<id> - hand back the .xlsx itself so the
+    # user can open it in Excel. Same file the agent and the node read.
+    def _stories_download(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        path = _stories.stories_path(project_root)
+        if not os.path.isfile(path):
+            return self._reply(404, {"error": "no %s in this project" % _stories.STORIES_REL})
+        with open(path, "rb") as f:
+            data = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type",
+                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.send_header("Content-Disposition", 'attachment; filename="user-stories.xlsx"')
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    # POST /__stories/upload?project=<id>  body: raw .xlsx bytes
+    # Writes to a temp file and PARSES it before replacing the live sheet, so
+    # a wrong-format drop cannot destroy the stories already in the project.
+    def _stories_upload(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > 25 * 1024 * 1024:
+            return self._reply(413, {"error": "xlsx file required; max 25MB", "bytes": length})
+        body = self.rfile.read(length)
+        if not body.startswith(b"PK"):
+            return self._reply(400, {
+                "error": "that is not an .xlsx file",
+                "hint": "legacy .xls and .csv are not read directly - save as .xlsx in Excel first"})
+        dest = _stories.stories_path(project_root)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        tmp = dest + ".upload.tmp"
+        with open(tmp, "wb") as f:
+            f.write(body)
+        try:
+            sheets = _xlsx_io.read_xlsx(tmp)
+            parsed = _stories.parse_sheet((sheets[0].get("rows") if sheets else []) or [],
+                                          sheets[0].get("name") if sheets else "")
+        except Exception as e:
+            os.remove(tmp)
+            return self._reply(400, {"error": "could not read that workbook: %s" % e})
+        if not sheets:
+            os.remove(tmp)
+            return self._reply(400, {"error": "that workbook has no sheets"})
+        os.replace(tmp, dest)
+        proto = self._stories_prototype(qs, project_root)
+        payload = _stories.rows_for_display(project_root, proto)
+        payload["ok"] = True
+        payload["imported"] = len(payload.get("rows") or [])
+        payload["pages"] = self._stories_page_list(project_root, proto)
+        return self._reply(200, payload)
+
+    # POST /__stories/template?project=<id>  body: { force?: bool }
+    def _stories_template(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body()
+        except ValueError:
+            body = {}
+        path = _stories.stories_path(project_root)
+        if os.path.isfile(path) and not body.get("force"):
+            return self._reply(409, {"error": "%s already exists" % _stories.STORIES_REL,
+                                     "hint": "pass force:true to overwrite it"})
+        _stories.write_template(project_root)
+        proto = self._stories_prototype(qs, project_root)
+        payload = _stories.rows_for_display(project_root, proto)
+        payload["ok"] = True
+        payload["pages"] = self._stories_page_list(project_root, proto)
+        return self._reply(200, payload)
+
+    # POST /__stories/map?project=<id>  body: { prototype?, rows: [...] }
+    # Full replace - the node sends the whole table, same contract as
+    # /__workflow. Re-stamps each row's storyHash so an edit made right after
+    # a story change does not immediately read back as stale.
+    def _stories_map_save(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body(max_bytes=4 * 1024 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        rows = body.get("rows")
+        if not isinstance(rows, list):
+            return self._reply(400, {"error": "rows[] required"})
+        proto = (body.get("prototype") or "").strip() or self._stories_prototype(qs, project_root)
+        by_id = {str(s.get("id") or ""): s
+                 for s in (_stories.load_stories(project_root).get("stories") or [])}
+        stamped = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            r = dict(r)
+            if body.get("restamp") or not str(r.get("storyHash") or "").strip():
+                story = by_id.get(str(r.get("id") or ""))
+                if story:
+                    r["storyHash"] = story.get("hash") or ""
+            stamped.append(r)
+        _stories.save_map(project_root, {"prototype": proto, "rows": stamped})
+        payload = _stories.rows_for_display(project_root, proto)
+        payload["ok"] = True
+        payload["pages"] = self._stories_page_list(project_root, proto)
+        return self._reply(200, payload)
+
+    # POST /__stories/validate?project=<id>[&prototype=<slug>]
+    # The re-run: cross-check sheet against map against the built prototype and
+    # hand back every discrepancy, per story and in total.
+    def _stories_validate(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        proto = self._stories_prototype(qs, project_root)
+        try:
+            payload = _stories.rows_for_display(project_root, proto)
+        except Exception as e:
+            return self._reply(500, {"error": "validate failed: %s" % e})
+        payload["ok"] = True
+        payload["pages"] = self._stories_page_list(project_root, proto)
+        return self._reply(200, payload)
+
+    # POST /__ds/validate?project=<id>[&prototype=<slug>][&pages=a.html,b.html]
+    # The design-system node's re-run: editor/tools/qa/ds_lint.py over the built
+    # pages, reporting where the prototype forked away from the bound DS.
+    def _ds_validate(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        proto = (qs.get("prototype") or qs.get("branch") or [""])[0].strip() \
+            or (self._default_prototype_slug(project_root) or "")
+        script = os.path.join(EDITOR_DIR, "tools", "qa", "ds_lint.py")
+        if not os.path.isfile(script):
+            return self._reply(500, {"error": "ds_lint.py is missing from this install"})
+        cmd = [sys.executable, script, "--project-root", project_root, "--json"]
+        if proto:
+            cmd += ["--prototype", proto]
+        pages = (qs.get("pages") or [""])[0].strip()
+        if pages:
+            cmd += ["--pages", pages]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            return self._reply(200, {"ok": False, "status": "error",
+                                     "error": "ds lint timed out after 120s"})
+        try:
+            report = json.loads(proc.stdout or "{}")
+        except ValueError:
+            return self._reply(200, {"ok": False, "status": "error",
+                                     "error": "ds_lint.py produced no parseable report",
+                                     "stderr": (proc.stderr or "")[-2000:],
+                                     "exitCode": proc.returncode})
+        # exit 2 / status no-ds is "not applicable", not a failure: a project
+        # with no design system bound has nothing to drift from.
+        report["ok"] = report.get("status") in ("clean", "no-ds")
+        report["exitCode"] = proc.returncode
+        report["checkedAt"] = _dt.datetime.now().replace(microsecond=0).isoformat()
         return self._reply(200, report)
 
     # ── Git / GitHub backbone (host side) - see editor/git_ops.py ──────────

@@ -31748,6 +31748,7 @@ const WORKFLOW_NODE_FLOOR = {
   "narrative-experience":            { minW: 280, minH: 220, defW: 800, defH: 450 },
   "frames":                          { minW: 320, minH: 220, defW: 800, defH: 540 },
   "section":                         { minW: 280, minH: 180, defW: 880, defH: 560 },
+  "story-map":                       { minW: 520, minH: 260, defW: 980, defH: 460 },
   "design-system":                   { minW: 320, minH: 640, defW: 340, defH: 720 },
   "ds-brainstorm":                   { minW: 320, minH: 720, defW: 360, defH: 820 },
   "iterator-repeater":               { minW: 300, minH: 380, defW: 360, defH: 380 },
@@ -34053,6 +34054,14 @@ const WORKFLOW_NODE_FACTORY = {
       fill: p.fill || "white", lineColor: p.lineColor || "gray",
     };
   },
+  // Owns no content: the rows come from docs/user-stories.xlsx and
+  // docs/story-map.json. `bakedPath` is what makes the map readable as
+  // context by any agent wired to the out port (KIND_IO resolve: bakedFile).
+  "story-map": (p = {}) => ({
+    kind: "story-map", w: 980, h: 460,
+    prototype: p.prototype || (typeof activePrototypeSlug === "function" ? activePrototypeSlug() : ""),
+    bakedPath: "docs/story-map.json",
+  }),
   "design-system": (p) => ({
     kind: "design-system", w: 360, h: 720,
     dsId: (p.dsId || projectPrimaryDsId()).toLowerCase(),
@@ -34388,6 +34397,11 @@ const WORKFLOW_CONNECT_DEFS = {
     label: "Pose viewer",
     provides: { out: { label: "Selected pose", tags: ["asset", "remixable", "blendable"] } },
     accepts:  { in:  { label: "Pose set", tags: ["asset", "asset-gen", "runnable", "sprite"] } },
+  },
+  "story-map": {
+    label: "User story map",
+    provides: { out: { label: "Story map", tags: ["text", "story-map"] } },
+    accepts:  { edit: { label: "Map the stories", tags: ["text-gen"] } },
   },
   "design-system": {
     label: "Design system",
@@ -40997,6 +41011,7 @@ const WORKFLOW_ADD_CATALOG = [
   { kind: "color-palette",     label: "Colour palette",       glyph: "◐", sub: "swatches" },
   { kind: "typography",        label: "Typography",           glyph: "Tt", sub: "type scale" },
   { kind: "design-system",     label: "Design system",        glyph: "◆", sub: "tokens + components" },
+  { kind: "story-map",         label: "User story map",       glyph: "▤", sub: "stories → screens" },
 ];
 // Punctuation-insensitive match key so "materiallab" finds "Material Lab" and
 // "splatlab" finds "Splat Lab" (drops spaces / hyphens / slashes).
@@ -57594,6 +57609,24 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
                 />
               `;
             })}
+            ${(data.nodes || []).filter(n => n.kind === "story-map").map(n => html`
+              <${WorkflowStoryMapNode}
+                key=${n.id}
+                node=${n}
+                zoom=${zoom}
+                selected=${chromeSelected(n.id)}
+                onSelect=${() => setSelectedNodeId(n.id)}
+                onMove=${onMoveForNode(n.id, (dx, dy) => moveNode(n.id, dx, dy))}
+                onResize=${(dw, dh) => resizeNode(n.id, dw, dh)}
+                onRemove=${() => removeNode(n.id)}
+                onChange=${(patch) => updateNode(n.id, patch)}
+                onDragStart=${() => startNodeDrag(n.id)}
+                onDragEnd=${() => setNodeDragging(false)}
+                onStartEdge=${(side, ev) => startEdgeDrag(n.id, side, ev)}
+                allNodes=${data.nodes || []}
+                allEdges=${data.edges || []}
+              />
+            `)}
             ${(data.nodes || []).filter(n => n.kind === "ds-brainstorm").map(n => {
               // Folder nodes wired into the brainstorm's `in` port become the
               // reference-folder for the dispatched build.
@@ -60761,6 +60794,20 @@ function WorkflowLibrary({ tab = "nodes" }) {
             <span className="workflow-library-item-glyph">⇄</span>
             <span className="workflow-library-item-label">Mermaid diagram</span>
             <span className="workflow-library-item-id">diagram</span>
+          </div>
+          <div
+            className="workflow-library-item"
+            draggable=${true}
+            onDragStart=${(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-th-workflow",
+                JSON.stringify({ kind: "story-map", prototype: activePrototypeSlug() }));
+            }}
+            title="Drag onto canvas - user story map. A table of the project's user stories (docs/user-stories.xlsx) joined to where each one lives in the prototype. Import your .xlsx, wire an agent into its edit port to fill the locations, then ▶ Re-check to see what drifted."
+          >
+            <span className="workflow-library-item-glyph">▤</span>
+            <span className="workflow-library-item-label">User story map</span>
+            <span className="workflow-library-item-id">xlsx → screens</span>
           </div>
           <div
             className="workflow-library-item"
@@ -89711,6 +89758,385 @@ function WorkflowStrategyChainNode({ node, zoom, selected, onSelect, onMove, onR
   `;
 }
 
+/* ────────── User story map node ──────────
+   A table on the canvas whose rows are the project's user stories, joined to
+   WHERE each one lives in the prototype. Neither half is owned by the node:
+   the stories come from docs/user-stories.xlsx (authored in Excel, or seeded
+   from a template), the locations from docs/story-map.json (filled by a wired
+   agent, or typed here). The node is the place the two meet and disagree.
+
+   Story columns are read-only on purpose - the sheet is the source of truth,
+   and a story edited here would be silently overwritten on the next import.
+   Location columns are editable, and an edit stamps the row `manual`, which a
+   mapping agent is told to preserve.
+
+   Re-check runs POST /__stories/validate: stories with no location, locations
+   whose page or element is gone from the build, mappings whose story text has
+   changed since it was recorded. Findings ride back per row and paint the
+   row's left edge by severity. */
+
+const STORY_MAP_COLS = [
+  { key: "id",       label: "ID",            w: 92,  edit: false, mono: true },
+  { key: "title",    label: "Story",         w: 200, edit: false },
+  { key: "screen",   label: "Screen",        w: 130, edit: true },
+  { key: "page",     label: "Page",          w: 140, edit: true, mono: true, list: "pages" },
+  { key: "selector", label: "Element",       w: 160, edit: true, mono: true },
+  { key: "reach",    label: "How to reach",  w: 240, edit: true },
+];
+
+// Worst severity wins the row's stripe. Kept in step with stories.py _SEVERITY.
+const STORY_SEV_RANK = { high: 3, medium: 2, low: 1 };
+function storyRowSeverity(row) {
+  let worst = "";
+  for (const f of (row.findings || [])) {
+    if ((STORY_SEV_RANK[f.severity] || 0) > (STORY_SEV_RANK[worst] || 0)) worst = f.severity;
+  }
+  return worst;
+}
+
+function WorkflowStoryMapNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove,
+                                onChange, onDragStart, onDragEnd, onStartEdge, allNodes, allEdges }) {
+  const [dragging, setDragging] = useState(false);
+  const [doc, setDoc] = useState(null);       // null until the daemon answers
+  const [busy, setBusy] = useState("");       // "load" | "check" | "save" | "import" | "seed"
+  const [error, setError] = useState("");
+  const [onlyIssues, setOnlyIssues] = useState(false);
+  const fileRef = useRef(null);
+  const { w, h } = workflowNodeDrawnSize(node);
+
+  const onHandleDown = useCallback(dragHandler(zoom, onMove, onDragStart, onDragEnd),
+                                   [zoom, onMove, onDragStart, onDragEnd]);
+  const onResizeDown = useCallback(resizeHandler(zoom, onResize, onDragStart, onDragEnd),
+                                   [zoom, onResize, onDragStart, onDragEnd]);
+
+  const proto = (node.prototype || "").trim();
+  const protoQs = proto ? "&prototype=" + encodeURIComponent(proto) : "";
+
+  const load = useCallback(async (path, opts) => {
+    setBusy(opts?.busy || "load");
+    setError("");
+    try {
+      const r = await fetch(apiUrl(path) + protoQs, opts?.init || {});
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setError(j.error || ("HTTP " + r.status)); return null; }
+      setDoc(j);
+      // Remember which prototype the map is bound to, so the node keeps
+      // reading the same build after the default prototype changes.
+      const bound = j?.map?.prototype || "";
+      if (bound && bound !== node.prototype) onChange({ prototype: bound });
+      return j;
+    } catch (e) {
+      setError(String(e?.message || e));
+      return null;
+    } finally {
+      setBusy("");
+    }
+  }, [protoQs, node.prototype, onChange]);
+
+  useEffect(() => { load("/__stories"); }, [protoQs]);
+  // The sheet and the build both change outside this node - re-read on the
+  // same buses the rest of the canvas listens to.
+  useEffect(() => {
+    const onR = () => load("/__stories");
+    window.addEventListener("th:stories-refresh", onR);
+    window.addEventListener("th:asset-refresh", onR);
+    return () => {
+      window.removeEventListener("th:stories-refresh", onR);
+      window.removeEventListener("th:asset-refresh", onR);
+    };
+  }, [load]);
+
+  const rows = doc?.rows || [];
+  const val = doc?.validation || {};
+  const counts = val.counts || {};
+  const sheet = doc?.stories || {};
+  const pages = doc?.pages || [];
+  const issueCount = (val.findings || []).length;
+
+  const shown = onlyIssues ? rows.filter(r => (r.findings || []).length) : rows;
+
+  const recheck = () => load("/__stories/validate", { busy: "check", init: { method: "POST" } });
+
+  // Every edit writes the WHOLE table back, same full-replace contract as
+  // /__workflow. Cheap at story-sheet scale and immune to row-index drift.
+  const saveRows = useCallback(async (nextRows) => {
+    setDoc((d) => (d ? { ...d, rows: nextRows } : d));   // optimistic
+    setBusy("save");
+    setError("");
+    try {
+      const r = await fetch(apiUrl("/__stories/map"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prototype: proto || doc?.map?.prototype || "",
+          rows: nextRows.map((x) => ({
+            id: x.id, screen: x.screen, page: x.page, selector: x.selector,
+            reach: x.reach, note: x.note,
+            confidence: x.confidence, source: x.source,
+            // Carried verbatim. Every save posts the WHOLE table, so a row
+            // that came back blank here would be re-stamped by the daemon -
+            // clearing the "story text changed" flag on rows nobody touched.
+            storyHash: x.storyHash,
+          })),
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setError(j.error || ("HTTP " + r.status)); return; }
+      setDoc(j);
+    } catch (e) {
+      setError(String(e?.message || e));
+    } finally {
+      setBusy("");
+    }
+  }, [proto, doc]);
+
+  const editCell = (id, key, value) => {
+    // Clearing storyHash on the edited row only: the daemon re-stamps a row
+    // with no hash, which is exactly right here - the person just looked at
+    // this story and this location together, so the pairing is current again.
+    const next = rows.map((r) => (r.id === id
+      ? { ...r, [key]: value, mapped: true, source: "manual", storyHash: "" }
+      : r));
+    saveRows(next);
+  };
+
+  const importSheet = async (file) => {
+    if (!file) return;
+    setBusy("import");
+    setError("");
+    try {
+      const r = await fetch(apiUrl("/__stories/upload"), {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: await file.arrayBuffer(),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setError(j.error || ("HTTP " + r.status)); return; }
+      setDoc(j);
+      window.dispatchEvent(new CustomEvent("th:stories-refresh"));
+    } catch (e) {
+      setError(String(e?.message || e));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const seedTemplate = async () => {
+    if (sheet.exists && !(await uiConfirm(
+      "Overwrite " + (sheet.path || "docs/user-stories.xlsx") + " with the blank template? "
+      + "The stories in it now will be lost."))) return;
+    setBusy("seed");
+    setError("");
+    try {
+      const r = await fetch(apiUrl("/__stories/template"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: !!sheet.exists }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setError(j.error || ("HTTP " + r.status)); return; }
+      setDoc(j);
+      window.dispatchEvent(new CustomEvent("th:stories-refresh"));
+    } catch (e) {
+      setError(String(e?.message || e));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const badge = !doc
+    ? html`<span className="workflow-node-sm-badge" data-tone="idle">…</span>`
+    : !sheet.exists
+      ? html`<span className="workflow-node-sm-badge" data-tone="idle"
+               title="No docs/user-stories.xlsx in this project yet">No sheet</span>`
+      : issueCount === 0
+        ? html`<span className="workflow-node-sm-badge" data-tone="ok"
+                 title="Every story has a location, and every location still resolves">Clean</span>`
+        : html`<span className="workflow-node-sm-badge" data-tone=${val.ok ? "warn" : "bad"}
+                 title="Click Re-check for the current picture">${issueCount} to look at</span>`;
+
+  return html`
+    <div
+      className="workflow-node workflow-node-sm"
+      data-quiet="face"
+      data-dragging=${dragging ? "true" : "false"}
+      data-selected=${selected ? "true" : "false"}
+      data-node-id=${node.id}
+      style=${{ left: node.x + "px", top: node.y + "px", width: w + "px", height: h + "px" }}
+      onMouseDown=${() => { onSelect && onSelect(); }}
+    >
+      <div className="workflow-node-bar workflow-node-sm-bar" onMouseDown=${onHandleDown}>
+        <span className="workflow-node-sm-glyph">▤</span>
+        <${HoverTip}
+          as="span"
+          className="workflow-node-sm-title"
+          tip=${"Stories: " + (sheet.path || "docs/user-stories.xlsx")
+                + " · Map: " + (doc?.map?.path || "docs/story-map.json")
+                + (doc?.map?.prototype ? " · against source/" + doc.map.prototype + "/" : "")}
+          ariaLabel="User story map"
+        >User story map<//>
+        ${badge}
+        <span className="workflow-node-bar-spacer"/>
+        <${HoverTip}
+          className="workflow-node-close"
+          tip="Remove this node from the canvas. The sheet and the map stay on disk."
+          ariaLabel="Remove story map node"
+          onClick=${(e) => { e.stopPropagation(); onRemove(); }}
+          onMouseDown=${(e) => e.stopPropagation()}
+        >×<//>
+      </div>
+
+      <div className="workflow-node-sm-body" onMouseDown=${(e) => e.stopPropagation()}>
+        <div className="workflow-node-sm-toolbar">
+          <${HoverTip}
+            className="workflow-node-sm-action workflow-node-sm-action-check"
+            tip="Re-read the sheet, the map and the built pages, then report every discrepancy: stories with no location, locations whose page or element is gone, and mappings whose story text changed since it was recorded."
+            ariaLabel="Re-check the story map"
+            disabled=${busy === "check" || !sheet.exists}
+            onClick=${(e) => { e.stopPropagation(); recheck(); }}
+          >${busy === "check"
+              ? html`<span className="workflow-node-sm-spinner"/>Checking…`
+              : html`<span className="workflow-node-sm-label"><${Icon.Play}/> Re-check</span>`}<//>
+          <input ref=${fileRef} type="file" accept=".xlsx" style=${{ display: "none" }}
+                 onChange=${async (e) => { await importSheet(e.target.files?.[0]); if (e.target) e.target.value = ""; }}/>
+          <${HoverTip}
+            className="workflow-node-sm-action"
+            tip="Import an .xlsx of user stories. Any column layout is read: headers are matched against the usual names (ID / Ref, Title / User story, As a, I want, So that, Acceptance criteria, Priority, Status). Columns it does not recognise are kept as-is."
+            ariaLabel="Import stories from Excel"
+            disabled=${busy === "import"}
+            onClick=${(e) => { e.stopPropagation(); fileRef.current && fileRef.current.click(); }}
+          >${busy === "import" ? "Importing…"
+              : html`<span className="workflow-node-sm-label"><${Icon.Clip}/> Import .xlsx</span>`}<//>
+          ${sheet.exists && html`
+            <${HoverTip}
+              className="workflow-node-sm-action"
+              tip="Download the sheet to edit in Excel. Re-import it when you are done."
+              ariaLabel="Download the stories sheet"
+              onClick=${(e) => { e.stopPropagation();
+                window.open(apiUrl("/__stories/download"), "_blank", "noopener"); }}
+            ><span className="workflow-node-sm-label"><${Icon.Download}/> .xlsx</span><//>
+          `}
+          <${HoverTip}
+            className="workflow-node-sm-action"
+            tip=${sheet.exists
+              ? "Replace the sheet with the blank template - the canonical columns plus three example rows."
+              : "Create docs/user-stories.xlsx with the canonical columns plus three example rows, then edit it in Excel."}
+            ariaLabel="Write the template sheet"
+            disabled=${busy === "seed"}
+            onClick=${(e) => { e.stopPropagation(); seedTemplate(); }}
+          >${busy === "seed" ? "Writing…" : "Template"}<//>
+          <span className="workflow-node-bar-spacer"/>
+          ${issueCount > 0 && html`
+            <label className="workflow-node-sm-filter" title="Show only the rows with something to look at">
+              <input type="checkbox" checked=${onlyIssues}
+                     onChange=${(e) => setOnlyIssues(e.target.checked)}/>
+              <span>Issues only</span>
+            </label>
+          `}
+        </div>
+
+        ${doc && html`
+          <div className="workflow-node-sm-summary">
+            <span className="workflow-node-sm-stat">
+              <b>${sheet.count || 0}</b> ${(sheet.count === 1) ? "story" : "stories"}
+            </span>
+            <span className="workflow-node-sm-stat">
+              <b>${val.mappedCount || 0}</b> mapped
+            </span>
+            ${Object.keys(counts).sort().map((k) => html`
+              <span key=${k} className="workflow-node-sm-chip" data-kind=${k}
+                    title=${(doc.findingKinds && doc.findingKinds[k]) || k}
+              >${counts[k]} ${k.replace(/-/g, " ")}</span>
+            `)}
+            ${val.checkedAt && html`
+              <span className="workflow-node-sm-stat workflow-node-sm-stat-when"
+                    title=${"Last checked " + val.checkedAt}>checked ${val.checkedAt.slice(11, 16)}</span>
+            `}
+          </div>
+        `}
+
+        ${error && html`<div className="workflow-node-sm-err">${error}</div>`}
+
+        ${!doc ? html`<div className="workflow-node-sm-empty">Reading the project…</div>`
+          : !sheet.exists ? html`
+            <div className="workflow-node-sm-empty">
+              <b>No user stories in this project yet.</b>
+              <span>Import an .xlsx you already have, or write the template and fill it in Excel.
+                    Each story needs an ID; the map keys off it.</span>
+            </div>`
+          : rows.length === 0 ? html`
+            <div className="workflow-node-sm-empty">
+              <b>The sheet parsed, but no story rows came out.</b>
+              <span>Check that ${sheet.sheet ? "the '" + sheet.sheet + "' sheet" : "the first sheet"} has
+                    a header row with an ID column above the stories.</span>
+            </div>`
+          : html`
+            <div className="workflow-node-sm-scroll">
+              <table className="workflow-node-sm-table">
+                <thead>
+                  <tr>
+                    ${STORY_MAP_COLS.map((c) => html`
+                      <th key=${c.key} style=${{ width: c.w + "px", minWidth: c.w + "px" }}>${c.label}</th>
+                    `)}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${shown.map((r) => html`
+                    <tr key=${r.id}
+                        data-sev=${storyRowSeverity(r)}
+                        data-orphan=${r.orphan ? "true" : "false"}
+                        title=${(r.findings || []).map((f) => f.detail).join("\n")}>
+                      ${STORY_MAP_COLS.map((c) => html`
+                        <td key=${c.key} data-mono=${c.mono ? "true" : "false"}>
+                          ${c.edit
+                            ? html`<input
+                                className="workflow-node-sm-input"
+                                value=${r[c.key] || ""}
+                                list=${c.list === "pages" ? "th-sm-pages-" + node.id : undefined}
+                                placeholder=${c.key === "reach" ? "Home > click Basket > Checkout" : ""}
+                                onChange=${(e) => editCell(r.id, c.key, e.target.value)}
+                                onMouseDown=${(e) => e.stopPropagation()}
+                              />`
+                            : html`<span className="workflow-node-sm-cell">${r[c.key] || ""}</span>`}
+                        </td>
+                      `)}
+                    </tr>
+                  `)}
+                </tbody>
+              </table>
+              <datalist id=${"th-sm-pages-" + node.id}>
+                ${pages.map((p) => html`<option key=${p} value=${p}/>`)}
+              </datalist>
+            </div>
+          `}
+      </div>
+
+      <div className="workflow-port-zone workflow-port-zone-in"
+           data-port-node=${node.id} data-port-side="edit"
+           title="Wire an agent here to fill or refresh the locations. It reads the sheet + the built pages and writes docs/story-map.json; rows you edited by hand are preserved."
+           onMouseDown=${(e) => onStartEdge && onStartEdge("edit", e)}>
+        <div className="workflow-port-dot"/>
+      </div>
+      <div className="workflow-port-zone workflow-port-zone-out"
+           data-port-node=${node.id} data-port-side="out"
+           title="The joined story + location table, as context for anything downstream (a QA agent, a prototype build, a report)."
+           onMouseDown=${(e) => onStartEdge && onStartEdge("out", e)}>
+        <div className="workflow-port-dot"/>
+        <span className="workflow-port-label workflow-port-label-right">story map</span>
+      </div>
+      <div
+        className="workflow-node-resize-corner"
+        title="Drag to resize width and height"
+        onMouseDown=${onResizeDown}
+      />
+      <${WorkflowNodeSelectBadge} nodeId=${node.id} selected=${selected}/>
+      <${WorkflowNodeStagePill} nodeId=${node.id}/>
+      <${WorkflowQuietFace} glyph=${"▤"} name=${"Story map"}
+        sub=${sheet.exists ? (sheet.count || 0) + " stories" : "no sheet"} />
+    </div>
+  `;
+}
+
 function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, upstreamDirection, upstreamFolder, allNodes, allEdges }) {
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState({ loading: true, exists: false, version: "", label: "" });
@@ -89751,6 +90177,26 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
   // "Use template design system" modal - opens the same wide customizer as the
   // new-project flow, but bakes the template DS straight into THIS project.
   const [tplOpen, setTplOpen] = useState(false);
+  // Validate - the DS equivalent of the story map's Re-check. Runs
+  // editor/tools/qa/ds_lint.py over the built pages and reports where the
+  // prototype forked away from this design system: component classes
+  // redefined in a page's local <style>, hallucinated tokens, hardcoded
+  // values that duplicate a token, one class forked across sibling pages.
+  // Read-only - it never edits a page, it says what drifted.
+  const [lint, setLint] = useState(null);
+  const [linting, setLinting] = useState(false);
+  const validateDs = useCallback(async () => {
+    setLinting(true);
+    try {
+      const r = await fetch(apiUrl("/__ds/validate"), { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      setLint(r.ok ? j : { ok: false, status: "error", error: j.error || ("HTTP " + r.status) });
+    } catch (e) {
+      setLint({ ok: false, status: "error", error: String(e?.message || e) });
+    } finally {
+      setLinting(false);
+    }
+  }, []);
 
   // Single source of truth for attaching the SSE stream - both the fresh
   // build() dispatch and the page-refresh resume call this. Resets the
@@ -90300,6 +90746,15 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
             onClick=${(e) => { e.stopPropagation(); setChatOpen(true); }}
           ><${Icon.Comment}/> Chat<//>
           <${HoverTip}
+            className="workflow-node-ds-action workflow-node-ds-action-validate"
+            tip=${"Check the built pages against this design system and report what drifted: component classes a page redefines in its own <style>, tokens that do not exist in the DS, hardcoded values that duplicate a token, and one class forked across sibling pages. Read-only - nothing is edited."}
+            ariaLabel="Validate the prototype against this design system"
+            disabled=${linting}
+            onClick=${(e) => { e.stopPropagation(); validateDs(); }}
+          >${linting
+              ? html`<span className="workflow-node-ds-spinner"/>Checking…`
+              : html`<span className="workflow-node-ds-label"><${Icon.Play}/> Validate</span>`}<//>
+          <${HoverTip}
             className="workflow-node-ds-action workflow-node-ds-action-refresh"
             tip=${"Re-read design-systems/" + dsId + "/ from disk - picks up any changes made outside the editor."}
             ariaLabel="Refresh DS state"
@@ -90309,6 +90764,40 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
         ${status.exists && html`
           <div className="workflow-node-ds-actions workflow-node-ds-sync-row">
             <${GlobalDsSyncActions} dsId=${dsId} compact=${true}/>
+          </div>
+        `}
+        ${lint && html`
+          <div className="workflow-node-ds-lint" data-tone=${lint.status === "clean" ? "ok"
+                                                            : lint.status === "no-ds" ? "idle"
+                                                            : lint.status === "error" ? "bad" : "warn"}>
+            <div className="workflow-node-ds-lint-head">
+              <b>${lint.status === "clean" ? "No drift"
+                   : lint.status === "no-ds" ? "No design system bound"
+                   : lint.status === "error" ? "Check failed"
+                   : (lint.counts?.error || 0) + " to fix, " + (lint.counts?.warn || 0) + " to look at"}</b>
+              ${lint.pagesLinted?.length ? html`
+                <span className="workflow-node-ds-lint-meta">
+                  ${lint.pagesLinted.length} ${lint.pagesLinted.length === 1 ? "page" : "pages"}
+                  ${lint.checkedAt ? " · " + lint.checkedAt.slice(11, 16) : ""}
+                </span>` : ""}
+              <span className="workflow-node-bar-spacer"/>
+              <button type="button" className="workflow-node-ds-lint-close"
+                      title="Dismiss this report" aria-label="Dismiss the drift report"
+                      onClick=${(e) => { e.stopPropagation(); setLint(null); }}>×</button>
+            </div>
+            ${(lint.error || lint.detail) && html`
+              <div className="workflow-node-ds-lint-note">${lint.error || lint.detail}</div>`}
+            ${(lint.findings || []).slice(0, 40).map((f, i) => html`
+              <div key=${i} className="workflow-node-ds-lint-row" data-sev=${f.severity}>
+                <span className="workflow-node-ds-lint-rule">${f.rule}</span>
+                <span className="workflow-node-ds-lint-where">
+                  ${f.page || (f.pages || []).join(", ")}</span>
+                <span className="workflow-node-ds-lint-detail">${f.detail}</span>
+              </div>
+            `)}
+            ${(lint.findings || []).length > 40 && html`
+              <div className="workflow-node-ds-lint-note">
+                ${(lint.findings || []).length - 40} more not shown.</div>`}
           </div>
         `}
         ${upstreamDirection && upstreamDirection.length > 0 && html`

@@ -2988,6 +2988,36 @@ KINDS = {
         "notes": "Pure UI grouping. No semantics. Never created by the orchestrator; manual only.",
     },
 
+    # ── story-map (user stories -> where they live in the prototype) ────────
+    "story-map": {
+        "title":        "User story map",
+        "category":     "consumer",
+        "inputs": {
+            "prototype": {"type": "text",   "userEditable": True},
+            "columns":   {"type": "object", "userEditable": True},
+            "w":         {"type": "number", "userEditable": True},
+            "h":         {"type": "number", "userEditable": True},
+        },
+        "outputs":      {},
+        "outputsRoot":  None,
+        "consumeFrom":  None,
+        "dispatch":     "none",
+        "fanOut":       None,
+        "visibility":   {"transcript": False, "chatPanel": False, "perChildKill": False},
+        "extendsGraph": False,
+        "runStatusFlow": ["queued"],
+        "completion":   {"requires": []},
+        "pauseAfter":   False,
+        "notes": (
+            "A read-and-correct view of docs/story-map.json joined against the stories "
+            "parsed from docs/user-stories.xlsx. The node owns no content of its own: "
+            "both files are project artefacts, edited here, in Excel, or by a wired "
+            "agent. Its Re-check button runs POST /__stories/validate, which reports "
+            "stories with no location, locations whose page or element is gone, and "
+            "rows whose story text changed since the mapping was recorded."
+        ),
+    },
+
     # ── table (data grid in the node graph; cells host nodes/items) ──────────
     "table": {
         "title":        "Table (data grid)",
@@ -3187,6 +3217,46 @@ _VECTOR_AUTHORING = (
     "shapes are regenerated from that block's wired SVG (or traced from its wired image), so do not hand-edit "
     "members of a `src` group; leave `src` null for groups you author. A hidden group (`visible:false`) hides "
     "all its members."
+)
+
+_STORY_MAP_AUTHORING = (
+    "This is the STORY MAP - the table that says, for every user story in the project's Excel "
+    "sheet, WHERE that story lives in the built prototype. It is a LOCATION index, not a place to "
+    "restate or invent requirements: the stories themselves are owned by `docs/user-stories.xlsx` "
+    "and you must never edit or rewrite them from here.\n"
+    "  READ FIRST, in this order:\n"
+    "      1. `docs/user-stories.xlsx` via `GET /__stories?project=<id>` - the parsed stories with "
+    "their IDs. Do not attempt to parse the .xlsx by hand; the endpoint returns normalised JSON.\n"
+    "      2. `source/{branch}/` - the built pages you are mapping the stories onto.\n"
+    "      3. the existing `docs/story-map.json`, so mappings a human corrected are preserved.\n"
+    "  Then write the canonical file `docs/story-map.json` (re-imported live on write):\n"
+    "      {\"version\":1,\"prototype\":\"{branch}\",\"rows\":[ ... ]}\n"
+    "  One row per story you can actually locate. Row shape, every field a string:\n"
+    "      • id         - the story ID EXACTLY as the sheet spells it (US-014, REQ-3). Never invent "
+    "an ID, never renumber, never map an ID the sheet does not contain.\n"
+    "      • screen     - the human name of the screen, as a user would say it (\"Checkout review\").\n"
+    "      • page       - the file, relative to `source/{branch}/` (\"checkout.html\", "
+    "\"admin/users.html\"). It MUST exist; a page that does not is reported as a discrepancy.\n"
+    "      • selector   - the element on that page: a CSS selector (`#order-summary .btn-pay`), or "
+    "literal visible text wrapped in quotes (\"Pay now\") when the markup has no stable hook. Prefer "
+    "an id or a data-testid over a deep descendant chain; the validator checks each token textually, "
+    "so a brittle chain reads as broken the moment the DOM is reshuffled.\n"
+    "      • reach      - the interaction path from the app's entry point, as ordered steps separated "
+    "by \" > \": \"Home > click Basket > click Checkout > Review step\". This is the field the whole "
+    "map exists for. Write what a person does, not what the code does; name real visible controls.\n"
+    "      • note       - anything a reviewer needs (partial coverage, which part of the story this "
+    "element satisfies). Empty is fine.\n"
+    "      • confidence - \"high\" when you found an unambiguous element for the story, \"medium\" when "
+    "the screen is right but the element is a best guess, \"low\" when you are inferring. Be honest: a "
+    "low-confidence row a human can correct is worth more than a confident wrong one.\n"
+    "      • source     - always \"agent\" for rows you write. Rows already carrying \"manual\" were "
+    "corrected by a human: KEEP their screen/page/selector/reach verbatim unless the page they name is "
+    "gone, and if you must change one, say so in `note`.\n"
+    "  A story you genuinely cannot locate gets NO row. Leaving it unmapped is the correct, visible "
+    "outcome - it reports as an `unmapped` discrepancy, which is the signal the prototype does not "
+    "cover that story yet. Fabricating a plausible location destroys the only thing this file is for.\n"
+    "  Do not write `storyHash` or `checkedAt`; the daemon stamps those. After writing, re-run the "
+    "check with `POST /__stories/validate?project=<id>` and fix anything it reports."
 )
 
 _FONT_AUTHORING = (
@@ -3855,6 +3925,17 @@ KIND_IO = {
     },
     # A table carries its cell contents the same way a section carries its
     # frame contents (sectionBundle resolves nodes whose centre is in the rect).
+    # The map feeds downstream agents as CONTEXT (the joined story/location
+    # table, read from its baked JSON) and accepts an agent on `edit` to fill
+    # or refresh the locations.
+    "story-map": {
+        "provides": [{"port": "out", "label": "Story map", "tags": ["text", "story-map"],
+                      "resolve": "bakedFile"}],
+        "accepts":  [{"port": "edit", "label": "Map the stories",
+                      "tags": ["text-gen"], "ingest": "editTarget",
+                      "canonical": "docs/story-map.json",
+                      "authoring": _STORY_MAP_AUTHORING}],
+    },
     "table": {
         "provides": [{"port": "out", "label": "Table contents", "tags": ["section"],
                        "resolve": "sectionBundle"}],
