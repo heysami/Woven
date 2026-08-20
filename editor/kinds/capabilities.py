@@ -686,7 +686,12 @@ HOW:
 # rebuilds the same prompt from the persisted flags (a resume that rebuilt a
 # different preamble would cache-bust the whole session - see
 # serve.py _run_resume).
-GUARD_DEFAULTS = {"visual": True, "dsGuard": True}
+# Per-guard DEFAULT. Not all default the same way: the two original gates are
+# on because their failures (self-certified "done", silent DS drift) are silent
+# and expensive, while requirement QA is off because most threads have no
+# requirement document to check against - dispatching it there would burn a
+# subagent to report "no source named".
+GUARD_DEFAULTS = {"visual": True, "dsGuard": True, "reqQa": False}
 
 
 def normalize_guards(raw) -> dict:
@@ -714,6 +719,31 @@ VISUAL_GUARD_OFF_STUB = """
 ### Visual verification - turned OFF for this thread (by the user)
 The user has switched the mandatory visual-verification gate off for this chat, so you are NOT required to render, screenshot, or QA what you build before reporting it, and you should NOT spend a subagent dispatch on a look-loop unless asked. Say plainly what you changed and that you did not verify it visually; never claim a visual result you did not see.
 The tooling stays available for when the user DOES ask to check something: `GET $TH_DAEMON_URL/__qa/run?project=$TH_PROJECT_ID&page=<slug>` (composed page) or `&node=<nodeId>` (one baked interactive piece), plus the `mcp__claude_preview__*` browser tools. Screenshots you take land in THIS conversation, so take the fewest that answer the question."""
+
+
+# Rides on the interactive tiers ONLY when the user ticks it on (default off).
+# The failure it targets is the one no visual check and no linter can see: the
+# build is rendered, styled and internally consistent, and it quietly says
+# something the requirement never said. Wording drifts to a synonym, a rule is
+# softened, a figure or a status is invented outright and reads as authoritative
+# because everything around it is real.
+#
+# Report-only by design. The subagent finds and evidences; the MAIN agent
+# decides, because only the main thread knows why it built what it built (a
+# "missing" item may be deliberately deferred, an "invented" field may be
+# something the user asked for in chat). See docs/agents/requirement-qa.md.
+REQUIREMENT_QA_STUB = """
+
+### REQUIREMENT QA - mandatory gate (the user turned this check ON for this thread)
+This thread checks its work against the REQUIREMENT it was given. A requirement source is any input that says what the thing must be: a document or file the user pointed you at (a spec, a brief, a ticket, a transcript, a data dictionary, an uploaded PDF/doc under `source/uploads/` or `attachments/`), or the user's own request when it carries concrete requirements. If this thread has NO such source, this gate is a no-op - do not dispatch, and do not invent a source to check against.
+
+- AFTER you finish a change that was DRIVEN by a requirement source, and BEFORE you tell the user it is done: dispatch ONE general-purpose `Task` subagent with this self-contained brief (it does not see this preamble): "Read $TH_PROTOCOL_ROOT/docs/agents/requirement-qa.md and execute it. Project root: <absolute cwd>. Requirement sources: <exact file paths, and any requirement the user stated in chat quoted verbatim>. Artefacts changed: <the exact files you touched>." It re-reads the requirement, reads what shipped, and returns a compact `REQ-QA` report: hallucination / drift / missing, each with the requirement location, the artefact location, a one-line fix, and whether that fix is `mechanical`. Batch ONE dispatch per reply covering everything that reply touched. It does not edit anything - fixing is yours.
+- THEN ACT ON THE REPORT, do not just relay it:
+  - **HALLUCINATION findings: fix them, always.** An invented fact, figure, date, name, status, rule or citation is never a judgement call and never something to ask the user about - the requirement does not say it, so it does not ship. Delete it, or replace it with what the requirement actually states. Say what you removed.
+  - **Mechanical DRIFT and MISSING (`mechanical: yes`): fix them too.** A term swapped back to the requirement's own word, a rule restored to what it says, a listed item added: apply it, then say you did.
+  - **Non-mechanical findings (`mechanical: no`) and every `ambiguous` line: STOP and ask the user.** These need a product decision - the requirement is ambiguous, two requirements conflict, or the fix changes scope or a flow already built. Put them to the user as a short numbered list: what the requirement says, what the build does, and the options. Do not pick for them, and do not bury it in a summary.
+  - **Findings you deliberately reject: say so and why.** You may know something the subagent cannot (the user asked for it in chat, the item is deferred to a later step, the "invention" is agreed placeholder data). Overriding is legitimate; overriding silently is not - one line per rejection.
+- Report the outcome in one line the user can trust: what the QA found, what you auto-fixed, and what needs their decision. If the dispatch itself failed, say that rather than implying the check passed."""
 
 
 # design goal is skim-proofing: a leaf's correct default is to PROCEED (not to
@@ -2929,6 +2959,8 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     # The DS drift gate is per-prototype (empty string when no DS is bound),
     # and the user can drop it for this thread the same way.
     _ds_block = _ds_guard_stub(project_root, prototype) if _g["dsGuard"] else ""
+    # Opt-in, so it is empty on almost every thread.
+    _req_block = REQUIREMENT_QA_STUB if _g["reqQa"] else ""
     # Accept the legacy cost-name aliases full/slim for the setup/leaf paths.
     if tier == "full":
         tier = "setup"
@@ -2950,7 +2982,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + _ds_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + _ds_block + _req_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
     # NORMAL path: the project's everyday chat, the untargeted default. Same
     # routing strip as scoped (routing is fetched on demand only when the user
     # asks for a genuine new build), but NOT bound to one prototype - a general
@@ -2958,13 +2990,13 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "normal":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _normal_general_stub() + _ds_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+        return _preamble + _normal_general_stub() + _ds_block + _req_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
     # SETUP path (default): a new prototype build. Keeps the full routing
     # catalog. Append manifest-carried hard rules for orchestrators added
     # after ship time (not covered by the static prose above). Appended AFTER
     # the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
-    return _preamble + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+    return _preamble + _req_block + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
 
 
 def orchestrator_routing_text(project_root: Optional[str] = None) -> str:

@@ -11806,30 +11806,38 @@ function ChatViewModePicker({ value, onChange, openUp }) {
    permission mode they apply to the next run, not the one already streaming.
    Persisted in the shared editor settings blob (a sticky user preference). */
 const CHAT_GUARD_OPTIONS = [
-  { key: "visual",  label: "Visual verification", hint: "Agent renders and looks at what it built (via a throwaway verifier subagent) before saying it is done - including anything it creates on the canvas. Off: it reports without checking, and may glance inline." },
-  { key: "dsGuard", label: "Design system guard", hint: "After any markup / CSS edit on a design-system-bound page, the agent runs the DS-drift linter and autofixes local forks. Off: no drift check. Projects with no design system are unaffected." },
+  { key: "visual",  def: true,  label: "Visual verification", hint: "Agent renders and looks at what it built (via a throwaway verifier subagent) before saying it is done - including anything it creates on the canvas. Off: it reports without checking, and may glance inline." },
+  { key: "dsGuard", def: true,  label: "Design system guard", hint: "After any markup / CSS edit on a design-system-bound page, the agent runs the DS-drift linter and autofixes local forks. Off: no drift check. Projects with no design system are unaffected." },
+  { key: "reqQa",   def: false, label: "Requirement QA",      hint: "For work driven by a requirement doc or referenced file: a QA subagent re-reads the requirement and checks the build's terms, logic and facts against it. The agent auto-fixes hallucinated facts and mechanical drift, and brings anything needing a decision to you. Off unless the thread has a requirement to check." },
 ];
-// What a thread runs with when its spawn event carries no `guards` (spawned
-// before the toggles shipped, or by a caller that passes none): both gates on,
-// which is exactly what the daemon defaults such a spawn to.
-const GUARD_DEFAULTS_ALL = Object.fromEntries(CHAT_GUARD_OPTIONS.map(o => [o.key, true]));
+// The spawn defaults, mirroring kinds/capabilities.py GUARD_DEFAULTS: not all
+// guards default the same way (the two always-on gates catch silent, expensive
+// failures; requirement QA is opt-in because most threads have no requirement
+// document to check against). Also what a thread runs with when its spawn event
+// carries no `guards` at all - spawned before the flags shipped, or by a caller
+// that passes none, which is exactly what the daemon defaults such a spawn to.
+const GUARD_SPAWN_DEFAULTS = Object.fromEntries(CHAT_GUARD_OPTIONS.map(o => [o.key, !!o.def]));
 function loadChatGuards() {
   const raw = loadSettings().chatGuards;
   const out = {};
   for (const o of CHAT_GUARD_OPTIONS) {
-    out[o.key] = (raw && typeof raw === "object" && o.key in raw) ? !!raw[o.key] : true;
+    out[o.key] = (raw && typeof raw === "object" && o.key in raw) ? !!raw[o.key] : !!o.def;
   }
   return out;
 }
 function saveChatGuards(next) {
   saveSettings({ chatGuards: next });
+  // Two surfaces edit this: the composer dropdown and Settings > Preferences.
+  // Broadcast so whichever one is not the editor re-reads instead of showing a
+  // stale tick (same pattern as th:editor-theme-changed).
+  try { window.dispatchEvent(new CustomEvent("th:chat-guards-changed")); } catch {}
   return next;
 }
 function chatGuardsSummary(g) {
-  const off = CHAT_GUARD_OPTIONS.filter(o => !g[o.key]);
-  if (!off.length) return "Checks: on";
-  if (off.length === CHAT_GUARD_OPTIONS.length) return "Checks: off";
-  return `Checks: ${CHAT_GUARD_OPTIONS.length - off.length}/${CHAT_GUARD_OPTIONS.length}`;
+  const on = CHAT_GUARD_OPTIONS.filter(o => g[o.key]).length;
+  if (on === CHAT_GUARD_OPTIONS.length) return "Checks: all";
+  if (on === 0) return "Checks: off";
+  return `Checks: ${on}/${CHAT_GUARD_OPTIONS.length}`;
 }
 
 /* Same skeleton + CSS family as PermissionModePicker / ChatViewModePicker, so
@@ -11849,10 +11857,13 @@ function ChatGuardsPicker({ value, onChange, openUp, locked }) {
   // reports what THIS thread is running with. Editable only on an empty
   // thread, where the next send is the spawn the value actually reaches.
   useEffect(() => { if (locked) setOpen(false); }, [locked]);
-  const anyOff = CHAT_GUARD_OPTIONS.some(o => !value[o.key]);
+  // Amber = a gate that normally runs has been DROPPED. Arming an extra
+  // opt-in check (requirement QA) is not a caution, so it does not colour the
+  // chip; the count already shows it.
+  const anyOff = CHAT_GUARD_OPTIONS.some(o => o.def && !value[o.key]);
   const lockedTitle = locked
-    ? `This thread is running with ${CHAT_GUARD_OPTIONS.map(o => `${o.label.toLowerCase()} ${value[o.key] ? "on" : "off"}`).join(", ")}. Checks are fixed when a thread starts - start a new chat to change them.`
-    : "Which mandatory checks the agent runs before it calls work done";
+    ? `This thread is running with: ${CHAT_GUARD_OPTIONS.map(o => `${o.label} ${value[o.key] ? "on" : "off"}`).join(", ")}. Checks are fixed when a thread starts - start a new chat to change them.`
+    : "Which checks the agent runs before it calls work done";
   return html`
     <div className="perm-picker guards-picker" ref=${ref} data-up=${!!openUp} data-locked=${!!locked}>
       <button
@@ -16084,6 +16095,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // so this state only drives the footer control's own rendering.
   const [chatGuards, setChatGuards] = useState(loadChatGuards);
   const changeChatGuards = (g) => { setChatGuards(g); saveChatGuards(g); };
+  useEffect(() => {
+    const on = () => setChatGuards(loadChatGuards());
+    window.addEventListener("th:chat-guards-changed", on);
+    return () => window.removeEventListener("th:chat-guards-changed", on);
+  }, []);
   const [answers, setAnswers] = useState({});   // { toolUseId: [{ question, answer }, …] }
   // A clicked DecisionRequestCard sends a user-message shaped
   // `[decision:<id>] <v1>[,v2,…] - <label1>[; label2;…]`.
@@ -16897,7 +16913,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       const g = ev.data && ev.data.guards;
       if (g && typeof g === "object") {
         const out = {};
-        for (const o of CHAT_GUARD_OPTIONS) out[o.key] = (o.key in g) ? !!g[o.key] : true;
+        for (const o of CHAT_GUARD_OPTIONS) out[o.key] = (o.key in g) ? !!g[o.key] : !!o.def;
         return out;
       }
     }
@@ -17059,7 +17075,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           />
 ${variant !== "system" && html`
             <${ChatGuardsPicker}
-              value=${isNew ? chatGuards : (runGuards || GUARD_DEFAULTS_ALL)}
+              value=${isNew ? chatGuards : (runGuards || GUARD_SPAWN_DEFAULTS)}
               onChange=${changeChatGuards}
               openUp=${true}
               locked=${!isNew}
@@ -96683,6 +96699,16 @@ function WorkflowSendKeySection() {
   const [theme, setTheme] = useState(() => loadEditorTheme());
   const [nodeCorners, setNodeCorners] = useState(() => loadNodeCorners());
   const [canvasBg, setCanvasBg] = useState(() => loadCanvasBg());
+  const [guards, setGuards] = useState(() => loadChatGuards());
+  useEffect(() => {
+    const on = () => setGuards(loadChatGuards());
+    window.addEventListener("th:chat-guards-changed", on);
+    return () => window.removeEventListener("th:chat-guards-changed", on);
+  }, []);
+  const pickGuard = (key, on) => {
+    const next = { ...loadChatGuards(), [key]: !!on };
+    setGuards(next); saveChatGuards(next);
+  };
   useEffect(() => {
     const on = () => setTheme(loadEditorTheme());
     window.addEventListener("th:editor-theme-changed", on);
@@ -96781,6 +96807,22 @@ function WorkflowSendKeySection() {
             <span className="onboarding-sendkey-sub">⇧/⌘ + Enter = new line</span>
           </button>
         </div>
+      </div>
+      <div className="workflow-settings-section">
+        <div className="onboarding-sendkey-head">
+          <span className="onboarding-sendkey-title">Checks before "done"</span>
+          <span className="onboarding-sendkey-desc">What a NEW chat starts with. Any chat can still change these before its first message, from the Checks dropdown next to the composer; once a thread is running its checks are fixed.</span>
+        </div>
+        ${CHAT_GUARD_OPTIONS.map(opt => html`
+          <label className="chat-ctx-auto-toggle chat-ctx-auto-settings settings-guard-row" key=${opt.key}>
+            <input type="checkbox" checked=${!!guards[opt.key]}
+                   onChange=${(e) => pickGuard(opt.key, e.target.checked)}/>
+            <span className="settings-guard-body">
+              <span className="settings-guard-label">${opt.label}${opt.def ? "" : html` <span className="settings-guard-tag">off by default</span>`}</span>
+              <span className="settings-guard-hint">${opt.hint}</span>
+            </span>
+          </label>
+        `)}
       </div>
       <div className="workflow-settings-section">
         <div className="onboarding-sendkey-head">

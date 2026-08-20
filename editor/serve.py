@@ -13660,15 +13660,15 @@ def _normalize_chat_tier(raw) -> str:
 
 
 def _normalize_chat_guards(raw) -> dict:
-    """The chat composer's per-thread check toggles ({"visual", "dsGuard"},
-    both default True) coerced onto plain booleans. Kept as a thin wrapper so
+    """The chat composer's per-thread check toggles (visual / dsGuard, on by
+    default; reqQa, off by default) coerced onto plain booleans. Kept as a thin wrapper so
     an import failure of kinds.capabilities (which every preamble call already
     tolerates) still yields a usable dict rather than exploding a spawn."""
     try:
         from kinds.capabilities import normalize_guards
         return normalize_guards(raw)
     except Exception:
-        out = {"visual": True, "dsGuard": True}
+        out = {"visual": True, "dsGuard": True, "reqQa": False}
         if isinstance(raw, dict):
             for k in out:
                 if k in raw:
