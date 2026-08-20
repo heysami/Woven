@@ -157,6 +157,7 @@ _GITIGNORE_LOCAL = [
     "workflow/runs/",           # generated run artifacts (assets/thumbnails) - GBs
     "workflow/views/",          # generated per-version prototype snapshots - GBs
     "editor/chat.jsonl",        # local chat transcript - large, machine-local, never sync
+    "editor/chat-queues.json",  # pending follow-ups per run - machine-local, same lifecycle as chat.jsonl
     ".history/",                # undo stack - transient (matches duplicate's skip set)
     ".trash/",                  # transient scratch
     ".DS_Store",                # macOS junk
@@ -9579,6 +9580,182 @@ def _ss_gc_locked() -> None:
 # daemon shows yesterday's conversation. Writes are best-effort; failures must
 # never break the in-memory event log that the live SSE stream consumes.
 
+# ── Per-run message queue (daemon-owned) ──────────────────────────────────
+# A follow-up typed while the agent is mid-turn is QUEUED, not sent: the CLI
+# would interleave it with the turn in flight. That queue used to live in the
+# browser and drain from the chat composer's own effect, which meant it only
+# moved while that thread's drawer was mounted - close the drawer, switch view,
+# or reload, and the messages sat there forever while the user believed the
+# agent would pick them up "automatically" (the composer placeholder says so).
+#
+# The daemon owns it now: it already knows when a turn ends (same boundary
+# auto-compact fires on) and it keeps running whether or not anything is
+# watching. The browser only enqueues, reorders, and renders.
+#
+# One file per project, `editor/chat-queues.json`, keyed by runId - the same
+# place and lifecycle as chat.jsonl, so a daemon restart keeps pending work.
+_QUEUE_LOCK = threading.Lock()
+
+
+def _queue_path(project_root: str) -> str:
+    return os.path.join(project_root, "editor", "chat-queues.json")
+
+
+def _queue_load_all(project_root: str) -> dict:
+    try:
+        with open(_queue_path(project_root), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _queue_persist(state) -> None:
+    """Write the whole project map back. Best-effort: a queue that fails to
+    persist still works for this daemon lifetime, and blowing up a turn
+    boundary over a disk error would be worse than losing the sidecar."""
+    root = getattr(state, "project_root", None)
+    if not root:
+        return
+    try:
+        with _QUEUE_LOCK:
+            allq = _queue_load_all(root)
+            q = list(getattr(state, "msg_queue", None) or [])
+            if q:
+                allq[state.run_id] = q
+            else:
+                allq.pop(state.run_id, None)
+            path = _queue_path(root)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(allq, f)
+            os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def _queue_restore(state) -> None:
+    root = getattr(state, "project_root", None)
+    if not root:
+        return
+    try:
+        q = _queue_load_all(root).get(state.run_id)
+        if isinstance(q, list):
+            state.msg_queue = [e for e in q if isinstance(e, dict) and isinstance(e.get("text"), str)]
+    except Exception:
+        pass
+
+
+def _queue_deliverable(state, mode: str) -> bool:
+    """Is now a moment to hand the head of the queue to the agent?
+
+    Never after the user pressed Stop: an explicit stop must not be undone by
+    messages typed before it. Those stay queued for the user to send by hand.
+    Otherwise it depends which door we came in:
+      - "stdin": a turn just ended on a still-running, stdin-driven process.
+        Requires the turn to actually be over - that is the whole reason the
+        queue exists.
+      - "resume": the process is gone. There is no turn in flight to protect,
+        and this is the ONLY delivery route left, so a crash mid-turn still
+        gets the follow-up out (matching what the old client-side drain did).
+    """
+    if not getattr(state, "msg_queue", None):
+        return False
+    if getattr(state, "stop_reason", None) == "user-stop":
+        return False
+    if mode == "stdin":
+        return bool(state.is_live and not state.done and getattr(state, "turn_done", False)
+                    and AGENT_DEFS.get(state.agent_id, {}).get("prompt_via_stdin"))
+    return not state.is_live
+
+
+def _queue_drain_maybe(state, mode: str = "stdin") -> None:
+    """Deliver ONE queued message if the run is ready for it. One per turn, so
+    each queued follow-up gets a whole turn to itself exactly as it would have
+    if the user had typed it at the prompt.
+
+    Two delivery routes, and the CALLER picks which by `mode`, so they can
+    never race each other on a single-shot runtime (codex / opencode exit after
+    every turn, so their turn-end and process-exit moments are microseconds
+    apart):
+      - "stdin"  - turn-end on a live stream-json process: write the user frame.
+      - "resume" - process exit: respawn through our own /resume handler, which
+        is the only thing that knows how to rebuild this thread's spawn. Doing
+        it inline here would duplicate the tier / prototype / guards / MCP
+        reconstruction, and a second copy of that is exactly how a resumed
+        thread ends up on a different system prompt.
+    The server is threading, so self-calling from this background thread is safe.
+    """
+    if not _queue_deliverable(state, mode):
+        return
+    if getattr(state, "_queue_draining", False):
+        return
+    state._queue_draining = True
+
+    def _work():
+        try:
+            with _QUEUE_LOCK:
+                q = list(getattr(state, "msg_queue", None) or [])
+            head = q[0] if q else None
+            if head is None:
+                return
+            text = head.get("send") or head.get("text") or ""
+            if not text.strip():
+                _queue_drop(state, head.get("id"))
+                return
+            ok = False
+            if mode == "stdin":
+                try:
+                    state.proc.stdin.write(_claude_user_frame(text))
+                    state.proc.stdin.flush()
+                    state.turn_done = False
+                    state.append("user_message", {"text": head.get("text") or text,
+                                                  "queued": True})
+                    ok = True
+                except Exception as e:
+                    print(f"[queue] stdin deliver failed run={state.run_id}: {e}", flush=True)
+            else:
+                ok = _queue_deliver_via_resume(state, text)
+            if ok:
+                _queue_drop(state, head.get("id"))
+            # A failed delivery leaves the message at the head: the next turn
+            # boundary (or the next enqueue) retries. Never silently drop.
+        finally:
+            state._queue_draining = False
+
+    threading.Thread(target=_work, daemon=True,
+                     name=f"queue-drain-{state.run_id}").start()
+
+
+def _queue_deliver_via_resume(state, text: str) -> bool:
+    """Respawn the run with the queued text as its next message, by POSTing our
+    own /resume. Building the resume spawn inline here would mean duplicating
+    the tier / prototype / guards / MCP reconstruction that handler owns, and a
+    second copy of that is exactly how a resumed thread ends up on a different
+    system prompt (the resume-tier-balloon class of bug)."""
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{PORT}/__run/{state.run_id}/resume",
+            data=json.dumps({"text": text}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=120) as r:
+            return 200 <= r.status < 300
+    except Exception as e:
+        print(f"[queue] resume deliver failed run={state.run_id}: {e}", flush=True)
+        return False
+
+
+def _queue_drop(state, entry_id) -> None:
+    with _QUEUE_LOCK:
+        state.msg_queue = [e for e in (getattr(state, "msg_queue", None) or [])
+                           if e.get("id") != entry_id]
+    _queue_persist(state)
+
+
 # Serialize writes per file path. Multiple runs on the same branch race here.
 _CHAT_JSONL_LOCKS: dict = {}
 _CHAT_JSONL_LOCKS_GUARD = threading.Lock()
@@ -10438,6 +10615,12 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
         # rehydrate as None, which _normalize_chat_guards turns back into
         # "both gates on", i.e. exactly what they were spawned with.
         state.guards = guards or None
+        # Follow-ups queued before the daemon restarted are still owed to this
+        # thread - bring them back so a restart is not a silent drop.
+        try:
+            _queue_restore(state)
+        except Exception:
+            pass
         state.model = model or None
         state.chain_rest = list(chain) if chain else []
         # A daemon restart mid build-chain loses the auto-dispatch of the
@@ -10615,6 +10798,11 @@ class RunState:
         # the UI so the chat header can badge Setup vs Subagent vs (scoped=none).
         self.tier = None
         self.guards = None   # per-thread check toggles (visual / dsGuard)
+        # Follow-ups typed while a turn was in flight, delivered one per turn
+        # boundary by _queue_drain_maybe. Daemon-owned so they land whether or
+        # not the chat drawer is open. Entries: {id, text, send?, meta?, at}.
+        self.msg_queue = []
+        self._queue_draining = False
         # prototype slug the scoped preamble was built for; set by _run_create.
         self.prototype = None
         # Chosen default model (Settings > Agent model); set by _run_create.
@@ -12456,6 +12644,13 @@ def _drain_stdout(state: "RunState") -> None:
                                 _auto_compact_maybe(state)
                             except Exception:
                                 pass
+                        # Hand the agent the next follow-up the user queued
+                        # while it was working. Same boundary as auto-compact
+                        # and for the same reason: mid-turn is never safe.
+                        try:
+                            _queue_drain_maybe(state, mode="stdin")
+                        except Exception:
+                            pass
                         # promote NORMAL -> SETUP for the badge when this
                         # run starts a build. The decide phase runs on the normal
                         # tier (untargeted default) and escalates; _drain_stdout
@@ -12580,6 +12775,15 @@ def _drain_stdout(state: "RunState") -> None:
             effective_exit = exit_code or 0 if exit_code is not None else exit_code
         state.append("end", {"exitCode": exit_code, "effectiveExitCode": effective_exit, "stopReason": state.stop_reason})
         state.finish(effective_exit if state.stop_reason else exit_code)
+        # The process is gone and the user still has follow-ups queued: respawn
+        # through /resume and hand it the next one. This is the ONLY route for
+        # single-shot runtimes (codex / opencode exit after every turn) and the
+        # recovery route for a claude chat that crashed or was stopped by
+        # something other than the user.
+        try:
+            _queue_drain_maybe(state, mode="resume")
+        except Exception:
+            pass
         # verify any shader HTML the run wrote (process-exit fallback for
         # single-shot runs that never emitted a turn-done status).
         try:
@@ -14675,7 +14879,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if parsed.path == "/__run":
                 return self._run_create(qs)
             # /__run/<id>/stop · user-message · tool-result · resume · delete
-            m = re.match(r"^/__run/([0-9a-f]{6,64})/(stop|user-message|tool-result|resume|delete|compact)$", parsed.path)
+            m = re.match(r"^/__run/([0-9a-f]{6,64})/(stop|user-message|tool-result|resume|delete|compact|enqueue|queue)$", parsed.path)
             if m:
                 run_id, action = m.group(1), m.group(2)
                 if action == "stop":
@@ -14688,6 +14892,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._run_delete(run_id, qs)
                 if action == "compact":
                     return self._run_compact(run_id, qs)
+                if action == "enqueue":
+                    return self._run_enqueue(run_id)
+                if action == "queue":
+                    return self._run_queue_op(run_id)
                 return self._run_user_message(run_id)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
@@ -14839,6 +15047,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._dispatch_planner_result(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__system_runs":
             return self._system_runs_list(urllib.parse.parse_qs(parsed.query))
+        m_q = re.match(r"^/__run/([0-9a-f]{6,64})/queue$", url_path)
+        if m_q:
+            return self._run_queue_get(m_q.group(1))
         if url_path == "/__chat":
             return self._chat_history(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__chat_search":
@@ -33700,6 +33911,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         # the trailing __finish line) is suppressed by _chat_jsonl_append and
         # can't resurrect the run as a historical ghost.
         _DELETED_RUN_IDS.add(run_id)
+        # A deleted thread owes nobody its pending follow-ups.
+        if state is not None:
+            try:
+                state.msg_queue = []
+                _queue_persist(state)
+            except Exception:
+                pass
         # Stop a live subprocess first.
         if state is not None and getattr(state, "is_live", False):
             try:
@@ -33807,6 +34025,92 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Echo into the event log so the UI shows the message in-thread.
         state.append("user_message", {"text": text})
         return self._reply(200, {"ok": True})
+
+    # ── message queue ─────────────────────────────────────────────────
+    # GET  /__run/<id>/queue                  -> { queue: [...] }
+    # POST /__run/<id>/enqueue { text, send?, meta? }
+    # POST /__run/<id>/queue   { op: remove|move|clear, id?, dir? }
+    #
+    # The browser used to hold this queue and drain it from the chat
+    # composer's own effect, so it only moved while that drawer was mounted.
+    # The daemon owns it now (see _queue_drain_maybe): follow-ups land at the
+    # next turn boundary whether or not anything is watching.
+    def _run_queue_state(self, run_id):
+        with RUNS_LOCK:
+            state = RUNS.get(run_id)
+        return state
+
+    def _run_queue_get(self, run_id):
+        state = self._run_queue_state(run_id)
+        if not state:
+            return self._reply(404, {"error": "unknown runId", "runId": run_id})
+        return self._reply(200, {"queue": list(getattr(state, "msg_queue", None) or [])})
+
+    def _run_enqueue(self, run_id):
+        body = self._read_json_body(max_bytes=4 * 1024 * 1024)
+        text = (body.get("text") or "").strip()
+        # `send` is the composed form (attachment preambles folded in) that
+        # actually reaches the agent; `text` stays raw so the queue chip shows
+        # what the user typed and can put it back in the composer to edit.
+        send = (body.get("send") or "").strip() or text
+        if not text and not send:
+            return self._reply(400, {"error": "empty text"})
+        state = self._run_queue_state(run_id)
+        if not state:
+            return self._reply(404, {"error": "unknown runId", "runId": run_id})
+        entry = {
+            "id": uuid.uuid4().hex[:12],
+            "text": text or send,
+            "send": send,
+            "meta": body.get("meta") if isinstance(body.get("meta"), dict) else {},
+            "at": time.time(),
+        }
+        with _QUEUE_LOCK:
+            q = list(getattr(state, "msg_queue", None) or [])
+            q.append(entry)
+            state.msg_queue = q
+        _queue_persist(state)
+        # Idle right now? Then there is nothing to wait for - hand it over.
+        # Enqueue-then-drain (rather than "send directly when idle") keeps ONE
+        # ordering path, so a message can never overtake one already queued.
+        try:
+            _queue_drain_maybe(state, mode="stdin")
+            _queue_drain_maybe(state, mode="resume")
+        except Exception:
+            pass
+        return self._reply(200, {"ok": True, "entry": entry,
+                                 "queue": list(getattr(state, "msg_queue", None) or [])})
+
+    def _run_queue_op(self, run_id):
+        body = self._read_json_body()
+        op = (body.get("op") or "").strip()
+        state = self._run_queue_state(run_id)
+        if not state:
+            return self._reply(404, {"error": "unknown runId", "runId": run_id})
+        eid = body.get("id")
+        with _QUEUE_LOCK:
+            q = list(getattr(state, "msg_queue", None) or [])
+            if op == "clear":
+                q = []
+            elif op == "remove":
+                q = [e for e in q if e.get("id") != eid]
+            elif op == "move":
+                i = next((n for n, e in enumerate(q) if e.get("id") == eid), -1)
+                if i >= 0:
+                    j = i + (1 if str(body.get("dir")) == "down" else -1)
+                    if 0 <= j < len(q):
+                        q[i], q[j] = q[j], q[i]
+            elif op == "order":
+                # Full reorder from a drag: accept an id list, keep only ids we
+                # already hold so a stale client cannot inject or resurrect one.
+                want = [str(x) for x in (body.get("ids") or [])]
+                by_id = {e.get("id"): e for e in q}
+                q = [by_id[i] for i in want if i in by_id] + [e for e in q if e.get("id") not in want]
+            else:
+                return self._reply(400, {"error": f"unknown op: {op or '(none)'}"})
+            state.msg_queue = q
+        _queue_persist(state)
+        return self._reply(200, {"ok": True, "queue": list(getattr(state, "msg_queue", None) or [])})
 
     # POST /__run/<id>/resume  body: { text }
     # Spawns a NEW Claude process with --resume <sessionId> and pipes the

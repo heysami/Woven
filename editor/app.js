@@ -16903,6 +16903,14 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     return null;
   }, [events]);
 
+  // How many user messages this thread has seen. The composer watches it to
+  // re-read the daemon's send-queue: a message the DAEMON delivered at a turn
+  // boundary (possibly while this drawer was closed) arrives as exactly one
+  // new user_message event, so a change here means the queue moved.
+  const userMsgCount = useMemo(
+    () => events.reduce((n, ev) => n + (ev.type === "user_message" || ev.event === "user_message" ? 1 : 0), 0),
+    [events]);
+
   // Same idea for the per-thread checks: the spawn event carries the guards
   // the system prompt was actually built with. Threads spawned before the
   // toggles existed carry none - they ran with both gates on, which is what
@@ -17060,6 +17068,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         runId=${run?.runId}
         isNew=${isNew}
         agentId=${run?.agentId}
+        userMsgCount=${userMsgCount}
         disabled=${!isNew && (status === "streaming" || status === "connecting")}
         locked=${processEnded || !!run?.historical}
         selectionCount=${selectionCount}
@@ -17244,7 +17253,7 @@ async function __loadSlashSkills() {
   return items;
 }
 
-function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId }) {
+function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, userMsgCount }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -17298,53 +17307,92 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const [uploadBusy, setUploadBusy] = useState(false);
   const [pickBusy,   setPickBusy]   = useState(false);
   // Claude-Code-style send queue. While `disabled` (agent mid-turn), Send
-  // enqueues instead of posting; the drain effect dispatches the head when
-  // the turn ends. Each envelope snapshots text + attachments + uploads at
-  // enqueue time so the user can stage fresh attachments without mutating
-  // queued messages. Policy B: drain on ANY non-busy status transition
-  // (done / fail / error) and let the existing user-message ↔ resume
-  // fallback recover from a dead process.
-  // Lazy init from localStorage so a queued reply survives a drawer close
-  // or page refresh - see loadChatQueue / saveChatQueue above. The save
-  // effect (declared below) keeps the persisted copy in sync.
-  const [queue, setQueue] = useState(() => loadChatQueue(runId));   // [{ id, text, attachments, uploads }]
-  // Monotonic envelope IDs - Date-free so it doesn't run afoul of replay
-  // tooling that intercepts Date.now / new Date. Seed past any restored
-  // IDs so a fresh enqueue can never collide with a re-hydrated one.
-  const queueIdRef = useRef(queue.reduce((m, e) => Math.max(m, e.id || 0), 0));
-  // Tracks which runId the current `queue` state belongs to so the save
-  // effect can refuse to persist when the runId prop is mid-swap (e.g. the
-  // drawer just switched to a different run but the queue still mirrors the
-  // previous one). The load effect updates this ref before resetting state.
+  // enqueues instead of posting, and the head goes out when the turn ends.
+  // Each envelope snapshots text + attachments + uploads at enqueue time so
+  // the user can stage fresh attachments without mutating queued messages.
+  // The send-queue lives on the DAEMON (serve.py _run_enqueue / _queue_drain_maybe),
+  // not here: it used to be localStorage drained by this component's own
+  // effect, so follow-ups only moved while this drawer was mounted - close it
+  // and they sat there forever while the placeholder promised "the next turn
+  // picks it up automatically". This state is a VIEW of the daemon's queue,
+  // re-read after every mutation and whenever a message actually lands.
+  const [queue, setQueue] = useState([]);   // [{ id, text, attachments, uploads, fileRefs, scratchpads }]
+  // Which runId the current `queue` view belongs to, so a run swap re-reads
+  // instead of showing the previous thread's pending messages. Envelope IDs
+  // come from the daemon now; nothing local mints them.
   const queueRunIdRef = useRef(runId);
-  // Previous `disabled` value so the drain effect fires on the
-  // true → false transition (turn-end). Initialised to `true` - not `false`
-  // - so a fresh mount with a restored queue ALSO satisfies fellOpen on the
-  // first idle render and the queue self-empties; otherwise a queue saved
-  // before a refresh would sit indefinitely until the next live turn ended.
-  const prevDisabledRef = useRef(true);
+  // Daemon entry {id, text, send, meta} <-> UI envelope. `send` is the composed
+  // form (attachment preambles folded in) the agent actually receives; `text`
+  // stays raw so the chip previews what the user typed and can put it back in
+  // the composer. Everything the UI needs beyond text rides in `meta`, which
+  // the daemon treats as opaque.
+  const qFromServer = (arr) => (Array.isArray(arr) ? arr : []).map(e => ({
+    id: e.id,
+    text: e.text || "",
+    attachments: (e.meta && e.meta.attachments) || [],
+    uploads:     (e.meta && e.meta.uploads) || [],
+    fileRefs:    (e.meta && e.meta.fileRefs) || [],
+    scratchpads: (e.meta && e.meta.scratchpads) || [],
+  }));
+  const queueFetch = useCallback(async (rid) => {
+    if (!rid) { setQueue([]); return; }
+    try {
+      const r = await fetch(apiUrl(`/__run/${encodeURIComponent(rid)}/queue`));
+      if (!r.ok) return;
+      const j = await r.json();
+      setQueue(qFromServer(j.queue));
+    } catch { /* transient - the next mutation or turn re-reads */ }
+  }, []);
+  const queueMutate = useCallback(async (rid, body) => {
+    if (!rid) return false;
+    try {
+      const r = await fetch(apiUrl(`/__run/${encodeURIComponent(rid)}/queue`), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) return false;
+      const j = await r.json();
+      setQueue(qFromServer(j.queue));
+      return true;
+    } catch { return false; }
+  }, []);
   const fileInputRef = useRef(null);
   const uploadInputRef = useRef(null);
   const taRef = useRef(null);
 
-  // Persist the queue per runId so a drawer close / page refresh doesn't
-  // discard pending messages. Order matters: SAVE is declared first so on
-  // a runId swap render the save fires with stale (previous-runId) state
-  // and is correctly gated out by the ref mismatch; the LOAD effect then
-  // updates the ref and swaps state to the new runId's queue.
+  // Read the daemon's queue for this run on mount and on every run swap. Any
+  // queue left in localStorage by the old client-owned implementation is
+  // handed over once and cleared, so an upgrade mid-conversation does not
+  // strand messages the user is still expecting to send.
   useEffect(() => {
-    if (!runId) return;
-    if (queueRunIdRef.current !== runId) return;
-    saveChatQueue(runId, queue);
-  }, [queue, runId]);
-  useEffect(() => {
-    if (queueRunIdRef.current === runId) return;
     queueRunIdRef.current = runId;
-    const restored = runId ? loadChatQueue(runId) : [];
-    setQueue(restored);
-    const maxId = restored.reduce((m, e) => Math.max(m, e.id || 0), 0);
-    if (queueIdRef.current < maxId) queueIdRef.current = maxId;
-  }, [runId]);
+    if (!runId) { setQueue([]); return; }
+    let cancelled = false;
+    (async () => {
+      const legacy = loadChatQueue(runId);
+      if (legacy.length) {
+        for (const env of legacy) {
+          try {
+            await fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/enqueue`), {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text: env.text || "",
+                send: composeWithAttachments(env.text || "", env.attachments || [], env.uploads || [], env.fileRefs || [], env.scratchpads || []),
+                meta: { attachments: env.attachments || [], uploads: env.uploads || [], fileRefs: env.fileRefs || [], scratchpads: env.scratchpads || [] },
+              }),
+            });
+          } catch { /* leave it in localStorage for the next attempt */ }
+        }
+        saveChatQueue(runId, []);
+      }
+      if (!cancelled) await queueFetch(runId);
+    })();
+    return () => { cancelled = true; };
+  }, [runId, queueFetch]);
+  // A message the DAEMON delivered (at a turn boundary, possibly while this
+  // drawer was closed) shows up as a new user_message event. Re-read then, so
+  // the chips reflect what is actually still pending.
+  useEffect(() => { queueFetch(runId); }, [userMsgCount, runId, queueFetch]);
 
   const uploadAttachment = useCallback(async (file) => {
     if (!file) return;
@@ -17594,6 +17642,37 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // or stale-state error still lands on whichever endpoint the daemon
   // currently accepts. Returns true on success, false on failure (caller
   // decides whether to requeue).
+  // Hand an envelope to the daemon's queue. Composes the send-text HERE (the
+  // attachment preambles are client-side prose) and keeps the raw text plus
+  // the chip metadata alongside it for the UI.
+  const enqueue = async (env) => {
+    if (!runId) return false;
+    try {
+      const r = await fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/enqueue`), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: env.text || "",
+          send: composeWithAttachments(env.text || "", env.attachments || [], env.uploads || [], env.fileRefs || [], env.scratchpads || []),
+          meta: {
+            attachments: env.attachments || [], uploads: env.uploads || [],
+            fileRefs: env.fileRefs || [], scratchpads: env.scratchpads || [],
+          },
+        }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setError(j.error || `HTTP ${r.status}`);
+        return false;
+      }
+      const j = await r.json();
+      setQueue(qFromServer(j.queue));
+      return true;
+    } catch (e) {
+      setError(e.message || String(e));
+      return false;
+    }
+  };
+
   const dispatch = async (envelope) => {
     if (!runId) return false;
     const body = composeWithAttachments(envelope.text, envelope.attachments, envelope.uploads, envelope.fileRefs || [], envelope.scratchpads || []);
@@ -17683,11 +17762,12 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       setBusy(false);
     }
   };
-  // Stable handle for the drain effect - keeps the effect's dep list to
-  // `disabled / queue / busy` so the prevDisabled flip-detect stays sharp
-  // regardless of how often dispatch's identity churns.
+  // Stable handles so the programmatic-inject effect can send without
+  // re-subscribing every time dispatch/enqueue change identity.
   const dispatchRef = useRef(dispatch);
   dispatchRef.current = dispatch;
+  const enqueueRef = useRef(enqueue);
+  enqueueRef.current = enqueue;
   // Guards against re-entering the drain loop while one envelope is
   // already in flight. Belt-and-braces with the busy/queue checks below.
   const drainingRef = useRef(false);
@@ -17699,14 +17779,14 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     // the live composer don't mutate already-queued messages.
     if (wouldQueue) {
       const env = {
-        id: ++queueIdRef.current,
         text: text.trim(),
         attachments: attachments.slice(),
         uploads: uploads.slice(),
         fileRefs: fileRefs.slice(),
         scratchpads: scratchpads.slice(),
       };
-      setQueue(prev => [...prev, env]);
+      const queued = await enqueue(env);
+      if (!queued) return;   // error is surfaced; keep the text so nothing is lost
       setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]);
       return;
     }
@@ -17728,7 +17808,6 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     }
     // Live reply - agent is idle. Dispatch immediately.
     const env = {
-      id: ++queueIdRef.current,
       text: text.trim(),
       attachments: attachments.slice(),
       uploads: uploads.slice(),
@@ -17749,38 +17828,18 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     const onInject = (e) => {
       const t = (((e && e.detail) || {}).text || "").trim();
       if (!t || isNew || !runId) return;
-      const env = { id: ++queueIdRef.current, text: t, attachments: [], uploads: [], fileRefs: [], scratchpads: [] };
-      if (disabled) { setQueue(prev => [...prev, env]); return; }
+      const env = { text: t, attachments: [], uploads: [], fileRefs: [], scratchpads: [] };
+      if (disabled) { enqueueRef.current(env); return; }
       dispatchRef.current(env);
     };
     window.addEventListener("th:chat-inject", onInject);
     return () => window.removeEventListener("th:chat-inject", onInject);
   }, [isNew, runId, disabled]);
 
-  // Drain effect - fire-once-per-turn-end. When `disabled` falls from
-  // true → false (any of done / fail / error, per policy B), shift the head
-  // off the queue and dispatch it. The dispatch path's own fallback handles
-  // a dead process; on hard failure we put the envelope back at the front
-  // so the user can see it (and the next user nudge re-attempts).
-  useEffect(() => {
-    const fellOpen = prevDisabledRef.current && !disabled;
-    prevDisabledRef.current = disabled;
-    if (!fellOpen) return;
-    if (drainingRef.current) return;
-    if (!queue.length || busy) return;
-    if (!runId) return;
-    const head = queue[0];
-    setQueue(rest => rest.slice(1));
-    drainingRef.current = true;
-    (async () => {
-      try {
-        const ok = await dispatchRef.current(head);
-        if (!ok) setQueue(prev => [head, ...prev]);
-      } finally {
-        drainingRef.current = false;
-      }
-    })();
-  }, [disabled, queue, busy, runId]);
+  // NO drain effect here any more. The daemon delivers the head of the queue
+  // at each turn boundary (serve.py _queue_drain_maybe), which is what makes a
+  // queued follow-up land while this drawer is closed - or while the browser
+  // is. What used to be this effect is now the `userMsgCount` re-read above.
 
   // Pull a queued envelope BACK into the live composer for editing. Removes
   // the envelope from the queue and folds its text + attachments + uploads
@@ -17789,7 +17848,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const pullQueuedIntoComposer = (id) => {
     const env = queue.find(q => q.id === id);
     if (!env) return;
-    setQueue(prev => prev.filter(q => q.id !== id));
+    queueMutate(runId, { op: "remove", id });
     setText(prev => prev ? (prev + (prev.endsWith("\n") ? "" : "\n") + env.text) : env.text);
     setAttachments(prev => [...prev, ...env.attachments]);
     setUploads(prev => [...prev, ...env.uploads]);
@@ -17799,7 +17858,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       try { taRef.current.focus(); } catch { /* fine */ }
     }
   };
-  const removeQueued = (id) => setQueue(prev => prev.filter(q => q.id !== id));
+  const removeQueued = (id) => queueMutate(runId, { op: "remove", id });
 
   // Whether THIS run's runtime can take a mid-turn message (bolt button
   // while the agent is working). Daemon-authoritative list; agentId can be
@@ -17814,47 +17873,42 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // /user-message endpoint writes to the live process stdin regardless of
   // turn state, and the CLI folds a mid-turn user frame in as steering. On
   // failure the envelope goes back to the front of the queue so nothing is
-  // lost (same recovery contract as the drain effect).
+  // lost (same recovery contract the daemon's drain follows).
   const steerQueued = async (id) => {
     if (busy || drainingRef.current) return;
     const env = queue.find(q => q.id === id);
     if (!env) return;
-    setQueue(prev => prev.filter(q => q.id !== id));
     drainingRef.current = true;
     try {
+      // Send first, drop second: on failure the entry simply stays queued in
+      // its current position, which is a better recovery than removing it and
+      // trying to push it back onto a queue the daemon owns.
       const ok = await dispatchRef.current(env);
-      if (!ok) setQueue(prev => [env, ...prev]);
+      if (ok) await queueMutate(runId, { op: "remove", id });
     } finally {
       drainingRef.current = false;
     }
   };
 
-  // Reorder the send-queue. The drain effect always fires queue[0], so the
+  // Reorder the send-queue. The daemon always delivers queue[0], so the
   // order here IS the firing order - letting the user re-prioritise what the
   // agent picks up next turn. Two entry points: drag-and-drop (mouse) and
   // ↑/↓ on the focused grip (keyboard). Both funnel through setQueue so the
   // persistence effect mirrors the new order to localStorage automatically.
-  const moveQueued = (id, dir) => setQueue(prev => {
-    const i = prev.findIndex(q => q.id === id);
-    if (i < 0) return prev;
-    const j = i + dir;
-    if (j < 0 || j >= prev.length) return prev;
-    const next = prev.slice();
-    [next[i], next[j]] = [next[j], next[i]];
-    return next;
-  });
+  const moveQueued = (id, dir) => queueMutate(runId, { op: "move", id, dir: dir > 0 ? "down" : "up" });
   const reorderQueued = (fromId, toId, after) => {
     if (fromId === toId) return;
-    setQueue(prev => {
-      const item = prev.find(q => q.id === fromId);
-      if (!item) return prev;
-      const without = prev.filter(q => q.id !== fromId);
-      let to = without.findIndex(q => q.id === toId);
-      if (to < 0) return prev;
-      if (after) to += 1;
-      without.splice(to, 0, item);
-      return without;
-    });
+    const item = queue.find(q => q.id === fromId);
+    if (!item) return;
+    const without = queue.filter(q => q.id !== fromId);
+    let to = without.findIndex(q => q.id === toId);
+    if (to < 0) return;
+    if (after) to += 1;
+    without.splice(to, 0, item);
+    // Optimistic locally (drag should feel instant), authoritative on the
+    // daemon - its response overwrites this.
+    setQueue(without);
+    queueMutate(runId, { op: "order", ids: without.map(q => q.id) });
   };
   // Drag state - `dragQId` is the envelope being dragged; `dropQId` is the
   // hovered drop target plus which side of it the drop would land on. Null
@@ -18034,7 +18088,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     : isNew
       ? `Ask the agent anything  ·  ${sendHint}`
     : disabled
-      ? "Type a follow-up - Send queues it. The next turn picks it up automatically."
+      ? "Type a follow-up - Send queues it. The next turn picks it up, even if you close this chat."
       : `Reply to the agent  ·  ${sendHint}`;
 
   return html`
