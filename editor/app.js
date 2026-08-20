@@ -90057,7 +90057,13 @@ function WorkflowStoryMapNode({ node, zoom, selected, onSelect, onMove, onResize
 
         ${error && html`<div className="workflow-node-sm-err">${error}</div>`}
 
-        ${!doc ? html`<div className="workflow-node-sm-empty">Reading the project…</div>`
+        ${(!doc && error) ? html`
+            <div className="workflow-node-sm-empty">
+              <b>Could not read the stories.</b>
+              <span>If the daemon was updated while it was running, it needs a restart
+                    before it knows about ${"docs/user-stories.xlsx"}.</span>
+            </div>`
+          : !doc ? html`<div className="workflow-node-sm-empty">Reading the project…</div>`
           : !sheet.exists ? html`
             <div className="workflow-node-sm-empty">
               <b>No user stories in this project yet.</b>
