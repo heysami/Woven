@@ -10784,7 +10784,12 @@ class RunState:
                  # Guard so the auto-compact trigger fires at most once per
                  # crossing (set when a background compact is scheduled,
                  # cleared when the compact lands or fails).
-                 "_compact_inflight")
+                 "_compact_inflight",
+                 # Follow-ups typed while a turn was in flight, delivered one
+                 # per turn boundary by _queue_drain_maybe, plus its re-entry
+                 # guard. Daemon-owned so the queue drains whether or not the
+                 # chat drawer is open.
+                 "msg_queue", "_queue_draining")
 
     def __init__(self, run_id, proc, agent_id, branch, kind, title, project_id=None, project_root=None):
         self.run_id = run_id
