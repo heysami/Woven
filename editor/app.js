@@ -57253,6 +57253,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
                 zoom=${zoom}
                 closing=${codePanelClosing}
                 offsetX=${inspectorSameNode ? WORKFLOW_INSPECTOR_DOCK_W + 8 : 0}
+                picked=${inspectorSameNode ? pickedShownElement : null}
                 focus=${codePanelFocus && codePanelFocus.nodeId === host.id ? codePanelFocus : null}
                 onClose=${() => { setCodePanelNodeId(null); setCodePanelFocus(null); }}
               />`;
@@ -58966,6 +58967,10 @@ async function revealInFinder(path) {
    read-only outside source/. */
 function ProtoViewerCodePane({ tab, isActive }) {
   const path = tab.path;
+  // Same Source / CSS split as the canvas code panel. Here the live document
+  // is whichever preview tab is on screen, so the CSS view answers "what is
+  // the page I am looking at actually styled by".
+  const [viewMode, setViewMode] = useState("source");
   const [body, setBody]         = useState({ text: "", loading: true, error: null });
   const [draft, setDraft]       = useState(null);   // null = clean
   const [saving, setSaving]     = useState(false);
@@ -59042,12 +59047,20 @@ function ProtoViewerCodePane({ tab, isActive }) {
     }
   };
 
+  const cssable = /\.(html?|css|js|mjs|jsx|tsx|ts)$/i.test(path || "");
+  const findLiveHost = useCallback(
+    () => document.querySelector('.workflow-proto-frame[data-active="true"]'), []);
+
   return html`
     <div className="workflow-proto-codepane" data-active=${isActive ? "true" : "false"}>
       <div className="workflow-proto-codepane-body">
-        ${body.loading && html`<div className="pv-panel-empty">Loading…</div>`}
-        ${body.error && html`<div className="pv-panel-empty">Could not read this file: ${body.error}</div>`}
-        ${!body.loading && !body.error && html`
+        ${viewMode === "css" && html`<${WorkflowLiveCssView}
+          findHost=${findLiveHost}
+          hint="No preview tab is open to read."
+        />`}
+        ${viewMode === "source" && body.loading && html`<div className="pv-panel-empty">Loading…</div>`}
+        ${viewMode === "source" && body.error && html`<div className="pv-panel-empty">Could not read this file: ${body.error}</div>`}
+        ${viewMode === "source" && !body.loading && !body.error && html`
           <textarea
             className="workflow-code-panel-editor"
             wrap="off"
@@ -59060,6 +59073,19 @@ function ProtoViewerCodePane({ tab, isActive }) {
         `}
       </div>
       <div className="workflow-proto-codepane-foot">
+        ${cssable && html`
+          <div className="workflow-code-panel-modes" role="tablist">
+            <button type="button" role="tab"
+              aria-selected=${viewMode === "source" ? "true" : "false"}
+              className=${"workflow-code-panel-mode" + (viewMode === "source" ? " is-active" : "")}
+              title="The file on disk"
+              onClick=${() => setViewMode("source")}>Source</button>
+            <button type="button" role="tab"
+              aria-selected=${viewMode === "css" ? "true" : "false"}
+              className=${"workflow-code-panel-mode" + (viewMode === "css" ? " is-active" : "")}
+              title="The CSS the open preview actually resolved, read live"
+              onClick=${() => setViewMode("css")}>CSS</button>
+          </div>`}
         <span className="workflow-proto-codepane-path" title=${path}>
           ${path}${dirty ? html`<span className="workflow-code-panel-dirty" title="Unsaved changes">●</span>` : null}
         </span>
@@ -67391,13 +67417,633 @@ function WorkflowCommentsPanel({ node, onClose, zoom, onStartChatWithPrompt, clo
   `;
 }
 
+/* ── Live CSS: what the RENDERED page actually uses ─────────────────────
+   The code panel shows FILE bytes, which is the wrong answer the moment the
+   markup is produced at run time: a JS-rendered app, a templated include, a
+   component that injects its own <style>. In those cases no single file
+   spells the CSS that ends up applying. These helpers read a LIVE iframe
+   document instead and report the cascade the browser actually resolved,
+   the way an inspector does.
+
+   Everything here is read-only and best-effort. A cross-origin sheet throws
+   on .cssRules; it is reported as unreadable rather than dropped, so the
+   view never silently under-reports. */
+
+const WF_CSS_PSEUDO_EL_RE = /::[a-zA-Z-]+(?:\((?:[^()]|\([^()]*\))*\))?/g;
+const WF_CSS_STATE_RE = new RegExp(
+  ":(?:hover|active|focus|focus-visible|focus-within|visited|link|any-link|target"
+  + "|checked|indeterminate|default|disabled|enabled|read-only|read-write"
+  + "|placeholder-shown|autofill|user-invalid|user-valid|invalid|valid|required"
+  + "|optional|in-range|out-of-range|open|popover-open|fullscreen"
+  + "|picture-in-picture|modal|-webkit-[a-z-]+|-moz-[a-z-]+)\\b", "gi");
+
+/* Split a selector list on TOP-LEVEL commas only, so `:is(a, b) span` stays
+   one part. */
+function wfCssSplitSelector(sel) {
+  const s = String(sel || "");
+  const out = [];
+  let depth = 0, quote = "", start = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quote) { if (c === quote && s[i - 1] !== "\\") quote = ""; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === "(" || c === "[") depth++;
+    else if (c === ")" || c === "]") depth--;
+    else if (c === "," && depth <= 0) { out.push(s.slice(start, i)); start = i + 1; }
+  }
+  out.push(s.slice(start));
+  return out.map(p => p.trim()).filter(Boolean);
+}
+
+/* A selector's RESTING form: the part that can match an element sitting
+   still in the DOM. `.btn:hover` IS used CSS when a `.btn` exists, and a
+   coverage view that says otherwise is worse than no view at all. Pseudo
+   elements never match querySelectorAll either, so they come off too. */
+function wfCssRestingSelector(sel) {
+  let s = String(sel || "").replace(WF_CSS_PSEUDO_EL_RE, "").replace(WF_CSS_STATE_RE, "");
+  // Stripping a state out of :not()/:is()/:where()/:has() can leave an empty
+  // functional form or a dangling comma, both of which throw. Drop the husk.
+  for (let i = 0; i < 3; i++) {
+    s = s.replace(/,\s*\)/g, ")").replace(/\(\s*,/g, "(")
+         .replace(/:(?:not|is|where|has)\(\s*\)/gi, "");
+  }
+  s = s.replace(/\s+/g, " ").trim();
+  return s || "*";
+}
+
+/* Approximate specificity as [id, class, type]. Exact enough to order a real
+   stylesheet's rules; the two things it could get wrong (`:is()` taking its
+   argument's specificity, escaped punctuation in a class name) only ever
+   shuffle neighbours in the list, never change which file a rule came from. */
+function wfCssSpecificity(sel) {
+  const raw = String(sel || "")
+    .replace(/\\./g, "x")
+    .replace(/\[[^\]]*\]/g, "[]")
+    .replace(/\((?:[^()]|\([^()]*\))*\)/g, "()");
+  // Mask pseudo elements first so the pseudo-class count cannot see them.
+  // (No lookbehind: it is still missing on older Safari.)
+  const pseudoEls = (raw.match(/::[\w-]+/g) || []).length;
+  const t = raw.replace(/::[\w-]+/g, "\u0000");
+  const id = (t.match(/#[\w-]+/g) || []).length;
+  const cls = (t.match(/\.[\w-]+/g) || []).length
+            + (t.match(/\[\]/g) || []).length
+            + (t.match(/:[\w-]+/g) || []).length;
+  const type = (t.match(/(?:^|[\s>+~])[a-zA-Z][\w-]*/g) || []).length + pseudoEls;
+  return [id, cls, type];
+}
+function wfCssSpecCmp(a, b) {
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] - b[i];
+  return 0;
+}
+
+/* Every declaration of one CSSStyleDeclaration, in author order.
+
+   Read from `cssText`, not by iterating the declaration: iteration hands back
+   LONGHANDS, so a rule that authored `border: 1px solid #ccc; padding: 12px`
+   comes out as twenty-two lines nobody can read. cssText keeps the shorthand
+   the author actually wrote. Iteration is the fallback for the rare engine
+   that gives an empty cssText. */
+function wfCssDecls(style) {
+  const out = [];
+  if (!style) return out;
+  let text = "";
+  try { text = style.cssText || ""; } catch {}
+  if (text) {
+    for (const chunk of wfCssSplitDecls(text)) {
+      const i = chunk.indexOf(":");
+      if (i < 0) continue;
+      const prop = chunk.slice(0, i).trim();
+      let value = chunk.slice(i + 1).trim();
+      let important = false;
+      const m = value.match(/!\s*important\s*$/i);
+      if (m) { important = true; value = value.slice(0, m.index).trim(); }
+      if (prop) out.push({ prop, value, important });
+    }
+    if (out.length) return out;
+  }
+  try {
+    for (let i = 0; i < style.length; i++) {
+      const prop = style[i];
+      out.push({
+        prop,
+        value: style.getPropertyValue(prop),
+        important: style.getPropertyPriority(prop) === "important",
+      });
+    }
+  } catch {}
+  return out;
+}
+
+/* Split a declaration block on top-level semicolons, so a `;` inside a
+   data: URI, a quoted string or a nested function does not cut a value. */
+function wfCssSplitDecls(text) {
+  const s = String(text || "");
+  const out = [];
+  let depth = 0, quote = "", start = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quote) { if (c === quote && s[i - 1] !== "\\") quote = ""; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === "(") depth++;
+    else if (c === ")") depth--;
+    else if (c === ";" && depth <= 0) { out.push(s.slice(start, i)); start = i + 1; }
+  }
+  out.push(s.slice(start));
+  return out.map(d => d.trim()).filter(Boolean);
+}
+
+/* The longhand properties one declaration actually covers. `border` claims
+   twelve of them, and the cascade cannot tell what overrides what without
+   knowing that. Resolved by a throwaway probe element so the browser's own
+   expansion table answers, not a hand-maintained list. */
+function wfCssLonghands(doc, prop, value, cache) {
+  const key = prop + "|" + value;
+  if (cache && cache[key]) return cache[key];
+  let keys = [prop];
+  try {
+    const probe = doc.createElement("div");
+    probe.style.setProperty(prop, value);
+    const got = [];
+    for (let i = 0; i < probe.style.length; i++) got.push(probe.style[i]);
+    if (got.length) keys = got;
+  } catch {}
+  if (cache) cache[key] = keys;
+  return keys;
+}
+
+/* Flatten a nested selector against its parent. `& .x` inside `.card` is
+   `:is(.card) .x`; a nested selector with no `&` is a descendant of the
+   parent. Without this a nested rule matches nothing and reads as dead CSS. */
+function wfCssResolveNested(sel, parentSel) {
+  const s = String(sel || "");
+  if (!parentSel) return s;
+  const p = ":is(" + parentSel + ")";
+  return wfCssSplitSelector(s)
+    .map(part => part.includes("&") ? part.replace(/&/g, p) : (p + " " + part))
+    .join(", ");
+}
+
+/* How many elements in the live DOM a rule currently matches. -1 means the
+   selector could not be evaluated (exotic syntax); the view shows that as
+   "unknown" rather than as zero, which would read as dead CSS. */
+function wfCssMatchCount(doc, selector) {
+  const resting = wfCssRestingSelector(selector);
+  try { return doc.querySelectorAll(resting).length; } catch {}
+  let n = 0, ok = false;
+  for (const part of wfCssSplitSelector(resting)) {
+    try { n += doc.querySelectorAll(part).length; ok = true; } catch {}
+  }
+  return ok ? n : -1;
+}
+
+const WF_CSS_RULE_LIMIT = 6000;
+
+/* Walk one sheet's rule list, flattening @media / @supports / @layer /
+   @container into a flat list that carries its conditions along. */
+function wfCssWalk(win, ruleList, conds, sheet, state, parentSel) {
+  let list = [];
+  try { list = Array.from(ruleList || []); } catch { return; }
+  for (const rule of list) {
+    if (state.count >= WF_CSS_RULE_LIMIT) { state.truncated = true; return; }
+    const nested = rule.cssRules;
+    // A style rule is decided by selectorText + style, NOT by the absence of
+    // children: with CSS nesting a CSSStyleRule carries its own (usually
+    // empty) cssRules list, and testing that first made every plain rule in
+    // the document look like an at-rule group and vanish.
+    if (typeof rule.selectorText === "string" && rule.style) {
+      const sel = rule.selectorText;
+      state.count++;
+      sheet.rules.push({
+        kind: "style",
+        selector: sel,
+        resolved: wfCssResolveNested(sel, parentSel),
+        decls: wfCssDecls(rule.style),
+        conds,
+        order: state.order++,
+        sheetIdx: sheet.idx,
+        sheetLabel: sheet.label,
+        href: sheet.href,
+        nestedIn: parentSel || "",
+      });
+      // Nested children inherit this rule's resolved selector as their `&`.
+      if (nested && nested.length) {
+        wfCssWalk(win, nested, conds, sheet, state, wfCssResolveNested(sel, parentSel));
+      }
+      continue;
+    }
+    if (nested) {
+      // A conditional group. `active` is what the viewport resolves RIGHT
+      // NOW, which is the whole point of reading the live document.
+      let text = "", at = "@group", active = true;
+      if (typeof rule.conditionText === "string") text = rule.conditionText;
+      else if (rule.media && rule.media.mediaText) text = rule.media.mediaText;
+      const cn = (rule.constructor && rule.constructor.name) || "";
+      if (cn.includes("Media")) { at = "@media"; try { active = win.matchMedia(text).matches; } catch {} }
+      else if (cn.includes("Supports")) { at = "@supports"; try { active = win.CSS && win.CSS.supports(text); } catch {} }
+      else if (cn.includes("Container")) at = "@container";
+      else if (cn.includes("Layer")) { at = "@layer"; text = rule.name || ""; }
+      else if (cn.includes("Scope")) at = "@scope";
+      else if (cn.includes("Keyframes")) {
+        state.count++;
+        sheet.rules.push({
+          kind: "at", label: "@keyframes " + (rule.name || ""),
+          cssText: rule.cssText || "", conds, order: state.order++,
+          sheetIdx: sheet.idx, sheetLabel: sheet.label, href: sheet.href,
+          animName: rule.name || "",
+        });
+        continue;
+      }
+      wfCssWalk(win, nested, conds.concat([{ at, text, active }]), sheet, state, parentSel);
+      continue;
+    }
+    // Leaf at-rule: @font-face, @import, @property, @page.
+    const cssText = rule.cssText || "";
+    state.count++;
+    sheet.rules.push({
+      kind: "at",
+      label: (cssText.match(/^\s*@[\w-]+/) || ["@rule"])[0].trim(),
+      cssText, conds, order: state.order++,
+      sheetIdx: sheet.idx, sheetLabel: sheet.label, href: sheet.href,
+    });
+  }
+}
+
+/* Read every stylesheet attached to a live document. */
+function wfCssCollect(win, doc) {
+  const sheets = [];
+  const state = { order: 0, count: 0, truncated: false };
+  let list = [];
+  try { list = Array.from(doc.styleSheets || []); } catch {}
+  list.forEach((sheet, idx) => {
+    let href = "", owner = null;
+    try { href = sheet.href || ""; } catch {}
+    try { owner = sheet.ownerNode; } catch {}
+    const tag = owner && owner.tagName ? owner.tagName.toUpperCase() : "";
+    const entry = {
+      idx, href,
+      label: href
+        ? (href.split("?")[0].split("/").pop() || href)
+        : (tag === "STYLE" ? "<style> block" : "stylesheet " + (idx + 1)),
+      sub: href
+        ? wfCssHrefPath(href, doc)
+        : (tag === "STYLE"
+            ? (owner.isConnected === false ? "detached <style>" : "inline or injected at run time")
+            : "adopted stylesheet"),
+      readable: true, error: "", rules: [],
+      media: (() => { try { return sheet.media && sheet.media.mediaText || ""; } catch { return ""; } })(),
+    };
+    let rules = null;
+    try { rules = sheet.cssRules; }
+    catch { entry.readable = false; entry.error = "not readable from here (cross-origin stylesheet)"; }
+    if (rules) wfCssWalk(win, rules, [], entry, state, "");
+    sheets.push(entry);
+  });
+  // Constructed sheets adopted by the document are not in styleSheets on
+  // every engine; pick them up so a CSS-in-JS runtime is not invisible.
+  let adopted = [];
+  try { adopted = Array.from(doc.adoptedStyleSheets || []); } catch {}
+  adopted.forEach((sheet, i) => {
+    const entry = {
+      idx: sheets.length, href: "",
+      label: "adopted sheet " + (i + 1), sub: "constructed in JS",
+      readable: true, error: "", rules: [], media: "",
+    };
+    try { wfCssWalk(win, sheet.cssRules, [], entry, state, ""); } catch { entry.readable = false; }
+    sheets.push(entry);
+  });
+  return { sheets, truncated: state.truncated, total: state.count };
+}
+
+/* Absolute sheet href to something the user recognises: the path inside the
+   project when it is one of ours, the bare origin when it is a CDN. */
+function wfCssHrefPath(href, doc) {
+  try {
+    const u = new URL(href, doc.baseURI);
+    const here = new URL(doc.baseURI);
+    if (u.origin !== here.origin) return u.origin;
+    const p = decodeURIComponent(u.pathname).replace(/^\//, "");
+    return p || u.pathname;
+  } catch { return href; }
+}
+
+/* The cascade for ONE element: every rule that matches it, strongest first,
+   with each declaration marked as winning or overridden. Inline style rides
+   at the top as its own pseudo rule, exactly like an inspector shows it. */
+function wfCssCascadeFor(win, doc, el, collected) {
+  const hits = [];
+  for (const sheet of collected.sheets) {
+    for (const r of sheet.rules) {
+      if (r.kind !== "style") continue;
+      if (r.conds.some(c => c.active === false)) continue;
+      let best = null, bestSpec = null, restingOnly = false;
+      for (const part of wfCssSplitSelector(r.resolved || r.selector)) {
+        const resting = wfCssRestingSelector(part);
+        let m = false;
+        try { m = el.matches(resting); } catch { m = false; }
+        if (!m) continue;
+        const spec = wfCssSpecificity(part);
+        if (!bestSpec || wfCssSpecCmp(spec, bestSpec) > 0) {
+          bestSpec = spec;
+          best = part;
+          // Did it match only after states were stripped? Then the rule is
+          // conditional: it applies on :hover, :focus, ::before and so on.
+          restingOnly = resting !== part.replace(/\s+/g, " ").trim();
+        }
+      }
+      if (best) hits.push(Object.assign({}, r, {
+        matched: best, spec: bestSpec, conditional: restingOnly,
+        decls: r.decls.map(d => Object.assign({}, d)),
+      }));
+    }
+  }
+  hits.sort((a, b) => wfCssSpecCmp(b.spec, a.spec) || (b.order - a.order));
+  const inlineDecls = wfCssDecls(el.style).map(d => Object.assign({}, d));
+  const inline = inlineDecls.length ? {
+    kind: "style", inline: true, matched: "element.style", selector: "element.style",
+    decls: inlineDecls, conds: [], spec: [9, 9, 9], order: Infinity,
+    sheetLabel: "inline", href: "",
+  } : null;
+  const ordered = inline ? [inline].concat(hits) : hits;
+  // Cascade resolution: important declarations win outright, in cascade
+  // order; normal declarations fill in whatever no important rule claimed.
+  const cache = {};
+  const winner = {};
+  for (const pass of [true, false]) {
+    for (const r of ordered) {
+      // A conditional rule (:hover, ::before) is not applying right now, so
+      // it never takes a property away from a rule that is.
+      if (r.conditional) continue;
+      for (const d of r.decls) {
+        if (d.important !== pass) continue;
+        d.keys = d.keys || wfCssLonghands(doc, d.prop, d.value, cache);
+        for (const k of d.keys) if (!winner[k]) winner[k] = d;
+      }
+    }
+  }
+  for (const r of ordered) {
+    for (const d of r.decls) {
+      if (r.conditional) { d.overridden = false; continue; }
+      const keys = d.keys || wfCssLonghands(doc, d.prop, d.value, cache);
+      // Struck through only when EVERY longhand it covers went to someone
+      // else - a partly beaten shorthand is still doing work.
+      d.overridden = keys.every(k => winner[k] !== d);
+    }
+  }
+  return ordered;
+}
+
+/* Label an element the way the inspector does: tag plus its first classes,
+   with pick-mode chrome classes filtered out. */
+function wfCssElLabel(el) {
+  if (!el) return "";
+  const tag = (el.tagName || "").toLowerCase();
+  const cls = (typeof el.className === "string" ? el.className : "")
+    .trim().split(/\s+/).filter(c => c && !c.startsWith("th-pick-")).slice(0, 3);
+  return tag + (el.id ? "#" + el.id : "") + (cls.length ? "." + cls.join(".") : "");
+}
+
+/* WorkflowLiveCssView ────────────────────────────────────────────────────
+   The "CSS" half of a code surface. `findHost()` returns the live iframe to
+   read (the node's own frame on canvas, the active preview frame in the
+   viewer); everything else is derived from that document on each refresh.
+
+   Two scopes:
+     • Page    - every sheet the rendered document loaded, each rule marked
+                 with how many live elements it matches. Answers "which of
+                 this CSS is actually in play".
+     • Element - the full cascade for the picked element, strongest first,
+                 overridden declarations struck through. Answers "why does
+                 this look like that".
+   Read only by design: edits belong in the source tab, and clicking a rule
+   jumps there. */
+function WorkflowLiveCssView({ findHost, picked, onOpenSource, hint }) {
+  const [tick, setTick] = useState(0);
+  const [scope, setScope] = useState(picked ? "element" : "page");
+  const [query, setQuery] = useState("");
+  const [usedOnly, setUsedOnly] = useState(true);
+  const [limit, setLimit] = useState(300);
+  // Follow the pick: picking an element while the CSS view is open is a
+  // request to look at that element.
+  const pickedPath = picked && picked.path;
+  useEffect(() => { if (pickedPath) setScope("element"); }, [pickedPath]);
+  // Re-read whenever bytes land on disk (the same broadcast the source tab
+  // listens to) so the view is never stale after a run or an edit.
+  useEffect(() => {
+    const bump = () => setTick(t => t + 1);
+    window.addEventListener("th:asset-refresh", bump);
+    return () => window.removeEventListener("th:asset-refresh", bump);
+  }, []);
+
+  // findHost is often an inline closure at the call site; hold it in a ref so
+  // a parent re-render never re-reads every stylesheet in the document.
+  const findHostRef = useRef(findHost);
+  findHostRef.current = findHost;
+  const read = useMemo(() => {
+    const fh = findHostRef.current;
+    const ifr = fh && fh();
+    let doc = null, win = null;
+    try { doc = ifr && ifr.contentDocument; win = ifr && ifr.contentWindow; } catch {}
+    if (!doc || !win) return { error: "nohost" };
+    let url = "";
+    try { url = win.location && win.location.href || ""; } catch {}
+    let collected;
+    try { collected = wfCssCollect(win, doc); }
+    catch (e) { return { error: String((e && e.message) || e) }; }
+    let el = null;
+    if (picked && picked.path) {
+      try { el = doc.querySelector(picked.path); } catch { el = null; }
+    }
+    const cascade = el ? wfCssCascadeFor(win, doc, el, collected) : null;
+    // Count matches once per rule here rather than during render, so
+    // scrolling the list never re-queries the DOM.
+    for (const sheet of collected.sheets) {
+      for (const r of sheet.rules) {
+        r.hits = r.kind === "style" ? wfCssMatchCount(doc, r.resolved || r.selector) : -2;
+      }
+    }
+    return { doc, win, url, collected, el, cascade };
+  }, [tick, pickedPath]);
+
+  const refresh = () => setTick(t => t + 1);
+
+  if (read.error === "nohost") {
+    return html`<div className="wf-css-view">
+      <div className="wf-css-empty">
+        ${hint || "No rendered page to read here."}
+        <div className="wf-css-empty-sub">Live CSS is read from the running preview, so the page has to be on screen.</div>
+        <button className="wf-css-btn" onClick=${refresh}>Look again</button>
+      </div>
+    </div>`;
+  }
+  if (read.error) {
+    return html`<div className="wf-css-view">
+      <div className="wf-css-empty">Could not read the page's CSS: ${read.error}
+        <button className="wf-css-btn" onClick=${refresh}>Retry</button>
+      </div>
+    </div>`;
+  }
+
+  const q = query.trim().toLowerCase();
+  const matchQ = (r) => {
+    if (!q) return true;
+    const head = r.kind === "style" ? r.selector : (r.label + " " + (r.cssText || ""));
+    const body = (r.decls || []).map(d => d.prop + ":" + d.value).join(";");
+    return (head + " " + body).toLowerCase().includes(q);
+  };
+
+  const declLine = (d) => html`
+    <div className=${"wf-css-decl" + (d.overridden ? " is-overridden" : "")}
+         title=${d.overridden ? "Overridden by a stronger rule" : ""}>
+      <span className="wf-css-prop">${d.prop}</span>: <span className="wf-css-val">${d.value}</span>${
+        d.important ? html`<span className="wf-css-imp"> !important</span>` : null};
+    </div>`;
+
+  const condChips = (conds) => (conds && conds.length) ? html`
+    <div className="wf-css-conds">
+      ${conds.map((c, i) => html`
+        <span key=${i} className=${"wf-css-cond" + (c.active === false ? " is-off" : "")}
+              title=${c.active === false ? "Not matching at this viewport / capability" : "Matching right now"}>
+          ${c.at} ${c.text}
+        </span>`)}
+    </div>` : null;
+
+  const ruleBlock = (r, i, opts) => {
+    const o = opts || {};
+    const off = (r.conds || []).some(c => c.active === false);
+    const dead = r.kind === "style" && (r.hits === 0 || off);
+    return html`
+      <div key=${r.sheetIdx + ":" + r.order + ":" + i}
+           className=${"wf-css-rule"
+             + (dead ? " is-unused" : "")
+             + (o.conditional ? " is-conditional" : "")}>
+        ${condChips(r.conds)}
+        <div className="wf-css-rule-head">
+          <button type="button" className="wf-css-sel"
+            title=${onOpenSource ? "Find this rule in the source" : (r.selector || r.label)}
+            onClick=${() => onOpenSource && onOpenSource(r)}>
+            ${r.kind === "style" ? (o.matched || r.selector) : r.label}
+          </button>
+          ${r.kind === "style" && r.hits >= 0 && !o.hideHits && html`
+            <span className=${"wf-css-hits" + (r.hits === 0 ? " is-zero" : "")}
+                  title=${r.hits === 0
+                    ? "No element in the rendered page matches this rule"
+                    : (off
+                        ? r.hits + " element(s) match, but the condition above is not met right now"
+                        : r.hits + " element(s) in the rendered page match this rule")}>
+              ${r.hits === 0 ? "unused" : (off ? r.hits + "× off" : r.hits + "×")}
+            </span>`}
+          ${o.conditional && html`<span className="wf-css-flag" title="Applies only in a state (hover, focus) or on a pseudo element">state</span>`}
+          ${o.inline && html`<span className="wf-css-flag" title="Written on the element's style attribute">inline</span>`}
+          ${!o.hideSheet && html`<span className="wf-css-from" title=${r.href || r.sheetLabel}>${r.sheetLabel}</span>`}
+        </div>
+        ${r.kind === "style"
+          ? html`<div className="wf-css-decls">${r.decls.map(declLine)}</div>`
+          : html`<pre className="wf-css-at">${r.cssText}</pre>`}
+      </div>`;
+  };
+
+  const bar = html`
+    <div className="wf-css-bar">
+      <div className="wf-css-scope" role="tablist">
+        <button type="button" role="tab" aria-selected=${scope === "element" ? "true" : "false"}
+          className=${"wf-css-scope-btn" + (scope === "element" ? " is-active" : "")}
+          onClick=${() => setScope("element")}>Element</button>
+        <button type="button" role="tab" aria-selected=${scope === "page" ? "true" : "false"}
+          className=${"wf-css-scope-btn" + (scope === "page" ? " is-active" : "")}
+          onClick=${() => setScope("page")}>Page</button>
+      </div>
+      <input className="wf-css-search" type="search" placeholder="Filter"
+        value=${query} onInput=${(e) => setQuery(e.target.value)} />
+      ${scope === "page" && html`
+        <label className="wf-css-check" title="Hide rules that no element in the rendered page matches">
+          <input type="checkbox" checked=${usedOnly} onChange=${(e) => setUsedOnly(e.target.checked)} />
+          Used only
+        </label>`}
+      <button type="button" className="wf-css-icon" title="Re-read the page" onClick=${refresh}><${Icon.Refresh}/></button>
+    </div>`;
+
+  if (scope === "element") {
+    const el = read.el;
+    return html`
+      <div className="wf-css-view">
+        ${bar}
+        ${!el
+          ? html`<div className="wf-css-empty">
+              Nothing picked on this page.
+              <div className="wf-css-empty-sub">Pick an element with the selection tool and its full cascade shows up here, strongest rule first.</div>
+            </div>`
+          : html`
+            <div className="wf-css-scrollv">
+              <div className="wf-css-elhead">
+                <span className="wf-css-ellabel">${wfCssElLabel(el)}</span>
+                <span className="wf-css-elnote">${read.cascade.length} matching rule${read.cascade.length === 1 ? "" : "s"}</span>
+              </div>
+              ${read.cascade.filter(matchQ).map((r, i) => ruleBlock(r, i, {
+                matched: r.matched, conditional: r.conditional, inline: r.inline, hideHits: true,
+              }))}
+              ${read.cascade.length === 0 && html`<div className="wf-css-empty">No rule in any stylesheet matches this element. Everything you see is inherited or from the browser's own defaults.</div>`}
+            </div>`}
+      </div>`;
+  }
+
+  // Page scope.
+  const sheets = read.collected.sheets;
+  let shown = 0, hidden = 0;
+  const blocks = sheets.map((sheet) => {
+    const rules = sheet.rules.filter(r => matchQ(r) && !(usedOnly && r.kind === "style" && r.hits === 0));
+    const dropped = sheet.rules.length - rules.length;
+    const room = Math.max(0, limit - shown);
+    const take = rules.slice(0, room);
+    shown += take.length;
+    hidden += rules.length - take.length;
+    return { sheet, take, dropped, count: rules.length };
+  });
+  const usedCount = sheets.reduce((n, s) => n + s.rules.filter(r =>
+    r.kind === "style" && r.hits > 0 && !(r.conds || []).some(c => c.active === false)).length, 0);
+  const styleCount = sheets.reduce((n, s) => n + s.rules.filter(r => r.kind === "style").length, 0);
+
+  return html`
+    <div className="wf-css-view">
+      ${bar}
+      <div className="wf-css-scrollv">
+        <div className="wf-css-elhead">
+          <span className="wf-css-ellabel" title=${read.url}>${(read.url || "").split("/").pop() || "rendered page"}</span>
+          <span className="wf-css-elnote">${usedCount} of ${styleCount} rules in use, ${sheets.length} sheet${sheets.length === 1 ? "" : "s"}</span>
+        </div>
+        ${read.collected.truncated && html`
+          <div className="wf-css-note">Stopped reading at ${WF_CSS_RULE_LIMIT} rules. Everything past that is not shown.</div>`}
+        ${blocks.map(({ sheet, take, dropped, count }) => html`
+          <div key=${sheet.idx} className="wf-css-sheet">
+            <div className="wf-css-sheet-head">
+              <span className="wf-css-sheet-name">${sheet.label}</span>
+              ${sheet.sub !== sheet.label && html`
+                <span className="wf-css-sheet-sub" title=${sheet.href || sheet.sub}>${sheet.sub}</span>`}
+              <span className="wf-css-sheet-count">${count}</span>
+            </div>
+            ${!sheet.readable && html`<div className="wf-css-note">${sheet.error}</div>`}
+            ${take.map((r, i) => ruleBlock(r, i, { hideSheet: true }))}
+            ${dropped > 0 && html`<div className="wf-css-note">${dropped} rule${dropped === 1 ? "" : "s"} hidden by the filter.</div>`}
+          </div>`)}
+        ${hidden > 0 && html`
+          <button type="button" className="wf-css-more" onClick=${() => setLimit(l => l + 500)}>
+            Show ${Math.min(hidden, 500)} more (${hidden} not shown)
+          </button>`}
+        ${styleCount === 0 && html`<div className="wf-css-empty">This page has no readable stylesheet rules.</div>`}
+      </div>
+    </div>`;
+}
+
 /* `offsetX` pushes the panel further out from the node's right edge. The
    picked-element inspector docks against that same edge, so when both are
    open on one node the surface passes the inspector's width through here and
    the source panel steps aside instead of being covered by it. */
-function WorkflowCodePanel({ node, onClose, zoom, focus, closing, offsetX }) {
+function WorkflowCodePanel({ node, onClose, zoom, focus, closing, offsetX, picked }) {
   const [files, setFiles] = useState([]);          // [{ path, label }]
   const [activeIdx, setActiveIdx] = useState(0);
+  // "source" = the file's bytes. "css" = the CSS the RENDERED page resolved,
+  // read live out of the node's iframe. The two answer different questions,
+  // and for a page whose markup is built by JS only the second one is true.
+  const [viewMode, setViewMode] = useState("source");
   const [focusFlash, setFocusFlash] = useState(false); // brief pulse on programmatic focus
   const [bodies, setBodies] = useState({});        // path → { text, loading, error }
   const [panelW, setPanelW] = useState(480);
@@ -67590,6 +68236,38 @@ function WorkflowCodePanel({ node, onClose, zoom, focus, closing, offsetX }) {
   const dirty = hasDraft && drafts[activePath] !== cleanText;
   const editable = !!activePath && cur && !cur.loading && !cur.error;
 
+  // ── Live CSS view plumbing ────────────────────────────────────────────
+  // The CSS half reads the node's OWN iframe, resolved fresh on every read
+  // (React re-mounts the frame on every nonce bump, so a cached element goes
+  // stale). wfFindPickHost is the same resolver pick mode uses, including the
+  // nested-embed walk, so a node inside an embedded canvas still resolves.
+  const findLiveHost = useCallback(() => wfFindPickHost(node.id), [node.id]);
+  // Only surfaces that can RENDER have live CSS to read. An image or a JSON
+  // asset gets no toggle rather than a toggle that always says "nothing here".
+  const cssable = isProto || /\.(html?|css|js|mjs|jsx|tsx|ts)$/i.test(node.path || "");
+
+  /* Click a rule in the CSS view to land on it in the source. The stylesheet's
+     href names the file when there is one; a run-time-injected <style> has no
+     href, so we hand the selector to the same cross-file search the pick
+     locate uses and let it find the file that spells it. */
+  const openRuleInSource = useCallback((rule) => {
+    if (!rule) return;
+    const full = rule.kind === "style" ? (rule.selector || "") : (rule.label || "");
+    const first = wfCssSplitSelector(full)[0] || full;
+    // Short first parts ("a", "li") would match anywhere; use the whole list.
+    const needle = first.length >= 3 ? first : full;
+    let path = null;
+    if (rule.href) {
+      try {
+        const want = decodeURIComponent(new URL(rule.href).pathname).replace(/^\//, "");
+        const hit = files.find(f => f.path === want || f.path.endsWith("/" + want) || want.endsWith(f.path));
+        if (hit) path = hit.path;
+      } catch {}
+    }
+    setViewMode("source");
+    setSelfFocus({ token: "L" + (++selfFocusNRef.current), path, needle, select: false });
+  }, [files]);
+
   const save = async () => {
     if (!activePath || !dirty || saving) return;
     const activeFile = files[activeIdx];
@@ -67664,11 +68342,24 @@ function WorkflowCodePanel({ node, onClose, zoom, focus, closing, offsetX }) {
   // the two effects after it act on: switch to that tab, then reveal the
   // match. `select` separates the two callers' endings - see below.
   const [focusHit, setFocusHit] = useState(null);
+  // The CSS view drives the same locate machinery as the double-click and
+  // pick callers, just from inside the panel: clicking a rule flips to the
+  // source tab and reveals that selector. Its own token space ("L1", "L2")
+  // so it can never collide with the prop's numeric tokens.
+  const [selfFocus, setSelfFocus] = useState(null);
+  const selfFocusNRef = useRef(0);
+  useEffect(() => {
+    setSelfFocus(null);
+    // An outside locate ("show me this line") is meaningless in the CSS view.
+    if (focus && focus.token) setViewMode("source");
+  }, [focus && focus.token]);
+  const focusReq = selfFocus || focus;
   const bodiesRef = useRef(bodies);         bodiesRef.current = bodies;
   const draftsRef = useRef(drafts);         draftsRef.current = drafts;
   const filesRef  = useRef(files);          filesRef.current  = files;
   const activePathRef = useRef(activePath); activePathRef.current = activePath;
   useEffect(() => {
+    const focus = focusReq;
     if (!focus || !focus.token) return;
     const needles = (focus.needles && focus.needles.length)
       ? focus.needles
@@ -67726,7 +68417,7 @@ function WorkflowCodePanel({ node, onClose, zoom, focus, closing, offsetX }) {
       if (alive) setFocusHit(focus.path ? { token, path: focus.path, needle: null, select } : null);
     })();
     return () => { alive = false; };
-  }, [focus && focus.token]);
+  }, [focusReq && focusReq.token]);
 
   // Switch to the resolved file's tab…
   useEffect(() => {
@@ -67801,7 +68492,20 @@ function WorkflowCodePanel({ node, onClose, zoom, focus, closing, offsetX }) {
         <span className="workflow-code-panel-title" title=${activePath || titleText}>
           ${titleText}${dirty ? html`<span className="workflow-code-panel-dirty" title="Unsaved changes">●</span>` : null}
         </span>
-        ${activePath && html`
+        ${cssable && html`
+          <div className="workflow-code-panel-modes" role="tablist">
+            <button type="button" role="tab"
+              aria-selected=${viewMode === "source" ? "true" : "false"}
+              className=${"workflow-code-panel-mode" + (viewMode === "source" ? " is-active" : "")}
+              title="The file on disk"
+              onClick=${() => setViewMode("source")}>Source</button>
+            <button type="button" role="tab"
+              aria-selected=${viewMode === "css" ? "true" : "false"}
+              className=${"workflow-code-panel-mode" + (viewMode === "css" ? " is-active" : "")}
+              title="The CSS the rendered page actually resolved, read live out of the preview"
+              onClick=${() => setViewMode("css")}>CSS</button>
+          </div>`}
+        ${viewMode === "source" && activePath && html`
           <button
             type="button"
             className="workflow-code-panel-reset"
@@ -67831,7 +68535,7 @@ function WorkflowCodePanel({ node, onClose, zoom, focus, closing, offsetX }) {
             onClick=${() => save()}
           >${saving ? "Saving…" : (saveFlash === "saved" && !dirty ? "Saved ✓" : "Save")}</button>
         `}
-        ${activePath && html`
+        ${viewMode === "source" && activePath && html`
           <button
             type="button"
             className="workflow-code-panel-action"
@@ -67850,7 +68554,7 @@ function WorkflowCodePanel({ node, onClose, zoom, focus, closing, offsetX }) {
           onClick=${() => onClose && onClose()}
         >×</button>
       </div>
-      ${files.length > 1 && html`
+      ${viewMode === "source" && files.length > 1 && html`
         <div className="workflow-code-panel-tabs" role="tablist">
           ${files.map((f, i) => html`
             <button
@@ -67865,7 +68569,16 @@ function WorkflowCodePanel({ node, onClose, zoom, focus, closing, offsetX }) {
         </div>
       `}
       <div className="workflow-code-panel-body">
-        ${!activePath
+        ${viewMode === "css"
+          ? html`<${WorkflowLiveCssView}
+              findHost=${findLiveHost}
+              picked=${picked}
+              onOpenSource=${openRuleInSource}
+              hint=${isProto
+                ? "This prototype is not rendering on the canvas right now."
+                : "This file is not rendering on the canvas right now."}
+            />`
+          : !activePath
           ? html`<div className="workflow-code-panel-empty">${isProto ? "No text files found under this prototype." : "No source file."}</div>`
           : !cur || cur.loading
             ? html`<div className="workflow-code-panel-empty">Loading…</div>`
@@ -67889,7 +68602,7 @@ function WorkflowCodePanel({ node, onClose, zoom, focus, closing, offsetX }) {
                   onScroll=${syncHitBand}
                 />`
         }
-        ${hitLine && hitLine.path === activePath && html`
+        ${viewMode === "source" && hitLine && hitLine.path === activePath && html`
           <div ref=${hitBandRef} className="workflow-code-panel-hit" aria-hidden="true"/>
         `}
       </div>
