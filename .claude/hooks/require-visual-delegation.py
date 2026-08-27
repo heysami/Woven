@@ -61,11 +61,12 @@ def main():
         deny = (
             "Blocked: the main chat thread must not screenshot to check work itself "
             "(VISUAL_DELEGATION_DISCIPLINE - images poison this thread's prompt cache and "
-            "judgment decays over long threads). Dispatch ONE general-purpose Task subagent "
-            "to do the whole look-loop: give it the exact URL(s)/pages, what must be true "
+            "judgment decays over long threads). Dispatch ONE `visual-verifier` Task subagent "
+            "(subagent_type=\"visual-verifier\") to do the whole look-loop: give it the exact "
+            "URL(s)/pages, what must be true "
             "visually, which interactions to try; it screenshots freely in its own context "
-            "and returns a text verdict. For DS-bound page edits use the ds-guardian brief "
-            "($TH_PROTOCOL_ROOT/docs/agents/ds-guardian.md)."
+            "and returns a text verdict. For DS-bound page edits dispatch the `ds-guardian` "
+            "subagent (subagent_type=\"ds-guardian\") instead."
         )
     elif tool == "Read":
         path = str(tool_input.get("file_path") or "")
@@ -73,8 +74,9 @@ def main():
         if low.endswith(IMAGE_EXTS) and "/attachments/" not in low:
             deny = (
                 "Blocked: the main chat thread must not Read image files to judge work "
-                "itself (VISUAL_DELEGATION_DISCIPLINE). Dispatch a general-purpose Task "
-                "subagent to view %s and report what you need as text. (User-attached "
+                "itself (VISUAL_DELEGATION_DISCIPLINE). Dispatch a `visual-verifier` Task "
+                "subagent (subagent_type=\"visual-verifier\") to view %s and report what you "
+                "need as text. (User-attached "
                 "images under attachments/ stay readable here - view those ONCE.)" % path
             )
 

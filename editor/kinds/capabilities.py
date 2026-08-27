@@ -936,7 +936,7 @@ def _ds_guard_stub(project_root: Optional[str] = None,
 
 ### DS GUARD - mandatory drift gate (this project is bound to design system `{ds['id']}`)
 - NEVER redefine a class the DS defines inside a page `<style>` block - not as a "small tweak", not with extra context selectors that change its skin. Vary a component ONLY via its custom-property knobs (e.g. `style="--kv-cols:2"` - the DS rule + `DESIGN.md` name them), or a NEW page-namespaced class composed alongside (`class="kv-grid fa-kv"` + `.fa-kv{{...}}`) carrying a layout/placement delta only. If the DS genuinely lacks a pattern, extend the DS itself (`styles.css` + `gallery.html` + `DESIGN.md`, all three in sync) - never fork it locally in a page.
-- AFTER any edit that touches the markup or CSS of a page under `source/{slug}/`, and BEFORE you tell the user the change is done: dispatch ONE general-purpose `Task` subagent with this self-contained brief (it does not see this preamble): "Read $TH_PROTOCOL_ROOT/docs/agents/ds-guardian.md and execute it. Project root: <absolute cwd>. Prototype: {slug}. Pages: <the exact page files you touched>." It runs the deterministic DS-drift linter, AUTOFIXES violations (the DS wins over local forks), re-lints until clean, render-checks the pages, and returns a compact `DS-GUARD` verdict. Relay that verdict line to the user; if it reports FAILED, or that it dropped a divergence the page needed, surface that instead of claiming done. This dispatch is unconditional for style/markup edits on DS-bound pages - your own screenshots do NOT substitute (drift is invisible in a single-page screenshot; the linter sees it deterministically). Batch one dispatch per reply, covering every page that reply touched, not one per file."""
+- AFTER any edit that touches the markup or CSS of a page under `source/{slug}/`, and BEFORE you tell the user the change is done: dispatch ONE `ds-guardian` `Task` subagent (subagent_type="ds-guardian") with this self-contained brief (it does not see this preamble): "Project root: <absolute cwd>. Prototype: {slug}. Pages: <the exact page files you touched>." It runs the deterministic DS-drift linter, AUTOFIXES violations (the DS wins over local forks), re-lints until clean, render-checks the pages, and returns a compact `DS-GUARD` verdict. Relay that verdict line to the user; if it reports FAILED, or that it dropped a divergence the page needed, surface that instead of claiming done. This dispatch is unconditional for style/markup edits on DS-bound pages - your own screenshots do NOT substitute (drift is invisible in a single-page screenshot; the linter sees it deterministically). Batch one dispatch per reply, covering every page that reply touched, not one per file."""
 
 
 def _normal_general_stub() -> str:
@@ -1154,6 +1154,10 @@ def _orchestrator_roster_block(project_root: Optional[str] = None) -> str:
     return "\n".join(out)
 
 
+class _SkipCatalog(Exception):
+    """Internal sentinel: the lean tiers skip the model-id enumeration."""
+
+
 def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full", prototype: Optional[str] = None,
                           guards: Optional[dict] = None) -> str:
     """A compact summary to inject into every spawn's system prompt. Includes
@@ -1282,7 +1286,14 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     # principle as the orchestrator roster: recall-based lists hide whole
     # families forever.
     model_catalog_block = ""
+    # Lean tiers carry the DEFAULTS + live availability (above) but not the
+    # full id enumeration. A scoped/leaf run should OMIT `model` and let the
+    # daemon pick the project default; when it genuinely needs to name one, the
+    # catalog is one fetch away. Full/setup keep it - those tiers choose models.
+    _skip_model_catalog = tier in ("slim", "leaf", "scoped")
     try:
+        if _skip_model_catalog:
+            raise _SkipCatalog()
         _status_by_provider = {r["id"]: r["status"] for r in avail_rows}
         # A catalog row whose provider has NO dispatch entry is not a
         # missing-key problem - the daemon has no renderer for it at all, and it
@@ -1344,6 +1355,14 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
                 "to the user and point at Settings, don't call it. `✗` = catalogued but the daemon has no "
                 "renderer for that provider, so it 400s no matter what key is pasted - never promise it.\n\n"
                 + "\n\n".join(sections))
+    except _SkipCatalog:
+        model_catalog_block = (
+            "\n\n**Model ids.** OMIT `model` on `/__asset_generate` and the daemon uses the "
+            "project default shown above - that is the correct call for almost every asset. "
+            "Only when you must name a specific model, GET "
+            "$TH_DAEMON_URL/__capabilities?project=$TH_PROJECT_ID for the id catalog and its "
+            "live key status; never invent an id (an unlisted id 400s)."
+        )
     except Exception:
         model_catalog_block = ""
 
@@ -1508,7 +1527,7 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     # on the highest-volume agent type - it fetches /__capabilities when it
     # needs a drawer's purpose. Full tier (orchestrators + main chat, the
     # agents that actually pick a drawer) keeps the descriptions.
-    if tier in ("slim", "leaf"):
+    if tier in ("slim", "leaf", "scoped", "normal"):
         _names = ", ".join(sa["name"] for sa in caps["subagents"][:100])
         subagent_lines = (
             f"  {_names}\n"
@@ -1519,9 +1538,22 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
         subagent_lines = "\n".join(
             f"  • {sa['name']} - {sa['description'][:140]}" for sa in caps["subagents"][:100]
         )
-    endpoint_lines = "\n".join(
-        f"  • {ep['method']:5s} {ep['path']:42s} {ep['purpose']}" for ep in caps["endpoints"]
-    )
+    # Lean tiers carry the endpoints an iterating / leaf agent actually calls;
+    # the rest are one fetch away. The full roster is ~9K chars of catalog that
+    # a scoped thread re-reads on every turn and uses maybe three lines of.
+    _HOT_ENDPOINTS = ("/__qa/run", "/__workflow", "/__capabilities", "/__asset_generate",
+                      "/__kinds/registry", "/__design_systems", "/__save", "/__history")
+    if tier in ("slim", "leaf", "scoped"):
+        _eps = [ep for ep in caps["endpoints"]
+                if any(ep["path"].startswith(h) for h in _HOT_ENDPOINTS)]
+        endpoint_lines = "\n".join(
+            f"  • {ep['method']:5s} {ep['path']:42s} {ep['purpose']}" for ep in _eps
+        ) + ("\n  (the hot subset - for any other endpoint, GET "
+             "$TH_DAEMON_URL/__capabilities?project=$TH_PROJECT_ID for the full roster)")
+    else:
+        endpoint_lines = "\n".join(
+            f"  • {ep['method']:5s} {ep['path']:42s} {ep['purpose']}" for ep in caps["endpoints"]
+        )
     # Resolve which orchestrators are enabled for this project. On import
     # failure or no project context, default to "all enabled" (the safest
     # fallback - the agent sees every orchestrator rule, never silently misses one).
@@ -1605,7 +1637,19 @@ If MCP tool schemas are deferred in your runtime, load every tool you need in ON
         _authorable_lines = "  (none resolved - GET /__kinds/registry)"
     _other_kinds_line = ", ".join(k["kind"] for k in _other_kinds) or "(none)"
 
-    node_kinds_block = f"""**Workflow nodes you can BUILD & AUTHOR for the user** ({len(_authorable)} authorable of {len(caps['kinds'])} kinds). You assemble a node graph on the user's canvas by committing nodes (`POST $TH_DAEMON_URL/__workflow/node/<id>/commit?project=$TH_PROJECT_ID` with `addNodes:[…]`) and wiring them with edges. For an *authorable* node you also write its **canonical file** under `source/<branch>/…` following that kind's `authoring` schema (`GET /__kinds/registry`) - the node re-imports it live, so this is how you "fill in" an editor or a building block by code:
+    # Lean tiers drop the node catalogue. A scoped iteration thread edits an
+    # existing prototype's source; a leaf builds ONE asset. Neither assembles a
+    # node graph, and the catalogue was ALSO misfiled inside the visual-guard
+    # section, so switching the visual check off silently dropped it too.
+    if tier in ("slim", "leaf", "scoped"):
+        node_kinds_block = (
+            "**Workflow nodes.** You can build + author nodes on the user's canvas "
+            "(`POST $TH_DAEMON_URL/__workflow/node/<id>/commit?project=$TH_PROJECT_ID`). "
+            "If this task needs one, GET $TH_DAEMON_URL/__kinds/registry for the kinds, "
+            "their `authoring` schemas, and the building blocks that wire into them."
+        )
+    else:
+        node_kinds_block = f"""**Workflow nodes you can BUILD & AUTHOR for the user** ({len(_authorable)} authorable of {len(caps['kinds'])} kinds). You assemble a node graph on the user's canvas by committing nodes (`POST $TH_DAEMON_URL/__workflow/node/<id>/commit?project=$TH_PROJECT_ID` with `addNodes:[…]`) and wiring them with edges. For an *authorable* node you also write its **canonical file** under `source/<branch>/…` following that kind's `authoring` schema (`GET /__kinds/registry`) - the node re-imports it live, so this is how you "fill in" an editor or a building block by code:
 {_authorable_lines}
 
 These split into **app-node editors** (bake a deliverable asset - e.g. Splat Lab → a Gaussian-splat viewer, Voxel/Spline 3D → .glb, Material Lab / Interactive composer → .html, Image/Pixel/Font editors, Music/Synth → audio) and **building blocks** (typed spec providers - Effect / Position / Trigger / Layer / Number generator / Timeline - that you WIRE INTO an editor's port to drive it; e.g. a Timeline or Number generator animating a composer's effect params). Wire an Agent into any of their `edit` ports to delegate the authoring, or write the canonical file yourself.

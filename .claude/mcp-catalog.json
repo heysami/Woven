@@ -1,14 +1,14 @@
 {
-  "_note": "Display metadata for the MCP servers the Woven harness wires into spawned CLI subprocesses (claude via --mcp-config, codex via -c mcp_servers overrides, opencode via the managed OPENCODE_CONFIG). Sibling of .claude/mcp-config.json (the runtime config). Surfaced under landing → System → MCP. Edit this file to add new servers (also add the runtime entry to mcp-config.json - they're intentionally kept separate so mcp-config.json stays a strict Claude-Code --mcp-config payload).",
+  "_note": "Display metadata for the MCP servers the Woven harness wires into spawned CLI subprocesses (claude via --mcp-config, codex via -c mcp_servers overrides, opencode via the managed OPENCODE_CONFIG). Sibling of .claude/mcp-config.json (the runtime config). Surfaced under landing \u2192 System \u2192 MCP. Edit this file to add new servers (also add the runtime entry to mcp-config.json - they're intentionally kept separate so mcp-config.json stays a strict Claude-Code --mcp-config payload).",
   "servers": [
     {
       "id": "claude_preview",
       "label": "Preview (builder self-test)",
-      "icon": "▶",
+      "icon": "\u25b6",
       "purpose": "The preview MCP every builder/lens playbook lists (mcp__claude_preview__preview_start/eval/screenshot/...). A local stdio server backed by the same Playwright headless Chrome the QA engine uses, launched with SwiftShader so WebGL/three.js scenes render. Before this server existed, daemon-spawned builders hung 20+ minutes on these tool names.",
       "whenToUse": "Builder self-tests and lens verification during pipeline builds: open the artefact, eval the exposed window.__* harness, read console errors, screenshot. GET /__qa/run remains the canonical final gate.",
       "package": "editor/tools/qa/preview_mcp.py (ships with the harness)",
-      "transport": "stdio · python3",
+      "transport": "stdio \u00b7 python3",
       "command": "/bin/sh -c 'exec python3 \"$TH_PROTOCOL_ROOT/editor/tools/qa/preview_mcp.py\"'",
       "toolPrefix": "mcp__claude_preview__",
       "requires": [
@@ -20,33 +20,17 @@
     {
       "id": "chrome",
       "label": "Chrome DevTools",
-      "icon": "▣",
+      "icon": "\u25a3",
       "purpose": "Drive a real browser via the DevTools Protocol. Launches its own headless, isolated Chrome - zero setup, nothing to start, no user profile touched.",
       "whenToUse": "Escalation path. The agent reaches for it only when built-in WebFetch returns 401 / 403 / a login wall, or when a page is JS-rendered and WebFetch's HTML comes back empty - and for Testing-node runs that click through a live prototype.",
       "package": "chrome-devtools-mcp@latest",
-      "transport": "stdio · npx",
+      "transport": "stdio \u00b7 npx",
       "command": "npx -y chrome-devtools-mcp@latest --headless --isolated",
       "toolPrefix": "mcp__chrome__",
       "requires": [
         "Node.js / npx available on PATH (so the daemon can spawn the server)"
       ],
       "firstCallNote": "First call cold-resolves the npm package and boots a Chromium - allow it a beat. No flags or relaunches needed from the user."
-    },
-    {
-      "id": "figma",
-      "label": "Figma",
-      "icon": "◆",
-      "purpose": "Read and generate Figma designs through Figma's official hosted MCP. Same `mcp-remote` proxy pattern as Claude Desktop's connector flow.",
-      "whenToUse": "When the user mentions Figma, pastes a figma.com URL, or asks to read / generate a design from Figma source.",
-      "package": "mcp-remote → https://mcp.figma.com/mcp",
-      "transport": "stdio · npx → remote SSE",
-      "command": "npx -y mcp-remote https://mcp.figma.com/mcp",
-      "toolPrefix": "mcp__figma__",
-      "requires": [
-        "Node.js / npx available on PATH",
-        "A Figma account (free tier is fine - only files you own or are shared into are reachable)"
-      ],
-      "firstCallNote": "First call opens an OAuth flow in your default browser. Approve once; the token persists in mcp-remote's local cache so subsequent runs are silent."
     }
   ]
 }
