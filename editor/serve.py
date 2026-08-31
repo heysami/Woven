@@ -14884,7 +14884,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if parsed.path == "/__run":
                 return self._run_create(qs)
             # /__run/<id>/stop · user-message · tool-result · resume · delete
-            m = re.match(r"^/__run/([0-9a-f]{6,64})/(stop|user-message|tool-result|resume|delete|compact|enqueue|queue)$", parsed.path)
+            m = re.match(r"^/__run/([0-9a-f]{6,64})/(stop|user-message|tool-result|resume|delete|compact|handoff|enqueue|queue)$", parsed.path)
             if m:
                 run_id, action = m.group(1), m.group(2)
                 if action == "stop":
@@ -14897,6 +14897,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._run_delete(run_id, qs)
                 if action == "compact":
                     return self._run_compact(run_id, qs)
+                if action == "handoff":
+                    return self._run_handoff(run_id, qs)
                 if action == "enqueue":
                     return self._run_enqueue(run_id)
                 if action == "queue":
@@ -33903,6 +33905,66 @@ class H(http.server.SimpleHTTPRequestHandler):
                        "session seeded from the summary"),
         })
         return self._reply(200, info)
+
+    # POST /__run/<id>/handoff[?project=<id>]   body {stop?: bool, reason?: str}
+    #   Summarise this thread so the CALLER can seed a BRAND NEW thread with it.
+    #   Sibling of /compact, and deliberately not the same move: compact keeps
+    #   one thread and swaps its history for a summary; handoff leaves this
+    #   thread intact (session id untouched, still resumable at full context)
+    #   and just hands its state out. The client uses it when something that is
+    #   fixed at SPAWN time has to change - today the per-thread checks, which
+    #   ride the system prompt and so cannot be edited in place.
+    #   stop=true first tears down a live turn, so the summary describes a
+    #   settled thread rather than one still writing files under it.
+    def _run_handoff(self, run_id, qs):
+        body = self._read_json_body() or {}
+        with RUNS_LOCK:
+            state = RUNS.get(run_id)
+        if not state:
+            try:
+                project_root = resolve_project_root(qs)
+                state = _rehydrate_run_from_jsonl(run_id, project_root)
+            except Exception:
+                state = None
+            if not state:
+                try:
+                    state = _rehydrate_system_run(run_id)
+                except Exception:
+                    state = None
+            if not state:
+                return self._reply(404, {"error": "unknown runId", "runId": run_id})
+        reason = (str(body.get("reason") or "handoff"))[:80]
+        stopped = False
+        if body.get("stop") and state.is_live:
+            state.stop_reason = "handoff"
+            try:
+                _kill_run_tree(state)
+                stopped = True
+            except Exception:
+                pass
+            state.append("status", {"label": "interrupted",
+                                    "detail": "stopped to hand this thread off"})
+        transcript = _transcript_from_run_events(state)
+        if not transcript:
+            return self._reply(409, {"error": "nothing to hand off - empty transcript",
+                                     "stopped": stopped})
+        try:
+            summary = _compact_summarize(transcript)
+        except Exception as e:
+            return self._reply(502, {
+                "error": "handoff summary failed: %s: %s" % (type(e).__name__, e),
+                "stopped": stopped,
+                "hint": "this thread is unchanged - reply here to carry on in it",
+            })
+        state.append("status", {
+            "label": "handed-off",
+            "detail": ("summarised into a new thread (%s) - this one stays "
+                       "reopenable with its full history" % reason),
+        })
+        return self._reply(200, {"ok": True, "summary": summary,
+                                 "summaryChars": len(summary),
+                                 "reason": reason, "stopped": stopped,
+                                 "title": state.title})
 
     # POST /__run/<id>/delete
     #   Remove a run entirely: stop it if still live (stop-then-delete), drop it

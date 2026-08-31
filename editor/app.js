@@ -11833,6 +11833,37 @@ function saveChatGuards(next) {
   try { window.dispatchEvent(new CustomEvent("th:chat-guards-changed")); } catch {}
   return next;
 }
+function sameChatGuards(a, b) {
+  if (!a || !b) return false;
+  return CHAT_GUARD_OPTIONS.every(o => !!a[o.key] === !!b[o.key]);
+}
+// Human-readable diff for the staged-change note: only the checks that
+// actually moved, in the order the dropdown lists them.
+function chatGuardsDiffLabel(from, to) {
+  const moved = CHAT_GUARD_OPTIONS.filter(o => !!(from || {})[o.key] !== !!(to || {})[o.key]);
+  if (!moved.length) return "";
+  return moved.map(o => `${o.label} ${to[o.key] ? "on" : "off"}`).join(", ");
+}
+/* The first message of a thread that CONTINUES another one. The daemon's
+   /__run/<id>/handoff wrote the summary; this wraps it so the fresh agent
+   reads it as its own memory of the work rather than as a document to review,
+   and knows not to redo what is already done. Mirrors the compact-resume
+   envelope in serve.py (_run_resume). */
+function composeGuardHandoffPrompt(summary, text, prevTitle) {
+  return (
+    "===== HANDOFF FROM THE PREVIOUS THREAD =====\n"
+    + "You are continuing work already in progress" + (prevTitle ? ` ("${prevTitle}")` : "")
+    + ". That thread was closed and restarted because the user changed which "
+    + "checks you run before calling work done - the checks now in your "
+    + "instructions are the ones that apply. Below is the summary of "
+    + "everything that happened; treat it as your own memory of the work. Do "
+    + "NOT redo anything it shows as already done, and do not re-ask decisions "
+    + "it shows as already answered.\n\n"
+    + (summary || "").trim() + "\n"
+    + "===== END HANDOFF =====\n\n"
+    + (text || "")
+  );
+}
 function chatGuardsSummary(g) {
   const on = CHAT_GUARD_OPTIONS.filter(o => g[o.key]).length;
   if (on === CHAT_GUARD_OPTIONS.length) return "Checks: all";
@@ -11842,8 +11873,11 @@ function chatGuardsSummary(g) {
 
 /* Same skeleton + CSS family as PermissionModePicker / ChatViewModePicker, so
    the footer dropdowns read as siblings - but the rows are CHECKBOXES (the
-   two gates are independent), not a single-choice list. */
-function ChatGuardsPicker({ value, onChange, openUp, locked }) {
+   two gates are independent), not a single-choice list.
+   `locked` still exists for surfaces with nowhere to go (a historical run
+   that can no longer be handed off); a LIVE thread is editable - see
+   `pending`, which reports that the change lands on a NEW thread. */
+function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -11852,30 +11886,37 @@ function ChatGuardsPicker({ value, onChange, openUp, locked }) {
     document.addEventListener("mousedown", off);
     return () => document.removeEventListener("mousedown", off);
   }, [open]);
-  // A live thread already carries its checks in the system prompt it was
-  // spawned with, so there is nothing here to change: the control locks and
-  // reports what THIS thread is running with. Editable only on an empty
-  // thread, where the next send is the spawn the value actually reaches.
+  // A live thread carries its checks in the system prompt it was SPAWNED
+  // with, so a change here cannot reach it - but it can reach its successor:
+  // editing on a running thread stages the change, and the next Send hands
+  // the thread off to a new one (summary carried) spawned with these checks.
+  // `locked` is left for threads with no successor path (historical).
   useEffect(() => { if (locked) setOpen(false); }, [locked]);
   // Amber = a gate that normally runs has been DROPPED. Arming an extra
   // opt-in check (requirement QA) is not a caution, so it does not colour the
   // chip; the count already shows it.
   const anyOff = CHAT_GUARD_OPTIONS.some(o => o.def && !value[o.key]);
+  const stateLine = CHAT_GUARD_OPTIONS.map(o => `${o.label} ${value[o.key] ? "on" : "off"}`).join(", ");
   const lockedTitle = locked
-    ? `This thread is running with: ${CHAT_GUARD_OPTIONS.map(o => `${o.label} ${value[o.key] ? "on" : "off"}`).join(", ")}. Checks are fixed when a thread starts - start a new chat to change them.`
-    : "Which checks the agent runs before it calls work done";
+    ? `This thread ran with: ${stateLine}. It is closed, so there is nothing left to change.`
+    : pending
+      ? `Staged: ${stateLine}. Checks are baked into a thread's system prompt, so Send starts a NEW thread with these, carrying a summary of this one.`
+      : running
+        ? `This thread is running with: ${stateLine}. Changing a check here starts a new thread (summary carried) on your next Send.`
+        : "Which checks the agent runs before it calls work done";
   return html`
     <div className="perm-picker guards-picker" ref=${ref} data-up=${!!openUp} data-locked=${!!locked}>
       <button
         className="perm-trigger"
         data-open=${open}
         data-off=${anyOff}
+        data-pending=${!!pending}
         disabled=${!!locked}
         aria-disabled=${!!locked}
         title=${lockedTitle}
         onClick=${() => { if (!locked) setOpen(o => !o); }}
       >
-        <span className="perm-trigger-label">${chatGuardsSummary(value)}</span>
+        <span className="perm-trigger-label">${chatGuardsSummary(value)}${pending ? " *" : ""}</span>
         ${!locked && html`<span className="perm-chev">${openUp ? "▴" : "▾"}</span>`}
       </button>
       ${open && !locked && html`
@@ -11900,7 +11941,9 @@ function ChatGuardsPicker({ value, onChange, openUp, locked }) {
             </button>
           `)}
           <div className="perm-menu-foot">
-            On by default. Unticking one drops it from the agent's instructions for the thread this message starts. Once a thread is running its checks are fixed - start a new chat to change them.
+            ${running
+              ? "Checks are baked into a thread's system prompt, so they can't change under a running thread. Change one here and your next Send starts a new thread with it, carrying a summary of this one."
+              : "On by default. Unticking one drops it from the agent's instructions for the thread this message starts."}
           </div>
         </div>
       `}
@@ -12953,7 +12996,10 @@ function RightRailDock({ mode }) {
     setChatRun(run);
     setChatRunFinished(!!run.done || !!run.turnDone);
   }, []);
-  const spawnChat = useCallback(async (text) => {
+  // opts (2nd arg) is the check-handoff seam: a running thread whose checks
+  // changed hands off through this same spawn path, and passes the NEW checks
+  // explicitly instead of the sticky preference (see ChatDrawer.handoffSend).
+  const spawnChat = useCallback(async (text, opts) => {
     // honour a pending handoff (set by openScopedChat). Read + clear it so this
     // one spawn goes out on the handoff tier (normal); every later new chat
     // falls back to the untargeted default (also normal).
@@ -12968,8 +13014,9 @@ function RightRailDock({ mode }) {
       model: agentDefault && agentDefault.model || undefined,
       tier: (scoped && scoped.tier) || undefined,
       // The composer's "Checks" toggles shape the spawn's preamble, so they
-      // are read fresh at send time (the footer control persists them).
-      guards: loadChatGuards(),
+      // are read fresh at send time (the footer control persists them) -
+      // unless this spawn IS the handoff that carries staged checks.
+      guards: (opts && opts.guards) || loadChatGuards(),
     });
     setChatRun(run);
     setChatRunFinished(false);
@@ -16100,6 +16147,17 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     window.addEventListener("th:chat-guards-changed", on);
     return () => window.removeEventListener("th:chat-guards-changed", on);
   }, []);
+  // Checks STAGED on an already-running thread. They can't reach it (a thread's
+  // checks are compiled into the system prompt it was spawned with), so they
+  // are held per-thread here and spent by the next Send, which hands this
+  // thread off to a new one spawned with them. Deliberately NOT the sticky
+  // `chatGuards` preference: a thread you open that happens to differ from your
+  // global pick must not read as a staged change you never made.
+  const [pendingGuards, setPendingGuards] = useState(null);
+  // The handoff summarises a whole thread through the model, which takes real
+  // seconds - the note says so rather than leaving Send looking stuck.
+  const [handoffBusy, setHandoffBusy] = useState(false);
+  useEffect(() => { setPendingGuards(null); setHandoffBusy(false); }, [run?.runId]);
   const [answers, setAnswers] = useState({});   // { toolUseId: [{ question, answer }, …] }
   // A clicked DecisionRequestCard sends a user-message shaped
   // `[decision:<id>] <v1>[,v2,…] - <label1>[; label2;…]`.
@@ -16928,6 +16986,48 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     return null;
   }, [events]);
 
+  // The checks the footer control shows, and whether they are a STAGED change
+  // this thread can't take. `pendingGuards` only exists on a running thread;
+  // an empty shell edits the sticky preference directly.
+  const effGuards = isNew ? chatGuards : (pendingGuards || runGuards || GUARD_SPAWN_DEFAULTS);
+  const guardsChanged = !isNew && !!pendingGuards
+                        && !sameChatGuards(pendingGuards, runGuards || GUARD_SPAWN_DEFAULTS);
+  const stageGuards = useCallback((next) => {
+    if (isNew) { changeChatGuards(next); return; }
+    // Toggling back to what the thread is actually running with is not a
+    // change - drop the staging so the note and the * both go away.
+    setPendingGuards(sameChatGuards(next, runGuards || GUARD_SPAWN_DEFAULTS) ? null : next);
+  }, [isNew, runGuards, chatGuards]);
+
+  // Spend a staged check change: summarise THIS thread (daemon side, from its
+  // own transcript), then spawn a new one whose first message carries the
+  // summary and whose spawn carries the new checks. Intercepts Send, so the
+  // message the user typed is the one that opens the new thread - nothing is
+  // retyped and nothing is silently dropped into the old one. Returns true
+  // when it handled the send; throws so the composer can surface the error
+  // (and keeps the typed text, because nothing was consumed).
+  const handoffSend = useCallback(async (env) => {
+    if (!guardsChanged || !run?.runId || !onStartNewChat) return false;
+    const live = status === "streaming" || status === "connecting";
+    setHandoffBusy(true);
+    try {
+      const r = await fetch(apiUrl(`/__run/${encodeURIComponent(run.runId)}/handoff`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stop: live, reason: "checks changed" }),
+      });
+      let j = null;
+      try { j = await r.json(); } catch {}
+      if (!r.ok || !j || !j.summary) throw new Error((j && (j.error || j.hint)) || `HTTP ${r.status}`);
+      const prompt = composeGuardHandoffPrompt(j.summary, env.send, run.title);
+      await onStartNewChat(prompt, { guards: pendingGuards, handoffFrom: run.runId });
+      setPendingGuards(null);
+      return true;
+    } finally {
+      setHandoffBusy(false);
+    }
+  }, [guardsChanged, run?.runId, run?.title, onStartNewChat, pendingGuards, status]);
+
   // Current model - set by Claude Code's `system/init` frame, then echoed on
   // every status frame. Display in the footer chip instead of the "done"
   // line so it's a steady label, not noise repeated on every turn end.
@@ -17064,9 +17164,23 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           <strong>Build-agent thread</strong> - don't continue the discussion here. Reply in the project chat instead.
         </div>
       `}
+      ${guardsChanged && html`
+        <div className="chat-leaf-note chat-guards-note" role="note">
+          ${handoffBusy ? html`
+            <strong>Summarising this thread…</strong> - the new thread opens with the summary and your message as soon as it lands.
+          ` : html`
+            <strong>Checks changed</strong> - ${chatGuardsDiffLabel(runGuards || GUARD_SPAWN_DEFAULTS, pendingGuards)}.
+            A thread's checks are fixed when it starts, so Send
+            ${(status === "streaming" || status === "connecting") ? " stops this thread and starts " : " starts "}
+            a new one with the new checks, carrying a summary of this one. This thread stays reopenable with its full history.
+            ${" "}<button type="button" className="chat-guards-note-undo" onClick=${() => setPendingGuards(null)}>Keep this thread's checks</button>
+          `}
+        </div>
+      `}
       <${ChatComposer}
         runId=${run?.runId}
         isNew=${isNew}
+        interceptSend=${guardsChanged ? handoffSend : null}
         agentId=${run?.agentId}
         userMsgCount=${userMsgCount}
         disabled=${!isNew && (status === "streaming" || status === "connecting")}
@@ -17084,10 +17198,12 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           />
 ${variant !== "system" && html`
             <${ChatGuardsPicker}
-              value=${isNew ? chatGuards : (runGuards || GUARD_SPAWN_DEFAULTS)}
-              onChange=${changeChatGuards}
+              value=${effGuards}
+              onChange=${stageGuards}
               openUp=${true}
-              locked=${!isNew}
+              running=${!isNew}
+              pending=${guardsChanged}
+              locked=${!isNew && (!!run?.historical || !onStartNewChat)}
             />
           `}
         `}
@@ -17253,7 +17369,7 @@ async function __loadSlashSkills() {
   return items;
 }
 
-function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, userMsgCount }) {
+function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, userMsgCount, interceptSend }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -17635,7 +17751,9 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // `!isNew && (streaming || connecting)`), so queueing only ever applies
   // to the reply path. Keeping the explicit `!isNew` guard makes the intent
   // obvious if that gate ever changes.
-  const wouldQueue = canSend && disabled && !isNew;
+  // An intercepted send never reaches the queue (it opens a different thread),
+  // so the button must not promise queueing.
+  const wouldQueue = canSend && disabled && !isNew && !interceptSend;
 
   // dispatch - fire ONE envelope at the daemon. Carries the full
   // user-message ↔ resume fallback so a drained envelope sent after a fail
@@ -17774,6 +17892,35 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
 
   const send = async () => {
     if (!canSend) return;
+    // A staged change this thread can't take (today: the per-thread checks,
+    // which are compiled into the spawn's system prompt) redirects the whole
+    // send: the parent hands this thread off and opens a new one with THIS
+    // message. Runs before the queue branch on purpose - a mid-turn send must
+    // not land in the thread we are leaving. On failure nothing is consumed,
+    // so the typed text is still there to retry or send as-is.
+    if (interceptSend) {
+      const env = {
+        text: text.trim(),
+        send: composeWithAttachments(text.trim(), attachments, uploads, fileRefs, scratchpads),
+        attachments: attachments.slice(), uploads: uploads.slice(),
+        fileRefs: fileRefs.slice(), scratchpads: scratchpads.slice(),
+      };
+      setBusy(true); setError(null);
+      let handled = false;
+      try {
+        handled = await interceptSend(env);
+      } catch (e) {
+        setError(e.message || String(e));
+        setBusy(false);
+        return;
+      }
+      setBusy(false);
+      if (handled) {
+        setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]);
+        if (onSent) onSent(env.send);
+        return;
+      }
+    }
     // Agent is mid-turn → ENQUEUE rather than POST. Snapshot text +
     // attachments + uploads onto the envelope so subsequent edits to
     // the live composer don't mutate already-queued messages.
@@ -18328,7 +18475,9 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
             aria-label=${wouldQueue ? "Queue message" : "Send message"}
             title=${(() => {
               const baseTitle = canSend
-                ? (wouldQueue
+                ? (interceptSend
+                    ? "Checks changed - Send starts a new thread with them, carrying a summary of this one  ⌘/Ctrl+Enter"
+                    : wouldQueue
                     ? "Agent is working - Send will queue this and fire it the moment the turn ends  ⌘/Ctrl+Enter"
                     : (isNew
                         ? "Start new chat  ⌘/Ctrl+Enter"
@@ -30438,7 +30587,7 @@ function WorkflowCanvas() {
     setChatRun(run);
     setChatRunFinished(!!run.done || !!run.turnDone);
   }, []);
-  const spawnWorkflowChat = useCallback(async (text) => {
+  const spawnWorkflowChat = useCallback(async (text, opts) => {
     // if the user has nodes selected on the canvas when they start the
     // chat, prepend a <selected-nodes> block so the agent can resolve "this",
     // "that node", "these prompts" etc. against the actual canvas state.
@@ -30491,7 +30640,8 @@ function WorkflowCanvas() {
       model: agentDefault && agentDefault.model || undefined,
       tier: targetSlug ? "scoped" : "normal",
       prototype: targetSlug || undefined,
-      guards: loadChatGuards(),
+      // opts.guards = the staged checks of a thread handing off to this one.
+      guards: (opts && opts.guards) || loadChatGuards(),
     });
     setChatRun(run);
     setChatRunFinished(false);
@@ -98091,7 +98241,7 @@ function WorkflowSendKeySection() {
       <div className="workflow-settings-section">
         <div className="onboarding-sendkey-head">
           <span className="onboarding-sendkey-title">Checks before "done"</span>
-          <span className="onboarding-sendkey-desc">What a NEW chat starts with. Any chat can still change these before its first message, from the Checks dropdown next to the composer; once a thread is running its checks are fixed.</span>
+          <span className="onboarding-sendkey-desc">What a NEW chat starts with. Any chat can change these from the Checks dropdown next to the composer; changing them under a RUNNING thread hands that thread off - the next Send opens a new thread with the new checks, carrying a summary of the old one.</span>
         </div>
         ${CHAT_GUARD_OPTIONS.map(opt => html`
           <label className="chat-ctx-auto-toggle chat-ctx-auto-settings settings-guard-row" key=${opt.key}>
@@ -100400,7 +100550,7 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.runId, node.lastRunId]);
 
-  const spawnFromComposer = async (userText) => {
+  const spawnFromComposer = async (userText, opts) => {
     const fullPrompt = workflowComposeAgentPrompt({
       wiredSystem, wiredInputs, wiredReadRoot, wiredReferenceFolder, wiredWriteRoot, wiredFileOut, userText,
     });
@@ -100408,7 +100558,7 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     const run = await triggerRun({
       branch, agentId: pickAgentIdForChat(), kind: "freeform",
       prompt: fullPrompt, title, permissionMode,
-      guards: loadChatGuards(),
+      guards: (opts && opts.guards) || loadChatGuards(),
     });
     setChatRun(run);
     onChange && onChange({ runId: run.runId, lastRunId: run.runId });
@@ -105394,7 +105544,7 @@ function App() {
     setRunFinished(false);
   }, [activeBranchIdForChat, agentId]);
 
-  const spawnFromComposer = useCallback(async (text) => {
+  const spawnFromComposer = useCallback(async (text, opts) => {
     // Called by ChatComposer when isNew && user clicks Send. Wrap the user's
     // text with the editor-mode context envelope so the agent knows we're
     // talking about data/IA/source, not the workflow node canvas.
@@ -105426,7 +105576,8 @@ function App() {
       prompt: wrappedPrompt,
       title,
       permissionMode,
-      guards: loadChatGuards(),
+      // opts.guards = the staged checks of a thread handing off to this one.
+      guards: (opts && opts.guards) || loadChatGuards(),
     });
     setChatRun(run);
     setLastRun(run);

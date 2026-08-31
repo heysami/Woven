@@ -23732,6 +23732,15 @@ a.ds-badge:hover, button.ds-badge:hover {
 }
 .guards-picker .perm-trigger[data-off="true"] { color: var(--warning); }
 .guards-picker .perm-trigger[data-off="true"]:hover { border-color: var(--warning); }
+/* Pending = the checks were changed under a RUNNING thread, which cannot take
+   them. The chip carries a "*" and an accent ring so the staged state is
+   visible from the closed control; the note above the composer says what the
+   next Send will do with it. */
+.guards-picker .perm-trigger[data-pending="true"] {
+  color: var(--accent-text);
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
 /* Locked = a thread is already running, so its checks are baked into the
    system prompt it was spawned with and there is nothing to change. The chip
    stays legible (it still REPORTS what this thread runs with) but reads as
@@ -33513,6 +33522,19 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   background: var(--warning-soft);
 }
 .chat-leaf-note strong { color: var(--text); font-weight: 600; }
+/* Staged-checks note - same plate as the leaf note, one inline "undo" that
+   drops the staging and puts the composer back on the current thread. */
+.chat-guards-note-undo {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.chat-guards-note-undo:hover { color: var(--text); }
 
 /* ────────── First-run guided tour (GuideTour in app.js) ──────────
    Four shutter strips dim everything except the spotlit hole (the hole is
