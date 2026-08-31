@@ -17387,126 +17387,399 @@ ${variant !== "system" && html`
    resets state.turn_done so the chip flips back to streaming. Disabled
    while the agent is mid-turn (status === "streaming" / "connecting").
    Cmd/Ctrl+Enter sends; plain Enter inserts a newline. */
-// Slash-command menu cache. Shared across ChatComposer mounts so the
-// /__cc_skills / /__orchestrators / /__prototype_catalog fetches happen once
-// per page session. Lives at module scope - React state would re-fetch on
-// every mount.
-//
-// Item shape (unified across sources):
-//   { kind, slug, name, description, invocation, insertText, source?, plugin? }
-//
-//   kind         "media" | "cc" | "orchestrator" | "library"
-//   invocation   visible token shown in the menu (e.g. "/foo", "@bar", "#baz")
-//   insertText   what we paste into the composer when the user picks the item.
-//                Falls back to `invocation + " "` if absent.
-//   image        optional preview path for the detail pane - library entries
-//                carry their design-library sample PNG, orchestrators their
-//                anthropomorphised portrait (editor/orchestrator-art/<id>.svg).
-//                Skills have no image; the detail pane falls back to their
-//                line icon rendered large.
-let __slashSkillCache = null;
-async function __loadSlashSkills() {
-  if (__slashSkillCache) return __slashSkillCache;
+/* ── Composer picker: two triggers, one namespaced engine ─────────────────
+   The chat composer used to have ONE menu on `/` whose four sources each
+   wore a different sigil (`/skill`, `@orchestrator`, `#library`). The sigil
+   carried the type, which meant the type was unguessable and the list was a
+   flat 200-row soup. It is now a two-level namespace tree on two triggers:
+
+     `/`  ACTIONS   - what the agent DOES:
+                      /orchestrator/<id> · /skill/<slug> · /media/<id> · /library/<slug>
+     `@`  RESOURCES - what the agent READS:
+                      @file/<page> · @designsystem/<ds>[/<section>]
+                      (later: @requirement/… · @qa/… - one registry row each)
+
+   Adding a source is ONE entry in PICKER_NAMESPACES:
+
+     { trigger, key, label, hint, eager?, load() }
+
+   `load()` runs at most once per page session (cached in __pickerCache),
+   the first time that namespace is needed. `eager: true` namespaces are
+   also prefetched when their trigger first opens, so a query typed WITHOUT
+   a namespace ("/hero") can still search across them. A heavy namespace
+   (designsystem parses every gallery) stays lazy: it costs nothing until
+   the user actually descends into it.
+
+   Item shape:
+     ns          namespace key ("orchestrator", "file", …)
+     kind        legacy type tag, drives the row/badge colour
+     slug        leaf id, unique within the namespace
+     name        human title shown in the detail pane
+     description ≤2-line blurb
+     token       the FULL namespaced token the row displays
+                 ("/orchestrator/hero-3d-orchestrator", "@file/main/index.html")
+     insertText  what actually lands in the message: the LEAF only, never the
+                 namespace path ("hero-3d-orchestrator", "index.html"). Skills
+                 keep their leading slash because `/prototype` IS their name.
+     ref         optional { path, name, scope } - any item that IS a file on
+                 disk attaches a reference chip carrying the real path, so
+                 leaf-only message text ("index.html") stays resolvable for
+                 the agent. Items that are just a name (orchestrators,
+                 skills) carry no ref.
+     preview     { kind: "image" | "page" | "glyph", src? } for the detail
+                 pane. "page" renders the real thing in an iframe behind a
+                 loading skeleton; "image" a still; "glyph" the line icon.
+*/
+let __pickerCache    = {};   // nsKey -> items[]
+let __pickerInflight = {};   // nsKey -> Promise<items[]>
+
+// Media-gen skills (image-gen, shader, threejs, …) - already in the page as
+// window.TH_MEDIA, so this "load" is synchronous in practice.
+async function __pickerLoadMedia() {
   const media = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
-  const items = media.map(sk => ({
-    kind:        "media",
-    slug:        sk.id,
-    name:        sk.label,
-    description: sk.hint,
-    invocation:  "/" + sk.id,
-    insertText:  "/" + sk.id + " ",
-    source:      sk.pathway === "Local" ? "local" : "media",
+  return media.map(sk => ({
+    ns: "media", kind: "media", slug: sk.id,
+    name: sk.label, description: sk.hint || "",
+    token: "/media/" + sk.id,
+    insertText: "/" + sk.id + " ",
+    source: sk.pathway === "Local" ? "local" : "media",
+    preview: { kind: "glyph" },
   }));
-  // Fan out the three optional fetches in parallel so a slow endpoint can't
-  // gate the others. Each is wrapped so a failure leaves the rest intact -
-  // the menu degrades to "just the sources that loaded" rather than empty.
-  const [ccRes, orchRes, libRes] = await Promise.all([
-    fetch(apiUrl("/__cc_skills")).catch(() => null),
-    fetch(apiUrl("/__orchestrators")).catch(() => null),
-    fetch(apiUrl("/__prototype_catalog")).catch(() => null),
+}
+
+// Workspace custom skills (.harness-skills/) - instruction documents the
+// agent reads, invoked by name.
+async function __pickerLoadSkills() {
+  const r = await fetch(apiUrl("/__cc_skills"));
+  if (!r || !r.ok) return [];
+  const j = await r.json();
+  return (j.skills || []).map(s => {
+    const inv = s.invocation || ("/" + s.slug);
+    return {
+      ns: "skill", kind: "cc", slug: s.slug,
+      name: s.name || s.slug, description: s.description || "",
+      token: "/skill/" + s.slug,
+      insertText: inv + " ",
+      source: s.source || "plugin", plugin: s.plugin,
+      preview: { kind: "glyph" },
+    };
+  });
+}
+
+// Orchestrators. Disabled ones are skipped: the spawned agent's preamble
+// doesn't carry them, so picking one would be a no-op.
+async function __pickerLoadOrchestrators() {
+  const r = await fetch(apiUrl("/__orchestrators"));
+  if (!r || !r.ok) return [];
+  const j = await r.json();
+  return (j.orchestrators || []).filter(o => o.enabled !== false).map(o => ({
+    ns: "orchestrator", kind: "orchestrator", slug: o.id,
+    name: o.label || o.id, description: o.tagline || "",
+    token: "/orchestrator/" + o.id,
+    insertText: o.id + " ",
+    // Anthropomorphised portrait, by id-convention; the detail pane hides
+    // the <img> if an orchestrator ships without art.
+    preview: { kind: "image", src: "/editor/orchestrator-art/" + o.id + ".svg" },
+  }));
+}
+
+// Design library - shells / styles / aesthetics / recipes. These ARE files
+// (design-library/<file>.md), so they attach a reference chip.
+async function __pickerLoadLibrary() {
+  const r = await fetch(apiUrl("/__prototype_catalog"));
+  if (!r || !r.ok) return [];
+  const j = await r.json();
+  const out = [];
+  for (const g of (j.groups || [])) {
+    for (const it of (g.items || [])) {
+      const path = it.path || ("design-library/" + it.file);
+      // First on-disk sample image (catalog order - the -ui.png mock leads
+      // by convention) becomes the detail-pane preview.
+      const img = (it.images || []).find(im => im && im.src && im.exists !== false);
+      out.push({
+        ns: "library", kind: "library", slug: it.slug,
+        name: it.title || it.slug, description: it.summary || g.label || "",
+        token: "/library/" + it.slug,
+        insertText: it.slug + " ",
+        libraryGroup: g.key,
+        ref: { path, name: it.slug, scope: "project", label: g.label || "design library" },
+        preview: img ? { kind: "image", src: img.src } : { kind: "glyph" },
+      });
+    }
+  }
+  return out;
+}
+
+// Project pages - every prototype index plus every other HTML page under
+// source/. Previewed live in an iframe.
+async function __pickerLoadFiles() {
+  const [pRes, hRes] = await Promise.all([
+    fetch(apiUrl("/__source_prototypes")).catch(() => null),
+    fetch(apiUrl("/__source_htmls")).catch(() => null),
   ]);
+  const out = [];
+  const seen = new Set();
+  const add = (relPath, label, description) => {
+    if (!relPath || seen.has(relPath)) return;
+    seen.add(relPath);
+    const base = relPath.split("/").pop();
+    // Drop the "source/" head from the displayed token - every entry has it.
+    const shown = relPath.replace(/^source\//, "");
+    out.push({
+      ns: "file", kind: "file", slug: relPath,
+      name: label || base, description: description || relPath,
+      token: "@file/" + shown,
+      insertText: base + " ",
+      ref: { path: relPath, name: base, scope: "project", label: "page" },
+      preview: { kind: "page", src: "/" + relPath },
+    });
+  };
   try {
-    if (ccRes && ccRes.ok) {
-      const j = await ccRes.json();
-      for (const s of (j.skills || [])) {
-        const inv = s.invocation || ("/" + s.slug);
-        items.push({
-          kind:        "cc",
-          slug:        s.slug,
-          name:        s.name,
-          description: s.description || "",
-          invocation:  inv,
-          insertText:  inv + " ",
-          source:      s.source || "plugin",
-          plugin:      s.plugin,
-        });
-      }
+    if (pRes && pRes.ok) {
+      const j = await pRes.json();
+      for (const p of (j.prototypes || [])) add(p.path, p.label || p.id, "prototype entry point");
     }
   } catch { /* leave whatever loaded */ }
   try {
-    if (orchRes && orchRes.ok) {
-      const j = await orchRes.json();
-      // Only surface enabled orchestrators - a disabled one in the project's
-      // toggles is invisible to the spawned agent's prompt anyway, so picking
-      // it from the menu would set the user up for a no-op.
-      for (const o of (j.orchestrators || [])) {
-        if (o.enabled === false) continue;
-        const tok = "@" + o.id;
-        items.push({
-          kind:        "orchestrator",
-          slug:        o.id,
-          name:        o.label || o.id,
-          description: o.tagline || "",
-          invocation:  tok,
-          insertText:  tok + " ",
-          // Anthropomorphised portrait, by id-convention. The detail pane's
-          // <img onError> hides it if an orchestrator ships without art.
-          image:       "/editor/orchestrator-art/" + o.id + ".svg",
-        });
+    if (hRes && hRes.ok) {
+      const j = await hRes.json();
+      for (const h of (j.htmls || [])) {
+        add(h.path, h.label || h.name, (h.branch ? h.branch + " · " : "") + "page");
       }
     }
   } catch { /* leave whatever loaded */ }
+  return out;
+}
+
+// Pull the section list out of a DS gallery. Two generators are in the wild:
+// the current one writes STATIC html (`<section class="comp" id="c-button">`),
+// which DOMParser reads directly; older galleries are a React app whose
+// sections only exist once the page has RUN, so their markup sits inside a JS
+// string that DOMParser cannot see. Static parse first, raw-text scan second.
+function __pickerGallerySections(rawHtml) {
+  const out = [];
+  const seen = new Set();
+  const strip = (v) => (v || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const push = (id, title, blurb) => {
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push({ id, title: strip(title) || id, blurb: strip(blurb).slice(0, 160) });
+  };
   try {
-    if (libRes && libRes.ok) {
-      const j = await libRes.json();
-      // Design library is grouped {shells, styles, aesthetics, recipes, …}
-      // - flatten with a per-group prefix so the kind chip can show the
-      // category and `/shell`, `/aesthetic` filter narrowing works.
-      for (const g of (j.groups || [])) {
-        for (const it of (g.items || [])) {
-          const tok = "#" + it.slug;
-          // First on-disk sample image (catalog order - the -ui.png mock
-          // leads by convention) becomes the detail-pane preview.
-          const img = (it.images || []).find(im => im && im.src && im.exists !== false);
-          items.push({
-            kind:        "library",
-            slug:        it.slug,
-            name:        it.title || it.slug,
-            description: it.summary || g.label || "",
-            invocation:  tok,
-            insertText:  (it.path || ("design-library/" + it.file)) + " - ",
-            libraryGroup: g.key,
-            image:       img ? img.src : null,
-          });
+    const doc = new DOMParser().parseFromString(rawHtml, "text/html");
+    for (const sec of doc.querySelectorAll("section[id]")) {
+      const h = sec.querySelector("h1, h2, h3");
+      const p = sec.querySelector("p");
+      push(sec.getAttribute("id"), h && h.textContent, p && p.textContent);
+    }
+  } catch { /* fall through to the raw scan */ }
+  if (out.length) return out;
+  const secRe = /<section\b[^>]*\bid="([A-Za-z0-9_-]+)"/g;
+  let m;
+  while ((m = secRe.exec(rawHtml))) {
+    const chunk = rawHtml.slice(m.index, m.index + 900);
+    const t = /<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/.exec(chunk);
+    const b = /<p[^>]*>([\s\S]*?)<\/p>/.exec(chunk);
+    push(m[1], t && t[1], b && b[1]);
+  }
+  return out;
+}
+
+// Design systems - the DS itself, every SECTION of its gallery (buttons,
+// forms, tables …), and its templates / shells. Heavy enough (one gallery
+// parse per DS) to stay lazy: nothing here loads until `@designsystem` is
+// actually opened.
+async function __pickerLoadDesignSystems() {
+  const [dsRes, fRes] = await Promise.all([
+    fetch(apiUrl("/__design_system")).catch(() => null),
+    fetch(apiUrl("/__list_files?root=design-systems&exts=html")).catch(() => null),
+  ]);
+  let systems = [];
+  try { if (dsRes && dsRes.ok) systems = (await dsRes.json()).items || []; } catch {}
+  let dsFiles = [];
+  try { if (fRes && fRes.ok) dsFiles = (await fRes.json()).files || []; } catch {}
+  const out = [];
+  for (const ds of systems) {
+    const galleryRel = "design-systems/" + ds.id + "/gallery.html";
+    out.push({
+      ns: "designsystem", kind: "ds", slug: ds.id,
+      name: ds.label ? ds.id + " · " + ds.label : ds.id,
+      description: ds.genre || "design system",
+      token: "@designsystem/" + ds.id,
+      insertText: ds.id + " ",
+      ref: { path: "design-systems/" + ds.id + "/", name: ds.id, scope: "project", label: "design system" },
+      preview: ds.hasGallery ? { kind: "page", src: "/" + galleryRel } : { kind: "glyph" },
+    });
+    // Gallery sections → the component vocabulary (@designsystem/<ds>/buttons).
+    if (ds.hasGallery) {
+      try {
+        const g = await fetch(apiUrl("/" + galleryRel));
+        if (g && g.ok) {
+          for (const sec of __pickerGallerySections(await g.text())) {
+            out.push({
+              ns: "designsystem", kind: "ds-section", slug: ds.id + "/" + sec.id,
+              name: sec.title,
+              description: sec.blurb || (ds.id + " design system"),
+              token: "@designsystem/" + ds.id + "/" + sec.id,
+              insertText: sec.id + " ",
+              ref: { path: galleryRel + "#" + sec.id, name: sec.title, scope: "project", label: ds.id + " component" },
+              preview: { kind: "page", src: "/" + galleryRel + "#" + sec.id, anchor: sec.id },
+            });
+          }
         }
-      }
+      } catch { /* a DS without a parseable gallery still contributes its root row */ }
     }
-  } catch { /* leave whatever loaded */ }
-  __slashSkillCache = items;
-  return items;
+  }
+  // Templates + shells, straight off disk.
+  for (const f of dsFiles) {
+    const segs = f.path.split("/");                 // design-systems/<id>/<group>/<file>
+    if (segs.length < 4) continue;                  // gallery.html is already covered above
+    const [, dsId, group] = segs;
+    const base = segs[segs.length - 1];
+    out.push({
+      ns: "designsystem", kind: "ds-file", slug: f.path,
+      name: base.replace(/\.html?$/, "") + " · " + group,
+      description: dsId + " " + group.replace(/s$/, ""),
+      token: "@designsystem/" + dsId + "/" + group + "/" + base,
+      insertText: base + " ",
+      ref: { path: f.path, name: base, scope: "project", label: dsId + " " + group.replace(/s$/, "") },
+      preview: { kind: "page", src: "/" + f.path },
+    });
+  }
+  return out;
+}
+
+const PICKER_NAMESPACES = [
+  { trigger: "/", key: "orchestrator", label: "Orchestrators",  hint: "build pipelines the agent dispatches", eager: true,  load: __pickerLoadOrchestrators },
+  { trigger: "/", key: "skill",        label: "Skills",         hint: "workspace instruction documents",      eager: true,  load: __pickerLoadSkills },
+  { trigger: "/", key: "media",        label: "Media",          hint: "image / video / audio / 3d generation", eager: true, load: __pickerLoadMedia },
+  { trigger: "/", key: "library",      label: "Design library", hint: "shells, styles, aesthetics, recipes",  eager: true,  load: __pickerLoadLibrary },
+  { trigger: "@", key: "file",         label: "Pages",          hint: "prototype pages under source/",        eager: true,  load: __pickerLoadFiles },
+  { trigger: "@", key: "designsystem", label: "Design system",  hint: "components, templates, shells",        eager: false, load: __pickerLoadDesignSystems },
+];
+
+const PICKER_TRIGGERS = ["/", "@"];
+
+function __pickerNamespaces(trigger) {
+  return PICKER_NAMESPACES.filter(n => n.trigger === trigger);
+}
+
+// One load per namespace per page session, de-duped across concurrent
+// callers (two composers mounting at once must not double-fetch).
+function __pickerLoad(nsKey) {
+  if (__pickerCache[nsKey])    return Promise.resolve(__pickerCache[nsKey]);
+  if (__pickerInflight[nsKey]) return __pickerInflight[nsKey];
+  const ns = PICKER_NAMESPACES.find(n => n.key === nsKey);
+  if (!ns) return Promise.resolve([]);
+  const p = Promise.resolve()
+    .then(() => ns.load())
+    .catch(() => [])                       // a dead endpoint costs its namespace, not the menu
+    .then(items => {
+      __pickerCache[nsKey] = Array.isArray(items) ? items : [];
+      delete __pickerInflight[nsKey];
+      return __pickerCache[nsKey];
+    });
+  __pickerInflight[nsKey] = p;
+  return p;
+}
+
+/* Detail-pane preview for ONE picker item.
+
+     "page"   the real thing in a sandboxed iframe, scaled down to card size.
+              Live pages are heavy, so the iframe only mounts once the
+              highlight has SETTLED - arrowing down a list must not spawn
+              twenty documents - and a skeleton holds the space until onLoad.
+     "image"  a still (design-library sample, orchestrator portrait), same
+              skeleton-until-loaded treatment.
+     "glyph"  the item's line icon in a kind-tinted tile. No fetch at all.
+
+   Keyed by item at the call site, so every bit of state resets when the
+   highlight moves to another row. */
+const PICKER_PREVIEW_SETTLE_MS = 180;
+function PickerPreview({ item }) {
+  const kind = (item.preview && item.preview.kind) || "glyph";
+  const src  = (item.preview && item.preview.src) || null;
+  const [state, setState] = useState(src ? "loading" : "ready");
+  const [armed, setArmed] = useState(kind !== "page");
+  // A component preview points at one SECTION of a gallery. The `#id` in the
+  // src only lands if that element exists at load time - the older galleries
+  // are a React app that paints a beat later, so retry once after render.
+  const anchor = (item.preview && item.preview.anchor) || null;
+  const scrollToAnchor = (frame) => {
+    if (!anchor || !frame) return;
+    const go = () => {
+      try {
+        const el = frame.contentDocument && frame.contentDocument.getElementById(anchor);
+        if (el) { el.scrollIntoView({ block: "start" }); return true; }
+      } catch { /* cross-origin or torn down - the top of the page is fine */ }
+      return false;
+    };
+    if (!go()) setTimeout(go, 500);
+  };
+  useEffect(() => {
+    if (kind !== "page") { setArmed(true); return; }
+    setArmed(false);
+    const t = setTimeout(() => setArmed(true), PICKER_PREVIEW_SETTLE_MS);
+    return () => clearTimeout(t);
+  }, [kind, src]);
+  if (kind === "page" && src) {
+    return html`
+      <div className="chat-slash-detail-frame" data-state=${state} data-kind="page">
+        ${armed && html`<iframe
+          className="chat-slash-detail-iframe"
+          src=${apiUrl(src)}
+          title=${item.name}
+          loading="lazy"
+          sandbox="allow-same-origin allow-scripts"
+          scrolling="no"
+          onLoad=${(e) => { setState("ready"); scrollToAnchor(e.target); }}
+          onError=${() => setState("error")}
+        />`}
+        ${state !== "ready" && html`<div className="chat-slash-detail-skel">
+          ${state === "error" ? "preview unavailable" : "loading preview…"}
+        </div>`}
+      </div>
+    `;
+  }
+  if (kind === "image" && src) {
+    return html`
+      <div className="chat-slash-detail-frame" data-state=${state} data-kind="image">
+        <img
+          className="chat-slash-detail-img"
+          data-kind=${item.kind}
+          src=${apiUrl(src)}
+          alt=${item.name}
+          loading="lazy"
+          onLoad=${() => setState("ready")}
+          onError=${() => setState("error")}
+        />
+        ${state !== "ready" && html`<div className="chat-slash-detail-skel">
+          ${state === "error" ? "no art for this entry" : "loading preview…"}
+        </div>`}
+      </div>
+    `;
+  }
+  const I = SKILL_ICON[item.slug] || (item.kind === "cc" ? Icon.NotesDoc : Icon.Spark);
+  return html`<div className=${"chat-slash-detail-glyph chat-slash-detail-glyph-" + item.kind}><${I}/></div>`;
 }
 
 function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, userMsgCount, interceptSend }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  // Slash-command menu - opens when the user types `/` at the start of an
-  // empty composer (or just after a whitespace boundary). Tracks the active
-  // query (chars after the `/`), the available skills, and the selected
-  // index. Up/Down navigate, Enter/Tab inserts, Esc closes.
-  const [slashOpen,  setSlashOpen]  = useState(false);
-  const [slashQuery, setSlashQuery] = useState("");
-  const [slashSkills, setSlashSkills] = useState(() => __slashSkillCache || []);
+  // Namespaced picker menu - opens when the user types `/` (actions) or `@`
+  // (resources) at a word boundary. `pickerQuery` is everything typed after
+  // the trigger, INCLUDING the namespace segment: "orch", "orchestrator/hero",
+  // "file/index". Up/Down navigate, Enter/Tab descends into a namespace row or
+  // inserts an item row, Esc closes. See PICKER_NAMESPACES at module scope.
+  const [slashOpen,    setSlashOpen]    = useState(false);
+  const [slashTrigger, setSlashTrigger] = useState("/");
+  const [slashQuery,   setSlashQuery]   = useState("");
+  // Loaded items per namespace, mirrored from the module-scope cache so a
+  // remount paints instantly. `nsLoading` is the set of namespaces whose
+  // load() is still in flight - the menu shows a loading row for those.
+  const [nsItems,   setNsItems]   = useState(() => ({ ...__pickerCache }));
+  const [nsLoading, setNsLoading] = useState(() => ({}));
   const [slashIndex, setSlashIndex] = useState(0);
   // Viewport-fixed anchor for the slash menu portal - see the measuring
   // useLayoutEffect below (it must be declared AFTER the textarea auto-grow
@@ -17777,10 +18050,26 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       for (const u of ups) lines.push("  • " + u.path + " (" + (u.mime || "binary") + ", " + u.bytes + " bytes)");
       lines.push("These are project-scoped. Reference them by path in skill recipes (e.g. `--image " + ups[0].path + "` for img2img) or Read them if you need their contents.");
     }
-    if (refs.length) {
+    // Two flavours of reference share one chip row. `scope: "project"` ones
+    // come from the `@` picker (and `/library`): the message text names them
+    // by LEAF ONLY ("index.html", "buttons"), so the mapping leaf → real
+    // path has to be spelled out here or the agent is guessing. The rest are
+    // OS-file-picker absolute paths outside the tree.
+    const projRefs  = refs.filter(r => r.scope === "project");
+    const localRefs = refs.filter(r => r.scope !== "project");
+    if (projRefs.length) {
       if (lines.length) lines.push("");
-      lines.push("User referenced " + refs.length + " local file" + (refs.length === 1 ? "" : "s") + " by absolute path (picked in the OS file browser; NOT copied into the project):");
-      for (const r of refs) lines.push("  • " + r.path + (r.size ? " (" + r.size + " bytes)" : ""));
+      lines.push("User pointed at " + projRefs.length + " project resource" + (projRefs.length === 1 ? "" : "s")
+        + " from the picker. The message names each one by its short name only - here is what each resolves to (paths are relative to the project root):");
+      for (const r of projRefs) {
+        lines.push("  • " + (r.name || r.path.split("/").pop()) + " → " + r.path + (r.label ? " (" + r.label + ")" : ""));
+      }
+      lines.push("Read them at those paths before acting on them.");
+    }
+    if (localRefs.length) {
+      if (lines.length) lines.push("");
+      lines.push("User referenced " + localRefs.length + " local file" + (localRefs.length === 1 ? "" : "s") + " by absolute path (picked in the OS file browser; NOT copied into the project):");
+      for (const r of localRefs) lines.push("  • " + r.path + (r.size ? " (" + r.size + " bytes)" : ""));
       lines.push("Read them in place with the Read tool at those exact absolute paths. They live outside the project tree; only copy one into the project if the task itself needs a project-local copy.");
     }
     if (pads.length) {
@@ -18220,92 +18509,117 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     else if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); moveQueued(id, +1); }
   };
 
-  // Filter the loaded skill list against the current slash query (chars after
-  // `/`). Match against kind + group + slug + name + description so users can
-  // surface a whole bucket with `/orch` / `/aesthetic` / `/shell` etc., AND
-  // find items by purpose, not just name. Empty query interleaves kinds so
-  // the user sees ALL four sources (skills · orchestrators · library) at
-  // first paint - otherwise the source-ordered list filled the 12-slot cap
-  // with media skills before orchestrators or library entries ever appeared.
-  const filteredSlashSkills = (() => {
-    if (!slashOpen) return [];
-    const q = slashQuery.trim().toLowerCase();
-    if (!q) {
-      // Round-robin across kinds → diverse first paint. Stops as soon as
-      // every bucket is drained or the cap fills.
-      const buckets = {
-        media:        slashSkills.filter(s => s.kind === "media"),
-        cc:           slashSkills.filter(s => s.kind === "cc"),
-        orchestrator: slashSkills.filter(s => s.kind === "orchestrator"),
-        library:      slashSkills.filter(s => s.kind === "library"),
-      };
-      // Surface orchestrators + library first so the user immediately sees
-      // the two new menu sources, then mix in skills.
-      const order = ["orchestrator", "library", "media", "cc"];
-      const out = [];
-      const cap = 12;
-      let round = 0;
-      while (out.length < cap) {
-        let added = false;
-        for (const k of order) {
-          if (out.length >= cap) break;
-          const item = buckets[k][round];
-          if (item) { out.push(item); added = true; }
-        }
-        if (!added) break;
-        round++;
-      }
-      return out;
-    }
-    return slashSkills.filter(s => {
-      const hay = (s.kind + " " + (s.libraryGroup || "") + " " + s.slug + " " + (s.name || "") + " " + (s.description || "")).toLowerCase();
-      return hay.includes(q);
-    }).slice(0, 12);
-  })();
+  // ── Picker navigation ──────────────────────────────────────────────────
+  // The query splits at the FIRST "/": everything before it names a
+  // namespace, everything after filters inside it. No slash yet means we are
+  // at level 1 - the namespace rows themselves, plus a flat search across
+  // every already-loaded namespace on this trigger so "/hero" still finds
+  // the orchestrator without the user knowing which drawer it lives in.
+  const nsForTrigger = __pickerNamespaces(slashTrigger);
+  const nsSplit  = slashQuery.indexOf("/");
+  const nsHead   = nsSplit >= 0 ? slashQuery.slice(0, nsSplit).trim().toLowerCase() : "";
+  const activeNs = nsHead ? (nsForTrigger.find(n => n.key === nsHead) || null) : null;
+  // Only the segment AFTER the namespace filters the item list. With no
+  // namespace committed, the whole query does.
+  const leafQuery = (activeNs ? slashQuery.slice(nsSplit + 1) : slashQuery).trim().toLowerCase();
 
-  // Detect a `/` token AT THE CARET - anywhere in the message, as long as the
-  // slash starts a word (preceded by start-of-text or whitespace), matching
-  // how agent harnesses surface slash commands mid-composition. A slash glued
-  // to a word ("src/foo.ts") never triggers; a no-match query renders zero
-  // rows, which releases Enter/Tab back to normal typing.
-  const slashStartRef = useRef(-1);   // index of the `/` the open menu tracks
+  // Rows are a union type so one keyboard handler drives both levels:
+  //   { type: "ns",   ns }     - descend into a namespace
+  //   { type: "item", item }   - insert an item
+  //   { type: "loading", ns }  - inert placeholder while load() is in flight
+  const PICKER_CAP = 14;
+  const matchItem = (it, q) => {
+    if (!q) return true;
+    const hay = (it.ns + " " + it.slug + " " + (it.name || "") + " "
+      + (it.libraryGroup || "") + " " + (it.description || "")).toLowerCase();
+    return hay.includes(q);
+  };
+  const pickerRows = (() => {
+    if (!slashOpen) return [];
+    const rows = [];
+    if (activeNs) {
+      const items = nsItems[activeNs.key] || [];
+      if (!items.length && nsLoading[activeNs.key]) return [{ type: "loading", ns: activeNs }];
+      for (const it of items) {
+        if (rows.length >= PICKER_CAP) break;
+        if (matchItem(it, leafQuery)) rows.push({ type: "item", item: it });
+      }
+      return rows;
+    }
+    // Level 1: namespaces first (they are the map), then flat item hits.
+    const q = leafQuery;
+    for (const ns of nsForTrigger) {
+      if (!q || ns.key.includes(q) || ns.label.toLowerCase().includes(q)) rows.push({ type: "ns", ns });
+    }
+    if (q) {
+      for (const ns of nsForTrigger) {
+        const items = nsItems[ns.key] || [];
+        for (const it of items) {
+          if (rows.length >= PICKER_CAP) break;
+          if (matchItem(it, q)) rows.push({ type: "item", item: it });
+        }
+      }
+    }
+    return rows.slice(0, PICKER_CAP);
+  })();
+  const pickerTotal = Object.keys(nsItems).reduce(
+    (n, k) => n + ((PICKER_NAMESPACES.find(x => x.key === k) || {}).trigger === slashTrigger ? nsItems[k].length : 0), 0);
+
+  // Pull a namespace's items in, mirroring the module cache into state so the
+  // menu re-renders when they land. Safe to call repeatedly - __pickerLoad
+  // de-dupes and caches.
+  const ensureNs = (key) => {
+    if (!key || __pickerCache[key]) {
+      if (key && __pickerCache[key] && !nsItems[key]) setNsItems(m => ({ ...m, [key]: __pickerCache[key] }));
+      return;
+    }
+    setNsLoading(m => (m[key] ? m : { ...m, [key]: true }));
+    __pickerLoad(key).then(items => {
+      setNsItems(m => ({ ...m, [key]: items }));
+      setNsLoading(m => { const n = { ...m }; delete n[key]; return n; });
+    });
+  };
+
+  // Detect a `/` or `@` token AT THE CARET - anywhere in the message, as long
+  // as it starts a word (preceded by start-of-text or whitespace), matching
+  // how agent harnesses surface mentions mid-composition. A trigger glued to
+  // a word ("src/foo.ts", "me@example.com") never fires; a no-match query
+  // renders zero rows, which releases Enter/Tab back to normal typing.
+  const slashStartRef = useRef(-1);   // index of the trigger char the open menu tracks
   const updateSlashMenu = (newText, caret) => {
     const at = typeof caret === "number" ? caret : newText.length;
-    const m = /(^|\s)\/([A-Za-z0-9_:.-]*)$/.exec(newText.slice(0, at));
+    const m = /(^|\s)([\/@])([A-Za-z0-9_:.\/-]*)$/.exec(newText.slice(0, at));
     if (m) {
-      if (!slashOpen) {
-        // First open - kick off the skill load if we haven't already.
-        __loadSlashSkills().then(items => {
-          setSlashSkills(items);
-        });
-      }
-      slashStartRef.current = at - m[2].length - 1;
+      const trigger = m[2];
+      const query   = m[3];
+      slashStartRef.current = at - query.length - 1;
+      setSlashTrigger(trigger);
       setSlashOpen(true);
-      setSlashQuery(m[2]);
+      setSlashQuery(query);
       setSlashIndex(0);
+      // Prefetch the cheap namespaces on this trigger so a namespace-less
+      // query can search across them; the heavy ones load on descent.
+      for (const ns of __pickerNamespaces(trigger)) if (ns.eager) ensureNs(ns.key);
+      const head = query.indexOf("/") >= 0 ? query.slice(0, query.indexOf("/")).trim().toLowerCase() : "";
+      if (head && __pickerNamespaces(trigger).some(n => n.key === head)) ensureNs(head);
       return;
     }
     if (slashOpen) setSlashOpen(false);
   };
 
-  const insertSlashSkill = (sk) => {
-    if (!sk) return;
-    // Replace ONLY the `/query` token the menu tracks (it can sit anywhere in
-    // the message now) with the item's insertText (skills: `/foo `;
-    // orchestrators: `@id `; library: `design-library/<file> - `). The
-    // trailing space / dash gives the user a cursor position to type their
-    // args from. Falls back to `invocation + " "` for legacy items.
-    const ins = sk.insertText || (sk.invocation + " ");
+  // Rewrite the tracked `<trigger><query>` span. `keepOpen` is how a
+  // namespace row descends: it leaves the menu up with the new query.
+  const replaceToken = (ins, keepOpen) => {
     const start = Math.max(0, slashStartRef.current);
     const end = start + 1 + slashQuery.length;
     let pos = 0;
     setText(cur => {
       const before = cur.slice(0, start);
-      const after = cur.slice(Math.min(end, cur.length));
+      const after  = cur.slice(Math.min(end, cur.length));
       pos = (before + ins).length;
       return before + ins + after;
     });
-    setSlashOpen(false);
+    if (!keepOpen) setSlashOpen(false);
     // Refocus the textarea so the user can keep typing at the insert point.
     if (taRef.current) {
       taRef.current.focus();
@@ -18315,12 +18629,44 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     }
   };
 
+  // Descend into a namespace: the composer keeps `<trigger><ns>/` and the
+  // menu switches to that namespace's items.
+  const enterNamespace = (ns) => {
+    if (!ns) return;
+    ensureNs(ns.key);
+    setSlashQuery(ns.key + "/");
+    setSlashIndex(0);
+    replaceToken(slashTrigger + ns.key + "/", true);
+  };
+
+  // Insert an item. Only the LEAF lands in the message ("index.html", not
+  // "@file/main/index.html") - the namespace path was navigation, not
+  // content. Items that ARE a file also attach a reference chip so the leaf
+  // stays resolvable: composeWithAttachments spells out chip → real path for
+  // the agent.
+  const insertSlashSkill = (sk) => {
+    if (!sk) return;
+    replaceToken(sk.insertText || ((sk.token || "").split("/").pop() + " "), false);
+    if (sk.ref && sk.ref.path) {
+      setFileRefs(prev => prev.some(r => r.path === sk.ref.path)
+        ? prev
+        : [...prev, { path: sk.ref.path, name: sk.ref.name || sk.ref.path.split("/").pop(),
+                      scope: sk.ref.scope || "project", label: sk.ref.label || "" }]);
+    }
+  };
+
+  // Enter / Tab on the highlighted row: namespaces descend, items insert.
+  const commitRow = (row) => {
+    if (!row) return;
+    if (row.type === "ns") enterNamespace(row.ns);
+    else if (row.type === "item") insertSlashSkill(row.item);
+  };
   const onKeyDown = (e) => {
-    // Slash menu key handling takes precedence when open.
-    if (slashOpen && filteredSlashSkills.length > 0) {
+    // Picker key handling takes precedence when open.
+    if (slashOpen && pickerRows.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSlashIndex(i => Math.min(i + 1, filteredSlashSkills.length - 1));
+        setSlashIndex(i => Math.min(i + 1, pickerRows.length - 1));
         return;
       }
       if (e.key === "ArrowUp") {
@@ -18330,12 +18676,22 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       }
       if (e.key === "Enter" && !(e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        insertSlashSkill(filteredSlashSkills[slashIndex]);
+        commitRow(pickerRows[Math.min(slashIndex, pickerRows.length - 1)]);
         return;
       }
       if (e.key === "Tab") {
         e.preventDefault();
-        insertSlashSkill(filteredSlashSkills[slashIndex]);
+        commitRow(pickerRows[Math.min(slashIndex, pickerRows.length - 1)]);
+        return;
+      }
+      // Backspace on a bare `<trigger><ns>/` token climbs back out of the
+      // namespace instead of nibbling its last character - the same gesture
+      // that descended, reversed.
+      if (e.key === "Backspace" && activeNs && slashQuery === activeNs.key + "/") {
+        e.preventDefault();
+        setSlashQuery("");
+        setSlashIndex(0);
+        replaceToken(slashTrigger, true);
         return;
       }
       if (e.key === "Escape") {
@@ -18452,13 +18808,18 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
               >×</button>
             </span>
           `)}
-          ${fileRefs.map((r, i) => html`
-            <span key=${"r"+i} className="chat-composer-attachment chat-composer-fileref" title=${r.path + " · read in place, not copied"}>
-              <span className="chat-composer-attachment-icon"><${Icon.Clip}/></span>
+          ${fileRefs.map((r, i) => {
+            // Project refs come from the `@` / `/library` picker and carry a
+            // project-relative path; the rest are absolute OS-picker paths.
+            const isProj = r.scope === "project";
+            return html`
+            <span key=${"r"+i} className=${"chat-composer-attachment chat-composer-fileref" + (isProj ? " chat-composer-projref" : "")}
+              title=${isProj ? (r.path + (r.label ? " · " + r.label : "") + " · project resource, read in place") : (r.path + " · read in place, not copied")}>
+              <span className="chat-composer-attachment-icon"><${isProj ? Icon.NotesDoc : Icon.Clip}/></span>
               <span className="chat-composer-attachment-name">${r.name || r.path.split("/").pop()}</span>
               <button className="chat-composer-attachment-rm" onClick=${() => setFileRefs(prev => prev.filter((_, j) => j !== i))} title="Remove reference (file stays on disk)">×</button>
             </span>
-          `)}
+          `;})}
           ${scratchpads.map((p, i) => html`
             <span key=${"s"+p.id} className="chat-composer-attachment chat-composer-scratchpad"
               title=${p.path + " · " + p.nodes + " nodes, " + p.items + " items" + (p.image ? " · snapshot attached" : " · no snapshot")}>
@@ -18509,40 +18870,78 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
             setTimeout(() => setSlashOpen(false), 120);
           }}
         />
-        ${slashOpen && slashPos && filteredSlashSkills.length > 0 && (() => {
+        ${slashOpen && slashPos && pickerRows.length > 0 && (() => {
           // The list is just tokens, anchor-colored per kind. The detail pane
-          // shows the active row's name + type badge + ≤2-line description.
+          // shows the active row's name + type badge + preview + description.
           // `activeIdx` clamps slashIndex in case filtering shrank the list
           // below the previous index before the user's first arrow press.
-          const activeIdx  = Math.min(slashIndex, filteredSlashSkills.length - 1);
-          const activeItem = filteredSlashSkills[activeIdx];
+          const activeIdx  = Math.min(slashIndex, pickerRows.length - 1);
+          const activeRow  = pickerRows[activeIdx];
+          const activeItem = activeRow && activeRow.type === "item" ? activeRow.item : null;
+          const activeNsRow = activeRow && activeRow.type === "ns" ? activeRow.ns : null;
           const kindLabelFor = (sk) =>
             sk.kind === "media"        ? "media"
           : sk.kind === "cc"           ? "skill"
           : sk.kind === "orchestrator" ? "orchestrator"
           : sk.kind === "library"      ? (sk.libraryGroup || "library")
+          : sk.kind === "file"         ? "page"
+          : sk.kind === "ds"           ? "design system"
+          : sk.kind === "ds-section"   ? "component"
+          : sk.kind === "ds-file"      ? "template"
           : sk.kind;
+          const rowKey = (row, i) =>
+            row.type === "ns"      ? "ns:" + row.ns.key
+          : row.type === "loading" ? "ld:" + row.ns.key
+          : row.item.ns + ":" + row.item.slug + ":" + i;
           // Portal to document.body so the panel columns' overflow:hidden
           // can't crop the menu (it grows wider than the chat column).
           return createPortal(html`
-            <div className="chat-slash-menu" role="listbox" aria-label="Skills, orchestrators, and design library"
+            <div className="chat-slash-menu" role="listbox"
+              aria-label=${slashTrigger === "/" ? "Orchestrators, skills and design library" : "Project pages and design systems"}
               style=${{ left: slashPos.left + "px", bottom: slashPos.bottom + "px", minWidth: slashPos.minWidth + "px" }}>
               <div className="chat-slash-head">
-                <span className="chat-slash-head-title">Skills · orchestrators · design library</span>
-                <span className="chat-slash-head-meta">${filteredSlashSkills.length} of ${slashSkills.length} - ↑↓ navigate, ↵ insert, Esc close</span>
+                <span className="chat-slash-head-title">
+                  ${activeNs
+                    ? html`<code className="chat-slash-crumb">${slashTrigger}${activeNs.key}/</code><span>${activeNs.hint}</span>`
+                    : (slashTrigger === "/"
+                        ? "Actions - what the agent does"
+                        : "Resources - what the agent reads")}
+                </span>
+                <span className="chat-slash-head-meta">${
+                  activeNs
+                    ? `${pickerRows.length} of ${(nsItems[activeNs.key] || []).length} - ↑↓ navigate, ↵ insert, ⌫ back`
+                    : `${pickerRows.length} shown${pickerTotal ? ` of ${pickerTotal}` : ""} - ↑↓ navigate, ↵ open, Esc close`
+                }</span>
               </div>
               <div className="chat-slash-list">
-                ${filteredSlashSkills.map((sk, i) => html`
-                  <button
-                    key=${sk.kind + ":" + sk.invocation + ":" + sk.slug + ":" + (sk.plugin || "")}
-                    type="button"
-                    className=${"chat-slash-item chat-slash-item-kind-" + sk.kind + (i === activeIdx ? " is-active" : "")}
-                    role="option"
-                    aria-selected=${i === activeIdx ? "true" : "false"}
-                    onMouseEnter=${() => setSlashIndex(i)}
-                    onMouseDown=${(e) => { e.preventDefault(); insertSlashSkill(sk); }}
-                  >${sk.invocation}</button>
-                `)}
+                ${pickerRows.map((row, i) => {
+                  if (row.type === "loading") return html`
+                    <span key=${rowKey(row, i)} className="chat-slash-item chat-slash-item-loading">Loading ${row.ns.label.toLowerCase()}…</span>
+                  `;
+                  if (row.type === "ns") return html`
+                    <button
+                      key=${rowKey(row, i)}
+                      type="button"
+                      className=${"chat-slash-item chat-slash-item-ns" + (i === activeIdx ? " is-active" : "")}
+                      role="option"
+                      aria-selected=${i === activeIdx ? "true" : "false"}
+                      onMouseEnter=${() => setSlashIndex(i)}
+                      onMouseDown=${(e) => { e.preventDefault(); enterNamespace(row.ns); }}
+                    ><span className="chat-slash-item-token">${slashTrigger}${row.ns.key}/</span><span className="chat-slash-item-sub">${row.ns.label}</span></button>
+                  `;
+                  const sk = row.item;
+                  return html`
+                    <button
+                      key=${rowKey(row, i)}
+                      type="button"
+                      className=${"chat-slash-item chat-slash-item-kind-" + sk.kind + (i === activeIdx ? " is-active" : "")}
+                      role="option"
+                      aria-selected=${i === activeIdx ? "true" : "false"}
+                      onMouseEnter=${() => setSlashIndex(i)}
+                      onMouseDown=${(e) => { e.preventDefault(); insertSlashSkill(sk); }}
+                    >${sk.token}</button>
+                  `;
+                })}
               </div>
               <div className="chat-slash-detail" aria-live="polite">
                 ${activeItem ? html`
@@ -18550,39 +18949,35 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                     <span className="chat-slash-detail-name">${activeItem.name}</span>
                     <span className=${"chat-slash-detail-badge chat-slash-detail-badge-" + activeItem.kind}>${kindLabelFor(activeItem)}</span>
                   </div>
-                  ${(() => {
-                    // Visual preview: library entries show their design-library
-                    // sample PNG, orchestrators their anthropomorphised vector
-                    // portrait. Skills (media + cc) fall back to their line
-                    // icon rendered large in a kind-tinted tile. key= forces a
-                    // remount per src so an onError-hidden img doesn't stay
-                    // hidden when the user arrows to the next item.
-                    if (activeItem.image) return html`<img
-                      key=${activeItem.image}
-                      className="chat-slash-detail-img"
-                      data-kind=${activeItem.kind}
-                      src=${apiUrl(activeItem.image)}
-                      alt=${activeItem.name}
-                      loading="lazy"
-                      onError=${(e) => { e.target.style.display = "none"; }}
-                    />`;
-                    if (activeItem.kind === "media" || activeItem.kind === "cc") {
-                      const I = SKILL_ICON[activeItem.slug] || (activeItem.kind === "cc" ? Icon.NotesDoc : Icon.Spark);
-                      return html`<div className=${"chat-slash-detail-glyph chat-slash-detail-glyph-" + activeItem.kind}><${I}/></div>`;
-                    }
-                    return null;
-                  })()}
-                  <code className=${"chat-slash-detail-cmd chat-slash-item-kind-" + activeItem.kind}>${activeItem.invocation}</code>
+                  <${PickerPreview} key=${activeItem.ns + ":" + activeItem.slug} item=${activeItem}/>
+                  <code className=${"chat-slash-detail-cmd chat-slash-item-kind-" + activeItem.kind}>${activeItem.token}</code>
                   ${activeItem.description && html`<p className="chat-slash-detail-desc">${activeItem.description}</p>`}
+                  ${activeItem.ref && html`<p className="chat-slash-detail-ref" title=${activeItem.ref.path}>
+                    inserts <b>${(activeItem.insertText || "").trim()}</b> · attaches ${activeItem.ref.path}
+                  </p>`}
+                ` : activeNsRow ? html`
+                  <div className="chat-slash-detail-head">
+                    <span className="chat-slash-detail-name">${activeNsRow.label}</span>
+                    <span className="chat-slash-detail-badge chat-slash-detail-badge-ns">namespace</span>
+                  </div>
+                  <div className="chat-slash-detail-glyph chat-slash-detail-glyph-ns"><${Icon.Folder}/></div>
+                  <code className="chat-slash-detail-cmd">${slashTrigger}${activeNsRow.key}/</code>
+                  <p className="chat-slash-detail-desc">${activeNsRow.hint}. ↵ or / to open${
+                    (nsItems[activeNsRow.key] || []).length ? ` · ${(nsItems[activeNsRow.key] || []).length} entries` : ""
+                  }.</p>
                 ` : html`<div className="chat-slash-detail-empty">Highlight an item to see details.</div>`}
               </div>
             </div>
           `, document.body);
         })()}
-        ${slashOpen && slashPos && filteredSlashSkills.length === 0 && slashSkills.length > 0 && createPortal(html`
+        ${slashOpen && slashPos && pickerRows.length === 0 && createPortal(html`
           <div className="chat-slash-menu chat-slash-menu-empty"
             style=${{ left: slashPos.left + "px", bottom: slashPos.bottom + "px", minWidth: slashPos.minWidth + "px" }}>
-            <div className="chat-slash-empty">No skill, orchestrator, or library entry matches “${slashQuery}”. Esc to dismiss.</div>
+            <div className="chat-slash-empty">${
+              activeNs
+                ? `Nothing in ${slashTrigger}${activeNs.key}/ matches “${leafQuery}”. ⌫ to back out, Esc to dismiss.`
+                : `No namespace or entry matches “${slashQuery}”. Esc to dismiss.`
+            }</div>
           </div>
         `, document.body)}
         <div className="chat-composer-inbox-actions">
