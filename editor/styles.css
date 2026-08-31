@@ -24322,6 +24322,60 @@ a.ds-badge:hover, button.ds-badge:hover {
 .runs-row[data-unread="true"] .runs-row-title {
   font-weight: 650;
 }
+/* Unread strip - the "there is more, and it is off screen" affordance. Two
+   sticky chips inside the scroll box: the top one names the unread total and
+   carries Mark all read (pointing UP once unread rows have scrolled off the
+   top), the bottom one appears only while unread rows sit below the fold.
+   Sticky rather than floating so the list keeps ONE control surface and the
+   rows never sit under a permanent overlay. */
+.runs-unread-bar {
+  position: sticky;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 2px 0;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--warning) 12%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--warning) 35%, transparent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+.runs-unread-bar[data-side="top"]    { top: 0; }
+.runs-unread-bar[data-side="bottom"] { bottom: 0; justify-content: center; }
+.runs-unread-jump,
+.runs-unread-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+  border-radius: var(--radius-sm);
+}
+.runs-unread-jump { cursor: pointer; }
+.runs-unread-jump:hover { background: color-mix(in oklab, var(--warning) 18%, transparent); }
+.runs-unread-jump svg,
+.runs-unread-count svg { display: block; flex-shrink: 0; }
+.runs-unread-chev { display: inline-flex; opacity: 0.75; }
+.runs-unread-chev.is-up { transform: rotate(180deg); }
+.runs-unread-all {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.runs-unread-all:hover { background: var(--surface-2); color: var(--text); }
 .runs-row-del {
   flex: 0 0 auto;
   display: inline-flex;

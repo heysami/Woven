@@ -12181,6 +12181,24 @@ function markRunRead(runId, seq) {
   // popover) clear its bar without waiting for its own 2s poll.
   try { window.dispatchEvent(new CustomEvent("woven:runs-read", { detail: { runId, seq: n } })); } catch {}
 }
+/* Stamp MANY runs read in one localStorage write. "Mark all read" would
+   otherwise fire one write plus one event per row, and each write reloads the
+   map it just wrote. Same never-backwards rule as markRunRead. */
+function markRunsRead(pairs) {
+  const prev = loadRunsRead();
+  const next = { ...prev };
+  let changed = false;
+  for (const [runId, seq] of pairs || []) {
+    if (!runId) continue;
+    const n = Number.isFinite(seq) ? seq : -1;
+    if ((next[runId] ?? -1) >= n) continue;
+    next[runId] = n;
+    changed = true;
+  }
+  if (!changed) return;
+  try { localStorage.setItem(runsReadKey(), JSON.stringify(next)); } catch {}
+  try { window.dispatchEvent(new CustomEvent("woven:runs-read", { detail: { all: true } })); } catch {}
+}
 function forgetRunRead(runId) {
   const prev = loadRunsRead();
   if (!(runId in prev)) return;
@@ -12267,8 +12285,75 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
     () => (runs || []).slice().sort(
       (a, b) => (b.startedAt || b.updatedAt || 0) - (a.startedAt || a.updatedAt || 0)),
     [runs]);
+
+  /* ── unread BEYOND the scroll ───────────────────────────────────────────
+     The dot on a row only says "new activity" to someone who can see the row.
+     A long history scrolls the interesting one out of the box entirely, and
+     nothing on screen says to go looking. These two counts drive the sticky
+     edge chips: how many unread rows sit above the visible window, and how
+     many below. Measured against the container box on scroll / resize /
+     re-render rather than per frame. */
+  const listRef = useRef(null);
+  const [offscreen, setOffscreen] = useState({ above: 0, below: 0 });
+  const unreadRows = useCallback(() => {
+    const box = listRef.current;
+    if (!box) return [];
+    return Array.from(box.querySelectorAll('.runs-row[data-unread="true"]'));
+  }, []);
+  const recount = useCallback(() => {
+    const box = listRef.current;
+    if (!box) return;
+    const cb = box.getBoundingClientRect();
+    let above = 0, below = 0;
+    for (const el of unreadRows()) {
+      const rb = el.getBoundingClientRect();
+      if (rb.bottom <= cb.top + 1) above++;
+      else if (rb.top >= cb.bottom - 1) below++;
+    }
+    setOffscreen(prev => (prev.above === above && prev.below === below) ? prev : { above, below });
+  }, [unreadRows]);
+  // Scroll fires far faster than the counts can change - coalesce to a frame.
+  const recountPending = useRef(0);
+  const onScroll = useCallback(() => {
+    if (recountPending.current) return;
+    recountPending.current = requestAnimationFrame(() => {
+      recountPending.current = 0;
+      recount();
+    });
+  }, [recount]);
+  useEffect(() => () => { if (recountPending.current) cancelAnimationFrame(recountPending.current); }, []);
+  // Rows going read/unread, arriving, or the panel being resized all move the
+  // answer without a scroll event.
+  useEffect(() => { recount(); }, [ordered, read, recount]);
+  useEffect(() => {
+    const box = listRef.current;
+    if (!box || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => recount());
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [recount]);
+  // Jump to the nearest unread row in `dir` (-1 up, +1 down).
+  const jumpToUnread = useCallback((dir) => {
+    const box = listRef.current;
+    if (!box) return;
+    const cb = box.getBoundingClientRect();
+    const els = unreadRows();
+    const target = dir < 0
+      ? els.filter(el => el.getBoundingClientRect().bottom <= cb.top + 1).pop()
+      : els.find(el => el.getBoundingClientRect().top >= cb.bottom - 1);
+    if (target) target.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [unreadRows]);
+  const unreadTotal = useMemo(
+    () => (runs || []).filter(
+      r => (Number.isFinite(r.lastSeq) ? r.lastSeq : -1) > (read[r.runId] ?? -1)).length,
+    [runs, read]);
+  const markAllRead = useCallback(() => {
+    markRunsRead((runs || []).map(r => [r.runId, r.lastSeq]));
+    setRead(loadRunsRead());
+  }, [runs]);
+
   return html`
-    <div className="left-chat-runs-list">
+    <div className="left-chat-runs-list" ref=${listRef} onScroll=${onScroll}>
       ${onStartNewChat && html`
         <button
           type="button"
@@ -12282,6 +12367,31 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
       `}
       ${runs.length === 0 && html`
         <div className="runs-empty">${loaded ? "No runs yet. Click + New chat above." : "Loading…"}</div>
+      `}
+      ${/* Unread strip. Pinned to the top of the scroll box whenever anything
+           is unread: it names the count, points UP when unread rows have
+           scrolled off the top, and carries the one "Mark all read" action. */ ""}
+      ${unreadTotal > 0 && html`
+        <div className="runs-unread-bar" data-side="top">
+          ${offscreen.above > 0 ? html`
+            <button
+              type="button"
+              className="runs-unread-jump"
+              onClick=${() => jumpToUnread(-1)}
+              title="Scroll up to the nearest unread thread"
+            >
+              <${Icon.Alert}/>
+              <span>${offscreen.above} above</span>
+              <span className="runs-unread-chev is-up"><${Icon.Chev}/></span>
+            </button>
+          ` : html`
+            <span className="runs-unread-count">
+              <${Icon.Alert}/>
+              <span>${unreadTotal} unread</span>
+            </span>
+          `}
+          <button type="button" className="runs-unread-all" onClick=${markAllRead}>Mark all read</button>
+        </div>
       `}
       ${ordered.map(r => {
         // Unread = this run has produced events past the watermark we stored
@@ -12344,6 +12454,23 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
           </div>
         `;
       })}
+      ${/* The other half of the same story: unread that is still BELOW the
+           fold. Pinned to the bottom edge of the scroll box, and it leaves as
+           soon as the last unread row is on screen. */ ""}
+      ${offscreen.below > 0 && html`
+        <div className="runs-unread-bar" data-side="bottom">
+          <button
+            type="button"
+            className="runs-unread-jump"
+            onClick=${() => jumpToUnread(1)}
+            title="Scroll down to the nearest unread thread"
+          >
+            <${Icon.Alert}/>
+            <span>${offscreen.below} below</span>
+            <span className="runs-unread-chev"><${Icon.Chev}/></span>
+          </button>
+        </div>
+      `}
     </div>
   `;
 }
