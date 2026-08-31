@@ -14055,6 +14055,19 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   white-space: nowrap;
 }
 .chat-target-more { opacity: 0.8; }
+/* A live thread's target is FIXED at spawn (the <chat-target> scope rides the
+   first prompt only), so the bar shows the run's committed target, not the
+   live selection / preview - dimmed, with a lock, and no affordance to change
+   it. Retargeting means starting a new chat. */
+.chat-target-locked .chat-target-chip { opacity: 0.85; }
+.chat-target-lock {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.45;
+  color: var(--text-muted, #666);
+}
+.chat-target-lock svg { width: 11px; height: 11px; }
+
 /* Preview-inferred target: a "previewing" tag + a compact affordance to fall
    back to whole-project when the inferred prototype is wrong. */
 .chat-target-preview .chat-target-chip-tag { background: var(--accent, #1f9d57); }

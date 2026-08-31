@@ -9846,6 +9846,9 @@ def _chat_jsonl_append(state, seq: int, ev_type: str, data) -> None:
         "agentId": state.agent_id,
         "kind":    state.kind,
         "tier":    getattr(state, "tier", None),   # setup vs scoped badge
+        # scoped-preamble target, stamped on every line so the chat target
+        # bar can show a live thread the prototype it actually committed to.
+        "prototype": getattr(state, "prototype", None),
         "title":   state.title,
         "startedAt": state.started_at,
         "seq":     seq,
@@ -10074,6 +10077,7 @@ class _ChatFileIndex:
                     "branch":         rec.get("branch") or "main",
                     "kind":           rec.get("kind") or "freeform",
                     "tier":           rec.get("tier"),
+                    "prototype":      rec.get("prototype"),
                     "title":          rec.get("title") or "",
                     "startedAt":      rec.get("startedAt") or rec.get("ts") or 0,
                     # last line seen for this run wins - the runs list
@@ -10093,6 +10097,16 @@ class _ChatFileIndex:
             ts_v = rec.get("ts")
             if isinstance(ts_v, (int, float)) and ts_v > (meta.get("updatedAt") or 0):
                 meta["updatedAt"] = ts_v
+            # Backfill the scoped-preamble target for runs whose lines predate
+            # the per-line `prototype` stamp - the spawn banner has carried it
+            # all along, and the chat target bar needs it to show a live thread
+            # which prototype it committed to.
+            if not meta.get("prototype"):
+                p_v = rec.get("prototype")
+                if not p_v and isinstance(rec.get("data"), dict) and rec["data"].get("label") == "spawned":
+                    p_v = rec["data"].get("prototype")
+                if p_v:
+                    meta["prototype"] = p_v
             # Track lifecycle terminators
             if rec.get("type") == "__finish":
                 meta["done"] = True
@@ -32420,6 +32434,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "branch": s.branch,
                 "kind": s.kind,
                 "tier": getattr(s, "tier", None),
+                "prototype": getattr(s, "prototype", None),
                 "title": s.title,
                 "startedAt": s.started_at,
                 "updatedAt": getattr(s, "updated_at", None) or s.started_at,
@@ -33168,6 +33183,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "branch": state.branch,
             "kind": state.kind,
             "tier": getattr(state, "tier", None),
+            "prototype": getattr(state, "prototype", None),
             "title": state.title,
             "startedAt": state.started_at,
             "updatedAt": getattr(state, "updated_at", None) or state.started_at,
@@ -33666,6 +33682,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "branch": branch,
             "kind": kind,
             "tier": _chat_tier,   # so the chat header can badge Setup vs scoped
+            "prototype": _chat_proto,   # target bar locks onto this once the thread exists
             "title": title,
         })
 

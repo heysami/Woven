@@ -30136,6 +30136,36 @@ function WorkflowChatTargetBar({ summary, override, onChangeOverride, activePrev
       .catch(() => {});
     return () => { alive = false; };
   }, []);
+  // An ALREADY-SPAWNED thread has its target baked in: spawnWorkflowChat
+  // resolved it once, injected the <chat-target> scope into the first prompt,
+  // and the daemon stored it on the run (tier + prototype) so /resume rebuilds
+  // the SAME system prompt. Follow-up messages carry no scope block at all, so
+  // changing selection / preview mid-thread does NOT move the target. The live
+  // derivation below therefore applies only to the isNew composer shell; for a
+  // live run we show what it actually committed to, locked.
+  if (run && run.runId && !run.isNew) {
+    const lockedSlug = run.tier === "scoped" ? (run.prototype || null) : null;
+    // node-agent drawers are not project-or-prototype chats - their badge
+    // already says what they are, so they get no target chip.
+    if (!lockedSlug && run.kind !== "freeform")
+      return badgeEl ? html`<div className="chat-target chat-target-locked">${badgeEl}</div>` : null;
+    return html`
+      <div
+        className=${"chat-target chat-target-locked" + (lockedSlug ? " chat-target-sel" : "")}
+        title=${lockedSlug
+          ? `This thread is scoped to prototype ${lockedSlug} - fixed when it started. Start a new chat to target something else.`
+          : "This thread is about the whole project - fixed when it started. Start a new chat to target a prototype."}
+      >
+        ${badgeEl}
+        <span className="chat-target-label">${lockedSlug ? "Editing" : "Talking about"}</span>
+        <span className="chat-target-chip" data-kind=${lockedSlug ? "prototype" : "general"}>
+          ${lockedSlug && html`<span className="chat-target-chip-tag">prototype</span>`}
+          <span className="chat-target-chip-name">${lockedSlug || "Whole project"}</span>
+        </span>
+        <span className="chat-target-lock" aria-hidden="true"><${Icon.Lock} /></span>
+      </div>
+    `;
+  }
   if (summary && summary.count > 0) {
     const kindTag = summary.primaryKind === "prototype" ? "prototype"
       : summary.primaryKind === "frames" ? "frames"
