@@ -9,6 +9,14 @@ __pycache__/
 .trash/
 **/.trash/
 
+# Draft-mode working files, written by the canvas-frames node's Draft button.
+# The page CLONE is a dot-prefixed sibling of the page it clones (same directory,
+# so the page's relative CSS / JS / images still resolve); the apply artefacts
+# (annotated raster + note payload) live in .drafts/. Both dot-prefixed forms are
+# also skipped by hosted-share snapshots and the daemon's file watcher.
+**/.draft-*.html
+**/.drafts/
+
 # Local machine-specific Claude settings
 .claude/settings.local.json
 
@@ -24,3 +32,19 @@ __pycache__/
 
 # Vendored figma-cli (external MIT tool; install per editor/tools/figma-bridge/USING-FIGMA-CLI.md)
 editor/tools/figma-cli/
+Woven-v*.zip
+
+# Daemon-written workspace state. These live at the workspace root and carry
+# REAL project names, share tokens and user-testing participant tokens. They
+# are per-install runtime state, never source. (They leaked to the public repo
+# once; keep them out.)
+workspace.json
+shares.json
+usertesting.json
+links.json
+.starred-prototypes.json
+.prototype-autofeatured.json
+
+# Every project is user content, never source. The editor scaffolds these at
+# runtime; nothing in the repo needs them.
+projects/
