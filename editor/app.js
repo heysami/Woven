@@ -46724,14 +46724,21 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     }
     if (!Number.isFinite(minX)) { minX = 0; minY = 0; }
     let z = wbMaxZ(wbItemsRef.current);
+    // Ids up front: an arrow in the batch must re-pin to the COPIES of the
+    // boxes it joins, not to the originals it would otherwise snap back to.
+    // No node ids here - this path carries wb items only, so a container
+    // binding (cell / sec) has nothing to re-point at and is dropped.
+    const wbIdMap = new Map();
+    for (const it of items) wbIdMap.set(it.id, wbNewId());
     const clones = items.map(it => {
-      const clone = { ..._stableClone(it), id: wbNewId(), z: ++z };
+      let clone = { ..._stableClone(it), id: wbIdMap.get(it.id), z: ++z };
       if (clone.type === "arrow") {
-        return Object.assign(clone, wbShiftArrow(clone, wx - minX, wy - minY));
+        clone = Object.assign(clone, wbShiftArrow(clone, wx - minX, wy - minY));
+      } else {
+        clone.x = (clone.x || 0) + (wx - minX);
+        clone.y = (clone.y || 0) + (wy - minY);
       }
-      clone.x = (clone.x || 0) + (wx - minX);
-      clone.y = (clone.y || 0) + (wy - minY);
-      return clone;
+      return workflowRemapClonedRefs(clone, new Map(), wbIdMap);
     });
     setData(d => ({ ...d, wb: [...(Array.isArray(d.wb) ? d.wb : []), ...clones] }));
     setSelectedWbIds(new Set(clones.map(c => c.id)));
@@ -46767,6 +46774,11 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       const txt = items.map(it => it.text).filter(Boolean).join("\n");
       if (txt) e.clipboardData.setData("text/plain", txt);
       wbClipboardRef.current = { items: items.map(_stableClone), ts: Date.now() };
+      // Refresh the unified canvas clipboard from the same gesture. Cmd+C
+      // already did this from the keydown path, but a CUT and the context
+      // menu's Copy (execCommand) reach here without it - and a canvas
+      // clipboard left holding an older payload would win the next Cmd+V.
+      copySelectedNodes();
       e.preventDefault();
     };
     const onCut = (e) => {
@@ -46844,7 +46856,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       document.removeEventListener("cut", onCut);
       document.removeEventListener("paste", onPaste);
     };
-  }, [removeWbItems, pasteWbClipboardAt, wbAddImageFromFile, wbUploadAttachment, addAssetNodeAt, addWbItem]);
+  }, [removeWbItems, pasteWbClipboardAt, wbAddImageFromFile, wbUploadAttachment, addAssetNodeAt, addWbItem, copySelectedNodes]);
 
   // ── OS file drop intake (referenced by onCanvasDrop through the early-
   // declared ref - onCanvasDrop is defined above this block). dataTransfer
@@ -46986,21 +46998,39 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
 
   const pasteNodesFromClipboard = useCallback((targetWorldX, targetWorldY) => {
     const clip = nodeClipboardRef.current;
-    if (!clip || !clip.nodes || !clip.nodes.length) return 0;
+    const clipNodes = (clip && Array.isArray(clip.nodes)) ? clip.nodes : [];
+    const clipWb    = (clip && Array.isArray(clip.wb))    ? clip.wb    : [];
+    if (!clip || (!clipNodes.length && !clipWb.length)) return 0;
     const tx = (typeof targetWorldX === "number") ? targetWorldX : (lastCanvasCursorRef.current.x + 30);
     const ty = (typeof targetWorldY === "number") ? targetWorldY : (lastCanvasCursorRef.current.y + 30);
     const dx = tx - clip.originX;
     const dy = ty - clip.originY;
     const idMap = new Map();
-    for (const n of clip.nodes) idMap.set(n.id, _freshNodeId());
-    const newNodes = clip.nodes.map(n => ({
+    for (const n of clipNodes) idMap.set(n.id, _freshNodeId());
+    // Whiteboard half of the SAME payload - a table's cell text, a section's
+    // stickies. It rides the node clipboard rather than the system one so the
+    // two land in one commit; without that the frame arrives empty, because a
+    // successful node paste preventDefaults the keystroke the system-clipboard
+    // listener needs. Ids are minted here so both halves can re-point their
+    // bindings at the copies (workflowRemapClonedRefs).
+    const wbIdMap = new Map();
+    for (const it of clipWb) wbIdMap.set(it.id, wbNewId());
+    let z = wbMaxZ(wbItemsRef.current);
+    const newWb = clipWb.map(it => {
+      let clone = { ..._stableClone(it), id: wbIdMap.get(it.id), z: ++z };
+      clone = clone.type === "arrow"
+        ? Object.assign(clone, wbShiftArrow(clone, dx, dy))
+        : Object.assign(clone, { x: (clone.x || 0) + dx, y: (clone.y || 0) + dy });
+      return workflowRemapClonedRefs(clone, idMap, wbIdMap);
+    });
+    const newNodes = clipNodes.map(n => workflowRemapClonedRefs({
       ...n,
       id: idMap.get(n.id),
       x: (typeof n.x === "number" ? n.x : 0) + dx,
       y: (typeof n.y === "number" ? n.y : 0) + dy,
       runStatus: undefined, runError: undefined, runRunId: undefined,
       runId: undefined, versions: [], activeVersionId: null, lastRunId: undefined,
-    }));
+    }, idMap, wbIdMap));
     const newEdges = clip.edges.map(e => {
       const fromId = (e.from || "").split(".", 1)[0];
       const fromPort = (e.from || "").split(".", 2)[1] || "out";
@@ -47038,6 +47068,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       ...d,
       nodes: [...(d.nodes || []), ...newNodes],
       edges: [...(d.edges || []), ...newEdges],
+      ...(newWb.length ? { wb: [...(Array.isArray(d.wb) ? d.wb : []), ...newWb] } : {}),
     }));
     if (selectionRef && selectionRef.current) {
       const newIds = new Set(newNodes.map(n => n.id));
@@ -47045,7 +47076,8 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       window.dispatchEvent(new CustomEvent("th:set-canvas-selection",
         { detail: { ids: Array.from(newIds) } }));
     }
-    return newNodes.length;
+    setSelectedWbIds(new Set(newWb.map(it => it.id)));
+    return newNodes.length + newWb.length;
   }, [setData, selectionRef, _findComposerPasteTarget]);
 
   const hasNodeClipboard = useCallback(() => !!nodeClipboardRef.current, []);
@@ -50554,14 +50586,20 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         return;
       }
       if (cmd && (e.key === "c" || e.key === "C")) {
+        // Captures the WHOLE selection - nodes, whiteboard items, and the
+        // contents of any selected frame - into one canvas clipboard.
         const n = copySelectedNodes();
         // With wb items in the selection, skip preventDefault so the
-        // native copy event still fires and the wb listener serializes
-        // them (preventing keydown's default cancels the copy event).
+        // native copy event still fires and the wb listener ALSO writes
+        // them to the system clipboard (that mirror is what carries them to
+        // another window; preventing keydown's default cancels the copy
+        // event). The canvas clipboard is the one Cmd+V reads.
         if (n > 0 && selectedWbIdsRef.current.size === 0) e.preventDefault();
       } else if (cmd && (e.key === "v" || e.key === "V")) {
-        // Two clipboard types share Cmd+V. pasteNodesFromClipboard
-        // is for the {nodes,edges} payload from copySelectedNodes; html-
+        // Two clipboard types share Cmd+V. pasteNodesFromClipboard is for
+        // the {nodes, edges, wb} canvas payload - it lands BOTH families in
+        // one commit, which is why preventDefault below is safe: the system
+        // -clipboard paste it suppresses would only re-add the wb half. html-
         // element clipboards (from copyPickedElement) need pastePickedElement
         // which spawns a standalone HTML asset (Path B inside that callback).
         // Back off entirely if pick-mode is on. The pick-mode
@@ -59362,7 +59400,8 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         anchor=${ctxMenu}
         wrapRef=${wrapRef}
         hasSelection=${selectedWbIds.size > 0}
-        canPaste=${!!(wbClipboardRef.current && wbClipboardRef.current.items && wbClipboardRef.current.items.length)}
+        canPaste=${!!(nodeClipboardRef.current && !nodeClipboardRef.current.type)
+          || !!(wbClipboardRef.current && wbClipboardRef.current.items && wbClipboardRef.current.items.length)}
         onCopy=${() => {
           // Populate BOTH the internal mirror (menu paste) and the system
           // clipboard (Cmd+V) - execCommand fires the wb copy listener.
@@ -59370,8 +59409,16 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
           setCtxMenu(null);
         }}
         onPaste=${() => {
-          const clip = wbClipboardRef.current;
-          if (clip && clip.items) pasteWbClipboardAt(clip.items, ctxMenu.worldX, ctxMenu.worldY);
+          // The canvas clipboard carries both families (and any frame that
+          // came with them), so it wins whenever it holds this session's most
+          // recent copy; the wb-only mirror is the fallback for a payload that
+          // arrived from another window through the system clipboard.
+          const canvasClip = nodeClipboardRef.current;
+          const wbClip = wbClipboardRef.current;
+          const canvasFresher = canvasClip && !canvasClip.type
+            && (!wbClip || (canvasClip.ts || 0) >= (wbClip.ts || 0));
+          if (canvasFresher) pasteNodesFromClipboard(ctxMenu.worldX, ctxMenu.worldY);
+          else if (wbClip && wbClip.items) pasteWbClipboardAt(wbClip.items, ctxMenu.worldX, ctxMenu.worldY);
           setCtxMenu(null);
         }}
         onBringToFront=${() => { layerSelectedWbItems("front"); setCtxMenu(null); }}
