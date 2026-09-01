@@ -3026,9 +3026,16 @@ KINDS = {
             "title":     {"type": "text",   "userEditable": True},
             "w":         {"type": "number", "userEditable": True},
             "h":         {"type": "number", "userEditable": True},
-            "cols":      {"type": "object"},
-            "rows":      {"type": "object"},
-            "merges":    {"type": "object"},
+            # The grid itself IS hand-edited - every insert / delete / resize /
+            # swap / merge row-or-column op writes these. Without the flag the
+            # editor's merge never pulls them, so two canvas surfaces holding
+            # different column layouts can never converge: each re-POSTs its own
+            # grid forever (measured on suss-cal at ~3 writes/sec, flipping the
+            # 47 cell-bound items back and forth with it) and an undo of a
+            # column op is re-asserted away by the other surface.
+            "cols":      {"type": "object", "userEditable": True},
+            "rows":      {"type": "object", "userEditable": True},
+            "merges":    {"type": "object", "userEditable": True},
             "fill":      {"type": "text",   "userEditable": True},
             "lineColor": {"type": "text",   "userEditable": True},
         },

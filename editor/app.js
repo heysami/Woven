@@ -31916,6 +31916,10 @@ function WorkflowCanvas() {
   // its snapshot never advanced, and the field was judged permanently dirty →
   // the merge stopped pulling and the node only updated after a manual refresh.
   const lastPersistedDocRef = useRef(null);
+  // Camera half of the same baseline. The doc comparison deliberately ignores
+  // pan/zoom (they live in a per-machine sidecar, not workflow.json), so a
+  // pan-only change has to be able to punch through the echo-save guard.
+  const lastPersistedViewRef = useRef(null);
   // Live Session - bumped to re-run the debounced save as a self-heal. A
   // guest's proxied SSE closes on every change and es.onerror ABORTS the
   // in-flight save (AbortError → no retry), so an edit POSTed at that instant
@@ -32239,7 +32243,10 @@ function WorkflowCanvas() {
           lastPersistedDocRef.current = JSON.stringify({
             nodes: _diskNodes, edges: j.edges || [], wb: Array.isArray(j.wb) ? j.wb : [],
           });
-        } catch { lastPersistedDocRef.current = null; }
+          lastPersistedViewRef.current = JSON.stringify({
+            pan: j.pan || null, zoom: j.zoom ?? null,
+          });
+        } catch { lastPersistedDocRef.current = null; lastPersistedViewRef.current = null; }
       })
       .catch(e => { if (!cancelled) setErr(String(e?.message || e)); });
     return () => { cancelled = true; };
@@ -32297,13 +32304,23 @@ function WorkflowCanvas() {
       // resets → real edits never flush → permanently-dirty fields → the
       // "only updates after refresh" desync. Only fires in a live session;
       // solo editing has no other writer, so it saves normally (pan/zoom too).
-      if (window.__thLiveActive && lastPersistedDocRef.current !== null
+      // (Not live-session-only. The guard used to be, on the reasoning that
+      // "solo editing has no other writer" - but a project can have two canvas
+      // surfaces live at once, and then each one's pull re-POSTs the doc it
+      // just read, which re-broadcasts, which makes the other pull and re-POST.
+      // Measured on suss-cal: ~3 writes/sec forever with nobody touching the
+      // canvas, every write flipping the same 47 items back and forth. A pull
+      // must never echo back out, in ANY session shape.)
+      if (lastPersistedDocRef.current !== null
           && !deletedIdsRef.current.size && !deletedWbIdsRef.current.size) {
         try {
           const coreStr = JSON.stringify({
             nodes: data.nodes || [], edges: data.edges || [], wb: data.wb || [],
           });
-          if (coreStr === lastPersistedDocRef.current) return;  // nothing diverges from disk
+          const viewStr = JSON.stringify({ pan: data.pan || null, zoom: data.zoom ?? null });
+          // Skip only when BOTH halves match disk - a pan-only change still saves.
+          if (coreStr === lastPersistedDocRef.current
+              && viewStr === lastPersistedViewRef.current) return;
         } catch {}
       }
       // G2 single-flight: if a save is already in flight, stash the latest
@@ -32344,6 +32361,14 @@ function WorkflowCanvas() {
           // so a drop goes clean once saved and converges across sessions.
           cell: _stableClone(n.cell),
           sec:  _stableClone(n.sec),
+          // Table grid - snapshotted for the same reason as w/h: a column op
+          // must go CLEAN once it persists, or the field is judged dirty for
+          // ever and the merge never pulls the other side's grid again.
+          ...(n.kind === "table" ? {
+            cols:   _stableClone(n.cols),
+            rows:   _stableClone(n.rows),
+            merges: _stableClone(n.merges),
+          } : {}),
           // runStatus / runError participate in the snapshot so
           // dirty-tracking works for them too (Bug B). Once the save POST
           // returns 200, savedSnapshotRef gets bumped to the latest local
@@ -32395,11 +32420,20 @@ function WorkflowCanvas() {
           for (const { id, snap } of wbSnapshotPayload) {
             savedSnapshotRef.current.set("wb:" + id, snap);
           }
+          // The hand gesture is now ON DISK - drop the human-override hold for
+          // everything this POST carried. Anything the user touched AFTER the
+          // payload was built was stamped again and is not in these lists, so
+          // an in-flight gesture keeps its protection.
+          wfReleaseHuman(snapshotPayload.map(e => e.id));
+          wfReleaseHuman(wbSnapshotPayload.map(e => e.id));
           // Disk now holds what we just POSTed - advance the echo-save baseline
           // so the inevitable post-save reload doesn't re-POST it back.
           try {
             lastPersistedDocRef.current = JSON.stringify({
               nodes: data.nodes || [], edges: data.edges || [], wb: data.wb || [],
+            });
+            lastPersistedViewRef.current = JSON.stringify({
+              pan: data.pan || null, zoom: data.zoom ?? null,
             });
           } catch {}
           if (saveFailedAt) setSaveFailedAt(null);
@@ -32477,6 +32511,25 @@ function WorkflowCanvas() {
     const onReload = async (ev) => {
       if (!loadedRef.current) return;
       const forceReplace = !!(ev && ev.detail && ev.detail.replace);
+      if (forceReplace) {
+        // Disk is truth wholesale (undo/redo restore, git discard, rename), so
+        // every save still in the pipeline is STALE by definition. Leaving them
+        // armed is what let an undo get silently re-done: a POST built before
+        // the restore lands after it and writes the pre-undo doc straight back.
+        // suss-cal's own .history shows the result - consecutive entries
+        // alternating 7↔8 columns, the user's undo losing every other round.
+        // Drop the stashed follow-up, clear the human-override holds it would
+        // have carried, and abort whatever is already on the wire.
+        pendingDataRef.current = null;
+        _wfHumanHold.clear();
+        try {
+          if (saveAbortRef.current) {
+            saveAbortRef.current.abort();
+            saveAbortRef.current = new AbortController();
+          }
+        } catch {}
+        inFlightRef.current = false;
+      }
       try {
         const r = await fetch(apiUrl("/__workflow"));
         if (!r.ok) return;
@@ -32737,12 +32790,30 @@ function WorkflowCanvas() {
             // node), so it never stomps your own in-progress gesture. w/h are
             // snapshotted on save (below) so a resize flips back to clean once
             // it persists and the next reload converges - same contract as x/y.
-            pullField("x"); pullField("y"); pullField("w"); pullField("h");
+            // ...but a hand gesture still outranks the pull. "Clean" means
+            // "matches my last POST", which goes true the moment that POST
+            // returns - so a second writer's stale doc could immediately
+            // overwrite a position the user had just placed by hand, and each
+            // side re-asserting produced an endless oscillation. Held ids sit
+            // out the geometry pull until their own save round-trips.
+            if (!wfHeldByHuman(disk.id)) {
+              pullField("x"); pullField("y"); pullField("w"); pullField("h");
+            }
             // Container bindings (cell:{tableId,r,c,...} / sec:{sectionId,...})
             // are user gestures on ANY kind (drop into a cell / onto a frame) -
             // pull them like geometry so a second session doesn't echo a stale
             // binding back over a fresh drop.
-            pullField("cell"); pullField("sec");
+            if (!wfHeldByHuman(disk.id)) { pullField("cell"); pullField("sec"); }
+            // A table's GRID is hand-edited geometry too (insert / delete /
+            // resize / swap / merge a row or column). It reaches the pull via
+            // the registry now that cols/rows/merges are userEditable, but
+            // pull it explicitly as well so a daemon still serving the old
+            // registry converges anyway - two surfaces holding different
+            // column layouts could otherwise never agree, and each one's
+            // re-POST dragged all 47 cell-bound items back with it.
+            if (disk.kind === "table" && !wfHeldByHuman(disk.id)) {
+              pullField("cols"); pullField("rows"); pullField("merges");
+            }
             // Bug B: conditional pull for runStatus / runError.
             // Pull from disk ONLY when local matches the last-saved
             // snapshot (i.e. no client-side change is in flight). If local
@@ -32819,10 +32890,24 @@ function WorkflowCanvas() {
               continue;
             }
             if (isDirty || _stableEqual(local, disk)) { mergedWb.push(local); continue; }
+            // Hand gesture outranks the pull (see the node-family note above):
+            // a just-dropped item is "clean" again the instant its save
+            // returns, and this branch would hand its position straight back
+            // to whatever disk says.
+            if (wfHeldByHuman(local.id)) { mergedWb.push(local); continue; }
             mergedWb.push(disk);                            // clean + disk changed → take disk
             savedSnapshotRef.current.set("wb:" + local.id, _stableClone(disk));
             wbChanged = true;
-            _wfxPendingWbIds.add(local.id);                 // agent write-back → completion wave
+            // Completion wave ONLY for a real content change. A geometry- or
+            // binding-only pull is bookkeeping, not an agent write-back, and
+            // firing the shockwave for it turned every reload into a yellow
+            // flash on screen. Same key set the node family already uses.
+            try {
+              for (const k of new Set([...Object.keys(local), ...Object.keys(disk)])) {
+                if (_wfxMergeIgnoreKeys.has(k) || k === "id" || k === "z") continue;
+                if (!_stableEqual(local[k], disk[k])) { _wfxPendingWbIds.add(local.id); break; }
+              }
+            } catch {}
           }
           if (!addedNodes.length && !addedEdges.length && !statusChanged && !wbChanged) return prev;
           // Drop edges that referenced a collaborator-deleted node so they
@@ -43085,6 +43170,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   const shiftWbItems = useCallback((ids, dx, dy) => {
     const set = ids instanceof Set ? ids : new Set(ids);
     if (set.size === 0) return;
+    wfHoldHuman(set);   // hand-moved: outranks reconcile + merge until saved
     setData(d => ({
       ...d,
       wb: (Array.isArray(d.wb) ? d.wb : []).map(it => {
@@ -43175,6 +43261,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   const shiftNodes = useCallback((ids, dx, dy) => {
     const set = ids instanceof Set ? ids : new Set(ids);
     if (set.size === 0) return;
+    wfHoldHuman(set);   // hand-moved: outranks reconcile + merge until saved
     setData(d => ({
       ...d,
       nodes: (d.nodes || []).map(n =>
@@ -43900,6 +43987,8 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     // the flag for those kinds; components that DO call onDragEnd reset it
     // again harmlessly.
     lastDragNodeIdRef.current = nid;
+    wfHoldHuman(nid);
+    if (selectedNodeIds.size > 1 && selectedNodeIds.has(nid)) wfHoldHuman(selectedNodeIds);
     if (!nodeDraggingRef.current) {
       setNodeDragging(true);
       const up = () => { window.removeEventListener("mouseup", up); setNodeDragging(false); };
@@ -45195,6 +45284,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
           });
         }
         addWbItem(item);
+        wfHoldHuman(item.id);
         setSelectedWbIds(new Set([item.id]));
         if (tool === "textbox") setEditingWbId(item.id);
         // Bind a box drawn on a table to its cell (arrows keep their own
@@ -45224,6 +45314,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       e.stopPropagation();
       const item = (wbItemsRef.current || []).find(i => i.id === id);
       if (!item) return;
+      wfHoldHuman(id);   // hand-resized: outranks reconcile + merge until saved
       const orig = _stableClone(item);
       const startX = e.clientX, startY = e.clientY;
       // Waypoint handles on an arrow: `mid:<i>` drags an existing bend
@@ -45483,20 +45574,26 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         if (it.sec && !sById.has(it.sec.sectionId)) { changed = true; it = stripSec(it); }
         if (it.draft) {
           if (!draftLives(it.draft)) { changed = true; it = stripDraft(it); }
-          else if (!(skipWb && skipWb.has(it.id))) {
+          else if (!(skipWb && skipWb.has(it.id)) && !wfHeldByHuman(it.id)) {
             const tg = screenTarget(it.draft);
             if (tg && (it.x !== tg.x || it.y !== tg.y)) { changed = true; it = { ...it, x: tg.x, y: tg.y }; }
           }
         }
         if (it.frame) {
           if (!frameHostLives(it.frame)) { changed = true; it = stripFrame(it); }
-          else if (!(skipWb && skipWb.has(it.id))) {
+          else if (!(skipWb && skipWb.has(it.id)) && !wfHeldByHuman(it.id)) {
             const tg = screenTarget(it.frame);
             if (tg && (it.x !== tg.x || it.y !== tg.y)) { changed = true; it = { ...it, x: tg.x, y: tg.y }; }
           }
         }
         if (!it.cell) return it;
         if (skipWb && skipWb.has(it.id)) return it;
+        // Hand gestures outrank the reconcile. `skipWb` only covers the drag
+        // while wbDraggingRef is still true - it flips false BEFORE the drop
+        // rebind computes the item's new cell offsets, so without this the
+        // reconcile re-pins to the OLD offsets and the drop reverts on the
+        // spot. The hold is released when the gesture's save lands.
+        if (wfHeldByHuman(it.id)) return it;
         if (!tById.has(it.cell.tableId)) { changed = true; return wbStripCell(it); }
         const tg = target(it.cell);
         if (!tg || (it.x === tg.x && it.y === tg.y)) return it;
@@ -45513,6 +45610,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         if (!n.cell) return n;
         if (n.id === activeDragId) return n;
         if (skipNode && skipNode.has(n.id)) return n;
+        if (wfHeldByHuman(n.id)) return n;   // same hand-gesture rule as wb
         if (!tById.has(n.cell.tableId)) { changed = true; return wbStripCell(n); }
         const tg = target(n.cell);
         if (!tg || ((n.x || 0) === tg.x && (n.y || 0) === tg.y)) return n;
@@ -45611,6 +45709,11 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   // table item AND every bound item/node's cell reference update atomically;
   // the reconcile effect above then repositions the bound content.
   const tableOp = useCallback((tableId, op, args = {}) => {
+    // Every grid mutation is a hand gesture (insert / delete / resize / swap /
+    // merge a row or column), so it outranks the reconcile and the disk merge
+    // until it round-trips - otherwise a second surface's stale grid lands on
+    // top of the column you just added and the change reads as "undone".
+    wfHoldHuman(tableId);
     setData(d => {
       const list = Array.isArray(d.wb) ? d.wb : [];
       const t = (d.nodes || []).find(n => n.id === tableId && n.kind === "table");
@@ -45710,12 +45813,22 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       // Remap every bound item/node's cell ref. Index ops shift r/c so the
       // content rides its cell; merge snaps swallowed cells to the anchor and
       // recomputes (ox,oy) so the item doesn't jump.
+      //
+      // A row/column DELETE takes its content with it. The old behaviour just
+      // stripped the binding, which left the dead column's text floating at its
+      // old world position - on top of whichever column slid left into that
+      // space - so deleting a middle column looked like the table scrambled
+      // itself. A table owns the content in its cells (the same rule
+      // removeNode already applies when the whole table is deleted), so the
+      // cells that cease to exist take their content with them. Undo restores
+      // it. Both canvas families ride this: wb items AND cell-hosted nodes.
+      const dropped = new Set();
       const remap = (o) => {
         const cell = o.cell;
         if (!cell || cell.tableId !== tableId) return o;
         let r = cell.r, c = cell.c, ox = cell.ox, oy = cell.oy;
-        if (rowMap) { const nr = rowMap(r); if (nr === null) return wbStripCell(o); r = nr; }
-        if (colMap) { const nc = colMap(c); if (nc === null) return wbStripCell(o); c = nc; }
+        if (rowMap) { const nr = rowMap(r); if (nr === null) { dropped.add(o.id); return null; } r = nr; }
+        if (colMap) { const nc = colMap(c); if (nc === null) { dropped.add(o.id); return null; } c = nc; }
         if (mergeRemap) {
           const a = mergeRemap({ r, c });
           if (a) {
@@ -45729,8 +45842,17 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         return { ...o, cell: { tableId, r, c, ox, oy } };
       };
 
-      const nextWb = list.map(it => it.cell ? remap(it) : it);
-      const nextNodes = (d.nodes || []).map(n => n.id === tableId ? nt : (n.cell ? remap(n) : n));
+      const nextWb = list.map(it => it.cell ? remap(it) : it).filter(Boolean);
+      const nextNodes = (d.nodes || []).map(n => n.id === tableId ? nt : (n.cell ? remap(n) : n)).filter(Boolean);
+      // Tombstone the removals so the daemon's preserve-what-the-POST-omits
+      // merge doesn't hand them straight back on the next save.
+      if (dropped.size) {
+        const wbGone = new Set(list.filter(it => it && dropped.has(it.id)).map(it => it.id));
+        for (const id of dropped) {
+          if (wbGone.has(id)) deletedWbIdsRef.current.add(id);
+          else deletedIdsRef.current.add(id);
+        }
+      }
 
       // Remap per-cell port EDGES ("<tableId>.cellin:r:c" / ".cellout:r:c") by
       // the same index/merge maps, so a wire into a cell rides its cell. A
@@ -45750,6 +45872,9 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         return next === ref ? ref : next;
       };
       const nextEdges = (d.edges || []).map(e => {
+        // an edge into a node that went with the deleted row/column dangles
+        if (dropped.has((e.from || "").split(".", 1)[0])
+            || dropped.has((e.to || "").split(".", 1)[0])) { edgesChanged = true; return null; }
         const nf = remapEdgeRef(e.from), ntp = remapEdgeRef(e.to);
         if (nf === null || ntp === null) { edgesChanged = true; return null; }
         if (nf === e.from && ntp === e.to) return e;
@@ -45760,7 +45885,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       return { ...d, wb: nextWb, nodes: nextNodes, ...(edgesChanged ? { edges: nextEdges } : {}) };
     });
     setTableSel(null);
-  }, [setData]);
+  }, [setData, deletedIdsRef, deletedWbIdsRef]);
 
   // ── Shared result-table helpers (used by the assistant nodes) ─────────────
   // Build a real canvas grid `table` node and fill every cell with a cell-bound
@@ -47001,6 +47126,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   // 480x536 -> 200x80, a family node 540x400 -> 280x220. Seeding from the
   // drawn box makes the first pixel of drag continue from what's on screen.
   const resizeNode = useCallback((nid, dw, dh) => {
+    wfHoldHuman(nid);
     setData(d => ({
       ...d,
       nodes: (d.nodes || []).map(n => {
@@ -96432,6 +96558,49 @@ const _wfxPendingNodeIds = new Set();
 // Merge keys that do NOT count as a content update: geometry, container
 // bindings, and run bookkeeping (runStatus's done-flip has its own diff).
 const _wfxMergeIgnoreKeys = new Set(["x", "y", "w", "h", "cell", "sec", "runRunId", "runId", "_building", "activeVersionId", "runStatus", "runError"]);
+
+/* ── Human-override latch ────────────────────────────────────────────────────
+   Ids the user just moved / resized / dropped BY HAND. A hand gesture outranks
+   both automatic geometry authorities - the cell reconcile and the disk merge -
+   until the gesture's own save round-trips.
+
+   Why this has to exist. "Dirty" (local differs from the last POSTed snapshot)
+   was doing double duty as "the human touched it", and it is not the same
+   thing: the instant a drag's save returns 200 the snapshot advances, the item
+   is clean again, and the very next reload happily overwrites the hand-placed
+   position with whatever disk says. With two writers on one project that is a
+   stable oscillation - measured on suss-cal at ~3 writes/sec, forever, every
+   pull firing a completion shockwave (the "constant yellow flash"). Same
+   root cause one layer down: the reconcile stops skipping a dragged item the
+   moment wbDraggingRef flips false, which is BEFORE the drop rebind computes
+   the item's new cell offsets, so it re-pins to the old ones and the drop
+   silently reverts.
+
+   Held ids are stamped at gesture START (not end) so the drag-end commit is
+   already covered, and released when a save carrying that id returns 200. The
+   deadline is a safety valve only: a save that never lands must not freeze an
+   item out of sync forever. Both canvas families ride the same registry -
+   nodes and wb items are stamped through the same helper. */
+const _wfHumanHold = new Map();   // id → deadline (ms epoch)
+const WF_HUMAN_HOLD_MS = 15000;
+function wfHoldHuman(ids) {
+  if (!ids) return;
+  const until = Date.now() + WF_HUMAN_HOLD_MS;
+  if (typeof ids === "string") { _wfHumanHold.set(ids, until); return; }
+  for (const id of ids) if (typeof id === "string") _wfHumanHold.set(id, until);
+}
+function wfHeldByHuman(id) {
+  const until = _wfHumanHold.get(id);
+  if (until === undefined) return false;
+  if (until > Date.now()) return true;
+  _wfHumanHold.delete(id);          // expired - self-prunes on read
+  return false;
+}
+function wfReleaseHuman(ids) {
+  if (!ids) return;
+  if (typeof ids === "string") { _wfHumanHold.delete(ids); return; }
+  for (const id of ids) _wfHumanHold.delete(id);
+}
 // One-shot mute for the enter-animation id-diff: set by WHOLE-DOC arrivals
 // (initial load, undo/redo restore, git-discard reset, rename replace) so a
 // full population never plays 200 bounces; consumed by the next diff run.
