@@ -31659,6 +31659,14 @@ function WorkflowCanvas() {
     // the empty drawer shell; the first user-sent message hits
     // spawnWorkflowChat via ChatDrawer.onStartNewChat where the workflow-mode
     // preamble is folded in.
+    //
+    // Drop any target override first. "Switch to general" and the dropdown
+    // read as a choice about THIS chat, but the override lives on the canvas
+    // for the whole page session - left standing it suppressed the
+    // previewing-<slug> chip on every later new chat, so a fresh thread
+    // opened over an open preview silently claimed the whole project. A new
+    // chat starts from the derived target; the user can override it again.
+    setChatTargetOverrideBoth(null);
     setChatRun({
       runId: null,
       isNew: true,
@@ -31668,7 +31676,7 @@ function WorkflowCanvas() {
       agentId: pickAgentIdForChat(),
     });
     setChatRunFinished(false);
-  }, [branch]);
+  }, [branch, setChatTargetOverrideBoth]);
   const reopenWorkflowRun = useCallback((run) => {
     // Called when the user clicks an existing run in the RunsMenu list.
     // The run's history streams in via SSE; no preamble is sent (the
