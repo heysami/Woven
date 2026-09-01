@@ -41805,6 +41805,16 @@ const PAL_TOOLRESULTS_KEY = "th-chat-search-toolresults";
 function loadPalToolResults() {
   try { return localStorage.getItem(PAL_TOOLRESULTS_KEY) === "1"; } catch { return false; }
 }
+// Whether transcript search reads TOOL CALLS - the one-line "which file, which
+// command" rows. ON by default (the opposite default to tool output): a call is
+// short, so it doesn't drown the conversation, and "which command touched
+// styles.css" is a fair query. Turned off, a search reads only what was SAID -
+// you, the agent, its thinking, the compacted summaries - which is what you
+// want when a word is common in commands and rare in the conversation.
+const PAL_TOOLCALLS_KEY = "th-chat-search-toolcalls";
+function loadPalToolCalls() {
+  try { return localStorage.getItem(PAL_TOOLCALLS_KEY) !== "0"; } catch { return true; }
+}
 // Split `text` on every case-insensitive occurrence of `q`, wrapping the hits
 // in <mark> so a snippet shows WHY it matched. Returns the plain string when
 // there's nothing to mark, keeping the common rows allocation-free.
@@ -41862,6 +41872,13 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
     try { localStorage.setItem(PAL_TOOLRESULTS_KEY, on ? "1" : "0"); } catch {}
     try { inputRef.current && inputRef.current.focus(); } catch {}
   };
+  // Same deal for tool CALLS, defaulted the other way - see PAL_TOOLCALLS_KEY.
+  const [toolCalls, setToolCalls] = useState(loadPalToolCalls);
+  const changeToolCalls = (on) => {
+    setToolCalls(on);
+    try { localStorage.setItem(PAL_TOOLCALLS_KEY, on ? "1" : "0"); } catch {}
+    try { inputRef.current && inputRef.current.focus(); } catch {}
+  };
   const chatReqRef = useRef(0);
   useEffect(() => {
     if (!open || tab !== "runs") return;
@@ -41876,7 +41893,8 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
     const t = setTimeout(async () => {
       try {
         const r = await fetch(apiUrl("/__chat_search?q=" + encodeURIComponent(term)
-                                     + (toolRes ? "&toolresults=1" : "")));
+                                     + (toolRes ? "&toolresults=1" : "")
+                                     + (toolCalls ? "" : "&toolcalls=0")));
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
         if (seq !== chatReqRef.current) return;     // superseded
@@ -41889,7 +41907,7 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
       }
     }, 280);
     return () => clearTimeout(t);
-  }, [open, tab, query, q, toolRes]);
+  }, [open, tab, query, q, toolRes, toolCalls]);
 
   const results = useMemo(() => {
     if (!open) return [];
@@ -42015,6 +42033,7 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
     if (chatBusy) return null;                      // the spinner speaks for it
     if (chatRes && chatRes.unsearchable) return "That query is all punctuation - add a word to search for.";
     return `Nothing in this project's conversations matches "${q.trim()}".`
+         + (toolCalls ? "" : " Tool calls are excluded - turn them back on to search commands and file paths.")
          + (toolRes ? "" : " Turn on Tool output to search file dumps and command output too.");
   };
 
@@ -42045,12 +42064,26 @@ function WorkflowSearchPalette({ open, initialTab, onClose, nodes, wb, onFocusNo
             <button
               type="button"
               role="switch"
+              aria-checked=${toolCalls ? "true" : "false"}
+              className="wf-pal-toggle"
+              data-on=${toolCalls ? "true" : "false"}
+              title=${toolCalls
+                ? "Tool calls are being searched - the one-line rows naming a command, a file, a prompt. Turn them off to search only what was SAID."
+                : "Tool calls are excluded. Only what was said is searched: you, the agent, its thinking, compacted summaries."}
+              onClick=${() => changeToolCalls(!toolCalls)}
+            >
+              <span className="wf-pal-toggle-box" aria-hidden="true">${toolCalls ? html`<${Icon.Check}/>` : null}</span>
+              <span>Tool calls</span>
+            </button>
+            <button
+              type="button"
+              role="switch"
               aria-checked=${toolRes ? "true" : "false"}
               className="wf-pal-toggle"
               data-on=${toolRes ? "true" : "false"}
               title=${toolRes
                 ? "Tool output is being searched. Turn it off to keep results to the conversation - file dumps and command output bury it otherwise."
-                : "Also search tool OUTPUT - file dumps, command output, page reads. Noisy, but it is where paths and errors live. Tool calls are always searched."}
+                : "Also search tool OUTPUT - file dumps, command output, page reads. Noisy, but it is where paths and errors live."}
               onClick=${() => changeToolRes(!toolRes)}
             >
               <span className="wf-pal-toggle-box" aria-hidden="true">${toolRes ? html`<${Icon.Check}/>` : null}</span>

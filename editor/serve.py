@@ -10326,7 +10326,8 @@ def _chat_search_row_text(rec):
     `toolresult` is its own role rather than part of `tool`: a tool CALL is a
     short line of intent (which file, which command) and belongs in a default
     search, while its OUTPUT is a file dump that would otherwise drown every
-    query. The endpoint filters on that split; see `tools` in _chat_search."""
+    query. The endpoint filters on that split - each role has its own switch;
+    see `skip_roles` in _chat_search."""
     t = rec.get("type")
     d = rec.get("data")
     if not isinstance(d, dict):
@@ -32569,7 +32570,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             out["omittedRows"] = omitted
         return self._reply(200, out)
 
-    # GET /__chat_search?q=<text>[&project=<id>][&toolresults=1]
+    # GET /__chat_search?q=<text>[&project=<id>][&toolresults=1][&toolcalls=0]
     #   Full-text search across every run's transcript in this project, for
     #   the canvas search palette's "Agent chats" tab. Answers newest-first,
     #   grouped by run. See _chat_search_scan for why this never parses a
@@ -32578,9 +32579,11 @@ class H(http.server.SimpleHTTPRequestHandler):
     #   Tool OUTPUT is excluded unless `toolresults=1`. A tool result is a
     #   file dump or a page of command output, so on any common word it wins
     #   the newest-first race and buries the actual conversation; the palette
-    #   surfaces the switch and defaults it off. Tool CALLS stay in either
-    #   way - "which command touched styles.css" is a fair thing to search
-    #   for, and a call is one line, not a page.
+    #   surfaces the switch and defaults it off. Tool CALLS are included
+    #   unless `toolcalls=0` - a call is one line, not a page, and "which
+    #   command touched styles.css" is a fair thing to search for - but the
+    #   palette can drop them too, for a query whose word is common in
+    #   commands and rare in the conversation.
     _CHAT_SEARCH_MAX_HITS    = 300   # rows collected before we stop scanning
     _CHAT_SEARCH_MAX_PER_RUN = 6     # matches surfaced per conversation
     _CHAT_SEARCH_MAX_RUNS    = 40
@@ -32601,7 +32604,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(200, dict(base, unsearchable=True))
         q_low = q.lower()
         want_results = (_qs_get(qs, "toolresults") or "").strip() in ("1", "true", "yes")
-        skip_roles = () if want_results else ("toolresult",)
+        want_calls = (_qs_get(qs, "toolcalls") or "").strip() not in ("0", "false", "no")
+        skip_roles = tuple(
+            r for r, keep in (("toolresult", want_results), ("tool", want_calls))
+            if not keep)
         deadline = time.monotonic() + _CHAT_SEARCH_BUDGET
         t0 = time.time()
         groups, order = {}, []
