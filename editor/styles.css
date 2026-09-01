@@ -9675,6 +9675,10 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   box-sizing: border-box;
   font-size: 14px;
   overflow: hidden;
+  /* Flex so the item's `vAlign` (inline align-items) has an axis to work on.
+     Default stays flex-start = the top placement stickies always had. */
+  display: flex;
+  align-items: flex-start;
 }
 .workflow-wb-sticky .workflow-wb-textbody { font-size: 14px; }
 .workflow-wb-image img {
@@ -19236,6 +19240,65 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text);
   background: var(--surface-2);
 }
+/* Settings > Preferences > Whiteboard tool defaults. One collapsed row per
+   drawing tool; the expanded body reuses the canvas tools panel's swatch /
+   segmented rows verbatim, so a control looks the same in both places. */
+.workflow-wb-defaults-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.workflow-wb-defaults-tool + .workflow-wb-defaults-tool { border-top: 1px solid var(--border); }
+.workflow-wb-defaults-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--text);
+  text-align: left;
+  font-size: 13px;
+}
+.workflow-wb-defaults-head:hover { background: var(--surface-2); }
+.workflow-wb-defaults-glyph {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+.workflow-wb-defaults-name { flex: 1 1 auto; }
+.workflow-wb-defaults-chip {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  flex: 0 0 auto;
+}
+.workflow-wb-defaults-state {
+  font-size: 11px;
+  color: var(--text-faint);
+  min-width: 46px;
+  text-align: right;
+}
+.workflow-wb-defaults-caret { color: var(--text-faint); font-size: 10px; }
+.workflow-wb-defaults-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 16px;
+  padding: 2px 10px 12px;
+}
+.workflow-wb-defaults-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.workflow-wb-defaults-field .workflow-wb-tools-sublabel { margin: 0; }
+.workflow-wb-defaults-body .workflow-canvasbg-reset { align-self: center; }
+
 .workflow-settings-section-head {
   display: flex;
   align-items: center;

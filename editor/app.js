@@ -8995,6 +8995,51 @@ if (typeof window !== "undefined") {
   }
 }
 
+/* Whiteboard tool style DEFAULTS - the style a newly drawn item starts with,
+   per tool, set in Settings > Preferences. Stored sparsely in the same
+   settings blob (`wbToolDefaults[tool] = { color, fontSize, ... }`): only the
+   keys the user actually set are written, so an unset key keeps the built-in
+   below and a new style field needs no migration. These are a STARTING POINT,
+   not a lock - a control the user touches in the whiteboard tools panel still
+   wins for the rest of that session. Read live via
+   th:wb-tool-defaults-changed so the canvas picks a change up without a
+   reload. */
+const WB_TOOL_BUILTIN_DEFAULTS = {
+  text:    { color: "ink",    fontSize: "md", align: "left" },
+  textbox: { color: "blue",   fontSize: "md", align: "center", vAlign: "middle", radius: 10 },
+  sticky:  { color: "yellow", fontSize: "sm", align: "left",   vAlign: "top" },
+  pen:     { color: "ink",    size: 3 },
+  shape:   { color: "gray",   shape: "rect", size: 2, radius: 6 },
+  arrow:   { color: "ink",    size: 3, arrowStart: false, arrowEnd: true, dash: false, route: "straight" },
+};
+function loadWbToolDefaults() {
+  const d = loadSettings().wbToolDefaults;
+  return (d && typeof d === "object") ? d : {};
+}
+function loadWbToolDefault(tool) {
+  const d = loadWbToolDefaults()[tool];
+  return (d && typeof d === "object") ? d : {};
+}
+function _wbToolDefaultsChanged() {
+  try { window.dispatchEvent(new CustomEvent("th:wb-tool-defaults-changed")); } catch {}
+}
+function saveWbToolDefault(tool, patch) {
+  const all = loadWbToolDefaults();
+  const next = { ...(all[tool] || {}), ...patch };
+  // null/undefined = "back to the built-in", so the key leaves the blob
+  // instead of being stored as an explicit empty value.
+  for (const k of Object.keys(next)) if (next[k] === null || next[k] === undefined) delete next[k];
+  saveSettings({ wbToolDefaults: { ...all, [tool]: next } });
+  _wbToolDefaultsChanged();
+}
+// tool = null clears every tool's overrides.
+function resetWbToolDefaults(tool) {
+  const all = { ...loadWbToolDefaults() };
+  if (tool) delete all[tool];
+  saveSettings({ wbToolDefaults: tool ? all : {} });
+  _wbToolDefaultsChanged();
+}
+
 /* Editor colour scheme preference. "light" | "dark" | "system" (default
    "system" = follow the OS). Stored in the same settings blob and applied by
    setting data-theme on <html>; the styles.css `:root[data-theme="dark"]` block
@@ -34496,6 +34541,18 @@ function hexToColorString(hex, fmt) {
 
 const WB_FONT_SIZES = { sm: 14, md: 18, lg: 26, xl: 40 };
 
+/* Vertical text placement inside a FIXED-HEIGHT text box (textbox / sticky).
+   `align` is horizontal, `vAlign` is the other axis - a sticky whose text
+   should hang off the bottom, a box label pinned to the top. Auto-height
+   `text` items have no room to align in, so they carry no vAlign.
+   Legacy items predate the field: the render falls back to each type's
+   historical placement (textbox centred, sticky top) so nothing shifts. */
+const WB_V_ALIGNS = ["top", "middle", "bottom"];
+const WB_V_ALIGN_CSS = { top: "flex-start", middle: "center", bottom: "flex-end" };
+function wbVAlignCSS(v, fallback) {
+  return WB_V_ALIGN_CSS[v] || WB_V_ALIGN_CSS[fallback] || "flex-start";
+}
+
 // fontSize is a preset token OR a raw px number (panel override).
 function wbFontPx(v, fallback = 18) {
   if (typeof v === "number" && v > 0) return v;
@@ -34538,13 +34595,15 @@ const WORKFLOW_WB_FACTORY = {
     type: "textbox", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 220, h: p.h ?? 120,
     text: p.text || "", color: p.color || "blue",
     radius: p.radius ?? 10, fontSize: p.fontSize || "md", align: p.align || "center",
+    vAlign: WB_V_ALIGNS.includes(p.vAlign) ? p.vAlign : "middle",
     bold: !!p.bold, italic: !!p.italic, rotation: p.rotation ?? 0,
   }),
   "sticky": (p = {}) => ({
     type: "sticky", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 180, h: p.h ?? 180,
     text: p.text || "", color: p.color || "yellow",
     fontSize: p.fontSize || "sm", bold: !!p.bold, italic: !!p.italic,
-    align: p.align || "left", rotation: p.rotation ?? 0,
+    align: p.align || "left", vAlign: WB_V_ALIGNS.includes(p.vAlign) ? p.vAlign : "top",
+    rotation: p.rotation ?? 0,
   }),
   "ink": (p = {}) => ({
     type: "ink", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 1, h: p.h ?? 1,
@@ -43068,7 +43127,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         const body = WORKFLOW_WB_FACTORY[target.key]({
           x: it.x, y: it.y, w: it.w, text: textOf(it),
           fontSize: it.fontSize, bold: it.bold, italic: it.italic,
-          align: it.align, rotation: it.rotation, color: it.color,
+          align: it.align, vAlign: it.vAlign, rotation: it.rotation, color: it.color,
         });
         wbTypeSwaps[it.id] = { ...body, id: it.id, z: it.z, ...(it.cell ? { cell: it.cell } : {}) };
         nextWbSel.add(it.id);
@@ -44395,21 +44454,47 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   // controls write here AND patch the live selection (when there is one).
   // null align/radius = per-type defaults.
   const [wbFmt, setWbFmt] = useState({
-    size: 3, fontSize: "md", bold: false, italic: false, align: null,
+    size: 3, fontSize: "md", bold: false, italic: false, align: null, vAlign: null,
     radius: null, fill: null, stroke: null, textColor: null, fillOpacity: null,
     arrowStart: false, arrowEnd: true, dash: false,
     shape: "rect", route: "straight",
   });
   const wbFmtRef = useRef(wbFmt); wbFmtRef.current = wbFmt;
+  // Which wbFmt keys the user actually touched THIS SESSION. Everything else
+  // still holds its initial value above, which must not shadow the per-tool
+  // defaults from Settings - see wbCreateFmt.
+  const wbFmtTouchedRef = useRef(new Set());
+  const wbApplyFmt = useCallback((patch) => {
+    for (const k of Object.keys(patch || {})) wbFmtTouchedRef.current.add(k);
+    setWbFmt(f => ({ ...f, ...patch }));
+  }, []);
+  // Per-tool style defaults from Settings > Preferences, live.
+  const [wbToolDefaults, setWbToolDefaults] = useState(loadWbToolDefaults);
+  const wbToolDefaultsRef = useRef(wbToolDefaults); wbToolDefaultsRef.current = wbToolDefaults;
+  useEffect(() => {
+    const onCh = () => setWbToolDefaults(loadWbToolDefaults());
+    window.addEventListener("th:wb-tool-defaults-changed", onCh);
+    return () => window.removeEventListener("th:wb-tool-defaults-changed", onCh);
+  }, []);
+  /* The style a NEW item of `tool` starts from. Three layers, weakest first:
+     the session's untouched wbFmt seed (built-in fallbacks the gestures read,
+     like arrowEnd / route), the tool's saved Settings default, then the panel
+     controls the user actually moved this session - which win, so arming a
+     colour or a size mid-session behaves exactly as it always did. */
+  const wbCreateFmt = useCallback((tool) => {
+    const F = wbFmtRef.current;
+    const over = { ...(wbToolDefaultsRef.current[tool] || {}) };
+    for (const k of wbFmtTouchedRef.current) over[k] = F[k];
+    return { ...F, ...over };
+  }, []);
   const wbCancelGestureRef = useRef(null);  // Esc cancels the in-flight gesture
   const wbSuppressMarqueeClearRef = useRef(false);
 
   const wbToolColor = useCallback((type) => {
     if (wbColorPickRef.current) return wbColorPickRef.current;
-    return type === "sticky" ? "yellow"
-         : type === "textbox" ? "blue"
-         : type === "shape" ? "gray"
-         : "ink";
+    const d = wbToolDefaultsRef.current[type];
+    if (d && d.color) return d.color;
+    return (WB_TOOL_BUILTIN_DEFAULTS[type] || {}).color || "ink";
   }, []);
 
   // One-shot tools revert to select after a commit; pen + sticky stay armed
@@ -44858,7 +44943,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       let raf = 0, cancelled = false;
       const pathEl = wbLiveStrokeRef.current && wbLiveStrokeRef.current.querySelector("path");
       const color = wbToolColor("pen");
-      const penSize = wbFmtRef.current.size || 3;
+      const penSize = wbCreateFmt("pen").size || 3;
       if (pathEl) {
         pathEl.setAttribute("stroke", wbColorCSS(color));
         pathEl.setAttribute("stroke-width", String(penSize));
@@ -44916,12 +45001,13 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     // ── sticky / text - click-to-place, edit immediately ──
     if (tool === "sticky" || tool === "text") {
       e.preventDefault();
-      const F = wbFmtRef.current;
+      const F = wbCreateFmt(tool);
       const item = tool === "sticky"
         ? wbMakeItem("sticky", {
             x: wp.x - 90, y: wp.y - 90, color: wbToolColor("sticky"),
             fontSize: F.fontSize === "md" ? "sm" : F.fontSize,
             bold: F.bold, italic: F.italic, align: F.align || "left",
+            ...(F.vAlign ? { vAlign: F.vAlign } : {}),
           })
         : wbMakeItem("text", {
             x: wp.x, y: wp.y, color: wbToolColor("text"),
@@ -44971,6 +45057,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     if (tool === "shape" || tool === "textbox" || tool === "arrow" || tool === "section" || tool === "table") {
       e.preventDefault();
       const color = wbToolColor(tool);
+      const F = wbCreateFmt(tool);
       const pressX = wp.x, pressY = wp.y;
       let x0 = wp.x, y0 = wp.y;
       // Arrow START: take the side port the hover preview was already showing,
@@ -44995,7 +45082,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
           const ex = endSnap ? endSnap.x : lastWp.x;
           const ey = endSnap ? endSnap.y : lastWp.y;
           setWbArrowSnap(prev => wbSnapSame(prev, endSnap) ? prev : endSnap);
-          setWbGhost({ type: "arrow", x1: x0, y1: y0, x2: ex, y2: ey, color, size: wbFmtRef.current.size || 3 });
+          setWbGhost({ type: "arrow", x1: x0, y1: y0, x2: ex, y2: ey, color, size: F.size || 3 });
         } else {
           setWbGhost({
             type: tool,
@@ -45014,7 +45101,6 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         // can shift the start by most of the band, which would read a plain
         // click as a drag and skip the click-to-place default size.
         const dragged = Math.hypot(lastWp.x - pressX, lastWp.y - pressY) >= 4;
-        const F = wbFmtRef.current;
         let item;
         if (tool === "section") {
           // Commit a real section node sized to the drawn box (default to the
@@ -45095,6 +45181,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
                 shape: F.shape === "diamond" ? "diamond" : "rect", ...boxColors }
             : { radius: F.radius ?? 10, fontSize: F.fontSize, align: F.align || "center",
                 bold: F.bold, italic: F.italic,
+                ...(F.vAlign ? { vAlign: F.vAlign } : {}),
                 ...(F.fill ? { fill: F.fill } : {}),
                 ...(F.textColor ? { textColor: F.textColor } : {}),
                 ...boxColors };
@@ -57906,7 +57993,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
               pickedColor=${wbPickedColor}
               onPickColor=${(tok) => { wbColorPickRef.current = tok; setWbPickedColor(tok); }}
               fmt=${wbFmt}
-              onFmt=${(patch) => setWbFmt(f => ({ ...f, ...patch }))}
+              onFmt=${wbApplyFmt}
               eyedropFmt=${eyedropFmt}
               onEyedropFmt=${setEyedropFmtPersist}
               onEyedrop=${runEyedropper}
@@ -97485,6 +97572,7 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, paintZ
             : `color-mix(in oklab, ${fillC} ${fillPct}%, transparent)`,
           borderColor: strokeC,
           borderRadius: Math.max(0, item.radius ?? 10) + "px",
+          alignItems: wbVAlignCSS(item.vAlign, "middle"),
           ...rotStyle,
         }}>
         ${textBody("", {
@@ -97502,7 +97590,9 @@ function WorkflowWbItem({ item, selected, editing, editingLabelIdx, zoom, paintZ
         style=${{
           left: item.x + "px", top: item.y + "px",
           width: item.w + "px", height: item.h + "px", zIndex: z,
-          "--wb-c": c, ...rotStyle,
+          "--wb-c": c,
+          alignItems: wbVAlignCSS(item.vAlign, "top"),
+          ...rotStyle,
         }}>
         ${textBody("", {
           fontSize: wbFontPx(item.fontSize, 14) + "px",
@@ -98134,6 +98224,82 @@ const WB_TOOL_GLYPHS = {
 };
 
 const WB_STICKER_EMOJIS = ["⭐","✅","👍","👎","🔥","💡","🤔","😍","😐","🎯","❤️","⚠️","🚀","💯","❓","🙌","👀","🧠","📌","🏆"];
+/* Shared whiteboard style controls - a colour swatch row and a segmented
+   button row. Rendered both by the canvas tools panel (which patches the live
+   selection) and by the Settings "Whiteboard tool defaults" section (which
+   writes the per-tool defaults), so the two surfaces stay one vocabulary. */
+function wbSwatchRow(cur, onPick, allowNone) {
+  return html`
+    <div className="workflow-wb-swatches">
+      ${allowNone && html`
+        <button type="button"
+          className=${"workflow-wb-swatch workflow-wb-swatch-none" + (cur === "none" ? " is-active" : "")}
+          title="None"
+          onClick=${() => onPick("none")}/>
+      `}
+      ${WB_COLOR_TOKENS.map(tok => html`
+        <button key=${tok} type="button"
+          className=${"workflow-wb-swatch" + (tok === "white" ? " workflow-wb-swatch-white" : "")
+            + (cur === tok ? " is-active" : "")}
+          title=${tok}
+          style=${{ background: `var(--wb-${tok})` }}
+          onClick=${() => onPick(tok)}/>
+      `)}
+    </div>`;
+}
+function wbSegRow(opts, cur, onPick) {
+  return html`
+    <div className="workflow-wb-seg">
+      ${opts.map(o => html`
+        <button key=${String(o.v)} type="button"
+          className=${"workflow-wb-seg-btn" + (cur === o.v ? " is-active" : "")}
+          title=${o.tip || String(o.v)}
+          onClick=${() => onPick(o.v)}
+        >${o.label}</button>
+      `)}
+    </div>`;
+}
+const WB_ALIGN_GLYPHS = {
+  left:   html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 4h11M2.5 8h7M2.5 12h9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>`,
+  center: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 4h11M4.5 8h7M3.2 12h9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>`,
+  right:  html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 4h11M6.5 8h7M4 12h9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>`,
+};
+const WB_V_ALIGN_GLYPHS = {
+  top:    html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 2.6h11M4.6 5.6h6.8v3.2H4.6z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`,
+  middle: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 8h11M4.6 4.2h6.8M4.6 11.8h6.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>`,
+  bottom: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 13.4h11M4.6 7.2h6.8v3.2H4.6z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`,
+};
+const WB_SHAPE_GLYPHS = {
+  rect:    html`<svg viewBox="0 0 16 16" width="13" height="13"><rect x="2.2" y="3.6" width="11.6" height="8.8" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg>`,
+  diamond: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M8 1.9 L14.1 8 L8 14.1 L1.9 8 Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/></svg>`,
+};
+const WB_ROUTE_GLYPHS = {
+  straight: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 13.5 L13.5 2.5" stroke="currentColor" strokeWidth="1.7" fill="none" strokeLinecap="round"/></svg>`,
+  curve:    html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 13.5 C 2.5 6, 10 13.5, 13.5 2.5" stroke="currentColor" strokeWidth="1.7" fill="none" strokeLinecap="round"/></svg>`,
+  elbow:    html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 13.5 H8 V2.5 H13.5" stroke="currentColor" strokeWidth="1.7" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>`,
+};
+// Segmented-row option lists shared by the tools panel and the Settings
+// defaults section.
+const WB_FONT_OPTS = [
+  { v: "sm", label: "S",  tip: "Small (14px)" },
+  { v: "md", label: "M",  tip: "Medium (18px)" },
+  { v: "lg", label: "L",  tip: "Large (26px)" },
+  { v: "xl", label: "XL", tip: "Extra large (40px)" },
+];
+const WB_SHAPE_OPTS = [
+  { v: "rect",    tip: "Rectangle", label: WB_SHAPE_GLYPHS.rect },
+  { v: "diamond", tip: "Diamond",   label: WB_SHAPE_GLYPHS.diamond },
+];
+const WB_ROUTE_OPTS = [
+  { v: "straight", tip: "Straight",         label: WB_ROUTE_GLYPHS.straight },
+  { v: "curve",    tip: "Curved",           label: WB_ROUTE_GLYPHS.curve },
+  { v: "elbow",    tip: "Elbow (90° turns)", label: WB_ROUTE_GLYPHS.elbow },
+];
+const WB_STROKE_OPTS = [2, 3, 5, 8].map(sz => ({
+  v: sz, tip: sz + "px",
+  label: html`<span className="workflow-wb-stroke-dot" style=${{ width: (sz + 3) + "px", height: (sz + 3) + "px" }}/>`,
+}));
+
 function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, selection, onPatchSelection, pickedColor, onPickColor, fmt, onFmt, eyedropFmt, onEyedropFmt, onEyedrop, lastEyedrop }) {
   // Contextual format controls. Which rows show follows the RELEVANT TYPES:
   // the selection’s item types when something is selected, else the armed
@@ -98159,6 +98325,8 @@ function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, s
   const hasColorableSel = sel.some(it => it.type !== "image");
   const showColors = hasColorableSel || (toolType && tool !== "select");
   const showText   = has("text", "textbox", "sticky");
+  // Fixed-height text boxes get the vertical-placement row too.
+  const showVAlign = has("textbox", "sticky");
   const showCorner = has("textbox", "shape");
   const showStroke = has("ink", "shape", "arrow");
   const showArrow  = has("arrow");
@@ -98172,39 +98340,15 @@ function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, s
   const showGenericColors = showColors && ((!hasBox && !hasTable) || hasOtherColorable);
   // `white` used to be a hand-placed leading swatch here (cell fill only); it
   // is a palette token now, so it rides the loop and every row gets it.
-  const swatchRow = (cur, onPick, allowNone) => html`
-    <div className="workflow-wb-swatches">
-      ${allowNone && html`
-        <button type="button"
-          className=${"workflow-wb-swatch workflow-wb-swatch-none" + (cur === "none" ? " is-active" : "")}
-          title="None"
-          onClick=${() => onPick("none")}/>
-      `}
-      ${WB_COLOR_TOKENS.map(tok => html`
-        <button key=${tok} type="button"
-          className=${"workflow-wb-swatch" + (tok === "white" ? " workflow-wb-swatch-white" : "")
-            + (cur === tok ? " is-active" : "")}
-          title=${tok}
-          style=${{ background: `var(--wb-${tok})` }}
-          onClick=${() => onPick(tok)}/>
-      `)}
-    </div>`;
-  const seg = (opts, cur, onPick) => html`
-    <div className="workflow-wb-seg">
-      ${opts.map(o => html`
-        <button key=${String(o.v)} type="button"
-          className=${"workflow-wb-seg-btn" + (cur === o.v ? " is-active" : "")}
-          title=${o.tip || String(o.v)}
-          onClick=${() => onPick(o.v)}
-        >${o.label}</button>
-      `)}
-    </div>`;
+  const swatchRow = wbSwatchRow;
+  const seg = wbSegRow;
   const alignCur = val("align", types.has("textbox") && !types.has("text") && !types.has("sticky") ? "center" : "left");
-  const ALIGN_GLYPHS = {
-    left:   html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 4h11M2.5 8h7M2.5 12h9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>`,
-    center: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 4h11M4.5 8h7M3.2 12h9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>`,
-    right:  html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 4h11M6.5 8h7M4 12h9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>`,
-  };
+  // Vertical placement only means something in a FIXED-HEIGHT box, so the row
+  // shows for textbox / sticky and hides for the auto-height `text` item.
+  // Fallback matches each type's historical placement.
+  const vAlignCur = val("vAlign", types.has("sticky") && !types.has("textbox") ? "top" : "middle");
+  const V_ALIGN_GLYPHS = WB_V_ALIGN_GLYPHS;
+  const ALIGN_GLYPHS = WB_ALIGN_GLYPHS;
   return html`
     <div className="workflow-wb-tools">
       <div className="workflow-wb-tools-list">
@@ -98306,12 +98450,7 @@ function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, s
         <div className="workflow-wb-tools-section">
           <div className="workflow-wb-tools-sublabel">Text</div>
           <div className="workflow-wb-fmt-row">
-            ${seg([
-              { v: "sm", label: "S",  tip: "Small (14px)" },
-              { v: "md", label: "M",  tip: "Medium (18px)" },
-              { v: "lg", label: "L",  tip: "Large (26px)" },
-              { v: "xl", label: "XL", tip: "Extra large (40px)" },
-            ], val("fontSize", "md"), (v) => apply({ fontSize: v }))}
+            ${seg(WB_FONT_OPTS, val("fontSize", "md"), (v) => apply({ fontSize: v }))}
             <input type="number" min="1" step="1"
               className="workflow-wb-num"
               title="Custom size (px)"
@@ -98337,27 +98476,28 @@ function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, s
               >${ALIGN_GLYPHS[a]}</button>
             `)}
           </div>
+          ${showVAlign && html`
+            <div className="workflow-wb-fmt-row">
+              ${WB_V_ALIGNS.map(v => html`
+                <button key=${v} type="button" title=${"Align text to " + v + " of the box"}
+                  className=${"workflow-wb-seg-btn" + (vAlignCur === v ? " is-active" : "")}
+                  onClick=${() => apply({ vAlign: v })}
+                >${V_ALIGN_GLYPHS[v]}</button>
+              `)}
+            </div>
+          `}
         </div>
       `}
       ${has("shape") && html`
         <div className="workflow-wb-tools-section">
           <div className="workflow-wb-tools-sublabel">Shape</div>
-          ${seg([
-            { v: "rect", tip: "Rectangle",
-              label: html`<svg viewBox="0 0 16 16" width="13" height="13"><rect x="2.2" y="3.6" width="11.6" height="8.8" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg>` },
-            { v: "diamond", tip: "Diamond",
-              label: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M8 1.9 L14.1 8 L8 14.1 L1.9 8 Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/></svg>` },
-          ], val("shape", "rect"), (v) => apply({ shape: v }))}
+          ${seg(WB_SHAPE_OPTS, val("shape", "rect"), (v) => apply({ shape: v }))}
         </div>
       `}
       ${showStroke && html`
         <div className="workflow-wb-tools-section">
           <div className="workflow-wb-tools-sublabel">Stroke</div>
-          ${seg([2, 3, 5, 8].map(s => ({
-            v: s,
-            tip: s + "px",
-            label: html`<span className="workflow-wb-stroke-dot" style=${{ width: (s + 3) + "px", height: (s + 3) + "px" }}/>`,
-          })), val("size", types.has("shape") ? 2 : 3), (v) => apply({ size: v }))}
+          ${seg(WB_STROKE_OPTS, val("size", types.has("shape") ? 2 : 3), (v) => apply({ size: v }))}
         </div>
       `}
       ${showCorner && html`
@@ -98425,14 +98565,7 @@ function WorkflowWhiteboardTools({ tool, onTool, stickerEmoji, onStickerEmoji, s
             ><svg viewBox="0 0 16 16" width="13" height="13"><path d="M2 8h2.6M6.7 8h2.6M11.4 8H14" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></button>
           </div>
           <div className="workflow-wb-tools-sublabel" style=${{ marginTop: "8px" }}>Line style</div>
-          ${seg([
-            { v: "straight", tip: "Straight",
-              label: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 13.5 L13.5 2.5" stroke="currentColor" strokeWidth="1.7" fill="none" strokeLinecap="round"/></svg>` },
-            { v: "curve", tip: "Curved",
-              label: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 13.5 C 2.5 6, 10 13.5, 13.5 2.5" stroke="currentColor" strokeWidth="1.7" fill="none" strokeLinecap="round"/></svg>` },
-            { v: "elbow", tip: "Elbow (90° turns)",
-              label: html`<svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 13.5 H8 V2.5 H13.5" stroke="currentColor" strokeWidth="1.7" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>` },
-          ], val("route", "straight"), (v) => apply({ route: v }))}
+          ${seg(WB_ROUTE_OPTS, val("route", "straight"), (v) => apply({ route: v }))}
           <div className="workflow-wb-tools-hint" style=${{ marginTop: "6px" }}>
             Drag the small dots on a selected arrow to add turns · double-click a bend to remove it · double-click the line to add a text label
           </div>
@@ -99413,6 +99546,151 @@ function WorkflowSettingsDialog({ onClose }) {
   `, document.body);
 }
 
+/* Settings > Preferences > "Whiteboard tool defaults".
+   One row per drawing tool; expanding a row shows exactly the style controls
+   that tool's items carry, wired to the sparse per-tool defaults blob (see
+   loadWbToolDefaults). A tool with no saved overrides shows the built-in
+   values greyed as its summary and no Reset. Controls reuse the canvas tools
+   panel's own swatch / segmented rows so the two surfaces read as one thing.
+   Whiteboard-only by nature: workflow NODES carry no per-kind text style, so
+   there is no node-family twin of this section to keep in step. */
+const WB_DEFAULT_TOOL_SPECS = [
+  { tool: "text",    label: "Text",        fields: ["color", "fontSize", "weight", "align"] },
+  { tool: "textbox", label: "Text box",    fields: ["color", "fontSize", "weight", "align", "vAlign", "radius"] },
+  { tool: "sticky",  label: "Sticky note", fields: ["color", "fontSize", "weight", "align", "vAlign"] },
+  { tool: "pen",     label: "Pen",         fields: ["color", "size"] },
+  { tool: "shape",   label: "Box",         fields: ["color", "shape", "size", "radius"] },
+  { tool: "arrow",   label: "Arrow",       fields: ["color", "size", "heads", "route"] },
+];
+function WorkflowWbDefaultsSection() {
+  const [defs, setDefs] = useState(loadWbToolDefaults);
+  const [open, setOpen] = useState(null);
+  useEffect(() => {
+    const onCh = () => setDefs(loadWbToolDefaults());
+    window.addEventListener("th:wb-tool-defaults-changed", onCh);
+    return () => window.removeEventListener("th:wb-tool-defaults-changed", onCh);
+  }, []);
+  const anySaved = WB_DEFAULT_TOOL_SPECS.some(sp => Object.keys(defs[sp.tool] || {}).length);
+  const row = (sp) => {
+    const saved = defs[sp.tool] || {};
+    const base = WB_TOOL_BUILTIN_DEFAULTS[sp.tool] || {};
+    const v = (k) => (saved[k] !== undefined ? saved[k] : base[k]);
+    const set = (patch) => saveWbToolDefault(sp.tool, patch);
+    const isOpen = open === sp.tool;
+    const nSaved = Object.keys(saved).length;
+    const control = (f) => {
+      if (f === "color") return html`
+        <div key="color" className="workflow-wb-defaults-field">
+          <span className="workflow-wb-tools-sublabel">Colour</span>
+          ${wbSwatchRow(v("color"), (c) => set({ color: c }), false)}
+        </div>`;
+      if (f === "fontSize") return html`
+        <div key="fontSize" className="workflow-wb-defaults-field">
+          <span className="workflow-wb-tools-sublabel">Text size</span>
+          ${wbSegRow(WB_FONT_OPTS, v("fontSize"), (x) => set({ fontSize: x }))}
+        </div>`;
+      if (f === "weight") return html`
+        <div key="weight" className="workflow-wb-defaults-field">
+          <span className="workflow-wb-tools-sublabel">Weight</span>
+          <div className="workflow-wb-fmt-row">
+            <button type="button" title="Bold by default"
+              className=${"workflow-wb-seg-btn workflow-wb-fmt-b" + (v("bold") ? " is-active" : "")}
+              onClick=${() => set({ bold: !v("bold") || null })}>B</button>
+            <button type="button" title="Italic by default"
+              className=${"workflow-wb-seg-btn workflow-wb-fmt-i" + (v("italic") ? " is-active" : "")}
+              onClick=${() => set({ italic: !v("italic") || null })}>I</button>
+          </div>
+        </div>`;
+      if (f === "align") return html`
+        <div key="align" className="workflow-wb-defaults-field">
+          <span className="workflow-wb-tools-sublabel">Align</span>
+          ${wbSegRow(["left", "center", "right"].map(a => ({ v: a, tip: "Align text " + a, label: WB_ALIGN_GLYPHS[a] })),
+                     v("align"), (a) => set({ align: a }))}
+        </div>`;
+      if (f === "vAlign") return html`
+        <div key="vAlign" className="workflow-wb-defaults-field">
+          <span className="workflow-wb-tools-sublabel">Vertical align</span>
+          ${wbSegRow(WB_V_ALIGNS.map(a => ({ v: a, tip: "Align text to " + a + " of the box", label: WB_V_ALIGN_GLYPHS[a] })),
+                     v("vAlign"), (a) => set({ vAlign: a }))}
+        </div>`;
+      if (f === "size") return html`
+        <div key="size" className="workflow-wb-defaults-field">
+          <span className="workflow-wb-tools-sublabel">Stroke</span>
+          ${wbSegRow(WB_STROKE_OPTS, v("size"), (x) => set({ size: x }))}
+        </div>`;
+      if (f === "shape") return html`
+        <div key="shape" className="workflow-wb-defaults-field">
+          <span className="workflow-wb-tools-sublabel">Shape</span>
+          ${wbSegRow(WB_SHAPE_OPTS, v("shape"), (x) => set({ shape: x }))}
+        </div>`;
+      if (f === "route") return html`
+        <div key="route" className="workflow-wb-defaults-field">
+          <span className="workflow-wb-tools-sublabel">Line style</span>
+          ${wbSegRow(WB_ROUTE_OPTS, v("route"), (x) => set({ route: x }))}
+        </div>`;
+      if (f === "heads") return html`
+        <div key="heads" className="workflow-wb-defaults-field">
+          <span className="workflow-wb-tools-sublabel">Ends</span>
+          <div className="workflow-wb-fmt-row">
+            <button type="button" title="Arrowhead at start"
+              className=${"workflow-wb-seg-btn" + (v("arrowStart") ? " is-active" : "")}
+              onClick=${() => set({ arrowStart: !v("arrowStart") })}
+            ><svg viewBox="0 0 16 16" width="13" height="13"><path d="M13 8H5M8.5 4.5 5 8l3.5 3.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button type="button" title="Arrowhead at end"
+              className=${"workflow-wb-seg-btn" + (v("arrowEnd") ? " is-active" : "")}
+              onClick=${() => set({ arrowEnd: !v("arrowEnd") })}
+            ><svg viewBox="0 0 16 16" width="13" height="13"><path d="M3 8h8M7.5 4.5 11 8l-3.5 3.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button type="button" title="Dashed line"
+              className=${"workflow-wb-seg-btn" + (v("dash") ? " is-active" : "")}
+              onClick=${() => set({ dash: !v("dash") })}
+            ><svg viewBox="0 0 16 16" width="13" height="13"><path d="M2 8h2.6M6.7 8h2.6M11.4 8H14" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></button>
+          </div>
+        </div>`;
+      if (f === "radius") return html`
+        <div key="radius" className="workflow-wb-defaults-field">
+          <span className="workflow-wb-tools-sublabel">Corner radius</span>
+          <input type="number" min="0" step="1" className="workflow-wb-num"
+            title="Corner radius (px)"
+            value=${v("radius")}
+            onChange=${(e) => set({ radius: Math.max(0, Math.round(+e.target.value || 0)) })}/>
+        </div>`;
+      return null;
+    };
+    return html`
+      <div className="workflow-wb-defaults-tool" key=${sp.tool} data-open=${isOpen ? "true" : "false"}>
+        <button type="button" className="workflow-wb-defaults-head"
+          aria-expanded=${isOpen ? "true" : "false"}
+          onClick=${() => setOpen(o => o === sp.tool ? null : sp.tool)}>
+          <span className="workflow-wb-defaults-glyph">${WB_TOOL_GLYPHS[sp.tool]}</span>
+          <span className="workflow-wb-defaults-name">${sp.label}</span>
+          <span className="workflow-wb-defaults-chip" style=${{ background: `var(--wb-${v("color")})` }}/>
+          <span className="workflow-wb-defaults-state">${nSaved ? "custom" : "default"}</span>
+          <span className="workflow-wb-defaults-caret">${isOpen ? "▾" : "▸"}</span>
+        </button>
+        ${isOpen && html`
+          <div className="workflow-wb-defaults-body">
+            ${sp.fields.map(control)}
+            ${nSaved ? html`<button type="button" className="workflow-canvasbg-reset"
+              onClick=${() => resetWbToolDefaults(sp.tool)}>Reset ${sp.label.toLowerCase()}</button>` : null}
+          </div>
+        `}
+      </div>`;
+  };
+  return html`
+    <div className="workflow-settings-section">
+      <div className="onboarding-sendkey-head">
+        <span className="onboarding-sendkey-title">Whiteboard tool defaults</span>
+        <span className="onboarding-sendkey-desc">The style each drawing tool starts a new item with. A control you change in the canvas tools panel still wins for the rest of that session.</span>
+      </div>
+      <div className="workflow-wb-defaults-list">
+        ${WB_DEFAULT_TOOL_SPECS.map(row)}
+      </div>
+      ${anySaved ? html`<button type="button" className="workflow-canvasbg-reset"
+        onClick=${() => resetWbToolDefaults(null)}>Reset all tools</button>` : null}
+    </div>
+  `;
+}
+
 /* The chat send-key preference, surfaced in the Settings dialog's "Send key"
    tab. Mirrors OnboardingSendKeyPref (same storage + th:chat-send-pref-changed
    broadcast) but wrapped in a .workflow-settings-section card instead of the
@@ -99634,6 +99912,7 @@ function WorkflowSendKeySection() {
           </button>
         </div>
       </div>
+      <${WorkflowWbDefaultsSection}/>
       ${proj ? html`
       <div className="workflow-settings-section">
         <div className="onboarding-sendkey-head">
