@@ -17826,6 +17826,52 @@ function PickerPreview({ item }) {
   return html`<div className=${"chat-slash-detail-glyph chat-slash-detail-glyph-" + item.kind}><${I}/></div>`;
 }
 
+// Inline picker chips - range bookkeeping.
+//
+// A picked item lands in the textarea as PLAIN TEXT (the leaf), and a chip
+// range {start,end} remembers where it sits, so the mirror layer under the
+// textarea can paint a pill over exactly those characters and Backspace can
+// eat the whole thing. The textarea stays the single source of truth: no
+// contenteditable, so caret math, undo, IME, paste and the `/@` trigger
+// regex all keep working on plain string offsets.
+//
+// After any edit the ranges are re-anchored by diffing prev -> next: a chip
+// entirely before the edit survives untouched, one entirely after shifts by
+// the length delta, and one the edit reaches INTO dissolves back into
+// ordinary text (typing inside a name is the user un-chipping it).
+let __chipSeq = 0;
+function __reanchorChips(chips, prev, next) {
+  if (!chips.length || prev === next) return chips;
+  let a = 0;
+  const maxA = Math.min(prev.length, next.length);
+  while (a < maxA && prev[a] === next[a]) a++;
+  let pEnd = prev.length, nEnd = next.length;
+  while (pEnd > a && nEnd > a && prev[pEnd - 1] === next[nEnd - 1]) { pEnd--; nEnd--; }
+  const delta = nEnd - pEnd;   // prev[a,pEnd) was replaced by next[a,nEnd)
+  const out = [];
+  for (const c of chips) {
+    if (c.end <= a) out.push(c);
+    else if (c.start >= pEnd) out.push({ ...c, start: c.start + delta, end: c.end + delta });
+  }
+  return out;
+}
+// Split the message into alternating plain / chipped runs for the mirror.
+function __chipSegments(text, chips) {
+  const sorted = chips
+    .filter(c => c.start >= 0 && c.end <= text.length && c.end > c.start)
+    .slice()
+    .sort((x, y) => x.start - y.start);
+  const out = [];
+  let i = 0;
+  for (const c of sorted) {
+    if (c.start < i) continue;             // overlap - first one wins
+    if (c.start > i) out.push({ text: text.slice(i, c.start) });
+    out.push({ text: text.slice(c.start, c.end), chip: c });
+    i = c.end;
+  }
+  if (i < text.length) out.push({ text: text.slice(i) });
+  return out;
+}
 function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, userMsgCount, interceptSend }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -17844,6 +17890,16 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const [nsItems,   setNsItems]   = useState(() => ({ ...__pickerCache }));
   const [nsLoading, setNsLoading] = useState(() => ({}));
   const [slashIndex, setSlashIndex] = useState(0);
+  // Inline chips - a picked picker item shows as a pill INSIDE the message
+  // rather than as a staged attachment in the tray below. Each entry is
+  // {id, start, end, kind, label, ref?}; `ref` (files, DS sections, library
+  // entries) is what composeWithAttachments turns into a leaf -> path line at
+  // send time, so the chip stays resolvable for the agent without ever
+  // occupying the attachment tray. See __reanchorChips above.
+  const [chips, setChips] = useState([]);
+  const prevTextRef = useRef("");
+  const chipEditRef = useRef(false);   // set when an edit already reconciled chips itself
+  const mirrorRef = useRef(null);
   // Viewport-fixed anchor for the slash menu portal - see the measuring
   // useLayoutEffect below (it must be declared AFTER the textarea auto-grow
   // effect so it measures the post-growth rect).
@@ -18099,7 +18155,23 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     return () => window.removeEventListener("th:attach-scratchpad", onAttachPad);
   }, []);
 
-  const composeWithAttachments = (body, atts = attachments, ups = uploads, refs = fileRefs, pads = scratchpads) => {
+  // References the INLINE chips carry. They deliberately never enter
+  // `fileRefs` state - that array is what the staged-attachment tray renders,
+  // and a chip is not an attachment. They join the list only at send time, so
+  // composeWithAttachments can still spell out leaf -> real path.
+  const chipRefs = () => {
+    const seen = new Set(fileRefs.map(r => r.path));
+    const out = [];
+    for (const c of chips) {
+      if (!c.ref || !c.ref.path || seen.has(c.ref.path)) continue;
+      seen.add(c.ref.path);
+      out.push(c.ref);
+    }
+    return out;
+  };
+  const sendRefs = () => (chips.length ? [...fileRefs, ...chipRefs()] : fileRefs);
+
+  const composeWithAttachments = (body, atts = attachments, ups = uploads, refs = sendRefs(), pads = scratchpads) => {
     if (!atts.length && !ups.length && !refs.length && !pads.length) return body;
     const lines = [];
     if (atts.length) {
@@ -18153,6 +18225,19 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     lines.push("");
     return lines.join("\n") + body;
   };
+
+  // Re-anchor chip ranges after any text change this component did not do the
+  // bookkeeping for itself (typing, paste, queue pull-back, programmatic
+  // clears). Runs before paint so the mirror never renders a stale pill.
+  useLayoutEffect(() => {
+    const prev = prevTextRef.current;
+    const skip = chipEditRef.current;
+    chipEditRef.current = false;
+    if (prev === text) return;
+    prevTextRef.current = text;
+    if (skip) return;
+    setChips(cs => (cs.length ? __reanchorChips(cs, prev, text) : cs));
+  }, [text]);
 
   // Auto-grow textarea up to a cap so the composer doesn't take over the drawer.
   useLayoutEffect(() => {
@@ -18380,9 +18465,9 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     if (interceptSend) {
       const env = {
         text: text.trim(),
-        send: composeWithAttachments(text.trim(), attachments, uploads, fileRefs, scratchpads),
+        send: composeWithAttachments(text.trim(), attachments, uploads, sendRefs(), scratchpads),
         attachments: attachments.slice(), uploads: uploads.slice(),
-        fileRefs: fileRefs.slice(), scratchpads: scratchpads.slice(),
+        fileRefs: sendRefs(), scratchpads: scratchpads.slice(),
       };
       setBusy(true); setError(null);
       let handled = false;
@@ -18395,7 +18480,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       }
       setBusy(false);
       if (handled) {
-        setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]);
+        setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]); setChips([]);
         if (onSent) onSent(env.send);
         return;
       }
@@ -18408,12 +18493,12 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         text: text.trim(),
         attachments: attachments.slice(),
         uploads: uploads.slice(),
-        fileRefs: fileRefs.slice(),
+        fileRefs: sendRefs(),
         scratchpads: scratchpads.slice(),
       };
       const queued = await enqueue(env);
       if (!queued) return;   // error is surfaced; keep the text so nothing is lost
-      setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]);
+      setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]); setChips([]);
       return;
     }
     // isNew shell - spawn a brand-new run via the parent. Never queued
@@ -18423,7 +18508,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       setBusy(true); setError(null);
       try {
         await onStartNewChat(body);
-        setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]);
+        setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]); setChips([]);
         if (onSent) onSent(body);
       } catch (e) {
         setError(e.message || String(e));
@@ -18437,11 +18522,11 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       text: text.trim(),
       attachments: attachments.slice(),
       uploads: uploads.slice(),
-      fileRefs: fileRefs.slice(),
+      fileRefs: sendRefs(),
       scratchpads: scratchpads.slice(),
     };
     const ok = await dispatch(env);
-    if (ok) { setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]); }
+    if (ok) { setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]); setChips([]); }
   };
 
   // External programmatic send - a Refine / Fork / regen action targeting the
@@ -18671,17 +18756,34 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   };
 
   // Rewrite the tracked `<trigger><query>` span. `keepOpen` is how a
-  // namespace row descends: it leaves the menu up with the new query.
-  const replaceToken = (ins, keepOpen) => {
+  // namespace row descends: it leaves the menu up with the new query. `chip`
+  // (optional) turns the inserted run into an inline pill - this is the one
+  // edit that knows its own ranges, so it reconciles `chips` here and tells
+  // the re-anchor effect to stand down for this change.
+  const replaceToken = (ins, keepOpen, chip) => {
     const start = Math.max(0, slashStartRef.current);
-    const end = start + 1 + slashQuery.length;
-    let pos = 0;
-    setText(cur => {
-      const before = cur.slice(0, start);
-      const after  = cur.slice(Math.min(end, cur.length));
-      pos = (before + ins).length;
-      return before + ins + after;
-    });
+    const cur   = prevTextRef.current;
+    const end   = Math.min(start + 1 + slashQuery.length, cur.length);
+    const before = cur.slice(0, start);
+    const after  = cur.slice(end);
+    const next   = before + ins + after;
+    const pos    = (before + ins).length;
+    if (next !== cur) {
+      const delta = ins.length - (end - start);
+      // The pill covers the inserted run minus its trailing space - that
+      // space is the caret's landing strip, not part of the name.
+      const label = ins.replace(/\s+$/, "");
+      chipEditRef.current = true;
+      prevTextRef.current = next;
+      setChips(cs => {
+        const kept = cs
+          .filter(c => c.end <= start || c.start >= end)
+          .map(c => (c.start >= end ? { ...c, start: c.start + delta, end: c.end + delta } : c));
+        if (!chip || !label) return kept;
+        return [...kept, { ...chip, id: "chip" + (++__chipSeq), start, end: start + label.length, label }];
+      });
+      setText(next);
+    }
     if (!keepOpen) setSlashOpen(false);
     // Refocus the textarea so the user can keep typing at the insert point.
     if (taRef.current) {
@@ -18704,18 +18806,19 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
 
   // Insert an item. Only the LEAF lands in the message ("index.html", not
   // "@file/main/index.html") - the namespace path was navigation, not
-  // content. Items that ARE a file also attach a reference chip so the leaf
-  // stays resolvable: composeWithAttachments spells out chip → real path for
-  // the agent.
+  // content - and it lands as an INLINE CHIP: a pill inside the sentence the
+  // user is writing, deleted whole by one Backspace. Items that ARE a file
+  // carry their `ref` on the chip rather than in the attachment tray; the
+  // ref joins the reference list only at send time, where
+  // composeWithAttachments spells out leaf -> real path for the agent.
   const insertSlashSkill = (sk) => {
     if (!sk) return;
-    replaceToken(sk.insertText || ((sk.token || "").split("/").pop() + " "), false);
-    if (sk.ref && sk.ref.path) {
-      setFileRefs(prev => prev.some(r => r.path === sk.ref.path)
-        ? prev
-        : [...prev, { path: sk.ref.path, name: sk.ref.name || sk.ref.path.split("/").pop(),
-                      scope: sk.ref.scope || "project", label: sk.ref.label || "" }]);
-    }
+    const ins = sk.insertText || ((sk.token || "").split("/").pop() + " ");
+    const ref = sk.ref && sk.ref.path
+      ? { path: sk.ref.path, name: sk.ref.name || sk.ref.path.split("/").pop(),
+          scope: sk.ref.scope || "project", label: sk.ref.label || "" }
+      : null;
+    replaceToken(ins, false, { kind: sk.kind || "item", ref });
   };
 
   // Enter / Tab on the highlighted row: namespaces descend, items insert.
@@ -18760,6 +18863,45 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       if (e.key === "Escape") {
         e.preventDefault();
         setSlashOpen(false);
+        return;
+      }
+    }
+    // Chips delete WHOLE. Backspace at a pill's right edge (or Delete at its
+    // left edge), with nothing selected, takes the pill out in one press
+    // instead of nibbling characters off a name that only means something
+    // intact.
+    if ((e.key === "Backspace" || e.key === "Delete") && chips.length && taRef.current
+        && taRef.current.selectionStart === taRef.current.selectionEnd) {
+      const el  = taRef.current;
+      const at  = el.selectionStart;
+      const hit = chips.find(c => (e.key === "Backspace" ? c.end === at : c.start === at));
+      if (hit) {
+        e.preventDefault();
+        const cut  = hit.end - hit.start;
+        const next = text.slice(0, hit.start) + text.slice(hit.end);
+        chipEditRef.current = true;
+        prevTextRef.current = next;
+        setChips(cs => cs
+          .filter(c => c.id !== hit.id)
+          .map(c => (c.start >= hit.end ? { ...c, start: c.start - cut, end: c.end - cut } : c)));
+        setText(next);
+        setSlashOpen(false);
+        setTimeout(() => { try { el.setSelectionRange(hit.start, hit.start); } catch {} }, 0);
+        return;
+      }
+    }
+    // Plain arrows step OVER a pill, so the caret never parks inside one and
+    // the next Backspace is always the whole-chip one.
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && chips.length && taRef.current
+        && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey
+        && taRef.current.selectionStart === taRef.current.selectionEnd) {
+      const el  = taRef.current;
+      const at  = el.selectionStart;
+      const hit = chips.find(c => (e.key === "ArrowLeft" ? c.end === at : c.start === at));
+      if (hit) {
+        e.preventDefault();
+        const to = e.key === "ArrowLeft" ? hit.start : hit.end;
+        try { el.setSelectionRange(to, to); } catch {}
         return;
       }
     }
@@ -18918,6 +19060,16 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       />
       ${targetBar}
       <div ref=${wrapRef} className="chat-composer-input-wrap" style=${{ position: "relative", minWidth: 0 }}>
+        ${chips.length > 0 && html`
+          <div ref=${mirrorRef} className="chat-composer-mirror" aria-hidden="true">
+            ${__chipSegments(text, chips).map((seg, i) => seg.chip
+              ? html`<span
+                  key=${"c" + i}
+                  className=${"composer-chip chat-slash-item-kind-" + (seg.chip.kind || "item")}
+                >${seg.text}</span>`
+              : html`<span key=${"t" + i}>${seg.text}</span>`)}
+            ${"\u200b"}
+          </div>`}
         <textarea
           ref=${taRef}
           className="chat-composer-input"
@@ -18925,8 +19077,10 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           placeholder=${placeholder}
           rows=${1}
           disabled=${busy}
+          data-chipped=${chips.length > 0 ? "true" : null}
           onInput=${(e) => { setText(e.target.value); updateSlashMenu(e.target.value, e.target.selectionStart); }}
           onKeyDown=${onKeyDown}
+          onScroll=${() => { if (mirrorRef.current && taRef.current) mirrorRef.current.scrollTop = taRef.current.scrollTop; }}
           onPaste=${onPaste}
           onBlur=${() => {
             // Defer close so a mousedown on a menu item gets through first.
@@ -19016,7 +19170,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                   <code className=${"chat-slash-detail-cmd chat-slash-item-kind-" + activeItem.kind}>${activeItem.token}</code>
                   ${activeItem.description && html`<p className="chat-slash-detail-desc">${activeItem.description}</p>`}
                   ${activeItem.ref && html`<p className="chat-slash-detail-ref" title=${activeItem.ref.path}>
-                    inserts <b>${(activeItem.insertText || "").trim()}</b> · attaches ${activeItem.ref.path}
+                    inserts a <b>${(activeItem.insertText || "").trim()}</b> chip · resolves to ${activeItem.ref.path}
                   </p>`}
                 ` : activeNsRow ? html`
                   <div className="chat-slash-detail-head">

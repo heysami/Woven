@@ -25036,6 +25036,42 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   outline: none;
 }
 .chat-composer-input:focus { outline: none; }
+/* Inline picker chips. The composer stays a real <textarea> - the pill is
+   painted by a mirror layer sitting UNDER it with identical metrics, and the
+   textarea's own glyphs go transparent while any chip is live (the caret
+   keeps its colour explicitly, or it would vanish with the text). The pill's
+   horizontal padding is cancelled by an equal negative margin, so a chip
+   never shifts where the mirrored text sits relative to the real one. */
+.chat-composer-input[data-chipped="true"] {
+  color: transparent;
+  caret-color: var(--text);
+}
+.chat-composer-mirror {
+  position: absolute;
+  inset: 0;
+  padding: 9px 44px 9px 12px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: var(--radius-lg);
+}
+.chat-composer[data-busy="true"] .chat-composer-mirror { padding-right: 78px; }
+.composer-chip {
+  padding: 1px 3px;
+  margin: 0 -3px;
+  border-radius: 4px;
+  /* Colour comes from the shared .chat-slash-item-kind-* rules the picker
+     menu uses, so a chip reads as the same thing the user just picked. */
+  background: color-mix(in oklab, currentColor 13%, transparent);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
 .chat-composer-input::placeholder {
   color: var(--text-faint);
   /* Keep the hint on a single line (clip with ellipsis if it overflows)
