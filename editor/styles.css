@@ -14061,16 +14061,21 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 .chat-target-more { opacity: 0.8; }
 /* A live thread's target is FIXED at spawn (the <chat-target> scope rides the
    first prompt only), so the bar shows the run's committed target, not the
-   live selection / preview - dimmed, with a lock, and no affordance to change
-   it. Retargeting means starting a new chat. */
-.chat-target-locked .chat-target-chip { opacity: 0.85; }
-.chat-target-lock {
-  display: inline-flex;
-  align-items: center;
-  opacity: 0.45;
-  color: var(--text-muted, #666);
+   live selection / preview. It reads as inert by going low-contrast - flat
+   background, faded border, the tag drained to grey - while the NAME keeps
+   full text colour, because the one thing you still need off this chip is
+   which prototype the thread is on. No lock glyph: a lock is an icon, and an
+   icon invites a click. Retargeting means starting a new chat. */
+.chat-target-locked .chat-target-label { opacity: 0.5; }
+.chat-target-locked .chat-target-chip {
+  border-color: color-mix(in oklab, var(--border) 55%, transparent);
+  background: transparent;
 }
-.chat-target-lock svg { width: 11px; height: 11px; }
+.chat-target-locked .chat-target-chip-tag {
+  background: color-mix(in oklab, var(--text-muted) 20%, transparent);
+  color: var(--text-muted);
+}
+.chat-target-locked .chat-target-chip-name { color: var(--text); }
 
 /* Preview-inferred target: a "previewing" tag + a compact affordance to fall
    back to whole-project when the inferred prototype is wrong. */

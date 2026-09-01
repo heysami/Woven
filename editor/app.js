@@ -12079,11 +12079,15 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending })
     document.addEventListener("mousedown", off);
     return () => document.removeEventListener("mousedown", off);
   }, [open]);
-  // A live thread carries its checks in the system prompt it was SPAWNED
-  // with, so a change here cannot reach it - but it can reach its successor:
-  // editing on a running thread stages the change, and the next Send hands
-  // the thread off to a new one (summary carried) spawned with these checks.
-  // `locked` is left for threads with no successor path (historical).
+  // A thread carries its checks in the system prompt it was SPAWNED with, so
+  // a change here cannot reach it - but it can reach its successor: editing
+  // stages the change, and the next Send hands the thread off to a new one
+  // (summary carried) spawned with these checks. That path works for a
+  // FINISHED thread too (the daemon summarises its transcript; only a live
+  // turn gets stopped first), so `locked` is now only for a drawer with no
+  // spawn callback at all - nowhere for a successor to go. It used to also
+  // lock every `historical` run, which meant any thread reopened from the
+  // runs list refused the change while still inviting a reply.
   useEffect(() => { if (locked) setOpen(false); }, [locked]);
   // Amber = a gate that normally runs has been DROPPED. Arming an extra
   // opt-in check (requirement QA) is not a caution, so it does not colour the
@@ -12092,11 +12096,11 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending })
   const stateLine = chatGuardsStateLine(value);
   const onNow = chatGuardsOnList(value);
   const lockedTitle = locked
-    ? `This thread ran with: ${stateLine}. It is closed, so there is nothing left to change.`
+    ? `This thread ran with: ${stateLine}. There is no way to start a follow-on thread from here, so its checks are fixed.`
     : pending
       ? `Staged: ${stateLine}. Checks are baked into a thread's system prompt, so Send starts a NEW thread with these, carrying a summary of this one.`
       : running
-        ? `This thread is running with: ${stateLine}. Changing a check here starts a new thread (summary carried) on your next Send.`
+        ? `This thread's checks: ${stateLine}. Changing one here starts a new thread (summary carried) on your next Send.`
         : "Which checks the agent runs before it calls work done";
   return html`
     <div className="perm-picker guards-picker" ref=${ref} data-up=${!!openUp} data-locked=${!!locked}>
@@ -17734,7 +17738,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
               openUp=${true}
               running=${!isNew}
               pending=${guardsChanged}
-              locked=${!isNew && (!!run?.historical || !onStartNewChat)}
+              locked=${!isNew && !onStartNewChat}
             />
           `}
           <${ChatOrchestratorsChip} orchestrators=${orchestrators}/>
@@ -31226,7 +31230,6 @@ function WorkflowChatTargetBar({ summary, override, onChangeOverride, activePrev
           ${lockedSlug && html`<span className="chat-target-chip-tag">prototype</span>`}
           <span className="chat-target-chip-name">${lockedSlug || "Whole project"}</span>
         </span>
-        <span className="chat-target-lock" aria-hidden="true"><${Icon.Lock} /></span>
       </div>
     `;
   }
