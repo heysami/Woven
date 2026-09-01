@@ -11777,6 +11777,137 @@ function ChatViewModeToggle({ value, onChange }) {
   ><span className="chat-composer-icon-toggle-mark" data-on=${always}><${Icon.List}/></span><//>`;
 }
 
+/* Orchestrator chip - present in the composer footer ONLY when this thread
+   actually ran one, so it reads as "a family is on this work", not as another
+   permanent control. A live dot when any family still has work in flight, a
+   grey one when they have all landed.
+
+   Clicking opens the same upward perm-menu the checks picker uses: an overlay
+   pinned above the composer, not a modal - no backdrop, click anywhere or hit
+   Escape and it is gone, and it is height-capped so a build with six families
+   scrolls inside the sheet instead of swallowing the transcript.
+
+   Finished subagents are deliberately absent: the panel answers "what is
+   happening right now", and a done drawer is answered by the family's own
+   Done state plus its count. */
+function ChatOrchestratorsChip({ orchestrators }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const ref = useRef(null);
+  const menuRef = useRef(null);
+  // The sheet is PORTALED to <body> and fixed-positioned. The chat drawer is
+  // an overflow-clipped column, so an in-flow absolute menu gets cut at its
+  // right edge - which is exactly what ate this panel's status column and the
+  // right half of every tagline on the first build.
+  const place = () => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const W = 380, GAP = 8;
+    const left = Math.max(GAP, Math.min(r.left, window.innerWidth - W - GAP));
+    setPos({ left, bottom: Math.round(window.innerHeight - r.top + 6), width: W });
+  };
+  useEffect(() => {
+    if (!open) { setPos(null); return; }
+    place();
+    const off = (e) => {
+      if (ref.current && ref.current.contains(e.target)) return;
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    const esc = (e) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
+    const reflow = () => place();
+    document.addEventListener("mousedown", off);
+    document.addEventListener("keydown", esc, true);
+    window.addEventListener("resize", reflow);
+    window.addEventListener("scroll", reflow, true);
+    return () => {
+      document.removeEventListener("mousedown", off);
+      document.removeEventListener("keydown", esc, true);
+      window.removeEventListener("resize", reflow);
+      window.removeEventListener("scroll", reflow, true);
+    };
+  }, [open]);
+  const n = orchestrators.length;
+  // The chip disappears when the thread has no orchestrator history at all;
+  // it must also close itself if that happens while the sheet is open (a
+  // thread switch under an open panel).
+  useEffect(() => { if (!n) setOpen(false); }, [n]);
+  if (!n) return null;
+  const anyLive = orchestrators.some(o => o.running);
+  return html`
+    <div className="perm-picker orch-chip" ref=${ref}>
+      <button
+        className="perm-trigger orch-trigger"
+        type="button"
+        data-open=${open}
+        data-live=${anyLive}
+        title=${`Orchestrators (${n})`}
+        aria-label=${`Orchestrators (${n})`}
+        onClick=${() => setOpen(o => !o)}
+      >
+        <span className="orch-trigger-icon" aria-hidden="true"><${Icon.Flow}/></span>
+        <span className="orch-trigger-dot" data-live=${anyLive} aria-hidden="true"/>
+      </button>
+      ${open && pos && createPortal(html`
+        <div
+          ref=${menuRef}
+          className="perm-menu orch-menu"
+          role="dialog"
+          aria-label="Orchestrators on this thread"
+          style=${{
+            position: "fixed",
+            // .perm-menu ships `top: calc(100% + 6px); right: 0` for its
+            // in-flow use. Both must be cleared or the fixed box gets a top
+            // AND a bottom and resolves to zero height.
+            top: "auto", right: "auto",
+            left: pos.left + "px", bottom: pos.bottom + "px", width: pos.width + "px",
+          }}
+        >
+          <div className="perm-menu-head">Orchestrators (${n})</div>
+          <div className="orch-list">
+            ${orchestrators.map(o => html`
+              <div className="orch-row" key=${o.id} data-live=${o.running}>
+                <div className="orch-row-head">
+                  ${o.art
+                    ? html`<img className="orch-row-art" src=${o.art} alt="" loading="lazy"/>`
+                    : html`<span className="orch-row-art orch-row-art-ph" aria-hidden="true"><${Icon.Flow}/></span>`}
+                  <span className="orch-row-text">
+                    <span className="orch-row-name">${o.label}</span>
+                    <span className="orch-row-tagline">${o.tagline}</span>
+                  </span>
+                  <span className="orch-row-state" data-live=${o.running}>
+                    <span className="orch-row-dot" data-live=${o.running} aria-hidden="true"/>
+                    ${o.running ? "Working" : "Done"}
+                  </span>
+                </div>
+                ${o.working.length > 0 && html`
+                  <div className="orch-row-agents">
+                    ${o.working.map(w => html`
+                      <div className="orch-agent" key=${w.id} data-self=${!!w.self}>
+                        <span className="chat-active-agent-spin" aria-hidden="true"/>
+                        <span className="orch-agent-type">${w.self ? "orchestrating" : w.type}</span>
+                        <span className="orch-agent-task">${w.task}</span>
+                      </div>
+                    `)}
+                  </div>
+                `}
+                ${(o.total > 0 || o.inferred) && html`
+                  <div className="orch-row-foot">
+                    ${o.total > 0 ? `${o.doneCount}/${o.total} subagent${o.total === 1 ? "" : "s"} finished` : ""}
+                    ${o.total > 0 && o.inferred ? " · " : ""}
+                    ${o.inferred ? "chained by this chat, not dispatched as an agent" : ""}
+                  </div>
+                `}
+              </div>
+            `)}
+          </div>
+        </div>
+      `, document.body)}
+    </div>
+  `;
+}
+
 /* Composer "+" menu - the three ways to give the agent a file. They were
    three bare icons in a row (image / clip / folder) that nobody could tell
    apart, and the difference between them (bound to one turn vs read in place
@@ -13372,6 +13503,12 @@ function extractRunSubagents(events) {
   // strip keeps only the LATEST line per subagent; here we keep the whole
   // ordered history so the panel can show everything the subagent acted on.
   const actionsById = new Map();
+  // Ordinal of each subagent's LATEST narration among ALL task_progress
+  // frames in the run. A background dispatch has no completion event to key
+  // off (see the fold below), so how recently it narrated is the only live
+  // signal there is.
+  const tickById = new Map();
+  let ticks = 0;
   for (const ev of events || []) {
     if (ev?.event !== "agent") continue;
     const d = ev?.data;
@@ -13386,6 +13523,8 @@ function extractRunSubagents(events) {
       const id   = d.type === "system" ? d.toolUseId   : d.frame?.tool_use_id;
       const desc = d.type === "system" ? d.description  : d.frame?.description;
       if (id && desc) {
+        ticks += 1;
+        tickById.set(id, ticks);
         let list = actionsById.get(id);
         if (!list) { list = []; actionsById.set(id, list); }
         // The SDK re-emits the same line while a tool runs - collapse the
@@ -13416,12 +13555,170 @@ function extractRunSubagents(events) {
       prompt: inp.prompt || "",
       result: resultToText(result),
       actions: actionsById.get(d.id) || [],
+      // A background dispatch's tool_result is an immediate "launched"
+      // acknowledgement, NOT its outcome - it lands within a second of the
+      // dispatch and says nothing about the work.
+      background: !!inp.run_in_background,
+      lastTick: tickById.get(d.id) || 0,
+      tickTotal: ticks,
       done: !!result,
       error: !!(result && (result.isError || result.is_error)),
     });
   }
   return out;
 }
+/* ── Orchestrator activity in one thread ─────────────────────────────────
+   An orchestrator reaches a thread two ways, and BOTH count as "this thread
+   ran one":
+     • directly - an Agent dispatch whose subagent_type IS the orchestrator id
+     • by hand-off - the orchestrator returns a scaffold envelope and the
+       CALLER chains the drawers itself (the whole family protocol). Its own
+       Agent call then finishes minutes before the work does, so judging the
+       family by that one call reports "done" over a build that is still
+       running. A thread can also carry the drawers with no orchestrator call
+       at all when the caller chains a previously-scaffolded graph.
+   So an orchestrator is RUNNING while its own call OR any drawer it owns is
+   still unresolved, and a family whose drawers appear without its own call is
+   still reported - inferred from the drawers, flagged so the panel can say so.
+
+   `index` comes from loadOrchestratorIndex(): { byId, ownerOf }. Lenses
+   (craft / aesthetic / concept) are dispatched by ten different families, so
+   they attribute to the most recently seen one; every other drawer belongs to
+   exactly one orchestrator.
+
+   LIVENESS, and why it is not just "has a tool_result". Families are
+   overwhelmingly dispatched with run_in_background, and a background Agent
+   call's tool_result is an immediate "Async agent launched successfully"
+   acknowledgement that lands a second after the dispatch. The SDK gives the
+   parent thread NO event when that agent actually finishes. Judging by the
+   result would therefore mark every family Done seconds into a build that
+   runs for many minutes - the false-success failure this codebase has been
+   burned by before. The one real signal is the task_progress narration the
+   background agent interleaves into this stream, so a backgrounded family
+   counts as working while it narrated within the last ORCH_LIVE_TICKS
+   narration frames. The window is deliberately generous: the cost of holding
+   "Working" for a short tail after it in fact finished is a stale-looking
+   chip, while the cost of the other error is lying about a running build.
+   Everything goes grey the moment the turn ends, which IS certain. */
+// Measured against a real five-family build: the widest gap between two
+// consecutive narrations of a single still-working orchestrator was 81
+// frames, with three families interleaving.
+const ORCH_LIVE_TICKS = 120;
+let __orchIndexCache = null;
+let __orchIndexInflight = null;
+async function loadOrchestratorIndex() {
+  if (__orchIndexCache) return __orchIndexCache;
+  if (__orchIndexInflight) return __orchIndexInflight;
+  __orchIndexInflight = (async () => {
+    const byId = new Map();
+    const ownerOf = new Map();   // drawer subagent type -> [orchestratorId]
+    try {
+      const r = await fetch(apiUrl("/__orchestrators"));
+      const j = r && r.ok ? await r.json() : null;
+      for (const o of ((j && j.orchestrators) || [])) {
+        if (!o || !o.id) continue;
+        byId.set(o.id, o);
+        const d = o.dispatches || {};
+        for (const list of [d.drawers, d.lenses]) {
+          for (const name of (list || [])) {
+            if (!name) continue;
+            if (!ownerOf.has(name)) ownerOf.set(name, []);
+            ownerOf.get(name).push(o.id);
+          }
+        }
+      }
+    } catch {}
+    __orchIndexCache = { byId, ownerOf };
+    __orchIndexInflight = null;
+    return __orchIndexCache;
+  })();
+  return __orchIndexInflight;
+}
+
+function extractRunOrchestrators(subagents, index, live) {
+  if (!index || !index.byId || index.byId.size === 0) return [];
+  const order = [];
+  const byId = new Map();
+  const openFor = (id) => {
+    let e = byId.get(id);
+    if (!e) {
+      const man = index.byId.get(id) || {};
+      e = {
+        id,
+        label: man.label || id,
+        tagline: man.tagline || "",
+        art: man.art || null,
+        dispatched: false,       // the orchestrator agent itself ran here
+        selfRunning: false,
+        selfTask: "",            // its own latest task_progress narration
+        drawers: [],             // every drawer attributed to it, in order
+        working: [],             // only the ones still unresolved
+        doneCount: 0,
+      };
+      byId.set(id, e);
+      order.push(id);
+    }
+    return e;
+  };
+  // Unresolved OR backgrounded-and-still-narrating. One rule, both dispatch
+  // shapes, so nothing downstream has to know which kind it is looking at.
+  // The recency is measured against the entry's OWN tickTotal, never a global
+  // max: this list can hold entries from two counters (the drawer's tail and
+  // the daemon's whole-transcript fold), and comparing across them would mark
+  // a genuinely live agent stale purely because the other source counted more.
+  const inFlight = (a) => a.background
+    ? (a.lastTick > 0 && ((a.tickTotal || 0) - a.lastTick) <= ORCH_LIVE_TICKS)
+    : !a.done;
+  let lastSeen = null;
+  for (const a of (subagents || [])) {
+    const type = a.type;
+    if (index.byId.has(type)) {
+      const e = openFor(type);
+      e.dispatched = true;
+      if (inFlight(a)) {
+        e.selfRunning = true;
+        // Most families dispatch their drawers INSIDE their own context, so
+        // those Agent calls never reach this transcript and there is no
+        // per-drawer row to show. What does reach it is the SDK's
+        // task_progress narration for the orchestrator's own call - the only
+        // truthful answer to "what is it doing right now" in that case.
+        e.selfTask = (a.actions && a.actions[a.actions.length - 1]) || a.label || "Working…";
+      }
+      lastSeen = type;
+      continue;
+    }
+    const owners = index.ownerOf.get(type);
+    if (!owners || owners.length === 0) continue;
+    // Shared lenses: the family that most recently spoke owns this one.
+    const ownerId = (owners.length > 1 && lastSeen && owners.includes(lastSeen))
+      ? lastSeen
+      : owners[0];
+    const e = openFor(ownerId);
+    e.drawers.push(a);
+    if (!inFlight(a)) e.doneCount += 1;
+    else e.working.push({
+      id: a.id,
+      type,
+      // The SDK's live "<subagent> is doing X" narration when there is one,
+      // else the dispatch description it was given.
+      task: (a.actions && a.actions[a.actions.length - 1]) || a.label || "Working…",
+    });
+  }
+  return order.map(id => {
+    const e = byId.get(id);
+    // Nothing can actually be in flight on a thread that is not streaming -
+    // an unresolved call there is a killed or stalled dispatch, not live work.
+    const running = !!live && (e.selfRunning || e.working.length > 0);
+    const working = !running ? [] : [
+      ...(e.selfRunning && e.selfTask
+        ? [{ id: id + ":self", type: id, task: e.selfTask, self: true }]
+        : []),
+      ...e.working,
+    ];
+    return { ...e, working, running, inferred: !e.dispatched, total: e.drawers.length };
+  });
+}
+
 function extractRunTasks(events) {
   const resultById = new Map();
   for (const ev of events || []) {
@@ -17026,6 +17323,45 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     return out;
   }, [blocks, events, status]);
 
+  // Which orchestrator families this thread has run, and what is still in
+  // flight under each. Unlike the live strip above, this survives the turn:
+  // the chip stays after the build lands so the thread still says which
+  // families touched it. The manifest index is fetched once per page.
+  const [orchIndex, setOrchIndex] = useState(null);
+  useEffect(() => {
+    let dead = false;
+    loadOrchestratorIndex().then(ix => { if (!dead) setOrchIndex(ix); });
+    return () => { dead = true; };
+  }, []);
+  // The drawer only ever holds the newest 4000 rows of a long transcript, and
+  // a build runs its orchestrators EARLY - so on a reopened marathon thread
+  // the dispatches are all below the hydrate cutoff and the chip would report
+  // "no orchestrator ran" on exactly the threads that ran the most. The
+  // daemon folds them out of the durable transcript instead; live SSE events
+  // then supersede that snapshot for anything still moving.
+  const [runDispatches, setRunDispatches] = useState([]);
+  useEffect(() => {
+    setRunDispatches([]);
+    const rid = run?.runId;
+    if (!rid || isNew) return;
+    let dead = false;
+    fetch(apiUrl("/__run_dispatches?runId=" + encodeURIComponent(rid)))
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (!dead && j && Array.isArray(j.dispatches)) setRunDispatches(j.dispatches); })
+      .catch(() => {});
+    return () => { dead = true; };
+  }, [run?.runId, isNew]);
+  const orchestrators = useMemo(() => {
+    if (!orchIndex) return [];
+    const live = status === "streaming" || status === "connecting";
+    // Union by dispatch id, the live copy winning: the snapshot was taken
+    // when the thread opened and knows nothing about what has happened since.
+    const fromEvents = extractRunSubagents(events);
+    const seen = new Set(fromEvents.map(a => a.id));
+    const merged = [...runDispatches.filter(a => !seen.has(a.id)), ...fromEvents];
+    return extractRunOrchestrators(merged, orchIndex, live);
+  }, [events, runDispatches, orchIndex, status]);
+
   // Tasks the user has already cleared (archived on a prior close) - hidden
   // from the strip so a reopened chat starts clean. Persisted per (project,
   // run) in localStorage; ids are stable within a run. Loaded fresh whenever
@@ -17397,6 +17733,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
               locked=${!isNew && (!!run?.historical || !onStartNewChat)}
             />
           `}
+          <${ChatOrchestratorsChip} orchestrators=${orchestrators}/>
         `}
         toolbarRight=${html`
           ${runModel && html`

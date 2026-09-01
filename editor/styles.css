@@ -23939,6 +23939,155 @@ a.ds-badge:hover, button.ds-badge:hover {
 .guard-row-icon svg { width: 13px; height: 13px; }
 .perm-item[aria-checked="true"] .guard-row-icon { color: var(--accent-text); }
 
+/* Orchestrator chip - only rendered when the thread actually ran a family,
+   so it never becomes another always-there control. Icon + a status dot that
+   is the whole closed-state message: green and breathing = work in flight,
+   grey = every family has landed. */
+.chat-composer-toolbar .orch-chip { margin-left: 2px; }
+.orch-trigger { gap: 4px; padding: 0 7px; }
+.orch-trigger-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  transition: color 0.12s;
+}
+.orch-trigger-icon svg { width: 15px; height: 15px; }
+.orch-trigger:hover .orch-trigger-icon,
+.orch-trigger[data-open="true"] .orch-trigger-icon { color: inherit; }
+.orch-trigger[data-live="true"] .orch-trigger-icon { color: var(--text); }
+.orch-trigger-dot,
+.orch-row-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--text-faint);
+}
+.orch-trigger-dot[data-live="true"],
+.orch-row-dot[data-live="true"] {
+  background: var(--success);
+  animation: orch-live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes orch-live-pulse {
+  0%, 100% { opacity: 1;   box-shadow: 0 0 0 0 color-mix(in oklab, var(--success) 55%, transparent); }
+  50%      { opacity: 0.7; box-shadow: 0 0 0 3px color-mix(in oklab, var(--success) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orch-trigger-dot[data-live="true"],
+  .orch-row-dot[data-live="true"] { animation: none; }
+}
+
+/* The sheet. An overlay pinned above the composer, NOT a modal: no backdrop,
+   outside-click and Escape both close it, and it is height-capped so a build
+   with six families scrolls inside itself rather than covering the chat. */
+/* Portaled to <body> and fixed-positioned by the component (the chat drawer
+   is an overflow-clipped column - an in-flow menu loses its right half). */
+.orch-menu {
+  padding: 6px 6px 4px;
+  max-width: calc(100vw - 16px);
+  z-index: 60;
+}
+.orch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: min(46vh, 340px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* macOS draws an OVERLAY scrollbar - it reserves no width and paints on top
+     of the row, which lands squarely on the Working / Done label. */
+  padding-right: 8px;
+}
+.orch-row {
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+.orch-row[data-live="true"] {
+  border-color: color-mix(in oklab, var(--success) 30%, transparent);
+  background: color-mix(in oklab, var(--success) 7%, transparent);
+}
+.orch-row-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+}
+/* Same treatment as the landing card's art: the illustrations are 160x120
+   line drawings, so `contain` + padding, never `cover` - cropping one to a
+   square lands on empty canvas and reads as a failed image. */
+.orch-row-art {
+  width: 44px; height: 33px;
+  border-radius: 6px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.orch-row-art-ph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+}
+.orch-row-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.orch-row-name { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.orch-row-tagline {
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.orch-row-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.orch-row-state[data-live="true"] { color: var(--success); }
+/* Only the subagents still working are listed - a finished one is already
+   reported by the family's Done state and the n/m count below. */
+.orch-row-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 7px 0 0 53px;
+  padding-left: 9px;
+  border-left: 1px solid var(--border);
+}
+.orch-agent {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.orch-agent-type {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.orch-agent-task {
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.orch-row-foot {
+  margin: 6px 0 0 53px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
 /* Composer "+" - one trigger for the three attach paths, which used to be
    three undifferentiated icons in a row. */
 .composer-add { margin-left: 2px; }
