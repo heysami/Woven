@@ -92459,6 +92459,16 @@ function WorkflowStoryMapNode({ node, zoom, selected, onSelect, onMove, onResize
   `;
 }
 
+/* Advisory size guide for a design system's DESIGN.md catalog, in CHARACTERS.
+   Mirrors DS_INDEX_BUDGET_CHARS in editor/kinds/capabilities.py - keep the two
+   in step. It is NOT a cap: every scoped agent turn embeds the catalog whole.
+   It used to BE the cap, silently - a DESIGN.md past 30k chars dropped out of
+   the preamble entirely while the preamble still claimed the DS was bound, so
+   the agent went back to grepping a 206k gallery and reading component anatomy
+   without ever seeing the usage rules. The cap is gone; the number survives
+   here as the readout below, so a growing catalog is visible to a person. */
+const DS_INDEX_BUDGET_CHARS = 30000;
+
 function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, upstreamDirection, upstreamFolder, allNodes, allEdges }) {
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState({ loading: true, exists: false, version: "", label: "" });
@@ -92551,6 +92561,9 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
         version: j.version || "",
         label:   j.label   || "",
         genre:   j.genre   || "",
+        // The endpoint already returns the whole trio, so the catalog's size
+        // is free here - no extra request for the budget readout.
+        designMdChars: String((j.trio && j.trio.designMd) || "").length,
       });
     } catch (e) {
       setStatus({ loading: false, exists: false, version: "", label: "", error: String(e?.message || e) });
@@ -92906,6 +92919,35 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
         >×<//>
       </div>
       <div className="workflow-node-ds-body" onMouseDown=${(e) => e.stopPropagation()}>
+        ${status.exists && (status.designMdChars || 0) > 0 && (() => {
+          /* What this DS costs on EVERY scoped agent turn. DESIGN.md is
+             embedded whole into the spawn preamble (capabilities.py
+             _scoped_iteration_stub), so its size is a real per-call price
+             AND the thing that keeps component-choice rules in front of the
+             agent. Over the guide is a nudge to prune or split the catalog,
+             never a silent drop - it still embeds in full. */
+          const chars = status.designMdChars || 0;
+          const toks  = Math.round(chars / 4);   /* ~4 chars per token */
+          const pct   = Math.round((chars / DS_INDEX_BUDGET_CHARS) * 100);
+          const over  = chars > DS_INDEX_BUDGET_CHARS;
+          const k = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n));
+          return html`
+            <div className="workflow-node-ds-budget" data-over=${over ? "true" : "false"}>
+              <div className="workflow-node-ds-budget-row">
+                <span className="workflow-node-ds-budget-label">DESIGN.md in every agent turn</span>
+                <span className="workflow-node-ds-budget-num">~${k(toks)} tokens · ${pct}%</span>
+              </div>
+              <div className="workflow-node-ds-budget-bar">
+                <span style=${{ width: Math.min(100, pct) + "%" }}/>
+              </div>
+              <div className="workflow-node-ds-budget-note">
+                ${k(chars)} of the ${k(DS_INDEX_BUDGET_CHARS)}-char guide.${" "}
+                ${over
+                  ? "Over the guide - still embedded whole. Consider pruning or splitting the catalog."
+                  : "Embedded whole into the preamble, so the agent always sees the component vocabulary."}
+              </div>
+            </div>`;
+        })()}
         <button
           type="button"
           className="workflow-node-ds-template-btn"

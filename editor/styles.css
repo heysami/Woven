@@ -15824,6 +15824,66 @@ a.ds-badge:hover, button.ds-badge:hover {
   overflow-y: auto;
   min-height: 0;
 }
+/* DESIGN.md preamble budget - what this DS costs on every scoped agent turn.
+   Advisory only (the catalog always embeds whole); the bar turns amber past
+   the guide so a catalog outgrowing its readable size is visible, instead of
+   being silently dropped the way the old hard cap did it. */
+.workflow-node-ds-budget {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2, var(--surface));
+}
+.workflow-node-ds-budget[data-over="true"] {
+  border-color: color-mix(in oklab, var(--warn, #b7791f) 45%, var(--border));
+  background: color-mix(in oklab, var(--warn, #b7791f) 7%, var(--surface));
+}
+.workflow-node-ds-budget-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.workflow-node-ds-budget-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase; font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.workflow-node-ds-budget-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.workflow-node-ds-budget[data-over="true"] .workflow-node-ds-budget-num {
+  color: var(--warn, #b7791f);
+  font-weight: 600;
+}
+.workflow-node-ds-budget-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+.workflow-node-ds-budget-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.workflow-node-ds-budget[data-over="true"] .workflow-node-ds-budget-bar > span {
+  background: var(--warn, #b7791f);
+}
+.workflow-node-ds-budget-note {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
 /* "Use template design system" - skip the agent, bake the bundled template DS
    straight into this node via the same customizer the new-project flow uses. */
 .workflow-node-ds-template-btn {

@@ -843,6 +843,15 @@ def _resolve_ds_binding(project_root: Optional[str], prototype: Optional[str]) -
         return None
 
 
+# Advisory size guide for a bound design system's DESIGN.md catalog, in
+# CHARACTERS. It is NOT a cap - the catalog embeds whole no matter how big
+# (see _scoped_iteration_stub). It exists so the design-system canvas node
+# can show the author what the catalog costs on EVERY agent turn, and how
+# far past the comfortable size it has grown. Mirrored client-side as
+# DS_INDEX_BUDGET_CHARS in app.js; keep the two in step.
+DS_INDEX_BUDGET_CHARS = 30000
+
+
 def _scoped_iteration_stub(prototype: Optional[str] = None,
                            project_root: Optional[str] = None) -> str:
     scope = f"`source/{prototype}/`" if prototype else "the committed prototype's `source/<slug>/` subtree"
@@ -859,16 +868,26 @@ def _scoped_iteration_stub(prototype: Optional[str] = None,
     # instead of only naming it. Rationale (suss-cal drift, 2026-07-16): the
     # catalog gets Read once at turn 2 and is buried 200k tokens back by the
     # time styling happens, so the agent invents classes. The preamble rides
-    # at the top of EVERY call - always in view, fully prompt-cached (~4k
-    # tokens). Size-capped so a pathological DESIGN.md can't balloon spawns;
-    # over-cap or unreadable falls back to today's name-the-file behavior.
+    # at the top of EVERY call - always in view, fully prompt-cached.
+    #
+    # NO SIZE CAP. There used to be one (`len(_idx_txt) <= 30000`), and it
+    # was the worst kind: silent. suss-cal's DESIGN.md grew past 30k chars,
+    # the embed switched itself off, the preamble still said "consult the
+    # DS" - and the agent went back to grepping class names out of a 206k
+    # gallery, reading component ANATOMY while never seeing the usage rules
+    # ("Filter chip ... Use everywhere; never hand-roll"). It shipped native
+    # <select>s where the DS codifies .filter-chip, and no lint catches that
+    # (ds_lint.py is CSS-only). A fix that disarms itself as the DS grows is
+    # worse than no fix. The catalog now always embeds; DS_INDEX_BUDGET_CHARS
+    # below is ADVISORY ONLY, surfaced on the design-system canvas node so
+    # growth is visible to a human instead of being swallowed here.
     ds_index = ""
     if ds and ds.get("designMd") and project_root:
         try:
             with open(os.path.join(project_root, ds["designMd"]), "r",
                       encoding="utf-8", errors="replace") as f:
                 _idx_txt = f.read().strip()
-            if _idx_txt and len(_idx_txt) <= 30000:
+            if _idx_txt:
                 ds_index = (
                     "\n\n## Committed design-system vocabulary (embedded from `" + ds["designMd"] + "`)\n\n"
                     "This is the COMPLETE token + component-class catalog of the bound design system. "
@@ -1528,7 +1547,7 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     # needs a drawer's purpose. Full tier (orchestrators + main chat, the
     # agents that actually pick a drawer) keeps the descriptions.
     if tier in ("slim", "leaf", "scoped", "normal"):
-        _names = ", ".join(sa["name"] for sa in caps["subagents"][:100])
+        _names = ", ".join("woven:" + sa["name"] for sa in caps["subagents"][:100])
         subagent_lines = (
             f"  {_names}\n"
             "  (names only - you are a leaf and rarely dispatch; for the one-line purpose of any drawer "
@@ -1536,7 +1555,7 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
         )
     else:
         subagent_lines = "\n".join(
-            f"  • {sa['name']} - {sa['description'][:140]}" for sa in caps["subagents"][:100]
+            f"  • woven:{sa['name']} - {sa['description'][:140]}" for sa in caps["subagents"][:100]
         )
     # Lean tiers carry the endpoints an iterating / leaf agent actually calls;
     # the rest are one fetch away. The full roster is ~9K chars of catalog that
@@ -1760,6 +1779,7 @@ The canvas Run reads these, injects the matching directive into the prompt, and 
 **Masked outpaint / inpaint on `generate-image` - extend a canvas, fill a hole, replace a region.** Pass `mask_data_uri` (a PNG the SAME pixel size as the input, **transparent where the model should paint, opaque where it must be preserved**) alongside `input_data_uri` (or `input_path`) on the same POST `/__asset_generate` call. Mask-less i2i regenerates the WHOLE frame; the mask is what pins the original so only the marked area changes - that is the difference between "restyle this image" and "extend / repair this image". To OUTPAINT, composite the source onto a larger transparent canvas (the new margin stays transparent), make a mask that is opaque over the original and transparent over the new margin, and request the gpt-image size bucket nearest the new aspect. gpt-image family only (same 400 as plain i2i otherwise). This is the exact mechanism behind the user's image-node Crop -> Expand "Regenerate fill" button.
 
 **Subagent drawers available** ({len(caps['subagents'])}, dispatch via the Task tool):
+> **Dispatch them by the `woven:` name EXACTLY as listed - `subagent_type: "woven:ds-guardian"`, never bare `ds-guardian`.** They reach claude as a plugin, which namespaces them; the bare name resolves only in projects that are not their own git repo, so it fails silently on exactly the published ones. The specs themselves still refer to each other bare (codex/opencode dispatch through the daemon, which accepts either) - so when a spec tells you to dispatch `foo-orchestrator`, you send `woven:foo-orchestrator`.
 {subagent_lines}
 
 **Daemon HTTP endpoints**:
