@@ -23780,18 +23780,6 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--accent-text);
 }
 .perm-trigger-label { letter-spacing: -0.005em; }
-/* Subtle hairline between the permission picker and the chat-view picker,
-   drawn in the centre of the footer's flex gap. */
-.chat-footer > .view-picker::before {
-  content: "";
-  position: absolute;
-  left: -5px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 1px;
-  height: 16px;
-  background: var(--border);
-}
 .perm-chev { font-size: 9px; color: var(--text-faint); margin-left: 2px; }
 
 .perm-mark {
@@ -23827,13 +23815,6 @@ a.ds-badge:hover, button.ds-badge:hover {
   bottom: calc(100% + 6px);
   left: 0;
   right: auto;
-}
-/* v3.12 - the Steps (view-mode) picker sits at the far right of the composer
-   toolbar, so its 340px menu opening from left:0 overflowed the drawer's right
-   edge and got cropped. Anchor it to the right edge instead so it grows inward. */
-.chat-composer-toolbar .view-picker[data-up="true"] .perm-menu {
-  left: auto;
-  right: 0;
 }
 .perm-menu-head {
   font-size: 10.5px;
@@ -23878,17 +23859,7 @@ a.ds-badge:hover, button.ds-badge:hover {
    a single-choice list, so the tick carries the state instead of a row fill.
    The trigger goes amber when any gate is off: a dropped check is a thing the
    user should notice from the closed state, not only on open. */
-.chat-composer-toolbar .guards-picker { position: relative; margin-left: 5px; }
-.chat-composer-toolbar .guards-picker::before {
-  content: "";
-  position: absolute;
-  left: -5px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 1px;
-  height: 16px;
-  background: var(--border);
-}
+.chat-composer-toolbar .guards-picker { position: relative; }
 .guards-picker .perm-trigger[data-off="true"] { color: var(--warning); }
 .guards-picker .perm-trigger[data-off="true"]:hover { border-color: var(--warning); }
 /* Pending = the checks were changed under a RUNNING thread, which cannot take
@@ -23931,6 +23902,108 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: #fff;
 }
 .guard-check svg { width: 11px; height: 11px; }
+/* One icon per check that is ON. The row replaces the old "2/3" count: a
+   count told you how many but never which, so the chip was unreadable
+   without opening it. Each icon owns a HoverTip naming its check. */
+.guards-trigger-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.guards-trigger-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: color 0.12s;
+}
+.guards-trigger-icon svg { width: 14px; height: 14px; }
+.perm-trigger:hover .guards-trigger-icon,
+.perm-trigger[data-open="true"] .guards-trigger-icon { color: inherit; }
+/* Staged-under-a-running-thread marker, previously a "*" glued to the label. */
+.guards-trigger-pending {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent-text);
+}
+/* Same icon repeated on the menu row, so the closed chip is decodable: the
+   user learns which glyph means which check by seeing them together. */
+.guard-row-icon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: -2px;
+  margin-right: 6px;
+  color: var(--text-muted);
+}
+.guard-row-icon svg { width: 13px; height: 13px; }
+.perm-item[aria-checked="true"] .guard-row-icon { color: var(--accent-text); }
+
+/* Composer "+" - one trigger for the three attach paths, which used to be
+   three undifferentiated icons in a row. */
+.composer-add { margin-left: 2px; }
+.composer-add-trigger[data-open="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.composer-add-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+.composer-add-icon svg { width: 15px; height: 15px; }
+.perm-item:hover .composer-add-icon { color: var(--text); }
+.composer-add .perm-item[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+/* Steps toggle - icon only, two states, tooltip carries the sentence. Sits at
+   the far right of the composer toolbar where the Steps dropdown used to. */
+.chat-composer-icon-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  width: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.chat-composer-icon-toggle:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+.chat-composer-icon-toggle-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-composer-icon-toggle-mark svg { width: 15px; height: 15px; }
+/* On = finished steps stay visible. The lit state has to be unmistakable at
+   15px, so it takes the accent fill rather than a colour shift alone. */
+.chat-composer-icon-toggle-mark[data-on="true"] {
+  color: var(--accent-text);
+}
+.chat-composer-icon-toggle:has(.chat-composer-icon-toggle-mark[data-on="true"]) {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+/* Permission mode in Settings > Preferences: the segmented option carries the
+   same coloured dot the chat header chip uses, so the two read as one thing. */
+.onboarding-sendkey-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 
 /* Compact read-only mode chip in the chat drawer header */
 .chat-mode-chip {
@@ -24930,9 +25003,6 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 .chat-composer-upload {
   background: color-mix(in oklab, var(--accent) 6%, var(--surface-2));
   border-color: color-mix(in oklab, var(--accent) 35%, var(--border));
-}
-.chat-composer-upload-btn {
-  /* Same chrome as the attach button, just a different glyph. */
 }
 /* While the agent is mid-turn the user can still type - only the Send
    button is gated. A subtle tinted background shows the composer is in

@@ -11692,63 +11692,49 @@ function SettingsGearButton({ onClick, className }) {
   ><${Icon.Gear}/><//>`;
 }
 
+/* Permission mode is a STICKY EDITOR PREFERENCE (Settings > Preferences), not
+   a per-thread control: in practice it is set once and never touched, so it
+   was pure noise in every chat footer. Auto is the default and the only mode
+   most projects ever run.
+   "plan" is retired as an option - a read-only agent cannot do anything the
+   editor is for - but stays in LEGACY_PERMISSION_MODES so a thread spawned
+   with it before the retirement still reports itself truthfully. */
 const PERMISSION_MODE_OPTIONS = [
-  { value: "bypassPermissions", label: "Auto - bypass",       short: "Auto",   hint: "Agent runs every tool with no prompts. Matches the migration plan default." },
+  { value: "bypassPermissions", label: "Auto - bypass",       short: "Auto",   hint: "Agent runs every tool with no prompts. The default, and what every build flow assumes." },
   { value: "acceptEdits",       label: "Accept edits",        short: "Edits",  hint: "Auto-approve Read / Edit / Write. Block Bash, WebFetch, etc." },
-  { value: "plan",              label: "Plan (read-only)",    short: "Plan",   hint: "Agent can read & think but cannot write. Safest." },
   { value: "default",           label: "Default (TTY only)",  short: "Ask",    hint: "Interactive prompt - never resolves in our daemon's non-TTY mode. For reference only." },
 ];
+const LEGACY_PERMISSION_MODES = {
+  plan: { value: "plan", label: "Plan (read-only)", short: "Plan", hint: "Read-only mode. No longer offered - this thread was spawned with it before it was retired." },
+};
 function permModeOption(value) {
-  return PERMISSION_MODE_OPTIONS.find(o => o.value === value) || PERMISSION_MODE_OPTIONS[0];
+  return PERMISSION_MODE_OPTIONS.find(o => o.value === value)
+    || LEGACY_PERMISSION_MODES[value]
+    || PERMISSION_MODE_OPTIONS[0];
 }
-
-function PermissionModePicker({ value, onChange, compact, openUp }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+/* One reader, one writer, one broadcast - the same shape as the editor theme
+   and the chat guards. A saved mode that is no longer offered (plan) falls
+   back to Auto for the NEXT spawn, which is what dropping the option means. */
+function loadPermissionMode() {
+  const v = loadSettings().permissionMode;
+  return PERMISSION_MODE_OPTIONS.some(o => o.value === v) ? v : "bypassPermissions";
+}
+function savePermissionMode(mode) {
+  saveSettings({ permissionMode: mode });
+  try { window.dispatchEvent(new CustomEvent("th:perm-mode-changed")); } catch {}
+  return mode;
+}
+/* Every surface that spawns a run holds the mode in state so it can pass it
+   to the spawn. Settings is now the only writer, so each holder just re-reads
+   on the broadcast instead of owning a picker of its own. */
+function usePermissionMode() {
+  const [mode, setMode] = useState(loadPermissionMode);
   useEffect(() => {
-    if (!open) return;
-    const off = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", off);
-    return () => document.removeEventListener("mousedown", off);
-  }, [open]);
-  const cur = permModeOption(value);
-  return html`
-    <div className="perm-picker" ref=${ref} data-compact=${!!compact} data-up=${!!openUp}>
-      <button
-        className="perm-trigger"
-        data-open=${open}
-        data-mode=${cur.value}
-        title=${cur.hint}
-        onClick=${() => setOpen(o => !o)}
-      >
-        <span className="perm-trigger-label">${compact ? cur.short : cur.label}</span>
-        <span className="perm-chev">${openUp ? "▴" : "▾"}</span>
-      </button>
-      ${open && html`
-        <div className="perm-menu">
-          <div className="perm-menu-head">Permission mode</div>
-          ${PERMISSION_MODE_OPTIONS.map(opt => html`
-            <button
-              key=${opt.value}
-              className="perm-item"
-              data-active=${opt.value === value}
-              title=${opt.hint}
-              onClick=${() => { onChange(opt.value); setOpen(false); }}
-            >
-              <span className="perm-mark" data-mode=${opt.value}/>
-              <span className="perm-item-body">
-                <span className="perm-item-label">${opt.label}</span>
-                <span className="perm-item-hint">${opt.hint}</span>
-              </span>
-            </button>
-          `)}
-          <div className="perm-menu-foot">
-            Changes apply to the next run. The current run keeps the mode it was spawned with.
-          </div>
-        </div>
-      `}
-    </div>
-  `;
+    const on = () => setMode(loadPermissionMode());
+    window.addEventListener("th:perm-mode-changed", on);
+    return () => window.removeEventListener("th:perm-mode-changed", on);
+  }, []);
+  return mode;
 }
 
 /* Chat view mode: how much of the agent's working activity (tool
@@ -11775,9 +11761,30 @@ function loadChatViewMode() {
   return "auto";
 }
 
-/* Same skeleton as PermissionModePicker - reuses the perm-* CSS family so
-   the two footer dropdowns read as siblings. */
-function ChatViewModePicker({ value, onChange, openUp }) {
+/* Steps toggle - an ICON, not a dropdown. There are only two states and the
+   icon carries both: lit = every tool card and thinking block stays visible
+   after the turn; unlit = finished activity collapses away, leaving the reply.
+   A two-value choice does not earn a 340px menu in the composer footer. */
+function ChatViewModeToggle({ value, onChange }) {
+  const always = value === "always";
+  return html`<${HoverTip}
+    className="chat-composer-icon-toggle"
+    ariaLabel=${always ? "Hide finished steps" : "Always show steps"}
+    tip=${always
+      ? "Steps shown - every tool card and thinking block stays visible after the turn finishes. Click to hide finished steps."
+      : "Steps hidden - tool activity shows while the agent works, then disappears once the turn finishes. Click to keep it visible."}
+    onClick=${() => onChange(always ? "auto" : "always")}
+  ><span className="chat-composer-icon-toggle-mark" data-on=${always}><${Icon.List}/></span><//>`;
+}
+
+/* Composer "+" menu - the three ways to give the agent a file. They were
+   three bare icons in a row (image / clip / folder) that nobody could tell
+   apart, and the difference between them (bound to one turn vs read in place
+   vs copied into the project) is exactly the thing an icon cannot say. One
+   "+" trigger, three named rows, each with the sentence that distinguishes it.
+   Same perm-* menu shell as the checks picker so the footer reads as one
+   family. */
+function ChatComposerAddMenu({ busy, attachBusy, pickBusy, uploadBusy, onAttachImage, onAttachRef, onUpload }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -11786,33 +11793,44 @@ function ChatViewModePicker({ value, onChange, openUp }) {
     document.addEventListener("mousedown", off);
     return () => document.removeEventListener("mousedown", off);
   }, [open]);
-  const cur = chatViewModeOption(value);
+  const anyBusy = attachBusy || pickBusy || uploadBusy;
+  const rows = [
+    { key: "image",  icon: Icon.Image,  busy: attachBusy, label: "Attach image",
+      hint: "For vision - the agent looks at it on this turn only. You can also drag or paste one straight into the box.",
+      run: onAttachImage },
+    { key: "ref",    icon: Icon.Clip,   busy: pickBusy,   label: "Attach files by reference",
+      hint: "Pick any file on disk in the OS browser. The agent reads it where it lives - nothing is copied into the project.",
+      run: onAttachRef },
+    { key: "upload", icon: Icon.Folder, busy: uploadBusy, label: "Upload into the project",
+      hint: "Multi-file, any type. Copies into source/uploads/ so the build can use it, not just this thread.",
+      run: onUpload },
+  ];
   return html`
-    <div className="perm-picker view-picker" ref=${ref} data-up=${!!openUp}>
+    <div className="perm-picker composer-add" ref=${ref} data-up="true">
       <button
-        className="perm-trigger"
+        className="chat-composer-attach composer-add-trigger"
+        type="button"
         data-open=${open}
-        title=${cur.hint}
-        onClick=${() => setOpen(o => !o)}
-      >
-        <span className="perm-trigger-label">${cur.short}</span>
-        <span className="perm-chev">${openUp ? "▴" : "▾"}</span>
-      </button>
+        disabled=${!!busy}
+        title="Add an image or file"
+        aria-label="Add an image or file"
+        onClick=${() => !busy && setOpen(o => !o)}
+      >${anyBusy ? "…" : html`<${Icon.Plus}/>`}</button>
       ${open && html`
         <div className="perm-menu">
-          <div className="perm-menu-head">Chat view</div>
-          ${CHAT_VIEW_MODE_OPTIONS.map(opt => html`
+          <div className="perm-menu-head">Add to this chat</div>
+          ${rows.map(r => html`
             <button
-              key=${opt.value}
+              key=${r.key}
               className="perm-item"
-              data-active=${opt.value === value}
-              title=${opt.hint}
-              onClick=${() => { onChange(opt.value); setOpen(false); }}
+              type="button"
+              disabled=${!!r.busy}
+              onClick=${() => { setOpen(false); r.run(); }}
             >
-              <span className="perm-mark view-mark" data-view=${opt.value}/>
+              <span className="composer-add-icon" aria-hidden="true"><${r.icon}/></span>
               <span className="perm-item-body">
-                <span className="perm-item-label">${opt.label}</span>
-                <span className="perm-item-hint">${opt.hint}</span>
+                <span className="perm-item-label">${r.label}${r.busy ? " …" : ""}</span>
+                <span className="perm-item-hint">${r.hint}</span>
               </span>
             </button>
           `)}
@@ -11838,9 +11856,9 @@ function ChatViewModePicker({ value, onChange, openUp }) {
    permission mode they apply to the next run, not the one already streaming.
    Persisted in the shared editor settings blob (a sticky user preference). */
 const CHAT_GUARD_OPTIONS = [
-  { key: "visual",  def: true,  label: "Visual verification", hint: "Agent renders and looks at what it built (via a throwaway verifier subagent) before saying it is done - including anything it creates on the canvas. Off: it reports without checking, and may glance inline." },
-  { key: "dsGuard", def: true,  label: "Design system guard", hint: "After any markup / CSS edit on a design-system-bound page, the agent runs the DS-drift linter and autofixes local forks. Off: no drift check. Projects with no design system are unaffected." },
-  { key: "reqQa",   def: false, label: "Requirement QA",      hint: "For work driven by a requirement doc or referenced file: a QA subagent re-reads the requirement and checks the build's terms, logic and facts against it. The agent auto-fixes hallucinated facts and mechanical drift, and brings anything needing a decision to you. Off unless the thread has a requirement to check." },
+  { key: "visual",  def: true,  icon: "Eye",      label: "Visual verification", hint: "Agent renders and looks at what it built (via a throwaway verifier subagent) before saying it is done - including anything it creates on the canvas. Off: it reports without checking, and may glance inline." },
+  { key: "dsGuard", def: true,  icon: "Palette",  label: "Design system guard", hint: "After any markup / CSS edit on a design-system-bound page, the agent runs the DS-drift linter and autofixes local forks. Off: no drift check. Projects with no design system are unaffected." },
+  { key: "reqQa",   def: false, icon: "NotesDoc", label: "Requirement QA",      hint: "For work driven by a requirement doc or referenced file: a QA subagent re-reads the requirement and checks the build's terms, logic and facts against it. The agent auto-fixes hallucinated facts and mechanical drift, and brings anything needing a decision to you. Off unless the thread has a requirement to check." },
 ];
 // The spawn defaults, mirroring kinds/capabilities.py GUARD_DEFAULTS: not all
 // guards default the same way (the two always-on gates catch silent, expensive
@@ -11896,11 +11914,19 @@ function composeGuardHandoffPrompt(summary, text, prevTitle) {
     + (text || "")
   );
 }
-function chatGuardsSummary(g) {
-  const on = CHAT_GUARD_OPTIONS.filter(o => g[o.key]).length;
-  if (on === CHAT_GUARD_OPTIONS.length) return "Checks: all";
-  if (on === 0) return "Checks: off";
-  return `Checks: ${on}/${CHAT_GUARD_OPTIONS.length}`;
+/* The closed chip shows ONE ICON PER CHECK THAT IS ON, and nothing for the
+   ones that are off - "2/3" told you a count but never which two, so you had
+   to open the menu to learn anything. Each icon's tooltip names its check and
+   nothing more: the chip hugs the drawer's left edge, and a bubble carrying
+   the whole hint spills off-screen there. The hint stays on the menu row.
+   With every check dropped there is no icon left to draw, so the chip falls
+   back to the amber "Checks: off" words - an empty chip would read as broken
+   rather than as a deliberate state. */
+function chatGuardsOnList(g) {
+  return CHAT_GUARD_OPTIONS.filter(o => !!(g || {})[o.key]);
+}
+function chatGuardsStateLine(g) {
+  return CHAT_GUARD_OPTIONS.map(o => `${o.label} ${(g || {})[o.key] ? "on" : "off"}`).join(", ");
 }
 
 /* Same skeleton + CSS family as PermissionModePicker / ChatViewModePicker, so
@@ -11928,7 +11954,8 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending })
   // opt-in check (requirement QA) is not a caution, so it does not colour the
   // chip; the count already shows it.
   const anyOff = CHAT_GUARD_OPTIONS.some(o => o.def && !value[o.key]);
-  const stateLine = CHAT_GUARD_OPTIONS.map(o => `${o.label} ${value[o.key] ? "on" : "off"}`).join(", ");
+  const stateLine = chatGuardsStateLine(value);
+  const onNow = chatGuardsOnList(value);
   const lockedTitle = locked
     ? `This thread ran with: ${stateLine}. It is closed, so there is nothing left to change.`
     : pending
@@ -11948,7 +11975,18 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending })
         title=${lockedTitle}
         onClick=${() => { if (!locked) setOpen(o => !o); }}
       >
-        <span className="perm-trigger-label">${chatGuardsSummary(value)}${pending ? " *" : ""}</span>
+        ${onNow.length
+          ? html`<span className="guards-trigger-icons">
+              ${onNow.map(opt => html`<${HoverTip}
+                key=${opt.key}
+                as="span"
+                className="guards-trigger-icon"
+                ariaLabel=${opt.label + " on"}
+                tip=${opt.label + " - on"}
+              ><${Icon[opt.icon]}/><//>`)}
+            </span>`
+          : html`<span className="perm-trigger-label">Checks: off</span>`}
+        ${pending && html`<span className="guards-trigger-pending" aria-hidden="true">*</span>`}
         ${!locked && html`<span className="perm-chev">${openUp ? "▴" : "▾"}</span>`}
       </button>
       ${open && !locked && html`
@@ -11967,7 +12005,10 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending })
                 ${value[opt.key] ? html`<${Icon.Check}/>` : null}
               </span>
               <span className="perm-item-body">
-                <span className="perm-item-label">${opt.label}</span>
+                <span className="perm-item-label">
+                  <span className="guard-row-icon" aria-hidden="true"><${Icon[opt.icon]}/></span>
+                  ${opt.label}
+                </span>
                 <span className="perm-item-hint">${opt.hint}</span>
               </span>
             </button>
@@ -12936,8 +12977,7 @@ function RightRailDock({ mode }) {
   const branch = activePrototypeSlug();
   const [chatRun, setChatRun] = useState(null);
   const [chatRunFinished, setChatRunFinished] = useState(false);
-  const [permissionMode, setPermissionMode] = useState(() => loadSettings().permissionMode || "bypassPermissions");
-  const onPermissionModeChange = useCallback((m) => { setPermissionMode(m); saveSettings({ permissionMode: m }); }, []);
+  const permissionMode = usePermissionMode();
   // Rail-bottom status cluster (history clock + daemon + CLI icons) - the
   // same trio the editor/workflow rails carry, so the standalone views
   // (User testing, Development) read identically. useHistory is project-
@@ -13248,7 +13288,6 @@ function RightRailDock({ mode }) {
           onRunComplete=${handleComplete}
           onStatusChange=${({ status }) => setChatRunFinished(status === "done" || status === "error" || status === "fail")}
           permissionMode=${permissionMode}
-          onPermissionModeChange=${onPermissionModeChange}
           onStartNewChat=${spawnChat}
         />` : html`<${LeftChatRunsList} onOpenRun=${reopenRun} onStartNewChat=${openChat}/>`}
         </div>
@@ -13313,7 +13352,6 @@ function RightRailDock({ mode }) {
             setChatRunFinished(status === "done" || status === "error" || status === "fail");
         }}
         permissionMode=${permissionMode}
-        onPermissionModeChange=${onPermissionModeChange}
         onStartNewChat=${spawnChat}
         selectionCount=${0}
       />`}
@@ -16237,7 +16275,7 @@ function chatStatusReducer(prev, ev) {
 // `variant` (optional) adds a `chat-drawer-<variant>` class to the root for
 // surface-specific layout. Workflow mode passes "dock" so the panel docks
 // BELOW the workflow bar instead of overlaying the full viewport height.
-function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onPermissionModeChange, onStartNewChat, preamble, selectionCount, onResizeStart, variant, targetBar }) {
+function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onStartNewChat, preamble, selectionCount, onResizeStart, variant, targetBar }) {
   // Publish WHICH thread is open, so the runs list can mark that row as the one
   // you are looking at. Done from the drawer rather than prop-drilled: the
   // drawer is the single component that knows, and it is hosted by four
@@ -17349,13 +17387,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         runStatus=${status}
         onStop=${stopRun}
         toolbarLeft=${html`
-          <${PermissionModePicker}
-            value=${permissionMode}
-            onChange=${onPermissionModeChange}
-            compact=${true}
-            openUp=${true}
-          />
-${variant !== "system" && html`
+          ${variant !== "system" && html`
             <${ChatGuardsPicker}
               value=${effGuards}
               onChange=${stageGuards}
@@ -17375,10 +17407,9 @@ ${variant !== "system" && html`
               this run: <strong>${permModeOption(runPermMode).short}</strong>
             </span>
           `}
-          <${ChatViewModePicker}
+          <${ChatViewModeToggle}
             value=${viewMode}
             onChange=${changeViewMode}
-            openUp=${true}
           />
         `}
         onStartNewChat=${onStartNewChat}
@@ -19053,30 +19084,15 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       </div>
       <div className="chat-composer-toolbar">
         ${toolbarLeft}
-        <button
-          className="chat-composer-attach"
-          type="button"
-          onClick=${() => fileInputRef.current && fileInputRef.current.click()}
-          disabled=${attachBusy || busy}
-          title="Attach image for vision (drag, paste, or click) - single turn"
-          aria-label="Attach image"
-        >${attachBusy ? "…" : html`<${Icon.Image}/>`}</button>
-        <button
-          className="chat-composer-attach chat-composer-fileref-btn"
-          type="button"
-          onClick=${pickLocalFiles}
-          disabled=${pickBusy || busy}
-          title="Attach files by reference - pick any file in the OS file browser; the agent reads it in place, nothing is copied"
-          aria-label="Attach files by reference"
-        >${pickBusy ? "…" : html`<${Icon.Clip}/>`}</button>
-        <button
-          className="chat-composer-attach chat-composer-upload-btn"
-          type="button"
-          onClick=${() => uploadInputRef.current && uploadInputRef.current.click()}
-          disabled=${uploadBusy || busy}
-          title="Upload project files - multi-file, any type, lives in source/uploads/"
-          aria-label="Upload files"
-        >${uploadBusy ? "…" : html`<${Icon.Folder}/>`}</button>
+        <${ChatComposerAddMenu}
+          busy=${busy}
+          attachBusy=${attachBusy}
+          pickBusy=${pickBusy}
+          uploadBusy=${uploadBusy}
+          onAttachImage=${() => fileInputRef.current && fileInputRef.current.click()}
+          onAttachRef=${pickLocalFiles}
+          onUpload=${() => uploadInputRef.current && uploadInputRef.current.click()}
+        />
         <span className="chat-composer-toolbar-spacer"/>
         ${toolbarRight}
       </div>
@@ -29579,7 +29595,7 @@ function ProjectsLanding({ info, projects, onReload }) {
   // redesign block above for the rationale.
   const [systemThreads, setSystemThreads] = useState([]);
   const [systemRun, setSystemRun] = useState(null);
-  const [systemPermMode, setSystemPermMode] = useState("bypassPermissions");
+  const systemPermMode = usePermissionMode();
   const fetchSystemThreads = useCallback(() => {
     fetch("/__system_runs").then(r => r.ok ? r.json() : null)
       .then(j => setSystemThreads(j ? (j.runs || []) : []))
@@ -30097,7 +30113,6 @@ function ProjectsLanding({ info, projects, onReload }) {
         onRunComplete=${onSystemRunComplete}
         onStatusChange=${() => {}}
         permissionMode=${systemPermMode}
-        onPermissionModeChange=${setSystemPermMode}
         onStartNewChat=${(text) => spawnSystemThread({ section: (systemRun && systemRun.section) || "orchestrators", prompt: text, title: text.slice(0, 60) })}
       />`, document.body)}
       ${tourOpen && html`<${GuideTour}
@@ -30805,7 +30820,7 @@ function WorkflowCanvas() {
   );
   const [chatRun, setChatRun] = useState(null);
   const [chatRunFinished, setChatRunFinished] = useState(false);
-  const [chatPermissionMode, setChatPermissionMode] = useState(() => loadSettings().permissionMode || "bypassPermissions");
+  const chatPermissionMode = usePermissionMode();
 
   // ── Right tiling dock (workflow surface) ──────────────────────────────
   // Same model as the editor App's dock, but floating (its own
@@ -31099,10 +31114,6 @@ function WorkflowCanvas() {
     })();
     return () => { cancelled = true; };
   }, [branch, chatRun]);
-  const onChatPermissionModeChange = useCallback((m) => {
-    setChatPermissionMode(m);
-    saveSettings({ permissionMode: m });
-  }, []);
   // selection-context injection. WorkflowSurface populates this ref
   // with { selectedIds: Set<string>, nodes: Node[] } on every selection
   // change; spawnWorkflowChat reads it at call time so the chat agent sees
@@ -32362,7 +32373,6 @@ function WorkflowCanvas() {
         onRunComplete=${handleWorkflowChatComplete}
         onStatusChange=${({ status }) => setChatRunFinished(status === "done" || status === "error" || status === "fail")}
         permissionMode=${chatPermissionMode}
-        onPermissionModeChange=${onChatPermissionModeChange}
         onStartNewChat=${spawnWorkflowChat}
         selectionCount=${selectionCount}
         targetBar=${html`<${WorkflowChatTargetBar} summary=${selectionSummary} override=${chatTargetOverride} onChangeOverride=${setChatTargetOverrideBoth} activePreviewSlug=${activePreviewSlug} run=${chatRun} />`}
@@ -32428,7 +32438,6 @@ function WorkflowCanvas() {
             setChatRunFinished(status === "done" || status === "error" || status === "fail");
         }}
         permissionMode=${chatPermissionMode}
-        onPermissionModeChange=${onChatPermissionModeChange}
         onStartNewChat=${spawnWorkflowChat}
         selectionCount=${selectionCount}
         targetBar=${html`<${WorkflowChatTargetBar} summary=${selectionSummary} override=${chatTargetOverride} onChangeOverride=${setChatTargetOverrideBoth} activePreviewSlug=${activePreviewSlug} run=${w.run} />`}
@@ -92099,7 +92108,7 @@ function WorkflowDesignSystemNode({ node, zoom, selected, onSelect, onMove, onRe
     try {
       const branch = activePrototypeSlug();
       const agentIdForRun = pickAgentIdForChat();
-      const permissionMode = (loadSettings().permissionMode) || "bypassPermissions";
+      const permissionMode = loadPermissionMode();
       const projectId = activeProjectId();
 
       const primitivePresetLine = (spec.primitivePreset || []).join(", ") || DS_DEFAULT_PRIMITIVE_PRESET.join(", ");
@@ -98946,6 +98955,16 @@ function WorkflowSendKeySection() {
   // Context auto-compact policy - daemon-persisted (the daemon needs it to
   // fire the trigger on threads whose chat UI is closed), so unlike the
   // localStorage prefs above this one round-trips /__compact_config.
+  // Permission mode moved here from the chat footer: it is set once and then
+  // never touched, so it belongs with the other sticky preferences rather
+  // than taking a slot in every composer. savePermissionMode broadcasts, so
+  // any chat surface already open picks the new mode up for its next spawn.
+  const [permMode, setPermMode] = useState(loadPermissionMode);
+  useEffect(() => {
+    const on = () => setPermMode(loadPermissionMode());
+    window.addEventListener("th:perm-mode-changed", on);
+    return () => window.removeEventListener("th:perm-mode-changed", on);
+  }, []);
   const [compactCfg, setCompactCfg] = useState(null);
   useEffect(() => {
     fetch(apiUrl("/__compact_config"))
@@ -98960,6 +98979,7 @@ function WorkflowSendKeySection() {
     }).catch(() => {});
   };
   const pick = (v) => { saveSendOnEnter(v); setSendOnEnter(v); };
+  const pickPermMode = (v) => { savePermissionMode(v); setPermMode(v); };
   const pickSimplify = (v) => { saveNodeSimplify(v); setSimplify(v); };
   const pickTheme = (v) => { saveEditorTheme(v); setTheme(v); };
   const pickCorners = (v) => { saveNodeCorners(v); setNodeCorners(v); };
@@ -99015,6 +99035,24 @@ function WorkflowSendKeySection() {
             <span className="onboarding-sendkey-keys">↵ Enter</span>
             <span className="onboarding-sendkey-sub">⇧/⌘ + Enter = new line</span>
           </button>
+        </div>
+      </div>
+      <div className="workflow-settings-section">
+        <div className="onboarding-sendkey-head">
+          <span className="onboarding-sendkey-title">Agent permissions</span>
+          <span className="onboarding-sendkey-desc">How much the agent may do without asking. Applies to the next run every chat starts; a run already streaming keeps the mode it was spawned with.</span>
+        </div>
+        <div className="onboarding-sendkey-seg" role="radiogroup" aria-label="Agent permissions">
+          ${PERMISSION_MODE_OPTIONS.map(opt => html`
+            <button type="button" role="radio" key=${opt.value} aria-checked=${permMode === opt.value}
+              className="onboarding-sendkey-opt" data-active=${permMode === opt.value}
+              onClick=${() => pickPermMode(opt.value)}>
+              <span className="onboarding-sendkey-keys">
+                <span className="perm-mark" data-mode=${opt.value}/>${opt.short}
+              </span>
+              <span className="onboarding-sendkey-sub">${opt.hint}</span>
+            </button>
+          `)}
         </div>
       </div>
       <div className="workflow-settings-section">
@@ -101230,9 +101268,8 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     return (m && m[1]) || activePrototypeSlug();
   })();
 
-  // Permission mode mirrors the daemon default (bypassPermissions). User can
-  // toggle from ChatDrawer's permission menu like in the editor view.
-  const [permissionMode, setPermissionMode] = useState("bypassPermissions");
+  // Permission mode is the editor-wide preference (Settings > Preferences).
+  const permissionMode = usePermissionMode();
 
   const _freshChatShell = () => ({
     runId: null,
@@ -101465,7 +101502,6 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     onRunComplete=${onRunComplete}
     onStatusChange=${() => {}}
     permissionMode=${permissionMode}
-    onPermissionModeChange=${setPermissionMode}
     onStartNewChat=${spawnFromComposer}
     onResizeStart=${startChatDrawerResize}
     preamble=${preamble}
@@ -106200,11 +106236,7 @@ function App() {
   // fresh run; if the user wants to keep talking to the existing agent, they
   // use the chat composer in the drawer instead.
   const runActive = !!chatRun && !runFinished;
-  const [permissionMode, setPermissionMode] = useState(() => loadSettings().permissionMode || "bypassPermissions");
-  const onPermissionModeChange = useCallback((mode) => {
-    setPermissionMode(mode);
-    saveSettings({ permissionMode: mode });
-  }, []);
+  const permissionMode = usePermissionMode();
 
   // Fires when ChatDrawer detects the agent's turn ended. Decides between:
   //   • Full page reload - ONLY when the agent edited the editor's own
@@ -106801,7 +106833,6 @@ function App() {
             onRunComplete=${handleRunComplete}
             onStatusChange=${({ status }) => setRunFinished(status === "done" || status === "error" || status === "fail")}
             permissionMode=${permissionMode}
-            onPermissionModeChange=${onPermissionModeChange}
             onStartNewChat=${spawnFromComposer}
             selectionCount=${editorSelectionCount}
           />` : html`<${LeftChatRunsList}
@@ -106908,7 +106939,6 @@ function App() {
               setRunFinished(status === "done" || status === "error" || status === "fail");
           }}
           permissionMode=${permissionMode}
-          onPermissionModeChange=${onPermissionModeChange}
           onStartNewChat=${spawnFromComposer}
           selectionCount=${editorSelectionCount}
         />`}
