@@ -1014,6 +1014,10 @@ const Icon = {
   //   Used by Prototype node's "Manage exposed assets" button.
   OpenExt:  () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M11 8.5V13a1 1 0 01-1 1H3a1 1 0 01-1-1V6a1 1 0 011-1h4.5"/><path d="M9 2.5h4.5V7M13.5 2.5L8 8"/></svg>`,
   List:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="3.5" cy="4" r="0.7" fill="currentColor"/><circle cx="3.5" cy="8" r="0.7" fill="currentColor"/><circle cx="3.5" cy="12" r="0.7" fill="currentColor"/><path d="M6.5 4h7M6.5 8h7M6.5 12h7"/></svg>`,
+  // Paragraph - prose, not a list. Indented first line, short last line, no
+  // bullets: the steps toggle means "how much of the turn stays on screen",
+  // and a bulleted List read as "here is a list of things".
+  Paragraph:() => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M6 4h7M3 8h10M3 12h6"/></svg>`,
   // PickEl: crosshair-in-frame (classic element-inspector affordance).
   // Mounted as a floating badge OUTSIDE the top-right of selected prototype +
   // HTML asset nodes; click enters pick mode where the user picks a
@@ -11774,7 +11778,7 @@ function ChatViewModeToggle({ value, onChange }) {
       ? "Steps shown - every tool card and thinking block stays visible after the turn finishes. Click to hide finished steps."
       : "Steps hidden - tool activity shows while the agent works, then disappears once the turn finishes. Click to keep it visible."}
     onClick=${() => onChange(always ? "auto" : "always")}
-  ><span className="chat-composer-icon-toggle-mark" data-on=${always}><${Icon.List}/></span><//>`;
+  ><span className="chat-composer-icon-toggle-mark" data-on=${always}><${Icon.Paragraph}/></span><//>`;
 }
 
 /* Orchestrator chip - present in the composer footer ONLY when this thread
