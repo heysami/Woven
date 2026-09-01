@@ -15076,6 +15076,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._chat_history(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__chat_search":
             return self._chat_search(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__run_dispatches":
+            return self._run_dispatches(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__doc":
             return self._branch_doc(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__screenshot/jobs":
@@ -32569,6 +32571,88 @@ class H(http.server.SimpleHTTPRequestHandler):
             out["truncated"] = True
             out["omittedRows"] = omitted
         return self._reply(200, out)
+
+    # GET /__run_dispatches?runId=<id>[&project=<id>][&prototype=<branch>]
+    #   Every Agent dispatch of ONE run, folded out of the DURABLE transcript
+    #   rather than the drawer's copy of it.
+    #
+    #   Why this exists: /__chat answers with at most the newest 4000 rows, so
+    #   a build that ran its orchestrators early and then streamed for another
+    #   10k events hydrates WITHOUT them. The composer's orchestrator chip
+    #   would then report "no orchestrator ran" on exactly the threads that
+    #   ran the most - a silent wrong answer, not a missing feature. This
+    #   endpoint reads the run's recorded byte span (same index the tail-seek
+    #   uses) and returns only the dispatch skeleton: a handful of small rows,
+    #   never tool output, so it stays cheap on a nine-figure transcript.
+    def _run_dispatches(self, qs):
+        run_id = (_qs_get(qs, "runId") or "").strip()
+        if not run_id:
+            return self._reply(400, {"error": "runId required"})
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        branch = _qs_prototype(qs).strip().lower()
+        if not SLUG_OK.match(branch):
+            return self._reply(400, {"error": "invalid branch slug", "slug": branch})
+        path = _chat_jsonl_path(project_root, branch)
+        try:
+            rows = _chat_rows_for_run(path, run_id)
+        except Exception as e:
+            return self._reply(500, {"error": "transcript read failed: %s" % e})
+        # One pass, mirroring extractRunSubagents in app.js: dispatches, their
+        # results, and the ordinal of each one's latest task_progress line
+        # (the only liveness signal a backgrounded agent leaves behind).
+        order = []
+        by_id = {}
+        ticks = 0
+        for r in rows:
+            if not isinstance(r, dict) or r.get("type") != "agent":
+                continue
+            d = r.get("data")
+            if not isinstance(d, dict):
+                continue
+            dtype = d.get("type")
+            if dtype == "tool_use" and d.get("name") == "Agent":
+                tid = d.get("id")
+                if not tid:
+                    continue
+                inp = d.get("input") or {}
+                if tid not in by_id:
+                    order.append(tid)
+                by_id[tid] = {
+                    "id": tid,
+                    "type": inp.get("subagent_type") or "subagent",
+                    "label": inp.get("description") or "Subagent task",
+                    "background": bool(inp.get("run_in_background")),
+                    "actions": [],
+                    "lastTick": 0,
+                    "done": False,
+                    "error": False,
+                }
+            elif dtype == "tool_result" and d.get("toolUseId") in by_id:
+                e = by_id[d["toolUseId"]]
+                e["done"] = True
+                e["error"] = bool(d.get("isError") or d.get("is_error"))
+            elif d.get("subtype") == "task_progress":
+                tid = d.get("toolUseId") or (d.get("frame") or {}).get("tool_use_id")
+                desc = d.get("description") or (d.get("frame") or {}).get("description")
+                if not desc:
+                    continue
+                ticks += 1
+                e = by_id.get(tid)
+                if e is None:
+                    continue
+                e["lastTick"] = ticks
+                # Only the latest line is ever rendered; keeping the whole
+                # history here would put a build's entire narration on the wire.
+                e["actions"] = [desc]
+        out = []
+        for tid in order:
+            e = by_id[tid]
+            e["tickTotal"] = ticks
+            out.append(e)
+        return self._reply(200, {"runId": run_id, "dispatches": out})
 
     # GET /__chat_search?q=<text>[&project=<id>][&toolresults=1][&toolcalls=0]
     #   Full-text search across every run's transcript in this project, for

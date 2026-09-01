@@ -33,3 +33,18 @@ __pycache__/
 # Vendored figma-cli (external MIT tool; install per editor/tools/figma-bridge/USING-FIGMA-CLI.md)
 editor/tools/figma-cli/
 Woven-v*.zip
+
+# Daemon-written workspace state. These live at the workspace root and carry
+# REAL project names, share tokens and user-testing participant tokens. They
+# are per-install runtime state, never source. (They leaked to the public repo
+# once; keep them out.)
+workspace.json
+shares.json
+usertesting.json
+links.json
+.starred-prototypes.json
+.prototype-autofeatured.json
+
+# Every project is user content, never source. The editor scaffolds these at
+# runtime; nothing in the repo needs them.
+projects/
