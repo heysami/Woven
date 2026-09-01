@@ -8492,6 +8492,10 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   border-style: solid;
   border-color: oklch(62% 0.13 174);
 }
+.workflow-sections-item-swatch[data-table="true"] {
+  border-style: solid;
+  border-color: oklch(58% 0.16 300);
+}
 
 /* v3.4.27 - Sub-tabs under Outputs (Prototypes & components / Visual assets).
    Compacter than the top-level tabs so the hierarchy reads as parent/child:

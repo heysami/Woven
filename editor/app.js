@@ -8733,7 +8733,7 @@ function collectEmbeddedFlowSections() {
   return out;
 }
 
-function WorkflowSectionsBar({ sections, wrapRef, pan, zoom, setPan, setZoom, onPick }) {
+function WorkflowSectionsBar({ sections, tables, wrapRef, pan, zoom, setPan, setZoom, onPick }) {
   const [open, setOpen] = useState(false);
   const hostRef = useRef(null);
   // Sections drawn inside canvas-frames embeds. Scanned on mount (with a few
@@ -8768,10 +8768,20 @@ function WorkflowSectionsBar({ sections, wrapRef, pan, zoom, setPan, setZoom, on
       document.removeEventListener("keydown", onKey, true);
     };
   }, [open]);
-  const list = (Array.isArray(sections) ? sections : [])
-    .slice()
-    .sort((a, b) => ((a.y || 0) - (b.y || 0)) || ((a.x || 0) - (b.x || 0)));
-  if (!list.length && !flowSections.length) return null;
+  const byPosition = (a, b) => ((a.y || 0) - (b.y || 0)) || ((a.x || 0) - (b.x || 0));
+  const list = (Array.isArray(sections) ? sections : []).slice().sort(byPosition);
+  // Tables are the OTHER framing node - they hold cells the same way a section
+  // holds nodes, so they're worth jumping to for the same reason. (Node family
+  // only: wb-family tables are lifted to kind:"table" nodes at load, so there
+  // is no whiteboard-side list to mirror here.)
+  const tableList = (Array.isArray(tables) ? tables : []).slice().sort(byPosition);
+  if (!list.length && !flowSections.length && !tableList.length) return null;
+  // Name only the families actually present, so a canvas with tables and no
+  // sections doesn't advertise a group it can't show.
+  const goLabel = "Go to " + [
+    (list.length || flowSections.length) ? "section" : "",
+    tableList.length ? "table" : "",
+  ].filter(Boolean).join(" / ");
   // Jump to a screen-flow section inside a canvas-frames node: its box is
   // known in SCREEN px, so convert back through the current pan/zoom to world
   // coords and fit the same way a node section does.
@@ -8797,8 +8807,13 @@ function WorkflowSectionsBar({ sections, wrapRef, pan, zoom, setPan, setZoom, on
   const jump = (sec) => {
     const wrap = wrapRef && wrapRef.current;
     if (!wrap || !setPan || !setZoom) return;
-    const w = Math.max(1, sec.w || 880);
-    const h = Math.max(1, sec.h || 560);
+    // A table's stored w/h are its col/row sums; measure it the way the canvas
+    // paints it so the fit matches what lands on screen.
+    const d = sec.kind === "table"
+      ? workflowNodeDrawnSize(sec)
+      : { w: sec.w || 880, h: sec.h || 560 };
+    const w = Math.max(1, d.w);
+    const h = Math.max(1, d.h);
     const pad = 60;   // screen px breathing room around the fitted section
     const fit = Math.min(
       (wrap.clientWidth  - pad * 2) / w,
@@ -8818,7 +8833,7 @@ function WorkflowSectionsBar({ sections, wrapRef, pan, zoom, setPan, setZoom, on
   return html`
     <div className="workflow-sections-bar" ref=${hostRef}>
       ${open && html`
-        <div className="workflow-sections-pop" role="menu" aria-label="Jump to section">
+        <div className="workflow-sections-pop" role="menu" aria-label="Jump to a section or table">
           ${list.map(s => html`
             <button
               key=${s.id}
@@ -8848,18 +8863,35 @@ function WorkflowSectionsBar({ sections, wrapRef, pan, zoom, setPan, setZoom, on
               </button>
             `)}
           `}
+          ${tableList.length > 0 && html`
+            ${(list.length > 0 || flowSections.length > 0) && html`<div className="workflow-sections-group">Tables</div>`}
+            ${tableList.map(t => html`
+              <button
+                key=${t.id}
+                type="button"
+                className="workflow-sections-item"
+                role="menuitem"
+                title=${"Jump to “" + (t.title || "Table") + "”"}
+                onClick=${() => jump(t)}
+              >
+                <span className="workflow-sections-item-swatch" data-table="true" aria-hidden="true"/>
+                <span className="workflow-sections-item-label">${t.title || "Table"}</span>
+                <span className="workflow-sections-count">${(t.cols || []).length}×${(t.rows || []).length}</span>
+              </button>
+            `)}
+          `}
         </div>
       `}
       <button
         type="button"
         className="workflow-sections-toggle"
         aria-expanded=${open ? "true" : "false"}
-        title="Sections on this canvas - click to jump to one"
+        title="Sections and tables on this canvas - click to jump to one"
         onClick=${() => { setOpen(o => !o); setFlowSections(collectEmbeddedFlowSections()); }}
       >
         <span className="workflow-sections-toggle-glyph" aria-hidden="true">▦</span>
-        <span>Go to section</span>
-        <span className="workflow-sections-count">${list.length + flowSections.length}</span>
+        <span>${goLabel}</span>
+        <span className="workflow-sections-count">${list.length + flowSections.length + tableList.length}</span>
         <span className="workflow-sections-caret" aria-hidden="true">${open ? "▾" : "▴"}</span>
       </button>
     </div>
@@ -36401,6 +36433,84 @@ function pickSubgraph(data, picked) {
   };
 }
 
+// Everything a FRAME holds, as ids - the contents a section / table carries
+// with it when it is copied. A frame stores nothing about its members: they
+// are ordinary nodes and wb items that name the frame through a `sec:` /
+// `cell:` binding (or, for anything never dragged since it was placed, sit
+// inside its rect). So a copy that takes only the frame node is an empty
+// shell, which is what "the table pasted with no content" was.
+// Nested frames come along too, recursively, but ONLY when explicitly bound -
+// the geometric fallback would otherwise let an overlapping neighbour frame
+// (and its whole subtree) ride along uninvited.
+function workflowFrameContents(frame, nodes, wb, _seen) {
+  const nodeIds = new Set(), wbIds = new Set();
+  if (!frame || (frame.kind !== "section" && frame.kind !== "table")) return { nodeIds, wbIds };
+  const seen = _seen || new Set();
+  if (seen.has(frame.id)) return { nodeIds, wbIds };
+  seen.add(frame.id);
+  const isTable = frame.kind === "table";
+  const x0 = frame.x, y0 = frame.y;
+  const x1 = x0 + (frame.w || (isTable ? 0 : 880));
+  const y1 = y0 + (frame.h || (isTable ? 0 : 560));
+  const holds = (o, bb, isFrame) => {
+    const host = workflowBoundTo(o);
+    if (host) return host === frame.id;
+    if (isFrame) return false;                    // unbound frame - never swallowed
+    if (!wfFrameCanHold(frame, o)) return false;  // frame paints OVER it
+    const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
+    return cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1;
+  };
+  const inner = [];
+  for (const n of (nodes || [])) {
+    if (!n || n.id === frame.id || typeof n.x !== "number") continue;
+    const nested = n.kind === "section" || n.kind === "table";
+    if (!holds(n, { x: n.x, y: n.y, w: n.w || 280, h: n.h || 200 }, nested)) continue;
+    nodeIds.add(n.id);
+    if (nested) inner.push(n);
+  }
+  for (const it of (wb || [])) {
+    if (!it) continue;
+    if (holds(it, wbItemBBox(it), false)) wbIds.add(it.id);
+  }
+  for (const f of inner) {
+    const sub = workflowFrameContents(f, nodes, wb, seen);
+    sub.nodeIds.forEach(id => nodeIds.add(id));
+    sub.wbIds.forEach(id => wbIds.add(id));
+  }
+  return { nodeIds, wbIds };
+}
+
+// Re-point one pasted thing's cross-references at the pasted COPIES. Every
+// binding is by id - `sec:` / `cell:` container membership, `draft:` / `frame:`
+// screen notes, an arrow's endpoint pins - so a clone that keeps the originals'
+// ids is either wrong (it snaps back to the source) or dangling (the reconcile
+// strips it and the content falls out of its cell). A reference whose target
+// was NOT part of the copy is dropped, which leaves the clone free-standing
+// rather than tied to something on another board.
+function workflowRemapClonedRefs(o, idMap, wbIdMap) {
+  let out = o;
+  const drop = (k) => { const { [k]: _gone, ...rest } = out; out = rest; };
+  const retarget = (k, field, map) => {
+    const b = out[k];
+    if (!b) return;
+    const next = map.get(b[field]);
+    if (next) out = { ...out, [k]: { ...b, [field]: next } };
+    else drop(k);
+  };
+  retarget("cell", "tableId", idMap);
+  retarget("sec", "sectionId", idMap);
+  retarget("draft", "nodeId", idMap);
+  retarget("frame", "nodeId", idMap);
+  for (const k of ["startBind", "endBind"]) {
+    const b = out[k];
+    if (!b || !b.id) continue;
+    const next = (b.t === "w" ? wbIdMap : idMap).get(b.id);
+    if (next) out = { ...out, [k]: { ...b, id: next } };
+    else drop(k);
+  }
+  return out;
+}
+
 // Eager raster cache for iframe-backed cards (html assets / prototypes).
 // html2canvas rasterises a LIVE React/JS card UNRELIABLY when fired on-demand
 // at Run time: it clones the doc but the clone can be mid-paint, so the same
@@ -46480,18 +46590,54 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   //   previewNodeId, outputNodeId, removeSection }
   const [convertCfg, setConvertCfg] = useState(null);
 
-  const copySelectedNodes = useCallback(() => {
-    const sel = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
-    if (!sel.size) return 0;
-    const picked = (data.nodes || []).filter(n => sel.has(n.id));
-    if (!picked.length) return 0;
+  /* Snapshot the whole canvas selection - BOTH families - as one payload.
+     Two rules make a copy match what the user sees selected:
+       1. a selected FRAME (section / table) carries its contents, because the
+          contents are separate objects bound to it, not fields on it;
+       2. nodes and whiteboard items travel in ONE envelope against ONE origin,
+          so the paste can land them together and keep their relative offsets.
+     Returns null when the selection is empty. */
+  const captureCanvasSelection = useCallback(() => {
+    const selNodes = (selectionRef && selectionRef.current && selectionRef.current.selectedIds) || new Set();
+    const selWb = selectedWbIdsRef.current || new Set();
+    const nodes = data.nodes || [];
+    const wb = Array.isArray(data.wb) ? data.wb : [];
+    const nodeIds = new Set(selNodes), wbIds = new Set(selWb);
+    for (const n of nodes) {
+      if (!selNodes.has(n.id) || (n.kind !== "section" && n.kind !== "table")) continue;
+      const held = workflowFrameContents(n, nodes, wb);
+      held.nodeIds.forEach(id => nodeIds.add(id));
+      held.wbIds.forEach(id => wbIds.add(id));
+    }
+    const picked = nodes.filter(n => nodeIds.has(n.id));
+    const items  = wb.filter(it => wbIds.has(it.id));
+    if (!picked.length && !items.length) return null;
     const sub = pickSubgraph(data, picked);
-    nodeClipboardRef.current = {
-      nodes: sub.nodes, edges: sub.edges,
-      originX: sub.origin.x, originY: sub.origin.y, ts: Date.now(),
+    let originX = picked.length ? sub.origin.x : Infinity;
+    let originY = picked.length ? sub.origin.y : Infinity;
+    for (const it of items) {
+      const bb = wbItemBBox(it);
+      if (bb.x < originX) originX = bb.x;
+      if (bb.y < originY) originY = bb.y;
+    }
+    if (!Number.isFinite(originX)) { originX = 0; originY = 0; }
+    return {
+      nodes: sub.nodes, edges: sub.edges, wb: items.map(_stableClone),
+      originX, originY, ts: Date.now(),
     };
-    return picked.length;
   }, [selectionRef, data]);
+
+  const copySelectedNodes = useCallback(() => {
+    const env = captureCanvasSelection();
+    // A copy that captured NOTHING clears the canvas clipboard instead of
+    // leaving the last payload armed: a stale envelope makes the next Cmd+V
+    // paste something the user never copied, and (because a successful node
+    // paste preventDefaults) swallows the system-clipboard paste behind it.
+    // Element / style clipboards carry a `type` and are left alone.
+    if (env) nodeClipboardRef.current = env;
+    else if (!nodeClipboardRef.current || !nodeClipboardRef.current.type) nodeClipboardRef.current = null;
+    return env ? env.nodes.length + env.wb.length : 0;
+  }, [captureCanvasSelection]);
 
   /* ────────── Whiteboard clipboard + OS file intake ──────────
      Copy/cut/paste ride the NATIVE clipboard events (not keydown + ref):
@@ -57232,6 +57378,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
           ${(wbMode || leftPanel !== "chat") && html`
             <${WorkflowSectionsBar}
               sections=${(data.nodes || []).filter(n => n.kind === "section")}
+              tables=${(data.nodes || []).filter(n => n.kind === "table")}
               wrapRef=${wrapRef}
               pan=${pan}
               zoom=${zoom}
