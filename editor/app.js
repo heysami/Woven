@@ -31916,6 +31916,14 @@ function WorkflowCanvas() {
   // its snapshot never advanced, and the field was judged permanently dirty →
   // the merge stopped pulling and the node only updated after a manual refresh.
   const lastPersistedDocRef = useRef(null);
+  // The doc as of the LAST RENDER. The save closure freezes `data` at the
+  // moment its debounce fired; anything that has to reason about "is what I
+  // posted still what the user has" must read this instead.
+  const latestDataRef = useRef(null);
+  // Retry ladder position, carried across re-armed saves. Lives in a ref (not
+  // the closure) because a retry now re-derives its payload from current state
+  // instead of replaying the frozen one, so it is a NEW save, not the same one.
+  const pendingRetryRef = useRef(0);
   // Live Session - bumped to re-run the debounced save as a self-heal. A
   // guest's proxied SSE closes on every change and es.onerror ABORTS the
   // in-flight save (AbortError → no retry), so an edit POSTed at that instant
@@ -32279,6 +32287,7 @@ function WorkflowCanvas() {
   const [saveFailedAt, setSaveFailedAt] = useState(null);
   const saveAttemptRef = useRef(0);
   useEffect(() => {
+    latestDataRef.current = data;
     if (!loadedRef.current || !data) return;
     // Skip the debounced save if this data update came from a
     // history undo/redo restore. The data IS the disk state (we just
@@ -32387,12 +32396,29 @@ function WorkflowCanvas() {
           // Success.
           for (const id of deletedIds) deletedIdsRef.current.delete(id);
           for (const id of deletedWbIds) deletedWbIdsRef.current.delete(id);
+          // Mark clean ONLY what the user has not changed since this payload
+          // was built. This bump is what the reload-merge reads as "no unsaved
+          // edit here, safe to take disk" - so bumping it to a value the user
+          // has already moved past told the merge that their newer edit was
+          // already saved, and the next reload pulled disk straight over it.
+          // That is the permanent revert: not a race that settles, a field
+          // declared clean while it is anything but. A superseded field simply
+          // stays dirty and rides the next save.
+          const _curNodes = new Map(((latestDataRef.current || {}).nodes || [])
+            .filter(n => n && typeof n.id === "string").map(n => [n.id, n]));
           for (const { id, snap } of snapshotPayload) {
+            const cur = _curNodes.get(id);
             for (const [f, v] of Object.entries(snap)) {
+              if (cur && !_stableEqual(cur[f], v)) continue;   // superseded - keep dirty
               savedSnapshotRef.current.set(id + "|" + f, v);
             }
           }
+          const _curWb = new Map((Array.isArray((latestDataRef.current || {}).wb)
+            ? latestDataRef.current.wb : []).filter(it => it && typeof it.id === "string")
+            .map(it => [it.id, it]));
           for (const { id, snap } of wbSnapshotPayload) {
+            const cur = _curWb.get(id);
+            if (cur && !_stableEqual(cur, snap)) continue;     // superseded - keep dirty
             savedSnapshotRef.current.set("wb:" + id, snap);
           }
           // Disk now holds what we just POSTed - advance the echo-save baseline
@@ -32404,15 +32430,19 @@ function WorkflowCanvas() {
           } catch {}
           if (saveFailedAt) setSaveFailedAt(null);
           saveAttemptRef.current = 0;
+          pendingRetryRef.current = 0;
           inFlightRef.current = false;
           // G2 - if newer edits landed while we were saving, schedule a
           // follow-up. setData triggers the debounced useEffect; using the
           // ref's value here is safe because React's render already saw it.
           if (pendingDataRef.current && pendingDataRef.current !== data) {
-            const stash = pendingDataRef.current;
+            // Newer edits landed while we were saving. Re-arm a save from the
+            // CURRENT state - do not push the stash back through setData. That
+            // was a whole-doc replace of live state with a snapshot taken
+            // before the save returned, so anything that arrived in between (a
+            // merge pull, another gesture) was silently rolled back.
             pendingDataRef.current = null;
-            // Tiny delay so the success render commits before the next save.
-            setTimeout(() => { try { setData(stash); } catch {} }, 0);
+            setTimeout(() => { try { setForceSaveTick(t => t + 1); } catch {} }, 0);
           } else if (window.__thLiveActive) {
             // Live Session convergence - after our write flushes, reconcile
             // once against the server's authoritative state. A collaborator's
@@ -32449,7 +32479,20 @@ function WorkflowCanvas() {
             ? [500, 1000, 2000, 4000]
             : [1000, 2000, 5000, 10000];
           if (attemptNum < delays.length) {
-            setTimeout(() => attemptSave(attemptNum + 1), delays[attemptNum]);
+            // Re-arm from the LATEST state instead of replaying `payload`.
+            // Replaying it is a data-loss bug waiting to fire: `payload`
+            // freezes at the moment the debounce fires, and the ladder retried
+            // that same frozen doc for up to ~7.5s while inFlightRef stayed
+            // held - so every edit made in that window could not start its own
+            // save, and the stale doc landed on disk on top of them. Not
+            // observed in the wild (the daemon did not 503 under 8 concurrent
+            // writes when I tried to provoke it), but the window is real for
+            // any failure that does retry: a dropped connection, a daemon
+            // restart mid-save, a 5xx.
+            inFlightRef.current = false;
+            pendingDataRef.current = null;        // superseded by current state
+            pendingRetryRef.current = attemptNum + 1;
+            setTimeout(() => setForceSaveTick(t => t + 1), delays[attemptNum]);
           } else {
             inFlightRef.current = false;
             setSaveFailedAt(Date.now());
@@ -32461,7 +32504,11 @@ function WorkflowCanvas() {
           }
         });
       };
-      attemptSave(0);
+      // Resume the ladder where a failed attempt left it (reset on success),
+      // so a genuinely unreachable daemon still surfaces after four tries.
+      const startAttempt = pendingRetryRef.current || 0;
+      pendingRetryRef.current = 0;
+      attemptSave(startAttempt);
     }, 350);
     return () => clearTimeout(t);
   }, [data, forceSaveTick]);
