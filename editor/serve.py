@@ -7534,6 +7534,47 @@ AGENT_MCP_CONFIG = os.environ.get("TH_MCP_CONFIG") or os.path.join(
 )
 
 
+AGENTS_PLUGIN_DIR = os.environ.get("TH_AGENTS_PLUGIN") or os.path.join(
+    INSTALL_ROOT, ".claude-agents-plugin"
+)
+
+
+def _agents_plugin_spawn_args() -> list:
+    """Return `["--plugin-dir", <dir>]` so a claude spawn can dispatch Woven's
+    subagents, else `[]`.
+
+    WHY THIS EXISTS. The claude CLI builds its Task-tool registry by searching
+    UPWARD from cwd for `.claude/agents/`, plus the user's `~/.claude/agents/`.
+    Woven spawns with cwd=project_root and projects live under INSTALL_ROOT, so
+    that search normally reaches INSTALL_ROOT/.claude/agents on its own. It
+    STOPS HARD at a git root, so a project that is its own repo (the published
+    ones) sees only the 5 built-in agent types and every dispatch dies with
+    `Agent type 'ds-guardian' not found`. Verified 2026-09-01: the same dir
+    reports 112 agent types with no .git and 6 after `git init`.
+
+    Passing definitions inline via `--agents <json>` is not an option: the set
+    is ~1.5 MB and macOS ARG_MAX is ~1 MB.
+
+    The plugin dir holds ONLY a manifest plus an `agents` symlink back to
+    INSTALL_ROOT/.claude/agents - the same folder capabilities._scan_subagents()
+    reads, so the roster and the registry can never drift. No commands, hooks or
+    skills are exposed by it.
+
+    COST: the CLI namespaces plugin agents, so every type gains a `woven:`
+    prefix (`woven:ds-guardian`). Bare names keep working in non-git projects
+    (the upward search still finds them) but NOT in git-rooted ones, so
+    `woven:<name>` is the only spelling valid everywhere. The agent specs stay
+    bare on purpose - codex/opencode dispatch through the daemon
+    (POST /__dispatch_planner), which resolves INSTALL_ROOT/.claude/agents/<name>.md
+    directly and never sees a prefix. capabilities.py states the prefix rule for
+    claude and emits the roster prefixed; _dispatch_planner strips a leading
+    `woven:` so a prefixed name still resolves there.
+    """
+    if AGENTS_PLUGIN_DIR and os.path.isdir(AGENTS_PLUGIN_DIR):
+        return ["--plugin-dir", AGENTS_PLUGIN_DIR]
+    return []
+
+
 def _mcp_config_spawn_args() -> list:
     """Return `["--mcp-config", <path>]` if the config file exists, else `[]`.
 
@@ -17121,6 +17162,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # manage MCP via their own config and have no --settings flag.
         if agent_id == "claude":
             spawn_args += _mcp_config_spawn_args()
+            spawn_args += _agents_plugin_spawn_args()
             _harness_settings = _ensure_harness_settings()
             if _harness_settings:
                 spawn_args += ["--settings", _harness_settings]
@@ -22845,6 +22887,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         project_id = os.path.basename(project_root.rstrip("/"))
         body = self._read_json_body(max_bytes=4 * 1024 * 1024)
         planner_type = (body.get("type") or "").strip()
+        # Claude namespaces plugin-loaded agents as `woven:<name>`; codex and
+        # opencode dispatch here with the bare name. Accept either spelling so a
+        # spec copied from a claude thread still resolves.
+        if planner_type.startswith("woven:"):
+            planner_type = planner_type.split(":", 1)[1].strip()
         brief = (body.get("brief") or "").strip()
         if not planner_type:
             return self._reply(400, {"error": "type required"})
@@ -22933,6 +22980,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "--append-system-prompt", sys_prompt,
             ]
             spawn_args += _mcp_config_spawn_args()
+            spawn_args += _agents_plugin_spawn_args()
             spawn_args += _planner_model_args
             stdin_pipe = subprocess.PIPE
             prompt_stdin = _claude_user_frame(brief)
@@ -33349,6 +33397,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         #   capabilities_preamble() - the agent edits that layer; feeding it
         #     the project confinement prose would re-confine it
         spawn_args += _mcp_config_spawn_args()
+        spawn_args += _agents_plugin_spawn_args()
         sys_prompt = QUESTION_FORM_SYSTEM_PROMPT + SYSTEM_AGENT_PROMPT
         if _mcp_config_spawn_args():
             sys_prompt = sys_prompt + _mcp_routing_prompt()
@@ -33576,6 +33625,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # dispatched via the Task tool are unaffected.
             spawn_args += ["--disable-slash-commands"]
             spawn_args += _mcp_config_spawn_args()
+            spawn_args += _agents_plugin_spawn_args()
             # Hook gate: block *.html writes until visual-orchestrator dispatched.
             _harness_settings = _ensure_harness_settings()
             if _harness_settings:
@@ -34314,6 +34364,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         spawn still omits --no-session-persistence so the thread is at least
         inspectable/recoverable from the session store."""
         planner_type = str(getattr(state, "kind", "") or "").split(":", 1)[1].strip()
+        # Same `woven:` tolerance as _dispatch_planner - see the note there.
+        if planner_type.startswith("woven:"):
+            planner_type = planner_type.split(":", 1)[1].strip()
         bin_path = state.bin_path or detect_agent_bin("claude")
         if not bin_path:
             return self._reply(500, {"error": "claude binary not found"})
@@ -34359,6 +34412,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "--append-system-prompt", sys_prompt,
         ]
         spawn_args += _mcp_config_spawn_args()
+        spawn_args += _agents_plugin_spawn_args()
         spawn_args += _model_args
         transcript = _transcript_from_run_events(state)
         if transcript:
@@ -34706,6 +34760,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             sys_prompt = QUESTION_FORM_SYSTEM_PROMPT + SYSTEM_AGENT_PROMPT
             if _mcp_config_spawn_args():
                 spawn_args += _mcp_config_spawn_args()
+                spawn_args += _agents_plugin_spawn_args()
                 sys_prompt = sys_prompt + _mcp_routing_prompt()
             spawn_args += ["--append-system-prompt", sys_prompt]
         else:
@@ -34719,6 +34774,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # a resumed chat's MCP tool calls all fail and it burns turns
             # working around them.
             spawn_args += _mcp_config_spawn_args()
+            spawn_args += _agents_plugin_spawn_args()
             # Rebuild the SAME system prompt as the original spawn (same tier,
             # same prototype scope, same DS note). Sending a different
             # --append-system-prompt on --resume cache-busts the entire
