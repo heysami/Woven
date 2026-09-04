@@ -14379,6 +14379,11 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 }
 /* Anchor colours for the `@` (resource) kinds, matching the `/` families. */
 .chat-slash-item-kind-file       { color: oklch(42% 0.13 250); }
+/* The DS vocabulary is three deep - section (what you read), class (what you
+   write in markup), token (what you write in CSS) - so each level gets its
+   own anchor colour inside the shared design-system hue family. */
+.chat-slash-item-kind-ds-class   { color: oklch(45% 0.13 300); }
+.chat-slash-item-kind-ds-token   { color: oklch(45% 0.12 250); }
 .chat-slash-item-kind-ds         { color: oklch(42% 0.15 330); }
 .chat-slash-item-kind-ds-section { color: oklch(45% 0.11 330); }
 .chat-slash-item-kind-ds-file    { color: oklch(45% 0.09 330); }
@@ -14404,6 +14409,29 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--surface-2);
+}
+/* Token preview plate: the colour itself when the value is a colour, the raw
+   value as text either way - a length or an easing curve has no swatch. */
+.chat-slash-detail-frame[data-kind="swatch"] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+}
+.chat-slash-swatch {
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  flex: none;
+}
+.chat-slash-swatch-value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chat-slash-detail-iframe {
   position: absolute;
@@ -14467,6 +14495,8 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 :root[data-theme="dark"] .chat-slash-item-kind-orchestrator { color: oklch(80% 0.13 140); }
 :root[data-theme="dark"] .chat-slash-item-kind-library      { color: oklch(82% 0.12 75); }
 :root[data-theme="dark"] .chat-slash-item-kind-file         { color: oklch(80% 0.10 250); }
+:root[data-theme="dark"] .chat-slash-item-kind-ds-class { color: oklch(80% 0.10 300); }
+:root[data-theme="dark"] .chat-slash-item-kind-ds-token { color: oklch(80% 0.09 250); }
 :root[data-theme="dark"] .chat-slash-item-kind-ds,
 :root[data-theme="dark"] .chat-slash-item-kind-ds-section,
 :root[data-theme="dark"] .chat-slash-item-kind-ds-file      { color: oklch(80% 0.11 330); }

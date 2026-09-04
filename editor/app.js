@@ -18013,17 +18013,22 @@ function __pickerGallerySections(rawHtml) {
   const out = [];
   const seen = new Set();
   const strip = (v) => (v || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-  const push = (id, title, blurb) => {
+  const push = (id, title, blurb, code) => {
     if (!id || seen.has(id)) return;
     seen.add(id);
-    out.push({ id, title: strip(title) || id, blurb: strip(blurb).slice(0, 160) });
+    out.push({ id, title: strip(title) || id, blurb: strip(blurb).slice(0, 160), code: strip(code) });
   };
   try {
     const doc = new DOMParser().parseFromString(rawHtml, "text/html");
     for (const sec of doc.querySelectorAll("section[id]")) {
       const h = sec.querySelector("h1, h2, h3");
       const p = sec.querySelector("p");
-      push(sec.getAttribute("id"), h && h.textContent, p && p.textContent);
+      // The class signature printed beside the heading (".btn .btn--*"). It is
+      // the section's CSS API, and it is routinely NOT the section id -
+      // #c-popup is ".scrim .modal" - so without it a search for the class you
+      // can see in the gallery finds nothing.
+      const c = sec.querySelector(".comp__bar code") || sec.querySelector("code");
+      push(sec.getAttribute("id"), h && h.textContent, p && p.textContent, c && c.textContent);
     }
   } catch { /* fall through to the raw scan */ }
   if (out.length) return out;
@@ -18033,15 +18038,70 @@ function __pickerGallerySections(rawHtml) {
     const chunk = rawHtml.slice(m.index, m.index + 900);
     const t = /<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/.exec(chunk);
     const b = /<p[^>]*>([\s\S]*?)<\/p>/.exec(chunk);
-    push(m[1], t && t[1], b && b[1]);
+    const c = /<code[^>]*>([\s\S]*?)<\/code>/.exec(chunk);
+    push(m[1], t && t[1], b && b[1], c && c[1]);
   }
   return out;
 }
 
+// A DS stylesheet holds the two vocabularies a section anchor cannot express:
+// every CLASS it declares, and every TOKEN (:root custom property) with its
+// value, so a colour can show as a swatch. Selector text only - the scan
+// stops at every brace, so a `url(x.png)` in a declaration never becomes a
+// class named "png".
+function __pickerParseDsCss(css) {
+  const clean = (css || "").replace(/\/\*[\s\S]*?\*\//g, "");
+  const classes = new Set();
+  for (const m of clean.matchAll(/(?:^|[},{])\s*([^{}@][^{}]*)\{/g))
+    for (const c of m[1].matchAll(/\.(-?[A-Za-z_][A-Za-z0-9_-]*)/g)) classes.add(c[1]);
+  const tokens = [];
+  const seen = new Set();
+  for (const b of clean.matchAll(/:root[^{]*\{([^}]*)\}/g))
+    for (const d of b[1].matchAll(/(--[A-Za-z0-9_-]+)\s*:\s*([^;]+)/g)) {
+      const name = d[1];
+      if (seen.has(name)) continue;
+      seen.add(name);
+      tokens.push({ name, value: d[2].trim().slice(0, 60) });
+    }
+  return { classes, tokens };
+}
+// Class tokens actually used inside one gallery section's markup, so a
+// modifier that only exists as a demo (".slideout--sm") is discoverable even
+// though the signature globs it as ".slideout--*".
+function __pickerSectionClasses(rawHtml) {
+  const out = new Map();
+  const secRe = /<section\b[^>]*\bid="([A-Za-z0-9_-]+)"/g;
+  const marks = [];
+  let m;
+  while ((m = secRe.exec(rawHtml))) marks.push([m.index, m[1]]);
+  for (let i = 0; i < marks.length; i++) {
+    const chunk = rawHtml.slice(marks[i][0], i + 1 < marks.length ? marks[i + 1][0] : rawHtml.length);
+    const set = new Set();
+    for (const c of chunk.matchAll(/class="([^"]+)"/g))
+      for (const t of c[1].split(/\s+/)) if (t) set.add(t);
+    out.set(marks[i][1], set);
+  }
+  return out;
+}
+// A class or token belongs to the section whose signature names its ROOT:
+// ".modal" claims modal, modal--sm, modal__body; "--space-*" claims
+// --space-4. Everything else is still real API, it just has no anchor.
+const __pickerClassRoot = (c) => c.split(/--|__/)[0];
+function __pickerSignatureRoots(sig) {
+  const cls = new Set(), tok = [];
+  for (const raw of (sig || "").split(/\s+/)) {
+    if (raw.startsWith(".")) cls.add(__pickerClassRoot(raw.slice(1).replace(/[*]+$/, "").replace(/-+$/, "")));
+    else if (raw.startsWith("--") && !raw.includes("{")) tok.push(raw.replace(/[*]+$/, ""));
+  }
+  cls.delete("");
+  return { cls, tok };
+}
+
 // Design systems - the DS itself, every SECTION of its gallery (buttons,
-// forms, tables …), and its templates / shells. Heavy enough (one gallery
-// parse per DS) to stay lazy: nothing here loads until `@designsystem` is
-// actually opened.
+// forms, tables …), then the CLASSES and TOKENS those sections are built
+// from, and its templates / shells. Heavy enough (one gallery + one
+// stylesheet parse per DS) to stay lazy: nothing here loads until
+// `@designsystem` is actually opened.
 async function __pickerLoadDesignSystems() {
   const [dsRes, fRes] = await Promise.all([
     fetch(apiUrl("/__design_system")).catch(() => null),
@@ -18063,24 +18123,92 @@ async function __pickerLoadDesignSystems() {
       ref: { path: "design-systems/" + ds.id + "/", name: ds.id, scope: "project", label: "design system" },
       preview: ds.hasGallery ? { kind: "page", src: "/" + galleryRel } : { kind: "glyph" },
     });
-    // Gallery sections → the component vocabulary (@designsystem/<ds>/buttons).
+    // Three levels of vocabulary, pushed in that order so a capped list shows
+    // the coarsest first: SECTION (the anchor you read), then CLASS (what you
+    // write in markup), then TOKEN (what you write in CSS).
+    let sections = [], sectionClasses = new Map();
     if (ds.hasGallery) {
       try {
         const g = await fetch(apiUrl("/" + galleryRel));
         if (g && g.ok) {
-          for (const sec of __pickerGallerySections(await g.text())) {
-            out.push({
-              ns: "designsystem", kind: "ds-section", slug: ds.id + "/" + sec.id,
-              name: sec.title,
-              description: sec.blurb || (ds.id + " design system"),
-              token: "@designsystem/" + ds.id + "/" + sec.id,
-              insertText: sec.id + " ",
-              ref: { path: galleryRel + "#" + sec.id, name: sec.title, scope: "project", label: ds.id + " component" },
-              preview: { kind: "page", src: "/" + galleryRel + "#" + sec.id, anchor: sec.id },
-            });
-          }
+          const raw = await g.text();
+          sections = __pickerGallerySections(raw);
+          sectionClasses = __pickerSectionClasses(raw);
         }
       } catch { /* a DS without a parseable gallery still contributes its root row */ }
+    }
+    for (const sec of sections) {
+      out.push({
+        ns: "designsystem", kind: "ds-section", slug: ds.id + "/" + sec.id,
+        name: sec.title,
+        code: sec.code || "",
+        description: sec.code
+          ? sec.code + (sec.blurb ? " · " + sec.blurb : "")
+          : (sec.blurb || (ds.id + " design system")),
+        token: "@designsystem/" + ds.id + "/" + sec.id,
+        insertText: sec.id + " ",
+        ref: { path: galleryRel + "#" + sec.id, name: sec.title, scope: "project", label: ds.id + " component" },
+        preview: { kind: "page", src: "/" + galleryRel + "#" + sec.id, anchor: sec.id },
+      });
+    }
+    // The stylesheet is the authority on what actually exists. Without it
+    // there are no class or token rows - a guessed class is worse than none.
+    const cssRel = "design-systems/" + ds.id + "/styles.css";
+    let vocab = { classes: new Set(), tokens: [] };
+    try {
+      let c = await fetch(apiUrl("/" + cssRel));
+      if (!c || !c.ok) c = await fetch(apiUrl("/design-systems/" + ds.id + "/all.css"));
+      if (c && c.ok) vocab = __pickerParseDsCss(await c.text());
+    } catch { /* no stylesheet reachable - sections still stand on their own */ }
+    const claimed = new Set();
+    const pushClass = (cls, sec) => {
+      if (claimed.has(cls)) return;
+      claimed.add(cls);
+      out.push({
+        ns: "designsystem", kind: "ds-class", slug: ds.id + "/." + cls,
+        name: "." + cls,
+        description: sec ? sec.title + " · " + ds.id : ds.id + " class",
+        token: "@designsystem/" + ds.id + "/." + cls,
+        insertText: "." + cls + " ",
+        ref: {
+          path: sec ? galleryRel + "#" + sec.id : cssRel,
+          name: "." + cls, scope: "project",
+          label: ds.id + " class" + (sec ? " (" + sec.title + ")" : ""),
+        },
+        preview: sec
+          ? { kind: "page", src: "/" + galleryRel + "#" + sec.id, anchor: sec.id }
+          : { kind: "glyph" },
+      });
+    };
+    // Owned first, section by section, so the list reads in gallery order.
+    for (const sec of sections) {
+      const roots = __pickerSignatureRoots(sec.code).cls;
+      if (!roots.size) continue;
+      const used = sectionClasses.get(sec.id) || new Set();
+      for (const cls of used)
+        if (vocab.classes.has(cls) && roots.has(__pickerClassRoot(cls))) pushClass(cls, sec);
+    }
+    // Then everything else the sheet declares - utilities, state classes and
+    // components the gallery never demos are still part of the API.
+    for (const cls of vocab.classes) pushClass(cls, null);
+    // Tokens last. A foundations section that names a prefix ("--space-*")
+    // adopts its family so the preview can anchor there.
+    const tokenOwners = sections
+      .map(sec => ({ sec, prefixes: __pickerSignatureRoots(sec.code).tok }))
+      .filter(o => o.prefixes.length);
+    for (const t of vocab.tokens) {
+      const owner = tokenOwners.find(o => o.prefixes.some(px => t.name.startsWith(px)));
+      const sec = owner && owner.sec;
+      out.push({
+        ns: "designsystem", kind: "ds-token", slug: ds.id + "/" + t.name,
+        name: t.name,
+        description: t.value + " · " + (sec ? sec.title + " · " : "") + ds.id + " token",
+        token: "@designsystem/" + ds.id + "/" + t.name,
+        insertText: t.name + " ",
+        ref: { path: cssRel, name: t.name, scope: "project", label: ds.id + " token = " + t.value },
+        preview: { kind: "swatch", value: t.value, anchor: sec ? sec.id : null,
+                   src: sec ? "/" + galleryRel + "#" + sec.id : null },
+      });
     }
   }
   // Templates + shells, straight off disk.
@@ -18191,6 +18319,22 @@ function PickerPreview({ item }) {
         ${state !== "ready" && html`<div className="chat-slash-detail-skel">
           ${state === "error" ? "preview unavailable" : "loading preview…"}
         </div>`}
+      </div>
+    `;
+  }
+  // A token previews as its VALUE: a colour fills the plate, anything else
+  // (a length, a duration, an easing curve) is shown as text, because a
+  // swatch of "0.18s" would be a lie.
+  if (kind === "swatch") {
+    const value = (item.preview && item.preview.value) || "";
+    const isColor = /^(#|rgb|hsl|oklch|oklab|lab|lch|color-mix|var\()/i.test(value)
+                 || /^[a-z]+$/i.test(value);
+    return html`
+      <div className="chat-slash-detail-frame" data-state="ready" data-kind="swatch">
+        ${isColor
+          ? html`<span className="chat-slash-swatch" style=${{ background: value }} aria-hidden="true"/>`
+          : null}
+        <code className="chat-slash-swatch-value">${value || "(empty)"}</code>
       </div>
     `;
   }
@@ -19069,8 +19213,14 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const matchItem = (it, q) => {
     if (!q) return true;
     const hay = (it.ns + " " + it.slug + " " + (it.name || "") + " "
-      + (it.libraryGroup || "") + " " + (it.description || "")).toLowerCase();
-    return hay.includes(q);
+      + (it.libraryGroup || "") + " " + (it.code || "") + " "
+      + (it.description || "")).toLowerCase();
+    // AND of parts, split on "/" and whitespace - one contiguous substring
+    // test would fail every query that spells a path differently from the
+    // slug ("suss/modal" against "suss/.modal", "suss button" against
+    // "suss/c-button"), which is exactly how people type these.
+    const parts = q.split(/[\s/]+/).filter(Boolean);
+    return parts.every(part => hay.includes(part));
   };
   const pickerRows = (() => {
     if (!slashOpen) return [];
@@ -19494,6 +19644,8 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           : sk.kind === "file"         ? "page"
           : sk.kind === "ds"           ? "design system"
           : sk.kind === "ds-section"   ? "component"
+          : sk.kind === "ds-class"     ? "class"
+          : sk.kind === "ds-token"     ? "token"
           : sk.kind === "ds-file"      ? "template"
           : sk.kind;
           const rowKey = (row, i) =>
