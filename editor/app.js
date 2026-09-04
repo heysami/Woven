@@ -19814,7 +19814,10 @@ function chatContextInfo(events) {
     if (d.type === "compact") { compacted = true; break; }
     // Sidechain usage = a Task subagent's own (small, throwaway) context,
     // tagged by serve.py's normalizer. Not this chat's window - skip.
-    if (d.type === "usage" && !d.sidechain) {
+    // `stale` = a frame the pre-compact session was still emitting when the
+    // compact retired it. Its context size belongs to the session that is
+    // gone, so folding it makes a successful compact look like a no-op.
+    if (d.type === "usage" && !d.sidechain && !d.stale) {
       const u = d.usage || {};
       let t = contextInputTokensFromUsage(u);
       if (t == null && u.tokens && typeof u.tokens === "object") {

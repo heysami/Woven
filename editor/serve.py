@@ -10841,6 +10841,14 @@ class RunState:
                  # crossing (set when a background compact is scheduled,
                  # cleared when the compact lands or fails).
                  "_compact_inflight",
+                 # Bumped by every compact. The stdout drain loop captures it
+                 # when it starts, so frames still in flight from the session a
+                 # compact just killed are recognisable as stale. They carry
+                 # the OLD context size and the OLD session id, and folding
+                 # either one back in re-arms the trigger (a second compact
+                 # then summarises the first summary) or resurrects the
+                 # bloated session on the next resume.
+                 "_compact_epoch",
                  # Follow-ups typed while a turn was in flight, delivered one
                  # per turn boundary by _queue_drain_maybe, plus its re-entry
                  # guard. Daemon-owned so the queue drains whether or not the
@@ -10872,6 +10880,7 @@ class RunState:
         # the event log for rehydrated runs by _run_context_tokens().
         self.context_tokens = None
         self._compact_inflight = False
+        self._compact_epoch = 0
         self.title = title
         # Phase 6 - remember which project this run was spawned in so /resume
         # can rebuild the same env + cwd, and so /__runs can group by project.
@@ -12383,7 +12392,7 @@ def _run_context_tokens(state: "RunState"):
         d = ev.get("data") or {}
         if d.get("type") == "compact":
             return None
-        if d.get("type") == "usage" and not d.get("sidechain"):
+        if d.get("type") == "usage" and not d.get("sidechain") and not d.get("stale"):
             n = _context_tokens_from_usage(d.get("usage") or {})
             if n:
                 state.context_tokens = n
@@ -12418,6 +12427,34 @@ def _compact_gate_pending(state: "RunState") -> bool:
         return bool(_GATE_MARKUP_RE.search("".join(reversed(tail))))
     except Exception:
         return True
+
+
+# A compact whose transcript is just the PREVIOUS summary is pure loss:
+# _transcript_from_run_events starts at the last compact marker, so the
+# summariser would be handed summary N-1 and everything it failed to restate
+# would be gone from the thread for good. Both the manual and the auto path
+# require real movement since the last handoff before they will compact again.
+_COMPACT_MIN_NEW_EVENTS = 3
+
+
+def _compact_progress_since(state: "RunState"):
+    """(real conversation events, saw a user message) since the run's LAST
+    compact marker - or since the start of the run when there is none.
+    `system` / `status` chatter does not count as movement; only user messages
+    and actual agent output do."""
+    with state.lock:
+        events = list(state.events)
+    n = 0
+    saw_user = False
+    for ev in events[_last_compact_index(events) + 1:]:
+        t = ev.get("type")
+        if t == "user_message":
+            n += 1
+            saw_user = True
+        elif t == "agent" and (ev.get("data") or {}).get("type") in (
+                "text_delta", "thinking_delta", "tool_use", "tool_result"):
+            n += 1
+    return n, saw_user
 
 
 _COMPACT_SUMMARY_SYSTEM = (
@@ -12467,10 +12504,17 @@ def _compact_run(state: "RunState", reason: str) -> dict:
     transcript = _transcript_from_run_events(state)
     if not transcript:
         raise RuntimeError("nothing to compact - empty transcript")
+    if _compact_progress_since(state)[0] < _COMPACT_MIN_NEW_EVENTS:
+        raise RuntimeError("nothing new to compact since the last handoff summary")
     summary = _compact_summarize(transcript)
-    # Summary in hand - now it's safe to mutate. Kill an idle live process
-    # (claude stream-json keeps it open between turns); codex/opencode are
-    # already dead between turns so this is a no-op for them.
+    # Summary in hand - now it's safe to mutate. Everything the old session
+    # still has in flight is stale from this line on: the drain loop reading it
+    # compares its captured epoch against this one and stops folding its usage
+    # and session id back into the run.
+    _retired_session = state.session_id
+    state._compact_epoch += 1
+    # Kill an idle live process (claude stream-json keeps it open between
+    # turns); codex/opencode are already dead between turns so this is a no-op.
     if state.proc is not None and state.proc.poll() is None:
         state.stop_reason = "compacted"
         try:
@@ -12482,6 +12526,7 @@ def _compact_run(state: "RunState", reason: str) -> dict:
         "summary": summary,
         "reason": reason,
         "contextTokensBefore": ctx_before,
+        "retiredSessionId": _retired_session,
     })
     state.session_id = None
     state.context_tokens = None
@@ -12505,6 +12550,14 @@ def _auto_compact_maybe(state: "RunState") -> None:
         if not ctx or ctx < int(cfg.get("thresholdTokens") or 0):
             return
         if _compact_gate_pending(state):
+            return
+        # Only compact once the thread has actually moved on from the last one.
+        # Without this a single late usage frame from the session the previous
+        # compact killed re-inflates the gauge, the next `done` off that same
+        # dying stream re-arms the trigger, and the second compact summarises
+        # the first summary.
+        _new, _saw_user = _compact_progress_since(state)
+        if _new < _COMPACT_MIN_NEW_EVENTS or not _saw_user:
             return
         state._compact_inflight = True
 
@@ -12636,6 +12689,12 @@ def _drain_stdout(state: "RunState") -> None:
     # the finally-block). The parser's output shape matches _normalize_frame, so
     # the lifecycle code below is identical for every agent.
     _oc_parser = _OpenCodeStreamParser() if state.agent_id == "opencode" else None
+    # Compact epoch this loop was started under. A compact that lands while
+    # this loop is still draining bumps the run's epoch, which retires
+    # everything the killed session has left in the pipe: its frames are still
+    # shown (the user watched them arrive) but they no longer set the session
+    # id, the context gauge, or the auto-compact trigger.
+    _epoch = state._compact_epoch
     try:
         for raw in state.proc.stdout:
             line = raw.decode("utf-8", errors="replace").strip()
@@ -12659,17 +12718,26 @@ def _drain_stdout(state: "RunState") -> None:
                 state.append("agent", {"type": "raw", "text": line})
                 continue
             _events = _oc_parser.feed(frame) if _oc_parser else _normalize_frame(state.agent_id, frame)
+            _stale = (state._compact_epoch != _epoch)
             for ev in _events:
+                # Frames the retired session was still holding when a compact
+                # killed it. They are shown (the user watched them stream) but
+                # flagged, so the client's context gauge - which scans back to
+                # the last compact marker - does not read the OLD session's
+                # size and report that the compact did nothing.
+                if _stale:
+                    ev["stale"] = True
                 state.append("agent", ev)
                 # Capture the session id off the first init frame - needed
                 # by /__run/:id/resume so post-Stop replies can rejoin the
                 # same Claude conversation instead of starting fresh.
-                if ev.get("type") == "status" and ev.get("sessionId") and not state.session_id:
+                if (ev.get("type") == "status" and ev.get("sessionId")
+                        and not state.session_id and not _stale):
                     state.session_id = ev["sessionId"]
                 # Track the live context size off every per-call usage event
                 # (claude + opencode emit them; codex has no token telemetry).
                 # Drives the chat context gauge + the auto-compact trigger.
-                if ev.get("type") == "usage" and not ev.get("sidechain"):
+                if ev.get("type") == "usage" and not ev.get("sidechain") and not _stale:
                     _ctx = _context_tokens_from_usage(ev.get("usage") or {})
                     if _ctx:
                         state.context_tokens = _ctx
@@ -12700,7 +12768,7 @@ def _drain_stdout(state: "RunState") -> None:
                         # the only safe moment (mid-turn kill would lose the
                         # in-flight work). No-op unless enabled + threshold
                         # crossed + no gate card awaiting the user.
-                        if ev.get("label") == "done":
+                        if ev.get("label") == "done" and not _stale:
                             try:
                                 _auto_compact_maybe(state)
                             except Exception:
