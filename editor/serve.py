@@ -10858,6 +10858,10 @@ class RunState:
                  # then summarises the first summary) or resurrects the
                  # bloated session on the next resume.
                  "_compact_epoch",
+                 # A summary that arrived while a turn was in flight, parked
+                 # until the turn ends. Applying it there and then would kill
+                 # the agent mid-tool-call.
+                 "_compact_pending",
                  # Follow-ups typed while a turn was in flight, delivered one
                  # per turn boundary by _queue_drain_maybe, plus its re-entry
                  # guard. Daemon-owned so the queue drains whether or not the
@@ -10890,6 +10894,7 @@ class RunState:
         self.context_tokens = None
         self._compact_inflight = False
         self._compact_epoch = 0
+        self._compact_pending = None
         self.title = title
         # Phase 6 - remember which project this run was spawned in so /resume
         # can rebuild the same env + cwd, and so /__runs can group by project.
@@ -12543,10 +12548,31 @@ def _compact_run(state: "RunState", reason: str) -> dict:
     if _compact_progress_since(state)[0] < _COMPACT_MIN_NEW_EVENTS:
         raise RuntimeError("nothing new to compact since the last handoff summary")
     summary = _compact_summarize(transcript)
-    # Summary in hand - now it's safe to mutate. Everything the old session
-    # still has in flight is stale from this line on: the drain loop reading it
-    # compares its captured epoch against this one and stops folding its usage
-    # and session id back into the run.
+    return _compact_commit(state, summary, ctx_before, reason)
+
+
+def _compact_commit(state: "RunState", summary: str, ctx_before, reason: str) -> dict:
+    """Apply a summary that is already in hand, but ONLY at a safe moment.
+
+    Summarising takes tens of seconds, and the run does not stand still while
+    it happens: the user sends the next message, or a queued follow-up drains,
+    and by the time the summary lands the agent is mid-tool-call again. Killing
+    it there kills the tool with it - the child dies with 137, the run ends
+    143, and the thread simply stops on the user in the middle of working.
+    That is the one thing a compact must never do, so a summary that arrives
+    mid-turn is PARKED and applied at the next turn boundary instead
+    (_compact_flush_pending). Nothing is lost by waiting: the marker only
+    defines where the replayed transcript starts, and everything after it is
+    replayed verbatim into the seed."""
+    _proc = state.proc
+    if _proc is not None and _proc.poll() is None and not state.turn_done:
+        state._compact_pending = {"summary": summary, "reason": reason,
+                                  "contextTokensBefore": ctx_before}
+        return {"ok": True, "deferred": True, "reason": reason,
+                "contextTokensBefore": ctx_before, "summaryChars": len(summary)}
+    # Safe to mutate. Everything the old session still has in flight is stale
+    # from this line on: the drain loop reading it compares its captured epoch
+    # against this one and stops folding its usage and session id back in.
     _retired_session = state.session_id
     state._compact_epoch += 1
     # Kill an idle live process (claude stream-json keeps it open between
@@ -12566,9 +12592,34 @@ def _compact_run(state: "RunState", reason: str) -> dict:
     })
     state.session_id = None
     state.context_tokens = None
-    return {"ok": True, "reason": reason,
+    return {"ok": True, "deferred": False, "reason": reason,
             "contextTokensBefore": ctx_before,
             "summaryChars": len(summary)}
+
+
+def _compact_flush_pending(state: "RunState") -> None:
+    """Turn-boundary hook: apply a summary _compact_commit parked mid-turn."""
+    pend = getattr(state, "_compact_pending", None)
+    if not pend:
+        return
+    state._compact_pending = None
+    try:
+        info = _compact_commit(state, pend["summary"], pend.get("contextTokensBefore"),
+                               pend.get("reason") or "auto")
+        if info.get("deferred"):
+            state._compact_pending = pend      # still mid-turn, try again later
+            return
+        state.append("status", {
+            "label": "compacted",
+            "detail": (f"auto-compact at "
+                       f"{(info.get('contextTokensBefore') or 0)//1000}k context "
+                       f"tokens - next message starts a fresh session seeded "
+                       f"from the summary"),
+        })
+    except Exception as e:
+        state.append("status", {"label": "compact-failed", "detail": str(e)[:400]})
+    finally:
+        state._compact_inflight = False
 
 
 def _auto_compact_maybe(state: "RunState") -> None:
@@ -12578,6 +12629,8 @@ def _auto_compact_maybe(state: "RunState") -> None:
     is waiting for the user, and at most one compact can be in flight."""
     try:
         if state.kind != "freeform" or state._compact_inflight:
+            return
+        if state._compact_pending:
             return
         cfg = _compact_config()
         if not cfg.get("autoCompact"):
@@ -12598,8 +12651,16 @@ def _auto_compact_maybe(state: "RunState") -> None:
         state._compact_inflight = True
 
         def _bg():
+            _parked = False
             try:
                 info = _compact_run(state, "auto")
+                # The agent started another turn while we were summarising.
+                # The summary waits for the turn boundary rather than killing
+                # the tool call underneath it; _compact_flush_pending applies
+                # it and clears the in-flight flag.
+                if info.get("deferred"):
+                    _parked = True
+                    return
                 state.append("status", {
                     "label": "compacted",
                     "detail": (f"auto-compact at "
@@ -12611,7 +12672,8 @@ def _auto_compact_maybe(state: "RunState") -> None:
                 state.append("status", {"label": "compact-failed",
                                         "detail": str(e)[:400]})
             finally:
-                state._compact_inflight = False
+                if not _parked:
+                    state._compact_inflight = False
 
         threading.Thread(target=_bg, daemon=True,
                          name=f"compact-{state.run_id}").start()
@@ -12800,6 +12862,13 @@ def _drain_stdout(state: "RunState") -> None:
                     if ev.get("label") in ("done", "error"):
                         state.turn_done = True
                         state.turns_completed += 1
+                        # A summary parked mid-turn applies HERE - the one
+                        # moment nothing is in flight to kill.
+                        if not _stale:
+                            try:
+                                _compact_flush_pending(state)
+                            except Exception:
+                                pass
                         # Auto-compact policy check at the turn boundary -
                         # the only safe moment (mid-turn kill would lose the
                         # in-flight work). No-op unless enabled + threshold
@@ -12940,6 +13009,13 @@ def _drain_stdout(state: "RunState") -> None:
             effective_exit = exit_code or 0 if exit_code is not None else exit_code
         state.append("end", {"exitCode": exit_code, "effectiveExitCode": effective_exit, "stopReason": state.stop_reason})
         state.finish(effective_exit if state.stop_reason else exit_code)
+        # The process is gone, so a summary parked mid-turn can land now - and
+        # it must land BEFORE the queue-driven respawn below, or that resume
+        # would seed itself from the un-compacted transcript.
+        try:
+            _compact_flush_pending(state)
+        except Exception:
+            pass
         # The process is gone and the user still has follow-ups queued: respawn
         # through /resume and hand it the next one. This is the ONLY route for
         # single-shot runtimes (codex / opencode exit after every turn) and the
@@ -34156,10 +34232,18 @@ class H(http.server.SimpleHTTPRequestHandler):
         try:
             info = _compact_run(state, "manual")
         except Exception as e:
+            state._compact_inflight = False
             return self._reply(502, {"error": f"compact failed: {type(e).__name__}: {e}",
                                      "unchanged": True})
-        finally:
+        # A summary parked mid-turn stays in flight until the boundary applies
+        # it (the user can send a message while we summarise, and that starts a
+        # turn we must not kill under).
+        if not info.get("deferred"):
             state._compact_inflight = False
+        if info.get("deferred"):
+            return self._reply(200, dict(info, note=(
+                "the agent started another turn while the summary was being "
+                "written - it will be applied the moment that turn ends")))
         state.append("status", {
             "label": "compacted",
             "detail": ("history summarised - the next message starts a fresh "
