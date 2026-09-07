@@ -13003,7 +13003,11 @@ def _drain_stdout(state: "RunState") -> None:
         # success path, user-stop, etc.). The actual exitCode is still stored on the
         # event payload for diagnostics; finish() also stores stopReason so
         # the chat can render "done"/"stopped" correctly.
-        if state.stop_reason in ("completed-orchestrator", "user-stop") and exit_code in (143, -15, None):
+        # "compacted" belongs here too: the compact tears the process down on
+        # purpose and the thread continues on its next message, so recording
+        # the SIGTERM as a non-zero exit made every successful compact render
+        # as a failed run.
+        if state.stop_reason in ("completed-orchestrator", "user-stop", "compacted") and exit_code in (143, -15, None):
             effective_exit = 0
         else:
             effective_exit = exit_code or 0 if exit_code is not None else exit_code

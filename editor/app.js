@@ -12657,8 +12657,7 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
         const unread = (Number.isFinite(r.lastSeq) ? r.lastSeq : -1) > (read[r.runId] ?? -1);
         const isLive    = !r.done && !r.turnDone;
         const isWaiting = !r.done &&  r.turnDone;
-        const intentionalStop = r.stopReason === "completed-orchestrator"
-                              || r.stopReason === "user-stop";
+        const intentionalStop = isIntentionalStop(r.stopReason);
         const succeeded = r.exitCode === 0 || r.exitCode == null || intentionalStop;
         const status = isLive    ? "live"
                      : isWaiting ? "waiting"
@@ -16575,10 +16574,21 @@ function AskUserQuestionCard({ ev, runId, answered, onAnswered }) {
 // the dropdown's `succeeded` check in RunsMenu so the chat header and the
 // run-history row agree on whether a run failed. Used as the floor for the
 // drawer's status seed AND as the discriminator on the live `end` event.
+// Every deliberate teardown, in one place. A compact ends the process ON
+// PURPOSE (the summary replaces the session; the next message re-seeds it), so
+// its SIGTERM 143 is no more a failure than a user pressing Stop. Without
+// "compacted" here the chat header, the runs list and the drawer all painted a
+// red FAIL on a thread that had just been compacted successfully - which reads
+// as "it was working, then it stopped and failed".
+const INTENTIONAL_STOPS = ["user-stop", "completed-orchestrator", "compacted"];
+function isIntentionalStop(stopReason) {
+  return INTENTIONAL_STOPS.indexOf(stopReason) >= 0;
+}
+
 function runIsFailed(run) {
   if (!run || !run.done) return false;
   if (run.exitCode == null || run.exitCode === 0) return false;
-  if (run.stopReason === "user-stop" || run.stopReason === "completed-orchestrator") return false;
+  if (isIntentionalStop(run.stopReason)) return false;
   return true;
 }
 
@@ -16598,7 +16608,7 @@ function runIsFailed(run) {
 function chatStatusReducer(prev, ev) {
   if (ev.event === "end") {
     const d = ev.data || {};
-    const intentional = d.stopReason === "user-stop" || d.stopReason === "completed-orchestrator";
+    const intentional = isIntentionalStop(d.stopReason);
     const failed = d.exitCode != null && d.exitCode !== 0 && !intentional;
     return failed ? "fail" : "done";
   }
@@ -23413,7 +23423,11 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
     case "error":
       return html`<div className="chat-row chat-row-error">${block.data.message || "error"}</div>`;
     case "end":
-      return html`<div className="chat-row chat-end">finished${block.data.exitCode != null ? ` · exit ${block.data.exitCode}` : ""}</div>`;
+      if (block.data.stopReason === "compacted")
+        return html`<div className="chat-row chat-end">session compacted · send a message to continue</div>`;
+      return html`<div className="chat-row chat-end">finished${
+        block.data.exitCode != null && !isIntentionalStop(block.data.stopReason)
+          ? ` · exit ${block.data.exitCode}` : ""}</div>`;
     case "raw":
     default:
       // No producer emits raw blocks anymore (buildBlocks drops unknown
@@ -23497,7 +23511,11 @@ function ChatEventRow({ ev, runId, answers, onAnswered }) {
     return html`<div className="chat-row chat-stderr"><span className="chat-row-tag">stderr</span> ${data.text}</div>`;
   }
   if (ev.event === "end" && data) {
-    return html`<div className="chat-row chat-end">finished${data.exitCode != null ? ` · exit ${data.exitCode}` : ""}</div>`;
+    if (data.stopReason === "compacted")
+      return html`<div className="chat-row chat-end">session compacted · send a message to continue</div>`;
+    return html`<div className="chat-row chat-end">finished${
+      data.exitCode != null && !isIntentionalStop(data.stopReason)
+        ? ` · exit ${data.exitCode}` : ""}</div>`;
   }
   return null;
 }
@@ -27177,6 +27195,7 @@ function systemThreadStatus(r) {
   if (!r) return "done";
   if (!r.done && !r.historical) return r.turnDone ? "waiting" : "live";
   if (r.stopReason === "user-stop") return "stopped";
+  if (r.stopReason === "compacted") return "done";
   return (r.exitCode === 0 || r.exitCode == null) ? "done" : "failed";
 }
 function fmtSystemThreadWhen(t) {
