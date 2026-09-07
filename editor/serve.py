@@ -10612,8 +10612,17 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
             # every (re)spawn banner emits a `codex-session` status event,
             # and only the newest recorded session holds the full context
             # for `codex exec resume` (see _run_resume_codex).
-            if isinstance(data, dict) and data.get("sessionId") and (
-                    not session_id or agent_id == "codex"):
+            # A compact retires the session it summarised. Carrying that id
+            # across a daemon restart makes the next message --resume the
+            # conversation the summary replaced, which restores the whole
+            # pre-compact context and puts the thread straight back over the
+            # auto-compact threshold: it compacts again, forever. Drop it and
+            # let a session started AFTER the compact claim the slot.
+            if isinstance(data, dict) and data.get("type") == "compact":
+                session_id = None
+            if (isinstance(data, dict) and data.get("sessionId")
+                    and not data.get("stale")
+                    and (not session_id or agent_id == "codex")):
                 session_id = data["sessionId"]
             # Capture spawn parameters from the initial spawn event
             if isinstance(data, dict) and data.get("label") == "spawned":
@@ -12374,6 +12383,33 @@ def _last_compact_index(events: list) -> int:
         if ev.get("type") == "agent" and (ev.get("data") or {}).get("type") == "compact":
             return i
     return -1
+
+
+def _session_retired_by_compact(state: "RunState") -> bool:
+    """True when the run's CURRENT session id belongs to a session a compact
+    retired. Scanning backwards, a compact marker reached before the frame
+    that announced this session means the session predates the compact: the
+    conversation it holds is the very one the summary replaced, so resuming
+    it silently undoes the compact and re-bills the whole prefix.
+
+    A retired id keeps coming back because more than one path restores it: a
+    late frame from the killed process announces it again, and a rehydrated
+    ghost reads it off an old line after a daemon restart. Rather than patch
+    each source, every resume asks this before it decides to --resume."""
+    sid = getattr(state, "session_id", None)
+    if not sid:
+        return False
+    with state.lock:
+        events = list(state.events)
+    for i in range(len(events) - 1, -1, -1):
+        d = events[i].get("data") or {}
+        if not isinstance(d, dict):
+            continue
+        if d.get("type") == "compact":
+            return True
+        if d.get("sessionId") == sid and not d.get("stale"):
+            return False
+    return False
 
 
 def _run_context_tokens(state: "RunState"):
@@ -34752,6 +34788,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                          "wait for it to complete or press Stop, then send again",
                 "busy": True,
             })
+        # Last line of defence for compaction: never resume a session a
+        # compact retired, whatever restored the id. Clearing it here routes
+        # every runtime to its compact-aware seed path instead.
+        if state.session_id and _session_retired_by_compact(state):
+            state.session_id = None
         # Codex/opencode resume. Neither has Claude's stream-json
         # --resume <session-id> protocol; each `codex exec` / `opencode run`
         # is a fresh session. We fake resume by reconstructing the prior
