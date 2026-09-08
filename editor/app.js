@@ -13834,11 +13834,23 @@ function capChatEvents(list) {
   return [...preserved, ...list.slice(cutoff)];
 }
 
+// A teardown persists BOTH a real `end` event and the synthetic `__finish`
+// finish-record, and every hydration path turned each of them into an "end"
+// row - so each teardown rendered twice ("session compacted..." printed
+// two and sometimes three times). __finish is the fallback for a run whose
+// process died without emitting `end`; drop it when the real one is already
+// there.
+function pushEndRow(evs, ev) {
+  const last = evs.length ? evs[evs.length - 1] : null;
+  if (last && last.event === "end") return;
+  evs.push(ev);
+}
+
 function chatRowsToEvents(rows) {
   const evs = [];
   for (const row of rows || []) {
     if (!row?.type) continue;
-    if (row.type === "__finish") { evs.push({ event: "end", data: row.data || {} }); continue; }
+    if (row.type === "__finish") { pushEndRow(evs, { event: "end", data: row.data || {} }); continue; }
     evs.push({ event: row.type, data: row.data });
   }
   return evs;
@@ -16899,7 +16911,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             const t = row?.type;
             if (!t) continue;
             if (t === "__finish") {
-              evs.push({ id: null, event: "end", data: row.data || {} });
+              pushEndRow(evs, { id: null, event: "end", data: row.data || {} });
             } else {
               evs.push({ id: row.seq, event: t, data: row.data });
             }
@@ -16964,7 +16976,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           let maxSeq = lastIdRef.current;
           for (const row of rows) {
             if (!row?.type) continue;
-            if (row.type === "__finish") { evs.push({ id: null, event: "end", data: row.data || {} }); continue; }
+            if (row.type === "__finish") { pushEndRow(evs, { id: null, event: "end", data: row.data || {} }); continue; }
             evs.push({ id: row.seq, event: row.type, data: row.data });
             if (typeof row.seq === "number" && row.seq > maxSeq) maxSeq = row.seq;
           }
@@ -19989,6 +20001,12 @@ function ChatContextGauge({ run, events, runModel }) {
                    value=${thr} disabled=${!cfg}
                    onInput=${(e) => saveCfg({ thresholdTokens: +e.target.value })}/>
             <div className="chat-ctx-scale"><span>100k</span><span>800k</span></div>
+            <label className="chat-ctx-auto-toggle">
+              <input type="checkbox" checked=${cfg ? cfg.autoContinue !== false : true}
+                     disabled=${!cfg}
+                     onChange=${(e) => saveCfg({ autoContinue: e.target.checked })}/>
+              Continue the thread afterwards
+            </label>
           </div>
         </div>`, document.body);
     })()}
@@ -23385,7 +23403,9 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
     case "agent_grid":
       return html`<div className="chat-row chat-assistant chat-agent-grid"><${AgentGridCard} block=${block}/></div>`;
     case "user_message":
-      return html`<div className="chat-bubble chat-bubble-user"><${Markdown} text=${stripChatPreamble(block.data.text)} inline=${true}/></div>`;
+      return html`<div className="chat-bubble chat-bubble-user">${
+        block.data.auto ? html`<span className="chat-bubble-prefix">auto:</span> ` : ""
+      }<${Markdown} text=${stripChatPreamble(block.data.text)} inline=${true}/></div>`;
     case "tool_answer": {
       let preview = block.data.content;
       try { preview = JSON.parse(block.data.content).answers?.map(a => a.answer).filter(Boolean).join(", ") || preview; } catch {}
@@ -23497,7 +23517,7 @@ function ChatEventRow({ ev, runId, answers, onAnswered }) {
     return null;
   }
   if (ev.event === "user_message" && data) {
-    return html`<div className="chat-row chat-user-msg"><span className="chat-row-tag">you</span> ${stripChatPreamble(data.text)}</div>`;
+    return html`<div className="chat-row chat-user-msg"><span className="chat-row-tag">${data.auto ? "auto" : "you"}</span> ${stripChatPreamble(data.text)}</div>`;
   }
   if (ev.event === "tool_answer" && data) {
     // Compact echo so the chat keeps a clear "you answered X" trail.
@@ -100134,6 +100154,12 @@ function WorkflowSendKeySection() {
                value=${compactCfg?.thresholdTokens || 400000} disabled=${!compactCfg}
                onInput=${(e) => saveCompactCfg({ thresholdTokens: +e.target.value })}/>
         <div className="chat-ctx-scale"><span>100k</span><span>800k</span></div>
+        <label className="chat-ctx-auto-toggle chat-ctx-auto-settings">
+          <input type="checkbox" checked=${compactCfg ? compactCfg.autoContinue !== false : true}
+                 disabled=${!compactCfg}
+                 onChange=${(e) => saveCompactCfg({ autoContinue: e.target.checked })}/>
+          Continue the thread afterwards, instead of waiting for a message
+        </label>
       </div>
       <div className="workflow-settings-section">
         <div className="onboarding-sendkey-head">

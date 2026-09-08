@@ -944,7 +944,11 @@ SEARCH_DEFAULTS_PATH     = os.path.join(MEDIA_CONFIG_DIR, "search-defaults.json"
 # Global (cross-project) on purpose - it's a cost preference, not project
 # state. Defaults: auto OFF, threshold 400k (~40% of a 1M-window claude chat).
 COMPACT_CONFIG_PATH      = os.path.join(MEDIA_CONFIG_DIR, "compact-config.json")
-COMPACT_DEFAULTS         = {"autoCompact": False, "thresholdTokens": 400_000}
+COMPACT_DEFAULTS         = {"autoCompact": False, "thresholdTokens": 400_000,
+                            # After an AUTO compact the thread is left waiting
+                            # for a message, and the message every user types
+                            # there is "continue". Send it for them.
+                            "autoContinue": True}
 
 
 def _compact_config() -> dict:
@@ -953,6 +957,8 @@ def _compact_config() -> dict:
         saved = _persist_json_load(COMPACT_CONFIG_PATH)
         if isinstance(saved.get("autoCompact"), bool):
             cfg["autoCompact"] = saved["autoCompact"]
+        if isinstance(saved.get("autoContinue"), bool):
+            cfg["autoContinue"] = saved["autoContinue"]
         thr = saved.get("thresholdTokens")
         if isinstance(thr, (int, float)) and 50_000 <= int(thr) <= 2_000_000:
             cfg["thresholdTokens"] = int(thr)
@@ -9769,7 +9775,7 @@ def _queue_drain_maybe(state, mode: str = "stdin") -> None:
                      name=f"queue-drain-{state.run_id}").start()
 
 
-def _queue_deliver_via_resume(state, text: str) -> bool:
+def _queue_deliver_via_resume(state, text: str, auto: str = "") -> bool:
     """Respawn the run with the queued text as its next message, by POSTing our
     own /resume. Building the resume spawn inline here would mean duplicating
     the tier / prototype / guards / MCP reconstruction that handler owns, and a
@@ -9779,7 +9785,8 @@ def _queue_deliver_via_resume(state, text: str) -> bool:
         import urllib.request
         req = urllib.request.Request(
             f"http://127.0.0.1:{PORT}/__run/{state.run_id}/resume",
-            data=json.dumps({"text": text}).encode("utf-8"),
+            data=json.dumps({"text": text, "auto": auto} if auto
+                            else {"text": text}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
@@ -9788,6 +9795,42 @@ def _queue_deliver_via_resume(state, text: str) -> bool:
     except Exception as e:
         print(f"[queue] resume deliver failed run={state.run_id}: {e}", flush=True)
         return False
+
+
+def _compact_autocontinue_maybe(state) -> None:
+    """Process-exit hook: pick the thread back up after an AUTO compact.
+
+    A compact ends the process on purpose, and the thread then sits waiting for
+    a message. In practice the message is always the same one - the user comes
+    back minutes later and types "continue" - so the daemon sends it. Only for
+    compacts it started itself; a compact the user asked for leaves the thread
+    where they put it.
+
+    Guards: nothing queued (the queue drain already respawns for that, and it
+    carries the user's real next message), and never twice without a human turn
+    in between, so a thread whose floor sits near the threshold cannot spin
+    compact -> continue -> compact on its own."""
+    if state.stop_reason != "compacted":
+        return
+    if not _compact_config().get("autoContinue"):
+        return
+    with _QUEUE_LOCK:
+        queued = list(getattr(state, "msg_queue", None) or [])
+    if queued or getattr(state, "_queue_draining", False):
+        return
+    with state.lock:
+        events = list(state.events)
+    ci = _last_compact_index(events)
+    if ci < 0 or (events[ci].get("data") or {}).get("reason") != "auto":
+        return
+    for ev in reversed(events[:ci]):
+        if ev.get("type") == "user_message":
+            if (ev.get("data") or {}).get("auto"):
+                return          # the last turn was already an auto-continue
+            break
+    state.append("status", {"label": "auto-continue",
+                            "detail": "picking the thread back up after the compact"})
+    _queue_deliver_via_resume(state, "continue", auto="compact-continue")
 
 
 def _queue_drop(state, entry_id) -> None:
@@ -13027,6 +13070,12 @@ def _drain_stdout(state: "RunState") -> None:
         # something other than the user.
         try:
             _queue_drain_maybe(state, mode="resume")
+        except Exception:
+            pass
+        # Nothing queued and the compact is what ended this process: carry the
+        # thread on rather than leaving the user to type "continue".
+        try:
+            _compact_autocontinue_maybe(state)
         except Exception:
             pass
         # verify any shader HTML the run wrote (process-exit fallback for
@@ -21908,6 +21957,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         cfg = _compact_config()
         if isinstance(body.get("autoCompact"), bool):
             cfg["autoCompact"] = body["autoCompact"]
+        if isinstance(body.get("autoContinue"), bool):
+            cfg["autoContinue"] = body["autoContinue"]
         thr = body.get("thresholdTokens")
         if isinstance(thr, (int, float)):
             thr = int(thr)
@@ -34659,7 +34710,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                          name=f"run-{run_id}-stderr-resumed").start()
         return self._reply(200, {"ok": True, "agentId": "claude", "plannerFallback": True})
 
-    def _run_resume_codex(self, state, run_id, text):
+    def _run_resume_codex(self, state, run_id, text, auto: str = ""):
         """Resume for the argv-prompt single-shot agents (codex AND opencode).
 
         Two paths:
@@ -34734,7 +34785,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             state.turn_done = False
             state.append("status", {"label": "resumed", "agentId": "codex",
                                     "resume": "session"})
-            state.append("user_message", {"text": text})
+            state.append("user_message", dict({"text": text},
+                                              **({"auto": auto} if auto else {})))
             threading.Thread(target=_drain_stdout, args=(state,), daemon=True,
                              name=f"run-{run_id}-stdout-resumed").start()
             threading.Thread(target=_drain_stderr, args=(state,), daemon=True,
@@ -34806,7 +34858,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.exit_code = None
         state.turn_done = False
         state.append("status", {"label": "resumed", "agentId": state.agent_id})
-        state.append("user_message", {"text": text})
+        state.append("user_message", dict({"text": text},
+                                          **({"auto": auto} if auto else {})))
         threading.Thread(target=_drain_stdout, args=(state,), daemon=True,
                          name=f"run-{run_id}-stdout-resumed").start()
         threading.Thread(target=_drain_stderr, args=(state,), daemon=True,
@@ -34817,6 +34870,11 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _run_resume(self, run_id):
         body = self._read_json_body(max_bytes=4 * 1024 * 1024)
         text = (body.get("text") or "").strip()
+        # Set when the DAEMON is speaking for the user (today: the
+        # auto-continue after a compact). Stamped on the echoed message so the
+        # chat can label it and so the auto-continue can see its own last turn
+        # and refuse to fire twice in a row.
+        auto = str(body.get("auto") or "").strip()[:40]
         if not text:
             return self._reply(400, {"error": "empty text"})
         with RUNS_LOCK:
@@ -34888,7 +34946,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # then spawning a fresh run with that combined prompt. Same run_id,
         # same event log - new process underneath.
         if state.agent_id in ("codex", "opencode"):
-            return self._run_resume_codex(state, run_id, text)
+            return self._run_resume_codex(state, run_id, text, auto=auto)
         if state.agent_id != "claude":
             return self._reply(400, {"error": f"resume not yet supported for agent {state.agent_id!r}"})
         # Planner runs spawn with --no-session-persistence, so their session
@@ -35047,7 +35105,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             "sessionId": state.session_id,
             **({"compactResume": True} if _compact_seed else {}),
         })
-        state.append("user_message", {"text": text})
+        state.append("user_message", dict({"text": text},
+                                          **({"auto": auto} if auto else {})))
 
         try:
             proc.stdin.write(_claude_user_frame(_compact_seed or text))
