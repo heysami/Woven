@@ -164,8 +164,17 @@ def clear_stale_index_lock(root, max_age=8):
     """Remove a leftover .git/index.lock when it's older than `max_age` seconds.
     The daemon serialises its own git ops, so a lingering lock means a prior op
     was interrupted (tab close / daemon restart / crash) - not a live op. The age
-    floor avoids racing a just-started external `git` in a terminal. Best-effort."""
-    lock = os.path.join(root, ".git", "index.lock")
+    floor avoids racing a just-started external `git` in a terminal. Best-effort.
+    Resolves the real gitdir (in a linked worktree `.git` is a FILE pointing at
+    .git/worktrees/<name>/, which holds that checkout's own index)."""
+    gitdir = os.path.join(root, ".git")
+    if os.path.isfile(gitdir):
+        code, out, _e = _git(root, "rev-parse", "--git-dir", timeout=8)
+        if code == 0 and out.strip():
+            gitdir = out.strip()
+            if not os.path.isabs(gitdir):
+                gitdir = os.path.join(root, gitdir)
+    lock = os.path.join(gitdir, "index.lock")
     try:
         import time as _t
         if os.path.isfile(lock) and (_t.time() - os.path.getmtime(lock)) >= max_age:
@@ -762,13 +771,16 @@ def _norm_branch_name(root, name):
 
 def branches(root):
     """Local branches with per-branch divergence vs their upstream. Returns
-    {current, branches:[{name, current, upstream, ahead, behind}]}. Cheap enough
-    to fold into status() (a couple of `git for-each-ref` reads)."""
+    {current, branches:[{name, current, upstream, ahead, behind, updatedAt,
+    sha}]} - updatedAt is the tip committerdate (unix seconds) so the panel can
+    show "updated 3d ago" per branch. Cheap enough to fold into status() (a
+    couple of `git for-each-ref` reads)."""
     if not is_repo(root):
         return {"current": "", "branches": []}
     cur = current_branch(root)
-    # name + upstream + ahead/behind in one shot; \x1f field separator.
-    fmt = "%(refname:short)%1f%(upstream:short)%1f%(upstream:track)"
+    # name + upstream + ahead/behind + tip date/sha in one shot; \x1f separator.
+    fmt = ("%(refname:short)%1f%(upstream:short)%1f%(upstream:track)"
+           "%1f%(committerdate:unix)%1f%(objectname)")
     code, out, _e = _git(root, "for-each-ref", "--sort=-committerdate",
                          f"--format={fmt}", "refs/heads/")
     rows = []
@@ -788,9 +800,101 @@ def branches(root):
                 ahead = int(ma.group(1))
             if mb:
                 behind = int(mb.group(1))
+            updated = 0
+            try:
+                updated = int(parts[3].strip()) if len(parts) > 3 and parts[3].strip() else 0
+            except ValueError:
+                pass
+            sha = parts[4].strip() if len(parts) > 4 else ""
             rows.append({"name": name, "current": name == cur,
-                         "upstream": upstream, "ahead": ahead, "behind": behind})
+                         "upstream": upstream, "ahead": ahead, "behind": behind,
+                         "updatedAt": updated, "sha": sha})
     return {"current": cur, "branches": rows}
+
+
+def list_worktrees(root):
+    """Linked checkouts of this repo: [{path, branch, head}] including the main
+    one. Lets the panel mark a branch as "open in another project" instead of
+    letting a switch die on git's one-branch-one-worktree rule."""
+    if not is_repo(root):
+        return []
+    code, out, _e = _git(root, "worktree", "list", "--porcelain")
+    if code != 0:
+        return []
+    rows, cur = [], {}
+    for ln in out.splitlines() + [""]:
+        ln = ln.strip()
+        if not ln:
+            if cur.get("path"):
+                rows.append(cur)
+            cur = {}
+            continue
+        if ln.startswith("worktree "):
+            cur["path"] = ln[len("worktree "):]
+        elif ln.startswith("HEAD "):
+            cur["head"] = ln[len("HEAD "):]
+        elif ln.startswith("branch "):
+            b = ln[len("branch "):]
+            cur["branch"] = b[len("refs/heads/"):] if b.startswith("refs/heads/") else b
+    return rows
+
+
+def worktree_add(root, name, dest):
+    """Check out an EXISTING branch into a second folder (`git worktree add`),
+    so two branches run side by side as two Woven projects. The branch keeps
+    living in this repo; `dest` gets its own working tree + index. Refuses if
+    dest exists or the branch is already checked out somewhere."""
+    if not is_repo(root):
+        raise RuntimeError("project is not a git repo")
+    n = _norm_branch_name(root, name)
+    code, _o, _e = _git(root, "show-ref", "--verify", "--quiet", f"refs/heads/{n}")
+    if code != 0:
+        raise RuntimeError(f"branch {n!r} does not exist")
+    if os.path.exists(dest):
+        raise RuntimeError(f"destination already exists: {os.path.basename(dest)}")
+    code, out, err = _git(root, "worktree", "add", dest, n, timeout=120)
+    if code != 0:
+        raise RuntimeError(f"worktree add failed: {(err or out).strip()[:400]}")
+    return {"ok": True, "branch": n, "path": dest}
+
+
+def branch_freshness(root, token=None):
+    """Per-branch "is my local copy behind GitHub?" - ONE `ls-remote` network
+    round-trip, then local ancestor checks. Returns {branches: {name: {stale,
+    remoteSha}}}; a branch is stale when origin's tip is not contained in the
+    local branch (including tips we have not even fetched). Branches with no
+    remote counterpart are omitted. Deliberately NOT part of status() - this
+    hits the network, so the panel calls it lazily when the dropdown opens."""
+    if not is_repo(root):
+        return {"branches": {}}
+    url = "origin"
+    if token:
+        try:
+            url = _origin_auth_url(root, token)
+        except Exception:
+            url = "origin"
+    code, out, err = _git(root, "ls-remote", "--heads", url, timeout=25)
+    if code != 0:
+        raise RuntimeError(f"ls-remote failed: {(err or out).strip()[:200]}")
+    remote = {}
+    for ln in out.splitlines():
+        parts = ln.split("\t")
+        if len(parts) == 2 and parts[1].startswith("refs/heads/"):
+            remote[parts[1][len("refs/heads/"):]] = parts[0].strip()
+    res = {}
+    for row in branches(root)["branches"]:
+        name = row["name"]
+        rsha = remote.get(name)
+        if not rsha:
+            continue
+        stale = False
+        if rsha != row.get("sha"):
+            # Not stale if the remote tip is an ancestor we already contain
+            # (local is ahead). An unknown object (never fetched) IS stale.
+            code, _o, _e = _git(root, "merge-base", "--is-ancestor", rsha, name)
+            stale = code != 0
+        res[name] = {"stale": stale, "remoteSha": rsha}
+    return {"branches": res}
 
 
 def create_branch(root, name, checkout=True):

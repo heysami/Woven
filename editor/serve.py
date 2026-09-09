@@ -5120,6 +5120,20 @@ def _resolve_git_root(qs_or_body):
     return resolve_project_root(qs_or_body, require_explicit=True)
 
 
+def _worktree_project_id(path):
+    """Map a git-worktree checkout path to its projects/<id> when it lives
+    directly under PROJECTS_DIR (a parallel-branch project); '' otherwise."""
+    try:
+        if not PROJECTS_DIR or not path:
+            return ""
+        rp = os.path.realpath(path)
+        if os.path.dirname(rp) == os.path.realpath(PROJECTS_DIR):
+            return os.path.basename(rp)
+    except Exception:
+        pass
+    return ""
+
+
 def _prune_baked_ds(ds_dir, style_id):
     """Strip template scaffolding the baked DS doesn't use, so it ships only
     its own look instead of all 9 starter overlays + build tools.
@@ -14994,7 +15008,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_mp = re.match(r"^/__multiplayer/(start|stop)$", parsed.path)
             if m_mp:
                 return self._multiplayer_op(m_mp.group(1), qs)
-            m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull|restore|discard-local|discard-remote|branch-create|branch-switch|branch-merge|branch-delete)$", parsed.path)
+            m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull|restore|discard-local|discard-remote|branch-create|branch-switch|branch-merge|branch-delete|branch-worktree)$", parsed.path)
             if m_git:
                 return self._git_op(m_git.group(1), qs)
             m_gh = re.match(r"^/__github/(device/start|device/poll|signout|connect_repo|create_repo|token|fork|pr)$", parsed.path)
@@ -15411,6 +15425,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._user_testing_config_get()
         if url_path == "/__git/status":
             return self._git_status(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__git/freshness":
+            return self._git_freshness(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__git/log":
             return self._git_log(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__git/diff":
@@ -26412,6 +26428,23 @@ class H(http.server.SimpleHTTPRequestHandler):
             st["conflicts"] = _gitops.conflicted_files(root) if st.get("repo") else []
             # Local branches for the fork/switch/merge UI (cheap for-each-ref).
             st["branches"] = _gitops.branches(root)["branches"] if st.get("repo") else []
+            # Branches checked out in a LINKED worktree (a parallel project)
+            # can't be switched to here - stamp the holding project so the
+            # panel offers "open that project" instead of a doomed switch.
+            if st.get("repo"):
+                try:
+                    self_rp = os.path.realpath(root)
+                    for wt in _gitops.list_worktrees(root):
+                        wpath = wt.get("path") or ""
+                        wbranch = wt.get("branch") or ""
+                        if not wpath or not wbranch or os.path.realpath(wpath) == self_rp:
+                            continue
+                        wpid = _worktree_project_id(wpath)
+                        for row in st["branches"]:
+                            if row.get("name") == wbranch:
+                                row["worktreeProject"] = wpid or os.path.basename(wpath)
+                except Exception:
+                    pass
             # Local sync version (cheap). The remote comparison is NOT done here
             # (status is polled often, and a remote read is a network round-trip)
             # - a mismatch surfaces as a 409 when the user actually pulls/pushes.
@@ -26425,6 +26458,30 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(200, st)
         except Exception as e:
             return self._reply(500, {"error": str(e)})
+
+    # GET /__git/freshness?project=<id> → {branches:{name:{stale, remoteSha}}}
+    # ONE ls-remote round-trip against origin, compared to local tips. Lazy by
+    # design: the panel calls it when the branch dropdown OPENS, never from the
+    # status poll (status stays network-free). No remote → empty map.
+    def _git_freshness(self, qs):
+        try:
+            root = _resolve_git_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            if not _gitops.is_repo(root):
+                return self._reply(200, {"branches": {}})
+            st = _gitops.status(root)
+            if not st.get("remote"):
+                return self._reply(200, {"branches": {}})
+            tok = None
+            try:
+                tok = (_gitops.host_token() or "") or None
+            except Exception:
+                pass
+            return self._reply(200, _gitops.branch_freshness(root, token=tok))
+        except Exception as e:
+            return self._reply(502, {"error": str(e)})
 
     # ── GitHub account (host side) - sign in ONCE, reused across projects ──
     # GET /__github/status  → {configured, signedIn, login, avatar, expired}.
@@ -26796,7 +26853,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Serialise the mutating ops + record them as in-flight so the panel can
         # show progress after a tab reload and a second click is refused cleanly.
         mutating = op in ("commit", "publish", "pull", "restore", "discard-local", "discard-remote",
-                          "branch-create", "branch-switch", "branch-merge", "branch-delete")
+                          "branch-create", "branch-switch", "branch-merge", "branch-delete",
+                          "branch-worktree")
         if mutating:
             now = time.time()
             with _GIT_INFLIGHT_LOCK:
@@ -27044,7 +27102,22 @@ class H(http.server.SimpleHTTPRequestHandler):
                     _gitops.revert_paths(root, meta_dirty)
                 if op == "branch-switch":
                     prev_branch = _gitops.current_branch(root)
-                    res = _gitops.switch_branch(root, body.get("name") or "")
+                    try:
+                        res = _gitops.switch_branch(root, body.get("name") or "")
+                    except RuntimeError as e:
+                        # One-branch-one-worktree: the branch is checked out in a
+                        # parallel project. Name that project so the panel can
+                        # offer "open it" instead of surfacing raw git output.
+                        m_wt = re.search(r"already used by worktree at '([^']+)'", str(e))
+                        if m_wt:
+                            wpid = _worktree_project_id(m_wt.group(1))
+                            return self._reply(409, {
+                                "error": ("branch '" + (body.get("name") or "")
+                                          + "' is open in the parallel project '"
+                                          + (wpid or os.path.basename(m_wt.group(1)))
+                                          + "' - open that project instead"),
+                                "worktreeProject": wpid})
+                        raise
                     # Comments are project-wide, not branch-scoped: carry the
                     # union across so switching never "replaces" them with the
                     # target branch's stale snapshot. With uncommitted share
@@ -27091,6 +27164,38 @@ class H(http.server.SimpleHTTPRequestHandler):
                     try: _broadcast_workflow_change(pid)
                     except Exception: pass
                 return self._reply(200, {"ok": True, **res})
+            if op == "branch-worktree":
+                # Open an EXISTING branch as a PARALLEL sibling project (a git
+                # worktree of the same repo). No switching, no dirty-tree guard
+                # needed - this tree is untouched; the branch gets its own
+                # folder under projects/ and shows up as a normal project.
+                pid = (_qs_get(qs, "project") or "").strip()
+                if _qs_get(qs, "gds"):
+                    return self._reply(400, {"error": "parallel checkouts are for projects, not design systems"})
+                if not PROJECTS_DIR or not pid:
+                    return self._reply(400, {"error": "parallel checkouts need workspace mode"})
+                name = (body.get("name") or "").strip()
+                if not name:
+                    return self._reply(400, {"error": "branch name required"})
+                cur = _gitops.current_branch(root)
+                if name == cur:
+                    return self._reply(400, {"error": "'" + name + "' is already this project's branch"})
+                for wt in _gitops.list_worktrees(root):
+                    if wt.get("branch") == name:
+                        wpid = _worktree_project_id(wt.get("path") or "")
+                        return self._reply(409, {
+                            "error": "'" + name + "' is already open in project '"
+                                     + (wpid or os.path.basename(wt.get("path") or "")) + "'",
+                            "worktreeProject": wpid})
+                base = re.sub(r"[^A-Za-z0-9._-]+", "-", pid + "-" + name).strip("-")[:60] or "worktree"
+                new_id = base
+                n = 2
+                while os.path.exists(_safe_join(PROJECTS_DIR, new_id)):
+                    new_id = base + "-" + str(n)
+                    n += 1
+                res = _gitops.worktree_add(root, name, _safe_join(PROJECTS_DIR, new_id))
+                return self._reply(200, {"ok": True, "branch": res.get("branch"),
+                                         "projectId": new_id})
             if op == "branch-delete":
                 res = _gitops.delete_branch(root, body.get("name") or "",
                                             force=bool(body.get("force")))

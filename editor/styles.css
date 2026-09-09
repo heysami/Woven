@@ -5629,10 +5629,57 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 
 /* Branches (fork / switch / merge) - real git branches, not Woven prototypes. */
 .th-git-branches { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-.th-git-branch-cur { display: flex; align-items: center; gap: 6px; }
 .th-git-branch-name { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.th-git-branch-body { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
-.th-git-branch-list { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; }
+/* Branch bar: one pill (current branch + switch glyph) and a circular + that
+   opens a branch as a PARALLEL sibling project (git worktree). */
+.th-git-branchbar { display: flex; align-items: center; gap: 6px; }
+.th-git-branchpill {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; gap: 6px;
+  font: inherit; text-align: left; cursor: pointer;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+.th-git-branchpill:hover, .th-git-branchpill.is-open { background: var(--surface-3, var(--surface-2)); border-color: color-mix(in oklab, var(--accent, #6aa6ff) 35%, var(--border)); }
+.th-git-branchpill-swap { margin-left: auto; display: inline-flex; color: var(--text-muted); }
+.th-git-branchpill:hover .th-git-branchpill-swap, .th-git-branchpill.is-open .th-git-branchpill-swap { color: var(--text); }
+.th-git-wtadd {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+}
+.th-git-wtadd:hover, .th-git-wtadd.is-open { color: var(--text); background: var(--surface-3, var(--surface-2)); border-color: color-mix(in oklab, var(--accent, #6aa6ff) 35%, var(--border)); }
+/* Overlay dropdown (portaled to body, share-menu idiom). */
+.th-git-branchmenu {
+  position: fixed;
+  z-index: 1400;
+  width: 320px;
+  max-height: min(60vh, 480px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.08);
+  padding: 10px;
+  font-size: 12.5px;
+}
+.th-git-branchmenu-head { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.th-git-fresh-loading { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; color: var(--text-faint, var(--text-muted)); }
+.th-git-branchmenu-hint { font-size: 11.5px; line-height: 1.45; color: var(--text-muted); }
+.th-git-branch-upd { margin-left: auto; flex: 0 0 auto; font-size: 10px; color: var(--text-faint, var(--text-muted)); }
+.th-git-pill.is-stale { color: #d97706; border-color: color-mix(in oklab, #d97706 45%, var(--border)); background: color-mix(in srgb, #d97706 10%, transparent); }
+.th-git-pill.is-worktree { color: var(--accent, #6aa6ff); border-color: color-mix(in oklab, var(--accent, #6aa6ff) 40%, var(--border)); }
+.th-git-branch-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .th-git-branch-item { display: flex; align-items: center; gap: 4px; padding: 2px; border-radius: 6px; }
 .th-git-branch-item.is-current { background: var(--surface-2); }
 .th-git-branch-pick { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0; background: none; border: none; padding: 4px 6px; font: inherit; cursor: pointer; border-radius: 6px; text-align: left; }

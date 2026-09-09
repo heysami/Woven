@@ -915,6 +915,7 @@ const Icon = {
   Branch:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="3.5" r="1.5"/><circle cx="4" cy="12.5" r="1.5"/><circle cx="12" cy="6" r="1.5"/><path d="M4 5v6M4 9c0-2 1.5-3 4-3"/></svg>`,
   Fork:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="4" r="1.5"/><circle cx="12" cy="4" r="1.5"/><circle cx="8" cy="13" r="1.5"/><path d="M4 5.5v2c0 1.5 1.5 2.5 4 2.5s4-1 4-2.5v-2M8 10v1.5"/></svg>`,
   Merge:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="4" cy="3.5" r="1.5"/><circle cx="4" cy="12.5" r="1.5"/><circle cx="12" cy="9" r="1.5"/><path d="M4 5v6M4 6c0 2 2 3 6.5 3"/></svg>`,
+  Swap:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 5.5h9M9.7 2.8L12.5 5.5 9.7 8.2M13 10.5H4M6.3 7.8L3.5 10.5 6.3 13.2"/></svg>`,
   Play:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M4 3l9 5-9 5z"/></svg>`,
   Flow:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2" y="2" width="5" height="3.5" rx="0.6"/><rect x="9" y="6.5" width="5" height="3" rx="0.6"/><rect x="2" y="10.5" width="5" height="3" rx="0.6"/><path d="M7 3.75c1 0 2 1 2 2.25v1.5M4.5 5.5v5"/></svg>`,
   Tree:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="5.5" y="1.5" width="5" height="3" rx="0.6"/><rect x="1" y="11" width="4" height="3" rx="0.6"/><rect x="6" y="11" width="4" height="3" rx="0.6"/><rect x="11" y="11" width="4" height="3" rx="0.6"/><path d="M8 4.5v3M3 11V7.5h10V11"/></svg>`,
@@ -15658,7 +15659,15 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
   const [tokenInput, setTokenInput] = useState("");          // paste-a-token sign-in field
   const [repoQuery, setRepoQuery] = useState("");            // repo-picker search box
   const [newRepoPrivate, setNewRepoPrivate] = useState(true);
-  const [showBranches, setShowBranches] = useState(false); // branch (fork/merge) section open?
+  // Branch dropdown: null, or {mode, top, right}. mode "switch" = the pill's
+  // switch/fork/merge/delete overlay; mode "worktree" = the + button's "open a
+  // branch as a parallel project" picker.
+  const [branchMenu, setBranchMenu] = useState(null);
+  const branchMenuRef = useRef(null);
+  const branchBarRef = useRef(null);
+  // Lazy per-branch GitHub freshness, fetched when the dropdown opens:
+  // null = idle, {loading:true}, or {map:{name:{stale}}}.
+  const [fresh, setFresh] = useState(null);
   const [newBranch, setNewBranch] = useState("");          // new-branch name field
   const [scope, setScope] = useState("");     // "" = whole project, else a prototype slug (commit + merge scope)
   const [diff, setDiff] = useState(null);   // compare modal: {title, loading, data, error}
@@ -15930,6 +15939,66 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
     if (j) { flashNote("Deleted " + name); reload(); }
   };
 
+  // ── Parallel projects (git worktrees): a second branch open at the same
+  //    time as a sibling project, instead of switching in place. ─────────────
+  const openProject = (id) => {
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.set("project", id);
+      window.location.href = u.toString();
+    } catch {}
+  };
+  const doAddWorktree = async (name) => {
+    const j = await op("branch-worktree", { name });
+    if (!j) return;
+    setBranchMenu(null);
+    if (j.projectId && (await uiConfirm(
+      "'" + name + "' is now open in parallel as project '" + j.projectId + "'.\n\n" +
+      "Both branches stay editable at the same time - no more switching. Open it now?")))
+      openProject(j.projectId);
+    else if (j.projectId) flashNote("Created parallel project " + j.projectId);
+    reload();
+  };
+
+  // Open the overlay dropdown anchored under the branch bar; kick off the
+  // (network) freshness probe so rows can grow their "stale vs GitHub" badge.
+  const openBranchMenu = (mode) => {
+    const el = branchBarRef.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    setBranchMenu({ mode, top: Math.round(r.bottom + 6), right: Math.round(window.innerWidth - r.right) });
+    if (st && st.remote) {
+      setFresh({ loading: true });
+      fetch(gurl("/__git/freshness"))
+        .then(r2 => (r2.ok ? r2.json() : null))
+        .then(j => setFresh({ map: (j && j.branches) || {} }))
+        .catch(() => setFresh({ map: {} }));
+    } else setFresh(null);
+  };
+  useEffect(() => {
+    if (!branchMenu) return;
+    const onDown = (e) => {
+      if (branchMenuRef.current && branchMenuRef.current.contains(e.target)) return;
+      if (branchBarRef.current && branchBarRef.current.contains(e.target)) return;
+      setBranchMenu(null);
+    };
+    const onKey = (e) => { if (e.key === "Escape") setBranchMenu(null); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [branchMenu]);
+
+  // "updated 3d ago" from a unix-seconds branch tip date.
+  const agoLabel = (unix) => {
+    if (!unix) return "";
+    const s = Math.max(0, Math.floor(Date.now() / 1000 - unix));
+    if (s < 60) return "just now";
+    const m = Math.floor(s / 60); if (m < 60) return m + "m ago";
+    const h = Math.floor(m / 60); if (h < 24) return h + "h ago";
+    const d = Math.floor(h / 24); if (d < 30) return d + "d ago";
+    const mo = Math.floor(d / 30); if (mo < 12) return mo + "mo ago";
+    return Math.floor(mo / 12) + "y ago";
+  };
+
   // ── GitHub pull-request (the collaboration / GitHub-side merge path) ───────
   const doOpenPR = async () => {
     if (curBranch === "main" || curBranch === "master") {
@@ -16179,42 +16248,76 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
 
             ${!isGuest && html`
               <div className="th-git-branches">
-                <div className="th-git-branch-cur">
-                  <${Icon.Branch}/>
-                  <span className="th-git-branch-name" title="Current git branch (not a Woven prototype)">${curBranch}</span>
-                  <button className="th-git-link" onClick=${() => setShowBranches(v => !v)}>
-                    ${showBranches ? "Hide" : "Branches (" + branchList.length + ")"}</button>
+                <div className="th-git-branchbar" ref=${branchBarRef}>
+                  <button className=${"th-git-branchpill" + (branchMenu && branchMenu.mode === "switch" ? " is-open" : "")}
+                    title="Current git branch - switch, fork, merge or delete branches"
+                    onClick=${() => (branchMenu && branchMenu.mode === "switch") ? setBranchMenu(null) : openBranchMenu("switch")}>
+                    <${Icon.Branch}/>
+                    <span className="th-git-branch-name">${curBranch}</span>
+                    <span className="th-git-branchpill-swap"><${Icon.Swap}/></span>
+                  </button>
+                  ${!urlSuffix && activeProjectId() && html`
+                    <button className=${"th-git-wtadd" + (branchMenu && branchMenu.mode === "worktree" ? " is-open" : "")}
+                      title="Open another branch in parallel - it becomes a sibling project, no switching"
+                      onClick=${() => (branchMenu && branchMenu.mode === "worktree") ? setBranchMenu(null) : openBranchMenu("worktree")}>
+                      <${Icon.Plus}/>
+                    </button>`}
                 </div>
-                ${showBranches && html`
-                  <div className="th-git-branch-body">
-                    <div className="th-git-create">
-                      <input className="th-git-input" placeholder="new-branch-name"
-                        value=${newBranch} onInput=${e => setNewBranch(e.target.value)}
-                        onKeyDown=${e => { if (e.key === "Enter") doCreateBranch(); }} />
-                      <button className="th-git-btn is-primary" disabled=${!newBranch.trim() || busy === "branch-create"} onClick=${doCreateBranch}
-                        title="Fork a new branch off the current one, carrying your edits">
-                        <${Icon.Fork}/> ${busy === "branch-create" ? "Forking…" : "Fork"}</button>
+                ${branchMenu && createPortal(html`
+                  <div ref=${branchMenuRef} className="th-git-branchmenu"
+                    style=${{ top: branchMenu.top + "px", right: branchMenu.right + "px" }}>
+                    <div className="th-git-branchmenu-head">
+                      <span>${branchMenu.mode === "worktree" ? "Open a branch in parallel" : "Branches (" + branchList.length + ")"}</span>
+                      ${fresh && fresh.loading && html`<span className="th-git-fresh-loading"><span className="th-git-inflight-dot"/>checking GitHub…</span>`}
                     </div>
+                    ${branchMenu.mode === "worktree" && html`
+                      <div className="th-git-branchmenu-hint">
+                        The branch opens as its own project next to this one - both stay editable at the same time, nothing to switch or discard.</div>`}
+                    ${branchMenu.mode === "switch" && html`
+                      <div className="th-git-create">
+                        <input className="th-git-input" placeholder="new-branch-name"
+                          value=${newBranch} onInput=${e => setNewBranch(e.target.value)}
+                          onKeyDown=${e => { if (e.key === "Enter") doCreateBranch(); }} />
+                        <button className="th-git-btn is-primary" disabled=${!newBranch.trim() || busy === "branch-create"} onClick=${doCreateBranch}
+                          title="Fork a new branch off the current one, carrying your edits">
+                          <${Icon.Fork}/> ${busy === "branch-create" ? "Forking…" : "Fork"}</button>
+                      </div>`}
                     <div className="th-git-branch-list">
-                      ${branchList.map(b => html`
+                      ${branchList.map(b => {
+                        const fr = fresh && fresh.map ? fresh.map[b.name] : null;
+                        const inWt = b.worktreeProject || "";
+                        const onPick = () => {
+                          if (b.current || busy) return;
+                          if (inWt) { openProject(inWt); return; }
+                          if (branchMenu.mode === "worktree") { doAddWorktree(b.name); return; }
+                          setBranchMenu(null); doSwitchBranch(b.name);
+                        };
+                        return html`
                         <div className=${"th-git-branch-item" + (b.current ? " is-current" : "")} key=${b.name}>
-                          <button className="th-git-branch-pick" disabled=${b.current || !!busy} onClick=${() => doSwitchBranch(b.name)}
-                            title=${b.current ? "Current branch" : "Switch to this branch"}>
+                          <button className="th-git-branch-pick" disabled=${b.current || !!busy} onClick=${onPick}
+                            title=${b.current ? "Current branch"
+                              : inWt ? "Open the parallel project '" + inWt + "' (this branch lives there)"
+                              : branchMenu.mode === "worktree" ? "Open '" + b.name + "' as a parallel project"
+                              : "Switch to this branch"}>
                             <span className="th-git-branch-pick-name">${b.name}</span>
                             ${b.current && html`<span className="th-git-pill">current</span>`}
+                            ${inWt && html`<span className="th-git-pill is-worktree">parallel</span>`}
                             ${b.ahead > 0 && html`<span className="th-git-pill is-ahead">↑${b.ahead}</span>`}
                             ${b.behind > 0 && html`<span className="th-git-pill is-behind">↓${b.behind}</span>`}
+                            ${fr && fr.stale && html`<span className="th-git-pill is-stale" title="GitHub has newer commits on this branch than your computer - pull to catch up">stale</span>`}
+                            ${b.updatedAt > 0 && html`<span className="th-git-branch-upd" title="Last commit on this branch">${agoLabel(b.updatedAt)}</span>`}
                           </button>
-                          ${!b.current && html`
+                          ${branchMenu.mode === "switch" && !b.current && html`
                             <button className="th-icon-btn" disabled=${!!busy} onClick=${() => doMergeBranch(b.name)}
                               title=${scope
                                 ? "Take prototype '" + scope + "' from " + b.name + " (scope is set above - everything else stays untouched)"
                                 : "Merge " + b.name + " into " + curBranch}><${Icon.Merge}/></button>
-                            <button className="th-icon-btn" disabled=${!!busy} onClick=${() => doDeleteBranch(b.name)}
-                              title=${"Delete " + b.name}><${Icon.Trash}/></button>`}
-                        </div>`)}
+                            <button className="th-icon-btn" disabled=${!!busy || !!inWt} onClick=${() => doDeleteBranch(b.name)}
+                              title=${inWt ? "Close the parallel project before deleting this branch" : "Delete " + b.name}><${Icon.Trash}/></button>`}
+                        </div>`;
+                      })}
                     </div>
-                  </div>`}
+                  </div>`, document.body)}
               </div>`}
 
             ${!isGuest && html`
