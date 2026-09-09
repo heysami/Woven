@@ -6370,6 +6370,32 @@ body:has(.workflow-body[data-view="proto"]) .canvas-ctxmenu {
   z-index: 30;
   padding: 6px 0 8px;
 }
+.workflow-proto-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 10px 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+}
+.workflow-proto-picker-search:focus-within {
+  border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 45%, var(--border));
+}
+.workflow-proto-picker-search-glyph { display: inline-flex; flex: 0 0 auto; color: var(--text-faint); }
+.workflow-proto-picker-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+}
+.workflow-proto-picker-search input::placeholder { color: var(--text-faint); }
+.workflow-proto-picker-search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 .workflow-proto-picker-head {
   padding: 8px 14px 6px;
   font-size: 11px;
@@ -6662,6 +6688,7 @@ body:has(.workflow-body[data-view="proto"]) .canvas-ctxmenu {
   flex: 0 0 auto;
 }
 .pv-panel-filter:focus { border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 45%, var(--border)); }
+.pv-panel-filter::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 .pv-panel-kindbar {
   display: flex;
   flex-wrap: wrap;
@@ -8588,9 +8615,62 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 /* List/grid toggle for the Outputs tab. Two radio buttons styled as a
    compact segmented control. */
 /* v3.13 - Outputs view toggle moved into the head row, top-right, icon-only. */
-.workflow-library-head { justify-content: space-between; }
+.workflow-library-head { justify-content: space-between; flex-wrap: wrap; row-gap: 6px; }
 .workflow-library-head .workflow-library-viewtoggle { padding: 0; border-bottom: 0; gap: 2px; }
 .workflow-library-head .workflow-library-viewtoggle-btn { flex: none; padding: 4px 7px; }
+
+/* Search box in the library head - narrows the Prototypes / DS pages / HTML
+   pages / Visual assets sections. Sits left of the view toggle and takes the
+   free width. The head is uppercase mono for its title role, so every
+   inherited type property is reset on the field itself. */
+.workflow-library-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* Wide enough to read a query in - below that the head wraps and the search
+     takes a full row of its own rather than collapsing to a sliver. */
+  flex: 1 1 130px;
+  min-width: 130px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+}
+.workflow-library-search:focus-within {
+  border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 45%, var(--border));
+}
+.workflow-library-search-glyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+.workflow-library-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.workflow-library-search-input::placeholder { color: var(--text-faint); }
+.workflow-library-search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.workflow-library-search-clear {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.workflow-library-search-clear:hover { color: var(--text); }
 
 .workflow-library-viewtoggle {
   display: flex;

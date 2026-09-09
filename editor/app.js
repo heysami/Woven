@@ -61189,6 +61189,10 @@ function PreviewAssetsPanel({ activePath, onClose }) {
 function PreviewFilesPanel({ activePath, onClose }) {
   const [entries, setEntries] = useState(null);   // null = loading
   const [collapsed, setCollapsed] = useState(() => new Set());
+  // Search over the whole source/ tree - label + path, whitespace-separated
+  // tokens that must all match. While a query is live every folder renders
+  // expanded (a hit three levels down is useless behind a collapsed dir).
+  const [filter, setFilter] = useState("");
   const load = useCallback(async () => {
     try {
       const [pr, hp] = await Promise.all([
@@ -61228,11 +61232,21 @@ function PreviewFilesPanel({ activePath, onClose }) {
     return () => { clearTimeout(t); window.removeEventListener("th:asset-refresh", onAsset); };
   }, [load]);
 
+  const q = filter.trim().toLowerCase();
+  const qTokens = useMemo(() => q.split(/\s+/).filter(Boolean), [q]);
+  const matched = useMemo(() => {
+    if (!qTokens.length) return entries;
+    return (entries || []).filter(e => {
+      const hay = ((e.label || "") + " " + (e.path || "")).toLowerCase();
+      return qTokens.every(t => hay.includes(t));
+    });
+  }, [entries, qTokens]);
+
   // Fold the flat path list into a directory tree under source/.
   const tree = useMemo(() => {
     const mkDir = (name, full) => ({ name, full, dirs: new Map(), files: [] });
     const root = mkDir("source", "source");
-    for (const e of entries || []) {
+    for (const e of matched || []) {
       const segs = e.path.split("/").filter(Boolean);
       if (segs[0] !== "source") continue;
       let node = root;
@@ -61245,7 +61259,7 @@ function PreviewFilesPanel({ activePath, onClose }) {
       node.files.push(e);
     }
     return root;
-  }, [entries]);
+  }, [matched]);
   const toggleDir = (full) => setCollapsed(s => {
     const next = new Set(s);
     if (next.has(full)) next.delete(full); else next.add(full);
@@ -61255,7 +61269,7 @@ function PreviewFilesPanel({ activePath, onClose }) {
     window.dispatchEvent(new CustomEvent("th:proto-open-tab", { detail: { path: e.path, label: e.label } }));
   };
   const renderDir = (dir, depth) => {
-    const isCollapsed = collapsed.has(dir.full);
+    const isCollapsed = !q && collapsed.has(dir.full);
     const subdirs = Array.from(dir.dirs.values()).sort((a, b) => a.name.localeCompare(b.name));
     const files = dir.files.slice().sort((a, b) => {
       const ai = a.path.endsWith("/index.html") ? 0 : 1;
@@ -61313,12 +61327,13 @@ function PreviewFilesPanel({ activePath, onClose }) {
     `;
   };
   const total = (entries || []).length;
+  const shown = (matched || []).length;
   return html`
     <div className="pv-panel pv-files-panel">
       <div className="pv-panel-head">
         <div className="pv-panel-title-wrap">
           <div className="pv-panel-title">Files</div>
-          ${entries !== null && html`<div className="pv-panel-sub">source/ · ${total} page${total === 1 ? "" : "s"}</div>`}
+          ${entries !== null && html`<div className="pv-panel-sub">source/ · ${q ? shown + " of " + total : total} page${(q ? shown : total) === 1 ? "" : "s"}</div>`}
         </div>
         <${HoverTip}
           className="pv-panel-tool"
@@ -61328,10 +61343,20 @@ function PreviewFilesPanel({ activePath, onClose }) {
         ><${Icon.Refresh}/><//>
         <button type="button" className="pv-panel-close" title="Close" aria-label="Close panel" onClick=${onClose}>×</button>
       </div>
+      <input
+        className="pv-panel-filter"
+        type="search"
+        placeholder="search prototypes and pages…"
+        aria-label="Search prototypes and pages"
+        value=${filter}
+        onInput=${(e) => setFilter(e.target.value)}
+        onKeyDown=${(e) => { if (e.key === "Escape") { e.stopPropagation(); setFilter(""); } }}
+      />
       <div className="pv-panel-list pv-file-tree">
         ${entries === null && html`<div className="pv-panel-empty">Loading…</div>`}
         ${entries !== null && total === 0 && html`<div className="pv-panel-empty">No prototype pages under source/ yet.</div>`}
-        ${entries !== null && total > 0 && renderDir(tree, 0)}
+        ${entries !== null && total > 0 && shown === 0 && html`<div className="pv-panel-empty">No pages match "${filter.trim()}".</div>`}
+        ${entries !== null && shown > 0 && renderDir(tree, 0)}
       </div>
     </div>
   `;
@@ -61587,9 +61612,11 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
   // "+" picker - fetches the same lists the library's Outputs tab shows.
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickList, setPickList] = useState(null);   // null = loading
+  const [pickQuery, setPickQuery] = useState("");
   const openPicker = useCallback(async () => {
     setPickerOpen(true);
     setPickList(null);
+    setPickQuery("");
     try {
       const [pr, hp] = await Promise.all([
         fetch(apiUrl("/__source_prototypes")).then(r => r.ok ? r.json() : { prototypes: [] }).catch(() => ({ prototypes: [] })),
@@ -61625,6 +61652,23 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
     })();
     return () => { cancelled = true; };
   }, [active, tabs.length, addTab]);
+  // "+" picker search - one box over both sections (prototypes + generated
+  // pages), matching label / id / path. Enter opens the first hit.
+  const pickQ = pickQuery.trim().toLowerCase();
+  const pickTokens = pickQ.split(/\s+/).filter(Boolean);
+  const pickHit = (...fields) => {
+    if (!pickTokens.length) return true;
+    const hay = fields.filter(f => typeof f === "string" && f).join(" ").toLowerCase();
+    return pickTokens.every(t => hay.includes(t));
+  };
+  const pickProtos = (pickList ? pickList.protos : []).filter(p => pickHit(p.label, p.id, p.path));
+  const pickHtmls  = (pickList ? pickList.htmls  : []).filter(p => pickHit(p.label, p.path));
+  const openFirstPick = () => {
+    const p = pickProtos[0];
+    if (p) { addTab(p.path, p.label || p.id); return; }
+    const h = pickHtmls[0];
+    if (h) addTab(h.path, h.label || h.path.split("/").pop());
+  };
   const activeTab = tabs.find(t => t.id === activeId) || null;
   const activeNav = (activeId && navControls[activeId]) || null;
   // Code tabs are a text editor, not a rendered page - device/zoom/nav/edit
@@ -61788,20 +61832,40 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
       ${pickerOpen && html`
         <div className="workflow-proto-picker-backdrop" onClick=${() => setPickerOpen(false)}/>
         <div className="workflow-proto-picker" role="menu">
+          <div className="workflow-proto-picker-search">
+            <span className="workflow-proto-picker-search-glyph" aria-hidden="true"><${Icon.Search}/></span>
+            <input
+              type="search"
+              autoFocus
+              value=${pickQuery}
+              placeholder="Search prototypes and pages…"
+              aria-label="Search prototypes and pages"
+              onInput=${(e) => setPickQuery(e.target.value)}
+              onKeyDown=${(e) => {
+                if (e.key === "Escape") { e.stopPropagation(); if (pickQuery) setPickQuery(""); else setPickerOpen(false); }
+                if (e.key === "Enter")  { e.preventDefault(); openFirstPick(); }
+              }}
+            />
+          </div>
           ${pickList === null && html`<div className="workflow-proto-picker-empty">Loading…</div>`}
+          ${pickList !== null && pickQ && pickProtos.length === 0 && pickHtmls.length === 0 && html`
+            <div className="workflow-proto-picker-empty">No prototypes or pages match "${pickQuery.trim()}".</div>
+          `}
           ${pickList !== null && html`
+            ${(!pickQ || pickProtos.length > 0) && html`
             <div className="workflow-proto-picker-head">Prototypes</div>
-            ${pickList.protos.length === 0 && html`<div className="workflow-proto-picker-empty">No prototypes under source/ yet.</div>`}
-            ${pickList.protos.map(p => html`
+            ${pickProtos.length === 0 && html`<div className="workflow-proto-picker-empty">No prototypes under source/ yet.</div>`}
+            `}
+            ${pickProtos.map(p => html`
               <div key=${"proto:" + p.id} className="workflow-proto-picker-item" role="menuitem" onClick=${() => addTab(p.path, p.label || p.id)}>
                 <span className="workflow-proto-picker-item-glyph"><${Icon.Play}/></span>
                 <span className="workflow-proto-picker-item-label">${p.label || p.id}</span>
                 <span className="workflow-proto-picker-item-path">${p.path}</span>
               </div>
             `)}
-            ${pickList.htmls.length > 0 && html`
+            ${pickHtmls.length > 0 && html`
               <div className="workflow-proto-picker-head">Generated pages</div>
-              ${pickList.htmls.map(p => html`
+              ${pickHtmls.map(p => html`
                 <div key=${"html:" + p.path} className="workflow-proto-picker-item" role="menuitem" onClick=${() => addTab(p.path, p.label || p.path.split("/").pop())}>
                   <span className="workflow-proto-picker-item-glyph"><${Icon.Canvas}/></span>
                   <span className="workflow-proto-picker-item-label">${p.label || p.path.split("/").pop()}</span>
@@ -61871,6 +61935,12 @@ function WorkflowLibrary({ tab = "nodes" }) {
   // (image / svg / shader thumbs), so the user usually wants to scan the
   // grid first; the list view is the secondary, name-driven mode.
   const [outputsView, setOutputsView] = useState("grid");
+  // Search box shared by the "protos" and "visual" panels. Filters every
+  // section those panels render (prototypes / DS pages / HTML pages / visual
+  // assets) on label + path + kind. Whitespace splits into tokens that must
+  // ALL match, so "hero png" narrows the way people expect. Cleared when the
+  // user switches library panels.
+  const [libQuery, setLibQuery] = useState("");
   // Multi-select for bulk delete of visual assets AND generated HTML pages
   // (moved here off the canvas nodes). Holds selected PATHS; a floating
   // bulk-delete bar appears when non-empty (reuses WorkflowBulkDeleteBar).
@@ -61992,8 +62062,8 @@ function WorkflowLibrary({ tab = "nodes" }) {
       window.removeEventListener("th:thumbnail-prototype-changed", onThumb);
     };
   }, [reload]);
-  // Reset the bulk selection when the user switches library panels.
-  useEffect(() => { clearAssetSel(); }, [tab, clearAssetSel]);
+  // Reset the bulk selection + the search box when the user switches panels.
+  useEffect(() => { clearAssetSel(); setLibQuery(""); }, [tab, clearAssetSel]);
   // Prune selected paths that no longer exist after a reload (deleted/renamed).
   // Live set spans BOTH selectable kinds: visual assets + generated HTML pages.
   useEffect(() => {
@@ -62055,6 +62125,31 @@ function WorkflowLibrary({ tab = "nodes" }) {
     }
     return { scenes, videoMotion, imageSvg, other };
   }, [assets]);
+
+  // ── Library search ────────────────────────────────────────────────────
+  // One matcher, four filtered lists - the "protos" panel's three sections
+  // and the "visual" panel's asset list all narrow from the same box.
+  const libQ = libQuery.trim().toLowerCase();
+  const libTokens = useMemo(() => libQ.split(/\s+/).filter(Boolean), [libQ]);
+  const libMatch = useCallback((...fields) => {
+    if (!libTokens.length) return true;
+    const hay = fields.filter(f => typeof f === "string" && f).join(" ").toLowerCase();
+    return libTokens.every(t => hay.includes(t));
+  }, [libTokens]);
+  const shownProtos = useMemo(
+    () => extraProtos.filter(p => libMatch(p.label, p.id, p.path, p.branch)),
+    [extraProtos, libMatch]);
+  const shownDsPages = useMemo(
+    () => dsPages.filter(p => libMatch(p.label, p.path, p.kind)),
+    [dsPages, libMatch]);
+  const shownHtmlPages = useMemo(
+    () => htmlPages.filter(p => libMatch(p.label, p.path, p.kind)),
+    [htmlPages, libMatch]);
+  const shownAssets = useMemo(
+    () => assets.filter(a => libMatch(a.name, a.path, a.kind)),
+    [assets, libMatch]);
+  const libSearchCount = tab === "visual" ? assets.length
+    : (extraProtos.length + dsPages.length + htmlPages.length);
 
   const deleteAsset = async (path) => {
     if (!await uiConfirm(`Delete ${path} from disk?\nThis is destructive - nodes referencing it will show "missing".`)) return;
@@ -62544,6 +62639,30 @@ function WorkflowLibrary({ tab = "nodes" }) {
       `}
       ${(tab === "protos" || tab === "visual") && html`
       <div className="workflow-library-head">
+          <div className="workflow-library-search">
+            <span className="workflow-library-search-glyph" aria-hidden="true"><${Icon.Search}/></span>
+            <input
+              type="search"
+              className="workflow-library-search-input"
+              value=${libQuery}
+              placeholder=${tab === "visual" ? "Search assets…" : "Search pages…"}
+              title=${tab === "visual"
+                ? "Search " + libSearchCount + " asset" + (libSearchCount === 1 ? "" : "s") + " by name, path or kind"
+                : "Search " + libSearchCount + " prototype" + (libSearchCount === 1 ? "" : "s") + " and page" + (libSearchCount === 1 ? "" : "s") + " by name or path"}
+              aria-label=${tab === "visual" ? "Search assets" : "Search prototypes and pages"}
+              onInput=${(e) => setLibQuery(e.target.value)}
+              onKeyDown=${(e) => { if (e.key === "Escape") { e.stopPropagation(); setLibQuery(""); } }}
+            />
+            ${libQ && html`
+              <button
+                type="button"
+                className="workflow-library-search-clear"
+                title="Clear search"
+                aria-label="Clear search"
+                onClick=${() => setLibQuery("")}
+              >×</button>
+            `}
+          </div>
           <div className="workflow-library-viewtoggle" role="radiogroup" aria-label="View mode">
             <button
               role="radio"
@@ -63239,13 +63358,17 @@ function WorkflowLibrary({ tab = "nodes" }) {
       </div>
       ` : null}
       ${tab === "protos" ? html`
+      ${libQ && shownProtos.length === 0 && shownDsPages.length === 0 && shownHtmlPages.length === 0 && html`
+        <div className="workflow-library-empty">No prototypes or pages match "${libQuery.trim()}".</div>
+      `}
+      ${(!libQ || shownProtos.length > 0) && html`
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">Prototypes</div>
-        ${(extraProtos.length === 0)
+        ${(shownProtos.length === 0)
           ? html`<div className="workflow-library-empty">No prototypes yet. When the agent writes <code>source/${"<slug>"}/index.html</code>, it shows up here AND auto-mounts a Prototype node on the canvas.</div>`
           : (outputsView === "list"
             ? html`<div className="workflow-library-list">
-                ${extraProtos.map(p => {
+                ${shownProtos.map(p => {
                   const isDeep = p.depth > 1;
                   const branchSeg = isDeep ? p.branch : p.id;
                   const lockedState = isDeep ? { pathname: "/" + p.path, hash: "" } : null;
@@ -63274,7 +63397,7 @@ function WorkflowLibrary({ tab = "nodes" }) {
                 })}
               </div>`
             : html`<div className="workflow-library-grid">
-                ${extraProtos.map(p => {
+                ${shownProtos.map(p => {
                   const isDeep = p.depth > 1;
                   const branchSeg = isDeep ? p.branch : p.id;
                   const lockedState = isDeep ? { pathname: "/" + p.path, hash: "" } : null;
@@ -63309,29 +63432,34 @@ function WorkflowLibrary({ tab = "nodes" }) {
               </div>`)
         }
       </div>
+      `}
+      ${(!libQ || shownDsPages.length > 0) && html`
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">Design system pages</div>
-        ${dsPages.length === 0
+        ${shownDsPages.length === 0
           ? html`<div className="workflow-library-empty">No DS pages yet. The DS-brainstorm node writes <code>_ds_brainstorm/${"<variant>"}/</code> under <code>source/</code>; any DS library's <code>design-systems/${"<id>"}/gallery.html</code> also lands here.</div>`
           : html`<div className=${outputsView === "grid" ? "workflow-library-grid" : "workflow-library-list"}>
-              ${dsPages.map(p => renderHtmlItem(p, outputsView))}
+              ${shownDsPages.map(p => renderHtmlItem(p, outputsView))}
             </div>`}
       </div>
+      `}
+      ${(!libQ || shownHtmlPages.length > 0) && html`
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">HTML pages · components</div>
-        ${htmlPages.length === 0
+        ${shownHtmlPages.length === 0
           ? html`<div className="workflow-library-empty">No generated HTML pages yet. Run any agent that writes <code>.html</code> under <code>source/</code> (other than the scene outputs in <code>images/</code>) or the DS pages that land in the Design system pages section above.</div>`
           : html`<div className=${outputsView === "grid" ? "workflow-library-grid" : "workflow-library-list"}>
-              ${htmlPages.map(p => renderHtmlItem(p, outputsView))}
+              ${shownHtmlPages.map(p => renderHtmlItem(p, outputsView))}
             </div>`}
       </div>
+      `}
       ` : null}
       ${tab === "visual" ? html`
       <div className="workflow-library-section">
         <div className="workflow-library-section-head">Assets</div>
         ${outputsView === "list" ? html`
           <div className="workflow-library-list">
-            <div
+            ${!libQ && html`<div
               className="workflow-library-item"
               draggable=${true}
               onDragStart=${(e) => {
@@ -63347,12 +63475,12 @@ function WorkflowLibrary({ tab = "nodes" }) {
               <span className="workflow-library-item-glyph"><${Icon.Plus}/></span>
               <span className="workflow-library-item-label">New image asset</span>
               <span className="workflow-library-item-id">empty</span>
-            </div>
-            ${assets.map(a => renderAssetItem(a, "list"))}
+            </div>`}
+            ${shownAssets.map(a => renderAssetItem(a, "list"))}
           </div>
         ` : html`
           <div className="workflow-library-grid">
-            <div
+            ${!libQ && html`<div
               className="workflow-library-card workflow-library-card-new"
               draggable=${true}
               onDragStart=${(e) => {
@@ -63369,8 +63497,14 @@ function WorkflowLibrary({ tab = "nodes" }) {
                 <span className="workflow-library-card-thumb-glyph">＋</span>
               </div>
               <div className="workflow-library-card-label">New image asset</div>
-            </div>
-            ${assets.map(a => renderAssetItem(a, "grid"))}
+            </div>`}
+            ${shownAssets.map(a => renderAssetItem(a, "grid"))}
+          </div>
+        `}
+        ${shownAssets.length === 0 && html`
+          <div className="workflow-library-empty">
+            ${libQ ? html`No assets match "${libQuery.trim()}".`
+                   : html`No visual assets yet. Run an image / video / scene skill, or drop files into <code>source/</code>.`}
           </div>
         `}
       </div>
