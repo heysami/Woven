@@ -858,6 +858,34 @@ def worktree_add(root, name, dest):
     return {"ok": True, "branch": n, "path": dest}
 
 
+def worktree_remove(root, name, force=False):
+    """Close the parallel checkout holding branch `name` (`git worktree remove`).
+    The branch and its commits stay in the repo - only the side-by-side folder
+    goes. Refuses the MAIN checkout and the checkout `root` itself; refuses a
+    dirty checkout unless force (git's own guard - force discards its edits)."""
+    if not is_repo(root):
+        raise RuntimeError("project is not a git repo")
+    n = (name or "").strip()
+    wts = list_worktrees(root)
+    target = None
+    for w in wts:
+        if w.get("branch") == n:
+            target = w
+            break
+    if not target or not target.get("path"):
+        raise RuntimeError(f"no parallel checkout holds branch {n!r}")
+    tpath = target["path"]
+    if wts and os.path.realpath(tpath) == os.path.realpath(wts[0].get("path") or ""):
+        raise RuntimeError("that is the project's main checkout - open it and close the others instead")
+    if os.path.realpath(tpath) == os.path.realpath(root):
+        raise RuntimeError("can't close the checkout you are currently in - do it from the main project")
+    args = ["worktree", "remove"] + (["--force"] if force else []) + [tpath]
+    code, out, err = _git(root, *args, timeout=60)
+    if code != 0:
+        raise RuntimeError(f"close parallel failed: {(err or out).strip()[:400]}")
+    return {"ok": True, "branch": n, "path": tpath}
+
+
 def branch_freshness(root, token=None):
     """Per-branch "is my local copy behind GitHub?" - ONE `ls-remote` network
     round-trip, then local ancestor checks. Returns {branches: {name: {stale,

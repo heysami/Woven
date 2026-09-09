@@ -5644,6 +5644,16 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   padding: 4px 10px;
 }
 .th-git-branchpill:hover, .th-git-branchpill.is-open { background: var(--surface-3, var(--surface-2)); border-color: color-mix(in oklab, var(--accent, #6aa6ff) 35%, var(--border)); }
+/* Sibling pills: one per branch open in PARALLEL (another project). Click
+   jumps to it; the x closes that parallel project (branch survives). */
+.th-git-branchpill.is-sibling { flex: 0 1 auto; cursor: pointer; color: var(--text-muted); }
+.th-git-branchpill.is-sibling .th-git-branch-name { font-weight: 500; color: inherit; }
+.th-git-branchpill.is-sibling:hover { color: var(--text); }
+.th-git-branchpill-go { flex: 0 0 auto; font-size: 11px; color: var(--text-faint, var(--text-muted)); }
+.th-git-branchpill.is-sibling:hover .th-git-branchpill-go { color: var(--accent, #6aa6ff); }
+.th-git-branchpill-x { flex: 0 0 auto; display: none; align-items: center; margin: -2px -4px -2px 0; padding: 2px; border-radius: 50%; color: var(--text-muted); }
+.th-git-branchpill.is-sibling:hover .th-git-branchpill-x { display: inline-flex; }
+.th-git-branchpill-x:hover { color: var(--danger, #dc2626); background: var(--surface-2); }
 .th-git-branchpill-swap { margin-left: auto; display: inline-flex; color: var(--text-muted); }
 .th-git-branchpill:hover .th-git-branchpill-swap, .th-git-branchpill.is-open .th-git-branchpill-swap { color: var(--text); }
 .th-git-wtadd {

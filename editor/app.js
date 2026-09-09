@@ -15960,6 +15960,20 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
     reload();
   };
 
+  const doCloseWorktree = async (name, projLabel) => {
+    if (!(await uiConfirm(
+      "Close the parallel project" + (projLabel ? " '" + projLabel + "'" : "") + " for branch '" + name + "'?\n\n" +
+      "The branch and its commits stay - only the side-by-side folder is removed. " +
+      "You can reopen it any time with the + button."))) return;
+    let j = await op("branch-worktree-remove", { name });
+    // Dirty checkout → the daemon refuses; offer a force that discards its edits.
+    if (j === null && (await uiConfirm(
+      "The parallel project for '" + name + "' has uncommitted changes.\n\n" +
+      "Discard them and close it anyway? This can't be undone.")))
+      j = await op("branch-worktree-remove", { name, force: true });
+    if (j) { flashNote("Closed the parallel project for " + name); reload(); }
+  };
+
   // Open the overlay dropdown anchored under the branch bar; kick off the
   // (network) freshness probe so rows can grow their "stale vs GitHub" badge.
   const openBranchMenu = (mode) => {
@@ -16256,6 +16270,19 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
                     <span className="th-git-branch-name">${curBranch}</span>
                     <span className="th-git-branchpill-swap"><${Icon.Swap}/></span>
                   </button>
+                  ${branchList.filter(b => b.worktreeProject).map(b => html`
+                    <span className="th-git-branchpill is-sibling" key=${b.name}
+                      title=${"'" + b.name + "' is open in parallel as project '" + b.worktreeProject + "'" + (b.worktreeMain ? " (the main project)" : "")}
+                      onClick=${() => openProject(b.worktreeProject)}>
+                      <${Icon.Branch}/>
+                      <span className="th-git-branch-name">${b.name}</span>
+                      <span className="th-git-branchpill-go">↗</span>
+                      ${!b.worktreeMain && html`
+                        <span className="th-git-branchpill-x" title=${"Close the parallel project '" + b.worktreeProject + "' (the branch stays)"}
+                          onClick=${(e) => { e.stopPropagation(); doCloseWorktree(b.name, b.worktreeProject); }}>
+                          <${Icon.X}/>
+                        </span>`}
+                    </span>`)}
                   ${!urlSuffix && activeProjectId() && html`
                     <button className=${"th-git-wtadd" + (branchMenu && branchMenu.mode === "worktree" ? " is-open" : "")}
                       title="Open another branch in parallel - it becomes a sibling project, no switching"
@@ -16286,9 +16313,11 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
                       ${branchList.map(b => {
                         const fr = fresh && fresh.map ? fresh.map[b.name] : null;
                         const inWt = b.worktreeProject || "";
+                        const inExt = b.worktreeExternal || "";
                         const onPick = () => {
                           if (b.current || busy) return;
                           if (inWt) { openProject(inWt); return; }
+                          if (inExt) { flashErr("'" + b.name + "' is checked out outside your projects (" + inExt + ") - remove that checkout first"); return; }
                           if (branchMenu.mode === "worktree") { doAddWorktree(b.name); return; }
                           setBranchMenu(null); doSwitchBranch(b.name);
                         };
@@ -16302,6 +16331,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
                             <span className="th-git-branch-pick-name">${b.name}</span>
                             ${b.current && html`<span className="th-git-pill">current</span>`}
                             ${inWt && html`<span className="th-git-pill is-worktree">parallel</span>`}
+                            ${inExt && html`<span className="th-git-pill is-worktree" title=${"Checked out outside your projects: " + inExt}>elsewhere</span>`}
                             ${b.ahead > 0 && html`<span className="th-git-pill is-ahead">↑${b.ahead}</span>`}
                             ${b.behind > 0 && html`<span className="th-git-pill is-behind">↓${b.behind}</span>`}
                             ${fr && fr.stale && html`<span className="th-git-pill is-stale" title="GitHub has newer commits on this branch than your computer - pull to catch up">stale</span>`}
@@ -16312,8 +16342,13 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
                               title=${scope
                                 ? "Take prototype '" + scope + "' from " + b.name + " (scope is set above - everything else stays untouched)"
                                 : "Merge " + b.name + " into " + curBranch}><${Icon.Merge}/></button>
-                            <button className="th-icon-btn" disabled=${!!busy || !!inWt} onClick=${() => doDeleteBranch(b.name)}
-                              title=${inWt ? "Close the parallel project before deleting this branch" : "Delete " + b.name}><${Icon.Trash}/></button>`}
+                            ${inWt && !b.worktreeMain
+                              ? html`<button className="th-icon-btn" disabled=${!!busy} onClick=${() => doCloseWorktree(b.name, inWt)}
+                                  title=${"Close the parallel project '" + inWt + "' (the branch stays)"}><${Icon.X}/></button>`
+                              : html`<button className="th-icon-btn" disabled=${!!busy || !!inWt || !!inExt} onClick=${() => doDeleteBranch(b.name)}
+                                  title=${inWt ? "This branch lives in the main project - delete it from there"
+                                    : inExt ? "Checked out elsewhere (" + inExt + ") - remove that checkout first"
+                                    : "Delete " + b.name}><${Icon.Trash}/></button>`}`}
                         </div>`;
                       })}
                     </div>

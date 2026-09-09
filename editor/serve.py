@@ -15008,7 +15008,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_mp = re.match(r"^/__multiplayer/(start|stop)$", parsed.path)
             if m_mp:
                 return self._multiplayer_op(m_mp.group(1), qs)
-            m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull|restore|discard-local|discard-remote|branch-create|branch-switch|branch-merge|branch-delete|branch-worktree)$", parsed.path)
+            m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull|restore|discard-local|discard-remote|branch-create|branch-switch|branch-merge|branch-delete|branch-worktree|branch-worktree-remove)$", parsed.path)
             if m_git:
                 return self._git_op(m_git.group(1), qs)
             m_gh = re.match(r"^/__github/(device/start|device/poll|signout|connect_repo|create_repo|token|fork|pr)$", parsed.path)
@@ -26434,7 +26434,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             if st.get("repo"):
                 try:
                     self_rp = os.path.realpath(root)
-                    for wt in _gitops.list_worktrees(root):
+                    wts = _gitops.list_worktrees(root)
+                    main_rp = os.path.realpath(wts[0]["path"]) if wts and wts[0].get("path") else ""
+                    for wt in wts:
                         wpath = wt.get("path") or ""
                         wbranch = wt.get("branch") or ""
                         if not wpath or not wbranch or os.path.realpath(wpath) == self_rp:
@@ -26442,7 +26444,16 @@ class H(http.server.SimpleHTTPRequestHandler):
                         wpid = _worktree_project_id(wpath)
                         for row in st["branches"]:
                             if row.get("name") == wbranch:
-                                row["worktreeProject"] = wpid or os.path.basename(wpath)
+                                # A projects/ sibling is navigable; anything else
+                                # (an agent's scratch worktree, a hand-made one)
+                                # is only display - never a jump target. The MAIN
+                                # checkout is jumpable but never closable.
+                                if wpid:
+                                    row["worktreeProject"] = wpid
+                                else:
+                                    row["worktreeExternal"] = os.path.basename(wpath)
+                                if os.path.realpath(wpath) == main_rp:
+                                    row["worktreeMain"] = True
                 except Exception:
                     pass
             # Local sync version (cheap). The remote comparison is NOT done here
@@ -26854,7 +26865,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # show progress after a tab reload and a second click is refused cleanly.
         mutating = op in ("commit", "publish", "pull", "restore", "discard-local", "discard-remote",
                           "branch-create", "branch-switch", "branch-merge", "branch-delete",
-                          "branch-worktree")
+                          "branch-worktree", "branch-worktree-remove")
         if mutating:
             now = time.time()
             with _GIT_INFLIGHT_LOCK:
@@ -27196,6 +27207,24 @@ class H(http.server.SimpleHTTPRequestHandler):
                 res = _gitops.worktree_add(root, name, _safe_join(PROJECTS_DIR, new_id))
                 return self._reply(200, {"ok": True, "branch": res.get("branch"),
                                          "projectId": new_id})
+            if op == "branch-worktree-remove":
+                # Close a parallel checkout. The branch survives; only the
+                # side-by-side folder goes. A dirty checkout needs force (the
+                # panel asks the user before discarding that work).
+                name = (body.get("name") or "").strip()
+                if not name:
+                    return self._reply(400, {"error": "branch name required"})
+                try:
+                    res = _gitops.worktree_remove(root, name, force=bool(body.get("force")))
+                except RuntimeError as e:
+                    msg = str(e)
+                    if "modified or untracked files" in msg or "use --force" in msg:
+                        return self._reply(409, {
+                            "error": "the parallel project for '" + name
+                                     + "' has uncommitted changes",
+                            "needsForce": True})
+                    raise
+                return self._reply(200, {"ok": True, **res})
             if op == "branch-delete":
                 res = _gitops.delete_branch(root, body.get("name") or "",
                                             force=bool(body.get("force")))
