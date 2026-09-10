@@ -16270,6 +16270,8 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
                     <span className="th-git-branch-name">${curBranch}</span>
                     <span className="th-git-branchpill-swap"><${Icon.Swap}/></span>
                   </button>
+                  ${branchList.some(b => b.worktreeProject) && html`
+                  <div className="th-git-branchtrack">
                   ${branchList.filter(b => b.worktreeProject).map(b => html`
                     <span className="th-git-branchpill is-sibling" key=${b.name}
                       title=${"'" + b.name + "' is open in parallel as project '" + b.worktreeProject + "'" + (b.worktreeMain ? " (the main project)" : "")}
@@ -16283,6 +16285,7 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
                           <${Icon.X}/>
                         </span>`}
                     </span>`)}
+                  </div>`}
                   ${!urlSuffix && activeProjectId() && html`
                     <button className=${"th-git-wtadd" + (branchMenu && branchMenu.mode === "worktree" ? " is-open" : "")}
                       title="Open another branch in parallel - it becomes a sibling project, no switching"

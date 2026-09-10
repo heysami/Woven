@@ -5630,25 +5630,51 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 /* Branches (fork / switch / merge) - real git branches, not Woven prototypes. */
 .th-git-branches { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
 .th-git-branch-name { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Branch bar: one pill (current branch + switch glyph) and a circular + that
-   opens a branch as a PARALLEL sibling project (git worktree). */
-.th-git-branchbar { display: flex; align-items: center; gap: 6px; }
-.th-git-branchpill {
-  flex: 1 1 auto; min-width: 0;
-  display: flex; align-items: center; gap: 6px;
-  font: inherit; text-align: left; cursor: pointer;
-  color: var(--text);
+/* Branch bar: a segmented-control TRACK. The pill for THIS project is raised
+   (white in light mode) so "which one am I in" reads at a glance; parallel
+   siblings are flat pills in a scrollable strip; the + stays pinned. */
+.th-git-branchbar {
+  display: flex; align-items: center; gap: 4px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 4px 10px;
+  padding: 3px;
 }
-.th-git-branchpill:hover, .th-git-branchpill.is-open { background: var(--surface-3, var(--surface-2)); border-color: color-mix(in oklab, var(--accent, #6aa6ff) 35%, var(--border)); }
-/* Sibling pills: one per branch open in PARALLEL (another project). Click
-   jumps to it; the x closes that parallel project (branch survives). */
-.th-git-branchpill.is-sibling { flex: 0 1 auto; cursor: pointer; color: var(--text-muted); }
+.th-git-branchpill {
+  flex: 1 1 auto; min-width: 104px;
+  display: flex; align-items: center; gap: 6px;
+  font: inherit; text-align: left; cursor: pointer;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.10);
+}
+.th-git-branchpill:hover, .th-git-branchpill.is-open { border-color: color-mix(in oklab, var(--accent, #6aa6ff) 40%, var(--border)); }
+/* Sibling strip: scrolls ONLY when the pills overflow (overflow-x: auto), so
+   nothing changes visually while everything still fits. */
+.th-git-branchtrack {
+  flex: 0 1 auto; min-width: 0;
+  display: flex; align-items: center; gap: 4px;
+  overflow-x: auto;
+  border-radius: 999px;
+  scrollbar-width: thin;
+}
+.th-git-branchtrack::-webkit-scrollbar { height: 3px; }
+.th-git-branchtrack::-webkit-scrollbar-track { background: transparent; }
+.th-git-branchtrack::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+/* Sibling pills: one per branch open in PARALLEL (another project). Flat on
+   the track (vs the raised current pill), floor width + ellipsis so a long
+   name never crushes its neighbours. Click jumps to it; the x closes that
+   parallel project (branch survives). */
+.th-git-branchpill.is-sibling {
+  flex: 0 0 auto; min-width: 84px; max-width: 150px;
+  cursor: pointer; color: var(--text-muted);
+  background: transparent; border-color: transparent; box-shadow: none;
+}
 .th-git-branchpill.is-sibling .th-git-branch-name { font-weight: 500; color: inherit; }
-.th-git-branchpill.is-sibling:hover { color: var(--text); }
+.th-git-branchpill.is-sibling:hover { color: var(--text); background: var(--surface-3, var(--surface-2)); border-color: var(--border); }
 .th-git-branchpill-go { flex: 0 0 auto; font-size: 11px; color: var(--text-faint, var(--text-muted)); }
 .th-git-branchpill.is-sibling:hover .th-git-branchpill-go { color: var(--accent, #6aa6ff); }
 .th-git-branchpill-x { flex: 0 0 auto; display: none; align-items: center; margin: -2px -4px -2px 0; padding: 2px; border-radius: 50%; color: var(--text-muted); }
@@ -5659,11 +5685,11 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-git-wtadd {
   flex: 0 0 auto;
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px;
+  width: 24px; height: 24px;
   cursor: pointer;
   color: var(--text-muted);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 50%;
 }
 .th-git-wtadd:hover, .th-git-wtadd.is-open { color: var(--text); background: var(--surface-3, var(--surface-2)); border-color: color-mix(in oklab, var(--accent, #6aa6ff) 35%, var(--border)); }
