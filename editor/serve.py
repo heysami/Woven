@@ -5134,6 +5134,40 @@ def _worktree_project_id(path):
     return ""
 
 
+def _worktree_link_info(path):
+    """When `path` is a LINKED git worktree (a parallel-branch project), return
+    {worktreeOf: <parent project id>, branch: <its branch>} so the project list
+    can badge it. Pure file reads - a linked checkout's `.git` is a one-line
+    FILE `gitdir: <parent>/.git/worktrees/<name>`, and that dir's HEAD says the
+    branch. None for a normal project (`.git` is a directory) or on any doubt."""
+    try:
+        gf = os.path.join(path, ".git")
+        if not os.path.isfile(gf):
+            return None
+        with open(gf, "r", encoding="utf-8") as f:
+            line = f.read().strip()
+        if not line.startswith("gitdir:"):
+            return None
+        gd = line[len("gitdir:"):].strip()
+        if not os.path.isabs(gd):
+            gd = os.path.normpath(os.path.join(path, gd))
+        m = re.match(r"^(.*)[/\\]\.git[/\\]worktrees[/\\][^/\\]+$", gd)
+        if not m:
+            return None
+        parent = os.path.basename(m.group(1))
+        branch = ""
+        try:
+            with open(os.path.join(gd, "HEAD"), "r", encoding="utf-8") as f:
+                head = f.read().strip()
+            if head.startswith("ref: refs/heads/"):
+                branch = head[len("ref: refs/heads/"):]
+        except OSError:
+            pass
+        return {"worktreeOf": parent, "branch": branch}
+    except Exception:
+        return None
+
+
 def _prune_baked_ds(ds_dir, style_id):
     """Strip template scaffolding the baked DS doesn't use, so it ships only
     its own look instead of all 9 starter overlays + build tools.
@@ -6455,6 +6489,13 @@ def _list_projects() -> list:
                 })
         except OSError:
             pass
+    # Badge parallel checkouts: a linked worktree gets {worktreeOf, branch} so
+    # the landing shows "branch of <parent>" instead of a lookalike project.
+    for entry in out:
+        wt = _worktree_link_info(entry.get("path") or "")
+        if wt:
+            entry["worktreeOf"] = wt["worktreeOf"]
+            entry["worktreeBranch"] = wt["branch"]
     return out
 
 
@@ -32044,6 +32085,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             if os.path.isdir(c): dest = c; break
         if not dest:
             return self._reply(404, {"error": "no such project", "id": proj_id})
+        wt = _worktree_link_info(dest)
+        if wt:
+            return self._reply(409, {
+                "error": "'" + proj_id + "' is branch '" + (wt["branch"] or "?")
+                         + "' of '" + wt["worktreeOf"] + "' opened in parallel - its name "
+                         + "follows the branch; manage it from '" + wt["worktreeOf"] + "'",
+                "worktreeOf": wt["worktreeOf"]})
         ws_json = os.path.join(WORKSPACE_DIR, "workspace.json")
         try:
             cfg = {}
@@ -32082,6 +32130,16 @@ class H(http.server.SimpleHTTPRequestHandler):
             if os.path.isdir(c): dest = c; break
         if not dest:
             return self._reply(404, {"error": "no such project", "id": proj_id})
+        # A parallel checkout is closed from its MAIN project (the x on its
+        # branch pill runs `git worktree remove`); trashing the folder here
+        # would strand stale worktree metadata in the parent repo.
+        wt = _worktree_link_info(dest)
+        if wt:
+            return self._reply(409, {
+                "error": "'" + proj_id + "' is branch '" + (wt["branch"] or "?")
+                         + "' of '" + wt["worktreeOf"] + "' opened in parallel - close it "
+                         + "from '" + wt["worktreeOf"] + "' (the x on its branch pill)",
+                "worktreeOf": wt["worktreeOf"]})
         # Don't let the user delete the install dir out from under themselves.
         try:
             if os.path.samefile(dest, INSTALL_ROOT):
@@ -32348,6 +32406,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             if os.path.isdir(c): src = c; break
         if not src:
             return self._reply(404, {"error": "no such project", "id": src_id})
+        # Copying a parallel checkout would clone its `.git` POINTER FILE into a
+        # folder the parent repo knows nothing about - a corrupt half-project.
+        wt = _worktree_link_info(src)
+        if wt:
+            return self._reply(409, {
+                "error": "'" + src_id + "' is branch '" + (wt["branch"] or "?")
+                         + "' of '" + wt["worktreeOf"] + "' opened in parallel - duplicate "
+                         + "from '" + wt["worktreeOf"] + "' instead",
+                "worktreeOf": wt["worktreeOf"]})
 
         # Source label: prefer the workspace.json entry, else fall back to id.
         ws_json = os.path.join(WORKSPACE_DIR, "workspace.json")

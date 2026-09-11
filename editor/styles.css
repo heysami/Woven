@@ -3422,6 +3422,20 @@ select.sysadd-input {
   opacity: 0;
   pointer-events: none;
 }
+/* Marker on a card that is a PARALLEL CHECKOUT (git worktree) of another
+   project: "branch-name of parent-project". */
+.landing-card-worktree {
+  display: inline-flex; align-items: center; gap: 5px;
+  justify-self: start; width: fit-content;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--accent, #6aa6ff);
+  background: color-mix(in srgb, var(--accent, #6aa6ff) 9%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent, #6aa6ff) 35%, var(--border));
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-top: 2px;
+}
 .landing-card-id {
   font-family: var(--font-mono);
   font-size: 11.5px;

@@ -31106,24 +31106,34 @@ function ProjectsLanding({ info, projects, onReload }) {
                       tip="Rename"
                       ariaLabel="Rename"
                       disabled=${busyId === p.id}
-                      onClick=${(e) => { e.stopPropagation(); setEditingId(p.id); setEditLabel(p.label || p.id); setErr(null); }}
+                      onClick=${(e) => { e.stopPropagation();
+                        if (p.worktreeOf) { uiAlert("'" + p.id + "' is branch '" + (p.worktreeBranch || "?") + "' of '" + p.worktreeOf + "' opened in parallel - its name follows the branch, so rename the branch from '" + p.worktreeOf + "' instead."); return; }
+                        setEditingId(p.id); setEditLabel(p.label || p.id); setErr(null); }}
                     ><${Icon.Pen}/><//>
                     <${HoverTip}
                       className="landing-card-action"
                       tip="Duplicate"
                       ariaLabel="Duplicate"
                       disabled=${busyId === p.id}
-                      onClick=${(e) => { e.stopPropagation(); duplicateProject(p.id, p.label); }}
+                      onClick=${(e) => { e.stopPropagation();
+                        if (p.worktreeOf) { uiAlert("'" + p.id + "' is branch '" + (p.worktreeBranch || "?") + "' of '" + p.worktreeOf + "' opened in parallel - duplicate from '" + p.worktreeOf + "' instead."); return; }
+                        duplicateProject(p.id, p.label); }}
                     ><${Icon.Copy}/><//>
                     <${HoverTip}
                       className="landing-card-action landing-card-action-danger"
                       tip="Delete"
                       ariaLabel="Delete"
                       disabled=${busyId === p.id}
-                      onClick=${(e) => { e.stopPropagation(); deleteProject(p.id, p.label); }}
+                      onClick=${(e) => { e.stopPropagation();
+                        if (p.worktreeOf) { uiAlert("'" + p.id + "' is branch '" + (p.worktreeBranch || "?") + "' of '" + p.worktreeOf + "' opened in parallel - close it from '" + p.worktreeOf + "': the x on its branch pill in the git panel."); return; }
+                        deleteProject(p.id, p.label); }}
                     ><${Icon.Trash}/><//>
                   </div>
                 </div>
+                ${p.worktreeOf && html`
+                  <div className="landing-card-worktree" title=${"Parallel checkout - branch '" + (p.worktreeBranch || "?") + "' of project '" + p.worktreeOf + "'. Close it from that project's branch pill."}>
+                    <${Icon.Branch}/> ${p.worktreeBranch || "branch"} of ${p.worktreeOf}
+                  </div>`}
                 ${p.label && p.label !== p.id ? html`<div className="landing-card-id">${p.id}</div>` : null}
                 ${(p.starredPrototypes || []).length > 0 && html`
                   <div className="landing-card-stars">
