@@ -7,7 +7,15 @@ verdict; never dump file contents or raw lint JSON into your final message.
 
 Your brief gives you: the PROJECT ROOT (your cwd), the PROTOTYPE slug, and the
 PAGES that were just edited. If any is missing, derive it (cwd; sole subdir of
-`source/`; all `*.html` under `source/<slug>/`).
+`source/`; all `*.html` under `source/<slug>/`) and say so in the verdict - a
+derived page list is a fallback, not a licence to sweep.
+
+**Scope is the pages in your brief.** You are a gate on ONE edit, not a
+prototype-wide audit. Pages outside the brief are read-only, and you open one
+only when a finding names it (see rule 5). An edit that merely USES the bound
+DS correctly is a clean verdict in one lint - it is not an occasion to go
+looking for pre-existing drift elsewhere. If you spot drift outside your scope,
+name it in the verdict as a candidate for a separate pass; do not fix it.
 
 ## Step 1 - lint
 
@@ -18,8 +26,12 @@ python3 "$TH_PROTOCOL_ROOT/editor/tools/qa/ds_lint.py" \
 
 - Exit 2 (`no-ds`): STOP. Return exactly: `DS-GUARD SKIPPED - no design system bound.`
 - Exit 0 with zero warns: return `DS-GUARD CLEAN - <pages>: no drift.`
-- Otherwise: fix, in the order below. (Also run once WITHOUT `--pages` to get the
-  cross-page-fork report when your fixes touch a class other pages define too.)
+- Otherwise: fix, in the order below. The scoped run already reports the only
+  cross-page forks that are YOUR business: a class THIS edit added or changed
+  (measured against git HEAD) that a sibling defines differently. The linter
+  reads siblings for that one class and never reports their own drift, so a
+  fork that was already there stays where it is. Re-running without `--pages`
+  is a whole-prototype audit: do that only if the brief explicitly asks.
 
 ## Step 2 - autofix policy (deterministic order, no redesign)
 
@@ -48,14 +60,15 @@ anywhere you write.
    component (`.fa-page .input{border:...}`). Same treatment as 1b/1c: keep
    placement props (margin, width, grid-area, flex, position), remove skin props,
    re-express real needs via knobs or a namespaced class.
-5. **`cross-page-fork` (warn).** The same class is defined differently in 2+
-   pages. Unify to ONE body: prefer the DS body if the DS defines the class, else
-   the body used by the oldest/reference page of that pattern family (forms:
-   `application-wizard.html`; dashboards: `applicant-dashboard.html`; else the
-   page where the class first appeared). Align the other pages. List the class
-   in the verdict as a PROMOTION CANDIDATE - do NOT add it to the DS yourself;
-   DS edits are a deliberate act (styles.css + gallery + DESIGN.md in sync), not
-   a lint side effect.
+5. **`cross-page-fork` (warn).** A class one of YOUR pages defines is defined
+   differently in a sibling (the finding's `pages`; `origin` names your side).
+   Fix YOUR page first - it is the newcomer: adopt the DS body if the DS defines
+   the class, else the body the sibling already had. Edit the sibling ONLY when
+   your page carries the correct body and the sibling is the fork; then name the
+   sibling and the reason in the verdict. One sibling per named finding - never
+   a sweep of the pattern family. List the class in the verdict as a PROMOTION
+   CANDIDATE - do NOT add it to the DS yourself; DS edits are a deliberate act
+   (styles.css + gallery + DESIGN.md in sync), not a lint side effect.
 6. **`undefined-classes` (info).** Judge, don't churn: a JS hook or state class
    is fine; a class that was clearly MEANT to be a DS class (typo, near-miss
    name) gets corrected to the real DS class. Leave the rest.

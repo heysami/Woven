@@ -27,6 +27,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -224,6 +225,42 @@ def extract_markup_classes(html):
     return {c for c in out if re.fullmatch(r"[A-Za-z_][\w-]*", c)}
 
 
+def bare_local_defs(html, ds_classes):
+    # type: (str, Set[str]) -> Dict[str, str]
+    """Page-local class definitions: `.foo{...}` at top level, class not in the
+    DS (DS names are a separate, louder finding). The unit the fork detector
+    and the git baseline both compare."""
+    defs = {}  # type: Dict[str, str]
+    for sel, body in parse_css_rules(extract_style_blocks(html)):
+        if not body.strip():
+            continue
+        for one_sel in sel.split(","):
+            one_sel = one_sel.strip()
+            if not one_sel:
+                continue
+            subj, has_context = subject_classes(one_sel)
+            if not has_context and len(subj) == 1:
+                cls = next(iter(subj))
+                if cls not in ds_classes:
+                    defs[cls] = normalize_body(body)
+    return defs
+
+
+def baseline_html(root, rel):
+    # type: (str, str) -> Optional[str]
+    """The committed text of `rel` (repo-relative-ish, resolved from `root`), or
+    None when git cannot answer - not a repo, no HEAD, or the file is new. None
+    means "no baseline": the caller must then claim nothing about what changed."""
+    try:
+        r = subprocess.run(["git", "-C", root, "show", "HEAD:./" + rel],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    return r.stdout.decode("utf-8", "replace")
+
+
 def lint_page(page_path, ds_vocab, shared_classes):
     # type: (str, Dict[str, object], Set[str]) -> Tuple[List[Dict[str, object]], Dict[str, str]]
     """Lint one page. Returns (findings, local_bare_defs) where
@@ -242,7 +279,9 @@ def lint_page(page_path, ds_vocab, shared_classes):
     # style="--knob: value" attributes on elements.
     local_tokens = set(re.findall(r"--([\w-]+)\s*:", css))
     local_tokens |= set(re.findall(r"--([\w-]+)\s*:", html))
-    local_bare_defs = {}    # type: Dict[str, str]
+    # Bare local definitions, for the cross-page fork detector (classes NOT in
+    # the DS - DS ones are already flagged above).
+    local_bare_defs = bare_local_defs(html, ds_classes)  # type: Dict[str, str]
 
     for sel, body in rules:
         local_classes |= classes_in_selector(sel)
@@ -281,12 +320,6 @@ def lint_page(page_path, ds_vocab, shared_classes):
                                       "placement is fine, skin/geometry belongs to the DS"
                                       % ", ".join(chrome[:6]),
                         })
-            # Track bare local definitions for the cross-page fork detector
-            # (classes NOT in the DS - DS ones are already flagged above).
-            if not has_context and len(subj) == 1:
-                cls = next(iter(subj))
-                if cls not in ds_classes:  # type: ignore[operator]
-                    local_bare_defs[cls] = normalize_body(body)
 
     # Unknown tokens: var(--x) that neither the DS nor this page defines.
     for tok in set(re.findall(r"var\(\s*--([\w-]+)", css)):
@@ -334,7 +367,9 @@ def main(argv=None):
     ap.add_argument("--prototype", default=None,
                     help="source/<slug> to lint (default: sole/first source subdir)")
     ap.add_argument("--pages", default=None,
-                    help="comma-separated page filenames to lint (default: all *.html)")
+                    help="comma-separated page filenames to lint (default: all *.html). "
+                         "Scoped: findings come only from these pages; siblings are read "
+                         "solely to spot a fork of a class THESE pages define")
     ap.add_argument("--json", action="store_true", dest="as_json")
     ap.add_argument("--strict", action="store_true",
                     help="warns also gate (exit 1)")
@@ -381,22 +416,56 @@ def main(argv=None):
 
     # Cross-page fork detector: same non-DS class defined bare in 2+ pages
     # with DIFFERENT bodies. (Identical bodies are copy-paste, still worth
-    # promoting, but forks are the active drift.) Only meaningful when
-    # linting the whole prototype.
-    if not args.pages:
-        by_class = {}  # type: Dict[str, Dict[str, str]]
+    # promoting, but forks are the active drift.)
+    #
+    # A SCOPED run (--pages: the post-edit guard) reports only the forks THIS
+    # EDIT is responsible for. A class is in play only if its local body was
+    # ADDED or CHANGED against git HEAD; siblings are then read for that class
+    # alone, and their own drift is never reported. So an edit that merely USES
+    # the bound DS produces no cross-page work at all, and a pre-existing fork
+    # between two pages stays where it is until someone asks for an audit. No
+    # baseline (untracked page, no repo, no HEAD) means no claim about what
+    # changed, so the scoped fork check sits out entirely. A bare sweep (no
+    # --pages) keeps the exhaustive whole-prototype report.
+    edited = set(os.path.basename(p) for p in pages)
+    by_class = {}  # type: Dict[str, Dict[str, str]]
+    if args.pages:
+        for p in pages:
+            page = os.path.basename(p)
+            base = baseline_html(root, os.path.relpath(p, root))
+            if base is None:
+                continue
+            was = bare_local_defs(base, ds_vocab["classes"])  # type: ignore[arg-type]
+            for cls, body in bare_defs_by_page.get(page, {}).items():
+                if was.get(cls) != body:
+                    by_class.setdefault(cls, {})[page] = body
+    else:
         for page, defs in bare_defs_by_page.items():
             for cls, body in defs.items():
                 by_class.setdefault(cls, {})[page] = body
-        for cls, pages_map in sorted(by_class.items()):
-            if len(pages_map) >= 2 and len(set(pages_map.values())) > 1:
-                all_findings.append({
-                    "rule": "cross-page-fork", "severity": "warn",
-                    "classes": [cls], "pages": sorted(pages_map),
-                    "detail": ".%s is defined locally in %d pages with different bodies - "
-                              "unify to one body; promotion candidate for the DS"
-                              % (cls, len(pages_map)),
-                })
+    if args.pages and by_class:
+        siblings = sorted(f for f in (os.listdir(proto_dir) if os.path.isdir(proto_dir) else [])
+                          if f.endswith(".html") and f not in edited)
+        for f in siblings:
+            sib_bare = bare_local_defs(_read(os.path.join(proto_dir, f)),
+                                       ds_vocab["classes"])  # type: ignore[arg-type]
+            for cls, body in sib_bare.items():
+                if cls in by_class:
+                    by_class[cls][f] = body
+    for cls, pages_map in sorted(by_class.items()):
+        if len(pages_map) >= 2 and len(set(pages_map.values())) > 1:
+            fork = {
+                "rule": "cross-page-fork", "severity": "warn",
+                "classes": [cls], "pages": sorted(pages_map),
+                "detail": ".%s is defined locally in %d pages with different bodies%s - "
+                          "unify to one body; promotion candidate for the DS"
+                          % (cls, len(pages_map),
+                             " (this edit forked it)" if args.pages else ""),
+            }  # type: Dict[str, object]
+            if args.pages:
+                # Which side is YOURS - the page to fix first.
+                fork["origin"] = sorted(set(pages_map) & edited)
+            all_findings.append(fork)
 
     errors = [f for f in all_findings if f["severity"] == "error"]
     warns = [f for f in all_findings if f["severity"] == "warn"]
