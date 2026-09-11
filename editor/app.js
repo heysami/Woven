@@ -16766,6 +16766,11 @@ function chatStatusReducer(prev, ev) {
     return failed ? "fail" : "done";
   }
   if (ev.event === "error") return "error";
+  // The daemon announces that it is picking the thread back up after a
+  // compact. It lands between the `end` and the respawn's first frames, so
+  // without it the drawer shows "done" for a few seconds and invites the user
+  // to type a message the agent is already answering.
+  if (ev.event === "status" && ev.data?.label === "auto-continue") return "streaming";
   if (ev.event === "agent" && ev.data?.type === "status") {
     if (ev.data.label === "done")  return "done";
     if (ev.data.label === "error") return "error";

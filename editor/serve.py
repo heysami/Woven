@@ -9852,6 +9852,37 @@ def _queue_deliver_via_resume(state, text: str, auto: str = "") -> bool:
         return False
 
 
+# How long an SSE tail waits, after a run goes done, for a respawn the DAEMON
+# is about to perform itself. Long enough to cover summarise -> kill -> resume
+# on a slow machine, short enough that a genuinely finished run closes.
+_RESPAWN_LINGER_SECS = 90
+
+
+def _run_respawn_expected(state) -> bool:
+    """True while the daemon is about to bring this run back WITHOUT the client
+    asking: a queued follow-up to deliver, a compact summary still to apply, or
+    an auto compact whose auto-continue has not fired yet.
+
+    The chat's SSE tail closes when a run goes done, and the browser only
+    re-opens it when the USER does something. So a daemon-side respawn streamed
+    into a connection nobody was reading: the agent worked the whole time and
+    the drawer showed nothing until a manual refresh. While this is true the
+    tail lingers instead of closing, and the respawned process streams into the
+    same connection the drawer is already reading."""
+    try:
+        if getattr(state, "_compact_pending", None) or getattr(state, "_compact_inflight", False):
+            return True
+        with _QUEUE_LOCK:
+            if list(getattr(state, "msg_queue", None) or []):
+                return True
+        if (getattr(state, "stop_reason", None) == "compacted"
+                and _compact_config().get("autoContinue")):
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _compact_autocontinue_maybe(state) -> None:
     """Process-exit hook: pick the thread back up after an AUTO compact.
 
@@ -34326,11 +34357,40 @@ class H(http.server.SimpleHTTPRequestHandler):
             last_seen = flush_from(after)
             if last_seen is None:
                 return
+            linger_until = None
             while True:
                 with state.lock:
                     have_more = state.events and state.events[-1]["seq"] > last_seen
                     is_done = state.done
+                if not is_done:
+                    linger_until = None          # live again: fresh window later
                 if is_done and not have_more:
+                    # Hold the tail open across a respawn the daemon is about
+                    # to do on its own, so its events reach this reader.
+                    if _run_respawn_expected(state):
+                        now = time.time()
+                        if linger_until is None:
+                            linger_until = now + _RESPAWN_LINGER_SECS
+                        if now < linger_until:
+                            waker.wait(timeout=1.0)
+                            waker.clear()
+                            # Flush HERE rather than falling through to the
+                            # 25 s wait below: that wait would start on a
+                            # just-cleared waker and sit on the respawn's
+                            # first events for up to 25 s.
+                            with state.lock:
+                                have_more = state.events and state.events[-1]["seq"] > last_seen
+                            if have_more:
+                                last_seen = flush_from(last_seen)
+                                if last_seen is None:
+                                    return
+                            else:
+                                try:
+                                    self.wfile.write(b": heartbeat\n\n")
+                                    self.wfile.flush()
+                                except Exception:
+                                    return
+                            continue
                     break
                 # 25 s heartbeat - beneath proxy idle thresholds.
                 waker.wait(timeout=25)
@@ -35058,6 +35118,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.done = False
         state.exit_code = None
         state.turn_done = False
+        state.stop_reason = None
         state.append("status", {"label": "resumed", "agentId": state.agent_id})
         state.append("user_message", dict({"text": text},
                                           **({"auto": auto} if auto else {})))
@@ -35306,6 +35367,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "sessionId": state.session_id,
             **({"compactResume": True} if _compact_seed else {}),
         })
+        state.stop_reason = None
         state.append("user_message", dict({"text": text},
                                           **({"auto": auto} if auto else {})))
 
