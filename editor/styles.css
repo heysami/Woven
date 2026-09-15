@@ -14610,6 +14610,11 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Desktop-sized offscreen page, scaled + translated into the plate by
+   PickerPreview's fitTarget so the picked COMPONENT is framed rather than the
+   page it sits on. The scale here is only the pre-fit default; the skeleton
+   covers the frame until the real transform lands. Size must stay in step
+   with PICKER_PAGE_W / PICKER_PAGE_H in app.js. */
 .chat-slash-detail-iframe {
   position: absolute;
   top: 0;
@@ -14618,7 +14623,7 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   height: 900px;
   border: 0;
   background: #fff;
-  transform: scale(0.25);
+  transform: scale(0.23);
   transform-origin: top left;
   pointer-events: none;
 }

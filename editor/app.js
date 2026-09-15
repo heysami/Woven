@@ -18316,7 +18316,7 @@ async function __pickerLoadDesignSystems() {
         token: "@designsystem/" + ds.id + "/" + sec.id,
         insertText: sec.id + " ",
         ref: { path: galleryRel + "#" + sec.id, name: sec.title, scope: "project", label: ds.id + " component" },
-        preview: { kind: "page", src: "/" + galleryRel + "#" + sec.id, anchor: sec.id },
+        preview: { kind: "page", src: "/" + galleryRel + "#" + sec.id, anchor: sec.id, el: "#" + escAttr(sec.id) },
       });
     }
     // The stylesheet is the authority on what actually exists. Without it
@@ -18343,8 +18343,12 @@ async function __pickerLoadDesignSystems() {
           name: "." + cls, scope: "project",
           label: ds.id + " class" + (sec ? " (" + sec.title + ")" : ""),
         },
-        preview: sec
-          ? { kind: "page", src: "/" + galleryRel + "#" + sec.id, anchor: sec.id }
+        // Zoom to the real element rather than the page it lives on. A class
+        // the gallery never demos still gets a shot: the selector is looked
+        // up at render time, and only a genuine miss falls back to the glyph.
+        preview: ds.hasGallery
+          ? { kind: "page", src: "/" + galleryRel + (sec ? "#" + sec.id : ""),
+              anchor: sec ? sec.id : null, el: "." + escAttr(cls) }
           : { kind: "glyph" },
       });
     };
@@ -18445,35 +18449,102 @@ function __pickerLoad(nsKey) {
    Keyed by item at the call site, so every bit of state resets when the
    highlight moves to another row. */
 const PICKER_PREVIEW_SETTLE_MS = 180;
+// The offscreen page renders at desktop size and is then scaled into the
+// plate. A component is FRAMED inside that page rather than shown as a
+// shrunken screenshot of it: pad gives the target breathing room, and the
+// minimum window stops a 24px chip from being blown up to fill the card.
+const PICKER_PAGE_W = 1280;
+const PICKER_PAGE_H = 900;
+const PICKER_FIT_PAD = 18;
+const PICKER_FIT_MIN_W = 300;
+// Never zoom out past this: a whole 980px section shrunk to fit reads as grey
+// noise, so an oversized target is CROPPED to its top-left instead - the part
+// that carries the title and the first demo row.
+const PICKER_FIT_MIN_SCALE = 0.55;
+const __clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi <= lo ? lo : hi));
 function PickerPreview({ item }) {
   const kind = (item.preview && item.preview.kind) || "glyph";
   const src  = (item.preview && item.preview.src) || null;
   const [state, setState] = useState(src ? "loading" : "ready");
   const [armed, setArmed] = useState(kind !== "page");
-  // A component preview points at one SECTION of a gallery. The `#id` in the
-  // src only lands if that element exists at load time - the older galleries
-  // are a React app that paints a beat later, so retry once after render.
+  // A page preview may point at one PART of that page - a gallery section, or
+  // the first live element carrying a class. `el` is a selector resolved in
+  // the loaded document; `anchor` is the older id-only form.
   const anchor = (item.preview && item.preview.anchor) || null;
-  const scrollToAnchor = (frame) => {
-    if (!anchor || !frame) return;
-    const go = () => {
-      try {
-        const el = frame.contentDocument && frame.contentDocument.getElementById(anchor);
-        if (el) { el.scrollIntoView({ block: "start" }); return true; }
-      } catch { /* cross-origin or torn down - the top of the page is fine */ }
-      return false;
-    };
-    if (!go()) setTimeout(go, 500);
+  const target = (item.preview && item.preview.el) || (anchor ? "#" + escAttr(anchor) : null);
+  const holderRef = useRef(null);
+  const liveRef = useRef(true);
+  useEffect(() => () => { liveRef.current = false; }, []);
+  const [fit, setFit] = useState(null);
+  // Frame the target: scroll it into the iframe viewport (assigning scrollTop
+  // directly, since scrollIntoView in a child document drags the editor's own
+  // scroll containers along), then scale + translate the whole iframe so the
+  // target sits centred in the plate. Tall targets fit to WIDTH and align top,
+  // because the head of a component at readable size beats all of it at none.
+  const fitTarget = (frame, attempt) => {
+    const holder = holderRef.current;
+    if (!frame || !holder || !liveRef.current) return;
+    let doc = null;
+    try { doc = frame.contentDocument; } catch { /* torn down */ }
+    if (!doc || !doc.body) { setState("error"); return; }
+    // A `#id` in the iframe src makes the browser bring that anchor into view
+    // by scrolling EVERY ancestor - including this plate, which is a scroll
+    // container by virtue of holding a 900px iframe under overflow:hidden.
+    // That silent scroll offsets everything measured below, so zero it first.
+    holder.scrollTop = 0;
+    holder.scrollLeft = 0;
+    const box = holder.getBoundingClientRect();
+    const W = box.width || 300, H = box.height || 132;
+    const el = target ? doc.querySelector(target) : null;
+    if (target && !el) {
+      // Galleries that paint from JS need a beat before the element exists.
+      if (attempt < 2) { setTimeout(() => fitTarget(frame, attempt + 1), 450); return; }
+      setState("noel");
+      return;
+    }
+    if (!el) { setFit(`scale(${(W / PICKER_PAGE_W).toFixed(4)})`); return; }   // whole page, fit to width
+    const sc = doc.scrollingElement || doc.documentElement;
+    let r = el.getBoundingClientRect();
+    if (!r.width || !r.height) {
+      if (attempt < 2) { setTimeout(() => fitTarget(frame, attempt + 1), 450); return; }
+      setState("noel");
+      return;
+    }
+    const tall = r.height + PICKER_FIT_PAD * 2 > PICKER_PAGE_H;
+    const wantTop = tall
+      ? r.top + sc.scrollTop - PICKER_FIT_PAD * 2          // park its head near the top
+      : r.top + sc.scrollTop + r.height / 2 - PICKER_PAGE_H / 2;
+    sc.scrollTop = __clamp(wantTop, 0, (sc.scrollHeight || PICKER_PAGE_H) - PICKER_PAGE_H);
+    r = el.getBoundingClientRect();
+    const win = __clamp(r.width + PICKER_FIT_PAD * 2, PICKER_FIT_MIN_W, W / PICKER_FIT_MIN_SCALE);
+    const s = W / win;
+    const viewH = H / s;
+    const wide = r.width + PICKER_FIT_PAD * 2 > win;
+    const x = __clamp(
+      wide ? r.left - PICKER_FIT_PAD                // wider than the window: start at its left edge
+           : r.left + r.width / 2 - win / 2,        // it fits: centre it
+      0, PICKER_PAGE_W - win);
+    const y = __clamp(
+      r.height + PICKER_FIT_PAD * 2 <= viewH
+        ? r.top + r.height / 2 - viewH / 2       // it fits: centre it
+        : r.top,                                 // taller than the plate: flush with its top
+      0, PICKER_PAGE_H - viewH);
+    setFit(`scale(${s.toFixed(4)}) translate(${(-x).toFixed(1)}px, ${(-y).toFixed(1)}px)`);
+    // Web fonts and late images reflow the page UNDER a fit that was measured
+    // at load, which slides a deep section right out of the plate. Measure
+    // again once things have settled - the pass is idempotent.
+    if (attempt < 2) setTimeout(() => fitTarget(frame, attempt + 1), 600);
   };
   useEffect(() => {
+    setFit(null);
     if (kind !== "page") { setArmed(true); return; }
     setArmed(false);
     const t = setTimeout(() => setArmed(true), PICKER_PREVIEW_SETTLE_MS);
     return () => clearTimeout(t);
-  }, [kind, src]);
-  if (kind === "page" && src) {
+  }, [kind, src, target]);
+  if (kind === "page" && src && state !== "noel") {
     return html`
-      <div className="chat-slash-detail-frame" data-state=${state} data-kind="page">
+      <div className="chat-slash-detail-frame" ref=${holderRef} data-state=${state} data-kind="page">
         ${armed && html`<iframe
           className="chat-slash-detail-iframe"
           src=${apiUrl(src)}
@@ -18481,10 +18552,11 @@ function PickerPreview({ item }) {
           loading="lazy"
           sandbox="allow-same-origin allow-scripts"
           scrolling="no"
-          onLoad=${(e) => { setState("ready"); scrollToAnchor(e.target); }}
+          style=${fit ? { transform: fit } : null}
+          onLoad=${(e) => { fitTarget(e.target, 0); setState("ready"); }}
           onError=${() => setState("error")}
         />`}
-        ${state !== "ready" && html`<div className="chat-slash-detail-skel">
+        ${(state !== "ready" || !fit) && html`<div className="chat-slash-detail-skel">
           ${state === "error" ? "preview unavailable" : "loading preview…"}
         </div>`}
       </div>
