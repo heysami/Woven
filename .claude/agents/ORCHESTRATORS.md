@@ -1,5 +1,7 @@
 # Orchestrator system - registry, discovery, disable
 
+All orchestrators use the shared [contract and brief writer](../../docs/agents/contract-writer.md) when producing downstream prose. Creative decisions and review stay with the orchestrator; writing has its own global model and per-orchestrator override.
+
 The orchestrator registry surfaces every top-level orchestrator agent the app
 ships and lets the user disable any of them per project (or workspace-wide
 from the landing page).

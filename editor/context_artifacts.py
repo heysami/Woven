@@ -23,14 +23,17 @@ def project_path(root, relative):
 
 
 def atomic_json(path, value):
+    atomic_text(path, json.dumps(value, ensure_ascii=False, allow_nan=False, indent=2) + "\n")
+
+
+def atomic_text(path, text):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     # Unique staging file, safe with concurrent readers and writers.
     fd, staging = tempfile.mkstemp(prefix=".context-", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(value, stream, ensure_ascii=False, allow_nan=False, indent=2)
-            stream.write("\n")
+            stream.write(text)
         os.replace(staging, path)
     finally:
         if os.path.exists(staging):

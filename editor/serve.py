@@ -46,6 +46,7 @@ if _sys.version_info < (3, 9):
 import atexit
 import context_policy
 import context_artifacts
+import contract_writer
 import datetime as _dt
 import difflib
 import glob
@@ -951,7 +952,8 @@ COMPACT_DEFAULTS         = {"autoCompact": False, "thresholdTokens": 400_000,
                             # for a message, and the message every user types
                             # there is "continue". Send it for them.
                             "autoContinue": True, "summaryModel": "fast",
-                            "referenceReuse": True, "compactQa": True}
+                            "referenceReuse": True, "compactQa": True,
+                            "contractWriterModel": "fast", "contractWriterOverrides": {}}
 
 
 def _compact_config() -> dict:
@@ -964,6 +966,12 @@ def _compact_config() -> dict:
             cfg["autoContinue"] = saved["autoContinue"]
         if saved.get("summaryModel") in ("fast", "inherit"):
             cfg["summaryModel"] = saved["summaryModel"]
+        if contract_writer.valid_model(saved.get("contractWriterModel")):
+            cfg["contractWriterModel"] = saved["contractWriterModel"]
+        overrides = saved.get("contractWriterOverrides")
+        if isinstance(overrides, dict):
+            cfg["contractWriterOverrides"] = {key: value for key, value in overrides.items()
+                if re.fullmatch(r"[a-z0-9-]+-orchestrator", key) and contract_writer.valid_model(value)}
         for key in ("referenceReuse", "compactQa"):
             if isinstance(saved.get(key), bool):
                 cfg[key] = saved[key]
@@ -14953,6 +14961,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._media_config_set()
             if parsed.path in ("/__context/reference", "/__context/contract"):
                 return self._context_artifact(parsed.path, qs)
+            if parsed.path in ("/__context/writer/prepare", "/__context/writer/publish"):
+                return self._context_writer(parsed.path, qs)
             if parsed.path == "/__compact_config":
                 return self._compact_config_set()
             if parsed.path == "/__media_config/test":
@@ -22000,6 +22010,47 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _compact_config_get(self):
         return self._reply(200, _compact_config())
 
+    def _context_writer(self, route, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+            body = self._read_json_body(max_bytes=4 * 1024 * 1024)
+            if not isinstance(body, dict):
+                raise ValueError("body must be an object")
+            if route.endswith("/publish"):
+                with open(os.path.join(EDITOR_DIR, "art-direction-defaults.json")) as stream:
+                    defaults = json.load(stream)
+                with _workflow_lock(os.path.basename(root.rstrip("/"))):
+                    status, result = contract_writer.publish(root, body, defaults)
+                return self._reply(status, result)
+            name = body.get("orchestrator")
+            if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9-]+-orchestrator", name):
+                raise ValueError("orchestrator must name the originating orchestrator")
+            if not os.path.isfile(os.path.join(INSTALL_ROOT, ".claude", "agents", name + ".md")):
+                raise ValueError("unknown orchestrator")
+            parent_id = body.get("parent") or _qs_get(qs, "parent")
+            with RUNS_LOCK:
+                parent = RUNS.get(parent_id) if parent_id else None
+            if parent and os.path.realpath(parent.project_root) != os.path.realpath(root):
+                raise ValueError("writer parent belongs to another project")
+            runtime = getattr(parent, "agent_id", None) or _agent_default_runtime()
+            cfg = _compact_config()
+            setting = cfg["contractWriterOverrides"].get(name, cfg["contractWriterModel"])
+            own_run = getattr(parent, "kind", None) in ("planner:" + name, "planner:woven:" + name)
+            inherited = ((getattr(parent, "model", None) if own_run else None)
+                         or _subagent_override_model_for_node(name, name, want_provider=_provider_for_agent(runtime))
+                         or _orch_override_model_for_node(name, name, want_provider=_provider_for_agent(runtime))
+                         or getattr(parent, "model", None)
+                         or _agent_default_model())
+            if runtime not in ("claude", "codex") and setting in ("fast", "inherit"):
+                raise ValueError("choose an explicit Claude or Codex writer model for this runtime")
+            model = context_policy.summary_model(runtime, setting, inherited)
+            result = contract_writer.prepare(root, body, model, _assistant_agent_complete)
+            return self._reply(200, result)
+        except (ValueError, TypeError, KeyError, OSError) as e:
+            return self._reply(400, {"error": str(e)})
+        except (RuntimeError, subprocess.TimeoutExpired) as e:
+            return self._reply(502, {"error": "writer failed; decisions retained: " + str(e)})
+
     def _context_artifact(self, route, qs):
         """Project-scoped reuse and lossless mechanical contract assembly."""
         try:
@@ -22060,6 +22111,23 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not isinstance(body, dict):
             return self._reply(400, {"error": "body must be a JSON object"})
         cfg = _compact_config()
+        if "contractWriterModel" in body:
+            if not contract_writer.valid_model(body["contractWriterModel"]):
+                return self._reply(400, {"error": "invalid contract writer model"})
+            cfg["contractWriterModel"] = body["contractWriterModel"]
+        if "contractWriterOverrides" in body:
+            patch = body["contractWriterOverrides"]
+            if not isinstance(patch, dict) or any(
+                not re.fullmatch(r"[a-z0-9-]+-orchestrator", key)
+                or (value is not None and not contract_writer.valid_model(value))
+                for key, value in patch.items()):
+                return self._reply(400, {"error": "invalid orchestrator writer override"})
+            cfg["contractWriterOverrides"] = dict(cfg["contractWriterOverrides"])
+            for key, value in patch.items():
+                if value is None:
+                    cfg["contractWriterOverrides"].pop(key, None)
+                else:
+                    cfg["contractWriterOverrides"][key] = value
         if isinstance(body.get("autoCompact"), bool):
             cfg["autoCompact"] = body["autoCompact"]
         if isinstance(body.get("autoContinue"), bool):

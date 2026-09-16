@@ -56,16 +56,22 @@ curl -fsS -X POST "$TH_DAEMON_URL/__asset_generate?project=$TH_PROJECT_ID" -H "C
 
 ## 4.6 Phase C.6 - (mode: finalize) author + write the contract, GROUNDED in the §4.5 crops
 
-Read `$TH_PROTOCOL_ROOT/docs/agents/art-direction-contract.md`. Now author the project-specific contract decisions from the chosen plate, using the crops you just took as the close-read: `extracted` palette/ratios/value/material/composition read off the real isolated regions (the UI crop tells you the component + composition truth; the subject crop tells you the human register), `typeConstruction` off the rendered display/body text, `authored` harmonised with all of it. **This is the first write to disk for the direction.** Also author `buildRegister` here from the CHOSEN plate, same derivation discipline as the rest of the contract: derive the build-brief vocabulary from the plate + each downstream slot's actual behaviour (name each thing by its craft/model, not its look), set the `cadence` the plate implies, and keep the `antiVoice` guards - ship the METHOD, never a fixed word list. This governs the language of build briefs, NOT shipped copy (that is `voice`). Set `platePath` = the chosen plate, `candidatesConsidered` = the set, and populate `itemReferences[]` from §4.5 - each `{ itemId, role: "subject"|"ui"|"item"|"decoration", refPath, matchesSlots, bboxNote }`. **When §4.7 qualifies (envelope `motionPlates: true` + video provider wired + at least one motion-benefiting owns-surface), run §4.7's clip generation + inspection BEFORE this write** so each `surfaceContracts[*].motionPlate` is populated in the same single write. Assemble the contract ONCE through `POST /__context/contract?project=$TH_PROJECT_ID`
-with a JSON body `{ "draft": <your project-specific fields>, "previousHash": null }`.
-Use a payload file with curl `--data-binary @<path>` so decisions are written once.
-The daemon fills shared boilerplate in code, checks that all supplied values survive
-exactly, and atomically writes `workflow/art-direction-contract.json`. No extra
-model call is needed for formatting. For a revision, supply the previous contract's
-SHA-256 of canonical JSON (Python: `hashlib.sha256(json.dumps(contract, sort_keys=True,
-ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode()).hexdigest()`).
-A 409 means another writer changed the contract: read it and reconcile before retrying.
-Do not weaken the schema or overwrite a newer contract to get past validation. Because finalize only runs after a `plate-<n>` pick, no stale contract is ever left for a steered/rejected direction.
+Read `$TH_PROTOCOL_ROOT/docs/agents/art-direction-contract.md`. Now author the project-specific contract decisions from the chosen plate, using the crops you just took as the close-read: `extracted` palette/ratios/value/material/composition read off the real isolated regions (the UI crop tells you the component + composition truth; the subject crop tells you the human register), `typeConstruction` off the rendered display/body text, `authored` harmonised with all of it. **This is the first write to disk for the direction.** Also author `buildRegister` here from the CHOSEN plate, same derivation discipline as the rest of the contract: derive the build-brief vocabulary from the plate + each downstream slot's actual behaviour (name each thing by its craft/model, not its look), set the `cadence` the plate implies, and keep the `antiVoice` guards - ship the METHOD, never a fixed word list. This governs the language of build briefs, NOT shipped copy (that is `voice`). Set `platePath` = the chosen plate, `candidatesConsidered` = the set, and populate `itemReferences[]` from §4.5 - each `{ itemId, role: "subject"|"ui"|"item"|"decoration", refPath, matchesSlots, bboxNote }`. **When §4.7 qualifies (envelope `motionPlates: true` + video provider wired + at least one motion-benefiting owns-surface), run §4.7's clip generation + inspection BEFORE this write** so each `surfaceContracts[*].motionPlate` is populated in the same single write. Use the shared writer protocol in
+`$TH_PROTOCOL_ROOT/docs/agents/contract-writer.md`. Save these decisions once as
+compact notes in the existing schema at `workflow/art-direction-decisions.json`.
+Call `/__context/writer/prepare` with this orchestrator's ID, that draft path,
+`outputPath: "workflow/art-direction-contract.json"`, and only the narrative
+`prosePaths` (for example `/crossSurfaceContract/colorUsePrinciple` and
+`/authored/componentStyle/recipeNotes`). The writer has its own configured model;
+this orchestrator still owns every observation, choice, and exact value. Review
+its returned edits, then publish the accepted paths through
+`/__context/writer/publish`. Shared contract fields are assembled by code.
+Do not send the writer font resolution, palette values, paths, approvals,
+exceptions, or promised formats. Keep required approval and crop checks above.
+For revisions, supply the prior contract hash per the writer protocol. A 409
+means another writer changed the contract: read and reconcile before retrying.
+Do not weaken the schema or overwrite a newer contract to pass validation.
+Because finalize only runs after a `plate-<n>` pick, no stale contract is ever left for a steered/rejected direction.
 
 Downstream consumption is by `role`: entries with a non-empty `matchesSlots` (subject / item / recurring decoration) are i2i references - the illustration/photography enrichers copy `refPath` into the matched slot's `refImagePath`, visual-orchestrator carries it onto the skill node, raster-foreground POSTs it as `input_path`. The `role: "ui"` entry has no `matchesSlots`; the build's component/layout step and the aesthetic-lens read it as the composition ground-truth. No new plumbing.
 

@@ -13,10 +13,38 @@ compaction control and points here for model settings.
 | Changing QA settings | Same summary model and state transfer |
 | Compaction | Same summary model; messages arriving during generation remain outside its coverage boundary |
 | Normal resume | Saved session or replay, without a new summary call |
-| Worker briefs | Assigned task model; recipient-specific decisions and artifact paths |
+| Worker briefs and contract prose | Separate writer model, with global default and per-orchestrator overrides; originating orchestrator reviews proposed edits |
 | Agent playbooks | Orchestrators retain routing judgment; drawers receive leaf context; art direction loads its current phase |
-| Research and creative handoffs | Assigned creative model; reference saved work instead of repeating it |
+| Research and creative decisions | Assigned creative model; prose handoffs use the separate writer and reference saved work |
 | Art contract assembly | Code fills shared fields and preserves all supplied creative values exactly; no formatting model call |
+
+**Contract and brief writing** is the first group in Context and cost. Choose
+Fast, Same model as orchestrator, or a specific Codex/Claude model. Expand any
+Orchestrators card to override the writer for that orchestrator. This does not
+change the card's planning/judgment model or the conversation-summary model.
+All 20 orchestrator playbooks and their Codex mirrors use this shared role.
+
+The orchestrator records compact decision notes in its existing schema. The
+writer receives selected prose fields in a separate tool-free context with low
+reasoning. It returns edits, not another copy of the entire contract. The
+orchestrator reviews each proposed change before publishing. Unselected values
+and rejected edits remain exact; decisions and review evidence stay on disk.
+JSON contracts and Markdown briefs are supported. Identical prepare requests
+reuse their saved review. Model failures do not publish a contract or silently
+switch models. Details: [writer protocol](../agents/contract-writer.md).
+
+Writing adds a small model call and a review. The intended saving comes from
+shorter drafting by the planning model and shorter downstream briefs; total
+cost savings across real builds have not yet been measured.
+
+Writer verification: ten new regressions cover model precedence, per-orchestrator
+settings, explicit review, unchanged structured values, rejected edits, text briefs,
+source/output revision checks, errors, and all 20 playbook/mirror pairs. The full
+context/writer suite has 38 passing tests. Browser checks verified global and
+per-card settings, persistence after reload, and the existing Woven controls.
+Live synthetic calls returned valid concise edits from Luna in 13.6 seconds and
+Haiku in 51.5 seconds. Both kept the sample's motion, accessibility, and negative
+constraints. These samples do not establish semantic fidelity for every brief.
 
 **Fast** uses `gpt-5.6-luna` with low reasoning for Codex and `claude-haiku-4-5`
 for Claude. **Same model as thread** preserves the chosen model. Summary failures

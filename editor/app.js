@@ -29180,7 +29180,7 @@ function OrchestratorModelSelect({ orchestratorId, disabled }) {
       data-active=${current ? "true" : "false"}
       title=${disabled
         ? "Enable this orchestrator to set its model"
-        : "Model this orchestrator's dispatched subagents run on. ‘Agent default’ follows the global chat/agent model."}
+        : "Model for this orchestrator's decisions and dispatched subagents. Contract writing has its own setting below. ‘Agent default’ follows the global chat/agent model."}
       onClick=${(e) => e.stopPropagation()}
     >
       <span className="orchestrator-card-model-icon" aria-hidden="true">◇</span>
@@ -29303,6 +29303,9 @@ function OrchestratorCard({ orchestrator, busy, onToggle }) {
       </div>
 
       ${expanded && html`
+      <div className="orchestrator-section">
+        <${OrchestratorWriterSettings} orchestratorId=${p.id} disabled=${!p.enabled}/>
+      </div>
       <div className="orchestrator-card-description">${p.description}</div>
 
       ${Array.isArray(p.triggers) && p.triggers.length > 0 && html`
@@ -99578,12 +99581,14 @@ function WorkflowExposeDialog({ items, initialSelected, branch, onCancel, onAppl
    which fall back to the Claude CLI (anthropic with no key), and resolve
    the vague "follow system" placeholder to a NAMED model the user can
    actually see picked. */
-function WorkflowContextCostSection() {
+function useContextCostConfig() {
   const [config, setConfig] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
     let cancelled = false;
+    const changed = e => { if (e.detail) setConfig(e.detail); };
+    window.addEventListener("th:context-config-changed", changed);
     fetch(apiUrl("/__compact_config"))
       .then(async r => {
         if (!r.ok) throw new Error(`Could not load context settings (${r.status}).`);
@@ -99591,7 +99596,10 @@ function WorkflowContextCostSection() {
       })
       .then(value => { if (!cancelled) setConfig(value); })
       .catch(e => { if (!cancelled) setError(e.message); });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      window.removeEventListener("th:context-config-changed", changed);
+    };
   }, []);
   const save = async (patch) => {
     setSaving(true); setError("");
@@ -99600,11 +99608,66 @@ function WorkflowContextCostSection() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
-      if (!r.ok) throw new Error(`Could not save context settings (${r.status}).`);
-      setConfig(await r.json());
+      const value = await r.json();
+      if (!r.ok) throw new Error(value.error || `Could not save context settings (${r.status}).`);
+      setConfig(value);
+      window.dispatchEvent(new CustomEvent("th:context-config-changed", { detail: value }));
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
   };
+  return { config, saving, error, save };
+}
+
+function ContractWriterModelControl({ config, save, disabled, orchestratorId }) {
+  const current = orchestratorId
+    ? config?.contractWriterOverrides?.[orchestratorId] || ""
+    : config?.contractWriterModel || "fast";
+  const choices = ((window.TH_MEDIA || {}).textModels || []).filter(m =>
+    ["openai", "anthropic"].includes(m.provider) && !m.cliOnly && m.integrated !== false);
+  return html`
+    <div className="workflow-default-provider-row">
+      <span className="workflow-default-provider-label">Writer model</span>
+      <div className="workflow-default-provider-controls">
+        <select className="workflow-default-provider-select" aria-label="Contract and brief writer model"
+          style=${{ gridColumn: "1 / -1" }} disabled=${disabled} value=${current}
+          onChange=${e => save(orchestratorId
+            ? { contractWriterOverrides: { [orchestratorId]: e.target.value || null } }
+            : { contractWriterModel: e.target.value })}>
+          ${orchestratorId && html`<option value="">Use global writer setting</option>`}
+          <option value="fast">Fast (Luna for Codex / Haiku for Claude)</option>
+          <option value="inherit">Same model as orchestrator</option>
+          ${current && !["fast", "inherit"].includes(current) && !choices.some(m => m.id === current)
+            && html`<option value=${current}>${current}</option>`}
+          ${["openai", "anthropic"].map(provider => html`
+            <optgroup key=${provider} label=${provider === "openai" ? "Codex models" : "Claude models"}>
+              ${choices.filter(m => m.provider === provider).map(m => html`
+                <option key=${m.id} value=${m.id}>${m.label || m.id}</option>`)}
+            </optgroup>`)}
+        </select>
+      </div>
+    </div>`;
+}
+
+function OrchestratorWriterSettings({ orchestratorId, disabled }) {
+  const { config, saving, error, save } = useContextCostConfig();
+  return html`
+    <div className="workflow-default-providers">
+      <div className="workflow-settings-section-group-head">Contract and brief writing</div>
+      <div className="workflow-settings-section-group-sub">
+        The orchestrator's model above makes decisions and reviews the result.
+        This separate writer turns those decisions into concise contracts and subagent briefs.
+      </div>
+      <${ContractWriterModelControl} config=${config} save=${save}
+        disabled=${disabled || !config || saving} orchestratorId=${orchestratorId}/>
+      <div role="status" className="workflow-settings-localhint">${saving ? "Saving..." : config
+        ? "Global writer: " + (config.contractWriterModel === "fast" ? "Fast (Luna / Haiku)" : config.contractWriterModel === "inherit" ? "Same model as orchestrator" : config.contractWriterModel)
+        : "Loading writer setting..."}</div>
+      ${error && html`<div role="alert" className="workflow-settings-localhint">${error}</div>`}
+    </div>`;
+}
+
+function WorkflowContextCostSection() {
+  const { config, saving, error, save } = useContextCostConfig();
   const disabled = !config || saving;
   const thresholds = [...new Set([50000, 100000, 200000, 400000, 600000, 800000, 1000000, 2000000,
     config?.thresholdTokens || 400000])].sort((a, b) => a - b);
@@ -99619,6 +99682,18 @@ function WorkflowContextCostSection() {
     </label>`;
   return html`
     <section aria-label="Context and cost">
+      <div className="workflow-default-providers">
+        <div className="workflow-settings-section-group-head">Contract and brief writing</div>
+        <div className="workflow-settings-section-group-sub">
+          A separate writer makes contracts and subagent briefs concise for every orchestrator.
+          Creative decisions and review stay with the orchestrator's own model.
+        </div>
+        <${ContractWriterModelControl} config=${config} save=${save} disabled=${disabled}/>
+        <div className="workflow-settings-section-group-sub">
+          This is the default for all orchestrators. Override it on an expanded Orchestrators card.
+          Writers receive selected descriptions, preserve exact values, and return edits for review.
+        </div>
+      </div>
       <div className="workflow-default-providers">
         <div className="workflow-settings-section-group-head">Conversation summaries</div>
         <div className="workflow-settings-section-group-sub">
@@ -99667,9 +99742,9 @@ function WorkflowContextCostSection() {
       <div className="workflow-default-providers">
         <div className="workflow-settings-section-group-head">Creative work and worker briefs</div>
         <div className="workflow-settings-section-group-sub">
-          Research, art direction, worker briefs, and QA judgment keep their assigned task models.
-          Set these in Orchestrators. Briefs reference saved artifacts, and art direction loads its current phase.
-          Shared contract fields are assembled by code, preserving every supplied creative decision.
+          Research, creative direction, and QA judgment keep their assigned task models, set in Orchestrators.
+          Contract and brief prose uses the writer above. Shared fields are assembled by code;
+          exact tokens, references, constraints, and approved exceptions are retained.
         </div>
         <div className="workflow-settings-section-group-sub">
           DS QA on includes the full bound DESIGN.md during generation and QA. DS QA off leaves it out of the prompt.
@@ -100245,7 +100320,7 @@ function WorkflowSettingsDialog({ onClose }) {
     api: modelSub === "keys"
       ? "Your provider keys · stored by the daemon, never sent to the browser"
       : "Which provider and model each capability uses by default",
-    context: "Summary models, reference reuse, and conversation size",
+    context: "Writer models, summaries, reference reuse, and conversation size",
     install: "Local tools the daemon installs on demand · no API key needed",
     figma: "Woven Bridge plugin · one-time setup, runs in Figma Desktop",
     orchestrators: "Toggle which orchestrators auto-dispatch · pick each one's default model",

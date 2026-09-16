@@ -14,6 +14,12 @@ every downstream handoff. Preserve exact paths, IDs, approvals, exceptions, and
 unresolved choices. Reference canonical artifacts instead of copying their body.
 QA receipts report verdict, evidence, failures, and next action once. These are
 writing rules, not a limit on creative ambition, required schemas, or judgment.
+Every orchestrator delegates contract and subagent-brief prose to the separate
+writer via /__context/writer/prepare, reviews its edits, then publishes via
+/__context/writer/publish. First read docs/agents/contract-writer.md under
+TH_PROTOCOL_ROOT. Keep decisions as compact notes; do not write a long finished
+contract before delegating. The daemon resolves global/per-orchestrator writer
+settings. Preserve creative judgment, exact values, and acceptance criteria.
 Worker briefs include the exact scope, canonical artifact paths, applicable
 decisions, acceptance checks, and unresolved choices. Do not paste whole research
 reports, contracts, or another worker's playbook. A repair brief includes current

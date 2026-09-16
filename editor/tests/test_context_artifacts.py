@@ -184,7 +184,8 @@ class ContextArtifactsTests(unittest.TestCase):
         self.assertIn("<direction-options", plate)
         self.assertIn("motionGateBlock", plate)
         self.assertIn("art-direction-contract.md", finalize)
-        self.assertIn("/__context/contract", finalize)
+        self.assertIn("/__context/writer/prepare", finalize)
+        self.assertIn("/__context/writer/publish", finalize)
         self.assertLess(len(common + plate), 77448 * .5)
 
 
