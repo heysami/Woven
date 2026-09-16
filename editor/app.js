@@ -12038,7 +12038,7 @@ function ChatComposerAddMenu({ busy, attachBusy, pickBusy, uploadBusy, onAttachI
    Persisted in the shared editor settings blob (a sticky user preference). */
 const CHAT_GUARD_OPTIONS = [
   { key: "visual",  def: true,  icon: "Eye",      label: "Visual verification", hint: "Agent renders and looks at what it built (via a throwaway verifier subagent) before saying it is done - including anything it creates on the canvas. Off: it reports without checking, and may glance inline." },
-  { key: "dsGuard", def: true,  icon: "Palette",  label: "Design system guard", hint: "After any markup / CSS edit on a design-system-bound page, the agent runs the DS-drift linter and autofixes local forks. Off: no drift check. Projects with no design system are unaffected." },
+  { key: "dsGuard", def: true,  icon: "Palette",  label: "Design system guard", hint: "Includes the full bound DESIGN.md during generation and runs the DS-drift check after markup or CSS edits. Off: no full catalog injection or drift check; the design system still applies. Projects with no design system are unaffected." },
   { key: "reqQa",   def: false, icon: "NotesDoc", label: "Requirement QA",      hint: "For work driven by a requirement doc or referenced file: a QA subagent re-reads the requirement and checks the build's terms, logic and facts against it. The agent auto-fixes hallucinated facts and mechanical drift, and brings anything needing a decision to you. Off unless the thread has a requirement to check." },
 ];
 // The spawn defaults, mirroring kinds/capabilities.py GUARD_DEFAULTS: not all
@@ -12081,20 +12081,20 @@ function chatGuardsDiffLabel(from, to) {
    and knows not to redo what is already done. Mirrors the compact-resume
    envelope in serve.py (_run_resume). */
 function composeGuardHandoffPrompt(summary, text, prevTitle) {
-  return (
-    "===== HANDOFF FROM THE PREVIOUS THREAD =====\n"
-    + "You are continuing work already in progress" + (prevTitle ? ` ("${prevTitle}")` : "")
-    + ". That thread was closed and restarted because the user changed which "
-    + "checks you run before calling work done - the checks now in your "
-    + "instructions are the ones that apply. Below is the summary of "
-    + "everything that happened; treat it as your own memory of the work. Do "
-    + "NOT redo anything it shows as already done, and do not re-ask decisions "
-    + "it shows as already answered.\n\n"
-    + (summary || "").trim() + "\n"
-    + "===== END HANDOFF =====\n\n"
-    + (text || "")
-  );
+  return WovenContext.handoffPrompt(summary, text);
 }
+
+async function requestChatHandoff(runId) {
+  if (!runId) return { summary: "", context: {} };
+  const r = await fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/handoff`), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason: "continue working" }),
+  });
+  const result = await r.json();
+  if (!r.ok) throw new Error(result.error || `HTTP ${r.status}`);
+  return result;
+}
+
 /* The closed chip shows ONE ICON PER CHECK THAT IS ON, and nothing for the
    ones that are off - "2/3" told you a count but never which two, so you had
    to open the menu to learn anything. Each icon's tooltip names its check and
@@ -13363,14 +13363,17 @@ function RightRailDock({ mode }) {
   // targetSlug rule. (Names below stay `*Scoped*` for continuity; the tier is
   // normal.) The old setup thread is NOT killed - it stays reopenable; this just
   // makes the new working thread the active one.
-  const openScopedChat = useCallback((prototype) => {
+  const openScopedChat = useCallback(async (prototype, sourceRunId, prepared) => {
+    let handoff;
+    try { handoff = prepared || await requestChatHandoff(sourceRunId); }
+    catch (e) { await uiAlert("Could not prepare handoff: " + e.message); return; }
     const slug = prototype || branch || activePrototypeSlug();
-    pendingScopedRef.current = { tier: "normal", branch: slug };
+    pendingScopedRef.current = { ...WovenContext.handoffOptions(handoff.context), tier: "normal", branch: slug, prototype: slug, summary: handoff.summary };
     setChatRun({ runId: null, isNew: true, title: "Continue", kind: "freeform", branch: slug, tier: "normal", agentId: pickAgentIdForChat() });
     setChatRunFinished(false);
   }, []);
   useEffect(() => {
-    const on = (e) => openScopedChat(e && e.detail && e.detail.prototype);
+    const on = (e) => openScopedChat(e?.detail?.prototype, e?.detail?.runId, e?.detail?.handoffData);
     window.addEventListener("woven:continue-scoped", on);
     return () => window.removeEventListener("woven:continue-scoped", on);
   }, [openScopedChat]);
@@ -13387,20 +13390,23 @@ function RightRailDock({ mode }) {
     // one spawn goes out on the handoff tier (normal); every later new chat
     // falls back to the untargeted default (also normal).
     const scoped = pendingScopedRef.current;
-    pendingScopedRef.current = null;
+    opts = { ...(scoped || {}), ...(opts || {}) };
+    if (scoped?.summary) text = WovenContext.handoffPrompt(scoped.summary, text);
     const wrappedPrompt = composeModeAwarePrompt(mode === "workflow" || mode === "ramble" ? "workflow" : "editor", text);
     const title = text.length > 60 ? text.slice(0, 60) + "…" : text;
     const agentDefault = getDefaultForCapability("agent");
     const run = await triggerRun({
-      branch: (scoped && scoped.branch) || branch, agentId: pickAgentIdForChat(), kind: "freeform",
+      branch: opts.branch || branch, agentId: opts.agentId || pickAgentIdForChat(), kind: "freeform",
       prompt: wrappedPrompt, title, permissionMode,
-      model: agentDefault && agentDefault.model || undefined,
-      tier: (scoped && scoped.tier) || undefined,
+      model: opts?.model || (agentDefault && agentDefault.model) || undefined,
+      tier: opts.tier || undefined,
+      prototype: opts.prototype || undefined,
       // The composer's "Checks" toggles shape the spawn's preamble, so they
       // are read fresh at send time (the footer control persists them) -
       // unless this spawn IS the handoff that carries staged checks.
       guards: (opts && opts.guards) || loadChatGuards(),
     });
+    pendingScopedRef.current = null;
     setChatRun(run);
     setChatRunFinished(false);
     return run;
@@ -17774,7 +17780,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       try { j = await r.json(); } catch {}
       if (!r.ok || !j || !j.summary) throw new Error((j && (j.error || j.hint)) || `HTTP ${r.status}`);
       const prompt = composeGuardHandoffPrompt(j.summary, env.send, run.title);
-      await onStartNewChat(prompt, { guards: pendingGuards, handoffFrom: run.runId });
+      await onStartNewChat(prompt, WovenContext.handoffOptions(j.context, { guards: pendingGuards, handoffFrom: run.runId }));
       setPendingGuards(null);
       return true;
     } finally {
@@ -20226,6 +20232,9 @@ function ChatContextGauge({ run, events, runModel }) {
               Continue the thread afterwards
             </label>
           </div>
+          <div className="chat-ctx-auto">
+            <span className="chat-ctx-hint">Context summary model: ${!cfg ? "loading..." : cfg.summaryModel === "inherit" ? "same model as thread" : "Fast (Luna / Haiku)"}. Configure in Settings > Context and cost.</span>
+          </div>
         </div>`, document.body);
     })()}
   </span>`;
@@ -20336,7 +20345,7 @@ function buildBlocks(events) {
   // "working" chip (same rolling semantics as the thinking chip).
   const KNOWN_EVENT_TYPES = new Set([
     "text_delta", "thinking_delta", "tool_use", "tool_result",
-    "status", "usage", "error", "system",
+    "status", "usage", "error", "system", "compact", "handoff_checkpoint",
   ]);
   const isUnknownEv = (d) => !!d
     && !isThinkingTokensEv(d) && !isTaskProgressEv(d) && !isSystemNoise(d)
@@ -23481,19 +23490,28 @@ function InitCard({ init }) {
   </div>`;
 }
 
-function HandoffCard({ handoff }) {
+function HandoffCard({ handoff, runId }) {
+  const [busy, setBusy] = useState(false);
   const proto = handoff && handoff.prototype;
   const msg = (handoff && handoff.message)
     || "Setup is done. Continue in a working thread to iterate on this prototype. This thread stays available too.";
-  const go = () => {
-    try { window.dispatchEvent(new CustomEvent("woven:continue-scoped", { detail: { prototype: proto || null } })); } catch {}
+  const go = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const handoffData = await requestChatHandoff(runId);
+      window.dispatchEvent(new CustomEvent("woven:continue-scoped", {
+        detail: { prototype: proto || null, runId, handoffData },
+      }));
+    } catch (e) { await uiAlert("Could not prepare handoff: " + e.message); }
+    finally { setBusy(false); }
   };
   return html`<div className="chat-phase-card chat-phase-handoff" role="note">
     <span className="chat-phase-ico"><${Icon.Bolt}/></span>
     <div className="chat-phase-body">
       <div className="chat-phase-head">Continue in a working thread${proto ? html` · ${proto}` : null}</div>
       <div className="chat-phase-msg">${msg}</div>
-      <button type="button" className="chat-phase-btn" onClick=${go}>Continue in a working thread</button>
+      <button type="button" className="chat-phase-btn" disabled=${busy} onClick=${go}>${busy ? "Preparing handoff..." : "Continue in a working thread"}</button>
     </div>
   </div>`;
 }
@@ -23557,7 +23575,7 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
           if (seg.kind === "handoff") {
             // "continue in a working thread" call-to-action. The button opens a
             // normal thread to iterate on the built prototype.
-            return html`<${HandoffCard} key=${`ho${i}`} handoff=${seg.handoff}/>`;
+            return html`<${HandoffCard} key=${`ho${i}`} handoff=${seg.handoff} runId=${runId}/>`;
           }
           // Question-form segment - render as an interactive card. The
           // answers map tracks per-form-key picks so a re-render of the
@@ -32167,12 +32185,12 @@ function WorkflowCanvas() {
     // agent can never silently default to the wrong prototype (the bug this
     // bar fixes). See [[woven-canvas-chat-prototype-target]].
     // a handoff-opened chat is the working/build thread: force NORMAL and
-    // skip prototype targeting (Role A drives pipeline.json) even if a prototype
-    // is selected. One-shot flag set by the <handoff-card> button; nulling
-    // targetSlug makes the tier resolve to "normal" and prototype to undefined.
+    // preserve the explicit handoff scope (Role A drives pipeline.json).
+    // Legacy handoffs without metadata fall back to a general normal chat.
     const handoff = pendingHandoffRef.current;
     pendingHandoffRef.current = false;
-    const targetSlug = handoff ? null : resolveChatTargetSlug(selectionRef.current, chatTargetOverrideRef.current);
+    const targetSlug = opts && Object.prototype.hasOwnProperty.call(opts, "prototype")
+      ? opts.prototype : handoff ? null : resolveChatTargetSlug(selectionRef.current, chatTargetOverrideRef.current);
     const targetBlock = targetSlug ? [
       `<chat-target prototype="${targetSlug}">`,
       `The user is working on prototype \`${targetSlug}\`. Its source lives at \`source/${targetSlug}/\`. Any edit to this prototype's source files for this request MUST be written under \`source/${targetSlug}/\` (and that prototype's editor data file per the daemon rule) - do NOT edit a different prototype's source/ tree. If the request is clearly about the canvas / workflow nodes in general rather than this prototype's files, you may ignore this scope.`,
@@ -32203,10 +32221,10 @@ function WorkflowCanvas() {
     // the everyday path; it escalates into the setup routing on demand only when
     // the user asks for a genuine new build (see _normal_general_stub).
     const run = await triggerRun({
-      branch, agentId: pickAgentIdForChat(), kind: "freeform",
+      branch: opts?.branch || branch, agentId: opts?.agentId || pickAgentIdForChat(), kind: "freeform",
       prompt: wrappedPrompt, title, permissionMode: chatPermissionMode,
-      model: agentDefault && agentDefault.model || undefined,
-      tier: targetSlug ? "scoped" : "normal",
+      model: opts?.model || (agentDefault && agentDefault.model) || undefined,
+      tier: opts?.tier || (targetSlug ? "scoped" : "normal"),
       prototype: targetSlug || undefined,
       // opts.guards = the staged checks of a thread handing off to this one.
       guards: (opts && opts.guards) || loadChatGuards(),
@@ -32223,9 +32241,17 @@ function WorkflowCanvas() {
   // the handoff flag forces NORMAL (so Role A fires), and the agent reads
   // pipeline.json and drives the locked plan to completion.
   useEffect(() => {
-    const on = () => {
-      pendingHandoffRef.current = true;
-      spawnWorkflowChat("Build this prototype now: drive the locked plan (pipeline.json) to completion, running each orchestrator and gate in the order the plan lists. FIRST read the decision ledger at the project root - pipeline.json AND every DECISION_*.json. DECISION_prototype-direction.json is the locked look; when it carries a `detail` block (aesthetic slug, style/shell axes, palette, fonts, steers) that detail is binding on every dispatch you compose - never claim no direction is committed without reading it. pipeline.json may carry `brief` (the user's original request, verbatim) - it is the intent authority: if the locked plan's shape contradicts the brief's explicit experiential intent (e.g. the brief asks for an immersive piece but the plan boxed it into a section), pause and ask the user which to follow before driving on.");
+    const on = async (event) => {
+      try {
+        const handoff = event?.detail?.handoffData || await requestChatHandoff(event?.detail?.runId);
+        const prototype = event?.detail?.prototype || handoff.context?.prototype;
+        const request = "Build this prototype from pipeline.json and DECISION_*.json. "
+          + "Honor the locked direction and the original brief. Resume unfinished steps and gates "
+          + "in dependency order. If the plan conflicts with the user's explicit intent, ask before proceeding.";
+        pendingHandoffRef.current = true;
+        await spawnWorkflowChat(WovenContext.handoffPrompt(handoff.summary, request),
+          WovenContext.handoffOptions(handoff.context, { tier: "normal", prototype }));
+      } catch (e) { await uiAlert("Could not continue: " + e.message); }
     };
     window.addEventListener("woven:continue-scoped", on);
     return () => window.removeEventListener("woven:continue-scoped", on);
@@ -59326,13 +59352,13 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
                     // section in the agent's prompt, so the agent sees the
                     // input's STRUCTURE - not just its text representation.
                     if (up.kind === "prompt") {
-                      summary.inputs.push({ kind: "text", label: up.name || up.title || "input", text: workflowExpandPromptRefs(up, data.nodes || [], data.edges || []) });
+                      summary.inputs.push({ sourceId: up.id, sourceVersion: up.activeVersionId || up.version || null, kind: "text", label: up.name || up.title || "input", text: workflowExpandPromptRefs(up, data.nodes || [], data.edges || []) });
                     } else if (up.kind === "color-palette") {
-                      summary.inputs.push({ kind: "color-palette", label: up.name || "palette", swatches: up.swatches || [] });
+                      summary.inputs.push({ sourceId: up.id, sourceVersion: up.activeVersionId || up.version || null, kind: "color-palette", label: up.name || "palette", swatches: up.swatches || [] });
                     } else if (up.kind === "typography") {
-                      summary.inputs.push({ kind: "typography", label: up.name || "type scale", fontFamily: up.fontFamily, monoFamily: up.monoFamily, levels: up.levels || [] });
+                      summary.inputs.push({ sourceId: up.id, sourceVersion: up.activeVersionId || up.version || null, kind: "typography", label: up.name || "type scale", fontFamily: up.fontFamily, monoFamily: up.monoFamily, levels: up.levels || [] });
                     } else if (up.kind === "asset") {
-                      summary.inputs.push({ kind: "asset", label: up.path || "asset", path: up.path, assetKind: up.assetKind });
+                      summary.inputs.push({ sourceId: up.id, sourceVersion: up.activeVersionId || up.version || null, kind: "asset", label: up.path || "asset", path: up.path, assetKind: up.assetKind });
                     } else if (up.kind === "composer") {
                       // composer.out is treated like an HTML asset.
                       // The bake step (Bake button on the composer) writes a
@@ -59343,20 +59369,20 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
                       // user to bake first instead of looking for a file
                       // that isn't there.
                       if (up.bakedPath) {
-                        summary.inputs.push({ kind: "asset", label: "composer (" + up.bakedPath.split("/").pop() + ")", path: up.bakedPath, assetKind: "html" });
+                        summary.inputs.push({ sourceId: up.id, sourceVersion: up.activeVersionId || up.version || null, kind: "asset", label: "composer (" + up.bakedPath.split("/").pop() + ")", path: up.bakedPath, assetKind: "html" });
                       } else {
-                        summary.inputs.push({ kind: "text", label: "composer (UNBAKED - click Bake on the upstream Composer node first)", text: "" });
+                        summary.inputs.push({ sourceId: up.id, sourceVersion: up.activeVersionId || up.version || null, kind: "text", label: "composer (UNBAKED - click Bake on the upstream Composer node first)", text: "" });
                       }
                     } else if (up.kind === "vector-editor") {
                       // Like composer above, but writes an .svg. Surfaces as
                       // an SVG asset once baked; otherwise hint to bake first.
                       if (up.bakedPath) {
-                        summary.inputs.push({ kind: "asset", label: "vector (" + up.bakedPath.split("/").pop() + ")", path: up.bakedPath, assetKind: "svg" });
+                        summary.inputs.push({ sourceId: up.id, sourceVersion: up.activeVersionId || up.version || null, kind: "asset", label: "vector (" + up.bakedPath.split("/").pop() + ")", path: up.bakedPath, assetKind: "svg" });
                       } else {
-                        summary.inputs.push({ kind: "text", label: "vector-editor (UNBAKED - click Bake on the upstream Vector editor node first)", text: "" });
+                        summary.inputs.push({ sourceId: up.id, sourceVersion: up.activeVersionId || up.version || null, kind: "text", label: "vector-editor (UNBAKED - click Bake on the upstream Vector editor node first)", text: "" });
                       }
                     } else if (up.kind === "design-system") {
-                      summary.inputs.push({ kind: "design-system", label: "DS " + (up.dsId || "main"), dsId: up.dsId, dsRefVersion: up.version });
+                      summary.inputs.push({ sourceId: up.id, sourceVersion: up.activeVersionId || up.version || null, kind: "design-system", label: "DS " + (up.dsId || "main"), dsId: up.dsId, dsRefVersion: up.version });
                     } else if (up.kind === "section") {
                       // A section is a BUNDLE of typed node references - expand
                       // each contained node into its OWN typed input (image as
@@ -59373,23 +59399,23 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
                       const secName = up.title || "Section";
                       for (const cn of inside) {
                         if (cn.kind === "prompt" && (cn.text || "").trim()) {
-                          summary.inputs.push({ kind: "text", label: secName + " · " + (cn.name || cn.title || "prompt"), text: cn.text });
+                          summary.inputs.push({ sourceId: cn.id, sourceVersion: cn.activeVersionId || cn.version || null, kind: "text", label: secName + " · " + (cn.name || cn.title || "prompt"), text: cn.text });
                         } else if (cn.kind === "skill" && (cn.output || "").trim()) {
-                          summary.inputs.push({ kind: "text", label: secName + " · skill output", text: cn.output });
+                          summary.inputs.push({ sourceId: cn.id, sourceVersion: cn.activeVersionId || cn.version || null, kind: "text", label: secName + " · skill output", text: cn.output });
                         } else if (cn.kind === "color-palette") {
-                          summary.inputs.push({ kind: "color-palette", label: secName + " · " + (cn.name || "palette"), swatches: cn.swatches || [] });
+                          summary.inputs.push({ sourceId: cn.id, sourceVersion: cn.activeVersionId || cn.version || null, kind: "color-palette", label: secName + " · " + (cn.name || "palette"), swatches: cn.swatches || [] });
                         } else if (cn.kind === "typography") {
-                          summary.inputs.push({ kind: "typography", label: secName + " · " + (cn.name || "type scale"), fontFamily: cn.fontFamily, monoFamily: cn.monoFamily, levels: cn.levels || [] });
+                          summary.inputs.push({ sourceId: cn.id, sourceVersion: cn.activeVersionId || cn.version || null, kind: "typography", label: secName + " · " + (cn.name || "type scale"), fontFamily: cn.fontFamily, monoFamily: cn.monoFamily, levels: cn.levels || [] });
                         } else if (cn.kind === "design-system") {
-                          summary.inputs.push({ kind: "design-system", label: secName + " · DS " + (cn.dsId || "main"), dsId: cn.dsId, dsRefVersion: cn.version });
+                          summary.inputs.push({ sourceId: cn.id, sourceVersion: cn.activeVersionId || cn.version || null, kind: "design-system", label: secName + " · DS " + (cn.dsId || "main"), dsId: cn.dsId, dsRefVersion: cn.version });
                         } else if (cn.kind === "asset" && typeof cn.path === "string" && cn.path.startsWith("source/")) {
-                          summary.inputs.push({ kind: "asset", label: secName + " · " + (cn.path.split("/").pop() || "asset"), path: cn.path, assetKind: cn.assetKind });
+                          summary.inputs.push({ sourceId: cn.id, sourceVersion: cn.activeVersionId || cn.version || null, kind: "asset", label: secName + " · " + (cn.path.split("/").pop() || "asset"), path: cn.path, assetKind: cn.assetKind });
                         } else if (cn.kind === "composer" && cn.bakedPath) {
-                          summary.inputs.push({ kind: "asset", label: secName + " · composer", path: cn.bakedPath, assetKind: "html" });
+                          summary.inputs.push({ sourceId: cn.id, sourceVersion: cn.activeVersionId || cn.version || null, kind: "asset", label: secName + " · composer", path: cn.bakedPath, assetKind: "html" });
                         } else if (cn.kind === "vector-editor" && cn.bakedPath) {
-                          summary.inputs.push({ kind: "asset", label: secName + " · vector", path: cn.bakedPath, assetKind: "svg" });
+                          summary.inputs.push({ sourceId: cn.id, sourceVersion: cn.activeVersionId || cn.version || null, kind: "asset", label: secName + " · vector", path: cn.bakedPath, assetKind: "svg" });
                         } else if (cn.kind === "formatted-text" && cn.bakedPath) {
-                          summary.inputs.push({ kind: "asset", label: secName + " · formatted text", path: cn.bakedPath, assetKind: "html" });
+                          summary.inputs.push({ sourceId: cn.id, sourceVersion: cn.activeVersionId || cn.version || null, kind: "asset", label: secName + " · formatted text", path: cn.bakedPath, assetKind: "html" });
                         }
                       }
                     } else if (up.kind === "table") {
@@ -59424,31 +59450,31 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
                           for (let c = 0; c <= maxC; c++) out.push(row[c] != null ? row[c] : "");
                           return out.join("\t");
                         });
-                        summary.inputs.push({ kind: "text", label: tblName + " (table · " + rowKeys.length + " rows)", text: lines.join("\n") });
+                        summary.inputs.push({ sourceId: up.id, sourceVersion: up.activeVersionId || up.version || null, kind: "text", label: tblName + " (table · " + rowKeys.length + " rows)", text: lines.join("\n") });
                       }
                       for (const cn of (data.nodes || [])) {
                         if (!cn || !cn.cell || cn.cell.tableId !== up.id) continue;
                         if (!inSpan(cn.cell.r || 0, cn.cell.c || 0)) continue;
                         if (cn.kind === "color-palette") {
-                          summary.inputs.push({ kind: "color-palette", label: tblName + " · " + (cn.name || "palette"), swatches: cn.swatches || [] });
+                          summary.inputs.push({ sourceId: cn.id, sourceVersion: cn.activeVersionId || cn.version || null, kind: "color-palette", label: tblName + " · " + (cn.name || "palette"), swatches: cn.swatches || [] });
                         } else if (cn.kind === "typography") {
-                          summary.inputs.push({ kind: "typography", label: tblName + " · " + (cn.name || "type scale"), fontFamily: cn.fontFamily, monoFamily: cn.monoFamily, levels: cn.levels || [] });
+                          summary.inputs.push({ sourceId: cn.id, sourceVersion: cn.activeVersionId || cn.version || null, kind: "typography", label: tblName + " · " + (cn.name || "type scale"), fontFamily: cn.fontFamily, monoFamily: cn.monoFamily, levels: cn.levels || [] });
                         } else if (cn.kind === "asset" && typeof cn.path === "string" && cn.path.startsWith("source/")) {
-                          summary.inputs.push({ kind: "asset", label: tblName + " · " + (cn.path.split("/").pop() || "asset"), path: cn.path, assetKind: cn.assetKind });
+                          summary.inputs.push({ sourceId: cn.id, sourceVersion: cn.activeVersionId || cn.version || null, kind: "asset", label: tblName + " · " + (cn.path.split("/").pop() || "asset"), path: cn.path, assetKind: cn.assetKind });
                         }
                       }
                     } else if (up.kind === "browser" && (up.url || "").trim()) {
                       // Web-browser node wired in → hand the agent the URL; it
                       // can WebFetch the page itself. (Was offered by the ⊕ menu
                       // via the "asset" tag but dropped here.)
-                      summary.inputs.push({ kind: "text", label: "web page", text: "Web page reference: " + up.url.trim() + "\n(Use WebFetch to read its content if you need it.)" });
+                      summary.inputs.push({ sourceId: up.id, sourceVersion: up.activeVersionId || up.version || null, kind: "text", label: "web page", text: "Web page reference: " + up.url.trim() + "\n(Use WebFetch to read its content if you need it.)" });
                     } else if (up.kind === "formatted-text") {
                       // Mirror composer/vector-editor: a baked .html file is a
                       // visual reference; unbaked → hint to bake first.
                       if (up.bakedPath) {
-                        summary.inputs.push({ kind: "asset", label: "formatted text (" + up.bakedPath.split("/").pop() + ")", path: up.bakedPath, assetKind: "html" });
+                        summary.inputs.push({ sourceId: up.id, sourceVersion: up.activeVersionId || up.version || null, kind: "asset", label: "formatted text (" + up.bakedPath.split("/").pop() + ")", path: up.bakedPath, assetKind: "html" });
                       } else {
-                        summary.inputs.push({ kind: "text", label: "formatted-text (UNBAKED - click Bake on the upstream Formatted text node first)", text: "" });
+                        summary.inputs.push({ sourceId: up.id, sourceVersion: up.activeVersionId || up.version || null, kind: "text", label: "formatted-text (UNBAKED - click Bake on the upstream Formatted text node first)", text: "" });
                       }
                     }
                   }
@@ -99552,6 +99578,110 @@ function WorkflowExposeDialog({ items, initialSelected, branch, onCancel, onAppl
    which fall back to the Claude CLI (anthropic with no key), and resolve
    the vague "follow system" placeholder to a NAMED model the user can
    actually see picked. */
+function WorkflowContextCostSection() {
+  const [config, setConfig] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    fetch(apiUrl("/__compact_config"))
+      .then(async r => {
+        if (!r.ok) throw new Error(`Could not load context settings (${r.status}).`);
+        return r.json();
+      })
+      .then(value => { if (!cancelled) setConfig(value); })
+      .catch(e => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, []);
+  const save = async (patch) => {
+    setSaving(true); setError("");
+    try {
+      const r = await fetch(apiUrl("/__compact_config"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!r.ok) throw new Error(`Could not save context settings (${r.status}).`);
+      setConfig(await r.json());
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  };
+  const disabled = !config || saving;
+  const thresholds = [...new Set([50000, 100000, 200000, 400000, 600000, 800000, 1000000, 2000000,
+    config?.thresholdTokens || 400000])].sort((a, b) => a - b);
+  const toggle = (key, label, hint) => html`
+    <label className="chat-ctx-auto-toggle chat-ctx-auto-settings settings-guard-row">
+      <input type="checkbox" checked=${!!config?.[key]} disabled=${disabled}
+        onChange=${e => save({ [key]: e.target.checked })}/>
+      <span className="settings-guard-body">
+        <span className="settings-guard-label">${label}</span>
+        <span className="settings-guard-hint">${hint}</span>
+      </span>
+    </label>`;
+  return html`
+    <section aria-label="Context and cost">
+      <div className="workflow-default-providers">
+        <div className="workflow-settings-section-group-head">Conversation summaries</div>
+        <div className="workflow-settings-section-group-sub">
+          Carries decisions, constraints, and next steps into a fresh context.
+          Used for setup to prototype work, QA-setting changes, and compaction.
+        </div>
+        <div className="workflow-default-provider-row">
+          <label className="workflow-default-provider-label" htmlFor="context-summary-model">Summary model</label>
+          <div className="workflow-default-provider-controls">
+            <select id="context-summary-model" className="workflow-default-provider-select"
+              style=${{ gridColumn: "1 / -1" }} disabled=${disabled} value=${config?.summaryModel || "fast"}
+              onChange=${e => save({ summaryModel: e.target.value })}>
+              <option value="fast">Fast (Luna for Codex / Haiku for Claude)</option>
+              <option value="inherit">Same model as thread</option>
+            </select>
+          </div>
+        </div>
+        <div className="workflow-settings-section-group-sub">
+          Normal resume uses the saved session or context. It does not request another summary.
+        </div>
+      </div>
+      <div className="workflow-default-providers">
+        <div className="workflow-settings-section-group-head">Reuse and evidence</div>
+        ${toggle("referenceReuse", "Reuse unchanged reference extractions",
+          "Image descriptions reuse matching image content, request, and model. Figma readers can reuse saved notes after verifying the same node revision and request.")}
+        ${toggle("compactQa", "Concise QA results",
+          "Keeps failures, measurements, and image evidence available. Passing cases use short receipts; the complete report stays on disk. All required checks still run.")}
+      </div>
+      <div className="workflow-default-providers">
+        <div className="workflow-settings-section-group-head">Automatic compaction</div>
+        ${toggle("autoCompact", "Compact long conversations automatically",
+          "At the next turn boundary, replace older history with a working-state summary using the model above.")}
+        <div className="workflow-default-provider-row">
+          <label className="workflow-default-provider-label" htmlFor="context-threshold">Context threshold</label>
+          <div className="workflow-default-provider-controls">
+            <select id="context-threshold" className="workflow-default-provider-select"
+              style=${{ gridColumn: "1 / -1" }} disabled=${disabled} value=${config?.thresholdTokens || 400000}
+              onChange=${e => save({ thresholdTokens: +e.target.value })}>
+              ${thresholds.map(value => html`<option key=${value} value=${value}>${fmtTokens(value)} tokens</option>`)}
+            </select>
+          </div>
+        </div>
+        ${toggle("autoContinue", "Continue after automatic compaction",
+          "Resume the work once the summary is ready.")}
+      </div>
+      <div className="workflow-default-providers">
+        <div className="workflow-settings-section-group-head">Creative work and worker briefs</div>
+        <div className="workflow-settings-section-group-sub">
+          Research, art direction, worker briefs, and QA judgment keep their assigned task models.
+          Set these in Orchestrators. Briefs reference saved artifacts, and art direction loads its current phase.
+          Shared contract fields are assembled by code, preserving every supplied creative decision.
+        </div>
+        <div className="workflow-settings-section-group-sub">
+          DS QA on includes the full bound DESIGN.md during generation and QA. DS QA off leaves it out of the prompt.
+          Change QA checks in Preferences or the chat controls.
+        </div>
+      </div>
+      <div role="status" className="workflow-settings-localhint">${saving ? "Saving..." : config ? "Settings apply to new requests across this Woven installation." : "Loading settings..."}</div>
+      ${error && html`<div role="alert" className="workflow-settings-localhint">${error}</div>`}
+    </section>
+  `;
+}
+
 function WorkflowDefaultProvidersSection({ mediaConfig }) {
   const [state, setState] = useState(() => loadDefaultProviders());
   useEffect(() => {
@@ -100100,6 +100230,7 @@ function WorkflowSettingsDialog({ onClose }) {
   const activeProject = activeProjectId();
   const TABS = [
     { id: "api", label: "Model Config" },
+    { id: "context", label: "Context and cost" },
     { id: "install", label: "Things to install" },
     { id: "figma", label: "Send to Figma" },
     { id: "orchestrators", label: "Orchestrators" },
@@ -100114,6 +100245,7 @@ function WorkflowSettingsDialog({ onClose }) {
     api: modelSub === "keys"
       ? "Your provider keys · stored by the daemon, never sent to the browser"
       : "Which provider and model each capability uses by default",
+    context: "Summary models, reference reuse, and conversation size",
     install: "Local tools the daemon installs on demand · no API key needed",
     figma: "Woven Bridge plugin · one-time setup, runs in Figma Desktop",
     orchestrators: "Toggle which orchestrators auto-dispatch · pick each one's default model",
@@ -100172,7 +100304,9 @@ function WorkflowSettingsDialog({ onClose }) {
           ` : html`
             <${WorkflowDefaultProvidersSection} mediaConfig=${config}/>
             <${WorkflowSearchDefaultsSection} mediaConfig=${config}/>
-          `) : tab === "install" ? html`
+          `) : tab === "context" ? html`
+            <${WorkflowContextCostSection}/>
+          ` : tab === "install" ? html`
             ${LOCAL_PACKAGES.map(p => html`<${WorkflowLocalPackageRow} key=${p.id} pkg=${p}/>`)}
             <${WorkflowUserTestingSettingsRow}/>
             <${WorkflowBrowserSetupSection}/>
@@ -100394,19 +100528,6 @@ function WorkflowSendKeySection() {
     window.addEventListener("th:perm-mode-changed", on);
     return () => window.removeEventListener("th:perm-mode-changed", on);
   }, []);
-  const [compactCfg, setCompactCfg] = useState(null);
-  useEffect(() => {
-    fetch(apiUrl("/__compact_config"))
-      .then(r => r.json()).then(setCompactCfg)
-      .catch(() => setCompactCfg({ autoCompact: false, thresholdTokens: 400000 }));
-  }, []);
-  const saveCompactCfg = (patch) => {
-    setCompactCfg(prev => ({ ...(prev || {}), ...patch }));
-    fetch(apiUrl("/__compact_config"), {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    }).catch(() => {});
-  };
   const pick = (v) => { saveSendOnEnter(v); setSendOnEnter(v); };
   const pickPermMode = (v) => { savePermissionMode(v); setPermMode(v); };
   const pickSimplify = (v) => { saveNodeSimplify(v); setSimplify(v); };
@@ -100499,29 +100620,6 @@ function WorkflowSendKeySection() {
             </span>
           </label>
         `)}
-      </div>
-      <div className="workflow-settings-section">
-        <div className="onboarding-sendkey-head">
-          <span className="onboarding-sendkey-title">Chat context auto-compact</span>
-          <span className="onboarding-sendkey-desc">When a chat thread's context crosses the threshold, its history is summarised into a fresh session at the next turn boundary. Each extra 100k of carried context costs roughly $5 per 100 agent calls.</span>
-        </div>
-        <label className="chat-ctx-auto-toggle chat-ctx-auto-settings">
-          <input type="checkbox" checked=${!!compactCfg?.autoCompact}
-                 disabled=${!compactCfg}
-                 onChange=${(e) => saveCompactCfg({ autoCompact: e.target.checked })}/>
-          Auto-compact at <strong>${fmtTokens(compactCfg?.thresholdTokens || 400000)}</strong> tokens
-        </label>
-        <input type="range" className="chat-ctx-slider"
-               min="100000" max="800000" step="50000"
-               value=${compactCfg?.thresholdTokens || 400000} disabled=${!compactCfg}
-               onInput=${(e) => saveCompactCfg({ thresholdTokens: +e.target.value })}/>
-        <div className="chat-ctx-scale"><span>100k</span><span>800k</span></div>
-        <label className="chat-ctx-auto-toggle chat-ctx-auto-settings">
-          <input type="checkbox" checked=${compactCfg ? compactCfg.autoContinue !== false : true}
-                 disabled=${!compactCfg}
-                 onChange=${(e) => saveCompactCfg({ autoContinue: e.target.checked })}/>
-          Continue the thread afterwards, instead of waiting for a message
-        </label>
       </div>
       <div className="workflow-settings-section">
         <div className="onboarding-sendkey-head">
@@ -102376,7 +102474,7 @@ function workflowComposeAgentPrompt({ wiredSystem, wiredInputs, wiredReadRoot, w
     parts.push(wiredSystem.trim());
     parts.push("");
   }
-  const inputs = Array.isArray(wiredInputs) ? wiredInputs : [];
+  const inputs = WovenContext.dedupeInputs(wiredInputs);
   for (const inp of inputs) {
     // Typed inputs - each kind is formatted to make its STRUCTURE visible
     // to the agent (swatches as name=value pairs, type scale as size/weight
@@ -102448,14 +102546,18 @@ function workflowComposeAgentPrompt({ wiredSystem, wiredInputs, wiredReadRoot, w
     parts.push("=== Typed outputs ===");
     parts.push(`Your final response MUST be a single JSON object with one key "outputs", whose value is an array of ${targets.length} entries - one per wired downstream target listed below. Each entry's "targetId" must match the listed id exactly; "value" must match that target's schema. Emit ONLY the JSON object (no prose, no markdown fences).`);
     parts.push("");
-    parts.push("Targets:");
+    const emittedSchemas = new Set();
+    parts.push("Targets and shared value schemas:");
     targets.forEach((t, i) => {
       const schema = AGENT_OUTPUT_SCHEMAS[t.targetType] || `"<arbitrary content for ${t.targetType}>"`;
       const kindLabel = t.targetType === "asset" && t.assetKind ? `asset (${t.assetKind})` : t.targetType;
       parts.push(`  ${i + 1}. targetId="${t.targetNodeId}"  type="${kindLabel}"  label="${t.label}"`);
-      parts.push(`     value schema: ${schema}`);
-      const guidance = AGENT_OUTPUT_GUIDANCE[t.targetType];
-      if (guidance) parts.push(`     notes: ${guidance}`);
+      if (!emittedSchemas.has(t.targetType)) {
+        emittedSchemas.add(t.targetType);
+        parts.push(`     ${t.targetType} value schema: ${schema}`);
+        const guidance = AGENT_OUTPUT_GUIDANCE[t.targetType];
+        if (guidance) parts.push(`     notes: ${guidance}`);
+      }
       // Per-medium authoring (assetKind) - what this medium IS + how to produce
       // it, so the agent doesn't default to HTML/CSS for a shader/3d/etc.
       if (t.authoring) parts.push("     medium: " + t.authoring.split("\n").join("\n     "));
@@ -102465,7 +102567,7 @@ function workflowComposeAgentPrompt({ wiredSystem, wiredInputs, wiredReadRoot, w
     parts.push("{");
     parts.push("  \"outputs\": [");
     targets.forEach((t, i) => {
-      const schema = AGENT_OUTPUT_SCHEMAS[t.targetType] || '"<value>"';
+      const schema = JSON.stringify("<value matching the " + t.targetType + " schema above>");
       parts.push(`    { "targetId": "${t.targetNodeId}", "targetType": "${t.targetType}", "value": ${schema} }${i < targets.length - 1 ? "," : ""}`);
     });
     parts.push("  ]");
@@ -102808,7 +102910,8 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
     });
     const title = (((node.name && node.name !== "Untitled agent") ? node.name : (userText || "").trim().slice(0, 60)) || "Agent chat");
     const run = await triggerRun({
-      branch, agentId: pickAgentIdForChat(), kind: "freeform",
+      branch: opts?.branch || branch, agentId: opts?.agentId || pickAgentIdForChat(), kind: "freeform",
+      model: opts?.model, tier: opts?.tier, prototype: opts?.prototype,
       prompt: fullPrompt, title, permissionMode,
       guards: (opts && opts.guards) || loadChatGuards(),
     });
@@ -107817,8 +107920,9 @@ function App() {
       markAutoProtoFired();
     }
     const run = await triggerRun({
-      branch: activeBranchIdForChat,
-      agentId,
+      branch: opts?.branch || activeBranchIdForChat,
+      agentId: opts?.agentId || agentId,
+      model: opts?.model, tier: opts?.tier, prototype: opts?.prototype,
       kind: "freeform",
       prompt: wrappedPrompt,
       title,

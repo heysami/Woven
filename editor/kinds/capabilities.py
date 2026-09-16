@@ -852,35 +852,9 @@ def _resolve_ds_binding(project_root: Optional[str], prototype: Optional[str]) -
 DS_INDEX_BUDGET_CHARS = 30000
 
 
-def _scoped_iteration_stub(prototype: Optional[str] = None,
-                           project_root: Optional[str] = None) -> str:
-    scope = f"`source/{prototype}/`" if prototype else "the committed prototype's `source/<slug>/` subtree"
-    slug = prototype or "<slug>"
-    # Style-source discipline. The #1 iteration failure mode is the
-    # agent editing markup/CSS after reading ONLY the one file it's changing,
-    # then inventing class names / CSS variables that don't exist (hallucinated
-    # styles). A prototype's visual vocabulary lives in TWO places: its own
-    # `source/<slug>/styles.css`, and - when a design system is committed - the
-    # DS token + component sheet it @imports. Name both, and require reading
-    # them BEFORE authoring any style.
+def _design_system_catalog(project_root=None, prototype=None):
+    """Full catalog, no silent size cap. Caller gates this on DS QA."""
     ds = _resolve_ds_binding(project_root, prototype)
-    # When the bound DS carries a DESIGN.md catalog, EMBED it in the preamble
-    # instead of only naming it. Rationale (suss-cal drift, 2026-07-16): the
-    # catalog gets Read once at turn 2 and is buried 200k tokens back by the
-    # time styling happens, so the agent invents classes. The preamble rides
-    # at the top of EVERY call - always in view, fully prompt-cached.
-    #
-    # NO SIZE CAP. There used to be one (`len(_idx_txt) <= 30000`), and it
-    # was the worst kind: silent. suss-cal's DESIGN.md grew past 30k chars,
-    # the embed switched itself off, the preamble still said "consult the
-    # DS" - and the agent went back to grepping class names out of a 206k
-    # gallery, reading component ANATOMY while never seeing the usage rules
-    # ("Filter chip ... Use everywhere; never hand-roll"). It shipped native
-    # <select>s where the DS codifies .filter-chip, and no lint catches that
-    # (ds_lint.py is CSS-only). A fix that disarms itself as the DS grows is
-    # worse than no fix. The catalog now always embeds; DS_INDEX_BUDGET_CHARS
-    # below is ADVISORY ONLY, surfaced on the design-system canvas node so
-    # growth is visible to a human instead of being swallowed here.
     ds_index = ""
     if ds and ds.get("designMd") and project_root:
         try:
@@ -901,8 +875,23 @@ def _scoped_iteration_stub(prototype: Optional[str] = None,
                 )
         except Exception:
             ds_index = ""
+    return ds_index
+
+
+def _scoped_iteration_stub(prototype: Optional[str] = None,
+                           project_root: Optional[str] = None, embedded=False) -> str:
+    scope = f"`source/{prototype}/`" if prototype else "the committed prototype's `source/<slug>/` subtree"
+    slug = prototype or "<slug>"
+    # Style-source discipline. The #1 iteration failure mode is the
+    # agent editing markup/CSS after reading ONLY the one file it's changing,
+    # then inventing class names / CSS variables that don't exist (hallucinated
+    # styles). A prototype's visual vocabulary lives in TWO places: its own
+    # `source/<slug>/styles.css`, and - when a design system is committed - the
+    # DS token + component sheet it @imports. Name both, and require reading
+    # them BEFORE authoring any style.
+    ds = _resolve_ds_binding(project_root, prototype)
     if ds:
-        _ds_srcs = ((None if ds_index else ds.get("designMd")), ds.get("stylesCss"), ds.get("allCss"))
+        _ds_srcs = ((None if embedded else ds.get("designMd")), ds.get("stylesCss"), ds.get("allCss"))
         ds_reads = ", ".join(f"`{p}`" for p in _ds_srcs if p)
         ds_line = (
             f"- This prototype is BOUND to design system `{ds['id']}` (`design-systems/{ds['id']}/`). "
@@ -931,7 +920,7 @@ You need the full routing rules ONLY IF the user now asks to do one of these - a
   - start a NEW prototype from scratch (a different `source/<slug>/`).
 If NONE apply -> iterate in place, do not go fetch routing. If ANY apply -> STOP and fetch them first:
   `GET $TH_DAEMON_URL/__capabilities?section=orchestrators&project=$TH_PROJECT_ID`
-returns the authoritative setup-path routing blocks. Treat what it returns as binding. (For a genuinely new prototype, tell the user it is a fresh build, and name its `source/<slug>/` after the user's word for it - if unnamed, use the next free `prototype<N>` slug (`prototype2`, `prototype3`, ...), never `main`.)""" + ds_index
+returns the authoritative setup-path routing blocks. Treat what it returns as binding. (For a genuinely new prototype, tell the user it is a fresh build, and name its `source/<slug>/` after the user's word for it - if unnamed, use the next free `prototype<N>` slug (`prototype2`, `prototype3`, ...), never `main`.)"""
 
 
 def _ds_guard_stub(project_root: Optional[str] = None,
@@ -1309,7 +1298,7 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     # full id enumeration. A scoped/leaf run should OMIT `model` and let the
     # daemon pick the project default; when it genuinely needs to name one, the
     # catalog is one fetch away. Full/setup keep it - those tiers choose models.
-    _skip_model_catalog = tier in ("slim", "leaf", "scoped")
+    _skip_model_catalog = tier in ("slim", "leaf", "scoped", "normal")
     try:
         if _skip_model_catalog:
             raise _SkipCatalog()
@@ -1562,7 +1551,7 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     # a scoped thread re-reads on every turn and uses maybe three lines of.
     _HOT_ENDPOINTS = ("/__qa/run", "/__workflow", "/__capabilities", "/__asset_generate",
                       "/__kinds/registry", "/__design_systems", "/__save", "/__history")
-    if tier in ("slim", "leaf", "scoped"):
+    if tier in ("slim", "leaf", "scoped", "normal"):
         _eps = [ep for ep in caps["endpoints"]
                 if any(ep["path"].startswith(h) for h in _HOT_ENDPOINTS)]
         endpoint_lines = "\n".join(
@@ -1660,7 +1649,7 @@ If MCP tool schemas are deferred in your runtime, load every tool you need in ON
     # existing prototype's source; a leaf builds ONE asset. Neither assembles a
     # node graph, and the catalogue was ALSO misfiled inside the visual-guard
     # section, so switching the visual check off silently dropped it too.
-    if tier in ("slim", "leaf", "scoped"):
+    if tier in ("slim", "leaf", "scoped", "normal"):
         node_kinds_block = (
             "**Workflow nodes.** You can build + author nodes on the user's canvas "
             "(`POST $TH_DAEMON_URL/__workflow/node/<id>/commit?project=$TH_PROJECT_ID`). "
@@ -3020,6 +3009,9 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     # discipline is gone would tell the agent to verify but not how to keep
     # the pixels out of this thread.
     _g = normalize_guards(guards)
+    from context_policy import WRITING_DISCIPLINE
+    _preamble += WRITING_DISCIPLINE
+    _catalog = _design_system_catalog(project_root, prototype) if _g["dsGuard"] else ""
     _visual_block = VISUAL_DELEGATION_DISCIPLINE
     if not _g["visual"]:
         _preamble = _strip_sections_by_header(_preamble, [_VISUAL_GATE_HEADER])
@@ -3042,7 +3034,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "leaf":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + LEAF_ROUTER_STUB + GATE_CARD_SYNTAX + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+        return _preamble + _catalog + LEAF_ROUTER_STUB + GATE_CARD_SYNTAX + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
     # SCOPED path: editing an existing prototype. Same routing strip as leaf
     # (the prototype is committed, routing is decided), but keeps the full
     # app-capabilities surface and swaps in the iterate-in-place stub (named to
@@ -3050,7 +3042,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + _ds_block + _req_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root, embedded=bool(_catalog)) + _catalog + _ds_block + _req_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
     # NORMAL path: the project's everyday chat, the untargeted default. Same
     # routing strip as scoped (routing is fetched on demand only when the user
     # asks for a genuine new build), but NOT bound to one prototype - a general
@@ -3058,13 +3050,13 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "normal":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _normal_general_stub() + _ds_block + _req_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+        return _preamble + _normal_general_stub() + _catalog + _ds_block + _req_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
     # SETUP path (default): a new prototype build. Keeps the full routing
     # catalog. Append manifest-carried hard rules for orchestrators added
     # after ship time (not covered by the static prose above). Appended AFTER
     # the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
-    return _preamble + _req_block + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+    return _preamble + _catalog + _ds_block + _req_block + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
 
 
 def orchestrator_routing_text(project_root: Optional[str] = None) -> str:

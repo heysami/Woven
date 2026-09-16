@@ -44,6 +44,8 @@ if _sys.version_info < (3, 9):
     raise SystemExit(1)
 
 import atexit
+import context_policy
+import context_artifacts
 import datetime as _dt
 import difflib
 import glob
@@ -948,7 +950,8 @@ COMPACT_DEFAULTS         = {"autoCompact": False, "thresholdTokens": 400_000,
                             # After an AUTO compact the thread is left waiting
                             # for a message, and the message every user types
                             # there is "continue". Send it for them.
-                            "autoContinue": True}
+                            "autoContinue": True, "summaryModel": "fast",
+                            "referenceReuse": True, "compactQa": True}
 
 
 def _compact_config() -> dict:
@@ -959,6 +962,11 @@ def _compact_config() -> dict:
             cfg["autoCompact"] = saved["autoCompact"]
         if isinstance(saved.get("autoContinue"), bool):
             cfg["autoContinue"] = saved["autoContinue"]
+        if saved.get("summaryModel") in ("fast", "inherit"):
+            cfg["summaryModel"] = saved["summaryModel"]
+        for key in ("referenceReuse", "compactQa"):
+            if isinstance(saved.get(key), bool):
+                cfg[key] = saved[key]
         thr = saved.get("thresholdTokens")
         if isinstance(thr, (int, float)) and 50_000 <= int(thr) <= 2_000_000:
             cfg["thresholdTokens"] = int(thr)
@@ -4205,7 +4213,7 @@ def _codex_cli_complete(messages, model=None, timeout=600, extra_args=None, cwd=
     return (result.stdout or "").rstrip("\n")
 
 
-def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=600):
+def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=600, reasoning=None):
     """One-shot "simple agent" for the assistant nodes - a REAL Claude Code (or
     Codex) subagent that receives ONLY the given system prompt + task, with NO
     Woven capabilities preamble (that bloat is for orchestrators).
@@ -4244,9 +4252,16 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
             args = [bin_path, "--print", "--output-format", "text",
                     "--no-session-persistence", "--disable-slash-commands"]
             if system and system.strip():
-                args.extend(["--append-system-prompt", system.strip()])
-            if model:
+                # A text-only summarizer must not inherit the coding-agent role.
+                args.extend(["--system-prompt" if tools == "none" else "--append-system-prompt", system.strip()])
+            if model and model != "claude-default":
                 args.extend(["--model", model])
+            if reasoning and "haiku" not in (model or ""):
+                args.extend(["--effort", reasoning])
+            if tools == "none":
+                args.extend(["--tools", "", "--strict-mcp-config"])
+                if model == "claude-haiku-4-5":
+                    args.extend(["--setting-sources", ""])
             if tools == "browser":
                 # No --add-dir: the agent reads the asset over its served URL.
                 mcp = _mcp_config_spawn_args()
@@ -4271,8 +4286,21 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
         if system and system.strip():
             msgs.append({"role": "system", "content": system})
         msgs.append({"role": "user", "content": prompt or "Proceed."})
-        extra = _codex_mcp_spawn_args() if tools == "browser" else None
-        return _codex_cli_complete(msgs, model=model, timeout=timeout, extra_args=extra, cwd=scratch)
+        extra = _codex_mcp_spawn_args() if tools == "browser" else []
+        if tools == "none":
+            extra += ["--skip-git-repo-check", "--ephemeral",
+                      "--disable", "shell_tool", "--disable", "apps", "--disable", "plugins",
+                      "--disable", "multi_agent", "--disable", "browser_use",
+                      "--disable", "computer_use", "--disable", "image_generation",
+                      "--disable", "view_image", "-c", 'web_search="disabled"']
+            # The fixed fast summary model needs auth, not user tool servers or
+            # a coding profile. Inherit mode continues to honor user config.
+            if model == "gpt-5.6-luna":
+                extra += ["--ignore-user-config"]
+        if reasoning:
+            extra += ["-c", "model_reasoning_effort=" + json.dumps(reasoning)]
+        return _codex_cli_complete(msgs, model=None if model == "codex-default" else model,
+                                   timeout=timeout, extra_args=extra, cwd=scratch)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -8048,7 +8076,7 @@ def _codex_task_translation_note(project_id):
         "to invoke `Task(subagent_type: \"<type>\", prompt: \"<brief>\")`, "
         "instead run this shell command:\n\n"
         "  curl -s -X POST "
-        f"'http://127.0.0.1:{PORT}/__dispatch_planner?project={project_id}' "
+        f'"http://127.0.0.1:{PORT}/__dispatch_planner?project={project_id}&parent=$TH_RUN_ID" '
         "-H 'content-type: application/json' "
         "-d '{\"type\": \"<type>\", \"brief\": \"<brief>\"}'\n\n"
         "The daemon routes the nested dispatch to whichever LLM is available "
@@ -10754,7 +10782,7 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
                     and (not session_id or agent_id == "codex")):
                 session_id = data["sessionId"]
             # Capture spawn parameters from the initial spawn event
-            if isinstance(data, dict) and data.get("label") == "spawned":
+            if isinstance(data, dict) and data.get("label") in ("spawned", "planner-dispatched"):
                 if data.get("permissionMode") and permission_mode is None:
                     permission_mode = data["permissionMode"]
                 if data.get("tier") and not tier:
@@ -12616,7 +12644,7 @@ def _compact_progress_since(state: "RunState"):
         events = list(state.events)
     n = 0
     saw_user = False
-    for ev in events[_last_compact_index(events) + 1:]:
+    for ev in context_policy.remaining_events(events):
         t = ev.get("type")
         if t == "user_message":
             n += 1
@@ -12627,39 +12655,41 @@ def _compact_progress_since(state: "RunState"):
     return n, saw_user
 
 
-_COMPACT_SUMMARY_SYSTEM = (
-    "You write HANDOFF SUMMARIES for coding-agent conversations. The summary "
-    "replaces the full transcript as the only memory a fresh agent process "
-    "gets, so completeness of STATE matters more than brevity of prose. "
-    "Capture, in this order: (1) the user's goal and any constraints they "
-    "stated; (2) every decision made and gate answered (with the chosen "
-    "option); (3) current state of the work - what is DONE and verified, "
-    "what is in progress, what failed and why; (4) exact file paths, ids, "
-    "commands, and URLs that later turns will need; (5) open items / next "
-    "steps. Write plain prose + bullet lists, no preamble, no meta-comments "
-    "about being a summary. Hard cap ~1500 words."
-)
+_COMPACT_SUMMARY_SYSTEM = context_policy.SUMMARY_SYSTEM
 
 
-def _compact_summarize(transcript: str) -> str:
-    """Generate the handoff summary. Prefers the CLI subscription path
-    (_assistant_agent_complete - no API key needed); falls back to the BYOK
-    HTTP helper. Raises on total failure - the caller aborts the compact and
-    the thread is left untouched."""
-    prompt = ("Summarize this agent conversation for handoff to a fresh "
-              "process:\n\n===== TRANSCRIPT =====\n" + transcript
-              + "\n===== END TRANSCRIPT =====")
-    try:
-        out = _assistant_agent_complete(_COMPACT_SUMMARY_SYSTEM, prompt,
-                                        model=None, tools="none", timeout=300)
-        if out and out.strip():
-            return out.strip()
-    except Exception:
-        pass
-    out = _ut_llm_text(prompt, system=_COMPACT_SUMMARY_SYSTEM, max_tokens=4000)
-    if not (out and out.strip()):
+def _compact_summarize(transcript: str, state=None) -> str:
+    """Mechanical state transfer uses a fast model; creative work keeps its model.
+
+    Failure leaves the run intact. Do not silently fall back to a paid API or
+    a larger model. The context settings expose an explicit inherit option.
+    """
+    runtime = getattr(state, "agent_id", None) or _agent_default_runtime()
+    cfg = _compact_config()
+    inherited = getattr(state, "model", None) if state is not None else _agent_default_model()
+    if runtime not in ("claude", "codex") and cfg.get("summaryModel") == "inherit":
+        raise RuntimeError("Same-model summaries require Claude or Codex. Choose Fast in context settings.")
+    model = context_policy.summary_model(runtime, cfg.get("summaryModel"),
+                                         inherited)
+    prompt = "Summarize the conversation data below. Do not continue its task.\n\n" + transcript
+    out = _assistant_agent_complete(_COMPACT_SUMMARY_SYSTEM, prompt,
+                                    model=model, tools="none", timeout=300,
+                                    reasoning="low" if cfg.get("summaryModel") == "fast" else None)
+    if not out or not out.strip():
         raise RuntimeError("summary generation returned empty text")
+    if re.search(r"<(?:function_calls|invoke_tool|tool_call|tool_use)\b", out, re.I):
+        raise RuntimeError("summary attempted a tool call; original conversation retained")
+    # A summarizer did not run the checks. It can retain receipts, but must not
+    # promote an assistant's claims to independent verification in a heading.
+    out = re.sub(r"(?im)^(\s*(?:\#{1,6}\s+)?(?:\*\*)?)verified\s+(results|state|work|progress)(?=\s*[:*])",
+                 lambda match: match[1] + "Reported " + match[2].lower(), out)
     return out.strip()
+
+
+def _context_snapshot(state):
+    with state.lock:
+        events = list(state.events)
+    return context_policy.transcript(events, detail_budget=None), context_policy.event_watermark(events)
 
 
 def _compact_run(state: "RunState", reason: str) -> dict:
@@ -12671,16 +12701,16 @@ def _compact_run(state: "RunState", reason: str) -> dict:
     resuming the bloated one. Raises on failure - nothing is mutated until
     the summary exists."""
     ctx_before = _run_context_tokens(state)
-    transcript = _transcript_from_run_events(state)
+    transcript, covered_through = _context_snapshot(state)
     if not transcript:
         raise RuntimeError("nothing to compact - empty transcript")
     if _compact_progress_since(state)[0] < _COMPACT_MIN_NEW_EVENTS:
         raise RuntimeError("nothing new to compact since the last handoff summary")
-    summary = _compact_summarize(transcript)
-    return _compact_commit(state, summary, ctx_before, reason)
+    summary = _compact_summarize(transcript, state)
+    return _compact_commit(state, summary, ctx_before, reason, covered_through)
 
 
-def _compact_commit(state: "RunState", summary: str, ctx_before, reason: str) -> dict:
+def _compact_commit(state: "RunState", summary: str, ctx_before, reason: str, covered_through=None) -> dict:
     """Apply a summary that is already in hand, but ONLY at a safe moment.
 
     Summarising takes tens of seconds, and the run does not stand still while
@@ -12690,12 +12720,15 @@ def _compact_commit(state: "RunState", summary: str, ctx_before, reason: str) ->
     143, and the thread simply stops on the user in the middle of working.
     That is the one thing a compact must never do, so a summary that arrives
     mid-turn is PARKED and applied at the next turn boundary instead
-    (_compact_flush_pending). Nothing is lost by waiting: the marker only
-    defines where the replayed transcript starts, and everything after it is
-    replayed verbatim into the seed."""
+    (_compact_flush_pending). The snapshot's coveredThrough boundary controls
+    replay, not the marker's eventual position. Events received while the
+    summary was being written remain available to the resumed session."""
+    if covered_through is None:
+        raise ValueError("compaction requires the snapshot coverage boundary")
     _proc = state.proc
     if _proc is not None and _proc.poll() is None and not state.turn_done:
         state._compact_pending = {"summary": summary, "reason": reason,
+                                  "coveredThrough": covered_through,
                                   "contextTokensBefore": ctx_before}
         return {"ok": True, "deferred": True, "reason": reason,
                 "contextTokensBefore": ctx_before, "summaryChars": len(summary)}
@@ -12718,6 +12751,7 @@ def _compact_commit(state: "RunState", summary: str, ctx_before, reason: str) ->
         "reason": reason,
         "contextTokensBefore": ctx_before,
         "retiredSessionId": _retired_session,
+        "coveredThrough": covered_through,
     })
     state.session_id = None
     state.context_tokens = None
@@ -12734,7 +12768,7 @@ def _compact_flush_pending(state: "RunState") -> None:
     state._compact_pending = None
     try:
         info = _compact_commit(state, pend["summary"], pend.get("contextTokensBefore"),
-                               pend.get("reason") or "auto")
+                               pend.get("reason") or "auto", pend.get("coveredThrough"))
         if info.get("deferred"):
             state._compact_pending = pend      # still mid-turn, try again later
             return
@@ -12814,81 +12848,10 @@ def _auto_compact_maybe(state: "RunState") -> None:
 
 
 def _transcript_from_run_events(state: "RunState") -> str:
-    """Reconstruct a run's conversation as a plain-text transcript from its
-    event log. Used by the fake-resume paths (_run_resume_codex for the
-    argv-prompt single-shot agents, _run_resume_planner_claude for planner
-    runs whose sessions were never persisted): the rebuilt transcript is
-    prepended to the new user message so a fresh process can continue the
-    thread. Each event-log entry of type "agent" carries a normalised event
-    dict; we walk those and rebuild a transcript that reads naturally.
-
-    Compact-aware: when the run carries a `compact` marker, the transcript
-    starts from that marker's summary and only replays events AFTER it - the
-    pre-compact history is represented by the summary alone. This one seam
-    makes every resume path (codex, opencode, planner-claude, and the
-    fresh-seeded native-claude path) honour compaction automatically."""
-    lines = []
+    """Replay the checkpoint plus uncovered events, retaining user constraints."""
     with state.lock:
         events = list(state.events)
-    _ci = _last_compact_index(events)
-    if _ci >= 0:
-        _summary = ((events[_ci].get("data") or {}).get("summary") or "").strip()
-        if _summary:
-            lines.append("[SUMMARY OF EARLIER CONVERSATION - the turns before "
-                         "this point were compacted into the following summary]\n"
-                         + _summary)
-        events = events[_ci + 1:]
-    for ev in events:
-        t = ev.get("type")
-        d = ev.get("data") or {}
-        if t == "user_message":
-            u = (d.get("text") or "").strip()
-            if u:
-                lines.append(f"USER: {u}")
-        elif t == "agent":
-            dt = d.get("type")
-            if dt == "text_delta":
-                delta = (d.get("delta") or "").rstrip()
-                if delta:
-                    # Coalesce consecutive deltas into one ASSISTANT block.
-                    if lines and lines[-1].startswith("ASSISTANT: "):
-                        lines[-1] = lines[-1] + "\n" + delta
-                    else:
-                        lines.append(f"ASSISTANT: {delta}")
-            elif dt == "tool_use":
-                name = d.get("name") or "tool"
-                inp = d.get("input") or {}
-                cmd = inp.get("text") or inp.get("command") or json.dumps(inp)
-                lines.append(f"[TOOL CALL: {name}]\n{cmd}")
-            elif dt == "tool_result":
-                # _normalize_frame emits `content` as a FLAT STRING and the
-                # error flag as `isError`; only raw pass-through frames still
-                # carry the list-of-parts shape. Handle both - the list-only
-                # reading made every rebuilt transcript's tool results empty.
-                parts = d.get("content")
-                body_txt = ""
-                if isinstance(parts, str):
-                    body_txt = parts
-                elif isinstance(parts, list):
-                    for p in parts:
-                        if isinstance(p, dict) and p.get("type") == "text":
-                            body_txt += (p.get("text") or "")
-                err = " (error)" if (d.get("isError") or d.get("is_error")) else ""
-                # Truncate large tool results so the prompt doesn't blow up.
-                if len(body_txt) > 4000:
-                    body_txt = body_txt[:4000] + "\n…(truncated)"
-                lines.append(f"[TOOL RESULT{err}]\n{body_txt}")
-            # status / thinking_delta / usage - skip; transcript noise.
-    transcript = "\n\n".join(lines).strip()
-    # Cap the replayed transcript. Every stop+resume re-prepends the WHOLE
-    # history to a fresh prompt (no prompt cache), so repeated stops grow
-    # the prompt superlinearly. Keep the tail - the recent turns are what a
-    # follow-up needs.
-    _TRANSCRIPT_CAP = 80_000
-    if len(transcript) > _TRANSCRIPT_CAP:
-        transcript = ("(earlier turns omitted to keep the prompt bounded)\n\n"
-                      + transcript[-_TRANSCRIPT_CAP:])
-    return transcript
+    return context_policy.transcript(events)
 
 
 def _drain_stdout(state: "RunState") -> None:
@@ -13014,32 +12977,7 @@ def _drain_stdout(state: "RunState") -> None:
                             _queue_drain_maybe(state, mode="stdin")
                         except Exception:
                             pass
-                        # promote NORMAL -> SETUP for the badge when this
-                        # run starts a build. The decide phase runs on the normal
-                        # tier (untargeted default) and escalates; _drain_stdout
-                        # is the only run-aware place that sees its output. When a
-                        # turn's result carries a build marker (the Step -1
-                        # direction pick, the init-card, or the orchestration
-                        # roster gate), flip the persisted tier so the chat badges
-                        # "Setup". Promote only FROM normal, once - never touch
-                        # scoped / leaf / already-setup. Match the SPECIFIC
-                        # setup-thread card ids, never bare markup: the BUILD
-                        # thread also surfaces <direction-options> cards (the
-                        # art-direction plate gate, motion-studio concept
-                        # plates) and mentions DECISION_orchestrator-plan.json
-                        # in prose; matching bare "<direction-options" /
-                        # "orchestrator-plan" flipped build threads to setup,
-                        # and _run_resume then rebuilt them on the setup
-                        # preamble for good (citylife/teamfantasy, 2026-07).
-                        if (ev.get("label") == "done"
-                                and getattr(state, "tier", None) == "normal"):
-                            _res = ev.get("result") or ""
-                            if ("<init-card" in _res
-                                    or 'id="prototype-direction"' in _res
-                                    or "id='prototype-direction'" in _res
-                                    or 'id="orchestrator-plan"' in _res
-                                    or "id='orchestrator-plan'" in _res):
-                                state.tier = "setup"
+                        # Build cards do not change the spawn tier on resume.
                         # verify shaders at TURN-done, not just process-exit.
                         # Freeform/chat agents stay alive across turns (stream-json),
                         # so the process-exit hook in `finally` wouldn't fire until
@@ -14173,7 +14111,7 @@ def _codex_chat_preamble(agent_id: str, project_root: str, project_id: str,
         "tool, instead run this shell command:\n\n"
         "```\n"
         "curl -N -s -X POST "
-        f"'http://127.0.0.1:{PORT}/__dispatch_planner?project={project_id}' "
+        f'"http://127.0.0.1:{PORT}/__dispatch_planner?project={project_id}&parent=$TH_RUN_ID" '
         "-H 'content-type: application/json' "
         "-d '{\"type\":\"<orchestrator-id>\",\"brief\":\"<plain text brief>\"}'\n"
         "```\n\n"
@@ -14263,6 +14201,22 @@ def _normalize_chat_guards(raw) -> dict:
                 if k in raw:
                     out[k] = bool(raw[k])
         return out
+
+
+def _delegated_context(project_root, body, qs):
+    """Inherit scope/checks only from a dispatcher in the same project."""
+    parent_id = body.get("parent") or _qs_get(qs, "parent")
+    with RUNS_LOCK:
+        parent = RUNS.get(parent_id) if parent_id else None
+    if parent and os.path.realpath(parent.project_root) != os.path.realpath(project_root):
+        parent = None
+    prototype = body.get("prototype") or getattr(parent, "prototype", None)
+    if prototype and (not isinstance(prototype, str) or not re.fullmatch(
+            r"[A-Za-z0-9_-][A-Za-z0-9_.-]{0,79}(?:/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,79})?", prototype)):
+        prototype = None
+    return {"prototype": prototype,
+            "guards": _normalize_chat_guards(body.get("guards", getattr(parent, "guards", None))),
+            "parent": parent.run_id if parent else None}
 
 
 def _apply_guard_env(env: dict, guards: dict) -> dict:
@@ -14997,6 +14951,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._mcp_catalog_remove()
             if parsed.path == "/__media_config":
                 return self._media_config_set()
+            if parsed.path in ("/__context/reference", "/__context/contract"):
+                return self._context_artifact(parsed.path, qs)
             if parsed.path == "/__compact_config":
                 return self._compact_config_set()
             if parsed.path == "/__media_config/test":
@@ -17466,6 +17422,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # agent-model (Settings) > the CLI's own default. All go through
         # _agent_model_spawn_args so alias mapping + CLI-default-sentinel handling
         # + opencode-skip are identical everywhere - nothing hardcodes a model.
+        _omodel = None
         try:
             _want_prov = _provider_for_agent(agent_id)
             # explicit caller model (the assistant node's model select) wins.
@@ -17514,6 +17471,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         # TRACKING (RunState, streamed transcript, Task-subagent visibility,
         # resume) - not the ~10-35K capabilities bloat. Used by the strategy
         # chain driver.
+        _node_context = _delegated_context(project_root, {"parent": getattr(self, "_parent_run_id", None)}, {})
+        _node_context["prototype"] = _node_context.get("prototype") or branch
         _node_tier = None
         if not bare:
             try:
@@ -17522,7 +17481,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # an orchestrator; the leaf tier is ~25K tokens slimmer.
                 _tier = "setup" if "orchestrator" in (node_id or "").lower() else "leaf"
                 _node_tier = _tier   # recorded on the RunState below for resume weight
-                sys_prompt += "\n\n" + capabilities_preamble(project_root=project_root, tier=_tier)
+                sys_prompt += "\n\n" + capabilities_preamble(project_root=project_root, tier=_tier,
+                    prototype=_node_context.get("prototype"), guards=_node_context.get("guards"))
             except Exception:
                 _node_tier = None
         sys_prompt += "\n\n" + system_prompt
@@ -17559,6 +17519,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # transcript-marker fallback ("Begin the task for node `"), but the
         # env stamp is the deterministic primary signal.
         env["TH_SPAWN_KIND"] = "node-agent"
+        _apply_guard_env(env, _node_context.get("guards"))
         env["TH_NODE_ID"] = node_id or ""
         try:
             proc = subprocess.Popen(
@@ -17579,7 +17540,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                          project_id=project_id, project_root=project_root)
         state.bin_path = bin_path
         state.permission_mode = permission_mode
-        state.tier = _node_tier   # leaf (drawer) or setup (orchestrator node)
+        state.tier = _node_tier
+        state.guards = _node_context.get("guards")
+        state.prototype = _node_context.get("prototype")
+        state.model = _omodel or _agent_default_model() or None
         state.modifying = True
         # Tag for the auto-completion hook in _drain_stdout - when this
         # subprocess exits, the daemon flips the workflow node to done/error.
@@ -17609,6 +17573,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "kind": "node-agent",
             "nodeId": node_id,
             "tier": _node_tier,
+            "prototype": state.prototype, "guards": state.guards, "model": state.model,
             # remaining build-chain at spawn: persisted so a daemon restart
             # mid-chain is at least VISIBLE after rehydrate (the in-memory
             # chain_rest dies with the process table).
@@ -22035,6 +22000,58 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _compact_config_get(self):
         return self._reply(200, _compact_config())
 
+    def _context_artifact(self, route, qs):
+        """Project-scoped reuse and lossless mechanical contract assembly."""
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+            body = self._read_json_body(max_bytes=4 * 1024 * 1024)
+            if not isinstance(body, dict):
+                raise ValueError("body must be an object")
+            if route == "/__context/reference":
+                if not _compact_config()["referenceReuse"]:
+                    return self._reply(200, {"hit": False, "enabled": False})
+                source, revision = body.get("source"), body.get("revision")
+                if body.get("inputPath"):
+                    path = context_artifacts.project_path(root, body["inputPath"])
+                    source = "file:" + body["inputPath"]
+                    revision = hashlib.sha256(path.read_bytes()).hexdigest()
+                key = context_artifacts.reference_key(source, revision, body.get("request"))
+                action = body.get("action", "get")
+                if action == "put":
+                    context_artifacts.reference_put(root, key, body.get("value"))
+                    return self._reply(200, {"ok": True, "key": key})
+                if action != "get":
+                    raise ValueError("action must be get or put")
+                value = context_artifacts.reference_get(root, key)
+                return self._reply(200, {"hit": value is not None, "key": key, "value": value})
+
+            defaults_path = os.path.join(EDITOR_DIR, "art-direction-defaults.json")
+            with open(defaults_path, encoding="utf-8") as stream:
+                defaults = json.load(stream)
+            draft = body.get("draft")
+            contract = context_artifacts.assemble_contract(draft, defaults)
+            # The caller must already have the user's plate approval. Assembly
+            # performs no creative inference and cannot supply a missing plate.
+            for relative in [contract["platePath"]] + [r.get("refPath") for r in contract["itemReferences"]]:
+                if not context_artifacts.project_path(root, relative).is_file():
+                    raise ValueError("missing plate or reference: " + str(relative))
+            target = context_artifacts.project_path(root, "workflow/art-direction-contract.json")
+            with _workflow_lock(os.path.basename(root.rstrip("/"))):
+                existing = json.loads(target.read_text()) if target.is_file() else None
+                current_hash = context_artifacts.digest(existing) if existing is not None else None
+                next_hash = context_artifacts.digest(contract)
+                if current_hash != next_hash:
+                    if current_hash != body.get("previousHash"):
+                        return self._reply(409, {"error": "contract changed; read it before revising", "currentHash": current_hash})
+                    context_artifacts.atomic_json(target, contract)
+            return self._reply(200, {"ok": True, "contractPath": "workflow/art-direction-contract.json",
+                                     "sha256": next_hash, "fidelity": "all supplied values preserved",
+                                     "bytes": target.stat().st_size})
+        except (ValueError, TypeError, KeyError) as e:
+            return self._reply(400, {"error": str(e)})
+        except OSError as e:
+            return self._reply(400, {"error": str(e)})
+
     def _compact_config_set(self):
         try:
             body = self._read_json_body()
@@ -22047,6 +22064,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             cfg["autoCompact"] = body["autoCompact"]
         if isinstance(body.get("autoContinue"), bool):
             cfg["autoContinue"] = body["autoContinue"]
+        if "summaryModel" in body:
+            if body["summaryModel"] not in ("fast", "inherit"):
+                return self._reply(400, {"error": "summaryModel must be fast or inherit"})
+            cfg["summaryModel"] = body["summaryModel"]
+        for key in ("referenceReuse", "compactQa"):
+            if key in body:
+                if not isinstance(body[key], bool):
+                    return self._reply(400, {"error": key + " must be a boolean"})
+                cfg[key] = body[key]
         thr = body.get("thresholdTokens")
         if isinstance(thr, (int, float)):
             thr = int(thr)
@@ -23216,8 +23242,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         if planner_type.startswith("woven:"):
             planner_type = planner_type.split(":", 1)[1].strip()
         brief = (body.get("brief") or "").strip()
-        if not planner_type:
-            return self._reply(400, {"error": "type required"})
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", planner_type):
+            return self._reply(400, {"error": "valid planner type required"})
         if not brief:
             return self._reply(400, {"error": "brief required"})
         planner_path = os.path.join(INSTALL_ROOT, ".claude", "agents", f"{planner_type}.md")
@@ -23232,6 +23258,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._reply(500, {"error": f"could not read planner: {e}"})
         planner_body = re.sub(r"^---\n.*?\n---\n", "", planner_md, count=1, flags=re.S).strip()
+        _planner_context = _delegated_context(project_root, body, qs)
         # Pick runtime + build spawn shape.
         claude_bin   = detect_agent_bin("claude")
         codex_bin    = detect_agent_bin("codex")
@@ -23249,7 +23276,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         # spawn since it has no parent context to inherit.
         try:
             from kinds.capabilities import capabilities_preamble
-            caps_text = capabilities_preamble(project_root=project_root)
+            caps_text = capabilities_preamble(project_root=project_root,
+                tier=context_policy.planner_tier(planner_type),
+                prototype=_planner_context.get("prototype"), guards=_planner_context.get("guards"))
         except Exception:
             caps_text = ""
         # Runtime: honor the user's selected AGENT when it can spawn here and
@@ -23271,7 +23300,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         # we DID NOT fall back to a different runtime (a fallback runtime's own
         # default is safer than forcing a wrong-provider model id onto it).
         _want_prov = _provider_for_agent(agent_id)
-        _omodel = _orch_override_model_for_node(planner_type, planner_type, want_provider=_want_prov)
+        _omodel = (_subagent_override_model_for_node(planner_type, planner_type, brief, want_provider=_want_prov)
+                   or _orch_override_model_for_node(planner_type, planner_type, want_provider=_want_prov))
         if not _omodel and chosen == want:
             _omodel = _agent_default_model()
         _planner_model_args = _agent_model_spawn_args(agent_id, defs, _omodel) if _omodel else []
@@ -23359,6 +23389,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # delegated throwaway workers, not the main chat - exempt them from
         # the leaf-territory hard gate the same way node agents are.
         env["TH_SPAWN_KIND"] = "planner"
+        _apply_guard_env(env, _planner_context.get("guards"))
         argv = [bin_path, *spawn_args]
         if prompt_argv is not None:
             argv.append(prompt_argv)
@@ -23381,10 +23412,16 @@ class H(http.server.SimpleHTTPRequestHandler):
                          project_id=project_id, project_root=project_root)
         state.bin_path = bin_path
         state.permission_mode = "bypassPermissions"
+        state.tier = context_policy.planner_tier(planner_type)
+        state.prototype = _planner_context.get("prototype")
+        state.guards = _planner_context.get("guards")
+        state.parent_run_id = _planner_context.get("parent")
+        state.model = _omodel or None
         with RUNS_LOCK:
             RUNS[run_id] = state
         state.append("status", {"label": "planner-dispatched",
-                                "type": planner_type, "runtime": agent_id})
+                                "type": planner_type, "runtime": agent_id,
+                                **context_policy.handoff_metadata(state)})
         # Feed the prompt if the runtime takes stdin (Claude stream-json).
         if prompt_stdin is not None:
             try:
@@ -23709,7 +23746,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._reply(400, {"error": "prompt or messages required for llm skill"})
                 messages = [{"role": "user", "content": prompt}]
         elif skill == "describe":
-            prompt = (body.get("prompt") or "Describe this image in vivid detail.").strip()
+            prompt = (body.get("prompt") or "Describe this image concisely: subject, composition, color, typography, and distinctive details. State uncertainty.").strip()
             # Accept either a file path or a pre-built data URI (e.g., inline SVG).
             raw_uri = body.get("input_data_uri")
             if isinstance(raw_uri, str) and raw_uri.startswith("data:"):
@@ -23752,6 +23789,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             if not write_root_abs and read_root_abs:
                 write_root_abs = read_root_abs
 
+        describe_cache_key = None
+        if skill == "describe" and _compact_config()["referenceReuse"]:
+            describe_cache_key = context_artifacts.digest({
+                "version": 1, "messages": messages, "provider": provider,
+                "model": model, "options": options})
+            if not body.get("refresh"):
+                cached = context_artifacts.reference_get(project_root, describe_cache_key)
+                if cached is not None:
+                    return self._reply(200, {**cached, "cacheHit": True})
         tool_log = []
         try:
             if agent_mode and skill == "llm":
@@ -23810,6 +23856,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(502, {"error": f"{provider} API error", "detail": detail})
         except Exception as e:
             return self._reply(500, {"error": f"{type(e).__name__}: {e}"})
+
+        if describe_cache_key and text and text.strip():
+            try:
+                context_artifacts.reference_put(project_root, describe_cache_key, {
+                    "ok": True, "text": text, "skill": skill,
+                    "provider": provider, "model": model, "agent": None})
+            except OSError:
+                pass  # Cache failure must not discard a successful extraction.
 
         # Apply writes after the final assistant reply.
         wrote = []
@@ -26198,6 +26252,16 @@ class H(http.server.SimpleHTTPRequestHandler):
         report["mode"] = mode
         report["exitCode"] = proc.returncode
         report["outDir"] = out_dir
+        # Keep complete evidence on disk. Brief responses change no checks.
+        if _compact_config()["compactQa"] and _qs_get(qs, "detail") != "full":
+            try:
+                evidence_path = os.path.join(out_dir, "context-report.json")
+                context_artifacts.atomic_json(evidence_path, report)
+                packet = context_artifacts.qa_packet(report)
+                packet["evidence"] = {"path": evidence_path, "sha256": context_artifacts.digest(report)}
+                return self._reply(200, packet)
+            except (OSError, ValueError, TypeError):
+                pass  # A context optimization must not lose a completed QA result.
         return self._reply(200, report)
 
     # ── User stories + prototype story map ────────────────────────────────
@@ -34605,12 +34669,26 @@ class H(http.server.SimpleHTTPRequestHandler):
                 pass
             state.append("status", {"label": "interrupted",
                                     "detail": "stopped to hand this thread off"})
-        transcript = _transcript_from_run_events(state)
+        transcript, covered_through = _context_snapshot(state)
         if not transcript:
             return self._reply(409, {"error": "nothing to hand off - empty transcript",
                                      "stopped": stopped})
+        digest = hashlib.sha256(transcript.encode()).hexdigest()
+        with state.lock:
+            cached = next((ev.get("data") for ev in reversed(state.events)
+                           if (ev.get("data") or {}).get("type") == "handoff_checkpoint"
+                           and (ev.get("data") or {}).get("digest") == digest), None)
         try:
-            summary = _compact_summarize(transcript)
+            summary = cached["summary"] if cached else _compact_summarize(transcript, state)
+            if not cached:
+                state.append("agent", {"type": "handoff_checkpoint", "digest": digest,
+                                        "summary": summary, "coveredThrough": covered_through})
+            # Keep events that arrived during summarization, including queued user input.
+            with state.lock:
+                late = [ev for ev in state.events if ev.get("seq", -1) > covered_through]
+            updates = context_policy.transcript(late, detail_budget=None)
+            if updates:
+                summary += "\n\n[UPDATES AFTER SNAPSHOT]\n" + updates
         except Exception as e:
             return self._reply(502, {
                 "error": "handoff summary failed: %s: %s" % (type(e).__name__, e),
@@ -34625,7 +34703,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {"ok": True, "summary": summary,
                                  "summaryChars": len(summary),
                                  "reason": reason, "stopped": stopped,
-                                 "title": state.title})
+                                 "title": state.title,
+                                 "coveredThrough": covered_through,
+                                 "context": context_policy.handoff_metadata(state)})
 
     # POST /__run/<id>/delete
     #   Remove a run entirely: stop it if still live (stop-then-delete), drop it
@@ -34884,7 +34964,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         planner_body = re.sub(r"^---\n.*?\n---\n", "", planner_md, count=1, flags=re.S).strip()
         try:
             from kinds.capabilities import capabilities_preamble
-            caps_text = capabilities_preamble(project_root=state.project_root)
+            caps_text = capabilities_preamble(project_root=state.project_root,
+                tier=state.tier or context_policy.planner_tier(planner_type),
+                prototype=state.prototype, guards=state.guards)
         except Exception:
             caps_text = ""
         sys_prompt_parts = [planner_body]
@@ -34897,8 +34979,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             sys_prompt_parts.append(_mcp_routing_prompt())
         sys_prompt = "\n\n".join(p.strip() for p in sys_prompt_parts if p and p.strip())
         # Same model resolution as the original planner spawn.
-        _omodel = _orch_override_model_for_node(planner_type, planner_type,
-                                                want_provider=_provider_for_agent("claude"))
+        _omodel = (state.model
+                   or _subagent_override_model_for_node(planner_type, planner_type, planner_body, want_provider="anthropic")
+                   or _orch_override_model_for_node(planner_type, planner_type, want_provider="anthropic"))
         if not _omodel:
             _omodel = _agent_default_model()
         _model_args = _agent_model_spawn_args("claude", AGENT_DEFS["claude"], _omodel) if _omodel else []
@@ -35002,10 +35085,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         bin_path = state.bin_path or detect_agent_bin(state.agent_id)
         if not bin_path:
             return self._reply(500, {"error": f"{state.agent_id} binary not on PATH"})
+        _main_thread = not (state.kind == "node-agent" or (state.kind or "").startswith("planner:"))
         env = _build_child_env(state.agent_id, run_id,
                                project_root=state.project_root, project_id=state.project_id,
-                               main_thread=True)
+                               main_thread=_main_thread)
         _apply_guard_env(env, _normalize_chat_guards(getattr(state, "guards", None)))
+        if not _main_thread:
+            env["TH_SPAWN_KIND"] = "node-agent" if state.kind == "node-agent" else "planner"
         resume_sid = None
         if (state.agent_id == "codex"
                 and os.environ.get("WOVEN_CODEX_EXEC_RESUME", "").lower() not in ("0", "off", "false")
@@ -35024,7 +35110,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # `codex exec resume [OPTIONS] [SESSION_ID] [PROMPT]`.
             spawn_args = (["exec", "resume",
                            "-c", 'sandbox_mode="danger-full-access"']
-                          + _codex_mcp_spawn_args(visual_deny=True)
+                          + _codex_mcp_spawn_args(visual_deny=_main_thread)
                           + _agent_model_spawn_args(state.agent_id, defs, getattr(state, "model", None))
                           + [resume_sid, text])
             try:
@@ -35065,6 +35151,16 @@ class H(http.server.SimpleHTTPRequestHandler):
             _normalize_chat_tier(getattr(state, "tier", None)),
             (getattr(state, "prototype", None) or state.branch or "main"),
             guards=_normalize_chat_guards(getattr(state, "guards", None)))
+        if (state.kind or "").startswith("planner:"):
+            planner_type = state.kind.split(":", 1)[1].removeprefix("woven:")
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", planner_type):
+                return self._reply(400, {"error": "invalid planner type"})
+            try:
+                with open(os.path.join(INSTALL_ROOT, ".claude", "agents", planner_type + ".md"), encoding="utf-8") as f:
+                    spec = re.sub(r"^---\n.*?\n---\n", "", f.read(), count=1, flags=re.S).strip()
+                preamble = spec + "\n\n" + preamble
+            except OSError as e:
+                return self._reply(500, {"error": "could not restore planner spec: " + str(e)})
         # Compose the resume prompt. Frame it explicitly so codex knows the
         # prior conversation is context, not instructions to repeat.
         if transcript:
@@ -35095,7 +35191,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # OPENCODE_CONFIG below): the original spawn carried them, and without
         # them every resumed codex chat silently lost its MCP servers.
         # visual_deny/main_thread: a resume IS the long-lived chat thread.
-        _resume_mcp = _codex_mcp_spawn_args(visual_deny=True) if state.agent_id == "codex" else []
+        _resume_mcp = _codex_mcp_spawn_args(visual_deny=_main_thread) if state.agent_id == "codex" else []
         spawn_args = (list(defs["args"])
                       + _resume_mcp
                       + _agent_model_spawn_args(state.agent_id, defs, getattr(state, "model", None))
