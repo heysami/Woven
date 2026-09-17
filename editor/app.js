@@ -7215,7 +7215,7 @@ function InspectorPanel({ picked, tool, edits, onStyle, onMove }) {
   };
   const setAlign = (axis, value) => {
     const k = axis === "h" ? "justifySelf" : "alignSelf";
-    onStyle({ ...styles, [k]: value });
+    onStyle({ [k]: value });
   };
 
   const Seg = ({ value, options, onChange }) => html`
@@ -38276,6 +38276,10 @@ function installPickOverlay(iframeEl, onPick) {
   let doc;
   try { doc = iframeEl.contentDocument; } catch { return null; }
   if (!doc || !doc.body) return null;
+  try {
+    const path = WovenEdit.sourcePath(iframeEl) || "";
+    if (path.startsWith("source/")) WovenEdit.bind(doc, path, apiUrl);
+  } catch {}
   // Inject styles. The Figma-style inspect overlay (Cmd-held hover) uses
   // padding bands (green, like Figma), gap bands (pink), and child outlines
   // (blue) so the user can read spacing at a glance without leaving pick
@@ -38503,14 +38507,12 @@ function installPickOverlay(iframeEl, onPick) {
 /* Inject a tiny patch script at end-of-body so React-managed
    prototypes don't revert the user's inspector edits on the next iframe
    load. Inputs:
-     • html  - already-serialised HTML string (the live, post-React DOM
-       with the user's mutations).
+     • html  - original authored HTML, including any previously saved edits.
      • ops   - list of { type, selector, ...details } records from the
        inspector path (style, reorder, nudge, duplicate, delete).
    The injected script:
      1. Defines a `__thOps` array with the saved ops.
-     2. On window.load + 100ms, walks the ops in order and re-applies each
-        against the post-React DOM.
+     2. Applies immediately and observes framework mounts before paint.
      3. Mounts a MutationObserver on body that re-applies on every
         mutation burst, guarded by an `applying` flag so its own writes
         don't re-trigger.
@@ -38536,32 +38538,39 @@ function _extractPatchOps(html) {
 /* Merge prior (already-persisted) ops with this session's fresh ops.
    Style ops on the same selector collapse into one (later props win);
    text ops on the same selector replace; everything else dedupes on
-   exact JSON identity. Capped so a long-lived file can't grow unbounded. */
+   exact JSON identity. Structural edits are never silently truncated. */
 function _mergePatchOps(prior, fresh) {
   const merged = [];
   const styleBySel = new Map();
   const seen = new Set();
-  for (const op of [...(prior || []), ...(fresh || [])]) {
+  const flatten = ops => (ops || []).flatMap(op => op?.type === "batch" ? flatten(op.ops) : [op]);
+  for (const sourceOp of [...flatten(prior), ...flatten(fresh)]) {
+    const op = sourceOp && JSON.parse(JSON.stringify(sourceOp));
     if (!op || !op.type) continue;
+    if (op.cancelTargets?.length) {
+      for (let i = merged.length - 1; i >= 0; i--) {
+        if (["style", "text"].includes(merged[i].type) && op.cancelTargets.includes(merged[i].id)) { styleBySel.delete(merged[i].id || merged[i].selector); merged.splice(i, 1); }
+      }
+    }
     if (op.type === "style" && op.selector) {
-      const existing = styleBySel.get(op.selector);
+      const existing = styleBySel.get(op.id || op.selector);
       if (existing) {
         existing.styles = Object.assign({}, existing.styles, op.styles || {});
         // Newer identity meta wins - a later edit saw the element's
         // current fingerprint / creator marker.
-        if (op.fp) existing.fp = op.fp;
+        if (op.fp && !existing.fp) existing.fp = op.fp;
         if (op.parent) existing.parent = op.parent;
         if (op.m) existing.m = op.m;
         continue;
       }
       const copy = { ...op, styles: { ...(op.styles || {}) } };
-      styleBySel.set(op.selector, copy);
+      styleBySel.set(op.id || op.selector, copy);
       merged.push(copy);
       continue;
     }
     if (op.type === "text" && op.selector) {
-      const i = merged.findIndex(o => o.type === "text" && o.selector === op.selector);
-      if (i >= 0) { merged[i] = op; continue; }
+      const i = merged.findIndex(o => o.type === "text" && (o.id || o.selector) === (op.id || op.selector) && (o.prop || "text") === (op.prop || "text"));
+      if (i >= 0) { merged[i] = { ...op, selector: merged[i].selector, fp: merged[i].fp || op.fp, id: merged[i].id || op.id }; continue; }
       merged.push(op);
       continue;
     }
@@ -38571,7 +38580,7 @@ function _mergePatchOps(prior, fresh) {
     seen.add(key);
     merged.push(op);
   }
-  return _resolvePatchOpCancellations(merged).slice(-300);
+  return _resolvePatchOpCancellations(merged);
 }
 
 /* Cancellation pass. The patch replay applies EVERY op on EVERY
@@ -38596,11 +38605,23 @@ function _mergePatchOps(prior, fresh) {
 function _resolvePatchOpCancellations(ops) {
   let out = ops.slice();
   const drop = (o) => { out = out.filter(x => x !== o); };
+  const rootSelector = html => {
+    const first = (html || "").match(/^\s*<[^>]+>/)?.[0] || "";
+    const id = first.match(/data-woven-id="([^"]+)"/)?.[1];
+    return id ? '[data-woven-id="' + id + '"]' : null;
+  };
+  const reconnect = (creator, replacement) => {
+    const old = rootSelector(creator.html);
+    if (!old) return;
+    for (const child of out) {
+      if (child !== creator && child.anchor === old) child.anchor = replacement || creator.anchor || creator.selector;
+    }
+  };
   for (const del of out.slice()) {
     if (!del || del.type !== "delete") continue;
     if (del.cancelIns) {
       const creator = out.find(o => o.type === "insert" && o.key === del.cancelIns);
-      if (creator) { drop(creator); drop(del); continue; }
+      if (creator) { reconnect(creator); drop(creator); drop(del); continue; }
     }
     if (del.cancelDup) {
       const creator = out.find(o => o.type === "duplicate"
@@ -38610,7 +38631,8 @@ function _resolvePatchOpCancellations(ops) {
     if (del.cancelRep) {
       const creator = out.find(o => o.type === "replace" && o.key === del.cancelRep);
       if (creator) {
-        del.selector = creator.selector;
+        reconnect(creator, creator.selector);
+        Object.assign(del, { selector: creator.selector, id: creator.id, fp: creator.fp, parent: creator.parent, m: creator.m });
         delete del.cancelRep;
         drop(creator);
       }
@@ -38618,9 +38640,14 @@ function _resolvePatchOpCancellations(ops) {
   }
   for (const rep of out.slice()) {
     if (!rep || rep.type !== "replace") continue;
+    if (rep.cancelRep) {
+      const creator = out.find(o => o !== rep && o.type === "replace" && o.key === rep.cancelRep);
+      if (creator) { reconnect(creator, rootSelector(rep.html)); creator.html = rep.html; creator.key = rep.key; drop(rep); continue; }
+    }
     if (rep.cancelIns) {
       const creator = out.find(o => o.type === "insert" && o.key === rep.cancelIns);
       if (creator) {
+        reconnect(creator, rootSelector(rep.html));
         creator.html = rep.html;
         creator.key = rep.key;
         creator.marker = "data-th-rep";
@@ -38650,7 +38677,7 @@ function _injectInspectorPatch(html, ops, priorOps) {
   // Always strip any prior patch block first - otherwise a save with no
   // pending ops leaves a stale (and possibly buggy, see commit history)
   // script in place. Strip is unconditional; re-inject is conditional.
-  const stripPrior = (s) => s.replace(/<script\s+data-th-patch="1">[\s\S]*?<\/script>/gi, "");
+  const stripPrior = (s) => s.replace(/<script\s+data-th-patch="1">[\s\S]*?<\/script>/gi, "").replace(/<script data-woven-component-runtime>[\s\S]*?<\/script>/gi, "");
   // Merge with ops already persisted so a save never forgets
   // edits committed by an earlier save.
   //
@@ -38665,15 +38692,17 @@ function _injectInspectorPatch(html, ops, priorOps) {
   try { ops = _mergePatchOps(priorOps != null ? priorOps : _extractPatchOps(html), ops); } catch {}
   if (!ops || !ops.length) return stripPrior(html);
   let opsJson;
-  try { opsJson = JSON.stringify(ops); } catch { return stripPrior(html); }
+  try { opsJson = JSON.stringify(ops).replace(/</g, "\\u003c"); } catch { return stripPrior(html); }
   // Build the runtime block. Kept inline so the saved file is self-contained
   // and doesn't depend on an extra sidecar fetch.
-  const script = [
+  let script = [
     '<script data-th-patch="1">',
     '(function(){',
     'var OPS=', opsJson, ';',
     'if(!OPS||!OPS.length)return;',
     'var applying=false;var mo=null;',
+    'window.__wovenEditConflicts=[];',
+    'function resolved(op,node){var key=op.type+":"+(op.id||op.selector);window.__wovenEditConflicts=window.__wovenEditConflicts.filter(function(v){return v.key!==key;});if(!node&&op.type!=="delete")window.__wovenEditConflicts.push({key:key,selector:op.selector});return node;}',
     'function $(s){try{return document.querySelector(s);}catch(_){return null;}}',
     // Reorder owns its own element resolution because op.selector +
     // op.anchor become AMBIGUOUS once the move has been applied (the two
@@ -38715,11 +38744,11 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '  var attr=op.marker||"data-th-ins";',
     '  if(op.key){try{if(document.querySelector("[".concat(attr,"=\\"").concat(op.key,"\\"]")))return;}catch(_){}}',
     '  var anch=$(op.anchor);if(!anch||typeof op.html!=="string"||!op.html)return;',
-    '  try{anch.insertAdjacentHTML(op.position==="before"?"beforebegin":"afterend",op.html);}catch(_){}',
+    '  try{anch.insertAdjacentHTML(op.position==="inside"?"beforeend":op.position==="before"?"beforebegin":"afterend",op.html);}catch(_){}',
     '}',
     'function applyReplace(op){',
     '  if(op.key){try{if(document.querySelector("[data-th-rep=\\"".concat(op.key,"\\"]")))return;}catch(_){}}',
-    '  var el2=$(op.selector);if(!el2||typeof op.html!=="string"||!op.html)return;',
+    '  var el2=resolveTarget(op);if(!el2||typeof op.html!=="string"||!op.html)return;',
     '  var t=document.createElement("div");t.innerHTML=op.html;',
     '  var ns=Array.prototype.slice.call(t.childNodes);',
     '  if(ns.length){try{el2.replaceWith.apply(el2,ns);}catch(_){}}',
@@ -38747,8 +38776,9 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '  return true;',
     '}',
     'function resolveTarget(op){',
+    '  if(op.id){var stable=$("[data-woven-id=\\\""+op.id+"\\\"]");if(stable)return resolved(op,stable);}',
     '  if(op.m&&op.m.a&&op.m.v){',
-    '    try{var byM=document.querySelector("["+op.m.a+"=\\""+op.m.v+"\\"]");if(byM)return byM;}catch(_){}',
+    '    try{var byM=document.querySelector("["+op.m.a+"=\\""+op.m.v+"\\"]");if(byM)return resolved(op,byM);}catch(_){}',
     '  }',
     '  var el=$(op.selector);',
     '  if(op.fp&&!fpOk(el,op.fp)){',
@@ -38756,16 +38786,23 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '    var scope=(op.parent?$(op.parent):null)||document;',
     '    if(scope.querySelectorAll){',
     '      var cands=scope.querySelectorAll(op.fp.tag||"*");',
-    '      for(var ci=0;ci<cands.length;ci++){if(fpOk(cands[ci],op.fp)){el=cands[ci];break;}}',
+    '      var matches=[];for(var ci=0;ci<cands.length;ci++){if(fpOk(cands[ci],op.fp))matches.push(cands[ci]);}if(matches.length===1)el=matches[0];',
     '    }',
     '  }',
-    '  return el;',
+    '  if(el&&op.id)el.setAttribute("data-woven-id",op.id);',
+    '  return resolved(op,el);',
     '}',
     'function applyDelete(op){',
     '  var victim=resolveTarget(op);',
     '  if(victim&&victim.parentElement)victim.parentElement.removeChild(victim);',
     '}',
+    'function rememberOverride(op,node,kind,value){',
+    '  if(!op.component||!op.component.part)return;',
+    '  var host=node.closest("[data-woven-component]");if(!host)return;',
+    '  try{var changes=JSON.parse(host.getAttribute("data-woven-overrides")||"{}");var part=op.component.part;changes[part]=changes[part]||{};if(kind==="styles")changes[part].styles=Object.assign({},changes[part].styles||{},value);else changes[part][kind]=value;if(kind==="text"&&op.prop)changes[part].textProp=op.prop;host.setAttribute("data-woven-overrides",JSON.stringify(changes));}catch(_){}',
+    '}',
     'function applyOne(op){',
+    '  if(op.type==="attribute"){var at=$(op.selector);if(at&&/^data-(theme|mode)$/.test(op.name)){if(op.value==null)at.removeAttribute(op.name);else at.setAttribute(op.name,op.value);}return;}',
     '  if(op.type==="reorder"&&op.anchor){applyReorder(op);return;}',
     '  if(op.type==="insert"){applyInsert(op);return;}',
     '  if(op.type==="replace"){applyReplace(op);return;}',
@@ -38776,7 +38813,8 @@ function _injectInspectorPatch(html, ops, priorOps) {
     // ops shifted the indexes.
     '  if(op.type==="style"&&op.styles){',
     '    var st=resolveTarget(op);',
-    '    if(st){for(var k in op.styles){if(/(Mode|Fixed)$/.test(k))continue;var p=k.replace(/[A-Z]/g,function(m){return "-"+m.toLowerCase();});try{st.style.setProperty(p,op.styles[k]);}catch(_){}}}',
+    '    if(st){for(var k in op.styles){if(/(Mode|Fixed)$/.test(k))continue;var p=k.replace(/[A-Z]/g,function(m){return "-"+m.toLowerCase();});try{if(op.styles[k]==null||op.styles[k]==="")st.style.removeProperty(p);else st.style.setProperty(p,op.styles[k]);}catch(_){}}}',
+    '    if(st)rememberOverride(op,st,"styles",op.styles);',
     '    return;',
     '  }',
     // `op.prop` says WHERE this element's visible text lives (see thTextSlot).
@@ -38798,6 +38836,7 @@ function _injectInspectorPatch(html, ops, priorOps) {
     // so without this it would still empty the dropdown on replay.
     '      else if(tg!=="select"&&tg!=="input"&&tt.textContent!==op.text)tt.textContent=op.text;',
     '    }',
+    '    if(tt)rememberOverride(op,tt,"text",op.text);',
     '    return;',
     '  }',
     '  var el=$(op.selector);if(!el)return;',
@@ -38852,7 +38891,7 @@ function _injectInspectorPatch(html, ops, priorOps) {
     // it - "I edit it and it snaps right back".
     '  try{',
     '    mo=new MutationObserver(function(){if(!applying&&!window.__TH_PATCH_PAUSE)applyAll();});',
-    '    mo.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:["style","class"]});',
+    '    mo.observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:["style","class"]});',
     '  }catch(_){}',
     '  applyAll();',
     '}',
@@ -38873,8 +38912,9 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '})();',
     '</script>',
   ].join("");
+  if (typeof WovenComponents !== "undefined") script += "<script data-woven-component-runtime>(" + WovenComponents.runtime.toString() + ")(document);</script>";
   // Replace any prior patch block (so re-saves don't accumulate).
-  const stripped = stripPrior(html);
+  const stripped = stripPrior(html).replace(/<script data-woven-component-runtime>[\s\S]*?<\/script>/gi, "");
   // Inject right before the closing </body>. Fall back to before </html>,
   // then to the end of the string for hand-edited files.
   const bodyClose = /<\/body>/i;
@@ -38887,6 +38927,7 @@ function _injectInspectorPatch(html, ops, priorOps) {
 function pickSerializeClean(doc) {
   if (!doc || !doc.documentElement) return "";
   const clone = doc.documentElement.cloneNode(true);
+  clone.querySelectorAll('meta[name="woven-source-revision"]').forEach(n => n.remove());
   try {
     // Drop the injected style block(s). querySelectorAll returns a static
     // NodeList over the clone, so iterating-and-removing is safe.
@@ -38923,6 +38964,7 @@ function pickSerializeClean(doc) {
    re-locate to (for paste-as-sibling against the picked target). */
 function elementCssPath(el) {
   if (!el || !el.tagName) return "";
+  if (el.getAttribute(WovenEdit.ID)) return WovenEdit.selector(el.getAttribute(WovenEdit.ID));
   const parts = [];
   let cur = el;
   let depth = 0;
@@ -38976,7 +39018,9 @@ function _elementDeleteFingerprint(el) {
    text / delete ops stay aimed at the element the user actually touched
    even when other ops shift every :nth-child index. */
 function _patchTargetMeta(el) {
-  const out = {};
+  const out = { id: WovenEdit.identify(el) };
+  const component = WovenComponents.owner(el);
+  if (component) out.component = { id: WovenEdit.identify(component), part: el.getAttribute(WovenComponents.KEY) };
   try {
     const fp = _elementDeleteFingerprint(el);
     if (fp) out.fp = fp;
@@ -39008,6 +39052,9 @@ function _patchTargetMeta(el) {
    re-resolution path keeps elementCssPath. */
 function elementPatchSelector(el) {
   if (!el || !el.tagName) return "";
+  if (el.hasAttribute("data-th-ins") || el.hasAttribute("data-th-rep") || el.closest("[data-th-ins],[data-th-rep]")) {
+    return WovenEdit.selector(WovenEdit.identify(el));
+  }
   const esc = (s) => {
     try { return CSS.escape(s); } catch { return s.replace(/[^a-zA-Z0-9_-]/g, "\\$&"); }
   };
@@ -49514,6 +49561,8 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
           // Re-attach defensively if the doc was reloaded.
           const prev = teardowns.get(ifr);
           if (prev) { try { prev(); } catch {} teardowns.delete(ifr); }
+          const sourcePath = WovenEdit.sourcePath(ifr);
+          if (WovenEdit.isolate(ifr, sourcePath, apiUrl)) return;
           const teardown = installPickOverlay(ifr, (el) => {
             // Re-point refs to the iframe the user JUST clicked into.
             // This is what makes paste route to the right destination
@@ -49594,6 +49643,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       clearInterval(intervalId);
       for (const [ifr, td] of teardowns) {
         try { td(); } catch {}
+        WovenEdit.release(ifr);
         // Remove the persistent load listener we attached for
         // re-install-on-reload so it doesn't keep firing after pick-mode
         // exits.
@@ -49806,6 +49856,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       // user knows to re-pick before relying on the clipboard.
       if (!el || (ifr && ifr.contentDocument && !ifr.contentDocument.contains(el))) {
         try { flashPickOp("error", "Source iframe reloaded - re-pick the element before copying for fresh content"); } catch {}
+        return 0;
       }
       if (ifr && el && ifr.contentDocument) {
         const ext = zoomExtractCss(ifr.contentDocument, el, false);
@@ -49815,60 +49866,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
           rootInlineStyle: ext.rootInlineStyle || null,
           skippedSheets:   ext.skippedSheets || 0,
         };
-        // Strip our pick-overlay highlight classes from the clone so the
-        // exported snippet doesn't ship blue/red outlines.
-        const cleanClone = el.cloneNode(true);
-        cleanClone.classList && cleanClone.classList.remove("th-pick-hover", "th-pick-selected");
-        cleanClone.querySelectorAll && cleanClone.querySelectorAll(".th-pick-hover, .th-pick-selected")
-          .forEach(n => n.classList.remove("th-pick-hover", "th-pick-selected"));
-        // Absolutize relative URLs against the source page's base.
-        // The standalone export lives at source/<branch>/components/snippet-X
-        // .html so relative paths like `assets/hero.png` would 404 there.
-        // We rewrite to absolute URLs (same daemon origin) so the daemon
-        // serves the original asset regardless of where the snippet lands.
-        try {
-          // baseURI respects any <base> tag inside the doc; falls back to the
-          // window URL otherwise. Either way, relative paths resolve against
-          // the source page's actual location, so an `<img src="hero.jpg">`
-          // becomes the daemon URL that serves hero.jpg from the source dir.
-          const base = (ifr.contentDocument && ifr.contentDocument.baseURI)
-            || (ifr.contentWindow && ifr.contentWindow.location && ifr.contentWindow.location.href)
-            || "";
-          const abs = (raw) => {
-            if (!raw) return raw;
-            try { return new URL(raw, base).href; } catch { return raw; }
-          };
-          // Walk the clone (including the root itself) for elements with
-          // resolvable URL attributes. srcset gets per-candidate rewriting.
-          const URL_ATTRS = ["src", "href", "poster", "data"];
-          const nodes = [cleanClone, ...cleanClone.querySelectorAll ? Array.from(cleanClone.querySelectorAll("*")) : []];
-          for (const n of nodes) {
-            if (!n || !n.getAttribute) continue;
-            for (const a of URL_ATTRS) {
-              const v = n.getAttribute(a);
-              if (v && !/^(?:[a-z]+:|\/\/|data:|#)/i.test(v)) {
-                n.setAttribute(a, abs(v));
-              }
-            }
-            const srcset = n.getAttribute("srcset");
-            if (srcset) {
-              const rewritten = srcset.split(",").map(part => {
-                const seg = part.trim();
-                if (!seg) return seg;
-                // "url 2x" or "url 320w" - keep the descriptor
-                const space = seg.indexOf(" ");
-                const url = space === -1 ? seg : seg.slice(0, space);
-                const desc = space === -1 ? "" : seg.slice(space);
-                if (/^(?:[a-z]+:|\/\/|data:|#)/i.test(url)) return seg;
-                return abs(url) + desc;
-              }).join(", ");
-              n.setAttribute("srcset", rewritten);
-            }
-          }
-        } catch (err) {
-          console.warn("[copyPickedElement] URL absolutization failed - relative paths may break", err);
-        }
-        cleanOuter = cleanClone.outerHTML;
+        cleanOuter = WovenEdit.copy(el, { cssBundle }).outerHTML;
       }
     } catch (err) {
       console.warn("[copyPickedElement] CSS extraction failed - falling back to bare outerHTML", err);
@@ -49883,6 +49881,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       cssBundle,
       ts: Date.now(),
     };
+    WovenEdit.setClipboard(nodeClipboardRef.current);
     flashPickOp("done", `Copied <${pickedElement.tagName || "element"}>`);
     return 1;
   }, [pickedElement, resolveIframePath, flashPickOp]);
@@ -49907,8 +49906,27 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   // Resolve a save path for any iframe, not just the current pickerIframeRef.
   // Mirrors resolveIframePath but takes the iframe explicitly so per-iframe
   // commit doesn't depend on what's currently picked.
+  useEffect(() => {
+    const onSession = event => {
+      const { state, doc } = event.detail;
+      const origin = doc.defaultView?.frameElement;
+      const ifr = origin && wfPickHostId(origin) ? origin : wfPickHostIframes().find(frame => WovenEdit.sourcePath(frame) === state.path);
+      if (!ifr) return;
+      setPendingInspectorEdits(prev => {
+        const next = new Map(prev);
+        if (!state.dirty) next.delete(state.path);
+        else next.set(state.path, { path: state.path, ifr, doc, nodeId: wfPickHostId(ifr), ops: state.history.slice(0, state.cursor + 1).map(e => e.op) });
+        _dispatchPendingDigest(next);
+        return next;
+      });
+    };
+    window.addEventListener("woven:edit-session", onSession);
+    return () => window.removeEventListener("woven:edit-session", onSession);
+  }, []);
   const _resolveIframePathFor = useCallback((ifr) => {
     if (!ifr) return null;
+    const authoringPath = WovenEdit.sourcePath(ifr);
+    if (authoringPath) return authoringPath;
     try {
       const loc = ifr.contentWindow && ifr.contentWindow.location;
       if (loc && loc.pathname) {
@@ -49974,20 +49992,12 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       try { flashPickOp("error", "This draft navigated off its own screen - the edit wasn't staged. It's on its way back; try again."); } catch {}
       return;
     }
-    const nodeId = wfPickHostId(ifr);
-    setPendingInspectorEdits(prev => {
-      const next = new Map(prev);
-      const existing = next.get(path);
-      const ops = existing && Array.isArray(existing.ops) ? existing.ops.slice() : [];
-      if (op && op.type) ops.push(op);
-      next.set(path, { ifr, doc, path, nodeId, ops });
-      _dispatchPendingDigest(next);
-      return next;
-    });
+    WovenEdit.bind(doc, path, apiUrl);
+    WovenEdit.stage(doc, op);
   }, [_resolveIframePathFor, _dispatchPendingDigest, flashPickOp]);
 
   const pastePickedElement = useCallback(async () => {
-    const clip = nodeClipboardRef.current;
+    const clip = WovenEdit.getClipboard() || nodeClipboardRef.current;
     if (!clip || clip.type !== "html-element") return 0;
     // In-flight guard. Two keyboard handlers can both invoke this
     // for a single Cmd+V (pick-mode capture + canvas-level bubble) - even
@@ -50025,133 +50035,24 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       if (!parent) { flashPickOp("error", "Paste failed: target has no parent"); return 0; }
       flashPickOp("pending", "Pasting as sibling…");
       try {
-        const doc = ifr.contentDocument;
-        if (!doc) { flashPickOp("error", "Paste failed: iframe doc unavailable"); return 0; }
-        // Re-read the SOURCE element live at paste time, so the
-        // clipboard snapshot from copy time gets overridden by whatever
-        // the source iframe currently shows. This means the user can
-        // refine / edit the source between copy and paste and the latest
-        // bytes get pasted - no re-copy required. Falls back to
-        // clip.outerHTML when the source iframe is gone (host node
-        // deleted) or the selector no longer resolves.
-        let liveOuter = clip.outerHTML;
-        if (clip.sourceNodeId && clip.path) {
-          try {
-            const sourceIfr = wfFindPickHost(clip.sourceNodeId);
-            if (wfPickHostAlive(sourceIfr)) {
-              const liveSrcEl = sourceIfr.contentDocument.querySelector(clip.path);
-              if (liveSrcEl) {
-                const clean = liveSrcEl.cloneNode(true);
-                clean.classList && clean.classList.remove("th-pick-hover", "th-pick-selected");
-                clean.querySelectorAll && clean.querySelectorAll(".th-pick-hover, .th-pick-selected")
-                  .forEach(n => n.classList.remove("th-pick-hover", "th-pick-selected"));
-                // Inline the SOURCE'S computed styles onto the
-                // clone before serialising. Without this, the inserted
-                // element inherits the DESTINATION'S stylesheets - which is
-                // why pasting into a prototype that has its own rules
-                // overriding what you just changed makes the paste "appear
-                // as the old design". Inline styles have higher specificity
-                // than external rules, so the element looks identical at
-                // the destination as it did in the source. We mirror styles
-                // from each LIVE source element onto its matching clone
-                // node (DOM-walked in parallel) so descendants get the
-                // same treatment.
-                try {
-                  const srcWin = sourceIfr.contentWindow;
-                  // Strip the editor's pick-mode chrome BEFORE the
-                  // computed-style read. The live source element wears
-                  // .th-pick-hover/.th-pick-selected and the body wears
-                  // .th-pick-mode at copy time, so the bake captured the
-                  // picker's blue outline, selection box-shadow,
-                  // cursor:crosshair and user-select:none as if they were
-                  // the design ("why is there a blue outline?"). Classes are
-                  // restored after the walk; outline/cursor/user-select are
-                  // also skipped outright as belt-and-suspenders.
-                  const chromeUndo = [];
-                  try {
-                    const srcBody = sourceIfr.contentDocument.body;
-                    if (srcBody.classList.contains("th-pick-mode")) {
-                      srcBody.classList.remove("th-pick-mode");
-                      chromeUndo.push(() => srcBody.classList.add("th-pick-mode"));
-                    }
-                    [liveSrcEl, ...liveSrcEl.querySelectorAll(".th-pick-hover, .th-pick-selected")].forEach(n => {
-                      if (!n.classList) return;
-                      const h = n.classList.contains("th-pick-hover");
-                      const sl = n.classList.contains("th-pick-selected");
-                      if (!h && !sl) return;
-                      n.classList.remove("th-pick-hover", "th-pick-selected");
-                      chromeUndo.push(() => { if (h) n.classList.add("th-pick-hover"); if (sl) n.classList.add("th-pick-selected"); });
-                    });
-                  } catch {}
-                  const SKIP_BAKE_PROP = /^(outline($|-)|cursor$|user-select$|-webkit-user-select$)/;
-                  try {
-                  const liveTree  = [liveSrcEl, ...Array.from(liveSrcEl.querySelectorAll("*"))];
-                  const cloneTree = [clean,     ...Array.from(clean.querySelectorAll("*"))];
-                  const len = Math.min(liveTree.length, cloneTree.length);
-                  for (let i = 0; i < len; i++) {
-                    const live  = liveTree[i];
-                    const dst   = cloneTree[i];
-                    if (!live || !dst || !dst.setAttribute) continue;
-                    const cs = srcWin.getComputedStyle(live);
-                    // Build a `prop: value;` string for every computed
-                    // declaration. Big but reliable - every visual
-                    // property carries over.
-                    let css = "";
-                    for (let k = 0; k < cs.length; k++) {
-                      const prop = cs[k];
-                      if (SKIP_BAKE_PROP.test(prop)) continue;
-                      const val  = cs.getPropertyValue(prop);
-                      if (val) css += prop + ":" + val + ";";
-                    }
-                    // Preserve any existing inline style declarations the
-                    // element already had - they go FIRST so the computed
-                    // ones don't get clobbered by a re-parse of cs values.
-                    const existing = dst.getAttribute("style") || "";
-                    dst.setAttribute("style", css + existing);
-                  }
-                  } finally {
-                    chromeUndo.forEach(fn => { try { fn(); } catch {} });
-                  }
-                } catch (err) {
-                  console.warn("[paste sibling] inline-style bake failed; falling back to markup-only paste", err);
-                }
-                liveOuter = clean.outerHTML;
-              }
-            }
-          } catch {}
-        }
-        // Paste is now STAGED like every other inspector op
-        // (style / move / duplicate): mutate the live DOM, record a
-        // replayable `insert` op, and let the Save/Revert pill commit.
-        // The previous immediate POST gave the user no save affordance
-        // AND recorded no patch op - on React-managed prototypes the
-        // pasted element silently vanished on the next render ("copy
-        // paste seems to fail to save").
-        //
-        // Anchor selector captured BEFORE inserting - same-class twins
-        // inserted AFTER the target can't shift its disambiguation index.
+        const doc = ifrLive.contentDocument;
+        if (!doc || !doc.contains(targetEl)) throw new Error("Select a destination in the current frame.");
         const anchorSel = elementPatchSelector(targetEl);
-        const insKey = "i" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
-        const tmp = doc.createElement("div");
-        tmp.innerHTML = liveOuter;
-        // Stamp the idempotency key on every top-level ELEMENT before it
-        // enters the live tree, so the serialized op.html carries it and
-        // the patch replay can detect "already applied".
-        Array.from(tmp.children).forEach(n => { try { n.setAttribute("data-th-ins", insKey); } catch {} });
-        const stampedHtml = tmp.innerHTML;
-        let insertedCount = 0;
-        while (tmp.firstChild) {
-          const n = tmp.firstChild;
-          parent.insertBefore(n, targetEl.nextSibling);
-          insertedCount++;
-        }
-        doc.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(el => {
-          el.classList.remove("th-pick-hover");
-          el.classList.remove("th-pick-selected");
-        });
+        const inserted = WovenEdit.paste(targetEl, clip, "after", elementPatchSelector);
+        const stampedHtml = inserted.html;
+        const insKey = inserted.key;
+        const insertedCount = inserted.nodes.length;
+        doc.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(n => n.classList.remove("th-pick-hover", "th-pick-selected"));
+        const selected = inserted.nodes[0];
+        selected.classList.add("th-pick-selected");
+        pickedDomRef.current = selected;
+        window.dispatchEvent(new CustomEvent("th:element-picked", { detail: {
+          ...pickedElement, path: elementCssPath(selected), outerHTML: selected.outerHTML,
+          tagName: selected.tagName.toLowerCase(), nodeId: wfPickHostId(ifrLive),
+        } }));
         stageInspectorEdit(ifrLive || ifr, doc, {
           type:     "insert",
-          anchor:   anchorSel,
+          anchor:   inserted.anchor || anchorSel,
           position: "after",
           html:     stampedHtml,
           key:      insKey,
@@ -50227,25 +50128,6 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
           ? [...(d.edges || []), { from: `${assetId}.out`, to: `${composerTarget.id}.in` }]
           : (d.edges || []),
       }));
-      // Re-link the clipboard to the SNIPPET asset we just spawned.
-      // The user's mental model after Path B is "this card IS my copied
-      // element". So if they refine / edit the snippet and then Cmd+V again,
-      // they expect to paste the modified snippet, not the original source.
-      // Updating sourceNodeId here makes the live-source-re-read at the next
-      // Path A paste resolve to the snippet's iframe, not the original host.
-      // The path becomes "body > div > *:first-child" because Path B's
-      // template wraps the element in `<body><div style="…">…</div></body>`.
-      try {
-        const cur = nodeClipboardRef.current;
-        if (cur && cur.type === "html-element") {
-          nodeClipboardRef.current = {
-            ...cur,
-            sourceNodeId: assetId,
-            path: "body > div > *",
-            snippetAssetId: assetId,
-          };
-        }
-      } catch {}
       const skipped = bundle.skippedSheets || 0;
       const skipNote = skipped > 0
         ? ` (skipped ${skipped} cross-origin sheet${skipped === 1 ? "" : "s"})`
@@ -50262,193 +50144,23 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     } finally {
       pastePickedElement._inFlight = false;
     }
-  }, [data, setData, resolveIframePath, flashPickOp, _findComposerPasteTarget, stageInspectorEdit]);
+  }, [data, setData, resolveIframePath, flashPickOp, _findComposerPasteTarget, stageInspectorEdit, pickedElement]);
 
-  // Cmd+R: replace the currently picked element with the clipboard's
-  // content. Same shape as pastePickedElement Path A (live-source re-read,
-  // computed-style baking, three-step recovery against iframe re-mounts),
-  // but uses `replaceWith` instead of `insertBefore` so the target gets
-  // SWAPPED, not duplicated. Skips the replace + flash-warns the user when
-  // there's no valid swap to make (no clipboard, no picked target, or the
-  // picked target IS the original source - replacing self-with-self is a
-  // no-op and almost certainly means the user wanted browser refresh).
-  // Cmd+R browser refresh is suppressed unconditionally while pick-mode is
-  // active so the user can't lose their selection state by accident.
+  // Replacement uses the same immutable clipboard and identity rules as paste.
   const replacePickedElement = useCallback(async () => {
-    const clip = nodeClipboardRef.current;
-    if (!clip || clip.type !== "html-element") {
-      flashPickOp("error", "Cmd+R: nothing on the clipboard. Copy an element first (Cmd+C).");
-      return 0;
-    }
-    if (!pickedDomRef.current || !pickerIframeRef.current || !pickedElement) {
-      flashPickOp("error", "Cmd+R: pick a target element first (click one in the iframe).");
-      return 0;
-    }
-    // Same-element check: if the picked target IS the clipboard's source,
-    // a "replace" would copy the element onto itself. That's almost never
-    // the user's intent. Flash a hint instead of doing the no-op.
-    if (clip.sourceNodeId && clip.path
-        && clip.sourceNodeId === pickedElement.nodeId
-        && clip.path === pickedElement.path) {
-      flashPickOp("error", "Cmd+R: picked target is the same element you copied - pick a DIFFERENT element to replace.");
-      return 0;
-    }
-    if (replacePickedElement._inFlight) return 0;
-    replacePickedElement._inFlight = true;
+    const ifr = pickerIframeRef.current;
+    const doc = ifr?.contentDocument;
+    const el = doc && (pickedElement?.path ? doc.querySelector(pickedElement.path) : pickedDomRef.current);
+    if (!el) { flashPickOp("error", "Select an element to replace."); return 0; }
     try {
-      const project = activeProjectId();
-      const ifr = pickerIframeRef.current;
-      let ifrLive = ifr;
-      if (!wfPickHostAlive(ifrLive)) {
-        try {
-          const found = wfFindPickHost(pickedElement && pickedElement.nodeId);
-          if (found) { ifrLive = found; pickerIframeRef.current = found; }
-        } catch {}
-      }
-      let targetEl = pickedDomRef.current;
-      if (ifrLive && ifrLive.contentDocument && pickedElement && pickedElement.path) {
-        try {
-          const live = ifrLive.contentDocument.querySelector(pickedElement.path);
-          if (live) { targetEl = live; pickedDomRef.current = live; }
-        } catch {}
-      }
-      if (!targetEl || !targetEl.parentElement) {
-        flashPickOp("error", "Replace failed: target detached from the document");
-        return 0;
-      }
-      flashPickOp("pending", "Replacing…");
-      try {
-        const doc = ifrLive.contentDocument;
-        if (!doc) { flashPickOp("error", "Replace failed: iframe doc unavailable"); return 0; }
-        // Re-read the SOURCE element live (same logic as paste). Falls back
-        // to clip.outerHTML if the source iframe is gone.
-        let liveOuter = clip.outerHTML;
-        if (clip.sourceNodeId && clip.path) {
-          try {
-            const sourceIfr = wfFindPickHost(clip.sourceNodeId);
-            if (wfPickHostAlive(sourceIfr)) {
-              const liveSrcEl = sourceIfr.contentDocument.querySelector(clip.path);
-              if (liveSrcEl) {
-                const clean = liveSrcEl.cloneNode(true);
-                clean.classList && clean.classList.remove("th-pick-hover", "th-pick-selected");
-                clean.querySelectorAll && clean.querySelectorAll(".th-pick-hover, .th-pick-selected")
-                  .forEach(n => n.classList.remove("th-pick-hover", "th-pick-selected"));
-                // Bake computed styles inline so the destination's stylesheets
-                // don't override the source's intended look. Same approach as
-                // pastePickedElement Path A.
-                try {
-                  const srcWin = sourceIfr.contentWindow;
-                  // Strip the editor's pick-mode chrome BEFORE the
-                  // computed-style read. The live source element wears
-                  // .th-pick-hover/.th-pick-selected and the body wears
-                  // .th-pick-mode at copy time, so the bake captured the
-                  // picker's blue outline, selection box-shadow,
-                  // cursor:crosshair and user-select:none as if they were
-                  // the design ("why is there a blue outline?"). Classes are
-                  // restored after the walk; outline/cursor/user-select are
-                  // also skipped outright as belt-and-suspenders.
-                  const chromeUndo = [];
-                  try {
-                    const srcBody = sourceIfr.contentDocument.body;
-                    if (srcBody.classList.contains("th-pick-mode")) {
-                      srcBody.classList.remove("th-pick-mode");
-                      chromeUndo.push(() => srcBody.classList.add("th-pick-mode"));
-                    }
-                    [liveSrcEl, ...liveSrcEl.querySelectorAll(".th-pick-hover, .th-pick-selected")].forEach(n => {
-                      if (!n.classList) return;
-                      const h = n.classList.contains("th-pick-hover");
-                      const sl = n.classList.contains("th-pick-selected");
-                      if (!h && !sl) return;
-                      n.classList.remove("th-pick-hover", "th-pick-selected");
-                      chromeUndo.push(() => { if (h) n.classList.add("th-pick-hover"); if (sl) n.classList.add("th-pick-selected"); });
-                    });
-                  } catch {}
-                  const SKIP_BAKE_PROP = /^(outline($|-)|cursor$|user-select$|-webkit-user-select$)/;
-                  try {
-                  const liveTree  = [liveSrcEl, ...Array.from(liveSrcEl.querySelectorAll("*"))];
-                  const cloneTree = [clean,     ...Array.from(clean.querySelectorAll("*"))];
-                  const len = Math.min(liveTree.length, cloneTree.length);
-                  for (let i = 0; i < len; i++) {
-                    const live  = liveTree[i];
-                    const dst   = cloneTree[i];
-                    if (!live || !dst || !dst.setAttribute) continue;
-                    const cs = srcWin.getComputedStyle(live);
-                    let css = "";
-                    for (let k = 0; k < cs.length; k++) {
-                      const prop = cs[k];
-                      if (SKIP_BAKE_PROP.test(prop)) continue;
-                      const val  = cs.getPropertyValue(prop);
-                      if (val) css += prop + ":" + val + ";";
-                    }
-                    const existing = dst.getAttribute("style") || "";
-                    dst.setAttribute("style", css + existing);
-                  }
-                  } finally {
-                    chromeUndo.forEach(fn => { try { fn(); } catch {} });
-                  }
-                } catch (err) {
-                  console.warn("[replace] inline-style bake failed; falling back to markup-only", err);
-                }
-                liveOuter = clean.outerHTML;
-              }
-            }
-          } catch {}
-        }
-        // Materialise the replacement element(s) from the markup. innerHTML
-        // can produce multiple top-level nodes when the snippet has siblings;
-        // replaceWith handles a variadic list of nodes so we pass them all.
-        //
-        // Replace is now STAGED (Save/Revert pill) with a
-        // replayable `replace` op instead of an immediate POST - same
-        // rationale as paste: the user gets a save affordance, and the
-        // patch script re-applies the swap after React re-renders.
-        const replaceSel = elementPatchSelector(targetEl);
-        const repKey = "p" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
-        // Creator markers of the REPLACED target, for the merge's
-        // cancellation pass (replacing a pasted/duplicated element rewrites
-        // the creator op rather than persisting a fighting replace op).
-        const cancelIns = targetEl.getAttribute && targetEl.getAttribute("data-th-ins");
-        const cancelDup = targetEl.getAttribute && targetEl.getAttribute("data-th-clone-of");
-        const tmp = doc.createElement("div");
-        tmp.innerHTML = liveOuter;
-        Array.from(tmp.children).forEach(n => { try { n.setAttribute("data-th-rep", repKey); } catch {} });
-        const stampedHtml = tmp.innerHTML;
-        const newNodes = Array.from(tmp.childNodes);
-        if (newNodes.length === 0) {
-          flashPickOp("error", "Replace failed: clipboard produced no DOM");
-          return 0;
-        }
-        targetEl.replaceWith(...newNodes);
-        // Clear any leftover picker hover/selected classes so the saved HTML
-        // is clean.
-        doc.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(el => {
-          el.classList.remove("th-pick-hover");
-          el.classList.remove("th-pick-selected");
-        });
-        const repOp = {
-          type:     "replace",
-          selector: replaceSel,
-          html:     stampedHtml,
-          key:      repKey,
-        };
-        if (cancelIns) repOp.cancelIns = cancelIns;
-        if (cancelDup) repOp.cancelDup = cancelDup;
-        stageInspectorEdit(ifrLive || pickerIframeRef.current, doc, repOp);
-        // Clear the picked target so the next Cmd+R requires a fresh pick
-        // (the old target is gone from the DOM; the pick state is stale).
-        setPickedElement(null);
-        pickedDomRef.current = null;
-        flashPickOp("done", `Replaced <${pickedElement.tagName || "element"}> - staged; click Save on the node pill to persist`);
-        return newNodes.length;
-      } catch (err) {
-        console.error("[replace]", err);
-        flashPickOp("error", "Replace failed: " + (err.message || err));
-        return 0;
-      }
-    } finally {
-      replacePickedElement._inFlight = false;
-    }
-  }, [pickedElement, resolveIframePath, flashPickOp, stageInspectorEdit]);
+      const result = performSelectionCommand(el, "replace");
+      stageInspectorEdit(ifr, doc, result.op);
+      pickedDomRef.current = result.element;
+      setPickedElement({ ...pickedElement, path: elementCssPath(result.element), outerHTML: result.element.outerHTML });
+      flashPickOp("done", "Replaced element. Save to persist.");
+      return 1;
+    } catch (err) { flashPickOp("error", err.message); return 0; }
+  }, [pickedElement, flashPickOp, stageInspectorEdit]);
 
   const deletePickedElement = useCallback(async () => {
     const ifr = pickerIframeRef.current;
@@ -50549,100 +50261,28 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
 
   const commitInspectorEdits = useCallback(async () => {
     const snapshot = Array.from(pendingInspectorEdits.values());
-    if (snapshot.length === 0) return;
-    flashPickOp("pending", `Saving ${snapshot.length} edit${snapshot.length === 1 ? "" : "s"}…`);
-    // Suppress the iframe auto-reload caused by our OWN write.
-    // After a successful POST to /__html_save, the daemon's file watcher
-    // dispatches th:asset-refresh for the same path. The prototype node's
-    // asset-refresh listener bumps the iframe nonce → React re-mounts from
-    // the unchanged App source → user's DOM edits revert ("after a while
-    // the prototype refresh and it reverted"). Mark each path as "self-
-    // saved" before the POST; asset-refresh handlers below consume the
-    // marker (one-shot: removed after a single skip) so any SUBSEQUENT
-    // change to the same path (e.g. an agent's source update) still
-    // triggers a reload normally.
-    try {
-      if (!window.__thInspectorSelfSavedPaths) window.__thInspectorSelfSavedPaths = new Set();
-      for (const entry of snapshot) {
-        if (entry.path) window.__thInspectorSelfSavedPaths.add(entry.path);
-      }
-    } catch {}
-    let okCount = 0;
+    if (!snapshot.length) return;
+    const completed = new Map();
+    const errors = [];
+    flashPickOp("pending", "Saving edits...");
     for (const entry of snapshot) {
-      // Validate the iframe is still alive + the doc matches before serializing.
-      const ifr = entry.ifr;
-      if (!ifr || !ifr.isConnected) continue;
-      let curDoc = null;
-      try { curDoc = ifr.contentDocument; } catch {}
-      if (!curDoc || curDoc !== entry.doc) continue;
-      const project = activeProjectId();
-      let fullHtml = pickSerializeClean(entry.doc);
-      // Read the ON-DISK file's persisted ops as the merge base.
-      // The live doc's embedded patch script is frozen at iframe-load time;
-      // with reloads suppressed during editing it goes stale across
-      // consecutive saves and the merge would drop the previous save's ops.
-      let priorOps = null;
       try {
-        const pu = apiUrl("/" + entry.path);
-        const pr = await fetch(pu + (pu.includes("?") ? "&" : "?") + "_pm=" + Date.now());
-        if (pr.ok) priorOps = _extractPatchOps(await pr.text());
-      } catch {}
-      // Inject a post-mount patch script so React-managed
-      // prototypes don't revert the user's edits on the next iframe load.
-      // The script:
-      //   1. Waits for window.load + a 100ms tick so React has time to
-      //      mount + render once.
-      //   2. Walks the ops list and re-applies each via querySelector
-      //      against the post-render DOM.
-      //   3. Mounts a MutationObserver on body that re-applies on every
-      //      mutation burst (guarded by a flag so its own writes don't
-      //      re-trigger). Survives subsequent React re-renders.
-      // Vanilla (non-React) prototypes get the same script - it's idempotent
-      // and a no-op on the parsed-DOM state that already matches the ops.
-      if (entry.ops && entry.ops.length > 0) {
-        fullHtml = _injectInspectorPatch(fullHtml, entry.ops, priorOps);
-      }
-      const apiU = apiUrl("/__html_save");
-      const u = apiU + (apiU.includes("?") ? "&" : "?") + "_t=" + Date.now();
-      try {
-        const resp = await fetch(u, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: entry.path, html: fullHtml, project }),
-        });
-        if (resp.ok) okCount++;
-      } catch {}
+        if (!entry.ifr?.isConnected || entry.ifr.contentDocument !== entry.doc) throw new Error("The editing frame changed. Your edits remain pending.");
+        await WovenEdit.save(entry.doc, entry.path, apiUrl, entry.ops, _injectInspectorPatch, pickSerializeClean(entry.doc));
+        completed.set(entry.path, entry);
+      } catch (error) { errors.push(error.message); }
     }
     setPendingInspectorEdits(prev => {
-      const next = new Map();
+      const next = new Map(prev);
+      for (const [path, saved] of completed) {
+        const current = next.get(path);
+        if (current === saved) next.delete(path);
+        else if (current) next.set(path, { ...current, ops: current.ops.filter(op => !saved.ops.includes(op)) });
+      }
       _dispatchPendingDigest(next);
       return next;
     });
-    // Safety: clear the suppression markers after a window even if no
-    // asset-refresh ever arrived (e.g. watcher quiet) - prevents a stale
-    // marker from swallowing the next legitimate refresh on the same path.
-    //
-    // 45s window: the daemon's watcher echo is NOT fast - each scan walks
-    // every project's full tree, so the echo for a save can land 5-10+
-    // seconds later on real workspaces. A shorter cap lets the marker
-    // expire BEFORE the echo arrives; the unsuppressed echo then reloads
-    // the node iframe and wipes the user's in-progress pick-mode session.
-    // The marker is still consumed on first match, so 45s only governs the
-    // no-echo case.
-    try {
-      const paths = snapshot.map(e => e.path).filter(Boolean);
-      setTimeout(() => {
-        try {
-          const set = window.__thInspectorSelfSavedPaths;
-          if (!set) return;
-          for (const p of paths) set.delete(p);
-        } catch {}
-      }, 45000);
-    } catch {}
-    flashPickOp(okCount === snapshot.length ? "done" : "error",
-      okCount === snapshot.length
-        ? `Saved ${okCount} edit${okCount === 1 ? "" : "s"}`
-        : `Saved ${okCount} of ${snapshot.length} - some failed`);
+    flashPickOp(errors.length ? "error" : "done", errors.length ? errors.join("; ") : "Edits saved");
   }, [pendingInspectorEdits, flashPickOp, _dispatchPendingDigest]);
   const revertInspectorEdits = useCallback(() => {
     const snapshot = Array.from(pendingInspectorEdits.values());
@@ -50650,6 +50290,8 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     for (const entry of snapshot) {
       const ifr = entry.ifr;
       if (!ifr || !ifr.isConnected) continue;
+      WovenEdit.discard(entry.doc);
+      ifr.removeAttribute("srcdoc");
       // Reload from disk - cache-buster bump so the daemon serves the
       // canonical bytes (NOT the in-memory mutated doc).
       try {
@@ -51386,58 +51028,20 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   const duplicatePickedElement = useCallback(async () => {
     const { el, doc } = _resolvePickedLive();
     if (!el || !doc) return 0;
-    const parent = el.parentElement;
-    if (!parent) return 0;
-    const tagSnap = (el.tagName || "").toLowerCase();
-    flashPickOp("pending", `Duplicating <${tagSnap}>…`);
-    // deep clone preserves nested markup + inline styles. We strip the
-    // pick-mode hover/selected classes from BOTH copies so the saved
-    // HTML is clean of editor chrome.
-    //
-    // Selector captured BEFORE the clone mounts (a same-class
-    // twin after the target would shift the disambiguation index), the
-    // clone carries a unique data-th-clone-of key (the patch replay's
-    // GLOBAL idempotency marker), and any editor marker attributes the
-    // source carried are stripped from the clone so it can't satisfy
-    // another op's idempotency check.
-    const dupSel = elementPatchSelector(el);
-    const dupKey = "d" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
-    const clone = el.cloneNode(true);
-    clone.classList.remove("th-pick-hover");
-    clone.classList.remove("th-pick-selected");
-    try {
-      const stripMarkers = (n) => {
-        if (!n.removeAttribute) return;
-        ["data-th-ins", "data-th-rep", "data-th-rkey-el", "data-th-rkey-sib", "data-th-clone-of"]
-          .forEach(a => n.removeAttribute(a));
-      };
-      stripMarkers(clone);
-      clone.querySelectorAll && clone.querySelectorAll("[data-th-ins],[data-th-rep],[data-th-rkey-el],[data-th-rkey-sib],[data-th-clone-of]").forEach(stripMarkers);
-    } catch {}
-    try { clone.setAttribute("data-th-clone-of", dupKey); } catch {}
-    parent.insertBefore(clone, el.nextSibling);
-    doc.querySelectorAll(".th-pick-hover, .th-pick-selected").forEach(elm => {
-      elm.classList.remove("th-pick-hover");
-      elm.classList.remove("th-pick-selected");
-    });
-    // Stage with a duplicate op record for post-mount replay.
-    try {
-      const ifr = pickerIframeRef.current;
-      if (ifr) stageInspectorEdit(ifr, doc, {
-        type:     "duplicate",
-        selector: dupSel,
-        key:      dupKey,
-      });
-    } catch {}
-    flashPickOp("done", `Duplicated <${tagSnap}> - staged; click Save on the node pill to persist`);
+    const result = performSelectionCommand(el, "duplicate");
+    stageInspectorEdit(pickerIframeRef.current, doc, result.op);
+    pickedDomRef.current = result.element;
+    window.dispatchEvent(new CustomEvent("th:element-picked", { detail: { ...pickedElement,
+      path: elementCssPath(result.element), outerHTML: result.element.outerHTML,
+      tagName: result.element.tagName.toLowerCase() } }));
     return 1;
-  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp]);
+  }, [_resolvePickedLive, stageInspectorEdit, pickedElement]);
 
   // Media asset nodes riding the canvas clipboard (Cmd+C on an asset
   // card fills nodeClipboardRef via copySelectedNodes - {nodes,edges},
   // no `type` field). These feed pasteAssetNodeIntoPicked below.
   const _clipboardAssetNodes = useCallback(() => {
-    const clip = nodeClipboardRef.current;
+    const clip = WovenEdit.getClipboard() || nodeClipboardRef.current;
     if (!clip || clip.type || !Array.isArray(clip.nodes)) return [];
     return clip.nodes.filter(workflowPasteableAssetNode);
   }, []);
@@ -51574,7 +51178,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         copyPickedElement();
         e.preventDefault(); e.stopPropagation();
       } else if (cmd && (e.key === "v" || e.key === "V")) {
-        const clip = nodeClipboardRef.current;
+        const clip = WovenEdit.getClipboard() || nodeClipboardRef.current;
         if (clip && clip.type === "html-style") {
           // style-only clipboard paths through pastePickedStyle
           // instead of the element-paste flow. The user pasted onto a
@@ -51590,6 +51194,10 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
           pasteAssetNodeIntoPicked();
           e.preventDefault(); e.stopPropagation();
         }
+      } else if (cmd && e.key.toLowerCase() === "z") {
+        e.preventDefault(); e.stopPropagation();
+        WovenEdit.history(pickerIframeRef.current?.contentDocument, e.shiftKey ? 1 : -1);
+        pickedDomRef.current = null; setPickedElement(null);
       } else if (cmd && (e.key === "r" || e.key === "R")) {
         // Cmd+R = replace picked target with clipboard content.
         // Browser refresh is suppressed UNCONDITIONALLY while pick-mode is
@@ -51637,7 +51245,15 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       }
     };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    const attached = new Map();
+    const attach = () => {
+      for (const ifr of wfPickHostIframes()) {
+        const doc = ifr.contentDocument;
+        if (doc && !attached.has(doc)) { doc.addEventListener("keydown", onKey, true); attached.set(doc, true); }
+      }
+    };
+    attach(); const poll = setInterval(attach, 400);
+    return () => { clearInterval(poll); window.removeEventListener("keydown", onKey, true); for (const doc of attached.keys()) doc.removeEventListener("keydown", onKey, true); };
   }, [pickModeNodeId, pickedElement, copyPickedElement, pastePickedElement,
       copyPickedAsPng, copyPickedStyle, pastePickedStyle,
       replacePickedElement, deletePickedElement, duplicatePickedElement,
@@ -57296,6 +56912,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   const dblTextRef = useRef({});
   dblTextRef.current = {
     openCodePanelAt, stageInspectorEdit, flashPickOp,
+    enterEdit: setPickModeNodeId,
     findNode: (id) => (data.nodes || []).find(n => n.id === id),
   };
   useEffect(() => {
@@ -57317,14 +56934,27 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         let el; try { el = doc.elementFromPoint(e.clientX, e.clientY); } catch { el = e.target; }
         if (!el || el.tagName === "HTML" || el.tagName === "BODY" || el.tagName === "IFRAME") return;
         const needle = thNeedleFor(el);
-        if (!needle || needle.length < 2) return;
+        if (!needle) return;
         e.preventDefault(); e.stopPropagation();
         const api = dblTextRef.current;
         const node = api.findNode(nodeId);
         const branch = nodePrototype(node);
+        const path = WovenEdit.sourcePath(ifr);
+        if (path && !doc.querySelector('meta[name="woven-authoring"]')) {
+          const selector = elementPatchSelector(el);
+          const loaded = new Promise(resolve => ifr.addEventListener('load', resolve, { once: true }));
+          if (WovenEdit.isolate(ifr, path, apiUrl)) await loaded;
+          if (cancelled) return;
+          doc = ifr.contentDocument;
+          el = doc?.querySelector(selector);
+          if (!el) return;
+          api.enterEdit(nodeId);
+        }
         let res;
-        try { res = await thDetectDataText(branch, needle); }
-        catch { res = { found: false }; }
+        res = { found: false };
+        if (!doc.querySelector('meta[name="woven-authoring"]')) {
+          try { res = await thDetectDataText(branch, needle); } catch {}
+        }
         if (cancelled) return;
         if (res.found) {
           api.openCodePanelAt(nodeId, res.path, needle);
@@ -63809,20 +63439,16 @@ function WorkflowLibrary({ tab = "nodes" }) {
 
    Same-origin assumption: the daemon serves both the editor and every
    prototype, so `iframe.contentDocument` is readable/mutable from here.
-   Every persisted edit POSTs the entire serialised document to /__html_save
-   so the daemon can apply ops uniformly without selector parsing - the
-   browser already has the full DOM tree.
+   Editing uses an isolated rendered snapshot. Replayable commands are
+   merged into original source and saved with its revision through /__html_save.
 
    We tag every element in the iframe with a session-only `data-zoom-id`
    so comments / pending exports survive a duplicate/delete that shifts
    sibling indices. The attribute is stripped before serialisation so the
    file on disk stays clean.
 
-   React-managed pages (htm + React UMD prototypes) can't be reliably
-   mutated - DOM edits get reverted on next render. We detect them by
-   probing for __reactProps$ keys on a small sample of elements and surface
-   a banner; the structural tools disable on react-managed nodes while
-   comment/sketch/export still work because they only observe. */
+   Runtime code is preserved for playback. Application scripts stay paused
+   in the authoring document so direct editing cannot race framework renders. */
 
 const ZOOM_ID_ATTR = "data-zoom-id";
 
@@ -63903,6 +63529,7 @@ function zoomMirrorFontLoaders(parentDoc, nestedDoc) {
 function zoomSerialize(doc) {
   if (!doc || !doc.documentElement) return "";
   const clone = doc.documentElement.cloneNode(true);
+  clone.querySelectorAll('meta[name="woven-source-revision"]').forEach(n => n.remove());
   clone.querySelectorAll("[" + ZOOM_ID_ATTR + "]").forEach(n => n.removeAttribute(ZOOM_ID_ATTR));
   if (clone.removeAttribute) clone.removeAttribute(ZOOM_ID_ATTR);
   // Strip the editing-mode style block we may inject into <head>.
@@ -63920,34 +63547,7 @@ function zoomSerialize(doc) {
 }
 
 async function zoomSaveDoc(filePath, doc, ops) {
-  let html = zoomSerialize(doc);
-  // Persist replayable op records as a post-mount patch script,
-  // exactly like the workflow pick-mode staging path. Without this, zoom
-  // saves on React-managed prototypes baked the rendered DOM into the file
-  // but the app's own render wiped it on the next load - every zoom edit
-  // looked like it "didn't work".
-  // Merge base comes from the ON-DISK file (fetched fresh), not
-  // the serialized live doc: its embedded patch script is frozen at
-  // overlay-open time and goes stale if another surface saved meanwhile.
-  if (ops && ops.length) {
-    let priorOps = null;
-    try {
-      const pu = apiUrl("/" + filePath);
-      const pr = await fetch(pu + (pu.includes("?") ? "&" : "?") + "_pm=" + Date.now());
-      if (pr.ok) priorOps = _extractPatchOps(await pr.text());
-    } catch {}
-    try { html = _injectInspectorPatch(html, ops, priorOps); } catch {}
-  }
-  const r = await fetch(apiUrl("/__html_save"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path: filePath, html }),
-  });
-  if (!r.ok) {
-    let detail = ""; try { const j = await r.json(); detail = j.error || ""; } catch {}
-    throw new Error(detail || ("HTTP " + r.status));
-  }
-  return r.json();
+  return WovenEdit.save(doc, filePath, apiUrl, ops, _injectInspectorPatch, zoomSerialize(doc), true);
 }
 
 /* Selection-ring rect, computed in viewport coordinates so it can be
@@ -64281,42 +63881,8 @@ function ZoomSlotPicker({ rect, onDelete, onDuplicate, onReplace, onSide, onDril
    rules surfaced anything - covers cases where the daemon serves the
    stylesheet with cache headers that block rule enumeration. */
 function readIframeCssVars(doc) {
-  const out = {};
-  if (!doc) return out;
-  const collectFromRule = (rule) => {
-    if (!rule || !rule.style) return;
-    for (let i = 0; i < rule.style.length; i++) {
-      const prop = rule.style[i];
-      if (prop && prop.startsWith("--")) {
-        out[prop] = (rule.style.getPropertyValue(prop) || "").trim();
-      }
-    }
-  };
-  try {
-    for (const sheet of doc.styleSheets) {
-      let rules; try { rules = sheet.cssRules; } catch { continue; }
-      for (const rule of rules) {
-        if (rule.type !== 1 /* STYLE_RULE */) continue;
-        const sel = (rule.selectorText || "").trim();
-        if (sel === ":root" || sel === "html" || sel === "html, body" || sel === "body") {
-          collectFromRule(rule);
-        }
-      }
-    }
-  } catch {}
-  // Backstop - read the computed inline values from <html> so even when
-  // we missed a sheet (CORS, lazy load) the tokens are still visible.
-  try {
-    const root = doc.documentElement;
-    const cs = doc.defaultView.getComputedStyle(root);
-    for (let i = 0; i < cs.length; i++) {
-      const prop = cs[i];
-      if (prop.startsWith("--") && !(prop in out)) {
-        out[prop] = (cs.getPropertyValue(prop) || "").trim();
-      }
-    }
-  } catch {}
-  return out;
+  if (!doc) return {};
+  return Object.fromEntries(Object.entries(WovenEdit.variables(doc)).map(([name, token]) => [name, token.value]));
 }
 
 /* Classify a CSS variable's resolved value into a kind the
@@ -64381,7 +63947,7 @@ function PickedColorField({ label, value, inherited, cssVars, onChange }) {
         type="button"
         className=${"zoom-inspector-color-swatch" + (hasInline ? "" : " is-inherited")}
         title=${"Pick from design system tokens · current: " + (value || inherited || "(unset)")}
-        style=${{ background: effective || "transparent" }}
+        style=${{ background: effective.replace(/var\((--[^,)]+)(?:,[^)]*)?\)/g, (m, name) => cssVars?.[name] || m) || "transparent" }}
         onClick=${() => setOpen(o => !o)}
         aria-label=${"Color picker for " + label}
       >${!effective && "-"}</button>
@@ -64577,7 +64143,106 @@ function PickedBoxField({ label, value, inherited, placeholder, corners, onChang
     </div>`;
 }
 
-function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, onNavigate, cssVars, tree }) {
+function performSelectionCommand(element, action, value = {}) {
+  const C = WovenComponents;
+  let el = element;
+  if (action === "component-text") {
+    el = el.ownerDocument.querySelector(WovenEdit.selector(value.id));
+    if (!el) throw new Error("Select the component again.");
+    action = "text";
+  }
+  if (action === "copy") {
+    let cssBundle;
+    try { if (typeof zoomExtractCss === "function") cssBundle = zoomExtractCss(el.ownerDocument, el, false); } catch {}
+    WovenEdit.copy(el, { cssBundle }); return { element: el };
+  }
+  if (action === "mode") {
+    const mode = value.mode || (value.attribute ? value : null);
+    const attributes = value.attributes || [mode?.attribute].filter(Boolean);
+    const ops = attributes.flatMap(name => ['html', 'body'].map(selector => {
+      const next = mode?.attribute === name && selector === (mode.target || 'html') ? mode.value : null;
+      const target = el.ownerDocument.querySelector(selector);
+      if (next == null) target.removeAttribute(name);
+      else target.setAttribute(name, next);
+      return { type: "attribute", selector, name, value: next };
+    }));
+    return { element: el, op: { type: "batch", ops } };
+  }
+  if (action === "replace" || action === "replace-component") {
+    const clip = action === "replace-component"
+      ? { outerHTML: C.instance(value.definition, el.ownerDocument).outerHTML }
+      : WovenEdit.getClipboard();
+    if (!clip?.outerHTML) throw new Error("Copy an element first.");
+    const template = el.ownerDocument.createElement("template"); template.innerHTML = clip.outerHTML;
+    if (template.content.children.length !== 1) throw new Error("Replacement needs one root element.");
+    const next = WovenEdit.cleanClone(template.content.firstElementChild, true);
+    const key = WovenEdit.uid(); next.setAttribute("data-th-rep", key);
+    const op = { type: "replace", selector: elementPatchSelector(el), ..._patchTargetMeta(el), key,
+      html: next.outerHTML, cancelIns: el.getAttribute("data-th-ins"), cancelDup: el.getAttribute("data-th-clone-of"),
+      cancelRep: el.getAttribute("data-th-rep"),
+      cancelTargets: [el, ...el.querySelectorAll("*")].map(n => n.getAttribute(WovenEdit.ID)).filter(Boolean) };
+    el.replaceWith(next);
+    return { element: next, op };
+  }
+  if (action === "variable") {
+    const target = el.ownerDocument.documentElement;
+    const styles = WovenEdit.applyStyles(target, { [value.name]: value.value });
+    return { element: el, op: { type: "style", selector: "html", styles } };
+  }
+  if (action === "text") {
+    const op = { type: "text", selector: elementPatchSelector(el), ..._patchTargetMeta(el), text: value.text, prop: thTextSlot(el).prop };
+    thTextSlot(el).set(value.text);
+    C.capture(el, "text", value.text, op.prop);
+    return { element: el, op };
+  }
+  if (["paste", "duplicate", "insert", "insert-component"].includes(action)) {
+    const position = value.position || "after";
+    if (position === "inside" && /^(INPUT|IMG|BR|HR|AREA|BASE|LINK|META|SOURCE|TRACK|WBR|EMBED|PARAM|COL)$/.test(el.tagName)) throw new Error("This element cannot contain children. Insert before or after it.");
+    let clip = action === "paste" ? WovenEdit.getClipboard() : action === "duplicate" ? { outerHTML: WovenEdit.cleanClone(el).outerHTML } : { outerHTML: value.html };
+    if (action === "insert-component") clip = { outerHTML: C.instance(value.definition, el.ownerDocument).outerHTML };
+    if (!clip) throw new Error("Copy an element first.");
+    const anchor = elementPatchSelector(el);
+    const result = WovenEdit.paste(el, clip, position, elementPatchSelector);
+    return { element: result.nodes[0], op: { type: "insert", anchor: result.anchor || anchor, position, html: result.html, key: result.key } };
+  }
+  if (action === "make-component" || action.endsWith("component")) {
+    const host = action === "make-component" ? el : C.owner(el);
+    if (!host) throw new Error("Select a component instance first.");
+    const targets = action === "publish-component"
+      ? Array.from(el.ownerDocument.querySelectorAll("[data-woven-component]")).filter(n => n.getAttribute(C.REF) === value.id)
+      : [host];
+    const ops = []; let selected = host;
+    for (const target of targets) {
+      const sel = elementPatchSelector(target);
+      const meta = _patchTargetMeta(target);
+      const cancelTargets = [target, ...target.querySelectorAll("*")].map(n => n.getAttribute(WovenEdit.ID)).filter(Boolean);
+      const cancelIns = target.getAttribute("data-th-ins");
+      const cancelDup = target.getAttribute("data-th-clone-of");
+      const cancelRep = target.getAttribute("data-th-rep");
+      let next;
+      if (action === "make-component") { next = C.instance(value, target.ownerDocument); target.replaceWith(next); }
+      else if (action === "detach-component") next = C.detach(target);
+      else next = C.refresh(target, value, action === "reset-component");
+      const key = WovenEdit.uid(); next.setAttribute("data-th-rep", key);
+      next.removeAttribute("data-th-ins"); next.removeAttribute("data-th-clone-of");
+      ops.push({ type: "replace", selector: sel, ...meta, key, html: WovenEdit.cleanClone(next).outerHTML, cancelIns, cancelDup, cancelRep, cancelTargets });
+      if (target === host) selected = next;
+    }
+    return { element: selected, op: ops.length === 1 ? ops[0] : { type: "batch", ops } };
+  }
+  throw new Error("Unsupported edit command: " + action);
+}
+
+function readEditStyles(el) {
+  if (!el) return {};
+  const cs = el.ownerDocument.defaultView.getComputedStyle(el);
+  const styles = {};
+  for (const name of ["width", "height", "display", "justifySelf", "alignSelf", "flexDirection", "flexWrap", "justifyContent", "alignItems", "background", "borderColor", "borderWidth", "borderStyle", "borderRadius", "padding", "color", "fontFamily", "fontSize", "fontWeight", "boxShadow", "filter", "gap", "minWidth", "maxWidth", "minHeight", "maxHeight"]) styles[name] = el.style[name] || "";
+  for (const axis of ["width", "height"]) { styles[axis + "Mode"] = WovenEdit.sizeMode(el, axis); styles[axis + "Fixed"] = parseFloat(cs[axis]) || 0; }
+  return styles;
+}
+
+function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, onNavigate, cssVars, tree, element, onCommand }) {
   if (!picked) return null;
   const lay = picked.parent && picked.parent.layout;
   const isFlex = lay && (lay.display === "flex" || lay.display === "inline-flex");
@@ -64597,57 +64262,26 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
   const justifySelf = styles.justifySelf || "auto";
   const alignSelf   = styles.alignSelf   || "auto";
 
+  const parentHugs = axis => element?.parentElement && WovenEdit.sizeMode(element.parentElement, axis) === 'hug';
   const setSize = (axis, mode, fixed) => {
-    const k        = axis === "w" ? "width"      : "height";
-    const fixedKey = axis === "w" ? "widthFixed" : "heightFixed";
-    const modeKey  = axis === "w" ? "widthMode"  : "heightMode";
-    const next = { ...styles, [modeKey]: mode };
-
-    // Naive width:100% / width:auto writes silently fail in common layouts:
-    // inline boxes ignore width/height entirely; a plain block (or a flex
-    // CROSS-axis / grid child) treats width:auto as "stretch" - the opposite
-    // of hug - while the real "fill" lever for a flex item on its MAIN axis
-    // is flex-grow, not width:100%. Branch on the parent's layout + the
-    // element's own display and emit the property that actually lands.
-    const flexMain  = isFlex && (axis === "w" ? isRow : !isRow); // along the flex axis
-    const flexCross = isFlex && !flexMain;                       // flex cross axis (align-self)
-    const gridSelfKey = axis === "w" ? "justifySelf" : "alignSelf";
-
-    // Inline boxes ignore width/height - promote so the dimension can apply.
-    if (mode !== "fixed" && selfLay?.display === "inline") next.display = "inline-block";
-
-    if (mode === "fixed") {
-      next[k] = `${fixed}px`;
-      next[fixedKey] = fixed;
-      // A fixed flex item must not be grown/shrunk away from its size.
-      if (flexMain) { next.flexGrow = "0"; next.flexShrink = "0"; }
-    } else if (mode === "fill") {
-      // Clear a stylesheet max-* that would silently cap the fill - an inline
-      // value beats any non-!important rule, so Fill actually reaches 100%.
-      next[axis === "w" ? "maxWidth" : "maxHeight"] = "none";
-      if (flexMain)       { next.flexGrow = "1"; next[axis === "w" ? "minWidth" : "minHeight"] = "0"; next[k] = "auto"; }
-      else if (flexCross) { next.alignSelf = "stretch"; next[k] = "auto"; }
-      else if (isGrid)    { next[gridSelfKey] = "stretch"; next[k] = "auto"; }
-      else                { next[k] = "100%"; }
-    } else if (mode === "hug") {
-      const hugVal = axis === "w" ? "fit-content" : "auto"; // height:auto already hugs
-      if (flexMain)       { next.flexGrow = "0"; next.flexShrink = "0"; next[k] = hugVal; }
-      else if (flexCross) { next.alignSelf = "start"; next[k] = hugVal; }
-      else if (isGrid)    { next[gridSelfKey] = "start"; next[k] = hugVal; }
-      else                { next[k] = hugVal; }
-    }
-    onStyle(next);
+    onStyle(WovenEdit.sizing(axis, mode, fixed, lay, selfLay));
   };
   const setAlign = (axis, value) => {
-    const k = axis === "h" ? "justifySelf" : "alignSelf";
-    onStyle({ ...styles, [k]: value });
+    if (isFlex) {
+      const main = axis === "h" ? isRow : !isRow;
+      if (main) {
+        const first = axis === "h" ? "marginLeft" : "marginTop";
+        const last = axis === "h" ? "marginRight" : "marginBottom";
+        onStyle({ [first]: value === "start" ? "0px" : "auto", [last]: value === "end" ? "0px" : "auto" });
+      } else onStyle({ alignSelf: value });
+    } else onStyle({ [axis === "h" ? "justifySelf" : "alignSelf"]: value });
   };
   // Generic setter - every new field commits via this shape.
-  const set1 = (k, v) => onStyle({ ...styles, [k]: v });
+  const set1 = (k, v) => onStyle({ [k]: v });
   const Seg = ({ value, options, onChange }) => html`
     <div className="zoom-inspector-segment">
       ${options.map(o => html`
-        <button key=${o.v} data-active=${value === o.v} title=${o.title || ""} onClick=${() => onChange(o.v)}>${o.l}</button>
+        <button key=${o.v} disabled=${o.disabled} data-active=${value === o.v} title=${o.title || ""} onClick=${() => onChange(o.v)}>${o.l}</button>
       `)}
     </div>
   `;
@@ -64662,6 +64296,7 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
   const inheritedVal = (k) => (computedStyles && computedStyles[k]) || "";
 
   return html`<${React.Fragment}>
+    <${WovenSelectionTools} element=${element} onCommand=${onCommand} onStyle=${onStyle}/>
     <div className="zoom-inspector-section">
       <div className="zoom-inspector-label">Element</div>
       <div className="zoom-inspector-target">${picked.label}</div>
@@ -64704,9 +64339,9 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
       <div className="zoom-inspector-row">
         <span className="zoom-inspector-axis">W</span>
         <${Seg} value=${widthMode} onChange=${(v) => setSize("w", v, widthFixed)} options=${[
-          { v: "fill",  l: "Fill" },
-          { v: "hug",   l: "Hug"  },
-          { v: "fixed", l: "Fix"  },
+          { v: "fill", l: "Fill", disabled: parentHugs("width"), title: parentHugs("width") ? "Give the parent a size before filling it." : "Share available parent space in auto layout; stretch in grid." },
+          { v: "hug", l: "Hug", title: "Fit content within the available space." },
+          { v: "fixed", l: "Fixed", title: "Use CSS pixels, independent of canvas zoom." },
         ]}/>
         ${widthMode === "fixed" && html`
           <input className="zoom-inspector-num" type="number" min="0" value=${widthFixed}
@@ -64716,15 +64351,28 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
       <div className="zoom-inspector-row">
         <span className="zoom-inspector-axis">H</span>
         <${Seg} value=${heightMode} onChange=${(v) => setSize("h", v, heightFixed)} options=${[
-          { v: "fill",  l: "Fill" },
-          { v: "hug",   l: "Hug"  },
-          { v: "fixed", l: "Fix"  },
+          { v: "fill", l: "Fill", disabled: parentHugs("height"), title: parentHugs("height") ? "Give the parent a size before filling it." : "Share available parent space in auto layout; stretch in grid." },
+          { v: "hug", l: "Hug", title: "Fit content within the available space." },
+          { v: "fixed", l: "Fixed", title: "Use CSS pixels, independent of canvas zoom." },
         ]}/>
         ${heightMode === "fixed" && html`
           <input className="zoom-inspector-num" type="number" min="0" value=${heightFixed}
                  onChange=${e => setSize("h", "fixed", +e.target.value || 0)}/>
         `}
       </div>
+    </div>
+    <div className="zoom-inspector-section">
+      <div className="zoom-inspector-label">Layout and constraints</div>
+      <select aria-label="Container layout" className="zoom-inspector-input" value=${selfLay?.display || "block"} onChange=${e => set1("display", e.target.value)}>
+        <option value="block">Block</option><option value="flex">Auto layout</option><option value="grid">Grid</option><option value="inline">Inline</option><option value="inline-flex">Inline auto layout</option>
+      </select>
+      ${["gap", "minWidth", "maxWidth", "minHeight", "maxHeight"].map(key => html`<label key=${key} className="zoom-inspector-row">
+        <span>${key.replace(/[A-Z]/g, c => " " + c.toLowerCase())}</span>
+        <${PickedTextField} label=${key} value=${styleVal(key)} inherited=${inheritedVal(key)} onChange=${v => set1(key, v)}/>
+      </label>`)}
+      <small>Hug fits content. Fill uses available parent space. Fixed uses pixels. Minimum and maximum sizes remain in force.</small>
+      ${(parentHugs("width") || parentHugs("height")) && html`<small>Fill is unavailable on an axis where the parent hugs its content. Size the parent first.</small>`}
+      ${heightMode === "fill" && !isFlex && !isGrid && html`<small>For block layout, Fill height needs a parent with a defined height.</small>`}
     </div>
     ${selfIsFlex && html`
       <div className="zoom-inspector-section">
@@ -64738,6 +64386,14 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
             { v: "column-reverse", l: "Col↺", title: "Column reversed" },
           ]}/>
         </div>
+        ${[
+          ["flexWrap", "Wrap", ["nowrap", "wrap"]],
+          ["justifyContent", "Pack", ["flex-start", "center", "flex-end", "space-between", "space-around"]],
+          ["alignItems", "Align children", ["stretch", "flex-start", "center", "flex-end", "baseline"]],
+        ].map(([key, label, values]) => html`<label className="zoom-inspector-row" key=${key}><span>${label}</span>
+          <select aria-label=${label} value=${styles[key] || selfLay?.[key] || values[0]} onChange=${e => set1(key, e.target.value)}>
+            ${values.map(value => html`<option value=${value} key=${value}>${value}</option>`)}
+          </select></label>`)}
       </div>
     `}
     ${(isFlex || isGrid) && html`
@@ -65075,6 +64731,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   // `nestedDocBust` bumps when a new nested doc registers so the click
   // effect re-runs and binds listeners to it.
   const nestedDocsRef = useRef(new Set());
+  const activeEditDocRef = useRef(null);
   const [nestedDocBust, setNestedDocBust] = useState(0);
   // Paths of imported assets whose nested doc has been mutated in-memory.
   // Edits inside an imported component target THAT file (the asset's own
@@ -65102,6 +64759,26 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     setToast(msg);
     const t = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    const onSession = event => {
+      const doc = docRef.current;
+      if (!doc) return;
+      const state = event.detail.state;
+      const own = WovenEdit.state(doc) === state;
+      const nested = [...nestedDocsRef.current].some(d => WovenEdit.state(d) === state);
+      if (!own && !nested) return;
+      if (nested) {
+        if (state.dirty) nestedDirtyPathsRef.current.add(state.path);
+        else nestedDirtyPathsRef.current.delete(state.path);
+      }
+      setOpHistory(state.history); setHistoryIdx(state.cursor);
+      setDirty(WovenEdit.state(doc)?.dirty || nestedDirtyPathsRef.current.size > 0);
+      zoomTagAll(event.detail.doc || doc);
+    };
+    window.addEventListener("woven:edit-session", onSession);
+    return () => window.removeEventListener("woven:edit-session", onSession);
   }, []);
 
   // cmd/ctrl + wheel zooms the prototype canvas (instead of the browser
@@ -65250,6 +64927,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     let cancelled = false;
     setReady(false); setSelectedId(null); setSelectionRect(null); setHoverRect(null);
     docRef.current = null;
+    activeEditDocRef.current = null;
     // Reset nested-iframe tracking - any imports from a previous overlay
     // session belong to a stale doc.
     nestedDocsRef.current = new Set();
@@ -65261,7 +64939,9 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       if (!href || href === "about:blank") return;   // wait for the real navigation
       const commit = () => {
         if (cancelled) return;
+        if (WovenEdit.isolate(f, filePath, apiUrl)) return;
         docRef.current = doc;
+        WovenEdit.bind(doc, filePath, apiUrl);
         // Pause the saved patch script's MutationObserver while
         // zoom owns this doc (re-fires only; the initial arm() apply still
         // runs so the saved state is visible). Without this, editing a
@@ -65272,43 +64952,10 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
         // exact serialization; opHistory's snapshots compose on top of it.
         savedHtmlRef.current = zoomSerialize(doc);
         setReady(true);
-        setDirty(false);
-        setOpHistory([]);
-        setHistoryIdx(-1);
-        // If the prototype already contains imported components (saved
-        // <iframe data-zoom-import="…"> from prior sessions), wire each
-        // one: mirror font loaders, tag, register, then bump bust so the
-        // click + scroll effects pick them up.
-        const wireExistingNested = () => {
-          if (cancelled) return;
-          const nested = doc.querySelectorAll("iframe");
-          let added = 0;
-          nested.forEach((ifr) => {
-            const attach = () => {
-              let inner = null;
-              try { inner = ifr.contentDocument; } catch { return; }
-              if (!inner) return;
-              const href = (() => { try { return inner.location.href; } catch { return ""; } })();
-              if (!href || href === "about:blank") return;
-              try {
-                zoomMirrorFontLoaders(doc, inner);
-                zoomTagAll(inner);
-                if (!nestedDocsRef.current.has(inner)) {
-                  nestedDocsRef.current.add(inner);
-                  added++;
-                }
-              } catch { /* cross-origin */ }
-            };
-            if (ifr.contentDocument && (ifr.contentDocument.readyState === "complete")) {
-              attach();
-            } else {
-              ifr.addEventListener("load", attach, { once: true });
-              setTimeout(attach, 50);
-            }
-          });
-          if (added > 0) setNestedDocBust(b => b + 1);
-        };
-        wireExistingNested();
+        const editState = WovenEdit.state(doc);
+        setDirty(editState?.dirty || false);
+        setOpHistory(editState?.history || []);
+        setHistoryIdx(editState?.cursor ?? -1);
       };
       if (doc.readyState === "complete") commit();
       else doc.addEventListener("DOMContentLoaded", commit, { once: true });
@@ -65320,13 +64967,49 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     return () => { cancelled = true; f.removeEventListener("load", tryFinalize); };
   }, [iframeSrc]);
 
+  // Restoring a host snapshot recreates its nested iframe documents. Bind the
+  // new documents after undo/redo as well as after the initial host load.
+  useEffect(() => {
+    if (!ready || !docRef.current) return;
+    let cancelled = false;
+    const rootDoc = docRef.current;
+    const bindings = [];
+    for (const old of nestedDocsRef.current) {
+      const host = old.defaultView?.frameElement;
+      if (!host?.isConnected || host.contentDocument !== old) nestedDocsRef.current.delete(old);
+    }
+    const seenFrames = new Set();
+    const wire = frame => {
+      if (seenFrames.has(frame)) return;
+      seenFrames.add(frame);
+      const attach = () => {
+        if (cancelled) return;
+        try {
+          const inner = frame.contentDocument;
+          const path = WovenEdit.sourcePath(frame);
+          if (!inner?.body || !path || inner.location.href === 'about:blank') return;
+          if (WovenEdit.isolate(frame, path, apiUrl)) return;
+          WovenEdit.bind(inner, path, apiUrl);
+          zoomMirrorFontLoaders(rootDoc, inner); zoomTagAll(inner);
+          if (!nestedDocsRef.current.has(inner)) {
+            nestedDocsRef.current.add(inner); setNestedDocBust(n => n + 1);
+          }
+          inner.querySelectorAll('iframe').forEach(wire);
+        } catch {}
+      };
+      frame.addEventListener('load', attach); bindings.push([frame, attach]); attach();
+    };
+    rootDoc.querySelectorAll('iframe').forEach(wire);
+    return () => { cancelled = true; bindings.forEach(([frame, attach]) => frame.removeEventListener('load', attach)); };
+  }, [ready, opHistory, historyIdx]);
+
   // Esc / Delete / Cmd-D / Cmd-Z keymap. Skip when an input/textarea/contenteditable
   // inside the overlay UI has focus so the user can type freely.
   useEffect(() => {
     const isEditableTarget = (t) => {
       if (!t) return false;
       const tag = (t.tagName || "").toUpperCase();
-      if (tag === "INPUT" || tag === "TEXTAREA") return true;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
       if (t.isContentEditable) return true;
       return false;
     };
@@ -65351,6 +65034,13 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
         return;
       }
       if (isEditableTarget(e.target)) return;
+      if ((e.metaKey || e.ctrlKey) && ["c", "v", "d"].includes(e.key.toLowerCase()) && selectedId && tool === "select") {
+        e.preventDefault(); e.stopPropagation();
+        try { onSelectionCommand({ c: "copy", v: "paste", d: "duplicate" }[e.key.toLowerCase()]); }
+        catch (error) { showToast(error.message); }
+        return;
+      }
+
       if ((e.key === "Backspace" || e.key === "Delete") && selectedId && tool === "select") {
         e.preventDefault();
         deleteSelected();
@@ -65399,18 +65089,8 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     // after the iframe (re)loads and when imported nested docs register.
   }, [pendingComment, exportPanel, importPanel, slotPopoverAt, selectedId, tool, dirty, onClose, ready, nestedDocBust]);
 
-  // ─── Close with unsaved-changes confirm ──────────────────────────────
-  // Routed by Esc, the toolbar × button, and the backdrop click. If the
-  // user has uncommitted DOM mutations, surface a confirm dialog before
-  // wiping them - accidentally closing the overlay shouldn't lose work.
-  const closeWithConfirm = useCallback(async () => {
-    if (dirty) {
-      const count = opHistory.length;
-      if (!await uiConfirm("You have " + count + " unsaved change" + (count === 1 ? "" : "s") +
-                   " - close zoom and discard?")) return;
-    }
-    onClose();
-  }, [dirty, opHistory, onClose]);
+  // Closing the overlay retains the shared pending session for either surface.
+  const closeWithConfirm = useCallback(() => { onClose(); }, [onClose]);
 
   // Re-measure selection / pin rects on every iframe scroll, resize, or
   // window scroll. This is the only thing that keeps the overlay rings
@@ -65528,16 +65208,10 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
           const preEditMeta = _patchTargetMeta(el);
           const preEditSelector = elementPatchSelector(el);
           zoomBeginInlineEdit(el, () => {
-            if (meta.isNested) {
-              _markNestedDirty(meta);
-              showToast("Updated text in `" + label + "` (imported `" + (meta.path || "asset") + "`, unsaved)");
-            } else {
-              recordOp("Updated text in `" + label + "` (unsaved)", editSnap, Object.assign({
-                type:     "text",
-                selector: preEditSelector,
-                text:     el.textContent || "",
-              }, preEditMeta));
-            }
+            recordOp("Updated text (unsaved)", editSnap, Object.assign({
+              type: "text", selector: preEditSelector,
+              text: thTextSlot(el).get(), prop: thTextSlot(el).prop,
+            }, preEditMeta), el.ownerDocument);
           });
         } else if (tool === "comment") {
           setPendingComment({ zid, rect, label });
@@ -65561,9 +65235,10 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
         let el = doc.elementFromPoint(e.clientX, e.clientY);
         if (!el || el.tagName === "HTML" || el.tagName === "BODY" || el.tagName === "IFRAME") return;
         const needle = thNeedleFor(el);
-        if (!needle || needle.length < 2) return;
+        if (!needle) return;
         e.preventDefault(); e.stopPropagation();
-        let res; try { res = await thDetectDataText(branch, needle); } catch { res = { found: false }; }
+        let res = { found: false };
+        if (!doc.querySelector('meta[name="woven-authoring"]')) { try { res = await thDetectDataText(branch, needle); } catch {} }
         if (res.found) {
           if (onRevealInCode) onRevealInCode(res.path, needle);
           else showToast("This text comes from data.js - edit it in the code panel");
@@ -65577,7 +65252,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
           recordOp("Updated text (unsaved)", editSnap, Object.assign({
             type: "text", selector: preSel,
             text: thTextSlot(el).get(), prop: thTextSlot(el).prop,
-          }, preMeta));
+          }, preMeta), doc);
         });
       };
       doc.addEventListener("click", onClick, true);
@@ -65591,7 +65266,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
         doc.removeEventListener("dblclick", onDbl, true);
       };
     };
-    const docs = zoomCollectDocs(rootDoc);
+    const docs = zoomCollectDocs(rootDoc).filter(d => d.querySelector('meta[name="woven-authoring"]'));
     const teardowns = docs.map(handlerFor);
     return () => { teardowns.forEach(fn => fn && fn()); };
   }, [ready, tool, nestedDocBust]);
@@ -65612,19 +65287,18 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   // edits survive React re-render on the next load. Ops that can't be
   // replayed (slot inserts, imports) simply pass no op - they persist only
   // via the baked DOM, as before.
-  const recordOp = useCallback((recap, snapshotBefore, op) => {
-    const doc = docRef.current; if (!doc) return;
-    const after = zoomSerialize(doc);
-    if (snapshotBefore) {
-      setOpHistory(h => {
-        const trimmed = h.slice(0, historyIdx + 1);
-        return [...trimmed, { before: snapshotBefore, after, recap: recap || "", op: op || null }];
-      });
-      setHistoryIdx(i => i + 1);
+  const recordOp = useCallback((recap, snapshotBefore, op, targetDoc) => {
+    const doc = targetDoc || docRef.current; if (!doc) return;
+    if (!op) throw new Error("This operation has no saveable edit command.");
+    activeEditDocRef.current = doc;
+    if (doc !== docRef.current) {
+      const state = WovenEdit.state(doc);
+      if (!state) throw new Error("Open the live source before editing this imported content.");
+      nestedDirtyPathsRef.current.add(state.path);
     }
-    setDirty(true);
+    WovenEdit.stage(doc, op);
     if (recap) showToast(recap);
-  }, [historyIdx, showToast]);
+  }, [showToast]);
 
   const snapshotBefore = () => {
     const doc = docRef.current; if (!doc) return null;
@@ -65669,31 +65343,31 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       // contribute their patch-op records so the edits survive a React
       // re-render on the next load; undone entries are naturally excluded.
       const appliedOps = opHistory.slice(0, historyIdx + 1).map(e => e && e.op).filter(Boolean);
-      await zoomSaveDoc(filePath, doc, appliedOps);
-      savedHtmlRef.current = zoomSerialize(doc);
-      const refreshedPaths = [filePath];
+      const refreshedPaths = [];
+      if (WovenEdit.state(doc)?.dirty) {
+        await zoomSaveDoc(filePath, doc, appliedOps);
+        savedHtmlRef.current = zoomSerialize(doc);
+        refreshedPaths.push(filePath);
+      }
       // Flush every nested imported-asset file that the user edited.
       // We look up each iframe by its data-zoom-import attribute and write
       // the current contentDocument back to that path.
       const nestedPaths = Array.from(nestedDirtyPathsRef.current);
       for (const p of nestedPaths) {
-        const ifr = doc.querySelector('iframe[data-zoom-import="' + p + '"]');
-        if (!ifr) continue;
-        let inner = null;
-        try { inner = ifr.contentDocument; } catch { continue; }
+        const inner = [...nestedDocsRef.current].find(d => WovenEdit.state(d)?.path === p);
         if (!inner) continue;
         try {
-          await zoomSaveDoc(p, inner);
+          await zoomSaveDoc(p, inner, []);
           refreshedPaths.push(p);
+          if (!WovenEdit.state(inner)?.dirty) nestedDirtyPathsRef.current.delete(p);
         } catch (err) {
           showToast("Save failed for `" + p + "`: " + (err.message || err));
         }
       }
-      nestedDirtyPathsRef.current = new Set();
-      setDirty(false);
-      showToast(refreshedPaths.length === 1
-        ? ("Saved · " + filePath)
-        : ("Saved · " + filePath + " + " + (refreshedPaths.length - 1) + " imported asset" + (refreshedPaths.length === 2 ? "" : "s")));
+      setDirty(WovenEdit.state(doc)?.dirty || nestedDirtyPathsRef.current.size > 0);
+      showToast(nestedDirtyPathsRef.current.size > 0
+        ? "Some imported edits remain unsaved. Check their save errors."
+        : "Saved " + refreshedPaths.length + " file" + (refreshedPaths.length === 1 ? "" : "s"));
       // Intentional immediate refresh: other surfaces rendering this file
       // (viewer tab, canvas node iframe) pick up the saved bytes NOW -
       // harmless while the zoom overlay covers them.
@@ -65723,12 +65397,8 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   const discardChanges = useCallback(async () => {
     if (!dirty) return;
     if (!await uiConfirm("Discard all unsaved changes? The iframe will revert to the on-disk version.")) return;
-    if (savedHtmlRef.current) {
-      replaceDocFromHtml(savedHtmlRef.current);
-    } else {
-      // No captured baseline - fall back to a hard iframe reload.
-      setIframeNonce(n => n + 1);
-    }
+    for (const d of nestedDocsRef.current) if (WovenEdit.state(d)?.dirty) WovenEdit.discard(d);
+    WovenEdit.discard(docRef.current);
     // Hard-reload every dirty nested iframe so it re-fetches from disk -
     // we don't keep per-nested baselines, so reverting means "throw away
     // memory state, refetch bytes". Bumping a cache-buster on src forces
@@ -65821,12 +65491,9 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
               (fe.getAttribute("src") || "").replace(/^\//, "").split("?")[0])) || null;
     return { isNested: true, path: p, doc: eDoc };
   }, []);
-  const _markNestedDirty = useCallback((meta) => {
-    if (meta && meta.isNested && meta.path) {
-      nestedDirtyPathsRef.current.add(meta.path);
-      setDirty(true);
-    }
-  }, []);
+  const _markNestedDirty = useCallback((meta, op) => {
+    if (meta && meta.isNested && meta.path) recordOp("Imported content edited (unsaved)", null, op, meta.doc);
+  }, [recordOp]);
 
   // ─── Op: delete (in-memory; flush to disk on Save) ──────────────────
   const deleteSelected = useCallback(() => {
@@ -65858,7 +65525,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     el.remove();
     setSelectedId(null); setSelectionRect(null);
     if (meta.isNested) {
-      _markNestedDirty(meta);
+      _markNestedDirty(meta, delOp);
       showToast("Removed `" + label + "` from imported `" + (meta.path || "asset") + "` (unsaved)");
     } else {
       recordOp("Removed `" + label + "` (unsaved)", snap, delOp);
@@ -65866,42 +65533,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   }, [selectedId, recordOp, showToast, _docMeta, _markNestedDirty]);
 
   // ─── Op: duplicate ──────────────────────────────────────────────────
-  const duplicateSelected = useCallback(() => {
-    const doc = docRef.current; if (!doc || !selectedId) return;
-    const el = zoomFindById(doc, selectedId);
-    if (!el || !el.parentElement) return;
-    const meta = _docMeta(el);
-    const label = zoomElementLabel(el);
-    const snap = snapshotBefore();
-    // Selector captured BEFORE the clone mounts - the clone is a same-class
-    // twin and would otherwise shift the disambiguating index.
-    // Clone carries a unique data-th-clone-of key (the patch
-    // replay's GLOBAL idempotency marker) and is stripped of any editor
-    // marker attributes the source carried.
-    const patchSel = elementPatchSelector(el);
-    const dupKey = "d" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
-    const clone = el.cloneNode(true);
-    if (clone.removeAttribute) clone.removeAttribute(ZOOM_ID_ATTR);
-    clone.querySelectorAll && clone.querySelectorAll("[" + ZOOM_ID_ATTR + "]").forEach(n => n.removeAttribute(ZOOM_ID_ATTR));
-    try {
-      const stripMarkers = (n) => {
-        if (!n.removeAttribute) return;
-        ["data-th-ins", "data-th-rep", "data-th-rkey-el", "data-th-rkey-sib", "data-th-clone-of"]
-          .forEach(a => n.removeAttribute(a));
-      };
-      stripMarkers(clone);
-      clone.querySelectorAll && clone.querySelectorAll("[data-th-ins],[data-th-rep],[data-th-rkey-el],[data-th-rkey-sib],[data-th-clone-of]").forEach(stripMarkers);
-      clone.setAttribute("data-th-clone-of", dupKey);
-    } catch {}
-    el.insertAdjacentElement("afterend", clone);
-    zoomTagAll(meta.doc || doc);
-    if (meta.isNested) {
-      _markNestedDirty(meta);
-      showToast("Duplicated `" + label + "` in imported `" + (meta.path || "asset") + "` (unsaved)");
-    } else {
-      recordOp("Duplicated `" + label + "` (unsaved)", snap, { type: "duplicate", selector: patchSel, key: dupKey });
-    }
-  }, [selectedId, recordOp, showToast, _docMeta, _markNestedDirty]);
+  const duplicateSelected = () => onSelectionCommand("duplicate");
 
   // ─── Op: style apply (Phase 4) ──────────────────────────────────────
   const applyStyleToSelected = useCallback((patch, recapTail) => {
@@ -65917,7 +65549,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       if (v != null && v !== "") stylesForPatch[k.replace(/[A-Z]/g, m => "-" + m.toLowerCase())] = v;
     });
     if (meta.isNested) {
-      _markNestedDirty(meta);
+      _markNestedDirty(meta, { type: "style", selector: elementPatchSelector(el), ..._patchTargetMeta(el), styles: stylesForPatch });
       showToast("Styled `" + label + "` " + (recapTail || "") + " in imported `" + (meta.path || "asset") + "` (unsaved)");
     } else {
       recordOp("Styled `" + label + "` " + (recapTail || "") + " (unsaved)", snap,
@@ -65943,42 +65575,13 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     // body's sections (Fill, Outline, Radius, Text, Shadow, Filter).
     // Only props PRESENT in nextStyles get touched - partial style edits
     // (just changing background) don't accidentally clear unrelated props.
-    const cssKeys = [
-      ["width",         "width"],
-      ["height",        "height"],
-      ["justifySelf",   "justify-self"],
-      ["alignSelf",     "align-self"],
-      ["flexDirection", "flex-direction"],
-      ["background",    "background"],
-      ["borderColor",   "border-color"],
-      ["borderWidth",   "border-width"],
-      ["borderStyle",   "border-style"],
-      ["borderRadius",  "border-radius"],
-      ["padding",       "padding"],
-      ["color",         "color"],
-      ["fontFamily",    "font-family"],
-      ["fontSize",      "font-size"],
-      ["fontWeight",    "font-weight"],
-      ["boxShadow",     "box-shadow"],
-      ["filter",        "filter"],
-    ];
-    const stylesForPatch = {};
-    for (const [propJs, propCss] of cssKeys) {
-      if (!(propJs in nextStyles)) continue;
-      const v = nextStyles[propJs];
-      if (v == null || v === "" || v === "auto") {
-        try { el.style.removeProperty(propCss); } catch {}
-      } else {
-        try { el.style.setProperty(propCss, v); } catch {}
-        stylesForPatch[propCss] = v;
-      }
-    }
-    setPickedStyles(s => ({ ...s, [selectedId]: nextStyles }));
+    const stylesForPatch = WovenEdit.applyStyles(el, nextStyles);
+    setPickedStyles(s => ({ ...s, [selectedId]: { ...s[selectedId], ...nextStyles } }));
     // Re-derive picked.rect since width/height changed.
     const info = _capturePicked(el);
     if (info) { setPicked(info); setSelectionRect(info.rect); }
     if (meta.isNested) {
-      _markNestedDirty(meta);
+      _markNestedDirty(meta, { type: "style", selector: elementPatchSelector(el), ..._patchTargetMeta(el), styles: stylesForPatch });
     } else {
       recordOp("Inspector style applied (unsaved)", snap,
         Object.keys(stylesForPatch).length
@@ -65986,6 +65589,21 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
           : null);
     }
   }, [selectedId, recordOp, showToast, _docMeta, _markNestedDirty, _capturePicked]);
+
+  const onSelectionCommand = useCallback((action, value) => {
+    const doc = docRef.current;
+    const el = zoomFindById(doc, selectedId);
+    if (!el) throw new Error("Select an element first.");
+    const before = snapshotBefore();
+    const result = performSelectionCommand(el, action, value);
+    if (result.op) recordOp(action + " (unsaved)", before, result.op, el.ownerDocument);
+    if (result.element) {
+      zoomTagAll(result.element.ownerDocument);
+      setSelectedId(result.element.getAttribute(ZOOM_ID_ATTR));
+      const info = _capturePicked(result.element);
+      setPicked(info); setSelectionRect(info?.rect || null);
+    }
+  }, [selectedId, recordOp, _capturePicked]);
 
   // ─── Reorder in flex/grid (DOM-order shuffle prev/next) ──────────────
   const moveSelectedDom = useCallback((direction) => {
@@ -66007,7 +65625,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     const info = _capturePicked(el);
     if (info) { setPicked(info); setSelectionRect(info.rect); }
     if (meta.isNested) {
-      _markNestedDirty(meta);
+      _markNestedDirty(meta, { type: "reorder", selector: elSelPre, anchor: sibSelPre, position: direction === "prev" ? "before" : "after", key: opKey });
       showToast("Moved (imported, unsaved)");
     } else {
       recordOp("Moved element (unsaved)", snap, {
@@ -66023,6 +65641,15 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   // ─── Slot-popover payload application (insert / replace / blank) ────
   const _SLOT_SIDE_POS = { top: "beforebegin", left: "beforebegin", bottom: "afterend", right: "afterend" };
   const applySlotPayload = useCallback((payload) => {
+    if (payload.kind === "duplicate") { onSelectionCommand("duplicate"); setSlotPopoverAt(null); return; }
+    if (["primitive", "library"].includes(payload.kind)) {
+      const definitions = WovenComponents.catalog(typeof D !== "undefined" ? D : {});
+      const def = definitions.find(d => d.id.endsWith(":" + payload.libId));
+      if (def) {
+        onSelectionCommand(slotPopoverAt?.action === "replace" ? "replace-component" : "insert-component", { definition: def, position: ["top", "left"].includes(slotPopoverAt?.side) ? "before" : "after" });
+        setSlotPopoverAt(null); return;
+      }
+    }
     const doc = docRef.current; if (!doc || !selectedId) return;
     const el = zoomFindById(doc, selectedId);
     if (!el) return;
@@ -66093,7 +65720,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     zoomTagAll(meta.doc || doc);
     setSlotPopoverAt(null);
     if (meta.isNested) {
-      _markNestedDirty(meta);
+      _markNestedDirty(meta, op);
       showToast((isReplace ? "Replaced" : "Inserted on " + side) + " (imported, unsaved)");
     } else {
       recordOp((isReplace ? "Replaced" : "Inserted on " + side) + " (unsaved)", snap, op);
@@ -66105,26 +65732,17 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   // (no disk writes). Save is what reaches disk; the user can Undo all the
   // way back to the baseline and Save the original to revert on disk too.
   const undo = useCallback(() => {
-    if (historyIdx < 0) return;
-    const op = opHistory[historyIdx]; if (!op) return;
-    replaceDocFromHtml(op.before);
-    setHistoryIdx(i => i - 1);
-    // Dirty stays true unless we've undone everything AND the doc now
-    // matches savedHtmlRef. Cheap test: if no ops left ahead, mark clean.
-    if (historyIdx - 1 < 0 && savedHtmlRef.current === op.before) setDirty(false);
-    else setDirty(true);
-    showToast("Undid: " + (op.recap || "last change"));
-  }, [historyIdx, opHistory, replaceDocFromHtml, showToast]);
-
+    const doc = activeEditDocRef.current || docRef.current;
+    if (WovenEdit.history(doc, -1)) {
+      zoomTagAll(doc); setSelectedId(null); setPicked(null); setSelectionRect(null); showToast("Undid edit");
+    }
+  }, [showToast]);
   const redo = useCallback(() => {
-    const next = historyIdx + 1;
-    if (next >= opHistory.length) return;
-    const op = opHistory[next]; if (!op) return;
-    replaceDocFromHtml(op.after);
-    setHistoryIdx(next);
-    setDirty(true);
-    showToast("Redid: " + (op.recap || "last change"));
-  }, [historyIdx, opHistory, replaceDocFromHtml, showToast]);
+    const doc = activeEditDocRef.current || docRef.current;
+    if (WovenEdit.history(doc, 1)) {
+      zoomTagAll(doc); setSelectedId(null); setPicked(null); setSelectionRect(null); showToast("Redid edit");
+    }
+  }, [showToast]);
 
   // ─── Comments: save pin ─────────────────────────────────────────────
   const savePin = useCallback((text) => {
@@ -66677,6 +66295,10 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
         if (!href || href === "about:blank") return;
         const finish = () => {
           try {
+            const path = WovenEdit.sourcePath(iframe);
+            if (!path) return;
+            if (WovenEdit.isolate(iframe, path, apiUrl)) return;
+            WovenEdit.bind(inner, path, apiUrl);
             zoomMirrorFontLoaders(doc, inner);
             zoomTagAll(inner);
             nestedDocsRef.current.add(inner);
@@ -66737,7 +66359,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   // corner badge instead of inline text.
   overlayChildren.push(html`
     <aside key="rail" className="zoom-toolbar" data-busy=${busy ? "true" : "false"}>
-      <button className="zoom-toolbar-close" title="Close (Esc) - prompts to discard if there are unsaved edits" onClick=${closeWithConfirm}>×</button>
+      <button className="zoom-toolbar-close" title="Close (Esc) - keeps pending edits in this session" onClick=${closeWithConfirm}>×</button>
       <button
         className="zoom-canvas-pct"
         title=${canvasScale === 1
@@ -66873,28 +66495,28 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
               onMouseDown=${(e) => {
                 e.preventDefault(); e.stopPropagation();
                 const startX = e.clientX, startY = e.clientY;
-                const startW = selectionRect.w, startH = selectionRect.h;
+                const el = zoomFindById(docRef.current, selectedId);
+                if (!el) return;
+                const doc = el.ownerDocument;
+                const cs = doc.defaultView.getComputedStyle(el);
+                const parent = el.parentElement && doc.defaultView.getComputedStyle(el.parentElement);
+                const startW = parseFloat(cs.width), startH = parseFloat(cs.height);
                 const snap = snapshotBefore();
+                const target = { selector: elementPatchSelector(el), ..._patchTargetMeta(el) };
+                let patch = null;
                 const onMv = (ev) => {
-                  const dw = ev.clientX - startX, dh = ev.clientY - startY;
-                  const w = Math.max(8, Math.round(startW + dw));
-                  const h = Math.max(8, Math.round(startH + dh));
-                  const doc = docRef.current;
-                  const el = doc && doc.querySelector("[" + ZOOM_ID_ATTR + "=\"" + selectedId + "\"]");
-                  if (el) { el.style.width = w + "px"; el.style.height = h + "px"; }
-                  setSelectionRect(r => r && ({ ...r, w, h }));
+                  const w = Math.max(8, Math.round(startW + (ev.clientX - startX) / canvasScale));
+                  const h = Math.max(8, Math.round(startH + (ev.clientY - startY) / canvasScale));
+                  patch = WovenEdit.applyStyles(el, {
+                    ...WovenEdit.sizing("width", "fixed", w, parent, cs),
+                    ...WovenEdit.sizing("height", "fixed", h, parent, cs),
+                  });
+                  setSelectionRect(zoomRectFor(el, iframeRef.current));
                 };
                 const onUp = () => {
                   window.removeEventListener("mousemove", onMv);
                   window.removeEventListener("mouseup", onUp);
-                  const doc2 = docRef.current;
-                  const el2 = doc2 && doc2.querySelector("[" + ZOOM_ID_ATTR + "=\"" + selectedId + "\"]");
-                  recordOp("Resized selected element (unsaved)", snap,
-                    el2 ? Object.assign({
-                      type:     "style",
-                      selector: elementPatchSelector(el2),
-                      styles:   { width: el2.style.width, height: el2.style.height },
-                    }, _patchTargetMeta(el2)) : null);
+                  if (patch) recordOp("Resized selected element (unsaved)", snap, { type: "style", ...target, styles: patch }, doc);
                 };
                 window.addEventListener("mousemove", onMv);
                 window.addEventListener("mouseup", onUp);
@@ -67031,8 +66653,10 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       return html`
         <${ZoomInspectorPanel}
           key="inspector"
+          element=${zoomFindById(docRef.current, selectedId)}
+          onCommand=${onSelectionCommand}
           picked=${picked}
-          styles=${pickedStyles[selectedId] || {}}
+          styles=${readEditStyles(zoomFindById(docRef.current, selectedId))}
           computedStyles=${computedStyles}
           cssVars=${cssVars}
           tree=${tree}
@@ -67262,6 +66886,7 @@ function zoomBeginInlineEdit(el, onCommitSave) {
   if (!el) return;
   const slot = thTextSlot(el);
   if (slot.prop !== "text") return zoomBeginSlotEdit(el, slot, onCommitSave);
+  try { el.ownerDocument.defaultView.__TH_PATCH_PAUSE = true; } catch {}
   const original = el.innerHTML;
   el.setAttribute("contenteditable", "true");
   el.setAttribute("spellcheck", "false");
@@ -67286,6 +66911,7 @@ function zoomBeginInlineEdit(el, onCommitSave) {
     if (el.innerHTML !== original) onCommitSave && onCommitSave();
   };
   const onKey = (ke) => {
+    ke.stopPropagation();
     if (ke.key === "Escape") { cancelled = true; el.blur(); }
     if (ke.key === "Enter" && !ke.shiftKey) { ke.preventDefault(); el.blur(); }
   };
@@ -70986,9 +70612,10 @@ function WorkflowPickedInspectorDock({
         rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
       },
       styles: {
-        widthMode:    inferMode(widthInline),
+        ...readEditStyles(el),
+        widthMode:    WovenEdit.sizeMode(el, "width"),
         widthFixed:   fixedPx(widthInline,  "width"),
-        heightMode:   inferMode(heightInline),
+        heightMode:   WovenEdit.sizeMode(el, "height"),
         heightFixed:  fixedPx(heightInline, "height"),
         justifySelf:  (el.style.justifySelf || cs.justifySelf || "auto"),
         alignSelf:    (el.style.alignSelf   || cs.alignSelf   || "auto"),
@@ -71030,6 +70657,8 @@ function WorkflowPickedInspectorDock({
             ? ""
             : (cs.boxShadow || "");
         return {
+          display: cs.display, gap: cs.gap,
+          minWidth: cs.minWidth, maxWidth: cs.maxWidth, minHeight: cs.minHeight, maxHeight: cs.maxHeight,
           background:   cs.backgroundColor || "",
           borderColor:  cs.borderColor     || "",
           borderWidth:  cs.borderWidth     || "",
@@ -71081,42 +70710,7 @@ function WorkflowPickedInspectorDock({
       if (el) pickedDomRef.current = el;
     }
     if (!doc || !el) return;
-    const cssKeys = [
-      ["width",         "width"],
-      ["height",        "height"],
-      ["justifySelf",   "justify-self"],
-      ["alignSelf",     "align-self"],
-      ["flexDirection", "flex-direction"],
-      ["background",    "background"],
-      ["borderColor",   "border-color"],
-      ["borderWidth",   "border-width"],
-      ["borderStyle",   "border-style"],
-      ["borderRadius",  "border-radius"],
-      ["padding",       "padding"],
-      ["color",         "color"],
-      ["fontFamily",    "font-family"],
-      ["fontSize",      "font-size"],
-      ["fontWeight",    "font-weight"],
-      ["boxShadow",     "box-shadow"],
-      ["filter",        "filter"],
-    ];
-    // Track every style change in a styles map for the post-mount
-    // patch script. Only the actually-applied props go in; "auto"/null/empty
-    // are removals that we don't replay (the original source doesn't have
-    // them so re-removal is a no-op).
-    const stylesForPatch = {};
-    for (const [propJs, propCss] of cssKeys) {
-      // Only touch a property if it appears in nextStyles (so toggling
-      // sizing doesn't accidentally clear the user's border color).
-      if (!(propJs in nextStyles)) continue;
-      const v = nextStyles[propJs];
-      if (v == null || v === "" || v === "auto") {
-        try { el.style.removeProperty(propCss); } catch {}
-      } else {
-        try { el.style.setProperty(propCss, v); } catch {}
-        stylesForPatch[propCss] = v;
-      }
-    }
+    const stylesForPatch = WovenEdit.applyStyles(el, nextStyles);
     setRefreshTick(t => t + 1);
     // Stage the edit - persistence is deferred until the user explicitly
     // clicks Save on the badge pill. Falls back to the immediate save path
@@ -71190,6 +70784,18 @@ function WorkflowPickedInspectorDock({
     setRefreshTick(t => t + 1);
   }, [picked, onMoveElement]);
 
+  const onCommand = useCallback((action, value) => {
+    let ifr = pickerIframeRef.current;
+    if (!wfPickHostAlive(ifr)) ifr = wfFindPickHost(pickedElement?.nodeId || node.id);
+    const doc = ifr?.contentDocument;
+    const el = doc?.contains(pickedDomRef.current) ? pickedDomRef.current : doc?.querySelector(pickedElement?.path || "body");
+    if (!el) throw new Error("Select an element in the current frame.");
+    const result = performSelectionCommand(el, action, value);
+    if (result.op) onStageInspectorEdit(ifr, doc, result.op);
+    if (result.element) navigateTo(result.element);
+    setRefreshTick(n => n + 1);
+  }, [pickedElement, node.id, onStageInspectorEdit, navigateTo]);
+
   // React-rendered banner stays suppressed: the downstream pipeline
   // handles React reconciliation, so the inspector must not warn that DOM
   // edits won't survive reload (they do, via the pipeline). The variable
@@ -71233,6 +70839,8 @@ function WorkflowPickedInspectorDock({
         `}
         ${picked
           ? html`<${PickedInspectorBody}
+              element=${pickedDomRef.current}
+              onCommand=${onCommand}
               picked=${picked}
               styles=${styles}
               computedStyles=${computedStyles}
@@ -73269,7 +72877,6 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
           if (parent === "") break;        // crossed the project root
           cur = parent;
           if (cur === "source/") {         // include the source/ root then stop
-            ancestorDirs.push(cur);
             break;
           }
         }
@@ -73290,11 +72897,11 @@ function WorkflowPrototypeNode({ node, zoom, orphaned, selected, onSelect, onMov
         if (selfSet && selfSet.size > 0) {
           const consumed = paths.filter(p => p && selfSet.has(p));
           if (consumed.length && consumed.length === paths.length) {
-            for (const p of consumed) selfSet.delete(p);
+            for (const p of consumed) setTimeout(() => selfSet.delete(p), 0);
             return;
           }
           // Mixed: drop the self-saved entries, fall through for the rest.
-          for (const p of consumed) selfSet.delete(p);
+          for (const p of consumed) setTimeout(() => selfSet.delete(p), 0);
         }
       } catch {}
       const hit = paths.some(p => {
@@ -76720,7 +76327,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       try {
         const selfSet = window.__thInspectorSelfSavedPaths;
         if (selfSet && selfSet.has(node.path)) {
-          selfSet.delete(node.path);
+          setTimeout(() => selfSet.delete(node.path), 0);
           return;
         }
       } catch {}
@@ -77163,7 +76770,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
       <div className="workflow-node-asset-iframe-scale">
         <iframe
           ref=${htmlIframeRef}
-          key=${"asset-iframe-" + bust + "-" + (node.activeVersionId || "live")}
+          key=${"asset-iframe-" + bust}
           className="workflow-node-asset-thumb workflow-node-asset-iframe"
           src=${fileSrc}
           title=${basename}
@@ -77184,7 +76791,7 @@ function WorkflowAssetNode({ node, zoom, orphaned, selected, onSelect, replaceTa
     ` : html`
       <iframe
         ref=${htmlIframeRef}
-        key=${"asset-iframe-" + bust + "-" + (node.activeVersionId || "live")}
+        key=${"asset-iframe-" + bust}
         className="workflow-node-asset-thumb workflow-node-asset-iframe"
         src=${fileSrc}
         title=${basename}

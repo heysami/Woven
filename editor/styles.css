@@ -34954,3 +34954,17 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   color: var(--text-2, var(--text-faint));
 }
 .chat-composer-scratchpad .chat-composer-attachment-icon svg { width: 12px; height: 12px; }
+/* Shared visual editing controls. */
+.woven-edit-tools { display: grid; gap: 12px; padding: 12px; border-bottom: 1px solid var(--border); }
+.woven-edit-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.woven-edit-tools button, .woven-edit-tools select, .woven-edit-tools input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 6px 8px; min-width: 0; }
+.woven-edit-tools button { cursor: pointer; }
+.woven-edit-tools button:hover { background: var(--accent-soft); }
+.woven-edit-tools button:focus-visible, .woven-edit-tools select:focus-visible, .woven-edit-tools input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.woven-edit-library, .woven-edit-component, .woven-edit-variables { display: grid; gap: 6px; min-width: 0; }
+.woven-edit-tools small { opacity: .75; overflow-wrap: anywhere; }
+.woven-edit-tools label { display: grid; gap: 4px; }
+.woven-edit-component-list { display: grid; gap: 4px; max-height: 220px; overflow: auto; }
+.woven-edit-component-list button { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; text-align: left; }
+.woven-edit-component-preview { flex: 0 0 100%; width: 100%; height: 64px; border: 0; pointer-events: none; background: var(--surface); }
+.woven-edit-error { color: var(--text); border-left: 3px solid var(--accent); padding-left: 8px; }

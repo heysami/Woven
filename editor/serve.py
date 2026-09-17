@@ -15254,6 +15254,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._asset_param_set(qs)
             if parsed.path == "/__write_binary":
                 return self._write_binary(qs)
+            if parsed.path == "/__edit_components":
+                return self._edit_components(qs, True)
             if parsed.path == "/__html_save":
                 return self._html_save(qs)
             if parsed.path == "/__starred_prototypes/toggle":
@@ -15547,6 +15549,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         if url_path in ("/favicon.ico", "/favicon.svg"):
             return self._serve_root_favicon()
         # Daemon JSON endpoints first - they take precedence over static files.
+        if url_path == "/__edit_components":
+            return self._edit_components(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__edit_source":
+            return self._edit_source(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__agents":
             return self._agents_list()
         if url_path == "/__usage":
@@ -15945,12 +15951,24 @@ class H(http.server.SimpleHTTPRequestHandler):
                 data = f.read()
         except OSError:
             return super().do_GET()
+        source_revision = hashlib.sha256(data).hexdigest()[:16]
         # Stamp `?project=<id>` onto every relative src/href so nested loads
         # (styles.css, app.jsx, data.js, images) resolve to the right project
         # without depending on the Referer header.
         if project_id:
             data = self._stamp_project_on_html(data, project_id)
-        inject = b"<script>" + POKE_HELPER.encode("utf-8") + b"</script>"
+        inject = ('<meta name="woven-source-revision" content="' + source_revision + '">').encode() + b"<script>" + POKE_HELPER.encode("utf-8") + b"</script>"
+        # Project definitions travel with the served page; exported HTML keeps
+        # the last instance snapshot and never requires the editor to render.
+        try:
+            import component_store
+            root = resolve_project_root({"project": [project_id]} if project_id else {})
+            library = component_store.read(root)
+            if library["definitions"]:
+                encoded = json.dumps(library, ensure_ascii=False).replace("<", "\\u003c")
+                inject += ('<script type="application/json" data-woven-library>' + encoded + '</script>').encode("utf-8")
+        except (OSError, ValueError):
+            pass
         lower = data.lower()
         head = lower.find(b"<head>")
         if head >= 0:
@@ -24724,6 +24742,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Refuses paths outside the project root and any extension that isn't
     # .html / .htm. 4 MB cap matches typical prototype size headroom.
     def _html_save(self, qs):
+        import edit_store
         try:
             project_root = resolve_project_root(qs, require_explicit=True)
         except ValueError as e:
@@ -24741,26 +24760,56 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not (rel.endswith(".html") or rel.endswith(".htm")):
             return self._reply(400, {"error": "path must end in .html or .htm"})
         try:
-            abs_path = _safe_join(project_root, rel)
+            abs_path = edit_store.source_path(project_root, rel)
         except Exception as e:
             return self._reply(400, {"error": f"path resolution failed: {e}"})
         if not os.path.isfile(abs_path):
             return self._reply(404, {"error": f"file not found: {rel}"})
-        # Atomic write: stage next to target, then os.replace.
-        staging = abs_path + ".staging"
+        expected = body.get("expectedVersion")
+        if expected is not None and not isinstance(expected, str):
+            return self._reply(400, {"error": "expectedVersion must be a string"})
         try:
-            with _history_bracket(project_root, [rel],
-                                   kind="ui-edit", label=f"Edit HTML: {rel}",
-                                   source="editor"):
-                with open(staging, "w", encoding="utf-8") as f:
-                    f.write(html)
-                os.replace(staging, abs_path)
+            with edit_store.lock(abs_path):
+                if expected is not None and edit_store.read(abs_path)["version"] != expected:
+                    return self._reply(409, {"error": "The file changed outside this editing session. Your edits are still pending. Reload before saving again."})
+                with _history_bracket(project_root, [rel], kind="ui-edit",
+                                      label=f"Edit HTML: {rel}", source="editor"):
+                    result = edit_store.write(abs_path, html, expected)
+        except edit_store.Conflict as e:
+            return self._reply(409, {"error": str(e)})
         except OSError as e:
-            try: os.unlink(staging)
-            except Exception: pass
             return self._reply(500, {"error": f"write failed: {e}"})
-        h = hashlib.sha256(html.encode("utf-8", errors="replace")).hexdigest()[:16]
-        return self._reply(200, {"ok": True, "path": rel, "size": len(html.encode("utf-8")), "version": h})
+        return self._reply(200, {**result, "path": rel})
+
+    def _edit_components(self, qs, write=False):
+        import component_store
+        import edit_store
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+            if not write:
+                return self._reply(200, component_store.read(root))
+            body = self._read_json_body(max_bytes=2 * 1024 * 1024)
+            with edit_store.lock(os.path.join(root, "editor", "components.json")):
+                with _history_bracket(root, ["editor/components.json"], kind="ui-edit",
+                                      label="Update component library", source="editor"):
+                    value = component_store.put(root, body.get("definition"), body.get("expectedVersion"))
+            return self._reply(200, value)
+        except edit_store.Conflict as e:
+            return self._reply(409, {"error": str(e)})
+        except (ValueError, OSError) as e:
+            return self._reply(400, {"error": str(e)})
+
+    def _edit_source(self, qs):
+        import edit_store
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+            rel = (qs.get("path") or [""])[0]
+            if not rel.startswith("source/") or not rel.lower().endswith((".html", ".htm")):
+                return self._reply(400, {"error": "Select a source HTML file"})
+            path = edit_store.source_path(root, rel)
+            return self._reply(200, edit_store.read(path))
+        except (ValueError, OSError, UnicodeError) as e:
+            return self._reply(400, {"error": str(e)})
 
     # POST /__component_export?project=<id>
     # Body: JSON { path: "source/<branch>/components/<name>.html",
