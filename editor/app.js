@@ -11561,21 +11561,98 @@ function UsageMeter({ w }) {
    stays honest against an older daemon that predates the field. Fetched
    once per page load and shared across composer mounts. */
 let __steerableAgentsPromise = null;
+let __runtimeCustomModels = [];
+let __runtimeCustomRevision = 0;
+const __runtimeDiscovery = {};
+const __runtimeRefreshes = new Map();
+let __runtimeCatalogPromise = null;
+let __runtimeCatalogLoadedAt = 0;
+const RUNTIME_CATALOG_MAX_AGE = 6 * 60 * 60 * 1000;
+
+// Keep registration and discovery separate: saving a preference must not
+// discard models supplied by a CLI. Neither source changes the user's picks.
 function syncRuntimeModelCatalog(rows) {
+  if (Array.isArray(rows)) {
+    __runtimeCustomModels = rows;
+    __runtimeCustomRevision++;
+  }
   if (!window.TH_MEDIA) return;
   const providers = { codex: "openai", claude: "anthropic", opencode: "opencode" };
+  const discovered = Object.values(__runtimeDiscovery).flatMap(packet => packet.models || []);
   const saved = (window.TH_MEDIA.textModels || []).filter(m => !m.runtimeRegistered);
-  window.TH_MEDIA.textModels = [...saved, ...(rows || []).map(m => ({
+  window.TH_MEDIA.textModels = [...saved, ...[...__runtimeCustomModels, ...discovered].map(m => ({
     ...m, provider: providers[m.runtime], cliOnly: true, integrated: true, runtimeRegistered: true,
   }))].filter((m, i, all) => all.findIndex(x => x.id === m.id) === i);
   window.dispatchEvent(new CustomEvent("th:runtime-models-changed"));
 }
+
+function rememberRuntimeDiscovery(runtime, packet) {
+  if (!packet || !Array.isArray(packet.models)) return;
+  const previous = __runtimeDiscovery[runtime];
+  // A slow initial GET must not replace a newer manual refresh.
+  if (previous && Number(previous.checkedAt) > Number(packet.checkedAt || 0)) return;
+  __runtimeDiscovery[runtime] = packet;
+  syncRuntimeModelCatalog();
+}
+
+function refreshRuntimeModels(runtime) {
+  if (__runtimeRefreshes.has(runtime)) return __runtimeRefreshes.get(runtime);
+  const request = (async () => {
+    const response = await fetch(apiUrl("/__models/refresh"), {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ runtime }),
+    });
+    const value = await response.json();
+    if (!response.ok) throw new Error(value.error || "Model discovery failed");
+    rememberRuntimeDiscovery(runtime, value);
+    return value;
+  })().finally(() => __runtimeRefreshes.delete(runtime));
+  __runtimeRefreshes.set(runtime, request);
+  return request;
+}
+
+function loadRuntimeModelCatalog() {
+  if (__runtimeCatalogPromise) return __runtimeCatalogPromise;
+  // Coalesce picker mounts and focus events, including failures on older CLIs.
+  if (Date.now() - __runtimeCatalogLoadedAt < 60000) return Promise.resolve();
+  const customRevision = __runtimeCustomRevision;
+  __runtimeCatalogLoadedAt = Date.now();
+  __runtimeCatalogPromise = (async () => {
+    const read = path => fetch(apiUrl(path)).then(r => r.ok ? r.json() : null).catch(() => null);
+    const catalogRequest = read("/__models").then(catalog => {
+      if (!catalog) return;
+      if (__runtimeCustomRevision === customRevision && Array.isArray(catalog.custom)) {
+        syncRuntimeModelCatalog(catalog.custom);
+      }
+      for (const [runtime, packet] of Object.entries(catalog.discovery || {})) {
+        rememberRuntimeDiscovery(runtime, packet);
+      }
+    });
+    const [_, media] = await Promise.all([catalogRequest, read("/__media_config")]);
+    // Listing models does not start a model turn. Show cached rows first,
+    // then refresh installed runtimes when their discovery data is stale.
+    for (const runtime of ["codex", "opencode"]) {
+      const packet = __runtimeDiscovery[runtime];
+      if (media?.[runtime + "_cli_available"] &&
+          (!packet || Date.now() - Number(packet.checkedAt || 0) * 1000 >= RUNTIME_CATALOG_MAX_AGE)) {
+        try { await refreshRuntimeModels(runtime); } catch { /* Keep cached and manually registered rows. */ }
+      }
+    }
+  })().catch(() => {}).finally(() => { __runtimeCatalogPromise = null; });
+  return __runtimeCatalogPromise;
+}
+
 function useRuntimeModelCatalog() {
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     const changed = () => setRevision(n => n + 1);
+    const focus = () => loadRuntimeModelCatalog();
     window.addEventListener("th:runtime-models-changed", changed);
-    return () => window.removeEventListener("th:runtime-models-changed", changed);
+    window.addEventListener("focus", focus);
+    loadRuntimeModelCatalog();
+    return () => {
+      window.removeEventListener("th:runtime-models-changed", changed);
+      window.removeEventListener("focus", focus);
+    };
   }, []);
   return revision;
 }
@@ -11583,7 +11660,6 @@ function loadSteerableAgents() {
   if (!__steerableAgentsPromise) {
     __steerableAgentsPromise = fetch(apiUrl("/__media_config"))
       .then(r => r.ok ? r.json() : null)
-      .then(j => { if (j?.modelCatalog) syncRuntimeModelCatalog(j.modelCatalog); return j; })
       .then(j => (j && Array.isArray(j.steerable_agents) && j.steerable_agents.length)
         ? j.steerable_agents : ["claude"])
       .catch(() => ["claude"]);
@@ -11608,6 +11684,7 @@ function useSteerableAgents() {
    single source of truth. The reload callback is exposed so the setup card
    can re-poll after the user opens the Settings dialog and pastes a key. */
 function useMediaConfig() {
+  useRuntimeModelCatalog();
   const [config, setConfig] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const reload = useCallback(async () => {
@@ -28055,6 +28132,7 @@ function SystemLanding({ onSpawnSystemThread }) {
 // Each card is collapsible - head click expands; body hidden by default
 // so scanning the full set doesn't require a long scroll.
 function SkillsLanding() {
+  useRuntimeModelCatalog();
   const skills = (window.TH_MEDIA && window.TH_MEDIA.skills) || [];
   const imageModels = (window.TH_MEDIA && window.TH_MEDIA.imageModels) || [];
   const textModels  = (window.TH_MEDIA && window.TH_MEDIA.textModels) || [];
@@ -29202,6 +29280,7 @@ function OrchestratorsLanding({ scopeLabel, onSpawnSystemThread, withHead }) {
 // in localStorage["th.editor.orchestrator-models.v1"] and synced to the
 // daemon so the capabilities preamble can steer the dispatch per orchestrator.
 function OrchestratorModelSelect({ orchestratorId, disabled }) {
+  useRuntimeModelCatalog();
   const [override, setOverride] = useState(() => getOrchestratorModel(orchestratorId));
   useEffect(() => {
     const on = () => setOverride(getOrchestratorModel(orchestratorId));
@@ -29244,6 +29323,7 @@ function OrchestratorModelSelect({ orchestratorId, disabled }) {
 // per subagent name (craft-lens appears on many cards; they all show + set the
 // same value, kept in sync via the th:subagent-models-changed event).
 function SubagentModelSelect({ name, disabled }) {
+  useRuntimeModelCatalog();
   const [override, setOverride] = useState(() => getSubagentModel(name));
   useEffect(() => {
     const on = () => setOverride(getSubagentModel(name));
@@ -40064,6 +40144,7 @@ function WorkflowAssetControlsPanel({ node, selected, onChange }) {
    ever saw the asset's direct upstream (the empty-text generator node) and so
    showed empty prompts + a useless skill name. */
 function WorkflowAssetInputsPanel({ node, selected, allNodes, allEdges, onRunSkill, onPatchNode, runStates }) {
+  useRuntimeModelCatalog();
   const nodeId = node.id;
   const rect = useTrackedNodeRect(nodeId, selected);
   const lineage = useMemo(() => {
@@ -40493,10 +40574,11 @@ function AssetActionRemixForm({ form, setForm, firstInputRef }) {
    from the form's outputKind so swapping output → image/html/text auto-
    reshapes the available models. */
 function AssetActionRemixProviderRow({ form, setForm }) {
+  const catalogRevision = useRuntimeModelCatalog();
   const capability = form.outputKind === "image" ? "image"
                     : form.outputKind === "html"  ? "agent"
                                                   : "agent";
-  const models = useMemo(() => listModelsForCapability(capability), [capability]);
+  const models = useMemo(() => listModelsForCapability(capability), [capability, catalogRevision]);
   const providersInUse = useMemo(() => {
     const set = new Set();
     for (const m of models) if (m.provider) set.add(m.provider);
@@ -99239,7 +99321,7 @@ function useContextCostConfig() {
         if (!r.ok) throw new Error(`Could not load context settings (${r.status}).`);
         return r.json();
       })
-      .then(value => { if (!cancelled) setConfig(value); })
+      .then(value => { if (!cancelled) { setConfig(value); syncRuntimeModelCatalog(value.modelCatalog); } })
       .catch(e => { if (!cancelled) setError(e.message); });
     return () => {
       cancelled = true;
@@ -99265,9 +99347,10 @@ function useContextCostConfig() {
 }
 
 function RuntimeModelSelect({ config, current, disabled, onChange, label, inheritedLabel, allowGlobal }) {
+  useRuntimeModelCatalog();
   const choices = [
     ...((window.TH_MEDIA || {}).textModels || []).filter(m =>
-      ["openai", "anthropic", "opencode"].includes(m.provider) && !m.cliOnly && m.integrated !== false),
+      ["openai", "anthropic", "opencode"].includes(m.provider) && (!m.cliOnly || m.runtimeRegistered) && m.integrated !== false),
     ...(config?.modelCatalog || []).map(m => ({ ...m, label: (m.label || m.id) + " (" + m.runtime + ")" })),
   ].filter((m, i, all) => all.findIndex(x => x.id === m.id) === i);
   return html`<select className="workflow-default-provider-select" aria-label=${label}
@@ -99300,6 +99383,7 @@ function ContractWriterModelControl({ config, save, disabled, orchestratorId }) 
 }
 
 function RuntimeModelSettings({ config, save, disabled }) {
+  useRuntimeModelCatalog();
   const [runtime, setRuntime] = useState("codex");
   const [discovery, setDiscovery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -99331,7 +99415,7 @@ function RuntimeModelSettings({ config, save, disabled }) {
         value=${config?.helperConcurrency?.[id] || 2} aria-label=${id + " concurrent helpers"}
         onChange=${e => { const value = Number(e.target.value); if (Number.isInteger(value) && value >= 1 && value <= 16) save({ helperConcurrency: { [id]: value } }); }}/>
     </div>`)}
-    <div className="workflow-settings-section-group-sub">Register a model once to make it available in model selectors. Capability support remains unknown until checked with its runtime.</div>
+    <div className="workflow-settings-section-group-sub">Models are loaded automatically from installed Codex and OpenCode runtimes. Refresh to check for new models now, or register an exact ID manually. Claude models can be added manually.</div>
     <div className="workflow-default-provider-row">
       <select className="workflow-default-provider-select" aria-label="New model runtime" value=${runtime} disabled=${disabled} onChange=${e => setRuntime(e.target.value)}>
         ${["codex", "claude", "opencode"].map(id => html`<option key=${id} value=${id}>${id}</option>`)}
@@ -99339,13 +99423,8 @@ function RuntimeModelSettings({ config, save, disabled }) {
       <button className="workflow-default-provider-select" disabled=${disabled || refreshing} onClick=${async () => {
         setRefreshing(true); setDiscovery("");
         try {
-          const response = await fetch(apiUrl("/__models/refresh"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ runtime }) });
-          const value = await response.json();
-          if (!response.ok) throw new Error(value.error || "Model discovery failed");
+          const value = await refreshRuntimeModels(runtime);
           if (value.models) {
-            const current = config?.modelCatalog || [];
-            await save({ modelCatalog: [...current, ...value.models.filter(m => !current.some(x => x.id === m.id))].slice(0, 500) });
-            syncRuntimeModelCatalog([...current, ...value.models]);
             setDiscovery(value.models.length + " models: " + value.source);
           } else setDiscovery(value.message || "Discovery unavailable");
         } catch (e) { setDiscovery(e.message); }
@@ -101021,6 +101100,7 @@ function Slice9Guides({ pngPath, s9, onPatch }) {
 }
 
 function WorkflowSkillNode({ node, zoom, selected, onSelect, onMove, onResize, onRemove, onChange, onDragStart, onDragEnd, onStartEdge, onRun, runState, onAddOutputAsset, onSpawnConnected, allNodes, allEdges, projectId }) {
+  useRuntimeModelCatalog();
   const [dragging, setDragging] = useState(false);
   const onHandleDown = useCallback((e) => {
     if (e.button !== 0) return;

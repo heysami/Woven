@@ -37,6 +37,7 @@ const { chromium } = require('../tools/node_modules/playwright');
       window.TH_MEDIA = {textModels: []};
       const uiPrompt = async () => window.promptAnswer;
       const syncRuntimeModelCatalog = () => {};
+      const useRuntimeModelCatalog = () => 0;
       const apiUrl = p => p;
       ${components}
       function Fixture() {

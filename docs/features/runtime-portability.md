@@ -19,9 +19,17 @@ models for unrelated media calls. OpenCode IDs retain their `provider/model`
 form. Full Claude IDs pass through unchanged instead of being rewritten into
 the aliases opus, sonnet, or haiku.
 
-**Refresh models** uses Codex's authenticated `model/list`, including pagination,
-or OpenCode's runtime catalog. The OpenCode catalog is not evidence that this
-account can access every listed model. Claude has no verified standalone model
+Model pickers load registered and cached runtime models independently of chat.
+On opening a picker or returning to the window, installed Codex and OpenCode
+runtimes refresh automatically when discovery data is missing or over six hours
+old. Concurrent picker mounts share one request. Cached models remain selectable
+while discovery runs or if it fails. Discovery does not start a model turn.
+Saving context settings preserves discovered models without copying them into
+the manual registry or changing the selected model.
+
+**Refresh models** checks immediately using Codex's authenticated `model/list`,
+including pagination, or OpenCode's runtime catalog. The OpenCode catalog is not
+evidence that this account can access every listed model. Claude has no verified standalone model
 listing command in this implementation; manual registration remains available.
 Discovery records retain the runtime version, source, and check time.
 
@@ -199,12 +207,15 @@ Automated regression coverage includes opaque IDs, inheritance, helper routing,
 background launch acknowledgements, late completion, restarted children,
 process-tree stopping, MCP translation, structured event replay, ambiguous
 steering delivery, review provenance, and concurrent writer preparation.
-Browser tests exercise economy, transport, registration, and writer controls.
+Browser tests exercise economy, transport, registration, and writer controls,
+plus automatic discovery across seven pickers with empty, fresh, stale, and
+failed discovery states. They also cover preference saves and picker remounts.
 
 ```sh
 python3 -m unittest discover -s editor/tests -p 'test_*.py'
 node editor/tests/test-context-policy.cjs
 node editor/tests/test-runtime-settings.cjs
+node editor/tests/test-runtime-model-catalog.cjs
 editor/check-compat.sh
 node --check editor/app.js
 git diff --check
