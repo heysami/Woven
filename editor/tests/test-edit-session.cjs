@@ -45,12 +45,21 @@ const server = http.createServer(async (req, res) => {
     await page.goto('http://127.0.0.1:'+server.address().port);
     for (const file of ['edit-engine.js','edit-components.js']) await page.addScriptTag({path:path.join(root,file)});
     await page.addScriptTag({content:'const apiUrl = p => p + "?project=fixture";\n'+patch+selectors+slots+commands});
+    await page.route('**/__edit_source?*', route => route.fulfill({status:404,contentType:'text/html',body:'<!DOCTYPE html><html>Older daemon</html>'}));
     await page.evaluate(() => WovenEdit.isolate(document.querySelector('iframe'),'source/demo/index.html',apiUrl));
     await page.waitForFunction(()=>document.querySelector('iframe').contentDocument?.querySelector('meta[name="woven-authoring"]'));
     await page.evaluate(async () => {
       const doc=document.querySelector('iframe').contentDocument;
-      await WovenEdit.bind(doc,'source/demo/index.html',apiUrl).ready;
+      const state = WovenEdit.bind(doc,'source/demo/index.html',apiUrl);
+      await state.ready.catch(() => {});
+      if (!state.error.includes('Restart Woven') || state.error.includes('Unexpected token')) throw new Error('Missing service error must be actionable');
       const r=performSelectionCommand(doc.querySelector('button'),'text',{text:'Edited'}); WovenEdit.stage(doc,r.op);
+    });
+    await page.unroute('**/__edit_source?*');
+    await page.evaluate(async () => {
+      const doc=document.querySelector('iframe').contentDocument;
+      await WovenEdit.retry(doc);
+      if (WovenEdit.state(doc).error || !WovenEdit.state(doc).dirty) throw new Error('Retry must preserve pending edits');
     });
     await page.waitForTimeout(100);
     assert.equal(await page.frameLocator('#workflow').locator('button').textContent(),'Edited');

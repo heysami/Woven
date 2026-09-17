@@ -198,7 +198,7 @@
     return { nodes, key, html, target, anchor };
   }
   const cssName = name => name.replace(/[A-Z]/g, c => "-" + c.toLowerCase());
-  const CSS_KEYS = new Set(("width height minWidth minHeight maxWidth maxHeight display flexGrow flexShrink flexBasis flexDirection flexWrap gap rowGap columnGap justifyContent alignItems justifySelf alignSelf background backgroundColor borderColor borderWidth borderStyle borderRadius padding paddingTop paddingRight paddingBottom paddingLeft margin marginLeft marginRight marginTop marginBottom color fontFamily fontSize fontWeight lineHeight letterSpacing textAlign boxShadow filter opacity overflow").split(" "));
+  const CSS_KEYS = new Set(("width height minWidth minHeight maxWidth maxHeight display flexGrow flexShrink flexBasis flexDirection flexWrap gridTemplateColumns gridTemplateRows gap rowGap columnGap justifyContent alignItems justifySelf alignSelf background backgroundColor borderColor borderWidth borderStyle borderRadius padding paddingTop paddingRight paddingBottom paddingLeft margin marginLeft marginRight marginTop marginBottom color fontFamily fontSize fontWeight lineHeight letterSpacing textAlign boxShadow filter opacity overflow").split(" "));
   function applyStyles(el, patch) {
     const applied = {};
     for (const [name, raw] of Object.entries(patch)) {
@@ -324,20 +324,29 @@
     docs.set(doc, state);
     sessions.set(key, state);
     const url = apiUrl("/__edit_source") + "&path=" + encodeURIComponent(path);
-    state.ready = fetch(url.replace("/__edit_source&", "/__edit_source?"), { cache: "no-store" })
-      .then(async r => { const data = await r.json(); if (!r.ok) throw new Error(data.error || "Cannot read edit baseline"); return data; })
-      .then(data => {
-        if (state.recovered) {
-          if (data.version !== state.version) state.error = 'The source changed while these edits were closed. Download the recovered edits before reloading the latest source.';
-          return state;
-        }
-        const loaded = doc.querySelector('meta[name="woven-source-revision"]')?.content;
-        if (loaded && loaded !== data.version) throw new Error("This frame is older than the source file. Reload it before editing.");
-        state.source = data.html; state.baseSource = data.html; state.version = data.version;
-        remember(state); return state;
-      });
-    // Keep the rejection for save, without an unhandled promise at selection time.
-    state.ready.catch(() => {});
+    state.retry = () => {
+      state.error = null;
+      state.baselineReady = false;
+      state.ready = fetch(url.replace("/__edit_source&", "/__edit_source?"), { cache: "no-store" })
+        .then(r => readResponse(r, "Read page for editing"))
+        .then(data => {
+          if (typeof data.html !== 'string' || typeof data.version !== 'string') throw new Error('The editing service returned an invalid page. Restart Woven and retry.');
+          if (state.recovered) {
+            if (data.version !== state.version) state.error = 'The source changed while these edits were closed. Download the recovered edits before reloading the latest source.';
+            state.baselineReady = true;
+            return state;
+          }
+          const loaded = doc.querySelector('meta[name="woven-source-revision"]')?.content;
+          if (loaded && loaded !== data.version) throw new Error("This frame is older than the source file. Reload it before editing.");
+          state.source = data.html; state.baseSource = data.html; state.version = data.version;
+          state.baselineReady = true;
+          remember(state); return state;
+        });
+      // Preserve rejection for Save and expose recovery without discarding edits.
+      state.ready.then(() => notify(state, doc), error => { state.error = error.message; notify(state, doc); });
+      return state.ready;
+    };
+    state.retry();
     return state;
   }
   function stage(doc, op) {
@@ -396,8 +405,7 @@
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path, html, expectedVersion: state.version }),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Save failed");
+      const result = await readResponse(response, "Save changes");
       state.source = html; state.version = result.version;
       for (const ref of state.documents) {
         const marker = ref.deref()?.querySelector('meta[name="woven-source-revision"]');
@@ -441,7 +449,20 @@
   root.addEventListener?.('beforeunload', event => {
     if ([...sessions.values()].some(state => state.dirty)) { event.preventDefault(); event.returnValue = ''; }
   });
-  root.WovenEdit = { ID, uid, identify, selector, cleanClone, isTextInput, copy, setClipboard,
+  async function readResponse(response, action = "Load editor data") {
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch {
+      if (/^\s*</.test(text)) throw new Error("Editing services are unavailable. Restart Woven's daemon, then retry. Keep this editor open while restarting.");
+      throw new Error(action + " failed: the server returned an unreadable response. Please retry.");
+    }
+    if (!response.ok || data?.error) throw new Error(data?.error || action + " failed (" + response.status + "). Please retry.");
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error(action + " failed: the server returned an invalid response.");
+    return data;
+  }
+  root.WovenEdit = { ID, uid, identify, selector, cleanClone, isTextInput, copy, setClipboard, readResponse,
+    retry: doc => !docs.get(doc)?.baselineReady ? docs.get(doc)?.retry?.() : Promise.resolve(),
     getClipboard: () => clipboard, paste, applyStyles, sizing, sizeMode, variables, modes, bind, stage, save, digest,
     state: doc => docs.get(doc), serialize, restore, sourcePath, isolate, release, history, discard, download, reload };
   if (typeof module !== "undefined") module.exports = root.WovenEdit;

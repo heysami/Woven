@@ -64023,6 +64023,13 @@ function PickedColorField({ label, value, inherited, cssVars, onChange }) {
   // signalling "this is what would render if you don't override".
   const effective = (value || inherited || "").trim();
   const hasInline = !!(value || "").trim();
+  const colorLabel = color => {
+    const m = /^rgba?\(\s*([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/.exec(color || '');
+    if (!m) return color;
+    if (m[4] === '0') return 'Transparent';
+    const rgb = m.slice(1,4).map(v => Math.round(+v).toString(16).padStart(2,'0')).join('').toUpperCase();
+    return '#' + rgb + (m[4] != null && +m[4] < 1 ? Math.round(+m[4]*255).toString(16).padStart(2,'0').toUpperCase() : '');
+  };
   return html`
     <div className="zoom-inspector-color-row">
       <button
@@ -64035,9 +64042,10 @@ function PickedColorField({ label, value, inherited, cssVars, onChange }) {
       >${!effective && "-"}</button>
       <input
         className="zoom-inspector-color-input"
+        aria-label=${label}
         type="text"
         value=${draft}
-        placeholder=${inherited || "e.g. var(--accent) or #fff or linear-gradient(...)"}
+        placeholder=${colorLabel(inherited) || "#FFFFFF"}
         onChange=${(e) => setDraft(e.target.value)}
         onBlur=${commitDraft}
         onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}
@@ -64092,6 +64100,7 @@ function PickedTextField({ label, value, inherited, placeholder, rows, className
     ? html`
         <textarea
           className="zoom-inspector-textfield"
+          aria-label=${label}
           value=${draft}
           placeholder=${ph}
           rows=${rows}
@@ -64102,6 +64111,7 @@ function PickedTextField({ label, value, inherited, placeholder, rows, className
     : html`
         <input
           className=${"zoom-inspector-input" + (className ? " " + className : "")}
+          aria-label=${label}
           type="text"
           value=${draft}
           placeholder=${ph}
@@ -64196,6 +64206,7 @@ function PickedBoxField({ label, value, inherited, placeholder, corners, onChang
               <span className="zoom-inspector-box-side" aria-hidden="true">${sideLabels[i]}</span>
               <input
                 className="zoom-inspector-box-input"
+                aria-label=${sideTitles[i] + " " + label}
                 type="text"
                 value=${sides[i]}
                 placeholder=${inheritExp[i] || ""}
@@ -64214,6 +64225,7 @@ function PickedBoxField({ label, value, inherited, placeholder, corners, onChang
     <div className="zoom-inspector-boxfield">
       <input
         className="zoom-inspector-input"
+        aria-label=${label}
         type="text"
         value=${single}
         placeholder=${ph}
@@ -64324,319 +64336,8 @@ function readEditStyles(el) {
   return styles;
 }
 
-function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, onNavigate, cssVars, tree, element, onCommand }) {
-  if (!picked) return null;
-  const lay = picked.parent && picked.parent.layout;
-  const isFlex = lay && (lay.display === "flex" || lay.display === "inline-flex");
-  const isGrid = lay && (lay.display === "grid" || lay.display === "inline-grid");
-  const isRow  = isFlex && !((lay.flexDirection || "row").startsWith("column"));
-
-  // Picked element's OWN layout - toggles auto-layout direction when the
-  // picked element is itself a flex container.
-  const selfLay = picked.self && picked.self.layout;
-  const selfIsFlex = selfLay && (selfLay.display === "flex" || selfLay.display === "inline-flex");
-  const selfFlexDir = styles.flexDirection || (selfLay && selfLay.flexDirection) || "row";
-
-  const widthMode   = styles.widthMode  || "auto";
-  const widthFixed  = styles.widthFixed ?? Math.round(picked.rect ? picked.rect.w : 0);
-  const heightMode  = styles.heightMode  || "auto";
-  const heightFixed = styles.heightFixed ?? Math.round(picked.rect ? picked.rect.h : 0);
-  const justifySelf = styles.justifySelf || "auto";
-  const alignSelf   = styles.alignSelf   || "auto";
-
-  const parentHugs = axis => element?.parentElement && WovenEdit.sizeMode(element.parentElement, axis) === 'hug';
-  const setSize = (axis, mode, fixed) => {
-    onStyle(WovenEdit.sizing(axis, mode, fixed, lay, selfLay));
-  };
-  const setAlign = (axis, value) => {
-    if (isFlex) {
-      const main = axis === "h" ? isRow : !isRow;
-      if (main) {
-        const first = axis === "h" ? "marginLeft" : "marginTop";
-        const last = axis === "h" ? "marginRight" : "marginBottom";
-        onStyle({ [first]: value === "start" ? "0px" : "auto", [last]: value === "end" ? "0px" : "auto" });
-      } else onStyle({ alignSelf: value });
-    } else onStyle({ [axis === "h" ? "justifySelf" : "alignSelf"]: value });
-  };
-  // Generic setter - every new field commits via this shape.
-  const set1 = (k, v) => onStyle({ [k]: v });
-  const Seg = ({ value, options, onChange }) => html`
-    <div className="zoom-inspector-segment">
-      ${options.map(o => html`
-        <button key=${o.v} disabled=${o.disabled} data-active=${value === o.v} title=${o.title || ""} onClick=${() => onChange(o.v)}>${o.l}</button>
-      `)}
-    </div>
-  `;
-  // Treat empty string ("") + the literal "auto" as "unset" - that way
-  // the Seg buttons render with no active highlight when the element
-  // hasn't had this property set.
-  const styleVal = (k) => (styles[k] || "");
-  // Computed/inherited value lookup. The fields use this as a
-  // placeholder + the color swatches use it as a fallback so the user
-  // sees the element's CURRENT effective value even when nothing's set
-  // inline. Returns "" when not provided.
-  const inheritedVal = (k) => (computedStyles && computedStyles[k]) || "";
-
-  return html`<${React.Fragment}>
-    <${WovenSelectionTools} element=${element} onCommand=${onCommand} onStyle=${onStyle}/>
-    <div className="zoom-inspector-section">
-      <div className="zoom-inspector-label">Element</div>
-      <div className="zoom-inspector-target">${picked.label}</div>
-      <div className="zoom-inspector-context">↳ ${describeParent(picked.parent)}</div>
-    </div>
-
-    ${tree && (tree.parent || (tree.children && tree.children.length > 0)) && html`
-      <div className="zoom-inspector-section">
-        <div className="zoom-inspector-label">Tree</div>
-        ${tree.parent && html`
-          <div className="zoom-inspector-tree-row">
-            <span className="zoom-inspector-tree-arrow">↑</span>
-            <button
-              type="button"
-              className="zoom-inspector-tree-link"
-              title=${"Select parent · " + tree.parent.label}
-              onClick=${() => onNavigate && onNavigate(tree.parent.ref)}
-            >${tree.parent.label}</button>
-          </div>
-        `}
-        ${tree.children && tree.children.length > 0 && html`
-          <div className="zoom-inspector-tree-children">
-            <div className="zoom-inspector-tree-children-head">↓ ${tree.children.length} child${tree.children.length === 1 ? "" : "ren"}</div>
-            ${tree.children.map((c, i) => html`
-              <button
-                key=${i}
-                type="button"
-                className="zoom-inspector-tree-link"
-                title=${"Select · " + c.label}
-                onClick=${() => onNavigate && onNavigate(c.ref)}
-              >${c.label}</button>
-            `)}
-          </div>
-        `}
-      </div>
-    `}
-
-    <div className="zoom-inspector-section">
-      <div className="zoom-inspector-label">Sizing</div>
-      <div className="zoom-inspector-row">
-        <span className="zoom-inspector-axis">W</span>
-        <${Seg} value=${widthMode} onChange=${(v) => setSize("w", v, widthFixed)} options=${[
-          { v: "fill", l: "Fill", disabled: parentHugs("width"), title: parentHugs("width") ? "Give the parent a size before filling it." : "Share available parent space in auto layout; stretch in grid." },
-          { v: "hug", l: "Hug", title: "Fit content within the available space." },
-          { v: "fixed", l: "Fixed", title: "Use CSS pixels, independent of canvas zoom." },
-        ]}/>
-        ${widthMode === "fixed" && html`
-          <input className="zoom-inspector-num" type="number" min="0" value=${widthFixed}
-                 onChange=${e => setSize("w", "fixed", +e.target.value || 0)}/>
-        `}
-      </div>
-      <div className="zoom-inspector-row">
-        <span className="zoom-inspector-axis">H</span>
-        <${Seg} value=${heightMode} onChange=${(v) => setSize("h", v, heightFixed)} options=${[
-          { v: "fill", l: "Fill", disabled: parentHugs("height"), title: parentHugs("height") ? "Give the parent a size before filling it." : "Share available parent space in auto layout; stretch in grid." },
-          { v: "hug", l: "Hug", title: "Fit content within the available space." },
-          { v: "fixed", l: "Fixed", title: "Use CSS pixels, independent of canvas zoom." },
-        ]}/>
-        ${heightMode === "fixed" && html`
-          <input className="zoom-inspector-num" type="number" min="0" value=${heightFixed}
-                 onChange=${e => setSize("h", "fixed", +e.target.value || 0)}/>
-        `}
-      </div>
-    </div>
-    <div className="zoom-inspector-section">
-      <div className="zoom-inspector-label">Layout and constraints</div>
-      <select aria-label="Container layout" className="zoom-inspector-input" value=${selfLay?.display || "block"} onChange=${e => set1("display", e.target.value)}>
-        <option value="block">Block</option><option value="flex">Auto layout</option><option value="grid">Grid</option><option value="inline">Inline</option><option value="inline-flex">Inline auto layout</option>
-      </select>
-      ${["gap", "minWidth", "maxWidth", "minHeight", "maxHeight"].map(key => html`<label key=${key} className="zoom-inspector-row">
-        <span>${key.replace(/[A-Z]/g, c => " " + c.toLowerCase())}</span>
-        <${PickedTextField} label=${key} value=${styleVal(key)} inherited=${inheritedVal(key)} onChange=${v => set1(key, v)}/>
-      </label>`)}
-      <small>Hug fits content. Fill uses available parent space. Fixed uses pixels. Minimum and maximum sizes remain in force.</small>
-      ${(parentHugs("width") || parentHugs("height")) && html`<small>Fill is unavailable on an axis where the parent hugs its content. Size the parent first.</small>`}
-      ${heightMode === "fill" && !isFlex && !isGrid && html`<small>For block layout, Fill height needs a parent with a defined height.</small>`}
-    </div>
-    ${selfIsFlex && html`
-      <div className="zoom-inspector-section">
-        <div className="zoom-inspector-label">Auto layout</div>
-        <div className="zoom-inspector-row">
-          <span className="zoom-inspector-axis">↔</span>
-          <${Seg} value=${selfFlexDir} onChange=${v => set1("flexDirection", v)} options=${[
-            { v: "row",            l: "Row",  title: "Horizontal (row)" },
-            { v: "column",         l: "Col",  title: "Vertical (column)" },
-            { v: "row-reverse",    l: "Row↺", title: "Row reversed" },
-            { v: "column-reverse", l: "Col↺", title: "Column reversed" },
-          ]}/>
-        </div>
-        ${[
-          ["flexWrap", "Wrap", ["nowrap", "wrap"]],
-          ["justifyContent", "Pack", ["flex-start", "center", "flex-end", "space-between", "space-around"]],
-          ["alignItems", "Align children", ["stretch", "flex-start", "center", "flex-end", "baseline"]],
-        ].map(([key, label, values]) => html`<label className="zoom-inspector-row" key=${key}><span>${label}</span>
-          <select aria-label=${label} value=${styles[key] || selfLay?.[key] || values[0]} onChange=${e => set1(key, e.target.value)}>
-            ${values.map(value => html`<option value=${value} key=${value}>${value}</option>`)}
-          </select></label>`)}
-      </div>
-    `}
-    ${(isFlex || isGrid) && html`
-      <div className="zoom-inspector-section">
-        <div className="zoom-inspector-label">Reorder in ${isGrid ? "grid" : "flex"}</div>
-        <div className="zoom-inspector-pad">
-          <div className="zoom-inspector-pad-row">
-            ${(isGrid || !isRow) && html`<button className="zoom-inspector-pad-btn" title="Move toward start" onClick=${() => onMove("prev")}>↑</button>`}
-          </div>
-          <div className="zoom-inspector-pad-row">
-            ${(isGrid || isRow) && html`<button className="zoom-inspector-pad-btn" title="Move toward start" onClick=${() => onMove("prev")}>←</button>`}
-            <span className="zoom-inspector-pad-center" aria-hidden="true">•</span>
-            ${(isGrid || isRow) && html`<button className="zoom-inspector-pad-btn" title="Move toward end" onClick=${() => onMove("next")}>→</button>`}
-          </div>
-          <div className="zoom-inspector-pad-row">
-            ${(isGrid || !isRow) && html`<button className="zoom-inspector-pad-btn" title="Move toward end" onClick=${() => onMove("next")}>↓</button>`}
-          </div>
-        </div>
-      </div>
-      <div className="zoom-inspector-section">
-        <div className="zoom-inspector-label">Align in parent</div>
-        <div className="zoom-inspector-row">
-          <span className="zoom-inspector-axis">H</span>
-          <${Seg} value=${justifySelf} onChange=${v => setAlign("h", v)} options=${[
-            { v: "start",  l: "L", title: "Left" },
-            { v: "center", l: "C", title: "Center" },
-            { v: "end",    l: "R", title: "Right" },
-          ]}/>
-        </div>
-        <div className="zoom-inspector-row">
-          <span className="zoom-inspector-axis">V</span>
-          <${Seg} value=${alignSelf} onChange=${v => setAlign("v", v)} options=${[
-            { v: "start",  l: "T", title: "Top" },
-            { v: "center", l: "M", title: "Middle" },
-            { v: "end",    l: "B", title: "Bottom" },
-          ]}/>
-        </div>
-      </div>
-    `}
-
-    <div className="zoom-inspector-section">
-      <div className="zoom-inspector-label">Spacing</div>
-      <div className="zoom-inspector-row">
-        <span className="zoom-inspector-axis">P</span>
-        <${PickedBoxField}
-          label="Padding"
-          value=${styleVal("padding")}
-          inherited=${inheritedVal("padding")}
-          placeholder="e.g. 8px or 8px 12px"
-          onChange=${(v) => set1("padding", v)}/>
-      </div>
-    </div>
-
-    <div className="zoom-inspector-section">
-      <div className="zoom-inspector-label">Fill</div>
-      <${PickedColorField}
-        label="Background"
-        value=${styleVal("background")}
-        inherited=${inheritedVal("background")}
-        cssVars=${cssVars}
-        onChange=${(v) => set1("background", v)}/>
-    </div>
-
-    <div className="zoom-inspector-section">
-      <div className="zoom-inspector-label">Outline</div>
-      <${PickedColorField}
-        label="Border color"
-        value=${styleVal("borderColor")}
-        inherited=${inheritedVal("borderColor")}
-        cssVars=${cssVars}
-        onChange=${(v) => set1("borderColor", v)}/>
-      <div className="zoom-inspector-row">
-        <span className="zoom-inspector-axis">W</span>
-        <${PickedBoxField}
-          label="Border width"
-          value=${styleVal("borderWidth")}
-          inherited=${inheritedVal("borderWidth")}
-          placeholder="e.g. 1px"
-          onChange=${(v) => set1("borderWidth", v)}/>
-      </div>
-      <div className="zoom-inspector-row">
-        <${Seg} value=${styleVal("borderStyle") || inheritedVal("borderStyle")} onChange=${v => set1("borderStyle", v)} options=${[
-          { v: "",       l: "-",  title: "Unset" },
-          { v: "solid",  l: "Solid"  },
-          { v: "dashed", l: "Dashed" },
-          { v: "dotted", l: "Dotted" },
-        ]}/>
-      </div>
-    </div>
-
-    <div className="zoom-inspector-section">
-      <div className="zoom-inspector-label">Radius</div>
-      <div className="zoom-inspector-row">
-        <${PickedBoxField}
-          label="Border radius"
-          corners=${true}
-          value=${styleVal("borderRadius")}
-          inherited=${inheritedVal("borderRadius")}
-          placeholder="e.g. 8px or 8px 12px"
-          onChange=${(v) => set1("borderRadius", v)}/>
-      </div>
-    </div>
-
-    <div className="zoom-inspector-section">
-      <div className="zoom-inspector-label">Text</div>
-      <${PickedColorField}
-        label="Color"
-        value=${styleVal("color")}
-        inherited=${inheritedVal("color")}
-        cssVars=${cssVars}
-        onChange=${(v) => set1("color", v)}/>
-      <div className="zoom-inspector-row">
-        <span className="zoom-inspector-axis">F</span>
-        <${PickedTextField}
-          label="Font family"
-          value=${styleVal("fontFamily")}
-          inherited=${inheritedVal("fontFamily")}
-          placeholder="e.g. Inter, system-ui, sans-serif"
-          onChange=${(v) => set1("fontFamily", v)}/>
-      </div>
-      <div className="zoom-inspector-row">
-        <span className="zoom-inspector-axis">S</span>
-        <${PickedTextField}
-          label="Font size"
-          className="zoom-inspector-input-narrow"
-          value=${styleVal("fontSize")}
-          inherited=${inheritedVal("fontSize")}
-          placeholder="e.g. 14px"
-          onChange=${(v) => set1("fontSize", v)}/>
-        <${PickedTextField}
-          label="Font weight"
-          className="zoom-inspector-input-narrow"
-          value=${styleVal("fontWeight")}
-          inherited=${inheritedVal("fontWeight")}
-          placeholder="e.g. 500 / bold"
-          onChange=${(v) => set1("fontWeight", v)}/>
-      </div>
-    </div>
-
-    <div className="zoom-inspector-section">
-      <div className="zoom-inspector-label">Shadow</div>
-      <${PickedTextField}
-        label="Box shadow"
-        value=${styleVal("boxShadow")}
-        inherited=${inheritedVal("boxShadow")}
-        placeholder="e.g. 0 2px 8px rgba(0,0,0,0.12)"
-        rows=${2}
-        onChange=${(v) => set1("boxShadow", v)}/>
-    </div>
-
-    <div className="zoom-inspector-section">
-      <div className="zoom-inspector-label">Filter</div>
-      <${PickedTextField}
-        label="Filter"
-        value=${styleVal("filter")}
-        inherited=${inheritedVal("filter")}
-        placeholder="e.g. blur(4px) brightness(1.05)"
-        rows=${1}
-        onChange=${(v) => set1("filter", v)}/>
-    </div>
-  <//>`;
+function PickedInspectorBody(props) {
+  return html`<${WovenPropertiesPanel} ...${props}/>`;
 }
 
 /* Thin wrapper around PickedInspectorBody that supplies the
@@ -64645,11 +64346,9 @@ function PickedInspectorBody({ picked, styles, computedStyles, onStyle, onMove, 
    the zoom-mode mount site at app.js:28426 doesn't need to change. */
 function ZoomInspectorPanel(props) {
   if (!props.picked) return null;
-  return html`
-    <aside className="zoom-inspector-panel" onMouseDown=${e => e.stopPropagation()} onClick=${e => e.stopPropagation()}>
-      <${PickedInspectorBody} ...${props}/>
-    </aside>
-  `;
+  return html`<aside className="zoom-inspector-panel" aria-label="Design properties" onMouseDown=${e => e.stopPropagation()} onClick=${e => e.stopPropagation()} onWheel=${e => e.stopPropagation()}>
+    <${PickedInspectorBody} ...${props}/>
+  </aside>`;
 }
 
 /* ─── Zoom Slot popover ─────────────────────────────────────────────────
@@ -66551,6 +66250,22 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       </div>
     </div>
   `);
+
+  if (tool === "select" && ready && docRef.current) {
+    const selectedElement = selectedId ? zoomFindById(docRef.current, selectedId) : null;
+    overlayChildren.push(html`<aside key="layers" className="woven-layers-panel" aria-label="Layers"
+      onMouseDown=${e => e.stopPropagation()} onClick=${e => e.stopPropagation()} onWheel=${e => e.stopPropagation()}>
+      <${WovenLayersPanel} element=${selectedElement || docRef.current.body} onNavigate=${target => {
+        zoomTagAll(target.ownerDocument);
+        setSelectedId(target.getAttribute(ZOOM_ID_ATTR));
+        const info = _capturePicked(target);
+        if (info) { setPicked(info); setSelectionRect(info.rect); }
+      }}/>
+    </aside>`);
+    if (!selectionRect) overlayChildren.push(html`<aside key="properties-empty" className="zoom-inspector-panel woven-inspector" aria-label="Design properties">
+      <div className="woven-inspector-header"><strong>Design</strong></div><p className="woven-empty-selection">Select a layer to edit its properties.</p>
+    </aside>`);
+  }
 
   // Selection / hover ring layer (fixed; ignores pointer events except its
   // own corner handles in Phase 4 resize mode).
@@ -70533,7 +70248,7 @@ function WorkflowCodePanel({ node, onClose, zoom, focus, closing, offsetX, picke
    Shared with WorkflowCodePanel's `offsetX`: both docks anchor to the host
    node's right edge, and the source panel steps out by exactly this much
    (plus a gutter) when the inspector is open on the same node. */
-const WORKFLOW_INSPECTOR_DOCK_W = 240;
+const WORKFLOW_INSPECTOR_DOCK_W = 288;
 
 /* WorkflowPickedInspectorDock ─────────────────────────────────
    Docked property inspector for workflow-mode pick-mode. Sits to the
@@ -70893,7 +70608,12 @@ function WorkflowPickedInspectorDock({
     ? `<${pickedElement.tagName}>`
     : "(no selection)";
 
-  return html`
+  return html`<${React.Fragment}>
+    <aside className=${"woven-layers-panel woven-layers-workflow" + (closing ? " is-closing" : "")} aria-label="Layers"
+      style=${{ left: ((node.x || 0) - 248) + "px", top: top + "px", width: "240px", height: height + "px" }}
+      onMouseDown=${e => e.stopPropagation()} onClick=${e => e.stopPropagation()} onWheel=${e => e.stopPropagation()}>
+      <${WovenLayersPanel} element=${pickedDomRef.current} onNavigate=${navigateTo}/>
+    </aside>
     <div
       className=${"workflow-inspector-panel" + (closing ? " is-closing" : "")}
       data-host-node-id=${node.id}
@@ -70934,7 +70654,7 @@ function WorkflowPickedInspectorDock({
           : html`<div className="workflow-inspector-panel-empty">Pick an element inside the iframe to start editing.</div>`}
       </div>
     </div>
-  `;
+  <//>`;
 }
 
 // ─── Canvas LOD - progressive loading + zoom-out placeholders ─────────────

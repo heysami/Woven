@@ -4,6 +4,24 @@ Workflow element editing and the preview edit overlay use the same selection
 commands, clipboard, sizing rules, component controls, variables, and per-file
 editing session. Normal prototype playback continues to use the authored code.
 
+## Property panels
+
+Both editing surfaces put Layers on the left and Design properties on the right.
+Layers supports search, expandable groups, canvas selection, and arrow-key
+navigation. Preview reserves space for both panes so they do not cover the page.
+Workflow docks them on opposite sides of the selected prototype node.
+
+The Design panel uses compact controls for dimensions, resizing, layout flow,
+alignment, spacing, appearance, fills, and strokes. Auto layout has a nine-point
+alignment control. Size limits, effects, and inherited container typography are
+expandable. Plain numbers in spacing fields use pixels. Variables can be bound
+beside each property; Add opens the component browser. These controls share the
+same commands and sessions in both modes.
+
+If an older daemon returns an HTML error page for an editing endpoint, the UI
+explains that the daemon must be restarted. Retry keeps pending edits intact.
+Component-library errors stay within the component controls.
+
 ## Editing and saving
 
 Entering edit mode captures the rendered document into an authoring iframe.
