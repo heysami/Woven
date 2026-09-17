@@ -19,7 +19,7 @@ compaction control and points here for model settings.
 | Art contract assembly | Code fills shared fields and preserves all supplied creative values exactly; no formatting model call |
 
 **Contract and brief writing** is the first group in Context and cost. Choose
-Fast, Same model as orchestrator, or a specific Codex/Claude model. Expand any
+Economy preset, Same model as orchestrator, or a registered/custom CLI model. Expand any
 Orchestrators card to override the writer for that orchestrator. This does not
 change the card's planning/judgment model or the conversation-summary model.
 All 20 orchestrator playbooks and their Codex mirrors use this shared role.
@@ -46,13 +46,17 @@ Live synthetic calls returned valid concise edits from Luna in 13.6 seconds and
 Haiku in 51.5 seconds. Both kept the sample's motion, accessibility, and negative
 constraints. These samples do not establish semantic fidelity for every brief.
 
-**Fast** uses `gpt-5.6-luna` with low reasoning for Codex and `claude-haiku-4-5`
-for Claude. **Same model as thread** preserves the chosen model. Summary failures
+**Economy preset** (the persisted `fast` setting) is editable per runtime. Its
+migration defaults are Luna for Codex, Haiku for Claude, and the configured
+OpenCode default. **Same model as thread** preserves the chosen model. Summary failures
 retain the conversation, with no silent switch to a larger model or paid API.
 Claude's summary request replaces the coding system prompt, disables tools and
-MCP, and isolates the fast model from user settings. The fast Codex request omits
+MCP, and isolates every text-only helper from user settings. The Codex request omits
 user tool configuration, disables tool features, and uses an ephemeral scratch
-session. Explicit inherit mode continues to honor the runtime's model settings.
+session. Inherit mode selects the parent's model while retaining text-only
+isolation. Registered model IDs, helper concurrency, persistent transport
+previews, and current verification limits are documented in
+[model routing and CLI portability](runtime-portability.md).
 
 Summary prose targets 400-700 words for long histories, fewer for short ones.
 Each fact should appear once. Tool-call-shaped output is rejected; summary
@@ -156,7 +160,7 @@ changes in your own projects. Existing model sessions retain their old instructi
 until a new session or handoff. The isolated review page already uses the new code;
 it permits settings and artifact testing but blocks model dispatches.
 
-1. Open Settings > Context and cost. Try both summary choices, reference reuse,
+1. Open Settings > Context and cost. Try the summary choices, reference reuse,
    concise QA, and the compaction threshold. Reload and verify the saved values.
 2. In a disposable prototype, record a specific constraint and approved direction.
    Make an edit with DS QA on, then turn it off and send the next edit. The new

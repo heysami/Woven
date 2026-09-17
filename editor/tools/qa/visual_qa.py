@@ -1921,14 +1921,15 @@ def run(args: argparse.Namespace) -> int:
     # ----- OPTIONAL LLM FRAME-JUDGE -----
     # Precedence: the judge only ESCALATES or CONFIRMS; it never relaxes an
     # error/static/no-reaction pixel verdict.
-    #   - judge unavailable        -> verdict unchanged (pixel-diff stands).
+    #   - judge unavailable        -> a pixel pass becomes inconclusive.
     #   - judge ok:false           -> verdict becomes "effect-wrong" (the wrong
     #                                 thing renders even if pixels moved), but
     #                                 only when the pixel verdict was "pass"
     #                                 (an existing error/static/no-reaction is a
     #                                 stronger signal and is kept).
     #   - judge ok:true            -> CONFIRMS; verdict unchanged (still pass).
-    #   - judge inconclusive       -> verdict unchanged.
+    #   - judge inconclusive       -> a pixel pass becomes inconclusive.
+    report["renderVerdict"] = verdict
     if args.judge:
         judge = run_judge(report, out_dir, args)
         report["judge"] = judge
@@ -1941,9 +1942,13 @@ def run(args: argparse.Namespace) -> int:
             elif judge.get("ok") is True:
                 reasons.append("frame-judge confirmed the expected effect")
             elif judge.get("ok") is None:
+                if verdict == "pass":
+                    verdict = "inconclusive"
                 reasons.append("frame-judge inconclusive: %s"
                                % (judge.get("message") or "no parseable verdict"))
         else:
+            if verdict == "pass":
+                verdict = "inconclusive"
             reasons.append("frame-judge unavailable: %s"
                            % (judge.get("message") or "unknown reason"))
         log(judge.get("message") or "frame-judge completed")
@@ -2021,8 +2026,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "description of the intended effect; the harness "
                         "montages a labeled frame strip and asks a vision LLM "
                         "whether the captured behaviour matches. Fail-soft: if "
-                        "no LLM is reachable, judge.available=false and the "
-                        "pixel-diff verdict is unchanged.")
+                        "no LLM is reachable, judge.available=false and "
+                        "an otherwise passing verdict becomes inconclusive.")
     p.add_argument("--judge-daemon", default=None, metavar="BASE_URL",
                    help="Base URL of an ALREADY-RUNNING Woven daemon (e.g. "
                         "http://localhost:5747) to route the judge through its "

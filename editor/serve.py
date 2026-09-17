@@ -47,6 +47,12 @@ import atexit
 import context_policy
 import context_artifacts
 import contract_writer
+import model_routing
+import run_jobs
+import mcp_routing
+import runtime_drivers
+import review_evidence
+import helper_jobs
 import datetime as _dt
 import difflib
 import glob
@@ -940,6 +946,7 @@ MEDIA_CONFIG_PATH = os.path.join(MEDIA_CONFIG_DIR, "media-config.json")
 DEFAULT_PROVIDERS_PATH   = os.path.join(MEDIA_CONFIG_DIR, "default-providers.json")
 ORCHESTRATOR_MODELS_PATH = os.path.join(MEDIA_CONFIG_DIR, "orchestrator-models.json")
 SUBAGENT_MODELS_PATH     = os.path.join(MEDIA_CONFIG_DIR, "subagent-models.json")
+MODEL_DISCOVERY_PATH     = os.path.join(MEDIA_CONFIG_DIR, "model-discovery.json")
 SEARCH_DEFAULTS_PATH     = os.path.join(MEDIA_CONFIG_DIR, "search-defaults.json")
 # Context-compaction policy for chat threads (the "compact by handoff"
 # feature): manual compaction is always available; auto-compact fires at the
@@ -947,13 +954,17 @@ SEARCH_DEFAULTS_PATH     = os.path.join(MEDIA_CONFIG_DIR, "search-defaults.json"
 # Global (cross-project) on purpose - it's a cost preference, not project
 # state. Defaults: auto OFF, threshold 400k (~40% of a 1M-window claude chat).
 COMPACT_CONFIG_PATH      = os.path.join(MEDIA_CONFIG_DIR, "compact-config.json")
+COMPACT_CONFIG_LOCK      = threading.Lock()
 COMPACT_DEFAULTS         = {"autoCompact": False, "thresholdTokens": 400_000,
                             # After an AUTO compact the thread is left waiting
                             # for a message, and the message every user types
                             # there is "continue". Send it for them.
                             "autoContinue": True, "summaryModel": "fast",
                             "referenceReuse": True, "compactQa": True,
-                            "contractWriterModel": "fast", "contractWriterOverrides": {}}
+                            "contractWriterModel": "fast", "contractWriterOverrides": {},
+                            "economyModels": dict(model_routing.DEFAULTS), "modelCatalog": [],
+                            "runtimeDrivers": {"codex": "exec", "opencode": "run"},
+                            "helperConcurrency": {"codex": 2, "claude": 2, "opencode": 2}}
 
 
 def _compact_config() -> dict:
@@ -964,8 +975,16 @@ def _compact_config() -> dict:
             cfg["autoCompact"] = saved["autoCompact"]
         if isinstance(saved.get("autoContinue"), bool):
             cfg["autoContinue"] = saved["autoContinue"]
-        if saved.get("summaryModel") in ("fast", "inherit"):
+        if model_routing.valid_model(saved.get("summaryModel")):
             cfg["summaryModel"] = saved["summaryModel"]
+        cfg["economyModels"] = {**model_routing.DEFAULTS, **model_routing.validate_economy(saved.get("economyModels", {}))}
+        cfg["modelCatalog"] = model_routing.validate_catalog(saved.get("modelCatalog", []))
+        cfg["helperConcurrency"] = {**cfg["helperConcurrency"], **{k: v for k, v in saved.get("helperConcurrency", {}).items()
+            if k in model_routing.RUNTIMES and type(v) is int and 1 <= v <= 16}}
+        for runtime, choices in (("codex", ("exec", "app-server")), ("opencode", ("run", "http"))):
+            value = saved.get("runtimeDrivers", {}).get(runtime)
+            if value in choices:
+                cfg["runtimeDrivers"] = {**cfg["runtimeDrivers"], runtime: value}
         if contract_writer.valid_model(saved.get("contractWriterModel")):
             cfg["contractWriterModel"] = saved["contractWriterModel"]
         overrides = saved.get("contractWriterOverrides")
@@ -1237,9 +1256,12 @@ def _guest_cli_env(agent_id):
         okey = (gmap.get("openai") or "").strip()
         if okey:
             env["OPENAI_API_KEY"] = okey
+            cfg = os.path.join(tempfile.gettempdir(), "woven-guest-codex-" + hashlib.sha256(okey.encode()).hexdigest()[:16])
+            os.makedirs(cfg, mode=0o700, exist_ok=True)
+            env["CODEX_HOME"] = cfg
             return env
         raise RuntimeError("connect your OpenAI API key to use Codex in this live session")
-    return env
+    raise RuntimeError("guest credentials are not isolated for this runtime; choose Claude or Codex")
 
 
 def _resolve_provider_key(provider):
@@ -4125,13 +4147,7 @@ def _claude_cli_complete(messages, model=None, timeout=600):
     ]
     if system_parts:
         args.extend(["--append-system-prompt", "\n\n".join(system_parts)])
-    # Map full model IDs onto CLI aliases when possible - they accept either,
-    # but the alias is more forgiving across CLI versions.
-    if model:
-        m = model.lower()
-        if "sonnet" in m:    args.extend(["--model", "sonnet"])
-        elif "opus" in m:    args.extend(["--model", "opus"])
-        elif "haiku" in m:   args.extend(["--model", "haiku"])
+    args.extend(model_routing.spawn_model("claude", model, _compact_config()))
     args.append(flat)
     # Live Session - a guest's /__llm_run must spend the GUEST's credentials,
     # never the host's logged-in CLI. If this is a guest request, run the CLI
@@ -4206,7 +4222,7 @@ def _codex_cli_complete(messages, model=None, timeout=600, extra_args=None, cwd=
     # host's `codex login`. Guest request → env with the guest's OpenAI key (or
     # refuse); host request → inherited env (host's Codex auth).
     _cli_env = _guest_cli_env("codex")
-    result = subprocess.run(
+    result = helper_jobs.run(
         args,
         capture_output=True,
         text=True,
@@ -4221,7 +4237,66 @@ def _codex_cli_complete(messages, model=None, timeout=600, extra_args=None, cwd=
     return (result.stdout or "").rstrip("\n")
 
 
-def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=600, reasoning=None):
+def _opencode_text_complete(system, prompt, model=None, timeout=300, cwd=None, tools="none"):
+    """OpenCode's native text helper, with an explicit tools-denied agent."""
+    if tools != "none":
+        raise ValueError("OpenCode helper supports text-only work; use a tracked worker for browser or web work")
+    binary = detect_agent_bin("opencode")
+    if not binary:
+        raise FileNotFoundError("opencode")
+    env = dict(_guest_cli_env("opencode") or os.environ)
+    # Inline config has the highest precedence. No edits to personal config.
+    env["OPENCODE_CONFIG_CONTENT"] = json.dumps({
+        "agent": {"woven-text": {"description": "Woven text-only helper", "mode": "primary",
+            "prompt": system, "permission": {"*": "deny"}, "tools": {"*": False}}},
+        "permission": {"*": "deny"}, "tools": {"*": False}})
+    args = [binary, "run", "--pure", "--format", "json", "--agent", "woven-text"]
+    if model:
+        args.extend(["--model", model])
+    args.append(prompt or "Proceed.")
+    result = helper_jobs.run(args, capture_output=True, text=True, timeout=timeout,
+                            stdin=subprocess.DEVNULL, cwd=cwd, env=env)
+    if result.returncode:
+        raise RuntimeError((result.stderr or "OpenCode helper failed")[:600])
+    parser, chunks = _OpenCodeStreamParser(), []
+    for line in result.stdout.splitlines():
+        try:
+            frame = json.loads(line)
+        except ValueError:
+            continue
+        for event in parser.feed(frame):
+            if event.get("type") == "text_delta":
+                chunks.append(event.get("delta") or "")
+            if event.get("type") == "error":
+                raise RuntimeError(str(event.get("message") or "OpenCode helper failed"))
+    return "".join(chunks)
+
+
+def _tracked_helper_complete(state, profile, system, prompt, **kwargs):
+    job_id = "helper-" + uuid.uuid4().hex
+    started = time.time()
+    def emit(status, **extra):
+        if callable(getattr(state, "append", None)):
+            state.append("agent", {"type": "job", "jobId": job_id, "source": "helper",
+                "status": status, "required": True, "profile": profile, **extra})
+    emit("pending")
+    try:
+        with helper_jobs.execution(job_id, getattr(state, "run_id", None), profile["runtime"],
+                                   _compact_config().get("helperConcurrency", {}).get(profile["runtime"], 2),
+                                   cancelled=lambda: getattr(state, "stop_reason", None) == "user-stop"):
+            emit("running")
+            result = _assistant_agent_complete(system, prompt, model=profile["model"],
+                runtime=profile["runtime"], execution_profile=profile, **kwargs)
+        emit("completed", durationMs=round((time.time() - started) * 1000), usage=None,
+             outputChars=len(result), costUsd=None)
+        return result
+    except Exception as error:
+        emit("stopped" if isinstance(error, helper_jobs.Cancelled) else "failed",
+             error=str(error)[:400], durationMs=round((time.time() - started) * 1000))
+        raise
+
+
+def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=600, reasoning=None, runtime=None, execution_profile=None):
     """One-shot "simple agent" for the assistant nodes - a REAL Claude Code (or
     Codex) subagent that receives ONLY the given system prompt + task, with NO
     Woven capabilities preamble (that bloat is for orchestrators).
@@ -4252,7 +4327,11 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
         system = ((system or "").strip() + "\n\n" + no_files_note).strip()
     scratch = tempfile.mkdtemp(prefix="woven-assistant-")
     try:
-        prov = "openai" if re.match(r"^(gpt|o\d|codex)", (model or "").lower()) else "anthropic"
+        profile = execution_profile or model_routing.resolve(model or "inherit", runtime=runtime or "claude", config=_compact_config())
+        runtime, model = profile["runtime"], profile["model"]
+        if runtime == "opencode":
+            return _opencode_text_complete(system, prompt, model=model, timeout=timeout, cwd=scratch, tools=tools)
+        prov = model_routing.PROVIDERS[runtime]
         if prov == "anthropic":
             bin_path = detect_agent_bin("claude")
             if not bin_path:
@@ -4264,12 +4343,11 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
                 args.extend(["--system-prompt" if tools == "none" else "--append-system-prompt", system.strip()])
             if model and model != "claude-default":
                 args.extend(["--model", model])
-            if reasoning and "haiku" not in (model or ""):
+            if reasoning and reasoning in profile["capabilities"].get("efforts", []):
                 args.extend(["--effort", reasoning])
             if tools == "none":
                 args.extend(["--tools", "", "--strict-mcp-config"])
-                if model == "claude-haiku-4-5":
-                    args.extend(["--setting-sources", ""])
+                args.extend(["--setting-sources", ""])
             if tools == "browser":
                 # No --add-dir: the agent reads the asset over its served URL.
                 mcp = _mcp_config_spawn_args()
@@ -4282,7 +4360,7 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
                 args.extend(["--allow-dangerously-skip-permissions", "--dangerously-skip-permissions"])
             args.append(prompt or "Proceed.")
             _cli_env = _guest_cli_env("claude")
-            result = subprocess.run(args, capture_output=True, text=True, timeout=timeout,
+            result = helper_jobs.run(args, capture_output=True, text=True, timeout=timeout,
                                     stdin=subprocess.DEVNULL, env=_cli_env, cwd=scratch)
             if result.returncode != 0:
                 raise RuntimeError((result.stderr or f"exit {result.returncode}").strip()[:600])
@@ -4301,10 +4379,8 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
                       "--disable", "multi_agent", "--disable", "browser_use",
                       "--disable", "computer_use", "--disable", "image_generation",
                       "--disable", "view_image", "-c", 'web_search="disabled"']
-            # The fixed fast summary model needs auth, not user tool servers or
-            # a coding profile. Inherit mode continues to honor user config.
-            if model == "gpt-5.6-luna":
-                extra += ["--ignore-user-config"]
+            # Isolation belongs to the text-only role, regardless of model.
+            extra += ["--ignore-user-config"]
         if reasoning:
             extra += ["-c", "model_reasoning_effort=" + json.dumps(reasoning)]
         return _codex_cli_complete(msgs, model=None if model == "codex-default" else model,
@@ -7746,17 +7822,9 @@ def _codex_mcp_spawn_args(visual_deny=False) -> list:
     for MAIN CHAT spawns only (see _mcp_server_env)."""
     args = []
     for sid, spec in _mcp_servers_from_config().items():
-        cmd = (spec or {}).get("command")
-        if not cmd or not isinstance(cmd, str):
-            continue
-        safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", sid)
-        args += ["-c", "mcp_servers.%s.command=%s" % (safe_id, json.dumps(cmd))]
-        sargs = (spec or {}).get("args") or []
-        sargs = [a for a in sargs if isinstance(a, str)]
-        args += ["-c", "mcp_servers.%s.args=[%s]"
-                 % (safe_id, ", ".join(json.dumps(a) for a in sargs))]
-        for k, v in sorted(_mcp_server_env(spec, visual_deny=visual_deny).items()):
-            args += ["-c", "mcp_servers.%s.env.%s=%s" % (safe_id, k, json.dumps(v))]
+        translated = mcp_routing.translate(spec, "codex", _mcp_server_env(spec, visual_deny=visual_deny))
+        for key, value in translated.items():
+            args += ["-c", "mcp_servers.%s.%s=%s" % (json.dumps(sid), key, mcp_routing.toml(value))]
     return args
 
 
@@ -7822,7 +7890,7 @@ def _ensure_opencode_mcp_config(visual_deny=False):
                  "~/.config/opencode/opencode.jsonc"):
         try:
             with open(os.path.expanduser(cand), "r", encoding="utf-8") as f:
-                user_cfg = json.load(f)
+                user_cfg = mcp_routing.jsonc_loads(f.read())
             if isinstance(user_cfg, dict):
                 merged.update(user_cfg)
                 break
@@ -7830,15 +7898,12 @@ def _ensure_opencode_mcp_config(visual_deny=False):
             continue  # missing, or jsonc comments - harness entries only
     mcp = merged.get("mcp") if isinstance(merged.get("mcp"), dict) else {}
     for sid, spec in servers.items():
-        cmd = (spec or {}).get("command")
-        if not cmd or not isinstance(cmd, str) or sid in mcp:
+        if sid in mcp:
             continue  # a user-defined server with the same id wins
-        sargs = [a for a in ((spec or {}).get("args") or []) if isinstance(a, str)]
         # Explicit environment per server (same rationale as the codex
         # translation - see _mcp_server_env): don't rely on opencode
         # inheriting the spawn env into MCP server subprocesses.
-        mcp[sid] = {"type": "local", "command": [cmd] + sargs, "enabled": True,
-                    "environment": _mcp_server_env(spec, visual_deny=visual_deny)}
+        mcp[sid] = mcp_routing.translate(spec, "opencode", _mcp_server_env(spec, visual_deny=visual_deny))
     merged["mcp"] = mcp
     # Permission grant: the visual-QA engine (/__qa/run) writes its frame
     # screenshots to tempfile.mkdtemp(prefix="woven-qa-") - OUTSIDE the
@@ -7851,8 +7916,9 @@ def _ensure_opencode_mcp_config(visual_deny=False):
     # /var -> /private/var). A user-set blanket string action wins.
     try:
         _tmp = tempfile.gettempdir().rstrip("/")
-        _qa_globs = sorted({os.path.join(t, "woven-qa-*", "*")
-                            for t in (_tmp, os.path.realpath(_tmp))})
+        _qa_globs = sorted({os.path.join(t, prefix, "*")
+                            for t in (_tmp, os.path.realpath(_tmp))
+                            for prefix in ("woven-qa-*", "woven-preview-mcp")})
         perm = merged.get("permission") if isinstance(merged.get("permission"), dict) else {}
         ext = perm.get("external_directory")
         if not isinstance(ext, str):  # respect a user's blanket allow/deny/ask
@@ -7994,7 +8060,7 @@ AGENT_DEFS = {
         # opencode manages its own model in its own config (`opencode auth login`
         # + config file); model_flag None = we never pass --model, it stays on its
         # own configured default (skipped per the Settings picker too).
-        "model_flag": None,
+        "model_flag": "--model",
     },
 }
 
@@ -8009,24 +8075,79 @@ AGENT_DEFAULT = "claude"
 _CLI_DEFAULT_MODEL_SENTINELS = {"claude-default", "codex-default", "opencode-default"}
 
 
-def _agent_model_spawn_args(agent_id, defs, model):
-    """The `--model` flag pair to append at spawn for a chosen default model, or
-    [] when none is chosen / it's a CLI-default sentinel / the agent has no model
-    flag (opencode). A blank model means 'let the CLI use its own default'. For
-    Claude, map a full model id onto the short alias when possible (both are
-    accepted, the alias is more forgiving across CLI versions) - mirrors
-    _claude_cli_complete's mapping."""
-    model = (model or "").strip()
-    flag = defs.get("model_flag")
-    if not model or model in _CLI_DEFAULT_MODEL_SENTINELS or not flag:
-        return []
-    if agent_id == "claude":
-        m = model.lower()
-        if   "sonnet" in m: model = "sonnet"
-        elif "opus"   in m: model = "opus"
-        elif "haiku"  in m: model = "haiku"
-        # else pass the value through verbatim (a full id / a Custom entry)
-    return [flag, model]
+def _agent_model_spawn_args(agent_id, defs, model, resolved=False):
+    """Preserve exact IDs, including provider/model IDs for OpenCode."""
+    if resolved:
+        if model is None:
+            return []
+        if not model_routing.valid_model(model):
+            raise ValueError("invalid native model ID")
+        return ["--model", model]
+    return model_routing.spawn_model(agent_id, model, _compact_config())
+
+
+def _spawn_runtime_process(agent_id, argv, resume_id=None, driver_mode=None, **kwargs):
+    """Choose once before any prompt is sent. Never fall back after a send."""
+    runtime = agent_id
+    env = dict(kwargs.get("env") or os.environ)
+    configured = _compact_config().get("runtimeDrivers", {})
+    mode = driver_mode or env.get("WOVEN_" + runtime.upper() + "_DRIVER") or configured.get(runtime)
+    if runtime == "codex" and "resume" in argv[1:3]:
+        resume_id = resume_id or argv[-2]
+    # Correct project/run scope and guard policy reach every managed MCP process.
+    if runtime == "codex":
+        additions = []
+        for sid, spec in _mcp_servers_from_config().items():
+            if not spec.get("command"):
+                continue
+            values = {k: env[k] for k in ("TH_PROJECT_ROOT", "TH_PROJECT_ID", "TH_RUN_ID", "TH_VISUAL_GUARD", "TH_VISUAL_DENY") if k in env}
+            if env.get("TH_VISUAL_GUARD") == "0":
+                values["TH_VISUAL_DENY"] = "0"
+            for key, value in values.items():
+                additions += ["-c", "mcp_servers.%s.env.%s=%s" % (json.dumps(sid), key, json.dumps(value))]
+        argv = argv[:-1] + additions + argv[-1:]
+    elif runtime == "opencode":
+        patch = {}
+        existing = json.loads(env.get("OPENCODE_CONFIG_CONTENT") or "{}")
+        effective = {}
+        config_path = env.get("OPENCODE_CONFIG")
+        if config_path:
+            try:
+                with open(config_path, encoding="utf-8") as handle:
+                    effective = mcp_routing.jsonc_loads(handle.read()).get("mcp", {})
+            except (OSError, ValueError):
+                pass
+        effective = {**effective, **existing.get("mcp", {})}
+        for sid, spec in _mcp_servers_from_config().items():
+            base = effective.get(sid) or mcp_routing.translate(spec, "opencode", _mcp_server_env(spec))
+            if base.get("type") == "local":
+                values = {k: env[k] for k in ("TH_PROJECT_ROOT", "TH_PROJECT_ID", "TH_RUN_ID", "TH_VISUAL_GUARD", "TH_VISUAL_DENY") if k in env}
+                if env.get("TH_VISUAL_GUARD") == "0":
+                    values["TH_VISUAL_DENY"] = "0"
+                base = {**base, "environment": {**base.get("environment", {}), **values}}
+            patch[sid] = base
+        env["OPENCODE_CONFIG_CONTENT"] = json.dumps({**existing, "mcp": {**existing.get("mcp", {}), **patch}})
+        kwargs["env"] = env
+    if runtime == "claude" or mode not in ("app-server", "http"):
+        return subprocess.Popen(argv, **kwargs)
+    model, config_args = None, []
+    index = 1
+    while index < len(argv) - 1:
+        arg = argv[index]
+        if arg in ("--model", "-m"):
+            model = argv[index + 1]
+            index += 2
+        elif arg in ("-c", "--config"):
+            config_args += argv[index:index + 2]
+            index += 2
+        else:
+            index += 1
+    if runtime == "codex":
+        driver = runtime_drivers.CodexDriver(argv[0], config_args, kwargs["cwd"], env, model, resume_id)
+    else:
+        driver = runtime_drivers.OpenCodeDriver(argv[0], kwargs["cwd"], env, model, resume_id)
+    driver.start(argv[-1])
+    return driver
 
 
 def _agent_default_model():
@@ -8074,26 +8195,31 @@ def _provider_for_agent(agent_id):
 
 def _codex_task_translation_note(project_id):
     """The note that tells a codex/opencode subagent to dispatch nested Woven
-    subagents by POSTing /__dispatch_planner (neither CLI has Claude's native
-    Task tool). Shared by _dispatch_planner and _spawn_node_agent's non-claude
+    named Woven specialists by POSTing /__dispatch_planner. Native CLI workers
+    do not automatically load Woven's registered playbooks. Shared by the non-Claude
     branch so the three copies can't drift."""
     return (
         "===== RUNTIME NOTE =====\n"
-        "The spec above was written for Claude Code's `Task` tool. You are "
-        "running on a non-Claude CLI runtime. Wherever the spec instructs you "
-        "to invoke `Task(subagent_type: \"<type>\", prompt: \"<brief>\")`, "
-        "instead run this shell command:\n\n"
+        "The spec may name Claude Code's `Task` or `Agent` tool. Named Woven "
+        "specialists must load their registered playbook through the daemon "
+        "on this runtime. For a spec instruction such as "
+        "`Task(subagent_type: \"<type>\", prompt: \"<brief>\")`, "
+        "run this shell command:\n\n"
         "  curl -s -X POST "
         f'"http://127.0.0.1:{PORT}/__dispatch_planner?project={project_id}&parent=$TH_RUN_ID" '
         "-H 'content-type: application/json' "
         "-d '{\"type\": \"<type>\", \"brief\": \"<brief>\"}'\n\n"
-        "The daemon routes the nested dispatch to whichever LLM is available "
+        "The daemon preserves your runtime and model unless that specialist "
+        "has an explicit model override, "
         "and streams its events back as SSE. Parse the final `planner-done` "
         "event's `output` field and treat it the way the spec would have "
         "treated a Task tool return value. If the connection drops before "
         "`planner-done`, do NOT re-dispatch - the planner keeps running; poll "
         "`GET /__dispatch_planner/result?project=<id>&runId=<runId>` until "
-        "`done` is true and use its `output`.\n"
+        "`done` is true and use its `output`. Native CLI workers may be used "
+        "for self-contained subtasks when available, but their launch result "
+        "does not prove completion. Wait for every required worker result "
+        "before claiming the parent task is finished.\n"
         "Visual verification look-loops (screenshots, reading rendered frame "
         "PNGs, judging generated images) follow the same pattern: dispatch "
         "type \"visual-verifier\" with a self-contained brief instead of "
@@ -8226,7 +8352,11 @@ def _orch_override_model_for_node(node_id, title, want_provider=None):
     row = over.get(oid) or {}
     if want_provider and (row.get("provider") or "").strip().lower() != want_provider:
         return ""
-    return (row.get("model") or "").strip()
+    model = (row.get("model") or "").strip()
+    runtime = _PROVIDER_TO_AGENT.get(row.get("provider"))
+    if not want_provider and runtime and model and model.partition(":")[0] not in model_routing.RUNTIMES:
+        return runtime + ":" + model
+    return model
 
 
 # Generic role suffixes on subagent names that scaffolded node ids do NOT
@@ -8274,7 +8404,11 @@ def _subagent_override_model_for_node(node_id, title, prompt_text="", want_provi
     row = over.get(best_name) or {}
     if want_provider and (row.get("provider") or "").strip().lower() != want_provider:
         return ""
-    return (row.get("model") or "").strip()
+    model = (row.get("model") or "").strip()
+    runtime = _PROVIDER_TO_AGENT.get(row.get("provider"))
+    if not want_provider and runtime and model and model.partition(":")[0] not in model_routing.RUNTIMES:
+        return runtime + ":" + model
+    return model
 
 # In-memory run registry. Runs are ephemeral; if the daemon dies the user
 # re-issues. No SQLite. Map run_id → RunState.
@@ -10836,6 +10970,18 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
         state.done = done
         state.exit_code = exit_code
         state.events = events
+        for event in events:
+            data = event.get("data") or {}
+            run_jobs.reduce_job(state.jobs, data)
+            if data.get("executionProfile"):
+                state.execution_profile = data["executionProfile"]
+            if data.get("type") == "status" and data.get("model") and state.execution_profile:
+                state.execution_profile["resolvedModel"] = data["model"]
+            if data.get("parentRunId"):
+                state.parent_run_id = data["parentRunId"]
+        for job in state.jobs.values():
+            if job.get("status") not in run_jobs.TERMINAL:
+                job["status"] = "unknown"
         # Fall back to the daemon default if the spawn event predates the
         # permissionMode field (old runs from before that field landed).
         state.permission_mode = permission_mode or AGENT_DEFS.get(agent_id, {}).get("permission_default")
@@ -11031,7 +11177,7 @@ class RunState:
                  # per turn boundary by _queue_drain_maybe, plus its re-entry
                  # guard. Daemon-owned so the queue drains whether or not the
                  # chat drawer is open.
-                 "msg_queue", "_queue_draining")
+                 "msg_queue", "_queue_draining", "jobs", "execution_profile")
 
     def __init__(self, run_id, proc, agent_id, branch, kind, title, project_id=None, project_root=None):
         self.run_id = run_id
@@ -11054,6 +11200,8 @@ class RunState:
         self.prototype = None
         # Chosen default model (Settings > Agent model); set by _run_create.
         self.model = None
+        self.jobs = {}
+        self.execution_profile = None
         # Live context tokens (see __slots__ comment). Lazily backfilled from
         # the event log for rehydrated runs by _run_context_tokens().
         self.context_tokens = None
@@ -11134,24 +11282,14 @@ class RunState:
         STALL_WAKE.set()
 
     @property
+    def process_running(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    @property
     def is_live(self) -> bool:
-        """True iff a driveable subprocess is attached - i.e. we can write a
-        frame to its stdin or signal it right now.
-
-        The load-bearing case is `self.proc is None`: runs rehydrated from
-        history after a daemon restart are "ghost" RunStates (see _rehydrate,
-        proc=None) - their original subprocess died with the old daemon. Any
-        handler that touches `self.proc.<x>` MUST gate on this first, or it
-        crashes with "'NoneType' has no attribute 'stdin'/'terminate'/…". The
-        recovery path for a non-live run is /resume, which re-spawns the CLI
-        with --resume <session_id> and rebinds self.proc.
-
-        Note this is the SAME check the stdin handlers need (proc present AND
-        its stdin pipe open), so they share one source of truth - but it is
-        also correct for terminate()/signal handlers, which only require the
-        proc to exist. A closed stdin on a still-running proc is rare (we keep
-        it open for follow-ups) but counts as not-live for our purposes: there
-        is no way to drive the agent without it."""
+        """Whether the attached runtime accepts messages. Use process_running
+        for signal/stop decisions: exec/run processes can live without stdin.
+        """
         proc = self.proc
         if proc is None or proc.stdin is None or proc.stdin.closed:
             return False
@@ -11166,7 +11304,21 @@ class RunState:
         return proc.poll() is None
 
     def append(self, ev_type: str, data) -> None:
+        derived = None
         with self.lock:
+            if ev_type == "agent" and isinstance(data, dict) and not data.get("stale"):
+                derived = run_jobs.observe(self.jobs, data, self.agent_id)
+                run_jobs.reduce_job(self.jobs, data)
+                if data.get("type") == "job":
+                    key = data.get("jobId") or data.get("taskId") or data.get("toolUseId")
+                    data = dict(self.jobs.get(key, data))
+                if data.get("type") == "status" and data.get("model") and self.execution_profile:
+                    self.execution_profile["resolvedModel"] = data["model"]
+            if isinstance(data, dict) and data.get("label") in ("spawned", "planner-dispatched"):
+                if not self.execution_profile:
+                    self.execution_profile = model_routing.resolve("inherit", self.agent_id, self.model, role=self.kind)
+                self.execution_profile["driver"] = getattr(self.proc, "mode", "stream-json" if self.agent_id == "claude" else "exec" if self.agent_id == "codex" else "run")
+                data = {**data, "executionProfile": self.execution_profile, "parentRunId": self.parent_run_id}
             seq = len(self.events)
             self.events.append({"seq": seq, "type": ev_type, "data": data})
             self.updated_at = time.time()
@@ -11180,6 +11332,10 @@ class RunState:
             pass
         for w in waiters:
             w.set()
+        if derived:
+            self.append("agent", derived)
+        if ev_type == "agent" and isinstance(data, dict) and data.get("type") == "job" and data.get("status") in run_jobs.TERMINAL:
+            _settle_run_jobs(self)
 
     def finish(self, exit_code) -> None:
         with self.lock:
@@ -12040,6 +12196,9 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
 
     if ftype == "system":
         sub = frame.get("subtype")
+        job = run_jobs.claude_job(frame) if agent_id == "claude" else None
+        if job:
+            out.append(job)
         if sub == "init":
             out.append({
                 "type": "status",
@@ -12076,6 +12235,9 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
         # no user-actionable content, and raw JSON must not leak into chat.
         return out
 
+    if ftype == "woven_event":
+        return [frame["event"]]
+
     if ftype == "assistant":
         msg = frame.get("message") or {}
         for part in (msg.get("content") or []):
@@ -12104,6 +12266,10 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
             if frame.get("parent_tool_use_id"):
                 ev["sidechain"] = True
             out.append(ev)
+        for event in out:
+            if frame.get("parent_tool_use_id"):
+                event["parentToolUseId"] = frame["parent_tool_use_id"]
+                event["sidechain"] = True
         return out
 
     if ftype == "user":
@@ -12168,6 +12334,9 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
             # subtype:"success" with the failure text in `result`. See
             # _turn_result_failure() - the node completion hook reads both.
             "isError": frame.get("is_error"),
+            "origin": frame.get("origin"),
+            "parentToolUseId": frame.get("parent_tool_use_id"),
+            "sidechain": bool(frame.get("parent_tool_use_id")),
         })
         return out
 
@@ -12342,6 +12511,10 @@ def _fire_node_completion_hook(state, *, exit_code, error_detail=None, stopped=F
     """
     wf_node_id = getattr(state, "workflow_node_id", None)
     if not wf_node_id or not state.project_root: return
+    if exit_code == 0 and not stopped:
+        if _pending_run_jobs(state) or run_jobs.failed(state.jobs):
+            exit_code = 1
+            error_detail = "Required worker jobs are incomplete or failed; review their results before continuing"
     wf_path = os.path.join(state.project_root, "workflow", "workflow.json")
     if not os.path.isfile(wf_path): return
     # same lock as editor /__workflow + /status. Without it, the
@@ -12519,6 +12692,77 @@ def _kill_run_tree(state: "RunState", grace: float = 3.0) -> None:
                      name=f"run-{state.run_id}-reaper").start()
 
 
+def _pending_run_jobs(state):
+    with state.lock:
+        result = list(run_jobs.pending(state.jobs))
+    with RUNS_LOCK:
+        children = [s for s in RUNS.values() if s.parent_run_id == state.run_id
+                    and os.path.realpath(s.project_root) == os.path.realpath(state.project_root)
+                    and not s.done]
+    return result + [{"jobId": s.run_id, "source": "bridge", "status": "running"} for s in children]
+
+
+def _notify_bridge_parent(child, status):
+    with RUNS_LOCK:
+        parent = RUNS.get(child.parent_run_id)
+    if parent is None or os.path.realpath(parent.project_root) != os.path.realpath(child.project_root):
+        return
+    parent.append("agent", {"type": "job", "jobId": child.run_id, "source": "bridge",
+        "childRunId": child.run_id, "status": status, "description": child.title,
+        "profile": child.execution_profile, "required": True})
+
+
+def _settle_run_jobs(state):
+    """A parent's final response can precede its workers' final events."""
+    if not state.turn_done or state.done or state.stop_reason or _pending_run_jobs(state):
+        return
+    if state._compact_pending:
+        _compact_flush_pending(state)
+        if state.stop_reason:
+            return
+    is_planner = (state.kind or "").startswith("planner:")
+    if not is_planner and not state.workflow_node_id:
+        return
+    with state.lock:
+        last = next((e["data"] for e in reversed(state.events)
+            if isinstance(e.get("data"), dict) and e["data"].get("type") == "status"
+            and not e["data"].get("sidechain") and e["data"].get("label") in ("starting", "done", "error")), {})
+        if last.get("label") != "done" or getattr(state, "_node_completion_fired", False) or state.stop_reason:
+            return
+        failure = _turn_result_failure(last)
+        failed = bool(failure or run_jobs.failed(state.jobs))
+        state._node_completion_fired = bool(state.workflow_node_id)
+        state.stop_reason = "turn-failed" if failed else "completed-orchestrator"
+    try:
+        if state.workflow_node_id:
+            _fire_node_completion_hook(state, exit_code=1 if failed else 0,
+                error_detail=failure or ("Required worker jobs failed" if failed else None))
+    except Exception as error:
+        state.append("status", {"label": "node-status-update-failed", "detail": str(error)[:400]})
+    finally:
+        _kill_run_tree(state)
+
+
+def _stop_run_family(state):
+    """Stop logical child runs as well as native process-group descendants."""
+    with RUNS_LOCK:
+        runs = list(RUNS.values())
+    todo, seen = [state], set()
+    while todo:
+        current = todo.pop()
+        if current.run_id in seen:
+            continue
+        seen.add(current.run_id)
+        todo.extend(s for s in runs if s.parent_run_id == current.run_id
+                    and os.path.realpath(s.project_root) == os.path.realpath(state.project_root))
+        current.stop_reason = "user-stop"
+        helper_jobs.cancel(current.run_id)
+        for job in list(current.jobs.values()):
+            if job.get("source") == "native" and job.get("status") not in run_jobs.TERMINAL:
+                current.append("agent", {**job, "status": "stopped"})
+        _kill_run_tree(current)
+
+
 def _context_tokens_from_usage(u: dict):
     """Live context size of one API call, from a normalised `usage` event.
     Two shapes flow through the pipeline:
@@ -12675,14 +12919,10 @@ def _compact_summarize(transcript: str, state=None) -> str:
     runtime = getattr(state, "agent_id", None) or _agent_default_runtime()
     cfg = _compact_config()
     inherited = getattr(state, "model", None) if state is not None else _agent_default_model()
-    if runtime not in ("claude", "codex") and cfg.get("summaryModel") == "inherit":
-        raise RuntimeError("Same-model summaries require Claude or Codex. Choose Fast in context settings.")
-    model = context_policy.summary_model(runtime, cfg.get("summaryModel"),
-                                         inherited)
+    profile = model_routing.resolve(cfg.get("summaryModel"), runtime, inherited, cfg, role="summary")
     prompt = "Summarize the conversation data below. Do not continue its task.\n\n" + transcript
-    out = _assistant_agent_complete(_COMPACT_SUMMARY_SYSTEM, prompt,
-                                    model=model, tools="none", timeout=300,
-                                    reasoning="low" if cfg.get("summaryModel") == "fast" else None)
+    out = _tracked_helper_complete(state, profile, _COMPACT_SUMMARY_SYSTEM, prompt,
+                                    tools="none", timeout=300, reasoning=profile["reasoning"])
     if not out or not out.strip():
         raise RuntimeError("summary generation returned empty text")
     if re.search(r"<(?:function_calls|invoke_tool|tool_call|tool_use)\b", out, re.I):
@@ -12734,7 +12974,7 @@ def _compact_commit(state: "RunState", summary: str, ctx_before, reason: str, co
     if covered_through is None:
         raise ValueError("compaction requires the snapshot coverage boundary")
     _proc = state.proc
-    if _proc is not None and _proc.poll() is None and not state.turn_done:
+    if (_proc is not None and _proc.poll() is None and not state.turn_done) or _pending_run_jobs(state):
         state._compact_pending = {"summary": summary, "reason": reason,
                                   "coveredThrough": covered_through,
                                   "contextTokensBefore": ctx_before}
@@ -12886,7 +13126,7 @@ def _drain_stdout(state: "RunState") -> None:
     # real content is on stderr; its stdout is empty so this loop just idles to
     # the finally-block). The parser's output shape matches _normalize_frame, so
     # the lifecycle code below is identical for every agent.
-    _oc_parser = _OpenCodeStreamParser() if state.agent_id == "opencode" else None
+    _oc_parser = _OpenCodeStreamParser() if state.agent_id == "opencode" and not isinstance(state.proc, runtime_drivers.ProcessDriver) else None
     # Compact epoch this loop was started under. A compact that lands while
     # this loop is still draining bumps the run's epoch, which retires
     # everything the killed session has left in the pipe: its frames are still
@@ -12958,7 +13198,7 @@ def _drain_stdout(state: "RunState") -> None:
                         if _rel and not _rel.startswith("..") and _rel not in state.touched_paths:
                             state.touched_paths.append(_rel)
                 # Turn lifecycle tracking - distinct from process lifecycle.
-                if ev.get("type") == "status":
+                if ev.get("type") == "status" and not ev.get("sidechain"):
                     if ev.get("label") in ("done", "error"):
                         state.turn_done = True
                         state.turns_completed += 1
@@ -13024,28 +13264,8 @@ def _drain_stdout(state: "RunState") -> None:
                                 })
                         else:
                             _turn_fail = None
-                        if (ev.get("label") == "done"
-                                and getattr(state, "workflow_node_id", None)
-                                and not getattr(state, "_node_completion_fired", False)):
-                            try:
-                                if _turn_fail:
-                                    _fire_node_completion_hook(
-                                        state, exit_code=1,
-                                        error_detail=f"turn failed: {_turn_fail}")
-                                else:
-                                    _fire_node_completion_hook(state, exit_code=0)
-                            except Exception as _e:
-                                state.append("status", {"label": "node-status-update-failed", "detail": str(_e)})
-                            state._node_completion_fired = True
-                            # Terminate the subprocess so the reader loop
-                            # exits cleanly and we stop burning the open
-                            # SSE/CLI session. Tag the termination reason so
-                            # finish() knows this was intentional; the SIGTERM
-                            # exit code (143) shouldn't be reported as a
-                            # failure to the chat UI.
-                            state.stop_reason = "turn-failed" if _turn_fail else "completed-orchestrator"
-                            try: state.proc.terminate()
-                            except Exception: pass
+                        if ev.get("label") == "done" and not _stale:
+                            _settle_run_jobs(state)
                     elif ev.get("label") == "starting":
                         state.turn_done = False
     finally:
@@ -13086,6 +13306,13 @@ def _drain_stdout(state: "RunState") -> None:
             effective_exit = 0
         else:
             effective_exit = exit_code or 0 if exit_code is not None else exit_code
+        # Losing the runtime does not prove that a native worker completed.
+        for job in list(state.jobs.values()):
+            if job.get("source") == "native" and job.get("status") not in run_jobs.TERMINAL:
+                state.append("agent", {**job, "status": "unknown", "detail": "runtime disconnected before job completion"})
+        if _pending_run_jobs(state) and not state.stop_reason:
+            effective_exit = 1
+            exit_code = exit_code or 1
         state.append("end", {"exitCode": exit_code, "effectiveExitCode": effective_exit, "stopReason": state.stop_reason})
         state.finish(effective_exit if state.stop_reason else exit_code)
         # The process is gone, so a summary parked mid-turn can land now - and
@@ -13167,6 +13394,8 @@ def _drain_stdout(state: "RunState") -> None:
             except Exception as e:
                 # Don't crash the run-finish path on history failure.
                 state.append("status", {"label": "history-finalize-failed", "detail": str(e)})
+        _notify_bridge_parent(state, "stopped" if state.stop_reason == "user-stop" else
+            "failed" if state.exit_code or run_jobs.failed(state.jobs) or _pending_run_jobs(state) else "completed")
 
 
 def _drain_stderr(state: "RunState") -> None:
@@ -13176,7 +13405,7 @@ def _drain_stderr(state: "RunState") -> None:
     # the chat UI renders text + tool calls properly instead of dumping
     # every line as a "STDERR" prefixed bubble. Claude (and unknown agents)
     # keep the legacy raw-stderr passthrough.
-    if state.agent_id == "codex":
+    if state.agent_id == "codex" and not isinstance(state.proc, runtime_drivers.ProcessDriver):
         parser = _CodexStderrParser()
         try:
             for raw in state.proc.stderr:
@@ -13602,6 +13831,12 @@ class _OpenCodeStreamParser:
                     "name": tname,
                     "input": tinput if tinput is not None else {},
                 })
+            metadata = tstate.get("metadata") or {}
+            if tname == "task" and metadata.get("background"):
+                out.append({"type": "job", "source": "native", "runtime": "opencode",
+                    "jobId": metadata.get("jobId") or metadata.get("sessionId") or callid,
+                    "toolUseId": callid, "status": "failed" if status == "error" else "running",
+                    "background": True, "required": True, "childSessionId": metadata.get("sessionId")})
             if callid and status in ("completed", "error") and callid not in self._tool_done:
                 self._tool_done.add(callid)
                 output = tstate.get("output")
@@ -14223,6 +14458,9 @@ def _delegated_context(project_root, body, qs):
             r"[A-Za-z0-9_-][A-Za-z0-9_.-]{0,79}(?:/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,79})?", prototype)):
         prototype = None
     return {"prototype": prototype,
+            "runtime": getattr(parent, "agent_id", None),
+            "model": getattr(parent, "model", None),
+            "executionProfile": getattr(parent, "execution_profile", None),
             "guards": _normalize_chat_guards(body.get("guards", getattr(parent, "guards", None))),
             "parent": parent.run_id if parent else None}
 
@@ -14235,6 +14473,7 @@ def _apply_guard_env(env: dict, guards: dict) -> dict:
     try:
         if guards and not guards.get("visual", True):
             env["TH_VISUAL_GUARD"] = "0"
+            env["TH_VISUAL_DENY"] = "0"
         else:
             env.pop("TH_VISUAL_GUARD", None)
     except Exception:
@@ -14560,6 +14799,8 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
     # dropped (its tools never register) even though it kept running and opened a
     # browser - the "launched but No such tool available" race. Give the handshake
     # room so the chrome tools actually register. Only set when the user hasn't.
+    if agent_id in ("codex", "opencode"):
+        env["TH_VISUAL_DENY"] = "1" if main_thread else "0"
     env.setdefault("MCP_TIMEOUT", "60000")
     env.setdefault("MCP_TOOL_TIMEOUT", "120000")
     # opencode reads MCP servers from config files only (no CLI flag); point
@@ -14963,6 +15204,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._context_artifact(parsed.path, qs)
             if parsed.path in ("/__context/writer/prepare", "/__context/writer/publish"):
                 return self._context_writer(parsed.path, qs)
+            if parsed.path == "/__models/refresh":
+                return self._models_refresh()
             if parsed.path == "/__compact_config":
                 return self._compact_config_set()
             if parsed.path == "/__media_config/test":
@@ -15446,6 +15689,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._global_font_file(m_gfont.group(1))
         if url_path == "/__media_config":
             return self._media_config_get()
+        if url_path == "/__models":
+            return self._reply(200, {"custom": _compact_config().get("modelCatalog", []),
+                                     "discovery": _persist_json_load(MODEL_DISCOVERY_PATH)})
         if url_path == "/__compact_config":
             return self._compact_config_get()
         if url_path == "/__export_config":
@@ -17364,7 +17610,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             resp = _openai_chat(api_key, messages, model=model)
         else:
             raise ValueError(f"unsupported provider: {provider}")
-        return (resp.get("text") if isinstance(resp, dict) else "") or ""
+        return (resp.get("text") if isinstance(resp, dict) else resp if isinstance(resp, str) else "") or ""
 
     # ── node-agent subprocess spawn helper ───────────────────────
     # Focused per-node `claude` spawn used by /__workflow/node/<id>/run when
@@ -17382,7 +17628,18 @@ class H(http.server.SimpleHTTPRequestHandler):
         # The build fan-out follows the user's selected AGENT runtime unless the
         # caller passes an explicit one, so codex/opencode drawers run their own
         # CLI (with GPT/model overrides) instead of always spawning Claude.
-        agent_id = (agent_id or _agent_default_runtime())
+        _node_context = _delegated_context(project_root, {"parent": getattr(self, "_parent_run_id", None)}, {})
+        agent_id = agent_id or _node_context.get("runtime") or _agent_default_runtime()
+        selected = (model or _subagent_override_model_for_node(node_id, title, prompt_text)
+                    or _orch_override_model_for_node(node_id, title))
+        inherited = _node_context.get("model")
+        if not _node_context.get("parent"):
+            selected = selected or _agent_default_model()
+        try:
+            profile = model_routing.resolve(selected or "inherit", agent_id, inherited, _compact_config(), role="worker")
+        except ValueError as error:
+            return None, (400, {"error": str(error)})
+        agent_id = profile["runtime"]
         defs = AGENT_DEFS.get(agent_id)
         if not defs:
             return None, (500, {"error": f"agent not registered: {agent_id!r}"})
@@ -17432,19 +17689,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         # agent-model (Settings) > the CLI's own default. All go through
         # _agent_model_spawn_args so alias mapping + CLI-default-sentinel handling
         # + opencode-skip are identical everywhere - nothing hardcodes a model.
-        _omodel = None
-        try:
-            _want_prov = _provider_for_agent(agent_id)
-            # explicit caller model (the assistant node's model select) wins.
-            _omodel = (model
-                       or _subagent_override_model_for_node(node_id, title, prompt_text, want_provider=_want_prov)
-                       or _orch_override_model_for_node(node_id, title, want_provider=_want_prov))
-            _model_args = _agent_model_spawn_args(agent_id, defs, _omodel) if _omodel else []
-            if not _model_args:
-                _model_args = _agent_model_spawn_args(agent_id, defs, _agent_default_model())
-            spawn_args += _model_args
-        except Exception:
-            pass
+        _omodel = profile["model"]
+        spawn_args += _agent_model_spawn_args(agent_id, defs, _omodel, resolved=True)
         # Claude-only: --mcp-config + the hook-gate --settings (PreToolUse blocks
         # *.html writes until visual-orchestrator is dispatched). codex/opencode
         # manage MCP via their own config and have no --settings flag.
@@ -17532,7 +17778,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         _apply_guard_env(env, _node_context.get("guards"))
         env["TH_NODE_ID"] = node_id or ""
         try:
-            proc = subprocess.Popen(
+            proc = _spawn_runtime_process(agent_id,
                 [bin_path, *spawn_args],
                 cwd=project_root,
                 stdin=subprocess.PIPE if defs["prompt_via_stdin"] else None,
@@ -17553,7 +17799,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.tier = _node_tier
         state.guards = _node_context.get("guards")
         state.prototype = _node_context.get("prototype")
-        state.model = _omodel or _agent_default_model() or None
+        state.model = _omodel
+        state.execution_profile = profile
         state.modifying = True
         # Tag for the auto-completion hook in _drain_stdout - when this
         # subprocess exits, the daemon flips the workflow node to done/error.
@@ -17592,6 +17839,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         })
         with RUNS_LOCK:
             RUNS[run_id] = state
+        _notify_bridge_parent(state, "running")
         if defs["prompt_via_stdin"]:
             try:
                 proc.stdin.write(_claude_user_frame(prompt_text))
@@ -22010,6 +22258,54 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _compact_config_get(self):
         return self._reply(200, _compact_config())
 
+    def _models_refresh(self):
+        body = self._read_json_body() or {}
+        runtime = body.get("runtime")
+        if runtime not in model_routing.RUNTIMES:
+            return self._reply(400, {"error": "choose a runtime"})
+        binary = detect_agent_bin(runtime)
+        if not binary:
+            return self._reply(400, {"error": runtime + " is not installed"})
+        try:
+            rows = []
+            if runtime == "codex":
+                driver = runtime_drivers.CodexDriver(binary, [], INSTALL_ROOT,
+                    dict(_guest_cli_env(runtime) or os.environ), discovery=True)
+                try:
+                    cursor = None
+                    while True:
+                        result = driver.request("model/list", {"limit": 100, **({"cursor": cursor} if cursor else {})})
+                        for item in result.get("data", []):
+                            rows.append({"id": "codex:" + item["model"], "model": item["model"], "runtime": "codex",
+                                "label": item.get("displayName") or item["model"], "modalities": item.get("inputModalities", []),
+                                "efforts": [e["reasoningEffort"] for e in item.get("supportedReasoningEfforts", [])]})
+                        cursor = result.get("nextCursor")
+                        if not cursor or len(rows) >= 500:
+                            break
+                finally:
+                    driver.terminate()
+                    driver.wait(timeout=5)
+                source = "authenticated runtime model/list"
+            elif runtime == "opencode":
+                result = subprocess.run([binary, "models"], capture_output=True, text=True,
+                    env=_guest_cli_env(runtime), stdin=subprocess.DEVNULL, timeout=30)
+                if result.returncode:
+                    raise RuntimeError("OpenCode model listing failed")
+                rows = [{"id": "opencode:" + line, "model": line, "runtime": "opencode", "label": line}
+                        for line in result.stdout.splitlines() if "/" in line and model_routing.valid_model(line)][:500]
+                source = "runtime catalog; account access unverified"
+            else:
+                return self._reply(200, {"runtime": runtime, "available": False,
+                    "message": "This CLI has no verified standalone model-list command. Register exact IDs manually."})
+            packet = {"runtime": runtime, "version": _agent_version(binary), "source": source,
+                      "checkedAt": time.time(), "models": rows}
+            cached = _persist_json_load(MODEL_DISCOVERY_PATH)
+            cached[runtime] = packet
+            _persist_json_save(MODEL_DISCOVERY_PATH, cached)
+            return self._reply(200, packet)
+        except Exception as error:
+            return self._reply(502, {"error": str(error)[:500], "cachedModelsRetained": True})
+
     def _context_writer(self, route, qs):
         try:
             root = resolve_project_root(qs, require_explicit=True)
@@ -22041,10 +22337,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                          or _orch_override_model_for_node(name, name, want_provider=_provider_for_agent(runtime))
                          or getattr(parent, "model", None)
                          or _agent_default_model())
-            if runtime not in ("claude", "codex") and setting in ("fast", "inherit"):
-                raise ValueError("choose an explicit Claude or Codex writer model for this runtime")
-            model = context_policy.summary_model(runtime, setting, inherited)
-            result = contract_writer.prepare(root, body, model, _assistant_agent_complete)
+            if parent and (own_run or setting == "inherit"):
+                inherited = parent.model
+            selection = inherited if setting == "inherit" and parent is None else setting
+            profile = model_routing.resolve(selection or "inherit", runtime, inherited, cfg, role="writer")
+            profile["requestedModel"] = setting
+            def complete(system, prompt, **kwargs):
+                kwargs.pop("model", None)
+                return _tracked_helper_complete(parent, profile, system, prompt, **kwargs)
+            result = contract_writer.prepare(root, body, profile["model"] or profile["runtime"] + "-default", complete, profile=profile)
             return self._reply(200, result)
         except (ValueError, TypeError, KeyError, OSError) as e:
             return self._reply(400, {"error": str(e)})
@@ -22104,6 +22405,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": str(e)})
 
     def _compact_config_set(self):
+        with COMPACT_CONFIG_LOCK:
+            return H._compact_config_set_locked(self)
+
+    def _compact_config_set_locked(self):
         try:
             body = self._read_json_body()
         except ValueError as e:
@@ -22111,6 +22416,25 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not isinstance(body, dict):
             return self._reply(400, {"error": "body must be a JSON object"})
         cfg = _compact_config()
+        try:
+            if "runtimeDrivers" in body:
+                if not isinstance(body["runtimeDrivers"], dict) or any(
+                    v not in {"codex": ("exec", "app-server"), "opencode": ("run", "http")}.get(k, ())
+                    for k, v in body["runtimeDrivers"].items()):
+                    raise ValueError("invalid runtime driver")
+                cfg["runtimeDrivers"] = {**cfg.get("runtimeDrivers", {}), **body["runtimeDrivers"]}
+            if "helperConcurrency" in body:
+                values = body["helperConcurrency"]
+                if not isinstance(values, dict) or any(k not in model_routing.RUNTIMES or type(v) is not int or not 1 <= v <= 16 for k, v in values.items()):
+                    raise ValueError("helper concurrency must be between 1 and 16 per runtime")
+                cfg["helperConcurrency"] = {**cfg.get("helperConcurrency", {}), **values}
+            if "economyModels" in body:
+                cfg["economyModels"] = {**cfg.get("economyModels", model_routing.DEFAULTS),
+                    **model_routing.validate_economy(body["economyModels"])}
+            if "modelCatalog" in body:
+                cfg["modelCatalog"] = model_routing.validate_catalog(body["modelCatalog"])
+        except ValueError as error:
+            return self._reply(400, {"error": str(error)})
         if "contractWriterModel" in body:
             if not contract_writer.valid_model(body["contractWriterModel"]):
                 return self._reply(400, {"error": "invalid contract writer model"})
@@ -22133,8 +22457,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         if isinstance(body.get("autoContinue"), bool):
             cfg["autoContinue"] = body["autoContinue"]
         if "summaryModel" in body:
-            if body["summaryModel"] not in ("fast", "inherit"):
-                return self._reply(400, {"error": "summaryModel must be fast or inherit"})
+            if not model_routing.valid_model(body["summaryModel"]):
+                return self._reply(400, {"error": "invalid summary model"})
             cfg["summaryModel"] = body["summaryModel"]
         for key in ("referenceReuse", "compactQa"):
             if key in body:
@@ -22177,6 +22501,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         codex_avail  = detect_agent_bin("codex")  is not None
         opencode_avail = detect_agent_bin("opencode") is not None
         return self._reply(200, {
+            "modelCatalog": _compact_config().get("modelCatalog", []) + [m for packet in _persist_json_load(MODEL_DISCOVERY_PATH).values()
+                if isinstance(packet, dict) for m in packet.get("models", [])],
             "providers": masked,
             "claude_cli_available": claude_avail,
             "codex_cli_available":  codex_avail,
@@ -22187,7 +22513,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             # ONE place. The client falls back to ["claude"] when this key
             # is absent (older daemon).
             "steerable_agents": sorted(
-                aid for aid, d in AGENT_DEFS.items() if d.get("steerable")
+                aid for aid, d in AGENT_DEFS.items() if d.get("steerable") or
+                (aid == "codex" and _compact_config().get("runtimeDrivers", {}).get("codex") == "app-server")
             ),
         })
 
@@ -23349,30 +23676,31 @@ class H(http.server.SimpleHTTPRequestHandler):
                 prototype=_planner_context.get("prototype"), guards=_planner_context.get("guards"))
         except Exception:
             caps_text = ""
-        # Runtime: honor the user's selected AGENT when it can spawn here and
-        # is installed; else fall back to whichever IS installed so a build
-        # never dead-ends. This stops the old "always prefer claude" from
-        # overriding an explicit codex/opencode choice.
-        want = _agent_default_runtime()
+        # Resolve explicit overrides before selecting the binary. An absent
+        # selected runtime is an error, not permission to use another model.
+        want = _planner_context.get("runtime") or _agent_default_runtime()
+        selected = (body.get("model")
+                    or _subagent_override_model_for_node(planner_type, planner_type, brief)
+                    or _orch_override_model_for_node(planner_type, planner_type))
+        inherited = _planner_context.get("model")
+        if not _planner_context.get("parent"):
+            selected = selected or _agent_default_model()
+        try:
+            profile = model_routing.resolve(selected or "inherit", want, inherited, _compact_config(), role="planner")
+        except ValueError as error:
+            return self._reply(400, {"error": str(error)})
+        want = profile["runtime"]
         avail = {"claude": claude_bin, "codex": codex_bin, "opencode": opencode_bin}
-        chosen = want if avail.get(want) else next(
-            (a for a in ("claude", "codex", "opencode") if avail.get(a)), None)
+        chosen = want if avail.get(want) else None
         if chosen is None:
             return self._reply(502, {
-                "error": "no LLM runtime available - install Claude Code, Codex CLI, or opencode",
+                "error": "selected runtime is not installed: " + want,
                 "hint": "npm install -g @anthropic-ai/claude-code  OR  npm install -g @openai/codex  OR  npm install -g opencode-ai",
             })
         agent_id, bin_path, defs = chosen, avail[chosen], AGENT_DEFS[chosen]
-        # Per-orchestrator model override (keyed by planner_type) within the
-        # chosen runtime's provider; else the global agent model, but only when
-        # we DID NOT fall back to a different runtime (a fallback runtime's own
-        # default is safer than forcing a wrong-provider model id onto it).
-        _want_prov = _provider_for_agent(agent_id)
-        _omodel = (_subagent_override_model_for_node(planner_type, planner_type, brief, want_provider=_want_prov)
-                   or _orch_override_model_for_node(planner_type, planner_type, want_provider=_want_prov))
-        if not _omodel and chosen == want:
-            _omodel = _agent_default_model()
-        _planner_model_args = _agent_model_spawn_args(agent_id, defs, _omodel) if _omodel else []
+        # Spawn from the resolved profile without looking up the catalog again.
+        _omodel = profile["model"]
+        _planner_model_args = _agent_model_spawn_args(agent_id, defs, _omodel, resolved=True)
         if agent_id == "claude":
             # Build the full system prompt: planner body PLUS capabilities
             # preamble PLUS question-form protocol. Order matters - the
@@ -23462,7 +23790,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if prompt_argv is not None:
             argv.append(prompt_argv)
         try:
-            proc = subprocess.Popen(
+            proc = _spawn_runtime_process(agent_id,
                 argv,
                 cwd=project_root,
                 stdin=stdin_pipe,
@@ -23485,11 +23813,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.guards = _planner_context.get("guards")
         state.parent_run_id = _planner_context.get("parent")
         state.model = _omodel or None
+        state.execution_profile = profile
         with RUNS_LOCK:
             RUNS[run_id] = state
         state.append("status", {"label": "planner-dispatched",
                                 "type": planner_type, "runtime": agent_id,
                                 **context_policy.handoff_metadata(state)})
+        _notify_bridge_parent(state, "running")
         # Feed the prompt if the runtime takes stdin (Claude stream-json).
         if prompt_stdin is not None:
             try:
@@ -23568,7 +23898,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if ev["type"] != "agent":
                     continue
                 d = ev.get("data") or {}
-                if d.get("type") == "text_delta":
+                if d.get("type") == "text_delta" and not d.get("sidechain"):
                     chunks.append(d.get("delta") or "")
             output = "".join(chunks).strip()
             payload = {
@@ -23624,7 +23954,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if ev.get("type") != "agent":
                     continue
                 d = ev.get("data") or {}
-                if d.get("type") == "text_delta":
+                if d.get("type") == "text_delta" and not d.get("sidechain"):
                     chunks.append(d.get("delta") or "")
             output = "".join(chunks).strip()
         return self._reply(200, {
@@ -26229,6 +26559,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         cases_qs = (_qs_get(qs, "cases") or "").strip().lower()
         use_cases = bool(cases_path) and cases_qs not in ("0", "false", "no")
         out_dir = tempfile.mkdtemp(prefix="woven-qa-")
+        revision_root = os.path.dirname(abs_target) if abs_target else None
+        revision_before = review_evidence.source_revision(revision_root)
         # Run on the same interpreter that runs the daemon (system python).
         cmd = [sys.executable, qa_tool, "--url", url, "--out", out_dir,
                "--mode", mode]
@@ -26320,6 +26652,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         report["mode"] = mode
         report["exitCode"] = proc.returncode
         report["outDir"] = out_dir
+        report = review_evidence.attach(report, judge, revision_before, review_evidence.source_revision(revision_root))
         # Keep complete evidence on disk. Brief responses change no checks.
         if _compact_config()["compactQa"] and _qs_get(qs, "detail") != "full":
             try:
@@ -33090,6 +33423,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "updatedAt": getattr(s, "updated_at", None) or s.started_at,
                 "done": s.done,
                 "turnDone": s.turn_done,
+                "jobs": list(s.jobs.values()), "pendingJobs": len(_pending_run_jobs(s)),
+                "executionProfile": s.execution_profile, "processRunning": s.process_running,
                 "turnsCompleted": s.turns_completed,
                 "exitCode": s.exit_code,
                 "stopReason": s.stop_reason,
@@ -33252,6 +33587,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # (the only liveness signal a backgrounded agent leaves behind).
         order = []
         by_id = {}
+        jobs = {}
         ticks = 0
         for r in rows:
             if not isinstance(r, dict) or r.get("type") != "agent":
@@ -33259,8 +33595,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             d = r.get("data")
             if not isinstance(d, dict):
                 continue
+            run_jobs.reduce_job(jobs, d)
             dtype = d.get("type")
-            if dtype == "tool_use" and d.get("name") == "Agent":
+            if dtype == "tool_use" and d.get("name") in ("Agent", "Task", "task", "spawn_agent"):
                 tid = d.get("id")
                 if not tid:
                     continue
@@ -33297,6 +33634,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         out = []
         for tid in order:
             e = by_id[tid]
+            linked = [j for j in jobs.values() if j.get("toolUseId") == tid]
+            job = next(iter(run_jobs.pending({i: j for i, j in enumerate(linked)})), None)
+            job = job or next((j for j in linked if j.get("status") != "completed"), None) or next(iter(linked), None)
+            if job:
+                e["jobStatus"] = job.get("status")
+                e["done"] = job.get("status") in run_jobs.TERMINAL
+                e["error"] = job.get("status") in run_jobs.TERMINAL - {"completed"}
+                e["background"] = job.get("background", e["background"])
             e["tickTotal"] = ticks
             out.append(e)
         return self._reply(200, {"runId": run_id, "dispatches": out})
@@ -33926,6 +34271,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             "updatedAt": getattr(state, "updated_at", None) or state.started_at,
             "done": state.done,
             "turnDone": state.turn_done,
+            "jobs": list(state.jobs.values()), "pendingJobs": len(_pending_run_jobs(state)),
+            "executionProfile": state.execution_profile, "processRunning": state.process_running,
             "turnsCompleted": state.turns_completed,
             "exitCode": state.exit_code,
             "stopReason": state.stop_reason,
@@ -33981,7 +34328,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         # default. Before this, the system agent - the one the landing page's
         # "Add orchestrator" / "Add library entry" buttons spawn - ignored the
         # user's model pick entirely and always ran on the CLI default.
-        spawn_args += _agent_model_spawn_args("claude", defs, (body.get("model") or "").strip())
+        try:
+            profile = model_routing.resolve((body.get("model") or "").strip() or "inherit", "claude", config=_compact_config())
+            if profile["runtime"] != "claude":
+                raise ValueError("system threads currently require a Claude model")
+        except ValueError as error:
+            return self._reply(400, {"error": str(error)})
+        spawn_args += _agent_model_spawn_args("claude", defs, profile["model"], resolved=True)
         if permission_mode == "bypassPermissions":
             spawn_args += [
                 "--allow-dangerously-skip-permissions",
@@ -34008,7 +34361,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         env = _build_child_env("claude", run_id,
                                project_root=root, project_id="__system")
         try:
-            proc = subprocess.Popen(
+            proc = _spawn_runtime_process("claude",
                 [bin_path, *spawn_args],
                 cwd=root,
                 stdin=subprocess.PIPE,
@@ -34028,6 +34381,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.scope = "system"
         state.section = section
         state.bin_path = bin_path
+        state.model = profile["model"]
+        state.execution_profile = profile
         state.permission_mode = permission_mode or None
         # No undo/redo history snapshot - it would inventory the whole
         # workspace repo, and System changes are git-reviewable anyway.
@@ -34090,6 +34445,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "updatedAt": getattr(s, "updated_at", None) or s.started_at,
                 "done": s.done,
                 "turnDone": s.turn_done,
+                "jobs": list(s.jobs.values()), "pendingJobs": len(_pending_run_jobs(s)),
+                "executionProfile": s.execution_profile, "processRunning": s.process_running,
                 "turnsCompleted": s.turns_completed,
                 "exitCode": s.exit_code,
                 "stopReason": s.stop_reason,
@@ -34133,6 +34490,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Optional default-model override (Settings > Agent model). Blank = the
         # CLI's own configured default (no --model flag appended at spawn).
         agent_model = (body.get("model") or "").strip()
+        try:
+            profile = model_routing.resolve(agent_model or "inherit", agent_id, config=_compact_config())
+            agent_id, agent_model = profile["runtime"], profile["model"]
+        except ValueError as error:
+            return self._reply(400, {"error": str(error)})
         bin_path = detect_agent_bin(agent_id)
         if not bin_path:
             env_key = AGENT_BIN_ENV.get(agent_id, "")
@@ -34229,7 +34591,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             _harness_settings = _ensure_harness_settings()
             if _harness_settings:
                 spawn_args += ["--settings", _harness_settings]
-            spawn_args += _agent_model_spawn_args(agent_id, defs, agent_model)
+            spawn_args += _agent_model_spawn_args(agent_id, defs, agent_model, resolved=True)
         elif agent_id == "codex":
             # Codex's permission flags are version-specific
             # (--full-auto / --approval-mode full-auto / a config key).
@@ -34243,7 +34605,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # pixels (path-only) and the look-loop routes through
             # visual-verifier / __qa/run instead.
             spawn_args += _codex_mcp_spawn_args(visual_deny=True)
-            spawn_args += _agent_model_spawn_args(agent_id, defs, agent_model)
+            spawn_args += _agent_model_spawn_args(agent_id, defs, agent_model, resolved=True)
         # Append the question-form protocol so disabling AskUserQuestion
         # doesn't lose the "ask the user" capability - see
         # QUESTION_FORM_SYSTEM_PROMPT for the rationale. In workspace mode
@@ -34325,7 +34687,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         _apply_guard_env(env, _chat_guards)
 
         try:
-            proc = subprocess.Popen(
+            proc = _spawn_runtime_process(agent_id,
                 [bin_path, *spawn_args],
                 cwd=project_root,
                 stdin=subprocess.PIPE if defs["prompt_via_stdin"] else None,
@@ -34348,6 +34710,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.prototype = _chat_proto   # scoped-preamble target; re-used on resume
         state.guards = _chat_guards     # per-thread check toggles; re-used on resume
         state.model = agent_model or None   # Settings > Agent model; re-applied on resume
+        state.execution_profile = profile
         # ── History snapshot - BEFORE state ──────────────────────────────
         # The subprocess is running but hasn't received its prompt yet (we
         # write to stdin further down). It can't have produced any file
@@ -34615,19 +34978,34 @@ class H(http.server.SimpleHTTPRequestHandler):
             state = RUNS.get(run_id)
         if not state:
             return self._reply(404, {"error": "unknown runId", "runId": run_id})
-        if state.done:
+        if state.done and not _pending_run_jobs(state):
             return self._reply(200, {"ok": True, "alreadyDone": True})
         # tag intent BEFORE terminate(), so the drain-loop's finally
         # block sees the reason when it computes the finish record. Without
         # this the UI would render user-initiated stops as "failed" (because
         # SIGTERM = exit 143 ≠ 0).
         state.stop_reason = "user-stop"
+        if isinstance(state.proc, runtime_drivers.ProcessDriver) and state.process_running:
+            helper_jobs.cancel(state.run_id)
+            try:
+                state.proc.interrupt()
+            except Exception as error:
+                state.append("status", {"label": "interrupt-failed", "detail": str(error)[:400]})
+                _stop_run_family(state)
+            else:
+                with RUNS_LOCK:
+                    children = [s for s in RUNS.values() if s.parent_run_id == state.run_id and s.project_root == state.project_root]
+                for child in children:
+                    _stop_run_family(child)
+                state.append("status", {"label": "interrupted", "contextPreserved": True})
+                return self._reply(200, {"ok": True, "contextPreserved": True})
         # A non-live run (history-rehydrated ghost, proc=None) has no subprocess
         # to signal - its process died with the previous daemon. Don't call
         # .terminate() on None (that 500'd with a misleading "terminate failed"
         # AttributeError); just settle the record so the UI stops showing it as
         # mid-flight. See RunState.is_live.
-        if not state.is_live:
+        _stop_run_family(state)
+        if not state.process_running:
             state.finish(state.exit_code if state.exit_code is not None else 143)
             state.append("status", {"label": "interrupted"})
             return self._reply(200, {"ok": True, "wasGhost": True})
@@ -34728,7 +35106,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._reply(404, {"error": "unknown runId", "runId": run_id})
         reason = (str(body.get("reason") or "handoff"))[:80]
         stopped = False
-        if body.get("stop") and state.is_live:
+        if body.get("stop") and state.process_running:
             state.stop_reason = "handoff"
             try:
                 _kill_run_tree(state)
@@ -34795,10 +35173,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pass
         # Stop a live subprocess first.
-        if state is not None and getattr(state, "is_live", False):
+        if state is not None and (state.process_running or _pending_run_jobs(state)):
             try:
                 state.stop_reason = "user-stop"
-                _kill_run_tree(state)
+                _stop_run_family(state)
             except Exception:
                 pass
         # Figure out which JSONL(s) hold this run's history and purge it there.
@@ -34898,6 +35276,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Flip turn back to in-flight so the chip + Runs row reflect "agent
         # is processing the reply" instead of "done, waiting on you."
         state.turn_done = False
+        state.stop_reason = None
         # Echo into the event log so the UI shows the message in-thread.
         state.append("user_message", {"text": text})
         return self._reply(200, {"ok": True})
@@ -35052,7 +35431,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                    or _orch_override_model_for_node(planner_type, planner_type, want_provider="anthropic"))
         if not _omodel:
             _omodel = _agent_default_model()
-        _model_args = _agent_model_spawn_args("claude", AGENT_DEFS["claude"], _omodel) if _omodel else []
+        if state.execution_profile:
+            _omodel = state.model
+        _model_args = _agent_model_spawn_args("claude", AGENT_DEFS["claude"], _omodel, resolved=bool(state.execution_profile))
         spawn_args = [
             "--print",
             "--output-format", "stream-json",
@@ -35160,6 +35541,25 @@ class H(http.server.SimpleHTTPRequestHandler):
         _apply_guard_env(env, _normalize_chat_guards(getattr(state, "guards", None)))
         if not _main_thread:
             env["TH_SPAWN_KIND"] = "node-agent" if state.kind == "node-agent" else "planner"
+        frozen_mode = (state.execution_profile or {}).get("driver")
+        if frozen_mode:
+            env["WOVEN_" + state.agent_id.upper() + "_DRIVER"] = frozen_mode
+        if frozen_mode in ("app-server", "http"):
+            spawn_args = list(defs["args"]) + _agent_model_spawn_args(state.agent_id, defs, state.model, resolved=bool(state.execution_profile))
+            if state.agent_id == "codex":
+                spawn_args += _codex_mcp_spawn_args(visual_deny=_main_thread)
+            prompt = text if state.session_id else _transcript_from_run_events(state) + "\n\nUSER: " + text
+            try:
+                proc = _spawn_runtime_process(state.agent_id, [bin_path, *spawn_args, prompt],
+                    resume_id=state.session_id, driver_mode=frozen_mode, cwd=state.project_root, env=env)
+            except Exception as error:
+                return self._reply(502, {"error": str(error)[:500]})
+            state.proc, state.done, state.exit_code, state.turn_done, state.stop_reason = proc, False, None, False, None
+            state.append("status", {"label": "resumed", "runtimeMode": frozen_mode, "resume": "session" if state.session_id else "handoff"})
+            state.append("user_message", {"text": text})
+            threading.Thread(target=_drain_stdout, args=(state,), daemon=True).start()
+            threading.Thread(target=_drain_stderr, args=(state,), daemon=True).start()
+            return self._reply(200, {"ok": True, "runId": run_id, "sessionId": state.session_id})
         resume_sid = None
         if (state.agent_id == "codex"
                 and os.environ.get("WOVEN_CODEX_EXEC_RESUME", "").lower() not in ("0", "off", "false")
@@ -35179,10 +35579,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             spawn_args = (["exec", "resume",
                            "-c", 'sandbox_mode="danger-full-access"']
                           + _codex_mcp_spawn_args(visual_deny=_main_thread)
-                          + _agent_model_spawn_args(state.agent_id, defs, getattr(state, "model", None))
+                          + _agent_model_spawn_args(state.agent_id, defs, state.model, resolved=bool(state.execution_profile))
                           + [resume_sid, text])
             try:
-                proc = subprocess.Popen(
+                proc = _spawn_runtime_process(state.agent_id,
                     [bin_path, *spawn_args],
                     cwd=state.project_root,
                     stdin=subprocess.DEVNULL,
@@ -35262,10 +35662,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         _resume_mcp = _codex_mcp_spawn_args(visual_deny=_main_thread) if state.agent_id == "codex" else []
         spawn_args = (list(defs["args"])
                       + _resume_mcp
-                      + _agent_model_spawn_args(state.agent_id, defs, getattr(state, "model", None))
+                      + _agent_model_spawn_args(state.agent_id, defs, state.model, resolved=bool(state.execution_profile))
                       + [new_prompt])
         try:
-            proc = subprocess.Popen(
+            proc = _spawn_runtime_process(state.agent_id,
                 [bin_path, *spawn_args],
                 cwd=state.project_root,
                 stdin=subprocess.DEVNULL,
@@ -35474,7 +35874,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # (compacted run: no --resume - fresh session, seeded below)
         # Re-apply the chosen default model so a resume keeps (or, if the setting
         # changed, switches to) it rather than falling back to the CLI default.
-        spawn_args += _agent_model_spawn_args(state.agent_id, defs, getattr(state, "model", None))
+        spawn_args += _agent_model_spawn_args(state.agent_id, defs, state.model, resolved=bool(state.execution_profile))
         # The agent's workspace is the PROJECT only - INSTALL_ROOT is NOT
         # added to --add-dir on resume either, mirroring the policy applied
         # on the initial spawn (see _run_create's _spawn_node_agent path).
@@ -35507,7 +35907,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             pass
 
         try:
-            proc = subprocess.Popen(
+            proc = _spawn_runtime_process(state.agent_id,
                 [bin_path, *spawn_args],
                 cwd=state.project_root,
                 stdin=subprocess.PIPE,
@@ -35768,7 +36168,7 @@ def _stall_watch_loop() -> None:
         try:
             with RUNS_LOCK:
                 states = list(RUNS.values())
-            busy = any(not s.done and not s.turn_done and s.is_live
+            busy = any(not s.done and s.process_running and (not s.turn_done or _pending_run_jobs(s))
                        for s in states)
         except Exception:
             busy = True     # can't tell - stay awake rather than go deaf
@@ -35785,7 +36185,7 @@ def _stall_watch_loop() -> None:
             for s in states:
                 # turn_done means it finished its turn and is waiting on the
                 # USER - that's idle by design, not a stall.
-                if s.done or s.turn_done or not s.is_live:
+                if s.done or not s.process_running or (s.turn_done and not _pending_run_jobs(s)):
                     continue
                 alive.add(s.run_id)
                 with s.lock:

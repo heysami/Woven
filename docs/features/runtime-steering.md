@@ -1,6 +1,10 @@
 # Runtime steering parity: codex app-server + opencode serve
 
-Status: PLAN (living document - refine before building; nothing here is committed behavior yet)
+Status: PARTIALLY IMPLEMENTED. The original proposal below is retained as historical
+design context. See [current implementation and rollout limits](runtime-portability.md)
+for the 2026-09-17 behavior. Codex app-server and OpenCode HTTP are opt-in previews;
+OpenCode busy-session input remains queued, not mid-turn steering. Interactive
+approvals and reconnect-safe delivery are not implemented.
 Created: 2026-07-27
 Owner surface: `editor/serve.py` (runtime spawn/drive layer), `editor/app.js` (chat composer queue/steer UI)
 

@@ -144,12 +144,10 @@ def transcript(events, detail_budget=80000):
 
 def handoff_metadata(state):
     return {key: getattr(state, key, None)
-            for key in ("branch", "prototype", "tier", "guards", "model", "agent_id")}
+            for key in ("branch", "prototype", "tier", "guards", "model", "agent_id", "execution_profile")}
 
 
 def summary_model(runtime, configured="fast", inherited=None):
-    if configured == "inherit":
-        return inherited or ("codex-default" if runtime == "codex" else "claude-default")
-    if configured and configured != "fast":
-        return configured
-    return "gpt-5.6-luna" if runtime == "codex" else "claude-haiku-4-5"
+    import model_routing
+    profile = model_routing.resolve(configured, runtime, inherited, role="summary")
+    return profile["model"] or profile["runtime"] + "-default"

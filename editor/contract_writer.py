@@ -2,6 +2,8 @@
 import copy
 import json
 import re
+import threading
+import model_routing
 import context_artifacts as artifacts
 
 SYSTEM = """Write concise contract and worker-brief prose from supplied JSON data. Creative
@@ -27,8 +29,12 @@ PROTECTED_KEYS = {
 
 
 def valid_model(value):
-    return isinstance(value, str) and (value in ("fast", "inherit") or bool(
-        re.fullmatch(r"(?:(?:gpt-|claude-|codex-)[A-Za-z0-9_.-]{1,100}|o\d[A-Za-z0-9_.-]{0,100})", value)))
+    return model_routing.valid_model(value)
+
+
+# Bounded lock striping coalesces identical concurrent prepares without keeping
+# an unbounded collection of locks. Publication has its own workflow lock.
+_PREPARE_LOCKS = [threading.RLock() for _ in range(64)]
 
 
 def parts(path):
@@ -136,7 +142,13 @@ def load_draft(root, body):
     return value, kind
 
 
-def prepare(root, body, model, complete):
+def prepare(root, body, model, complete, profile=None):
+    key = artifacts.digest({"root": str(root), "body": body, "model": model, "profile": profile})
+    with _PREPARE_LOCKS[int(key[:8], 16) % len(_PREPARE_LOCKS)]:
+        return _prepare(root, body, model, complete, profile)
+
+
+def _prepare(root, body, model, complete, profile=None):
     draft, kind = load_draft(root, body)
     output = body.get("outputPath")
     artifacts.project_path(root, output)
@@ -147,7 +159,8 @@ def prepare(root, body, model, complete):
     previous = artifacts.digest(existing) if existing is not None else None
     if previous != body.get("previousHash"):
         raise ValueError("output changed; read its current hash before preparing a revision")
-    inputs = {"version": 1, "orchestrator": body["orchestrator"], "draft": draft,
+    inputs = {"version": 2, "systemHash": artifacts.digest(SYSTEM), "profile": profile,
+              "orchestrator": body["orchestrator"], "draft": draft,
               "draftPath": body.get("draftPath"), "format": kind, "outputPath": output,
               "previousHash": previous, "prosePaths": list(fields), "model": model}
     directory = "workflow/writing/" + artifacts.digest(inputs)
@@ -168,7 +181,7 @@ def prepare(root, body, model, complete):
         artifacts.atomic_json(target, packet)
     return {"ok": True, "reviewPath": relative, "reviewHash": artifacts.digest(packet),
             "decisionsPath": directory + "/decisions.json", "model": model,
-            "reused": reused, "edits": packet["edits"], "requiresReview": True}
+            "profile": profile, "reused": reused, "edits": packet["edits"], "requiresReview": True}
 
 
 def reviewed_value(root, body, art_defaults):

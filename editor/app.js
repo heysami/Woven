@@ -9470,16 +9470,12 @@ if (typeof window !== "undefined") {
     }
   } catch {}
 }
-/* The model choices a per-orchestrator/subagent override can pick from, scoped
-   to the ACTIVE agent runtime's provider: GPT ids when the agent is codex,
-   Anthropic ids when claude. The build fan-out (drawers via _spawn_node_agent,
-   orchestrators via /__dispatch_planner) spawns on that runtime, and the daemon
-   drops any stored override whose provider != the runtime's. opencode manages
-   its own model, so its provider yields an empty list (Agent-default only). */
+/* Per-orchestrator/subagent choices include registered native model IDs.
+   The stored provider and model pair explicitly chooses the child runtime. */
 function listOrchestratorModelChoices(filterProvider) {
   const M = (window.TH_MEDIA || {});
   const prov = filterProvider || getActiveAgentProvider();
-  return (M.textModels || []).filter(m => m.provider === prov && !m.cliOnly && m.integrated !== false);
+  return (M.textModels || []).filter(m => m.provider === prov && (!m.cliOnly || m.runtimeRegistered) && m.integrated !== false);
 }
 
 /* Pull the per-capability model lists from the media catalog. svg / video /
@@ -11565,10 +11561,29 @@ function UsageMeter({ w }) {
    stays honest against an older daemon that predates the field. Fetched
    once per page load and shared across composer mounts. */
 let __steerableAgentsPromise = null;
+function syncRuntimeModelCatalog(rows) {
+  if (!window.TH_MEDIA) return;
+  const providers = { codex: "openai", claude: "anthropic", opencode: "opencode" };
+  const saved = (window.TH_MEDIA.textModels || []).filter(m => !m.runtimeRegistered);
+  window.TH_MEDIA.textModels = [...saved, ...(rows || []).map(m => ({
+    ...m, provider: providers[m.runtime], cliOnly: true, integrated: true, runtimeRegistered: true,
+  }))].filter((m, i, all) => all.findIndex(x => x.id === m.id) === i);
+  window.dispatchEvent(new CustomEvent("th:runtime-models-changed"));
+}
+function useRuntimeModelCatalog() {
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const changed = () => setRevision(n => n + 1);
+    window.addEventListener("th:runtime-models-changed", changed);
+    return () => window.removeEventListener("th:runtime-models-changed", changed);
+  }, []);
+  return revision;
+}
 function loadSteerableAgents() {
   if (!__steerableAgentsPromise) {
     __steerableAgentsPromise = fetch(apiUrl("/__media_config"))
       .then(r => r.ok ? r.json() : null)
+      .then(j => { if (j?.modelCatalog) syncRuntimeModelCatalog(j.modelCatalog); return j; })
       .then(j => (j && Array.isArray(j.steerable_agents) && j.steerable_agents.length)
         ? j.steerable_agents : ["claude"])
       .catch(() => ["claude"]);
@@ -13567,11 +13582,18 @@ function extractRunSubagents(events) {
   // off (see the fold below), so how recently it narrated is the only live
   // signal there is.
   const tickById = new Map();
+  const jobs = new Map();
   let ticks = 0;
   for (const ev of events || []) {
     if (ev?.event !== "agent") continue;
     const d = ev?.data;
     if (!d) continue;
+    if (d.type === "job") {
+      const key = d.jobId || d.toolUseId;
+      const oldKey = d.toolUseId && jobs.has(d.toolUseId) ? d.toolUseId : key;
+      const old = { ...jobs.get(oldKey), ...jobs.get(key) };
+      if (key) { if (oldKey !== key) jobs.delete(oldKey); jobs.set(key, { ...old, ...d }); }
+    }
     if (d.type === "tool_result" && d.toolUseId) {
       resultById.set(d.toolUseId, d);
       continue;
@@ -13604,9 +13626,13 @@ function extractRunSubagents(events) {
   for (const ev of events || []) {
     if (ev?.event !== "agent") continue;
     const d = ev.data;
-    if (d?.type !== "tool_use" || d.name !== "Agent") continue;
+    if (d?.type !== "tool_use" || !["Agent", "Task", "task", "spawn_agent"].includes(d.name)) continue;
     const inp = d.input || {};
     const result = resultById.get(d.id) || null;
+    const linkedJobs = [...jobs.values()].filter(j => j.toolUseId === d.id);
+    const job = linkedJobs.find(j => !["completed", "failed", "stopped", "killed", "cancelled"].includes(j.status))
+      || linkedJobs.find(j => j.status !== "completed") || linkedJobs[0];
+    const terminal = ["completed", "failed", "stopped", "killed", "cancelled"].includes(job?.status);
     out.push({
       id: d.id || `a-${out.length}`,
       type: inp.subagent_type || "subagent",
@@ -13617,12 +13643,21 @@ function extractRunSubagents(events) {
       // A background dispatch's tool_result is an immediate "launched"
       // acknowledgement, NOT its outcome - it lands within a second of the
       // dispatch and says nothing about the work.
-      background: !!inp.run_in_background,
+      background: job?.background ?? inp.run_in_background ?? inp.background ?? false,
+      jobStatus: job?.status || null,
       lastTick: tickById.get(d.id) || 0,
       tickTotal: ticks,
-      done: !!result,
-      error: !!(result && (result.isError || result.is_error)),
+      done: job ? terminal : !!result && !/launched|running in (the )?background|agentId:/i.test(resultToText(result)),
+      error: job ? ["failed", "stopped", "killed", "cancelled"].includes(job.status) : !!(result && (result.isError || result.is_error)),
     });
+  }
+  for (const job of jobs.values()) {
+    if (out.some(a => a.id === job.toolUseId)) continue;
+    out.push({ id: job.jobId, type: job.profile?.role || job.taskType || "subagent",
+      label: job.description || job.profile?.role || "Background job", prompt: "", result: "", actions: [],
+      background: true, jobStatus: job.status, lastTick: 0, tickTotal: ticks,
+      done: ["completed", "failed", "stopped", "killed", "cancelled"].includes(job.status),
+      error: ["failed", "stopped", "killed", "cancelled"].includes(job.status) });
   }
   return out;
 }
@@ -13725,7 +13760,7 @@ function extractRunOrchestrators(subagents, index, live) {
   // max: this list can hold entries from two counters (the drawer's tail and
   // the daemon's whole-transcript fold), and comparing across them would mark
   // a genuinely live agent stale purely because the other source counted more.
-  const inFlight = (a) => a.background
+  const inFlight = (a) => a.jobStatus ? ["pending", "running"].includes(a.jobStatus) : a.background
     ? (a.lastTick > 0 && ((a.tickTotal || 0) - a.lastTick) <= ORCH_LIVE_TICKS)
     : !a.done;
   let lastSeen = null;
@@ -13767,7 +13802,7 @@ function extractRunOrchestrators(subagents, index, live) {
     const e = byId.get(id);
     // Nothing can actually be in flight on a thread that is not streaming -
     // an unresolved call there is a killed or stalled dispatch, not live work.
-    const running = !!live && (e.selfRunning || e.working.length > 0);
+    const running = (e.selfRunning || e.working.length > 0) && (!!live || subagents.some(a => ["pending", "running"].includes(a.jobStatus)));
     const working = !running ? [] : [
       ...(e.selfRunning && e.selfTask
         ? [{ id: id + ":self", type: id, task: e.selfTask, self: true }]
@@ -17942,6 +17977,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         isNew=${isNew}
         interceptSend=${guardsChanged ? handoffSend : null}
         agentId=${run?.agentId}
+        runtimeDriver=${events.find(e => e.data?.executionProfile?.driver)?.data.executionProfile.driver || run?.executionProfile?.driver}
         userMsgCount=${userMsgCount}
         disabled=${!isNew && (status === "streaming" || status === "connecting")}
         locked=${processEnded || !!run?.historical}
@@ -18652,7 +18688,7 @@ function __chipSegments(text, chips) {
   if (i < text.length) out.push({ text: text.slice(i) });
   return out;
 }
-function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, userMsgCount, interceptSend }) {
+function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, runtimeDriver, userMsgCount, interceptSend }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -19357,7 +19393,8 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // (claude). While the agent is IDLE the bolt is send-now and works for
   // every runtime, so it renders regardless then.
   const steerableAgents = useSteerableAgents();
-  const runSteerable = steerableAgents.includes(agentId || "claude");
+  const runSteerable = runtimeDriver ? ["stream-json", "app-server"].includes(runtimeDriver)
+    : (isNew ? steerableAgents.includes(agentId || "claude") : (agentId || "claude") === "claude");
 
   // Force-steer: fire a queued envelope at the daemon NOW, while the agent
   // is still mid-turn, instead of waiting for the turn to end. The daemon's
@@ -20233,7 +20270,7 @@ function ChatContextGauge({ run, events, runModel }) {
             </label>
           </div>
           <div className="chat-ctx-auto">
-            <span className="chat-ctx-hint">Context summary model: ${!cfg ? "loading..." : cfg.summaryModel === "inherit" ? "same model as thread" : "Fast (Luna / Haiku)"}. Configure in Settings > Context and cost.</span>
+            <span className="chat-ctx-hint">Context summary model: ${!cfg ? "loading..." : cfg.summaryModel === "inherit" ? "same model as thread" : cfg.summaryModel === "fast" ? "Economy preset" : cfg.summaryModel}. Configure in Settings > Context and cost.</span>
           </div>
         </div>`, document.body);
     })()}
@@ -91488,8 +91525,9 @@ function WorkflowBlendNode({ node, zoom, selected, onSelect, onMove, onResize, o
 // provider so the user can pick a cheap model for testers vs a strong one for
 // research / interviewing.
 function AssistantModelSelect({ value, onChange, title }) {
+  useRuntimeModelCatalog();
   const models = ((window.TH_MEDIA && window.TH_MEDIA.textModels) || [])
-    .filter(m => m && m.integrated !== false && !m.cliOnly);
+    .filter(m => m && m.integrated !== false && (!m.cliOnly || m.runtimeRegistered));
   const groups = {};
   for (const m of models) { (groups[m.provider] = groups[m.provider] || []).push(m); }
   return html`
@@ -99611,6 +99649,7 @@ function useContextCostConfig() {
       const value = await r.json();
       if (!r.ok) throw new Error(value.error || `Could not save context settings (${r.status}).`);
       setConfig(value);
+      syncRuntimeModelCatalog(value.modelCatalog || []);
       window.dispatchEvent(new CustomEvent("th:context-config-changed", { detail: value }));
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
@@ -99618,34 +99657,106 @@ function useContextCostConfig() {
   return { config, saving, error, save };
 }
 
+function RuntimeModelSelect({ config, current, disabled, onChange, label, inheritedLabel, allowGlobal }) {
+  const choices = [
+    ...((window.TH_MEDIA || {}).textModels || []).filter(m =>
+      ["openai", "anthropic", "opencode"].includes(m.provider) && !m.cliOnly && m.integrated !== false),
+    ...(config?.modelCatalog || []).map(m => ({ ...m, label: (m.label || m.id) + " (" + m.runtime + ")" })),
+  ].filter((m, i, all) => all.findIndex(x => x.id === m.id) === i);
+  return html`<select className="workflow-default-provider-select" aria-label=${label}
+    style=${{ gridColumn: "1 / -1" }} disabled=${disabled} value=${current}
+    onChange=${async e => {
+      const value = e.target.value;
+      if (value !== "__custom__") return onChange(value);
+      const custom = await uiPrompt("Exact model ID. Prefix with claude:, codex:, or opencode: to choose its runtime.", "");
+      if (custom?.trim()) onChange(custom.trim());
+    }}>
+    ${allowGlobal && html`<option value="">Use global writer setting</option>`}
+    <option value="fast">Economy preset for this runtime</option>
+    <option value="inherit">${inheritedLabel || "Same model as thread"}</option>
+    ${current && !["fast", "inherit"].includes(current) && !choices.some(m => m.id === current)
+      && html`<option value=${current}>${current}</option>`}
+    ${choices.map(m => html`<option key=${m.id} value=${m.id}>${m.label || m.id}</option>`)}
+    <option value="__custom__">Custom model...</option>
+  </select>`;
+}
+
 function ContractWriterModelControl({ config, save, disabled, orchestratorId }) {
-  const current = orchestratorId
-    ? config?.contractWriterOverrides?.[orchestratorId] || ""
-    : config?.contractWriterModel || "fast";
-  const choices = ((window.TH_MEDIA || {}).textModels || []).filter(m =>
-    ["openai", "anthropic"].includes(m.provider) && !m.cliOnly && m.integrated !== false);
-  return html`
+  const current = orchestratorId ? config?.contractWriterOverrides?.[orchestratorId] || "" : config?.contractWriterModel || "fast";
+  return html`<div className="workflow-default-provider-row">
+    <span className="workflow-default-provider-label">Writer model</span>
+    <div className="workflow-default-provider-controls">
+      <${RuntimeModelSelect} config=${config} current=${current} disabled=${disabled}
+        label="Contract and brief writer model" inheritedLabel="Same model as orchestrator" allowGlobal=${!!orchestratorId}
+        onChange=${value => save(orchestratorId ? { contractWriterOverrides: { [orchestratorId]: value || null } } : { contractWriterModel: value })}/>
+    </div></div>`;
+}
+
+function RuntimeModelSettings({ config, save, disabled }) {
+  const [runtime, setRuntime] = useState("codex");
+  const [discovery, setDiscovery] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  return html`<div className="workflow-default-providers">
+    <div className="workflow-settings-section-group-head">Models and economy presets</div>
+    ${["codex", "opencode"].map(id => html`<div key=${id} className="workflow-default-provider-row">
+      <label htmlFor=${"driver-" + id}>${id} connection</label>
+      <select className="workflow-default-provider-select" id=${"driver-" + id} disabled=${disabled} value=${config?.runtimeDrivers?.[id] || (id === "codex" ? "exec" : "run")}
+        onChange=${e => { __steerableAgentsPromise = null; save({ runtimeDrivers: { [id]: e.target.value } }); }}>
+        <option value=${id === "codex" ? "exec" : "run"}>CLI command</option>
+        <option value=${id === "codex" ? "app-server" : "http"}>Persistent session (preview)</option>
+      </select>
+    </div>`)}
+    <div className="workflow-settings-section-group-sub">Connection changes apply to new conversations. Existing conversations retain their connection. Persistent Codex sessions support steering; OpenCode uses queued follow-ups.</div>
+    <div className="workflow-settings-section-group-sub">
+      Choose the model used by the economy preset for each runtime. Exact IDs are passed unchanged.
+      OpenCode uses provider/model IDs. Its default follows OpenCode's configuration until you choose an economy model.
+    </div>
+    ${["claude", "codex", "opencode"].map(id => html`<div key=${id} className="workflow-default-provider-row">
+      <label className="workflow-default-provider-label" htmlFor=${"economy-" + id}>${id}</label>
+      <input key=${id + ":" + (config?.economyModels?.[id] || "")} id=${"economy-" + id}
+        className="workflow-default-provider-select" disabled=${disabled}
+        defaultValue=${config?.economyModels?.[id] || ""}
+        onBlur=${e => { const value = e.target.value.trim(); if (value && value !== config?.economyModels?.[id]) save({ economyModels: { [id]: value } }); }}/>
+    </div>`)}
+    ${["claude", "codex", "opencode"].map(id => html`<div key=${"limit-" + id} className="workflow-default-provider-row">
+      <label htmlFor=${"helper-limit-" + id}>${id} helper limit</label>
+      <input className="workflow-default-provider-select" id=${"helper-limit-" + id} type="number" min="1" max="16" disabled=${disabled}
+        value=${config?.helperConcurrency?.[id] || 2} aria-label=${id + " concurrent helpers"}
+        onChange=${e => { const value = Number(e.target.value); if (Number.isInteger(value) && value >= 1 && value <= 16) save({ helperConcurrency: { [id]: value } }); }}/>
+    </div>`)}
+    <div className="workflow-settings-section-group-sub">Register a model once to make it available in model selectors. Capability support remains unknown until checked with its runtime.</div>
     <div className="workflow-default-provider-row">
-      <span className="workflow-default-provider-label">Writer model</span>
-      <div className="workflow-default-provider-controls">
-        <select className="workflow-default-provider-select" aria-label="Contract and brief writer model"
-          style=${{ gridColumn: "1 / -1" }} disabled=${disabled} value=${current}
-          onChange=${e => save(orchestratorId
-            ? { contractWriterOverrides: { [orchestratorId]: e.target.value || null } }
-            : { contractWriterModel: e.target.value })}>
-          ${orchestratorId && html`<option value="">Use global writer setting</option>`}
-          <option value="fast">Fast (Luna for Codex / Haiku for Claude)</option>
-          <option value="inherit">Same model as orchestrator</option>
-          ${current && !["fast", "inherit"].includes(current) && !choices.some(m => m.id === current)
-            && html`<option value=${current}>${current}</option>`}
-          ${["openai", "anthropic"].map(provider => html`
-            <optgroup key=${provider} label=${provider === "openai" ? "Codex models" : "Claude models"}>
-              ${choices.filter(m => m.provider === provider).map(m => html`
-                <option key=${m.id} value=${m.id}>${m.label || m.id}</option>`)}
-            </optgroup>`)}
-        </select>
-      </div>
-    </div>`;
+      <select className="workflow-default-provider-select" aria-label="New model runtime" value=${runtime} disabled=${disabled} onChange=${e => setRuntime(e.target.value)}>
+        ${["codex", "claude", "opencode"].map(id => html`<option key=${id} value=${id}>${id}</option>`)}
+      </select>
+      <button className="workflow-default-provider-select" disabled=${disabled || refreshing} onClick=${async () => {
+        setRefreshing(true); setDiscovery("");
+        try {
+          const response = await fetch(apiUrl("/__models/refresh"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ runtime }) });
+          const value = await response.json();
+          if (!response.ok) throw new Error(value.error || "Model discovery failed");
+          if (value.models) {
+            const current = config?.modelCatalog || [];
+            await save({ modelCatalog: [...current, ...value.models.filter(m => !current.some(x => x.id === m.id))].slice(0, 500) });
+            syncRuntimeModelCatalog([...current, ...value.models]);
+            setDiscovery(value.models.length + " models: " + value.source);
+          } else setDiscovery(value.message || "Discovery unavailable");
+        } catch (e) { setDiscovery(e.message); }
+        finally { setRefreshing(false); }
+      }}>${refreshing ? "Refreshing..." : "Refresh models"}</button>
+      <button className="workflow-default-provider-select" disabled=${disabled} onClick=${async () => {
+        const model = await uiPrompt("Exact model ID for " + runtime, "");
+        if (!model?.trim()) return;
+        const id = runtime + ":" + model.trim();
+        save({ modelCatalog: [...(config?.modelCatalog || []).filter(m => m.id !== id), { id, runtime, model: model.trim(), label: model.trim() }] });
+      }}>Add model</button>
+    </div>
+    <div role="status" className="workflow-settings-localhint">${discovery}</div>
+    ${(config?.modelCatalog || []).map(m => html`<div key=${m.id} className="workflow-default-provider-row">
+      <span>${m.runtime}: ${m.model}</span>
+      <button className="workflow-default-provider-select" disabled=${disabled} aria-label=${"Remove " + m.id} onClick=${() => save({ modelCatalog: config.modelCatalog.filter(x => x.id !== m.id) })}>Remove</button>
+    </div>`)}
+  </div>`;
 }
 
 function OrchestratorWriterSettings({ orchestratorId, disabled }) {
@@ -99660,7 +99771,7 @@ function OrchestratorWriterSettings({ orchestratorId, disabled }) {
       <${ContractWriterModelControl} config=${config} save=${save}
         disabled=${disabled || !config || saving} orchestratorId=${orchestratorId}/>
       <div role="status" className="workflow-settings-localhint">${saving ? "Saving..." : config
-        ? "Global writer: " + (config.contractWriterModel === "fast" ? "Fast (Luna / Haiku)" : config.contractWriterModel === "inherit" ? "Same model as orchestrator" : config.contractWriterModel)
+        ? "Global writer: " + (config.contractWriterModel === "fast" ? "Economy preset" : config.contractWriterModel === "inherit" ? "Same model as orchestrator" : config.contractWriterModel)
         : "Loading writer setting..."}</div>
       ${error && html`<div role="alert" className="workflow-settings-localhint">${error}</div>`}
     </div>`;
@@ -99682,6 +99793,7 @@ function WorkflowContextCostSection() {
     </label>`;
   return html`
     <section aria-label="Context and cost">
+      <${RuntimeModelSettings} config=${config} save=${save} disabled=${disabled}/>
       <div className="workflow-default-providers">
         <div className="workflow-settings-section-group-head">Contract and brief writing</div>
         <div className="workflow-settings-section-group-sub">
@@ -99703,12 +99815,9 @@ function WorkflowContextCostSection() {
         <div className="workflow-default-provider-row">
           <label className="workflow-default-provider-label" htmlFor="context-summary-model">Summary model</label>
           <div className="workflow-default-provider-controls">
-            <select id="context-summary-model" className="workflow-default-provider-select"
-              style=${{ gridColumn: "1 / -1" }} disabled=${disabled} value=${config?.summaryModel || "fast"}
-              onChange=${e => save({ summaryModel: e.target.value })}>
-              <option value="fast">Fast (Luna for Codex / Haiku for Claude)</option>
-              <option value="inherit">Same model as thread</option>
-            </select>
+            <${RuntimeModelSelect} config=${config} current=${config?.summaryModel || "fast"}
+              disabled=${disabled} label="Summary model" onChange=${value => save({ summaryModel: value })}/>
+
           </div>
         </div>
         <div className="workflow-settings-section-group-sub">
@@ -99966,6 +100075,7 @@ function _pickAutoForCapability(cap, models, mediaConfig) {
 }
 
 function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }) {
+  const catalogRevision = useRuntimeModelCatalog();
   // Every model in the capability's catalog is offerable, minus the mode
   // variants that are decided by the asset rather than by preference (see
   // modelPinnableAsDefault). Image-conditioned VIDEO models are pinnable and
@@ -99975,7 +100085,7 @@ function WorkflowDefaultProviderRow({ capability, value, mediaConfig, onChange }
   // _video_resolve_prompt_only.
   const models = useMemo(
     () => listModelsForCapability(capability).filter(m => modelPinnableAsDefault(capability, m)),
-    [capability]);
+    [capability, catalogRevision]);
   const providersInUse = useMemo(() => {
     const set = new Set();
     for (const m of models) if (m.provider) set.add(m.provider);

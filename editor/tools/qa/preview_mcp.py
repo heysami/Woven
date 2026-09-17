@@ -365,7 +365,7 @@ def tool_preview_screenshot(args):
     # the screenshot is SAVED but the image block is withheld. The daemon
     # sets the flag per spawn (see serve.py _mcp_server_env); subagent
     # spawns (visual-verifier, lenses, planners) never carry it.
-    if os.environ.get("TH_VISUAL_DENY") == "1":
+    if os.environ.get("TH_VISUAL_DENY") == "1" and os.environ.get("TH_VISUAL_GUARD") != "0":
         return _text(
             "screenshot saved to %s - pixels withheld in this chat by design "
             "(main-thread image ingestion bloats the prompt cache on this "
