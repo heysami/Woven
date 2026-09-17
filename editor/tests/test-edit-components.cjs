@@ -1,6 +1,7 @@
 /* Component updates must preserve per-instance overrides and valid HTML IDs. */
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
 const { chromium } = require('../tools/node_modules/playwright');
 
 (async()=>{
@@ -34,6 +35,23 @@ const { chromium } = require('../tools/node_modules/playwright');
     assert.equal(result.reset,'Name');assert.equal(result.detached,false);
     assert.equal(result.catalog[0].id,'example:buttons.primary');
     assert.ok(result.catalog[0].html.includes('data-woven-part'));
+    const gallerySource=fs.readFileSync(path.join(__dirname,'../default-design-system/gallery.html'),'utf8');
+    const real=await page.evaluate(source=>{
+      const doc=new DOMParser().parseFromString(source,'text/html');
+      const rows=WovenComponents.catalogFromGallery(doc,'woven',{version:'current'});
+      const button=rows.find(d=>d.family==='c-button'&&d.html.includes('btn--primary'));
+      const table=rows.find(d=>d.html.startsWith('<table')&&!d.html.includes('class="matrix"'));
+      const before=rows.map(d=>d.id);
+      doc.querySelector('.comp__bar').prepend(doc.createElement('p'));
+      return {count:rows.length,unique:new Set(before).size,button,table:!!table,
+        stable:JSON.stringify(before)===JSON.stringify(WovenComponents.catalogFromGallery(doc,'woven').map(d=>d.id)),
+        chrome:rows.some(d=>/class="(?:comp__bar|vgroup|matrix)"/.test(d.html))};
+    },gallerySource);
+    assert.ok(real.count>40,'The actual shipped gallery must produce a usable library');
+    assert.equal(real.count,real.unique);assert.ok(real.button);assert.ok(real.table);
+    assert.equal(real.button.dsId,'woven');assert.equal(real.button.dsVersion,'current');
+    assert.ok(real.button.stylesheets.includes('/design-systems/woven/all.css'));
+    assert.equal(real.stable,true);assert.equal(real.chrome,false);
     assert.deepEqual(errors,[]);
     console.log('PASS: standalone main updates, independent text and input overrides, remapped label IDs, reset, detach, and canonical gallery extraction.');
   } finally {await browser.close();}

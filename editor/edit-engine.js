@@ -198,7 +198,7 @@
     return { nodes, key, html, target, anchor };
   }
   const cssName = name => name.replace(/[A-Z]/g, c => "-" + c.toLowerCase());
-  const CSS_KEYS = new Set(("width height minWidth minHeight maxWidth maxHeight display flexGrow flexShrink flexBasis flexDirection flexWrap gridTemplateColumns gridTemplateRows gap rowGap columnGap justifyContent alignItems justifySelf alignSelf background backgroundColor borderColor borderWidth borderStyle borderRadius padding paddingTop paddingRight paddingBottom paddingLeft margin marginLeft marginRight marginTop marginBottom color fontFamily fontSize fontWeight lineHeight letterSpacing textAlign boxShadow filter opacity overflow").split(" "));
+  const CSS_KEYS = new Set(("width height minWidth minHeight maxWidth maxHeight display position left top translate flexGrow flexShrink flexBasis flexDirection flexWrap gridTemplateColumns gridTemplateRows gap rowGap columnGap justifyContent alignItems justifySelf alignSelf background backgroundColor borderColor borderWidth borderStyle borderRadius padding paddingTop paddingRight paddingBottom paddingLeft margin marginLeft marginRight marginTop marginBottom color fontFamily fontSize fontWeight lineHeight letterSpacing textAlign boxShadow filter opacity overflow").split(" "));
   function applyStyles(el, patch) {
     const applied = {};
     for (const [name, raw] of Object.entries(patch)) {
@@ -223,6 +223,13 @@
     const grid = /^(inline-)?grid$/.test(parent.display || "");
     const main = flex && (width !== (parent.flexDirection || "row").startsWith("column"));
     const out = { [k + "Mode"]: mode };
+    if (mode === 'auto') {
+      out[k] = null;
+      if (main) Object.assign(out, { flexGrow: null, flexShrink: null, flexBasis: null });
+      if (flex && !main) out.alignSelf = null;
+      if (grid) out[width ? 'justifySelf' : 'alignSelf'] = null;
+      return out;
+    }
     if (self.display === "inline") out.display = "inline-block";
     if (main) Object.assign(out, { flexGrow: "0", flexShrink: "0", flexBasis: "auto" });
     if (mode === "fixed") {
@@ -256,6 +263,98 @@
     }
     if (p && /grid/.test(p.display) && el.style[axis === 'width' ? 'justifySelf' : 'alignSelf'] === 'stretch') return 'fill';
     return "auto";
+  }
+  function dimension(el, axis) {
+    const cs = el.ownerDocument.defaultView.getComputedStyle(el);
+    // Inline text has computed width/height "auto", despite a real layout box.
+    // CSS pixel dimensions must not inherit the host canvas's zoom transform.
+    const resolved = parseFloat(cs[axis]);
+    if (Number.isFinite(resolved)) return resolved;
+    if (cs.display === 'contents' || cs.display === 'none') return 0;
+    const offset = axis === 'width' ? el.offsetWidth : el.offsetHeight;
+    return Number.isFinite(offset) ? offset : el.getBoundingClientRect()[axis];
+  }
+  function sizingNote(el) {
+    const win = el.ownerDocument.defaultView, cs = win.getComputedStyle(el);
+    if (cs.display === 'contents') return 'This layer has no box (display: contents). Select its text child or choose a layout to give it a box.';
+    if (cs.display === 'none') return 'This layer is hidden by its stylesheet.';
+    if (el.textContent.trim() && (!dimension(el, 'width') || !dimension(el, 'height'))) {
+      if ([...el.children].some(n => /^(absolute|fixed)$/.test(win.getComputedStyle(n).position))) return 'Positioned children do not contribute to Hug size. Give the parent a fixed size or put its children in normal flow.';
+      return 'The measured box is zero. Check size limits, hidden ancestors, font size, and line height. Hug still respects CSS constraints.';
+    }
+    return '';
+  }
+  function move(el, direction, step = 1, selectorFor = n => selector(identify(n)), metaFor = () => ({})) {
+    if (!el?.isConnected || !el.parentElement) throw new Error('Select a visible layer before moving it.');
+    const win = el.ownerDocument.defaultView, cs = win.getComputedStyle(el), parent = el.parentElement;
+    const ps = win.getComputedStyle(parent), before = el.getBoundingClientRect();
+    if (el === el.ownerDocument.body || el === el.ownerDocument.documentElement) throw new Error('The page root cannot move. Select a layer inside it.');
+    if (cs.display === 'contents') throw new Error('This layer has no box (display: contents). Move one of its children.');
+    if (!el.getClientRects().length || cs.visibility === 'hidden') throw new Error('This layer is hidden. Show it before moving it.');
+    if (el.ownerSVGElement) throw new Error('Select the whole SVG to move it. Its internal shapes use SVG coordinates.');
+    const flex = /^(inline-)?flex$/.test(ps.display), grid = /^(inline-)?grid$/.test(ps.display);
+    const inLayout = (flex || grid) && !/^(absolute|fixed)$/.test(cs.position);
+    const horizontal = direction === 'left' || direction === 'right';
+    const sign = direction === 'left' || direction === 'up' ? -1 : 1;
+    const sel = selectorFor(el), meta = metaFor(el);
+    if (inLayout) {
+      const siblings = [...parent.children].filter(n => n !== el && n.getClientRects().length && !/^(absolute|fixed)$/.test(win.getComputedStyle(n).position) && win.getComputedStyle(n).display !== 'none');
+      let anchor;
+      if (direction === 'prev' || direction === 'next') {
+        const ordered = [...parent.children].filter(n => n === el || siblings.includes(n));
+        anchor = ordered[ordered.indexOf(el) + (direction === 'prev' ? -1 : 1)];
+      } else {
+        const mainHorizontal = !ps.flexDirection.startsWith('column');
+        if (flex && ps.flexWrap === 'nowrap' && mainHorizontal !== horizontal) throw new Error('This auto layout runs ' + (mainHorizontal ? 'horizontally. Use Left or Right.' : 'vertically. Use Up or Down.'));
+        const x = before.x + before.width / 2, y = before.y + before.height / 2;
+        anchor = siblings.map(n => {
+          const r = n.getBoundingClientRect(), dx = r.x + r.width / 2 - x, dy = r.y + r.height / 2 - y;
+          const along = (horizontal ? dx : dy) * sign, across = Math.abs(horizontal ? dy : dx);
+          return { n, along, score: along + across * 4 };
+        }).filter(n => n.along > 0.5).sort((a, b) => a.score - b.score)[0]?.n;
+      }
+      if (!anchor) throw new Error('No layer ' + (direction === 'prev' ? 'earlier' : direction === 'next' ? 'later' : 'to move past ' + direction) + ' in this ' + (grid ? 'grid.' : 'auto layout.'));
+      const children = [...parent.children];
+      const position = children.indexOf(anchor) < children.indexOf(el) ? 'before' : 'after';
+      const anchorSelector = selectorFor(anchor), anchorMeta = metaFor(anchor), next = el.nextSibling;
+      if (position === 'before') anchor.before(el); else anchor.after(el);
+      const after = el.getBoundingClientRect();
+      const directional = horizontal ? after.x - before.x : after.y - before.y;
+      if ((Math.abs(after.x - before.x) < 0.05 && Math.abs(after.y - before.y) < 0.05) || (!['prev', 'next'].includes(direction) && directional * sign <= 0)) {
+        parent.insertBefore(el, next);
+        throw new Error('CSS order or explicit grid placement keeps this layer in place. Change that placement before reordering.');
+      }
+      return { element: el, message: 'Moved in ' + (grid ? 'grid' : 'auto layout'), op: { type: 'reorder', selector: sel, ...meta, anchor: anchorSelector, anchorMeta, position, key: uid() } };
+    }
+    if (!['left', 'right', 'up', 'down'].includes(direction)) throw new Error('Use arrow keys to nudge a layer outside auto layout.');
+    const delta = sign * step, oldStyle = el.getAttribute('style');
+    let patch;
+    // Non-replaced inline boxes cannot be transformed. Relative offsets move
+    // their painted text while retaining their place in normal document flow.
+    if (cs.display === 'inline' && !/^(IMG|INPUT|TEXTAREA|SELECT|IFRAME|VIDEO|CANVAS)$/.test(el.tagName)) {
+      const key = horizontal ? 'left' : 'top', inverse = horizontal ? 'right' : 'bottom';
+      const initial = cs[key] === 'auto' ? -(parseFloat(cs[inverse]) || 0) : parseFloat(cs[key]) || 0;
+      patch = { [key]: (initial + delta) + 'px', ...(cs.position === 'static' ? { position: 'relative' } : {}) };
+    } else {
+      // Independent translation preserves author transforms and right/bottom
+      // anchors, including percentage-based positioning and responsive widths.
+      const values = []; let depth = 0, token = '';
+      for (const c of cs.translate === 'none' ? '0px 0px' : cs.translate) {
+        if (c === '(') depth++; if (c === ')') depth--;
+        if (c === ' ' && !depth) { if (token) values.push(token); token = ''; } else token += c;
+      }
+      if (token) values.push(token);
+      if (values.length === 1) values.push('0px');
+      const at = horizontal ? 0 : 1;
+      values[at] = 'calc(' + values[at] + ' + ' + delta + 'px)';
+      patch = { translate: values.join(' ') };
+    }
+    const styles = applyStyles(el, patch), after = el.getBoundingClientRect();
+    if (Math.abs(after.x - before.x) < 0.05 && Math.abs(after.y - before.y) < 0.05) {
+      if (oldStyle == null) el.removeAttribute('style'); else el.setAttribute('style', oldStyle);
+      throw new Error('The stylesheet prevents this movement. Check !important positioning or transforms, or move the containing frame.');
+    }
+    return { element: el, message: 'Nudged ' + step + ' px ' + direction, op: { type: 'style', selector: sel, ...meta, styles } };
   }
   function variables(doc) {
     const declared = new Map();
@@ -463,7 +562,7 @@
   }
   root.WovenEdit = { ID, uid, identify, selector, cleanClone, isTextInput, copy, setClipboard, readResponse,
     retry: doc => !docs.get(doc)?.baselineReady ? docs.get(doc)?.retry?.() : Promise.resolve(),
-    getClipboard: () => clipboard, paste, applyStyles, sizing, sizeMode, variables, modes, bind, stage, save, digest,
+    getClipboard: () => clipboard, paste, applyStyles, sizing, sizeMode, dimension, sizingNote, move, variables, modes, bind, stage, save, digest,
     state: doc => docs.get(doc), serialize, restore, sourcePath, isolate, release, history, discard, download, reload };
   if (typeof module !== "undefined") module.exports = root.WovenEdit;
 })(typeof window !== "undefined" ? window : globalThis);

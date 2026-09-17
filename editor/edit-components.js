@@ -87,13 +87,27 @@
     return result;
   }
   function dsIdFor(doc, fallback) {
-    for (const link of doc.querySelectorAll('link[rel="stylesheet"]')) {
-      const match = link.href.match(/\/design-systems\/([^/]+)\//);
+    const seen = new Set();
+    const find = sheet => {
+      if (!sheet || seen.has(sheet)) return;
+      seen.add(sheet);
+      const match = sheet.href?.match(/\/design-systems\/([^/]+)\//);
       if (match) return decodeURIComponent(match[1]);
+      try { for (const rule of sheet.cssRules || []) { const id = find(rule.styleSheet); if (id) return id; } } catch {}
+    };
+    for (const sheet of doc.styleSheets) { const id = find(sheet); if (id) return id; }
+    for (const link of doc.querySelectorAll('link[rel="stylesheet"]')) {
+      const match = link.href.match(/\/design-systems\/([^/]+)\//); if (match) return decodeURIComponent(match[1]);
     }
     return typeof fallback === 'string' ? fallback : fallback?.id;
   }
   function catalogFromGallery(doc, dsId, mirror = {}) {
+    const base = new URL('/design-systems/' + encodeURIComponent(dsId) + '/gallery.html', /^https?:/.test(root.location.href) ? root.location.href : 'http://woven.local');
+    const portable = raw => {
+      if (!raw || /^(data:|#)/.test(raw)) return raw;
+      const url = new URL(raw, base); return url.origin === base.origin ? url.pathname + url.search + url.hash : url.href;
+    };
+    const stylesheets = [...doc.querySelectorAll('link[rel="stylesheet"]')].map(n => portable(n.getAttribute('href'))).filter(href => href?.startsWith('/design-systems/' + encodeURIComponent(dsId) + '/'));
     const rows = catalog({ ...mirror, meta: { dsRef: { id: dsId, version: mirror.version } } });
     for (const row of rows) {
       try {
@@ -115,14 +129,58 @@
         try { rows.push(definition(id, title + ' / ' + label, markup, { dsId, dsVersion: mirror.version, family: section.id, variant })); } catch {}
       });
     }
+    // The bundled DS uses .comp sections with a class vocabulary in its bar.
+    // Extract only outermost component roots, never gallery frames/headings or
+    // the cells of a real component table. Explicit .ds-sample stays supported.
+    for (const section of doc.querySelectorAll('section.comp[id]')) {
+      if (section.querySelector('.ds-sample')) continue;
+      const title = section.querySelector('.comp__bar h2,.comp__bar h3')?.textContent.trim() || section.id;
+      const vocabulary = section.querySelector('.comp__bar > code')?.textContent || '';
+      const classes = [...new Set([...vocabulary.matchAll(/\.([a-zA-Z][\w-]*)(\*)?/g)].map(m => m[1]))];
+      if (!classes.length) continue;
+      const matches = n => classes.some(c => [...n.classList].some(k => c.endsWith('-') ? k.startsWith(c) : k === c));
+      const candidates = [...section.querySelectorAll('[class]')].filter(n => !n.closest('.comp__bar') && matches(n));
+      const roots = candidates.filter(n => !candidates.some(p => p !== n && p.contains(n)));
+      const used = new Set();
+      for (const node of roots) {
+        if (/^(TR|TD|TH|OPTION|OPTGROUP)$/.test(node.tagName)) continue;
+        const cell = node.closest('table.matrix td');
+        const rowLabel = cell?.parentElement.querySelector('th')?.textContent.trim();
+        const columnLabel = cell && cell.closest('table').querySelectorAll('thead th')[cell.cellIndex]?.textContent.trim();
+        const group = node.closest('.vgroup')?.querySelector('h5')?.textContent.trim();
+        const signature = [...node.classList].filter(c => !c.startsWith('th-')).sort().join(' ');
+        const label = [group, rowLabel, columnLabel, node.getAttribute('data-variant') || signature].filter(Boolean).join(' / ');
+        const slug = label.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '') || 'default';
+        let variant = slug, i = 2;
+        while (used.has(variant)) variant = slug + '-' + i++;
+        used.add(variant);
+        try { rows.push(definition(dsId + ':' + section.id + '.' + variant, title + ' / ' + label, node.outerHTML, { dsId, dsVersion: mirror.version, family: section.id, variant })); } catch {}
+      }
+    }
+    for (const row of rows) {
+      row.stylesheets = stylesheets;
+      row.gallery = base.pathname;
+      const t = doc.createElement('template'); t.innerHTML = row.html;
+      t.content.querySelectorAll('script').forEach(n => n.remove());
+      for (const n of t.content.querySelectorAll('*')) {
+        for (const attr of [...n.attributes]) if (/^on/i.test(attr.name)) n.removeAttribute(attr.name);
+        for (const attr of ['src', 'href', 'poster']) if (n.hasAttribute(attr)) n.setAttribute(attr, portable(n.getAttribute(attr)));
+      }
+      row.html = t.innerHTML;
+    }
     return rows;
   }
   async function loadCatalog(dsId, apiUrl) {
-    const mirror = root['EDITOR_DS_' + dsId] || {};
+    const mirror = { ...(root['EDITOR_DS_' + dsId] || {}) };
+    try {
+      const response = await fetch(apiUrl('/design-systems/' + encodeURIComponent(dsId) + '/meta.json'), { cache: 'no-store' });
+      if (response.ok) { const meta = await response.json(); if (meta.version) mirror.version = meta.version; }
+    } catch {}
     const frame = document.createElement('iframe');
     frame.setAttribute('aria-hidden', 'true'); frame.tabIndex = -1;
     frame.style.cssText = 'position:fixed;left:-20000px;width:1440px;height:900px;visibility:hidden;pointer-events:none';
-    frame.src = apiUrl('/design-systems/' + encodeURIComponent(dsId) + '/gallery.html');
+    const url = new URL(apiUrl('/design-systems/' + encodeURIComponent(dsId) + '/gallery.html'), root.location.href);
+    url.searchParams.set('woven-library-refresh', Date.now()); frame.src = url.href;
     try {
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('The design-system gallery did not load.')), 8000);
@@ -137,8 +195,21 @@
         if (result.length) return result;
         await new Promise(resolve => setTimeout(resolve, 100));
       }
-      return result;
+      throw new Error('No components were found in design system "' + dsId + '". Open its gallery to check the component samples.');
     } finally { frame.remove(); }
+  }
+  function ensureStyles(def, doc, apiUrl = href => href, apply = true) {
+    const existing = dsIdFor(doc);
+    if (def.dsId && existing && existing !== def.dsId) throw new Error('This page uses design system "' + existing + '". Insert a component from that system.');
+    const ops = [];
+    for (const path of def.stylesheets || []) {
+      const href = apiUrl(path);
+      const absolute = new URL(href, doc.baseURI).href;
+      if ([...doc.querySelectorAll('link[rel="stylesheet"]')].some(n => n.href === absolute || new URL(n.href).pathname === new URL(absolute).pathname)) continue;
+      if (apply) { const link = doc.createElement('link'); link.rel = 'stylesheet'; link.href = href; doc.head.append(link); }
+      ops.push({ type: 'stylesheet', href });
+    }
+    return ops;
   }
   // Standalone runtime embedded in saved pages. No editor or model dependency.
   function runtime(document) {
@@ -198,5 +269,5 @@
     observer = new MutationObserver(update);
     observer.observe(document.documentElement, { childList: true, subtree: true }); update();
   }
-  root.WovenComponents = { REF, KEY, definition, instance, owner, overrides, capture, refresh, detach, catalog, catalogFromGallery, dsIdFor, loadCatalog, runtime };
+  root.WovenComponents = { REF, KEY, definition, instance, owner, overrides, capture, refresh, detach, catalog, catalogFromGallery, dsIdFor, loadCatalog, ensureStyles, runtime };
 })(window);

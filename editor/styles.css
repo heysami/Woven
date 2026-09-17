@@ -35032,7 +35032,7 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 .woven-inspector-more > summary strong { color: var(--text-muted); font-size: 10px; font-weight: 400; }
 .woven-section-content { display: grid; gap: 8px; padding-top: 10px; }
 .woven-edit-note { color: var(--text-muted); font-size: 10px; line-height: 1.5; margin: 0; }
-.woven-edit-tools > .woven-edit-note { display: block; padding: 4px 12px; }
+.woven-edit-tools > .woven-edit-note, .woven-inspector > .woven-edit-note { display: block; padding: 4px 12px; }
 .woven-property-color { display: flex; align-items: center; margin-top: 8px; gap: 4px; }
 .woven-property-color .zoom-inspector-color-row { flex: 1; min-width: 0; }
 .woven-inspector .zoom-inspector-color-swatch { width: 24px; height: 24px; border: 1px solid var(--border-strong); border-radius: 4px; }

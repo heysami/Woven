@@ -38780,7 +38780,7 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '(function(){',
     'var OPS=', opsJson, ';',
     'if(!OPS||!OPS.length)return;',
-    'var applying=false;var mo=null;',
+    'var applying=false;var mo=null;var reordered=new WeakMap();',
     'window.__wovenEditConflicts=[];',
     'function resolved(op,node){var key=op.type+":"+(op.id||op.selector);window.__wovenEditConflicts=window.__wovenEditConflicts.filter(function(v){return v.key!==key;});if(!node&&op.type!=="delete")window.__wovenEditConflicts.push({key:key,selector:op.selector});return node;}',
     'function $(s){try{return document.querySelector(s);}catch(_){return null;}}',
@@ -38799,9 +38799,14 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '    try{elFound=document.querySelector("[data-th-rkey-el=\\"".concat(op.key,"\\"]"));}catch(_){}',
     '    try{sib=document.querySelector("[data-th-rkey-sib=\\"".concat(op.key,"\\"]"));}catch(_){}',
     '  }',
-    '  if(!elFound)elFound=$(op.selector);',
-    '  if(!sib)sib=$(op.anchor);',
+    '  if(!elFound)elFound=op.id?resolveTarget(op):$(op.selector);',
+    '  if(!sib)sib=op.anchorMeta?resolveTarget(Object.assign({selector:op.anchor},op.anchorMeta)):$(op.anchor);',
     '  if(!elFound||!sib||!sib.parentElement||sib.parentElement!==elFound.parentElement)return;',
+    // A structural command runs once per live pair. Replaying older moves on
+    // the same nodes would displace siblings inserted by later commands.
+    // Remounted nodes have different identities and receive the move again.
+    '  var done=reordered.get(op);if(done&&done.el===elFound&&done.sib===sib&&done.parent===sib.parentElement)return;',
+    '  reordered.set(op,{el:elFound,sib:sib,parent:sib.parentElement});',
     '  var stamp=function(){if(op.key){try{elFound.setAttribute("data-th-rkey-el",op.key);sib.setAttribute("data-th-rkey-sib",op.key);}catch(_){}}};',
     '  if(op.position==="before"){',
     '    if(elFound.nextElementSibling===sib){stamp();return;}',
@@ -38883,6 +38888,7 @@ function _injectInspectorPatch(html, ops, priorOps) {
     '}',
     'function applyOne(op){',
     '  if(op.type==="attribute"){var at=$(op.selector);if(at&&/^data-(theme|mode)$/.test(op.name)){if(op.value==null)at.removeAttribute(op.name);else at.setAttribute(op.name,op.value);}return;}',
+    '  if(op.type==="stylesheet"&&op.href){var href=new URL(op.href,document.baseURI).href;if(!Array.from(document.querySelectorAll("link[rel=stylesheet]")).some(function(n){return n.href===href;})){var link=document.createElement("link");link.rel="stylesheet";link.href=op.href;document.head.append(link);}return;}',
     '  if(op.type==="reorder"&&op.anchor){applyReorder(op);return;}',
     '  if(op.type==="insert"){applyInsert(op);return;}',
     '  if(op.type==="replace"){applyReplace(op);return;}',
@@ -50984,129 +50990,6 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     }
   }, [_resolvePickedLive, stageInspectorEdit, flashPickOp]);
 
-  const nudgePickedElement = useCallback(async (dx, dy) => {
-    const { el, doc, win } = _resolvePickedLive();
-    if (!el || !doc) return 0;
-    const cs = win.getComputedStyle(el);
-    const pos = cs.position;
-    if (pos !== "absolute" && pos !== "fixed") return 0;
-    // Read current inline value if set, otherwise the computed pixel value.
-    // parseFloat tolerates "12px" and "12". If both inline and computed are
-    // "auto" (newly-positioned element with no offsets), we anchor at 0.
-    const readPx = (inline, computed) => {
-      const fromInline = parseFloat(inline);
-      if (Number.isFinite(fromInline)) return fromInline;
-      const fromComputed = parseFloat(computed);
-      return Number.isFinite(fromComputed) ? fromComputed : 0;
-    };
-    const newLeft = readPx(el.style.left, cs.left) + dx;
-    const newTop  = readPx(el.style.top,  cs.top)  + dy;
-    el.style.left = `${newLeft}px`;
-    el.style.top  = `${newTop}px`;
-    // Stage with a nudge op record for post-mount replay.
-    try {
-      const ifr = pickerIframeRef.current;
-      if (ifr) stageInspectorEdit(ifr, doc, {
-        type: "nudge",
-        selector: elementPatchSelector(el),
-        left: newLeft,
-        top:  newTop,
-      });
-    } catch {}
-    flashPickOp("done", `Nudged ${dx > 0 ? "+" : ""}${dx} / ${dy > 0 ? "+" : ""}${dy}px`);
-    return 1;
-  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp]);
-
-  const reorderPickedElement = useCallback(async (direction) => {
-    // direction: "up" | "down" | "left" | "right"
-    const { el, doc, win } = _resolvePickedLive();
-    if (!el || !doc) return 0;
-    const parent = el.parentElement;
-    if (!parent) return 0;
-    const cs = win.getComputedStyle(el);
-    // Sticky / inline / table-row-group etc. - bail out rather than guess.
-    if (cs.position === "absolute" || cs.position === "fixed") return 0;
-    const pcs = win.getComputedStyle(parent);
-    const pd = pcs.display;
-    const isFlex = pd === "flex" || pd === "inline-flex";
-    const isGrid = pd === "grid" || pd === "inline-grid";
-    const isBlock = !isFlex && !isGrid;
-    let allowAxis; // "horizontal" | "vertical" | "both"
-    if (isFlex) {
-      const fd = (pcs.flexDirection || "row");
-      allowAxis = (fd === "row" || fd === "row-reverse") ? "horizontal" : "vertical";
-    } else if (isGrid) {
-      allowAxis = "both"; // grid items are a 2-D source order; allow either axis to step
-    } else if (isBlock) {
-      allowAxis = "vertical";
-    } else {
-      return 0;
-    }
-    const isHorizDir = (direction === "left" || direction === "right");
-    if (allowAxis === "horizontal" && !isHorizDir) return 0;
-    if (allowAxis === "vertical"   &&  isHorizDir) return 0;
-    // "Backward" = toward smaller source-order (Up / Left).
-    const backward = (direction === "up" || direction === "left");
-    let anchor = null;
-    let position = null;
-    // Capture selectors BEFORE mutating. elementCssPath uses
-    // :nth-of-type(N); a move changes el's index AND can shift its anchor's
-    // index (forward path moves the anchor under el's old position). Capture
-    // first; on reload the replay script runs against pre-move React DOM, so
-    // it MUST find el + anchor at their pre-move positions.
-    const elSelectorPre     = elementPatchSelector(el);
-    let   anchorSelectorPre = "";
-    // Selectors alone aren't identity-stable for reorder. After the
-    // first replay applies the move, the elements occupy each other's pre-move
-    // :nth-of-type slots, so the SAME selectors now resolve crossways. Any
-    // subsequent MutationObserver fire (next React update) would re-run
-    // applyOne with swapped element handles → un-do the move. To break the
-    // symmetry, stamp a unique key on BOTH el and anchor so the replay can
-    // re-locate the SAME nodes regardless of position, and do an idempotency
-    // check ("is el already adjacent to sib in the target order?") that's
-    // meaningful against the real identities.
-    //
-    // The key persists into the saved file via pickSerializeClean (which
-    // preserves attributes) and survives React state-driven re-renders that
-    // keep DOM identity. Unmount/remount re-fall-back to selectors for the
-    // first apply, then the patch script re-annotates with the same key.
-    const opKey = `r${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
-    try { el.setAttribute("data-th-rkey-el", opKey); } catch {}
-    if (backward) {
-      const prev = el.previousElementSibling;
-      if (!prev) return 0;
-      anchor = prev;
-      position = "before";   // place el before prev
-      anchorSelectorPre = elementPatchSelector(prev);
-      try { prev.setAttribute("data-th-rkey-sib", opKey); } catch {}
-      parent.insertBefore(el, prev);
-    } else {
-      const next = el.nextElementSibling;
-      if (!next) return 0;
-      anchor = next;
-      position = "after";    // place el after next (after the move below, next sits before el)
-      anchorSelectorPre = elementPatchSelector(next);
-      try { next.setAttribute("data-th-rkey-sib", opKey); } catch {}
-      parent.insertBefore(next, el);
-    }
-    // Stage with a reorder op record. selector + anchor + position
-    // let the post-mount script re-apply the move against the post-React
-    // DOM, even when React's render put the element back in its original
-    // source order.
-    try {
-      const ifr = pickerIframeRef.current;
-      if (ifr) stageInspectorEdit(ifr, doc, {
-        type:     "reorder",
-        selector: elSelectorPre,
-        anchor:   anchorSelectorPre,
-        position,
-        key:      opKey,
-      });
-    } catch {}
-    flashPickOp("done", `Moved ${direction}`);
-    return 1;
-  }, [_resolvePickedLive, stageInspectorEdit, flashPickOp]);
-
   const duplicatePickedElement = useCallback(async () => {
     const { el, doc } = _resolvePickedLive();
     if (!el || !doc) return 0;
@@ -51224,7 +51107,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     const onKey = (e) => {
       if (!wfOwnsInput(surfaceIdRef)) return;   // input arbiter: one canvas surface at a time
       const tag = (e.target && e.target.tagName || "").toLowerCase();
-      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (WovenEdit.isTextInput(e.target) || e.defaultPrevented) return;
       const cmd = e.metaKey || e.ctrlKey;
       if (cmd && (e.key === "c" || e.key === "C")) {
         // A MEDIA asset card selected on the canvas outranks the picked
@@ -51296,32 +51179,6 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         e.preventDefault(); e.stopPropagation();
         if (pickedElement) duplicatePickedElement();
         else flashPickOp("error", "Cmd+D: pick a target element first.");
-      } else if (e.key === "ArrowUp" || e.key === "ArrowDown" ||
-                 e.key === "ArrowLeft" || e.key === "ArrowRight") {
-        // Arrow keys translate (abs/fixed) or reorder (in-flow).
-        // Magnitude is 1px / 8px-with-shift for the translate branch;
-        // reorder branch ignores magnitude (one sibling per press).
-        if (!pickedElement) return;
-        e.preventDefault(); e.stopPropagation();
-        const step = e.shiftKey ? 8 : 1;
-        let dx = 0, dy = 0;
-        if (e.key === "ArrowLeft")  dx = -step;
-        if (e.key === "ArrowRight") dx =  step;
-        if (e.key === "ArrowUp")    dy = -step;
-        if (e.key === "ArrowDown")  dy =  step;
-        // Try the translate path first; if the element isn't absolutely
-        // positioned, nudgePickedElement returns 0 and we fall back to
-        // sibling reorder. The reorder path interprets directions
-        // semantically - Left/Right on a flex-column parent is a no-op
-        // by design (the user said "if no flex, up/down only").
-        const dir = (e.key === "ArrowLeft") ? "left"
-                  : (e.key === "ArrowRight") ? "right"
-                  : (e.key === "ArrowUp") ? "up"
-                  : "down";
-        (async () => {
-          const moved = await nudgePickedElement(dx, dy);
-          if (!moved) await reorderPickedElement(dir);
-        })();
       } else if (e.key === "Delete" || e.key === "Backspace") {
         if (pickedElement) { deletePickedElement(); e.preventDefault(); e.stopPropagation(); }
       }
@@ -51340,7 +51197,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       copyPickedAsPng, copyPickedStyle, pastePickedStyle,
       replacePickedElement, deletePickedElement, duplicatePickedElement,
       _clipboardAssetNodes, pasteAssetNodeIntoPicked,
-      nudgePickedElement, reorderPickedElement, flashPickOp]);
+      flashPickOp]);
 
   // Window-level keyboard shortcuts for canvas copy/paste/delete.
   // Skips when the user is typing in any form field so in-field
@@ -59060,7 +58917,6 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
                 pickedDomRef=${pickedDomRef}
                 onSaveIframeHtml=${_saveIframeHtml}
                 onStageInspectorEdit=${stageInspectorEdit}
-                onMoveElement=${reorderPickedElement}
                 onClose=${() => { setPickedElement(null); }}
               />`;
             })()}
@@ -64239,7 +64095,34 @@ function PickedBoxField({ label, value, inherited, placeholder, corners, onChang
 
 function performSelectionCommand(element, action, value = {}) {
   const C = WovenComponents;
+  let definitions = [];
+  if (['insert-component', 'replace-component'].includes(action)) definitions = [value.definition];
+  else if (['refresh-component', 'reset-component'].includes(action)) definitions = [value];
+  else if (['paste', 'replace'].includes(action)) {
+    const template = element.ownerDocument.createElement('template');
+    template.innerHTML = WovenEdit.getClipboard()?.outerHTML || '';
+    for (const node of template.content.querySelectorAll('[data-woven-definition]')) {
+      try { definitions.push(JSON.parse(node.getAttribute('data-woven-definition'))); } catch {}
+    }
+  }
+  definitions = definitions.filter(Boolean);
+  if (new Set(definitions.map(def => def.dsId).filter(Boolean)).size > 1) throw new Error('These components use different design systems. Insert components from the page\'s bound system.');
+  const url = typeof apiUrl === 'function' ? apiUrl : undefined;
+  const styleOps = definitions.flatMap(def => C.ensureStyles(def, element.ownerDocument, url, false));
+  const result = executeSelectionCommand(element, action, value);
+  for (const def of definitions) C.ensureStyles(def, element.ownerDocument, url);
+  if (styleOps.length && result.op) result.op = { type: 'batch', ops: [...styleOps, result.op] };
+  return result;
+}
+
+function executeSelectionCommand(element, action, value = {}) {
+  const C = WovenComponents;
   let el = element;
+  if (action === "move") {
+    const result = WovenEdit.move(el, value.direction, value.step || 1, elementPatchSelector, _patchTargetMeta);
+    if (result.op?.styles) C.capture(el, "styles", result.op.styles);
+    return result;
+  }
   if (action === "component-text") {
     el = el.ownerDocument.querySelector(WovenEdit.selector(value.id));
     if (!el) throw new Error("Select the component again.");
@@ -64297,7 +64180,8 @@ function performSelectionCommand(element, action, value = {}) {
     if (!clip) throw new Error("Copy an element first.");
     const anchor = elementPatchSelector(el);
     const result = WovenEdit.paste(el, clip, position, elementPatchSelector);
-    return { element: result.nodes[0], op: { type: "insert", anchor: result.anchor || anchor, position, html: result.html, key: result.key } };
+    const op = { type: "insert", anchor: result.anchor || anchor, position, html: result.html, key: result.key };
+    return { element: result.nodes[0], op };
   }
   if (action === "make-component" || action.endsWith("component")) {
     const host = action === "make-component" ? el : C.owner(el);
@@ -64329,10 +64213,9 @@ function performSelectionCommand(element, action, value = {}) {
 
 function readEditStyles(el) {
   if (!el) return {};
-  const cs = el.ownerDocument.defaultView.getComputedStyle(el);
   const styles = {};
   for (const name of ["width", "height", "display", "justifySelf", "alignSelf", "flexDirection", "flexWrap", "justifyContent", "alignItems", "background", "borderColor", "borderWidth", "borderStyle", "borderRadius", "padding", "color", "fontFamily", "fontSize", "fontWeight", "boxShadow", "filter", "gap", "minWidth", "maxWidth", "minHeight", "maxHeight"]) styles[name] = el.style[name] || "";
-  for (const axis of ["width", "height"]) { styles[axis + "Mode"] = WovenEdit.sizeMode(el, axis); styles[axis + "Fixed"] = parseFloat(cs[axis]) || 0; }
+  for (const axis of ["width", "height"]) { styles[axis + "Mode"] = WovenEdit.sizeMode(el, axis); styles[axis + "Fixed"] = WovenEdit.dimension(el, axis); }
   return styles;
 }
 
@@ -65384,40 +65267,8 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       const info = _capturePicked(result.element);
       setPicked(info); setSelectionRect(info?.rect || null);
     }
+    return result;
   }, [selectedId, recordOp, _capturePicked]);
-
-  // ─── Reorder in flex/grid (DOM-order shuffle prev/next) ──────────────
-  const moveSelectedDom = useCallback((direction) => {
-    const doc = docRef.current; if (!doc || !selectedId) return;
-    const el = zoomFindById(doc, selectedId);
-    if (!el || !el.parentElement) return;
-    const meta = _docMeta(el);
-    const snap = snapshotBefore();
-    const sib = direction === "prev" ? el.previousElementSibling : el.nextElementSibling;
-    if (!sib) { showToast("No sibling in that direction"); return; }
-    // Capture selectors BEFORE the move (the replay runs against the
-    // pre-move React DOM) + stamp identity keys, mirroring the workflow
-    // reorder op's stability scheme.
-    const elSelPre  = elementPatchSelector(el);
-    const sibSelPre = elementPatchSelector(sib);
-    const opKey = "r" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
-    try { el.setAttribute("data-th-rkey-el", opKey); sib.setAttribute("data-th-rkey-sib", opKey); } catch {}
-    if (direction === "prev") sib.before(el); else sib.after(el);
-    const info = _capturePicked(el);
-    if (info) { setPicked(info); setSelectionRect(info.rect); }
-    if (meta.isNested) {
-      _markNestedDirty(meta, { type: "reorder", selector: elSelPre, anchor: sibSelPre, position: direction === "prev" ? "before" : "after", key: opKey });
-      showToast("Moved (imported, unsaved)");
-    } else {
-      recordOp("Moved element (unsaved)", snap, {
-        type:     "reorder",
-        selector: elSelPre,
-        anchor:   sibSelPre,
-        position: direction === "prev" ? "before" : "after",
-        key:      opKey,
-      });
-    }
-  }, [selectedId, recordOp, showToast, _docMeta, _markNestedDirty, _capturePicked]);
 
   // ─── Slot-popover payload application (insert / replace / blank) ────
   const _SLOT_SIDE_POS = { top: "beforebegin", left: "beforebegin", bottom: "afterend", right: "afterend" };
@@ -66458,7 +66309,6 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
           cssVars=${cssVars}
           tree=${tree}
           onStyle=${applyInspectorStyle}
-          onMove=${moveSelectedDom}
           onNavigate=${navigateTo}
         />
       `;
@@ -70264,13 +70114,12 @@ const WORKFLOW_INSPECTOR_DOCK_W = 288;
      • pickerIframeRef   - ref → currently-active picker iframe
      • pickedDomRef      - ref → live DOM element
      • onSaveIframeHtml(doc, label) - persists doc back to /__html_save
-     • onMoveElement(direction) - calls reorderPickedElement with up/down/left/right
      • onClose           - close the dock
 */
 function WorkflowPickedInspectorDock({
   node, zoom, pickedElement,
   pickerIframeRef, pickedDomRef,
-  onSaveIframeHtml, onStageInspectorEdit, onMoveElement,
+  onSaveIframeHtml, onStageInspectorEdit,
   onClose, closing,
 }) {
   // Refresh tick - bumps whenever we mutate styles so the inspector
@@ -70370,21 +70219,6 @@ function WorkflowPickedInspectorDock({
       ? "." + labelClsList.slice(0, 2).join(".")
       : "";
     const cs = win.getComputedStyle(el);
-    // Infer mode from inline style if explicit, else from computed value.
-    const widthInline  = el.style.width  || "";
-    const heightInline = el.style.height || "";
-    const inferMode = (inline) => {
-      if (inline === "100%") return "fill";
-      if (inline === "auto") return "hug";
-      if (inline.endsWith("px")) return "fixed";
-      return "auto";
-    };
-    const fixedPx = (inline, computedKey) => {
-      const inlineN = parseFloat(inline);
-      if (Number.isFinite(inlineN)) return Math.round(inlineN);
-      const compN = parseFloat(cs[computedKey]);
-      return Number.isFinite(compN) ? Math.round(compN) : 0;
-    };
     // Capture EVERY editable property the inspector body
     // surfaces. Preference: inline style first (so we see exactly what
     // we'd write back), then computed style as a faint hint when unset.
@@ -70411,9 +70245,9 @@ function WorkflowPickedInspectorDock({
       styles: {
         ...readEditStyles(el),
         widthMode:    WovenEdit.sizeMode(el, "width"),
-        widthFixed:   fixedPx(widthInline,  "width"),
+        widthFixed:   WovenEdit.dimension(el, "width"),
         heightMode:   WovenEdit.sizeMode(el, "height"),
-        heightFixed:  fixedPx(heightInline, "height"),
+        heightFixed:  WovenEdit.dimension(el, "height"),
         justifySelf:  (el.style.justifySelf || cs.justifySelf || "auto"),
         alignSelf:    (el.style.alignSelf   || cs.alignSelf   || "auto"),
         background:   readInline("background") || readInline("backgroundColor") || "",
@@ -70557,30 +70391,6 @@ function WorkflowPickedInspectorDock({
     setRefreshTick(t => t + 1);
   }, [pickedDomRef, pickerIframeRef, pickedElement, node.id]);
 
-  // Map prev/next (layout-relative - used by the shared inspector body)
-  // into the absolute up/down/left/right that reorderPickedElement
-  // expects. Read parent layout to decide which axis.
-  const applyMove = useCallback(async (direction) => {
-    const lay = picked && picked.parent && picked.parent.layout;
-    if (!lay) return;
-    const isFlex = lay.display === "flex" || lay.display === "inline-flex";
-    const isRow  = isFlex && !(lay.flexDirection || "row").startsWith("column");
-    const isGrid = lay.display === "grid" || lay.display === "inline-grid";
-    let absDir;
-    if (isFlex && isRow) {
-      absDir = direction === "prev" ? "left" : "right";
-    } else if (isGrid) {
-      // For grids, the prev/next buttons in the pad span both axes; the
-      // shared body emits prev for ←/↑ and next for →/↓ uniformly.
-      // Prefer vertical for grids (matches column-major reading order).
-      absDir = direction === "prev" ? "up" : "down";
-    } else {
-      absDir = direction === "prev" ? "up" : "down";
-    }
-    await onMoveElement(absDir);
-    setRefreshTick(t => t + 1);
-  }, [picked, onMoveElement]);
-
   const onCommand = useCallback((action, value) => {
     let ifr = pickerIframeRef.current;
     if (!wfPickHostAlive(ifr)) ifr = wfFindPickHost(pickedElement?.nodeId || node.id);
@@ -70591,6 +70401,7 @@ function WorkflowPickedInspectorDock({
     if (result.op) onStageInspectorEdit(ifr, doc, result.op);
     if (result.element) navigateTo(result.element);
     setRefreshTick(n => n + 1);
+    return result;
   }, [pickedElement, node.id, onStageInspectorEdit, navigateTo]);
 
   // React-rendered banner stays suppressed: the downstream pipeline
@@ -70649,7 +70460,6 @@ function WorkflowPickedInspectorDock({
               cssVars=${cssVars}
               tree=${tree}
               onStyle=${applyStyle}
-              onMove=${applyMove}
               onNavigate=${navigateTo}/>`
           : html`<div className="workflow-inspector-panel-empty">Pick an element inside the iframe to start editing.</div>`}
       </div>

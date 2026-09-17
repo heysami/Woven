@@ -8,6 +8,7 @@ const { chromium } = require('../tools/node_modules/playwright');
 const root = path.join(__dirname, '..');
 let saveCount = 0;
 let componentsUnavailable = false;
+let galleryRevision = 2;
 let source = '<!doctype html><html><head><style>:root{--accent:#126b68;--space:12px;--radius:6px}body{font:16px Arial;padding:32px}main{display:flex;gap:16px}button{padding:12px;border-radius:var(--radius)}</style></head><body><main><button id="sample"><span>Continue</span></button><button>Cancel</button></main><script>setInterval(()=>{document.querySelector("#sample span").textContent="Continue"},20)</script></body></html>';
 const nestedPath = 'source/demo/component.html';
 let nestedSource = '<!doctype html><html><head></head><body><h2>Nested original</h2><script>setInterval(()=>{document.querySelector("h2").textContent="Nested original"},20)</script></body></html>';
@@ -27,6 +28,9 @@ const server = http.createServer(async (req,res)=>{
     }
     return res.end('{}');
   }
+  if (u.pathname === '/design-systems/fixture/meta.json') {res.setHeader('content-type','application/json');return res.end(JSON.stringify({id:'fixture',version:'live-'+galleryRevision}));}
+  if (u.pathname === '/design-systems/fixture/styles.css') {res.setHeader('content-type','text/css');return res.end('.button{background:rgb(12,110,90);color:white;padding:12px}');}
+  if (u.pathname === '/design-systems/fixture/gallery.html') {res.setHeader('content-type','text/html');return res.end('<!doctype html><link rel="stylesheet" href="styles.css"><section class="comp" id="c-button"><div class="comp__bar"><h3>Library Button</h3><code>.button</code></div><div class="vgroup"><h5>Primary</h5><button class="button" data-library-version="'+galleryRevision+'"><span>Library Button</span></button></div></section>');}
   if (u.pathname === '/'+nestedPath) {res.setHeader('content-type','text/html');return res.end(nestedSource.replace('<head>','<head><meta name="woven-source-revision" content="'+hash(nestedSource)+'">'));}
   if (u.pathname === '/source/demo/index.html') {res.setHeader('content-type','text/html');return res.end(source.replace('<head>','<head><meta name="woven-source-revision" content="'+hash()+'">'));}
   res.setHeader('content-type','text/html');res.end('<!doctype html><html><head></head><body><div id="root"></div></body></html>');
@@ -76,6 +80,23 @@ const server = http.createServer(async (req,res)=>{
     await page.getByRole('treeitem',{name:'sample',exact:true}).click();
     await page.waitForFunction(()=>document.querySelector('[role="treeitem"][aria-label="sample"]')?.getAttribute('aria-selected')==='true');
     assert.equal(await page.getByLabel('Width resizing').count(),1);
+    await frame.locator('#sample').press('ArrowRight');
+    assert.equal(await frame.locator('main > button').last().getAttribute('id'),'sample');
+    await frame.locator('#sample').press('ArrowRight');
+    assert.match(await page.getByRole('alert').innerText(),/No layer/);
+    await frame.locator('#sample').press('ArrowUp');
+    assert.match(await page.getByRole('alert').innerText(),/horizontally/);
+    await frame.locator('#sample').press('ArrowLeft');
+    assert.equal(await frame.locator('main > button').first().getAttribute('id'),'sample');
+    await frame.locator('#sample span').click();
+    assert.ok(Number(await page.getByLabel('Width',{exact:true}).inputValue()) > 20,'Inline text must have a real measured width');
+    assert.ok(Number(await page.getByLabel('Height',{exact:true}).inputValue()) > 5,'Inline text must have a real measured height');
+    assert.equal(await page.getByLabel('Width resizing').inputValue(),'auto','Inherited size must not pretend to be Hug');
+    await page.getByLabel('Width resizing').selectOption('hug');
+    await page.getByLabel('Height resizing').selectOption('hug');
+    assert.ok(await frame.locator('#sample span').evaluate(n=>n.getBoundingClientRect().width>20&&n.getBoundingClientRect().height>5));
+    await page.getByRole('treeitem',{name:'sample',exact:true}).click();
+
     assert.equal(await page.getByLabel('Min width',{exact:true}).isVisible(),false,'Size limits start collapsed');
     assert.equal(await page.locator('.woven-inspector').evaluate(n=>getComputedStyle(n).fontSize),'11px');
     await page.screenshot({path:path.join(require('node:os').tmpdir(),'woven-inspector-preview.png'),fullPage:true});
@@ -87,9 +108,23 @@ const server = http.createServer(async (req,res)=>{
     componentsUnavailable=false;
     await page.getByRole('button',{name:'Retry component library'}).click();
     await page.waitForFunction(()=>!document.querySelector('.woven-edit-error'));
-    await page.getByLabel('Search components').fill('Button');
+    await page.getByLabel('Search components').fill('Library Button');
+    await page.getByLabel('Component library').selectOption('ds');
+    await page.locator('.woven-edit-component-list button').first().waitFor();
     await page.locator('.woven-edit-component-list button').first().click();
     assert.equal(await frame.locator('[data-woven-component]').count(),1);
+    assert.equal(await frame.locator('[data-woven-component]').evaluate(n=>JSON.parse(n.getAttribute('data-woven-definition')).dsVersion),'live-2');
+    await page.waitForFunction(()=>getComputedStyle(document.querySelector('.zoom-overlay iframe').contentDocument.querySelector('[data-woven-component]')).backgroundColor==='rgb(12, 110, 90)');
+    await page.getByRole('button',{name:'Close insert'}).click();
+    await page.locator('.woven-edit-component > summary').click();
+    await page.getByLabel('Component text part-1').fill('My label');
+    await page.getByLabel('Component text part-1').press('Tab');
+    galleryRevision=3;
+    await page.getByRole('button',{name:'Update',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelector('.zoom-overlay iframe').contentDocument.querySelector('[data-woven-component]')?.getAttribute('data-library-version')==='3');
+    assert.equal(await frame.locator('[data-woven-component] span').textContent(),'My label','DS update preserves text overrides');
+    assert.equal(await frame.locator('[data-woven-component]').evaluate(n=>JSON.parse(n.getAttribute('data-woven-definition')).dsVersion),'live-3','Update fetches the current DS without opening Add');
+
     await page.getByRole('button',{name:'Copy',exact:true}).click();
     for(let i=0;i<3;i++) await page.getByRole('button',{name:'Paste',exact:true}).click();
     assert.equal(await frame.locator('[data-woven-component]').count(),4);
@@ -123,6 +158,12 @@ const server = http.createServer(async (req,res)=>{
       window.fixtureRoot.render(html`<${React.Fragment}><${WorkflowFixture}/><${DialogHost}/><//>`);
     });
     await page.waitForFunction(()=>document.querySelector('#wf-fixture')?.contentDocument?.querySelector('meta[name="woven-authoring"]'));
+    const wfDoc=page.frameLocator('#wf-fixture');
+    await page.getByLabel('Width resizing').waitFor();
+    const sampleIndex=await wfDoc.locator('#sample').evaluate(n=>[...n.parentElement.children].indexOf(n));
+    await wfDoc.locator('#sample').press('ArrowRight');
+    assert.equal(await wfDoc.locator('#sample').evaluate(n=>[...n.parentElement.children].indexOf(n)),sampleIndex+1,'Workflow shares auto-layout movement');
+    await wfDoc.locator('#sample').press('ArrowLeft');
     await page.getByRole('button',{name:'Add',exact:true}).click();
     await page.getByRole('button',{name:'Text',exact:true}).click();
     const workflowFrame=page.frameLocator('#wf-fixture');
@@ -157,9 +198,17 @@ const server = http.createServer(async (req,res)=>{
     await page.getByLabel('Width',{exact:true}).fill('440');
     await page.getByLabel('Width',{exact:true}).press('Enter');
     assert.equal(await workflowFrame.locator('main').evaluate(n=>n.style.width),'440px');
+    const beforeNudge=await workflowFrame.locator('main').evaluate(n=>n.getBoundingClientRect().x);
+    await workflowFrame.locator('main').press('Shift+ArrowRight');
+    assert.equal(await workflowFrame.locator('main').evaluate(n=>n.getBoundingClientRect().x),beforeNudge+10);
+    assert.match(await page.getByRole('status').innerText(),/Nudged 10 px right/);
     await page.screenshot({path:path.join(require('node:os').tmpdir(),'woven-inspector-layout.png'),fullPage:true});
+    const layerOffset=await workflowFrame.locator('main').evaluate(n=>n.style.translate);
+    await page.getByLabel('Width',{exact:true}).press('ArrowLeft');
+    assert.equal(await workflowFrame.locator('main').evaluate(n=>n.style.translate),layerOffset,'Property editing keeps native arrow behavior');
     await page.getByRole('treeitem',{name:'Main',exact:true}).press('ArrowRight');
     await page.keyboard.press('Enter');
+    assert.equal(await workflowFrame.locator('main').evaluate(n=>n.style.translate),layerOffset,'Layer navigation must not nudge');
     assert.equal(await page.getByRole('treeitem',{name:'sample',exact:true}).getAttribute('aria-selected'),'true');
     await page.screenshot({path:path.join(require('node:os').tmpdir(),'woven-edit-ui.png'),fullPage:true});
     assert.ok(await page.locator('.woven-inspector').evaluate(n=>n.scrollWidth <= n.clientWidth),'Properties must not overflow horizontally');

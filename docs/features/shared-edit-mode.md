@@ -22,6 +22,15 @@ If an older daemon returns an HTML error page for an editing endpoint, the UI
 explains that the daemon must be restarted. Retry keeps pending edits intact.
 Component-library errors stay within the component controls.
 
+Arrow keys use the same movement command in both surfaces. In-flow children of
+flex and grid containers move past a neighbor in the pressed direction, using
+visual positions (including reversed rows, RTL, and wrapping). Ordinary flow
+and absolutely positioned layers nudge by 1 CSS pixel; Shift nudges by 10.
+Nudging preserves the original layout footprint, transforms, and anchors.
+Focused text fields retain cursor movement, and Layers retains tree navigation.
+Blocked moves explain the cause, such as the end of a row, the wrong axis,
+explicit CSS ordering, hidden content, or a stylesheet preventing movement.
+
 ## Editing and saving
 
 Entering edit mode captures the rendered document into an authoring iframe.
@@ -34,6 +43,10 @@ Existing pages keep their selector and fingerprint fallbacks. Save merges the
 commands into the original source HTML; it does not replace React source with
 rendered DOM. Saved patches run before paint and replay after application
 rerenders, including text-node changes.
+Reorders run once per live target/anchor pair, so replaying earlier movements
+cannot shuffle components inserted later. Remounted elements receive the
+command again. Runtime code that rearranges the same live nodes retains its
+own ordering until those nodes remount; the authoring view remains frozen.
 
 Undo and redo share the per-file session between the two surfaces. Undo after
 Save can be saved again to restore the previous source result. Closing the edit
@@ -66,6 +79,7 @@ styling and variable bindings resolve against the destination stylesheet.
 
 | Mode | Behavior |
 | --- | --- |
+| From stylesheet | No width/height override from the inspector; the page's CSS determines sizing. |
 | Fixed | CSS pixels independent of canvas zoom. Stops flex growth and shrinkage on the main axis. |
 | Hug | Fits content within available space using `fit-content`. |
 | Fill in flex | Shares remaining main-axis space, or stretches on the cross axis. |
@@ -77,6 +91,10 @@ Minimum and maximum constraints still apply. Auto layout exposes direction,
 wrapping, packing, child alignment, gap, and padding. Grid and block behavior
 retain CSS semantics. Drag resizing converts dimensions to Fixed using local
 CSS pixels, accounting for canvas zoom.
+Inline text uses its actual layout dimensions when computed CSS says `auto`.
+Inherited sizing is labeled From stylesheet, rather than incorrectly appearing
+as Hug. True zero-sized boxes show an explanation, including positioned
+children that do not contribute to the parent's intrinsic size.
 
 ## Components and variables
 
@@ -84,6 +102,14 @@ The component browser reads the bound design system's rendered gallery, with
 runtime mirror data as a fallback. Project definitions live in
 `editor/components.json` and have their own revision checks. Design-system
 definitions remain owned by the existing DS update flow.
+The picker supports explicit `.ds-sample` galleries and the default library's
+`.comp` sections and class vocabulary. It shows Design system and Project
+sources separately. Gallery components carry their DS ID, version, stable
+variant reference, and canonical stylesheet dependencies. Insert, paste, and
+swap attach missing stylesheets, which also persist through Save and reload.
+Update fetches the latest canonical definition even when Add is closed. The
+instance links back to its gallery. Creating a component from a page selection
+creates a project definition; it does not silently change the canonical DS.
 
 Instances store a definition reference, definition snapshot, stable part keys,
 and per-part overrides. Supported actions are Create, Insert, Update, Swap,
@@ -107,7 +133,9 @@ This is a DOM/CSS editor. It does not translate arbitrary application logic into
 a Figma scene graph or rewrite a data model when a rendered label changes.
 Cross-origin embeds and canvas/WebGL internals are not editable DOM components.
 Copied script event closures are not synthesized into new application logic.
-Cross-design-system pastes can inherit a different class or variable vocabulary.
+Plain HTML pastes resolve against the destination CSS. Linked DS instances
+require the same bound design system, so importing a library cannot silently
+replace the destination page's global styles.
 Structural DS changes require Update; live CSS changes follow linked stylesheets.
 
 Saved edit commands remain embedded in source, and the existing daemon history
@@ -130,6 +158,7 @@ Run the focused regression checks from the repository root:
 node editor/tests/test-edit-engine.cjs
 node editor/tests/test-edit-session.cjs
 node editor/tests/test-edit-components.cjs
+node editor/tests/test-edit-movement.cjs
 node editor/tests/test-edit-ui.cjs
 python3 -B -m unittest discover -s editor/tests -p 'test_edit_*.py'
 ```

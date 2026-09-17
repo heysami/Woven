@@ -73,8 +73,8 @@ function WovenDimension({ axis, mode, size, disabledFill, onChange }) {
   };
   return html`<div className="woven-dimension">
     <label className="woven-dimension-value"><span>${axis.toUpperCase()}</span><input aria-label=${label} inputMode="decimal" value=${draft} onChange=${e => setDraft(e.target.value)} onBlur=${commit} onKeyDown=${e => { if (e.key === 'Enter') e.target.blur(); }}/><span className="woven-unit">px</span></label>
-    <select aria-label=${label + ' resizing'} value=${mode === 'auto' ? 'hug' : mode} title="Fixed: use pixels. Hug: fit content. Fill: use the space available in the parent." onChange=${e => onChange(e.target.value, size)}>
-      <option value="fixed">Fixed</option><option value="hug">Hug contents</option><option value="fill" disabled=${disabledFill}>Fill container</option>
+    <select aria-label=${label + ' resizing'} value=${mode} title="From stylesheet: use the page's sizing rule. Fixed: use pixels. Hug: fit content. Fill: use available parent space." onChange=${e => onChange(e.target.value, size)}>
+      <option value="auto">From stylesheet</option><option value="fixed">Fixed</option><option value="hug">Hug contents</option><option value="fill" disabled=${disabledFill}>Fill container</option>
     </select>
   </div>`;
 }
@@ -93,6 +93,9 @@ function WovenSelectionTools({ element, picked, onCommand, onStyle }) {
   const [busy, setBusy] = useState(false);
   const [dsDefinitions, setDsDefinitions] = useState([]);
   const [loadingDs, setLoadingDs] = useState(false);
+  const [dsError, setDsError] = useState('');
+  const [dsAttempt, setDsAttempt] = useState(0);
+  const [libraryScope, setLibraryScope] = useState('all');
   const [, setSessionTick] = useState(0);
   useEffect(() => {
     const listener = event => { if (WovenEdit.state(element?.ownerDocument) === event.detail.state) setSessionTick(n => n + 1); };
@@ -100,14 +103,15 @@ function WovenSelectionTools({ element, picked, onCommand, onStyle }) {
     return () => window.removeEventListener('woven:edit-session', listener);
   }, [element]);
   const dsId = element && WovenComponents.dsIdFor(element.ownerDocument, typeof D !== 'undefined' ? D.meta?.dsRef : null);
-  useEffect(() => {
-    if (!dsId || !open) return;
-    let live = true; setLoadingDs(true);
-    WovenComponents.loadCatalog(dsId, apiUrl).then(rows => { if (live) setDsDefinitions(rows); })
-      .catch(e => { if (live) setError(e.message); }).finally(() => { if (live) setLoadingDs(false); });
-    return () => { live = false; };
-  }, [dsId, open]);
   const instanceId = element && WovenComponents.owner(element)?.getAttribute(WovenComponents.REF);
+  useEffect(() => {
+    setDsDefinitions([]); setDsError('');
+    if (!dsId || (!open && (!instanceId || instanceId.startsWith('local:')))) { setLoadingDs(false); return; }
+    let live = true; setLoadingDs(true);
+    WovenComponents.loadCatalog(dsId, apiUrl).then(rows => { if (live) { setDsDefinitions(rows); setDsError(''); } })
+      .catch(e => { if (live) setDsError(e.message); }).finally(() => { if (live) setLoadingDs(false); });
+    return () => { live = false; };
+  }, [dsId, open, instanceId, dsAttempt]);
   useEffect(() => {
     if (!open && !instanceId) return;
     let live = true;
@@ -125,7 +129,6 @@ function WovenSelectionTools({ element, picked, onCommand, onStyle }) {
   const definitions = [...new Map([...cached, ...dsDefinitions, ...library.definitions].map(d => [d.id, d])).values()];
   const host = C.owner(element);
   const current = host && (() => { try { return JSON.parse(host.getAttribute("data-woven-definition")); } catch { return null; } })();
-  const latest = current && definitions.find(d => d.id === current.id);
   const tokens = WovenEdit.variables(element.ownerDocument);
   const modes = WovenEdit.modes(element.ownerDocument);
   const cssProperty = property.replace(/[A-Z]/g, c => "-" + c.toLowerCase());
@@ -154,6 +157,22 @@ function WovenSelectionTools({ element, picked, onCommand, onStyle }) {
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   };
+  const updateInstance = async (reset = false) => {
+    setBusy(true); setError('');
+    try {
+      let fresh;
+      if (current.dsId) {
+        const rows = await C.loadCatalog(current.dsId, apiUrl); setDsDefinitions(rows);
+        fresh = rows.find(d => d.id === current.id);
+      } else {
+        const value = await fetch(apiUrl('/__edit_components'), { cache: 'no-store' }).then(r => WovenEdit.readResponse(r, 'Load components'));
+        setLibrary(value); fresh = value.definitions?.find(d => d.id === current.id);
+      }
+      if (!fresh) throw new Error('This component is missing from its source library. Keep the current instance, swap it, or detach it.');
+      await perform(reset ? 'reset-component' : 'refresh-component', fresh);
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
   const createVariable = async () => {
     const name = await uiPrompt("Variable name (page scope)", "--space-custom");
     if (!name) return;
@@ -175,7 +194,9 @@ function WovenSelectionTools({ element, picked, onCommand, onStyle }) {
   };
   const preview = def => {
     const doc = element.ownerDocument;
-    const css = Array.from(doc.querySelectorAll('link[rel="stylesheet"],style')).filter(n => !n.hasAttribute('data-th-pick-style')).map(n => n.outerHTML).join('');
+    const css = def.dsId && def.stylesheets?.length
+      ? def.stylesheets.map(href => '<link rel="stylesheet" href="' + apiUrl(href).replace(/"/g, '&quot;') + '">').join('')
+      : Array.from(doc.querySelectorAll('link[rel="stylesheet"],style')).filter(n => !n.hasAttribute('data-th-pick-style')).map(n => n.outerHTML).join('');
     return '<!doctype html><html><head><base href="' + doc.baseURI.replace(/"/g, '&quot;') + '">' + css + '<style>html,body{margin:0;padding:8px;min-width:0;background:transparent}body{display:flex;align-items:center;justify-content:center}body>*{max-width:100%;box-sizing:border-box}</style></head><body>' + def.html + '</body></html>';
   };
   const selectionName = element.getAttribute('data-name') || element.getAttribute('aria-label') ||
@@ -188,7 +209,7 @@ function WovenSelectionTools({ element, picked, onCommand, onStyle }) {
     </div>
     <div className="woven-selection-heading"><${WovenInspectorIcon} name=${current ? "component" : "frame"}/>
       <strong title=${picked?.label || selectionName}>${selectionName}</strong>
-      <${WovenIconButton} icon="component" label="Create component from selection" disabled=${busy} onClick=${() => publish(false)}/>
+      <${WovenIconButton} icon="component" label="Create project component from selection" disabled=${busy} onClick=${() => publish(false)}/>
     </div>
     <div className="woven-selection-actions">
       <${WovenIconButton} icon="copy" label="Copy" onClick=${() => perform("copy")}/>
@@ -216,13 +237,18 @@ function WovenSelectionTools({ element, picked, onCommand, onStyle }) {
         <button onClick=${() => perform("insert", { html: '<div style="display:flex;gap:8px;padding:16px;min-width:80px;min-height:48px"></div>', position })}><${WovenInspectorIcon} name="frame"/>Frame</button>
       </div>
       <input aria-label="Search components" placeholder="Search components..." value=${query} onChange=${e => setQuery(e.target.value)}/>
+      <label className="woven-labeled-row">Library<select aria-label="Component library" value=${libraryScope} onChange=${e => setLibraryScope(e.target.value)}>
+        <option value="all">All components</option><option value="ds">Design system${dsId ? ': ' + dsId : ''}</option><option value="project">Project components</option>
+      </select></label>
+      ${dsId ? html`<small className="woven-edit-note">Connected to <a href=${apiUrl('/design-systems/' + encodeURIComponent(dsId) + '/gallery.html')} target="_blank" rel="noopener">${dsId}</a>. Inserted DS components keep their library link.</small>` : html`<small className="woven-edit-note">No design system is bound to this page. Bind one in the project to browse its components.</small>`}
+      <small className="woven-edit-note">Create component saves to this project. Shared components are managed in the design-system library.</small>
       ${loadingDs && html`<small>Loading design-system components...</small>`}
       <div className="woven-edit-component-list">
-        ${definitions.filter(d => d.name.toLowerCase().includes(query.toLowerCase())).slice(0, 40).map(def => html`
+        ${definitions.filter(d => (libraryScope === 'all' || (libraryScope === 'ds' ? !!d.dsId : !d.dsId)) && d.name.toLowerCase().includes(query.toLowerCase())).slice(0, 40).map(def => html`
           <button key=${def.id} title=${def.dsId ? "Design system: " + def.dsId : "Project component"}
             onClick=${() => perform("insert-component", { definition: def, position })}>
             <iframe className="woven-edit-component-preview" title=${def.name + " preview"} tabIndex="-1" sandbox="" srcDoc=${preview(def)}/>
-            <span>${def.name}</span><small>${def.dsId || "Project"}</small>
+            <span>${def.name}</span><small>${def.dsId ? 'DS: ' + def.dsId : "Project"}</small>
           </button>`)}
         ${definitions.length === 0 && html`<small>No components yet. Create one from the selection.</small>`}
       </div>
@@ -230,6 +256,7 @@ function WovenSelectionTools({ element, picked, onCommand, onStyle }) {
     ${current && html`<details className="woven-edit-component woven-inspector-section">
       <summary><${WovenInspectorIcon} name="component"/><strong>${current.name}</strong><span>Instance</span></summary>
       <div className="woven-section-content">
+        <small className="woven-edit-note">${current.dsId ? html`Design system: <a href=${apiUrl('/design-systems/' + encodeURIComponent(current.dsId) + '/gallery.html') + '#' + encodeURIComponent(current.family || '')} target="_blank" rel="noopener">${current.dsId}</a>${current.dsVersion ? ' / ' + current.dsVersion : ''}` : 'Project component'}${loadingDs ? ' / Loading library...' : ''}</small>
         ${host.hasAttribute('data-woven-component-conflict') && html`<small role="alert">${host.getAttribute('data-woven-component-conflict')}</small>`}
         ${[host, ...host.querySelectorAll('[data-woven-part]')].filter(n => !n.children.length && n.textContent.trim()).slice(0, 12).map((n, i) => html`
           <label key=${WovenEdit.identify(n)} className="woven-labeled-row">Text ${i + 1}
@@ -241,8 +268,8 @@ function WovenSelectionTools({ element, picked, onCommand, onStyle }) {
           ${definitions.map(def => html`<option key=${def.id} value=${def.id}>${def.name}</option>`)}
         </select></label>
         <div className="woven-edit-actions">
-          <button onClick=${() => perform("refresh-component", latest || current)}>Update</button>
-          <button onClick=${() => perform("reset-component", latest || current)}>Reset overrides</button>
+          <button disabled=${busy} onClick=${() => updateInstance()}>Update</button>
+          <button disabled=${busy} onClick=${() => updateInstance(true)}>Reset overrides</button>
           <button onClick=${() => perform("detach-component")}>Detach</button>
         </div>
         ${current.id.startsWith("local:") && html`<button disabled=${busy} onClick=${() => publish(true)}>Publish selection as main</button>`}
@@ -269,11 +296,43 @@ function WovenSelectionTools({ element, picked, onCommand, onStyle }) {
       </div>
     </div>`}
     ${libraryError && (open || current) && html`<div role="alert" className="woven-edit-error">${libraryError}<button onClick=${() => setLibraryAttempt(n => n + 1)}>Retry component library</button></div>`}
+    ${dsError && (open || current) && html`<div role="alert" className="woven-edit-error">${dsError}<button onClick=${() => setDsAttempt(n => n + 1)}>Retry design system</button></div>`}
     ${error && html`<div role="alert" className="woven-edit-error">${error}<button onClick=${() => setError("")}>Dismiss</button></div>`}
   </div>`;
 }
 
-function WovenPropertiesPanel({ picked, styles, computedStyles, onStyle, onMove, onNavigate, cssVars, tree, element, onCommand }) {
+function useWovenMovement(element, onCommand) {
+  const [feedback, setFeedback] = useState(null);
+  const panel = React.useRef(null);
+  const move = (direction, step = 1) => {
+    try {
+      const result = onCommand('move', { direction, step });
+      setFeedback({ message: result?.message || 'Moved layer' });
+    } catch (error) { setFeedback({ error: true, message: error.message }); }
+  };
+  useEffect(() => { setFeedback(null); }, [element]);
+  useEffect(() => {
+    if (!element || !onCommand) return;
+    const doc = element.ownerDocument;
+    const onKey = e => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || !/^Arrow(Left|Right|Up|Down)$/.test(e.key)) return;
+      if (WovenEdit.isTextInput(e.target) || e.target.closest?.('[role="tree"],[role="dialog"],[role="slider"],[role="listbox"],[role="menu"]')) return;
+      const overlay = document.querySelector('.zoom-overlay');
+      if (overlay && !overlay.contains(panel.current)) return;
+      // A focused control outside this editing surface keeps its own arrows.
+      if (e.target.ownerDocument === document && e.target !== document.body && !panel.current?.contains(e.target) && !e.target.closest?.('.zoom-overlay,.workflow-node')) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      move(e.key.slice(5).toLowerCase(), e.shiftKey ? 10 : 1);
+    };
+    window.addEventListener('keydown', onKey, true);
+    if (doc !== document) doc.addEventListener('keydown', onKey, true);
+    return () => { window.removeEventListener('keydown', onKey, true); if (doc !== document) doc.removeEventListener('keydown', onKey, true); };
+  }, [element, onCommand]);
+  return { move, feedback, panel };
+}
+
+function WovenPropertiesPanel({ picked, styles, computedStyles, onStyle, onNavigate, cssVars, tree, element, onCommand }) {
+  const { move, feedback, panel } = useWovenMovement(element, onCommand);
   if (!picked || !element) return null;
   const cs = element.ownerDocument.defaultView.getComputedStyle(element);
   const parent = picked.parent?.layout;
@@ -315,15 +374,17 @@ function WovenPropertiesPanel({ picked, styles, computedStyles, onStyle, onMove,
   const directText = !element.children.length || Array.from(element.childNodes).some(n => n.nodeType === 3 && n.textContent.trim());
   const TypographySection = directText ? 'section' : 'details';
   const summary = name => html`<summary><strong>${name}</strong><span className="woven-disclosure-mark">⌄</span></summary>`;
-  return html`<div className="woven-inspector" onKeyDown=${e => { if (e.target.matches('input,textarea,select')) e.stopPropagation(); }}>
+  const sizeNote = WovenEdit.sizingNote(element);
+  return html`<div ref=${panel} className="woven-inspector" onKeyDown=${e => { if (e.target.matches('input,textarea,select')) e.stopPropagation(); }}>
     <${WovenSelectionTools} element=${element} picked=${picked} onCommand=${onCommand} onStyle=${onStyle}/>
+    ${feedback && html`<div className=${feedback.error ? 'woven-edit-error' : 'woven-edit-note'} role=${feedback.error ? 'alert' : 'status'}>${feedback.message}</div>`}
     ${(parentFlex || parentGrid) && html`<section className="woven-inspector-section">
       <div className="woven-section-heading"><strong>Position</strong><span className="woven-section-meta">In ${parentGrid ? 'grid' : 'auto layout'}</span></div>
       <div className="woven-alignment-toolbar">
         ${[['left','h','start'],['center','h','center'],['right','h','end'],['top','v','start'],['middle','v','center'],['bottom','v','end']].map(([icon,axis,value]) => html`<${WovenIconButton} key=${icon} icon=${icon} label=${'Align ' + icon} onClick=${() => align(axis, value)}/>`)}
         <span className="woven-toolbar-separator"/>
-        <${WovenIconButton} icon="up" label="Move earlier" onClick=${() => onMove('prev')}/>
-        <${WovenIconButton} icon="down" label="Move later" onClick=${() => onMove('next')}/>
+        <${WovenIconButton} icon="up" label="Move earlier" onClick=${() => move('prev')}/>
+        <${WovenIconButton} icon="down" label="Move later" onClick=${() => move('next')}/>
       </div>
     </section>`}
     <section className="woven-inspector-section">
@@ -337,9 +398,11 @@ function WovenPropertiesPanel({ picked, styles, computedStyles, onStyle, onMove,
         ${flex && html`<span className="woven-toolbar-separator"/><${WovenIconButton} icon="wrap" label="Wrap children" active=${(styles.flexWrap || cs.flexWrap) !== 'nowrap'} onClick=${() => set('flexWrap', cs.flexWrap === 'nowrap' ? 'wrap' : 'nowrap')}/>`}
       </div>
       <div className="woven-property-grid woven-dimensions">
-        <${WovenDimension} axis="w" mode=${styles.widthMode || WovenEdit.sizeMode(element, 'width')} size=${styles.widthFixed ?? (parseFloat(cs.width) || 0)} disabledFill=${parentHugs('width')} onChange=${(mode,value) => size('w',mode,value)}/>
-        <${WovenDimension} axis="h" mode=${styles.heightMode || WovenEdit.sizeMode(element, 'height')} size=${styles.heightFixed ?? (parseFloat(cs.height) || 0)} disabledFill=${parentHugs('height')} onChange=${(mode,value) => size('h',mode,value)}/>
+        <${WovenDimension} axis="w" mode=${styles.widthMode || WovenEdit.sizeMode(element, 'width')} size=${WovenEdit.dimension(element, 'width')} disabledFill=${parentHugs('width')} onChange=${(mode,value) => size('w',mode,value)}/>
+        <${WovenDimension} axis="h" mode=${styles.heightMode || WovenEdit.sizeMode(element, 'height')} size=${WovenEdit.dimension(element, 'height')} disabledFill=${parentHugs('height')} onChange=${(mode,value) => size('h',mode,value)}/>
       </div>
+      ${sizeNote && html`<small className="woven-edit-note" role="status">${sizeNote}</small>`}
+      <small className="woven-edit-note">Arrows reorder in auto layout and grid. Elsewhere they nudge 1 px, or 10 px with Shift.</small>
       ${flex && html`<div className="woven-auto-layout">
         <div className="woven-alignment-matrix" role="group" aria-label="Align children">
           ${Array.from({length:9},(_,i) => {
