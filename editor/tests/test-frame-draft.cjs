@@ -12,17 +12,21 @@ const original = '<!doctype html><html><head><style>body{font:16px Arial;margin:
 const files = new Map([[from,original]]);
 let failDraftSave = false, failApply = false;
 const writes = [];
-const data = { meta: { project: 'Draft fixture', prototype: 'demo', sourceRoot: '../source/demo/', sourceEntry: 'index.html', defaultFrame: {w:500,h:300}, gridGap: 32 }, frames: [{id:'screen',label:'Screen',kind:'page',entry:'index.html',x:0,y:0,w:500,h:300}], arrows:[],entities:[],tokens:[],primitives:[],library:[] };
+const data = { meta: { project: 'Draft fixture', prototype: 'demo', sourceRoot: '../source/demo/', sourceEntry: 'index.html', defaultFrame: {w:500,h:300}, gridGap: 32 }, frames: [
+  {id:'screen',label:'Screen',kind:'page',entry:'index.html',col:0,row:0,w:500,h:300},
+  {id:'second',label:'Second screen',kind:'page',entry:'index.html',col:1,row:0,w:360,h:260},
+], arrows:[],entities:[],tokens:[],primitives:[],library:[] };
 const bootstrap = `
 function DraftEmbed() {
   const [drafts,setDrafts] = useState({});
   useEffect(()=>{window.__wovenSetDraftFrames=setDrafts; window.__wovenSetFrameVisibility=()=>{};return()=>delete window.__wovenSetDraftFrames;},[]);
-  return html\`<\${Frame} frame=\${D.frames[0]} selected=\${true} onSelect=\${()=>{}} edits=\${[]} strokes=\${[]} gridMeta=\${D.meta} draft=\${drafts.screen || null}/>\`;
+  return D.frames.map(frame=>html\`<\${Frame} key=\${frame.id} frame=\${frame} selected=\${true} onSelect=\${()=>{}} edits=\${[]} strokes=\${[]} gridMeta=\${D.meta} draft=\${drafts[frame.id] || null}/>\`);
 }
 function DraftFixture() {
-  const [data,setData]=useState({pan:{x:270,y:100},zoom:1,nodes:[{id:'frames-one',kind:'frames',prototype:'demo',x:0,y:0,w:560,h:460}],edges:[],wb:[]});
+  const [data,setData]=useState({pan:{x:270,y:100},zoom:1,nodes:[{id:'frames-one',kind:'frames',prototype:'demo',x:0,y:0,w:1340,h:540,fit:'manual'}],edges:[],wb:[]});
   const selected=useRef(null), deleted=useRef(new Set()), deletedWb=useRef(new Set());
   window.draftFixtureData=data;
+  window.setDraftFixtureData=setData;
   return html\`<\${WorkflowSurface} data=\${data} setData=\${setData} selectionRef=\${selected} deletedIdsRef=\${deleted} deletedWbIdsRef=\${deletedWb} history=\${[]} openKinds=\${[]} />\`;
 }
 createRoot(document.getElementById('root')).render(html\`<\${React.Fragment}><\${new URLSearchParams(location.search).has('embed') ? DraftEmbed : DraftFixture}/><\${DialogHost}/><//>\`);
@@ -62,18 +66,51 @@ const server = http.createServer(async(req,res)=>{
 (async()=>{
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
   const browser=await chromium.launch({headless:true});
-  const page=await browser.newPage({viewport:{width:1550,height:1100}});
-  const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error(e.message);});
+  const page=await browser.newPage({viewport:{width:2300,height:1100}});
+  const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error(e.stack);});
   try {
     await page.goto('http://127.0.0.1:'+server.address().port+'/editor/index.html?project=fixture&prototype=demo');
     await page.locator('.workflow-node-frames-bodydrag').click({position:{x:20,y:20}});
-    await page.getByRole('button',{name:'Draft',exact:true}).click();
+    await page.getByRole('button',{name:'Draft',exact:true}).first().click();
     const embedded=page.frameLocator('iframe.workflow-node-iframe');
     const draft=embedded.frameLocator('iframe[data-draft-id]');
     await draft.locator('meta[name="woven-authoring"]').waitFor({state:'attached'});
     await draft.locator('#first').click();
     await page.getByRole('tree',{name:'Page layers'}).waitFor();
     await page.getByLabel('Width resizing').waitFor();
+    const assertDockedToFrame = async () => {
+      let actual;
+      for(let tries=0;tries<30;tries++) {
+        const frame=await embedded.locator('iframe[data-draft-id]').boundingBox();
+        const layers=await page.getByRole('complementary',{name:'Layers',exact:true}).boundingBox();
+        const design=await page.locator('.workflow-inspector-panel').boundingBox();
+        const scale=await page.locator('.workflow-node-frames').evaluate(n=>n.getBoundingClientRect().width/n.offsetWidth);
+        actual={frame,layers,design,scale};
+        if(frame && layers && design && Math.abs(design.x-frame.x-frame.width)<2
+          && Math.abs(layers.x+layers.width-frame.x+8*scale)<2
+          && Math.abs(design.y-frame.y)<2 && Math.abs(layers.y-frame.y)<2
+          && Math.abs(design.height-frame.height)<2 && Math.abs(layers.height-frame.height)<2) return;
+        await page.waitForTimeout(50);
+      }
+      assert.fail('Panels must flank the active frame: '+JSON.stringify(actual));
+    };
+    await assertDockedToFrame();
+    // A layout change within the embed does not resize the outer node.
+    await embedded.locator('.frame[data-frame-id="screen"]').evaluate(n=>{n.style.left='190px';n.style.top='160px';});
+    await assertDockedToFrame();
+    await embedded.locator('.frame[data-frame-id="screen"] .frame-body').evaluate(n=>{n.style.width='520px';n.style.height='340px';});
+    await assertDockedToFrame();
+    await embedded.locator('.frame[data-frame-id="screen"] .frame-body').evaluate(n=>{n.style.width='500px';n.style.height='300px';});
+    await assertDockedToFrame();
+    await page.locator('.workflow-canvas-wrap').dispatchEvent('wheel',{clientX:1000,clientY:700,ctrlKey:true,deltaY:150});
+    await page.waitForFunction(()=>document.querySelector('.workflow-node-frames').getBoundingClientRect().width/document.querySelector('.workflow-node-frames').offsetWidth<.95);
+    await page.locator('.workflow-canvas-wrap').dispatchEvent('wheel',{clientX:1000,clientY:700,deltaX:30,deltaY:20});
+    await page.evaluate(()=>setDraftFixtureData(d=>({...d,nodes:d.nodes.map(n=>({...n,x:40,y:25}))})));
+    await assertDockedToFrame();
+    await page.locator('.workflow-canvas-wrap').dispatchEvent('wheel',{clientX:1000,clientY:700,ctrlKey:true,deltaY:-150});
+    await page.waitForFunction(()=>document.querySelector('.workflow-node-frames').getBoundingClientRect().width/document.querySelector('.workflow-node-frames').offsetWidth>.99);
+    await page.evaluate(()=>setDraftFixtureData(d=>({...d,nodes:d.nodes.map(n=>({...n,x:0,y:0}))})));
+    await assertDockedToFrame();
     await page.waitForTimeout(1400);
     assert.equal(await draft.locator('meta[name="woven-authoring"]').count(),1,'Navigation pin must retain the authoring document');
     assert.equal(files.get(from),original);
@@ -128,7 +165,7 @@ const server = http.createServer(async(req,res)=>{
     assert.equal(writes.filter(w=>w.path===from).length,1);
     await embedded.locator('iframe:not([data-draft-id])').waitFor();
     assert.equal(await embedded.locator('iframe[srcdoc]').count(),0,'Apply remounts the real page, without old srcdoc');
-    await page.getByRole('button',{name:'Draft',exact:true}).click();
+    await page.getByRole('button',{name:'Draft',exact:true}).first().click();
     await draft.locator('meta[name="woven-authoring"]').waitFor({state:'attached'});
     await draft.locator('#title').dblclick({position:{x:20,y:10}});
     await draft.locator('#title[contenteditable]').fill('Throw this away');
@@ -136,12 +173,20 @@ const server = http.createServer(async(req,res)=>{
     await page.getByRole('button',{name:'Discard',exact:true}).click();
     await page.getByRole('button',{name:'Confirm',exact:true}).click();
     await page.waitForFunction(()=>!draftFixtureData.nodes[0].drafts.screen);
-    await page.getByRole('button',{name:'Draft',exact:true}).click();
+    await page.getByRole('button',{name:'Draft',exact:true}).first().click();
     await draft.locator('meta[name="woven-authoring"]').waitFor({state:'attached'});
     assert.equal(await draft.locator('#title').textContent(),'Draft title','Discarded edits must not recover into a new draft');
+    await draft.locator('#first').click();
+    await assertDockedToFrame();
+    await page.getByRole('button',{name:'Draft',exact:true}).click();
+    await page.getByRole('button',{name:'Confirm',exact:true}).click();
+    await embedded.locator('.frame[data-frame-id="second"] iframe[data-draft-id]').waitFor();
+    await draft.locator('meta[name="woven-authoring"]').waitFor({state:'attached'});
+    await draft.locator('#first').click();
+    await assertDockedToFrame();
     await page.screenshot({path:path.join(require('node:os').tmpdir(),'woven-frame-draft-fixed.png'),fullPage:true});
     assert.deepEqual(errors,[]);
-    console.log('PASS: nested Draft editing, stable text, arrows, repeated paste, editable pasted text, Add, guarded Apply, raw source preservation, and clean re-draft after Discard.');
+    console.log('PASS: nested Draft editing and clipboard, guarded Apply/Discard, frame-local panels across layout, zoom, pan, node moves, and draft switching.');
   } catch(error) {
     await page.screenshot({path:path.join(require('node:os').tmpdir(),'woven-frame-draft-failure.png'),fullPage:true});
     throw error;

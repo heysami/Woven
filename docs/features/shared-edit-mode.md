@@ -9,7 +9,9 @@ editing session. Normal prototype playback continues to use the authored code.
 Both editing surfaces put Layers on the left and Design properties on the right.
 Layers supports search, expandable groups, canvas selection, and arrow-key
 navigation. Preview reserves space for both panes so they do not cover the page.
-Workflow docks them on opposite sides of the selected prototype node.
+Workflow docks them on opposite sides of the selected prototype node. In Canvas
+frame Draft mode, both panels follow the individual frame's edges and height,
+including when the frame moves or resizes, the canvas zooms, or drafts switch.
 
 The Design panel uses compact controls for dimensions, resizing, layout flow,
 alignment, spacing, appearance, fills, and strokes. Auto layout has a nine-point

@@ -59358,9 +59358,9 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
             })()}
             ${pickedShownElement && pickedShownElement.nodeId && (() => {
               // Property inspector dock. Mounts when an element
-              // is picked inside any prototype / asset iframe. Sits to
-              // the right of that owning node - same docking pattern as
-              // the code panel. Reuses zoom-mode's PickedInspectorBody
+              // is picked inside any prototype / asset iframe. Drafts dock
+              // beside their individual frame inside the owning node.
+              // Reuses zoom-mode's PickedInspectorBody
               // so future updates land in both places.
               const host = wfPickOwnerNode(data.nodes, pickedShownElement.nodeId);
               if (!host) return null;
@@ -70559,14 +70559,14 @@ const WORKFLOW_INSPECTOR_DOCK_W = 288;
 
 /* WorkflowPickedInspectorDock ─────────────────────────────────
    Docked property inspector for workflow-mode pick-mode. Sits to the
-   right of the host node like WorkflowCodePanel; renders the SAME
+   right of the host node, or the active frame for a draft; renders the SAME
    PickedInspectorBody content zoom-mode uses, so updates to the inspector
    surface propagate to both modes from a single component.
 
    Inputs (refs come from WorkflowSurface so reads stay live as the user
    re-picks across iframes):
-     • node              - the host workflow node (prototype or asset)
-     • zoom              - canvas zoom factor (for hostRectW unit math)
+     • node              - the host workflow node (prototype, asset, or frames)
+     • zoom              - canvas zoom factor for coordinate conversion
      • pickedElement     - { nodeId, path, outerHTML, tagName } envelope
      • pickerIframeRef   - ref → currently-active picker iframe
      • pickedDomRef      - ref → live DOM element
@@ -70582,21 +70582,29 @@ function WorkflowPickedInspectorDock({
   // Refresh tick - bumps whenever we mutate styles so the inspector
   // re-reads the current state from the live element.
   const [refreshTick, setRefreshTick] = useState(0);
-  // Track host-node rendered size (ResizeObserver) so the dock sits flush
-  // against the right edge even when the node auto-sizes. Same pattern as
-  // WorkflowCodePanel.
-  const [hostRectW, setHostRectW] = useState(node.w || 360);
-  const [hostRectH, setHostRectH] = useState(node.h || 360);
-  useEffect(() => {
+  // Store bounds relative to the owning node in canvas units. A draft's
+  // iframe is nested inside the node, so its screen rect must cross that
+  // iframe boundary before we remove the outer canvas scale.
+  const hostId = pickedElement?.nodeId || node.id;
+  const draftDock = node.kind === "frames" && hostId !== node.id;
+  const [hostRect, setHostRect] = useState(null);
+  useLayoutEffect(() => {
     const el = typeof document !== "undefined"
-      ? document.querySelector(`.workflow-node[data-node-id="${node.id}"]`)
+      ? document.querySelector(`.workflow-node[data-node-id="${escAttr(node.id)}"]`)
       : null;
     if (!el) return;
     const sync = () => {
       const r = el.getBoundingClientRect();
-      const z = zoom || 1;
-      setHostRectW(Math.round(r.width / z));
-      setHostRectH(Math.round(r.height / z));
+      const target = draftDock ? wfPickHostRect(wfFindPickHost(hostId)) : r;
+      const z = el.offsetWidth > 0 ? r.width / el.offsetWidth : (zoom || 1);
+      if (!target || !(target.width > 0 && target.height > 0 && z > 0)) {
+        setHostRect(null);
+        return;
+      }
+      const next = { hostId, x: (target.left - r.left) / z, y: (target.top - r.top) / z,
+        w: target.width / z, h: target.height / z };
+      setHostRect(prev => prev && prev.hostId === hostId
+        && ["x", "y", "w", "h"].every(k => Math.abs(prev[k] - next[k]) < 0.1) ? prev : next);
     };
     sync();
     let ro = null;
@@ -70604,8 +70612,13 @@ function WorkflowPickedInspectorDock({
       ro = new ResizeObserver(sync);
       ro.observe(el);
     }
-    return () => { if (ro) ro.disconnect(); };
-  }, [node.id, node.w, node.h, node.size, zoom]);
+    // The inner frame can move or resize without changing its outer node.
+    // Follow it while a draft inspector is open, including iframe remounts.
+    let raf = 0;
+    const tick = () => { sync(); raf = requestAnimationFrame(tick); };
+    if (draftDock) raf = requestAnimationFrame(tick);
+    return () => { if (ro) ro.disconnect(); cancelAnimationFrame(raf); };
+  }, [node.id, node.w, node.h, node.size, zoom, hostId, draftDock]);
 
   // Re-derive picked shape + styles + tree + cssVars on every refreshTick
   // and every pickedElement change. Reads computed style from the live
@@ -70868,9 +70881,11 @@ function WorkflowPickedInspectorDock({
   // unchanged.
   const reactBanner = false;
 
-  const left   = (node.x || 0) + hostRectW;
-  const top    = (node.y || 0);
-  const height = hostRectH;
+  if (!hostRect || hostRect.hostId !== hostId) return null;
+  const frameLeft = (node.x || 0) + hostRect.x;
+  const left   = frameLeft + hostRect.w;
+  const top    = (node.y || 0) + hostRect.y;
+  const height = hostRect.h;
   const panelW = WORKFLOW_INSPECTOR_DOCK_W;
   const titleText = (pickedElement && pickedElement.tagName)
     ? `<${pickedElement.tagName}>`
@@ -70878,7 +70893,7 @@ function WorkflowPickedInspectorDock({
 
   return html`<${React.Fragment}>
     <aside className=${"woven-layers-panel woven-layers-workflow" + (closing ? " is-closing" : "")} aria-label="Layers"
-      style=${{ left: ((node.x || 0) - 248) + "px", top: top + "px", width: "240px", height: height + "px" }}
+      style=${{ left: (frameLeft - 248) + "px", top: top + "px", width: "240px", height: height + "px" }}
       onMouseDown=${e => e.stopPropagation()} onClick=${e => e.stopPropagation()} onWheel=${e => e.stopPropagation()}>
       <${WovenLayersPanel} element=${pickedDomRef.current} onNavigate=${navigateTo}/>
     </aside>

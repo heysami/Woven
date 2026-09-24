@@ -333,8 +333,9 @@ function useWovenMovement(element, onCommand) {
 
 function WovenPropertiesPanel({ picked, styles, computedStyles, onStyle, onNavigate, cssVars, tree, element, onCommand }) {
   const { move, feedback, panel } = useWovenMovement(element, onCommand);
-  if (!picked || !element) return null;
-  const cs = element.ownerDocument.defaultView.getComputedStyle(element);
+  const win = element?.ownerDocument?.defaultView;
+  if (!picked || !win || !element.isConnected) return null;
+  const cs = win.getComputedStyle(element);
   const parent = picked.parent?.layout;
   const self = picked.self?.layout;
   const display = styles.display || cs.display;
