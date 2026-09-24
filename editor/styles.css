@@ -24978,19 +24978,30 @@ a.ds-badge:hover, button.ds-badge:hover {
   margin-bottom: 4px;
 }
 .runs-list-head .runs-new-chat { flex: 1 1 auto; margin-bottom: 0; }
+/* Icon-only, and square: the word "Select" sat at a third weight next to a
+   dashed accent button and a warning strip, and read as clutter. */
 .runs-select-toggle {
-  flex: 0 0 auto;
-  padding: 0 10px;
+  /* Explicit square, NOT aspect-ratio: the head is a stretch flex row, so the
+     button's main size resolves from its content BEFORE stretch applies the
+     42px cross size, and the ratio has nothing definite to work from - it
+     collapses to an 18px sliver. 42px is New chat's padding-derived height;
+     the two are locked by hand, so move them together. */
+  flex: 0 0 42px;
+  height: 42px;
+  padding: 0;
+  display: grid;
+  place-items: center;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text-muted);
   font: inherit;
-  font-size: 11.5px;
-  font-weight: 500;
   cursor: pointer;
   transition: background .12s ease, color .12s ease, border-color .12s ease;
 }
+/* 16px, not the Icon set's default 14: the ticks are the whole message and
+   they smudge to grey at 14px on a 1x display. */
+.runs-select-toggle svg { display: block; width: 16px; height: 16px; }
 .runs-select-toggle:hover { background: var(--surface-2); color: var(--text); }
 .runs-select-toggle[data-on="true"] {
   background: var(--accent-soft);

@@ -969,6 +969,12 @@ const Icon = {
   // prototype node's share toggle).
   Share:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="12" cy="3.8" r="1.9"/><circle cx="12" cy="12.2" r="1.9"/><circle cx="4" cy="8" r="1.9"/><path d="M5.7 7.1l4.6-2.4M5.7 8.9l4.6 2.4"/></svg>`,
   Check:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 8.5l3.5 3.5L13 5"/></svg>`,
+  // CheckList - rows whose markers are ticks, i.e. "pick items out of this
+  // list". List's leading dots say "a list"; the ticks are what say "choose".
+  // Two rows, not three: at 14px a third row closes the gaps to mush. Ink
+  // spans y 3.7-12.4 so it centres on the 16-unit box; drawn from y=3.2 it
+  // sits a visible half-unit high in a centred square.
+  CheckList: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2.4 4.9l1.5 1.5 2.4-2.7"/><path d="M2.4 10.9l1.5 1.5 2.4-2.7"/><path d="M8.6 5.1h5M8.6 11.1h5"/></svg>`,
   Circle:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="5.5"/></svg>`,
   Stop:     () => html`<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3.5" y="3.5" width="9" height="9" rx="2" fill="currentColor"/></svg>`,
   Save:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 2.5h8.5L13.5 5v8.5a.5.5 0 01-.5.5H3a.5.5 0 01-.5-.5v-11a.5.5 0 01.5-.5z"/><path d="M5 2.5v3.5h5V2.5M5.5 9.5h5"/></svg>`,
@@ -12978,7 +12984,9 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
               data-on=${selectMode ? "true" : "false"}
               onClick=${() => (selectMode ? exitSelect() : setSelectMode(true))}
               title=${selectMode ? "Leave selection mode" : "Select runs to delete"}
-            >${selectMode ? "Done" : "Select"}</button>
+              aria-pressed=${selectMode ? "true" : "false"}
+              aria-label=${selectMode ? "Leave selection mode" : "Select runs"}
+            ><${selectMode ? Icon.Check : Icon.CheckList}/></button>
           `}
         </div>
       `}
