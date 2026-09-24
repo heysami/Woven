@@ -12718,6 +12718,76 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
     try { setOpenRunId(window.__thOpenRunId || null); } catch {}
     return () => window.removeEventListener("woven:open-run-changed", on);
   }, []);
+  /* ── multi-select ───────────────────────────────────────────────────────
+     Off by default: the list's resting state is one-click-opens-a-thread, and
+     a permanent checkbox column would tax every ordinary open to pay for a
+     rare cleanup. "Select" flips the leading dot cell into a checkbox (same
+     grid column, so nothing reflows) and swaps the sticky bar for the
+     selection actions. Esc or Done flips it back. */
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
+  const lastPickedRef = useRef(null);   // anchor for shift-click ranges
+  const exitSelect = useCallback(() => {
+    setSelectMode(false);
+    setSelected(new Set());
+    lastPickedRef.current = null;
+  }, []);
+  // Rename a thread. The daemon keeps this in a runId -> title sidecar rather
+  // than rewriting the transcript, so it is cheap and survives a restart.
+  const renameRun = useCallback(async (r) => {
+    const cur = r.title || r.kind || "";
+    const next = await uiPrompt("Rename this run", cur, { okLabel: "Rename" });
+    if (next == null) return;
+    const title = String(next).trim();
+    if (title === cur) return;
+    // Optimistic - the 2s poll would otherwise show the old name for a beat.
+    setRuns(prev => prev.map(x => x.runId === r.runId
+      ? { ...x, title: title || x.kind } : x));
+    try {
+      const resp = await fetch(apiUrl(`/__run/${r.runId}/rename`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (!resp.ok) {
+        const j = await resp.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${resp.status}`);
+      }
+    } catch (e) {
+      uiAlert("Rename failed: " + (e.message || e));
+    } finally {
+      reload();
+    }
+  }, [reload]);
+  // Delete a whole selection in ONE request. Deleting N runs one at a time
+  // would rewrite the project's chat.jsonl N times; the bulk endpoint rewrites
+  // it once.
+  const deleteSelected = useCallback(async () => {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    if (!(await uiConfirm(
+      `Delete ${ids.length} run${ids.length === 1 ? "" : "s"}?\n` +
+      `This stops any that are running and removes their chat history.`))) return;
+    const gone = new Set(ids);
+    setRuns(prev => prev.filter(x => !gone.has(x.runId)));
+    for (const id of ids) forgetRunRead(id);
+    exitSelect();
+    try {
+      const resp = await fetch(apiUrl("/__runs/delete"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runIds: ids }),
+      });
+      if (!resp.ok) {
+        const j = await resp.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${resp.status}`);
+      }
+    } catch (e) {
+      uiAlert("Delete failed: " + (e.message || e));
+    } finally {
+      reload();
+    }
+  }, [selected, exitSelect, reload]);
   // Delete a run - stop it if live, then purge its chat history server-side.
   const deleteRun = useCallback(async (r) => {
     const label = r.title || r.kind || "this run";
@@ -12817,26 +12887,107 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
     setRead(loadRunsRead());
   }, [runs]);
 
+  // Esc leaves selection before anything else gets to close the panel.
+  useEffect(() => {
+    if (!selectMode) return;
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      exitSelect();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [selectMode, exitSelect]);
+
+  const allSelected = selectMode && ordered.length > 0
+                   && ordered.every(r => selected.has(r.runId));
+  // Click semantics inside selection: plain click toggles one row, shift-click
+  // extends from the last row touched (the list convention everywhere else).
+  const toggleSelect = useCallback((runId, shift) => {
+    // Read the anchor HERE, not inside the updater: React calls the updater
+    // lazily during the render phase, by which point the assignment below has
+    // already moved the anchor to this very row and every shift-click would
+    // collapse to a range of one.
+    const anchor = lastPickedRef.current;
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (shift && anchor) {
+        const ids = ordered.map(x => x.runId);
+        const a = ids.indexOf(anchor), b = ids.indexOf(runId);
+        if (a >= 0 && b >= 0) {
+          const [lo, hi] = a < b ? [a, b] : [b, a];
+          const on = !next.has(runId);
+          for (let i = lo; i <= hi; i++) {
+            if (on) next.add(ids[i]); else next.delete(ids[i]);
+          }
+          return next;
+        }
+      }
+      if (next.has(runId)) next.delete(runId); else next.add(runId);
+      return next;
+    });
+    lastPickedRef.current = runId;
+  }, [ordered]);
+
   return html`
     <div className="left-chat-runs-list" ref=${listRef} onScroll=${onScroll}>
-      ${onStartNewChat && html`
-        <button
-          type="button"
-          className="runs-new-chat"
-          onClick=${() => { onAfterPick && onAfterPick(); onStartNewChat(); }}
-          title="Start a new chat with the agent"
-        >
-          <span className="runs-new-chat-plus"><${Icon.Plus}/></span>
-          <span className="runs-new-chat-label">New chat</span>
-        </button>
+      ${(onStartNewChat || runs.length > 0) && html`
+        <div className="runs-list-head">
+          ${onStartNewChat && html`
+            <button
+              type="button"
+              className="runs-new-chat"
+              onClick=${() => { onAfterPick && onAfterPick(); onStartNewChat(); }}
+              title="Start a new chat with the agent"
+            >
+              <span className="runs-new-chat-plus"><${Icon.Plus}/></span>
+              <span className="runs-new-chat-label">New chat</span>
+            </button>
+          `}
+          ${runs.length > 0 && html`
+            <button
+              type="button"
+              className="runs-select-toggle"
+              data-on=${selectMode ? "true" : "false"}
+              onClick=${() => (selectMode ? exitSelect() : setSelectMode(true))}
+              title=${selectMode ? "Leave selection mode" : "Select runs to delete"}
+            >${selectMode ? "Done" : "Select"}</button>
+          `}
+        </div>
       `}
       ${runs.length === 0 && html`
         <div className="runs-empty">${loaded ? "No runs yet. Click + New chat above." : "Loading…"}</div>
       `}
+      ${/* Selection actions take the same sticky slot the unread strip uses -
+           one control surface, never two stacked bars. */ ""}
+      ${selectMode && html`
+        <div className="runs-select-bar" data-side="top">
+          <label className="runs-select-all">
+            <input
+              type="checkbox"
+              checked=${allSelected}
+              onChange=${() => {
+                setSelected(allSelected ? new Set() : new Set(ordered.map(r => r.runId)));
+                lastPickedRef.current = null;
+              }}
+            />
+            <span>${selected.size ? `${selected.size} selected` : "Select all"}</span>
+          </label>
+          <button
+            type="button"
+            className="runs-select-del"
+            disabled=${selected.size === 0}
+            onClick=${deleteSelected}
+          >
+            <${Icon.Trash}/>
+            <span>Delete</span>
+          </button>
+        </div>
+      `}
       ${/* Unread strip. Pinned to the top of the scroll box whenever anything
            is unread: it names the count, points UP when unread rows have
            scrolled off the top, and carries the one "Mark all read" action. */ ""}
-      ${unreadTotal > 0 && html`
+      ${unreadTotal > 0 && !selectMode && html`
         <div className="runs-unread-bar" data-side="top">
           ${offscreen.above > 0 ? html`
             <button
@@ -12863,22 +13014,35 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
         // the last time it was on screen. A run we have never seen at all has
         // no entry, so anything it has ever emitted counts as new.
         const unread = (Number.isFinite(r.lastSeq) ? r.lastSeq : -1) > (read[r.runId] ?? -1);
-        const isLive    = !r.done && !r.turnDone;
-        const isWaiting = !r.done &&  r.turnDone;
-        const intentionalStop = isIntentionalStop(r.stopReason);
-        const succeeded = r.exitCode === 0 || r.exitCode == null || intentionalStop;
-        const status = isLive    ? "live"
-                     : isWaiting ? "waiting"
-                     : succeeded ? (r.stopReason === "user-stop" ? "stopped" : "done")
-                     : "fail";
+        /* The row's ONE circle, and the whole rule for it:
+             live      - the agent is mid-turn RIGHT NOW (accent, pulsing)
+             attention - it asked a question and is waiting on YOUR pick
+             (nothing) - everything else, including done / stopped / crashed
+           The old palette lit every row red after a daemon restart (a restart
+           SIGTERMs live runs, and that exit code is not a failure) and left
+           every thread the user simply walked away from sitting yellow. Colour
+           that is always on is colour nobody reads, so the only two states
+           that actually ask for attention keep it and the rest go blank.
+           Gate-yellow is tied to UNREAD too, so "Mark all read" clears it
+           along with the trailing new-activity dot - the user dismissing the
+           nag is exactly what that button means.
+           data-gate below exists only so the CSS can drop that trailing dot on
+           a gated row (two yellow marks on one line read as one noisy
+           cluster); data-unread stays truthful either way, because the
+           off-screen jump chips count on it. */
+        const gate = !!r.gatePending && unread;
+        const status = (!r.done && !r.turnDone) ? "live" : gate ? "attention" : "none";
+        const picked = selected.has(r.runId);
         return html`
-          <div className="runs-row-wrap" key=${r.runId}>
+          <div className="runs-row-wrap" key=${r.runId} data-picked=${picked ? "true" : "false"}>
             <button
               className="runs-row"
               data-unread=${unread ? "true" : "false"}
+              data-gate=${gate ? "true" : "false"}
               data-open=${r.runId === openRunId ? "true" : "false"}
               aria-current=${r.runId === openRunId ? "true" : undefined}
-              onClick=${() => {
+              onClick=${(e) => {
+                if (selectMode) { toggleSelect(r.runId, e.shiftKey); return; }
                 // Clear on open. The drawer keeps stamping while the thread
                 // stays on screen, so a run that keeps talking while you read
                 // it does not come back marked unread.
@@ -12897,7 +13061,11 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
                 else btn.removeAttribute("title");
               }}
             >
-              <span className="runs-row-dot" data-status=${status}/>
+              ${selectMode ? html`
+                <span className="runs-row-check" data-on=${picked ? "true" : "false"}>
+                  ${picked && html`<${Icon.Check}/>`}
+                </span>
+              ` : html`<span className="runs-row-dot" data-status=${status}/>`}
               <span className="runs-row-title">${r.title || r.kind}</span>
               <span className="runs-row-age">${formatRunAge(r.updatedAt || r.startedAt)}</span>
               ${/* Unread marker. A dot on the TRAILING edge rather than a bar on
@@ -12907,14 +13075,26 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
                   reflow as rows go read/unread. */ ""}
               <span className="runs-row-new" aria-label=${unread ? "New activity" : undefined}/>
             </button>
-            <button
-              className="runs-row-del"
-              title="Delete this run"
-              aria-label=${`Delete run ${r.title || r.kind}`}
-              onClick=${(e) => { e.stopPropagation(); deleteRun(r); }}
-            >
-              <${Icon.Trash}/>
-            </button>
+            ${!selectMode && html`
+              <button
+                className="runs-row-act"
+                title="Rename this run"
+                aria-label=${`Rename run ${r.title || r.kind}`}
+                onClick=${(e) => { e.stopPropagation(); renameRun(r); }}
+              >
+                <${Icon.Pen}/>
+              </button>
+            `}
+            ${!selectMode && html`
+              <button
+                className="runs-row-act runs-row-del"
+                title="Delete this run"
+                aria-label=${`Delete run ${r.title || r.kind}`}
+                onClick=${(e) => { e.stopPropagation(); deleteRun(r); }}
+              >
+                <${Icon.Trash}/>
+              </button>
+            `}
           </div>
         `;
       })}
@@ -16966,7 +17146,12 @@ function AskUserQuestionCard({ ev, runId, answered, onAnswered }) {
 // "compacted" here the chat header, the runs list and the drawer all painted a
 // red FAIL on a thread that had just been compacted successfully - which reads
 // as "it was working, then it stopped and failed".
-const INTENTIONAL_STOPS = ["user-stop", "completed-orchestrator", "compacted"];
+// "daemon-shutdown": the daemon SIGTERMs every live CLI subprocess on its way
+// out (_cleanup_subprocesses). The exit code that produces is ours, not the
+// agent's - without this the whole runs list came back red after every
+// restart, which is the fastest way to teach someone to ignore red.
+const INTENTIONAL_STOPS = ["user-stop", "completed-orchestrator", "compacted",
+                           "daemon-shutdown"];
 function isIntentionalStop(stopReason) {
   return INTENTIONAL_STOPS.indexOf(stopReason) >= 0;
 }

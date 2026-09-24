@@ -4358,10 +4358,11 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
                 # Claude Code ships WebSearch + WebFetch built in; bypassing
                 # permissions lets them run headless without a prompt.
                 args.extend(["--allow-dangerously-skip-permissions", "--dangerously-skip-permissions"])
-            args.append(prompt or "Proceed.")
             _cli_env = _guest_cli_env("claude")
+            # Transcripts can exceed the OS argument limit. Pipe the full text
+            # instead of putting it in argv; no context needs to be discarded.
             result = helper_jobs.run(args, capture_output=True, text=True, timeout=timeout,
-                                    stdin=subprocess.DEVNULL, env=_cli_env, cwd=scratch)
+                                    input=prompt or "Proceed.", env=_cli_env, cwd=scratch)
             if result.returncode != 0:
                 raise RuntimeError((result.stderr or f"exit {result.returncode}").strip()[:600])
             return (result.stdout or "").rstrip("\n")
@@ -7713,39 +7714,15 @@ AGENTS_PLUGIN_DIR = os.environ.get("TH_AGENTS_PLUGIN") or os.path.join(
 
 
 def _agents_plugin_spawn_args() -> list:
-    """Return `["--plugin-dir", <dir>]` so a claude spawn can dispatch Woven's
-    subagents, else `[]`.
+    """Load callable woven:* agents once in the model-visible catalog.
 
-    WHY THIS EXISTS. The claude CLI builds its Task-tool registry by searching
-    UPWARD from cwd for `.claude/agents/`, plus the user's `~/.claude/agents/`.
-    Woven spawns with cwd=project_root and projects live under INSTALL_ROOT, so
-    that search normally reaches INSTALL_ROOT/.claude/agents on its own. It
-    STOPS HARD at a git root, so a project that is its own repo (the published
-    ones) sees only the 5 built-in agent types and every dispatch dies with
-    `Agent type 'ds-guardian' not found`. Verified 2026-09-01: the same dir
-    reports 112 agent types with no .git and 6 after `git init`.
-
-    Passing definitions inline via `--agents <json>` is not an option: the set
-    is ~1.5 MB and macOS ARG_MAX is ~1 MB.
-
-    The plugin dir holds ONLY a manifest plus an `agents` symlink back to
-    INSTALL_ROOT/.claude/agents - the same folder capabilities._scan_subagents()
-    reads, so the roster and the registry can never drift. No commands, hooks or
-    skills are exposed by it.
-
-    COST: the CLI namespaces plugin agents, so every type gains a `woven:`
-    prefix (`woven:ds-guardian`). Bare names keep working in non-git projects
-    (the upward search still finds them) but NOT in git-rooted ones, so
-    `woven:<name>` is the only spelling valid everywhere. The agent specs stay
-    bare on purpose - codex/opencode dispatch through the daemon
-    (POST /__dispatch_planner), which resolves INSTALL_ROOT/.claude/agents/<name>.md
-    directly and never sees a prefix. capabilities.py states the prefix rule for
-    claude and emits the roster prefixed; _dispatch_planner strips a leading
-    `woven:` so a prefixed name still resolves there.
+    The plugin keeps dispatch working across project git boundaries. Its bare
+    aliases, discovered through .claude/agents, are excluded from the prompt by
+    the same launch arguments on chat, planner, node, and resume paths. Full
+    playbooks remain in place for direct reads and non-Claude runtimes.
     """
-    if AGENTS_PLUGIN_DIR and os.path.isdir(AGENTS_PLUGIN_DIR):
-        return ["--plugin-dir", AGENTS_PLUGIN_DIR]
-    return []
+    from agent_catalog import plugin_spawn_args
+    return plugin_spawn_args(AGENTS_PLUGIN_DIR)
 
 
 def _mcp_config_spawn_args() -> list:
@@ -9731,6 +9708,13 @@ def _cleanup_subprocesses(reason: str = "shutdown") -> None:
         try:
             ec = proc.poll() if proc.poll() is not None else None
             st.append("status", {"label": "interrupted", "reason": reason})
+            # WE killed this process, so its SIGTERM exit code is not a
+            # failure. Without a stop_reason the persisted __finish line
+            # carries a bare non-zero exit, and after the restart every run
+            # that happened to be alive comes back painted as a crash - in
+            # the runs list, in the drawer header, everywhere. See
+            # INTENTIONAL_STOPS in app.js for the other side of this.
+            st.stop_reason = st.stop_reason or "daemon-shutdown"
             st.finish(ec)
         except Exception: pass
 
@@ -10207,8 +10191,9 @@ def _chat_jsonl_append(state, seq: int, ev_type: str, data) -> None:
             f.write(serialized + "\n")
 
 
-def _chat_jsonl_purge_run(path: str, run_id: str) -> int:
-    """Rewrite `path` dropping every line whose runId == run_id, moving the
+def _chat_jsonl_purge_run(path: str, run_id) -> int:
+    """Rewrite `path` dropping every line whose runId is `run_id` - a single id
+    or any iterable of them, so a bulk delete rewrites the file ONCE - moving the
     removed lines into a sibling .chat-trash.jsonl so the delete is
     recoverable (mirrors the source/.trash/ convention for prototype deletes).
     Returns the count of purged lines. Best-effort; never raises - chat history
@@ -10217,6 +10202,9 @@ def _chat_jsonl_purge_run(path: str, run_id: str) -> int:
     Serializes against _chat_jsonl_append via the same per-path lock so a
     concurrent run writing to the file can't interleave with the rewrite."""
     if not path or not os.path.isfile(path):
+        return 0
+    ids = {run_id} if isinstance(run_id, str) else set(run_id or ())
+    if not ids:
         return 0
     lk = _chat_jsonl_lock(path)
     with lk:
@@ -10233,7 +10221,7 @@ def _chat_jsonl_purge_run(path: str, run_id: str) -> int:
                     except Exception:
                         kept.append(s)  # keep unparseable lines untouched
                         continue
-                    if obj.get("runId") == run_id:
+                    if obj.get("runId") in ids:
                         removed.append(s)
                     else:
                         kept.append(s)
@@ -10254,6 +10242,75 @@ def _chat_jsonl_purge_run(path: str, run_id: str) -> int:
             return len(removed)
         except OSError:
             return 0
+
+
+# ── run titles (rename) ───────────────────────────────────────────────────
+# A run's title is stamped on EVERY one of its chat.jsonl lines, so renaming by
+# rewriting history would mean rewriting a file that reaches nine figures of
+# bytes on a real build. The rename lives in a tiny sidecar instead - runId ->
+# title - and every reader that hands a run row to the UI overlays it. The
+# transcript is left exactly as written.
+# Same alphabet the /__run/<id>/... routes accept. Bulk endpoints take ids from
+# a JSON body rather than the path, so they have to validate for themselves.
+_RUN_ID_OK = re.compile(r"^[0-9a-f]{6,64}$")
+
+
+def _run_titles_path(project_root: str) -> str:
+    return os.path.join(project_root, "editor", "run-titles.json")
+
+
+def _system_run_titles_path() -> str:
+    return os.path.join(_system_chats_dir(), "run-titles.json")
+
+
+def _run_titles_load(path: str) -> dict:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _run_titles_set(path: str, run_id: str, title) -> None:
+    """Store (or, with a falsy title, clear) one run's rename. Best-effort."""
+    lk = _chat_jsonl_lock(path)        # one lock per path; reuse the registry
+    with lk:
+        cur = _run_titles_load(path)
+        if title:
+            cur[run_id] = str(title)
+        else:
+            cur.pop(run_id, None)
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(cur, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, path)
+        except OSError:
+            pass
+
+
+def _run_titles_forget(path: str, run_ids) -> None:
+    """Drop rename entries for deleted runs so the sidecar can't outgrow the
+    history it annotates."""
+    ids = {run_ids} if isinstance(run_ids, str) else set(run_ids or ())
+    if not ids:
+        return
+    lk = _chat_jsonl_lock(path)
+    with lk:
+        cur = _run_titles_load(path)
+        if not any(r in cur for r in ids):
+            return
+        for r in ids:
+            cur.pop(r, None)
+        try:
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(cur, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, path)
+        except OSError:
+            pass
 
 
 def _chat_jsonl_candidate_files(project_root: str) -> list:
@@ -10430,6 +10487,12 @@ class _ChatFileIndex:
                     "lastSeq":        -1,
                     "modifying":      False,
                     "historical":     True,
+                    # "waiting on YOU to pick a card" - the only state that
+                    # still earns a coloured dot in the runs list. Folded
+                    # forward line by line below (see _gate_feed); `_gateTail`
+                    # is scrubbed before the meta leaves this index.
+                    "gatePending":    False,
+                    "_gateTail":      "",
                     # present on system-thread lines only.
                     "section":        rec.get("section"),
                 }
@@ -10447,6 +10510,11 @@ class _ChatFileIndex:
                     p_v = rec["data"].get("prototype")
                 if p_v:
                     meta["prototype"] = p_v
+            # Same gate fold the live RunState.append does, so a run the
+            # daemon no longer holds still says "this one wants an answer".
+            gate = {"pending": meta["gatePending"], "tail": meta["_gateTail"]}
+            _gate_feed(gate, rec.get("type"), rec.get("data"))
+            meta["gatePending"], meta["_gateTail"] = bool(gate["pending"]), gate["tail"]
             # Track lifecycle terminators
             if rec.get("type") == "__finish":
                 meta["done"] = True
@@ -10498,6 +10566,7 @@ def _scan_chat_jsonl_records(candidates: list) -> dict:
         with idx.lock:
             metas = {rid: dict(meta) for rid, meta in idx.metas.items()}
         for rid, meta in metas.items():
+            meta.pop("_gateTail", None)   # index-internal carry, never shipped
             cur = out.get(rid)
             if cur is None:
                 out[rid] = meta
@@ -10519,6 +10588,8 @@ def _scan_chat_jsonl_records(candidates: list) -> dict:
                 cur["exitCode"] = meta["exitCode"]
             if not cur.get("section") and meta.get("section"):
                 cur["section"] = meta["section"]
+            if meta.get("gatePending"):
+                cur["gatePending"] = True
     return out
 
 
@@ -10964,12 +11035,22 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
                 run_id=run_id, proc=None, agent_id=agent_id, branch=branch_slug,
                 kind=kind, title=title, project_id=project_id, project_root=project_root,
             )
+        # A rename lives in the sidecar, not in the transcript - apply it here
+        # so a rehydrated ghost carries the name the user gave it.
+        try:
+            _rn = _run_titles_load(_system_run_titles_path() if _scope == "system"
+                                   else _run_titles_path(project_root))
+            if _rn.get(run_id):
+                state.title = _rn[run_id]
+        except Exception:
+            pass
         state.session_id = session_id
         state.started_at = started_at
         state.updated_at = updated_at
         state.done = done
         state.exit_code = exit_code
         state.events = events
+        _gate_recompute(state)
         for event in events:
             data = event.get("data") or {}
             run_jobs.reduce_job(state.jobs, data)
@@ -11068,6 +11149,60 @@ def _chat_jsonl_read_branch(project_root: str, branch: str) -> list:
     flat list ordered by file position (which is also chronological since we
     only ever append)."""
     return _read_jsonl_rows(_chat_jsonl_path(project_root, branch))
+
+
+# ── gate-card pendency ────────────────────────────────────────────────────
+# "This thread is waiting on YOU to pick something." An agent asks by emitting
+# one of the gate markups below; the ask is answered by the next user_message
+# or tool_answer on the run. Two consumers need the answer: the compact guard
+# (compacting mid-gate orphans the pick) and the runs list (the ONLY thing that
+# earns a coloured dot on a row - see LeftChatRunsList).
+#
+# Tracked INCREMENTALLY rather than by re-scanning the event log: /__runs is
+# polled every couple of seconds by several pollers at once, and a backwards
+# scan of a marathon thread's events per poll per run is exactly the cost this
+# file spent a whole index rewrite getting rid of. Feed one event at a time,
+# keep a 64-char tail so a tag split across two text_deltas still matches.
+_GATE_MARKUP_RE = re.compile(r"<\s*(decision-request|direction-options|question-form)\b")
+_GATE_TAIL_KEEP = 64
+
+
+def _gate_feed(gate: dict, ev_type: str, data) -> None:
+    """Fold ONE persisted/streamed event into a {pending, tail} gate tracker.
+    Mutates `gate` in place. Safe on any shape - unknown events are ignored."""
+    d = data if isinstance(data, dict) else {}
+    # The user answered (or a compact retired the transcript the card lived in).
+    if ev_type in ("user_message", "tool_answer") or d.get("type") == "compact":
+        gate["pending"] = False
+        gate["tail"] = ""
+        return
+    if ev_type != "agent":
+        return
+    if d.get("type") == "text_delta":
+        chunk = d.get("delta") or ""
+    elif d.get("type") == "status" and d.get("result"):
+        chunk = str(d.get("result"))
+    else:
+        return
+    if not chunk:
+        return
+    buf = (gate.get("tail") or "") + chunk
+    if _GATE_MARKUP_RE.search(buf):
+        gate["pending"] = True
+        gate["tail"] = ""
+    else:
+        gate["tail"] = buf[-_GATE_TAIL_KEEP:]
+
+
+def _gate_recompute(state) -> None:
+    """Rebuild a run's gate tracker from its whole event log. For RunStates
+    that get their events assigned wholesale (rehydration after a daemon
+    restart) rather than through append()."""
+    gate = {"pending": False, "tail": ""}
+    for ev in (state.events or []):
+        _gate_feed(gate, ev.get("type"), ev.get("data"))
+    state.gate_pending = bool(gate["pending"])
+    state.gate_tail = gate["tail"]
 
 
 class RunState:
@@ -11177,7 +11312,12 @@ class RunState:
                  # per turn boundary by _queue_drain_maybe, plus its re-entry
                  # guard. Daemon-owned so the queue drains whether or not the
                  # chat drawer is open.
-                 "msg_queue", "_queue_draining", "jobs", "execution_profile")
+                 "msg_queue", "_queue_draining", "jobs", "execution_profile",
+                 # "waiting on YOU to pick a card" - see _gate_feed. Folded
+                 # forward one event at a time by append(); rebuilt wholesale
+                 # by _gate_recompute for rehydrated runs. gate_tail is the
+                 # 64-char carry so a tag split across two text_deltas matches.
+                 "gate_pending", "gate_tail")
 
     def __init__(self, run_id, proc, agent_id, branch, kind, title, project_id=None, project_root=None):
         self.run_id = run_id
@@ -11202,6 +11342,8 @@ class RunState:
         self.model = None
         self.jobs = {}
         self.execution_profile = None
+        self.gate_pending = False
+        self.gate_tail = ""
         # Live context tokens (see __slots__ comment). Lazily backfilled from
         # the event log for rehydrated runs by _run_context_tokens().
         self.context_tokens = None
@@ -11322,6 +11464,11 @@ class RunState:
             seq = len(self.events)
             self.events.append({"seq": seq, "type": ev_type, "data": data})
             self.updated_at = time.time()
+            # Keep "is this thread waiting on a card pick" current. Cheap fold,
+            # done here so nothing downstream ever has to rescan the log.
+            gate = {"pending": self.gate_pending, "tail": self.gate_tail}
+            _gate_feed(gate, ev_type, data)
+            self.gate_pending, self.gate_tail = bool(gate["pending"]), gate["tail"]
             waiters = list(self.waiters)
         # Phase 5a - also persist the event to the per-branch chat JSONL so the
         # conversation survives daemon restarts. Fire-and-forget; a write
@@ -12850,31 +12997,13 @@ def _run_context_tokens(state: "RunState"):
     return None
 
 
-_GATE_MARKUP_RE = re.compile(r"<\s*(decision-request|direction-options|question-form)\b")
-
-
 def _compact_gate_pending(state: "RunState") -> bool:
     """True when the run's LAST agent output (since the user last replied)
     contains an interactive gate card - compacting now could orphan the pick.
-    Mirrors the client's gate parsing loosely; err on the side of True."""
-    with state.lock:
-        events = list(state.events)
-    tail = []
-    for i in range(len(events) - 1, -1, -1):
-        ev = events[i]
-        t = ev.get("type")
-        if t in ("user_message", "tool_answer"):
-            break
-        d = ev.get("data") or {}
-        if t == "agent":
-            if d.get("type") == "text_delta":
-                tail.append(d.get("delta") or "")
-            elif d.get("type") == "status" and d.get("result"):
-                tail.append(str(d.get("result")))
-            elif d.get("type") == "compact":
-                break
+    The tracker is maintained incrementally by RunState.append (and rebuilt by
+    _gate_recompute on rehydration); err on the side of True."""
     try:
-        return bool(_GATE_MARKUP_RE.search("".join(reversed(tail))))
+        return bool(getattr(state, "gate_pending", True))
     except Exception:
         return True
 
@@ -13302,7 +13431,11 @@ def _drain_stdout(state: "RunState") -> None:
         # purpose and the thread continues on its next message, so recording
         # the SIGTERM as a non-zero exit made every successful compact render
         # as a failed run.
-        if state.stop_reason in ("completed-orchestrator", "user-stop", "compacted") and exit_code in (143, -15, None):
+        # "daemon-shutdown" belongs here for the same reason: the SIGTERM came
+        # from OUR shutdown hook, so the run did not fail. Keep in sync with
+        # INTENTIONAL_STOPS in app.js.
+        if state.stop_reason in ("completed-orchestrator", "user-stop", "compacted",
+                                 "daemon-shutdown") and exit_code in (143, -15, None):
             effective_exit = 0
         else:
             effective_exit = exit_code or 0 if exit_code is not None else exit_code
@@ -15487,9 +15620,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             if parsed.path == "/__run":
                 return self._run_create(qs)
             # /__run/<id>/stop · user-message · tool-result · resume · delete
-            m = re.match(r"^/__run/([0-9a-f]{6,64})/(stop|user-message|tool-result|resume|delete|compact|handoff|enqueue|queue)$", parsed.path)
+            if parsed.path == "/__runs/delete":
+                return self._runs_delete_bulk(qs)
+            m = re.match(r"^/__run/([0-9a-f]{6,64})/(stop|user-message|tool-result|resume|delete|rename|compact|handoff|enqueue|queue)$", parsed.path)
             if m:
                 run_id, action = m.group(1), m.group(2)
+                if action == "rename":
+                    return self._run_rename(run_id, qs)
                 if action == "stop":
                     return self._run_stop(run_id)
                 if action == "tool-result":
@@ -33469,6 +33606,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         except ValueError:
             project_root = DEFAULT_PROJECT_ROOT
         project_id = (_qs_get(qs, "project") or "default").strip() or "default"
+        # runId -> renamed title. Overlaid on live AND historical rows so a
+        # rename survives the daemon restart that drops RUNS.
+        renames = _run_titles_load(_run_titles_path(project_root))
         live = []
         live_ids: set = set()
         with RUNS_LOCK:
@@ -33476,6 +33616,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         for s in states:
             with s.lock:
                 last_seq = s.events[-1]["seq"] if s.events else -1
+                gate_pending = bool(s.gate_pending)
             live_ids.add(s.run_id)
             live.append({
                 "runId": s.run_id,
@@ -33484,11 +33625,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "kind": s.kind,
                 "tier": getattr(s, "tier", None),
                 "prototype": getattr(s, "prototype", None),
-                "title": s.title,
+                "title": renames.get(s.run_id) or s.title,
                 "startedAt": s.started_at,
                 "updatedAt": getattr(s, "updated_at", None) or s.started_at,
                 "done": s.done,
                 "turnDone": s.turn_done,
+                "gatePending": gate_pending,
                 "jobs": list(s.jobs.values()), "pendingJobs": len(_pending_run_jobs(s)),
                 "executionProfile": s.execution_profile, "processRunning": s.process_running,
                 "turnsCompleted": s.turns_completed,
@@ -33514,6 +33656,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             # would prompt the user to send to a dead subprocess.
             meta["done"] = True
             meta["project"] = project_id
+            if renames.get(rid):
+                meta["title"] = renames[rid]
             live.append(meta)
         # Most-recently-ACTIVE first (last reply / last event), not
         # most-recently-created - an old thread you just came back to belongs
@@ -34337,6 +34481,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "updatedAt": getattr(state, "updated_at", None) or state.started_at,
             "done": state.done,
             "turnDone": state.turn_done,
+            "gatePending": bool(getattr(state, "gate_pending", False)),
             "jobs": list(state.jobs.values()), "pendingJobs": len(_pending_run_jobs(state)),
             "executionProfile": state.execution_profile, "processRunning": state.process_running,
             "turnsCompleted": state.turns_completed,
@@ -34495,22 +34640,25 @@ class H(http.server.SimpleHTTPRequestHandler):
         with RUNS_LOCK:
             states = [s for s in RUNS.values()
                       if getattr(s, "scope", None) == "system"]
+        sys_renames = _run_titles_load(_system_run_titles_path())
         for s in states:
             if section and (s.section or "orchestrators") != section:
                 continue
             with s.lock:
                 last_seq = s.events[-1]["seq"] if s.events else -1
+                gate_pending = bool(s.gate_pending)
             live_ids.add(s.run_id)
             live.append({
                 "runId": s.run_id,
                 "agentId": s.agent_id,
                 "branch": s.branch,
                 "kind": s.kind,
-                "title": s.title,
+                "title": sys_renames.get(s.run_id) or s.title,
                 "startedAt": s.started_at,
                 "updatedAt": getattr(s, "updated_at", None) or s.started_at,
                 "done": s.done,
                 "turnDone": s.turn_done,
+                "gatePending": gate_pending,
                 "jobs": list(s.jobs.values()), "pendingJobs": len(_pending_run_jobs(s)),
                 "executionProfile": s.execution_profile, "processRunning": s.process_running,
                 "turnsCompleted": s.turns_completed,
@@ -34526,6 +34674,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             if rid in live_ids:
                 continue
             meta["done"] = True   # not in RUNS → process can't be alive
+            if sys_renames.get(rid):
+                meta["title"] = sys_renames[rid]
             live.append(meta)
         # Same ordering rule as /__runs: last ACTIVITY on top.
         live.sort(key=lambda r: (r.get("updatedAt") or r.get("startedAt") or 0,
@@ -35219,6 +35369,92 @@ class H(http.server.SimpleHTTPRequestHandler):
                                  "coveredThrough": covered_through,
                                  "context": context_policy.handoff_metadata(state)})
 
+    # POST /__run/<id>/rename   body: { title }
+    #   Give a thread a name the user picked. The transcript is NOT rewritten -
+    #   the title is stamped on every one of the run's chat.jsonl lines and
+    #   those files run to hundreds of megabytes. The new name goes in a
+    #   runId -> title sidecar that every run-row reader overlays instead.
+    #   An empty/blank title clears the rename and the original title returns.
+    def _run_rename(self, run_id, qs):
+        body = self._read_json_body(max_bytes=64 * 1024)
+        title = (body.get("title") or "").strip()
+        if len(title) > 200:
+            title = title[:200]
+        with RUNS_LOCK:
+            state = RUNS.get(run_id)
+        is_system = state is not None and getattr(state, "scope", None) == "system"
+        if is_system:
+            path = _system_run_titles_path()
+        else:
+            try:
+                project_root = resolve_project_root(qs)
+            except ValueError:
+                project_root = DEFAULT_PROJECT_ROOT
+            path = _run_titles_path(project_root)
+        _run_titles_set(path, run_id, title)
+        # A live thread keeps its title in memory too, so the drawer header and
+        # /__run/<id> agree with the list without waiting for a restart.
+        if state is not None and title:
+            state.title = title
+        return self._reply(200, {"ok": True, "runId": run_id, "title": title})
+
+    # POST /__runs/delete   body: { runIds: [...] }
+    #   Bulk sibling of /__run/<id>/delete. Same semantics per run, but the
+    #   chat JSONL is rewritten ONCE for the whole batch instead of once per
+    #   run - a marathon project's history is far too big to rewrite N times
+    #   for an N-row selection.
+    def _runs_delete_bulk(self, qs):
+        body = self._read_json_body(max_bytes=256 * 1024)
+        raw = body.get("runIds")
+        if not isinstance(raw, list):
+            return self._reply(400, {"error": "missing runIds[]"})
+        run_ids = [r for r in ({str(x) for x in raw if x}) if _RUN_ID_OK.match(r)]
+        if not run_ids:
+            return self._reply(400, {"error": "no valid runIds"})
+        with RUNS_LOCK:
+            states = {r: RUNS.get(r) for r in run_ids}
+        # Mark deleted BEFORE terminating - see _run_delete for why.
+        for r in run_ids:
+            _DELETED_RUN_IDS.add(r)
+        system_ids, project_ids = set(), set()
+        for r, state in states.items():
+            if state is None:
+                continue
+            (system_ids if getattr(state, "scope", None) == "system" else project_ids).add(r)
+            try:
+                state.msg_queue = []
+                _queue_persist(state)
+            except Exception:
+                pass
+            if state.process_running or _pending_run_jobs(state):
+                try:
+                    state.stop_reason = "user-stop"
+                    _stop_run_family(state)
+                except Exception:
+                    pass
+        ghosts = {r for r, state in states.items() if state is None}
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError:
+            project_root = DEFAULT_PROJECT_ROOT
+        purged = 0
+        proj_targets = project_ids | ghosts
+        if proj_targets:
+            purged += _chat_jsonl_purge_run(_chat_jsonl_path(project_root, "main"),
+                                            proj_targets)
+            _run_titles_forget(_run_titles_path(project_root), proj_targets)
+        # A ghost might be a system thread; sweep the section files for those.
+        sys_targets = system_ids | ghosts
+        if sys_targets:
+            for pth, _sec in _system_chat_candidate_files():
+                purged += _chat_jsonl_purge_run(pth, sys_targets)
+            _run_titles_forget(_system_run_titles_path(), sys_targets)
+        with RUNS_LOCK:
+            for r in run_ids:
+                RUNS.pop(r, None)
+        return self._reply(200, {"ok": True, "runIds": run_ids,
+                                 "deleted": len(run_ids), "purged": purged})
+
     # POST /__run/<id>/delete
     #   Remove a run entirely: stop it if still live (stop-then-delete), drop it
     #   from the in-memory registry, and purge its lines from the persisted chat
@@ -35265,6 +35501,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         purged = 0
         for p in paths:
             purged += _chat_jsonl_purge_run(p, run_id)
+            # The rename sidecar lives beside the transcript it annotates -
+            # drop this run's entry so it can't outlive the history.
+            _run_titles_forget(os.path.join(os.path.dirname(p), "run-titles.json"),
+                               run_id)
         # Drop from the live registry last so a concurrent _runs_list can't
         # re-merge in-memory state after we've purged the on-disk history.
         with RUNS_LOCK:
@@ -36153,7 +36393,7 @@ class ReusableThreadingTCP(socketserver.ThreadingTCPServer):
 # blocks on STALL_WAKE (which RunState.__init__ sets), so an idle daemon pays
 # nothing for it - no timer, no wakeup, no empty-registry scan.
 STALL_POLL_S = 300      # look every 5 min
-STALL_AFTER_S = 900     # no new events for 15 min = stalled
+STALL_AFTER_S = 900     # no new events for 15 min warrants investigation
 
 
 def _stall_find_parent(child):
@@ -36171,7 +36411,8 @@ def _stall_find_parent(child):
     if rid:
         for s in states:
             if s.run_id == rid:
-                return s if s.is_live and not s.done else None
+                same_project = os.path.realpath(s.project_root) == os.path.realpath(child.project_root)
+                return s if same_project and s.is_live and not s.done else None
         return None
     if not child.workflow_node_id:
         return None     # only a dispatched NODE has a parent worth guessing
@@ -36182,13 +36423,10 @@ def _stall_find_parent(child):
 
 
 def _stall_tell_parent(child, mins) -> None:
-    """Tell the dispatching run that its child has gone silent. This is the
-    whole point of the watchdog: the child is beyond help (its stream is
-    dead), but the parent is alive, polling, and CAN act - stop the node and
-    re-dispatch, or move on without it. Left to itself it polls forever.
+    """Ask the dispatching run to investigate silence, without assuming failure.
 
-    Written straight to the parent's stdin, the same channel /user-message
-    uses, so it lands mid-turn without waiting for the poll loop to exit."""
+    Written to the parent's stdin so it lands during a polling turn.
+    """
     parent = None
     try:
         parent = _stall_find_parent(child)
@@ -36199,11 +36437,11 @@ def _stall_tell_parent(child, mins) -> None:
     node = child.workflow_node_id or child.run_id
     text = (
         f"[watchdog] The node you dispatched, `{node}` (run {child.run_id}), "
-        f"has produced no output for {mins} minutes. Its process is alive and "
-        f"its status is still \"running\", so polling will never resolve - the "
-        f"agent's stream is silent, not busy. Stop polling it. Either stop and "
-        f"re-dispatch that node, or continue without it and say plainly in "
-        f"chat that you did."
+        f"has produced no new events for {mins} minutes. Its process is alive. "
+        f"Check its pending jobs, child runs, and saved outputs before deciding "
+        f"whether it is stuck. Quiet output alone does not prove failure. Do not "
+        f"stop an active worker or skip required QA based only on this warning. "
+        f"If work has finished, continue the already-approved next step."
     )
     try:
         parent.proc.stdin.write(_claude_user_frame(text))
@@ -36222,6 +36460,55 @@ def _stall_tell_parent(child, mins) -> None:
     print(f"[stall] told parent {parent.run_id} about {node}", flush=True)
 
 
+def _stall_watch_candidates(states):
+    """Watch workers, not coordinators that are waiting on live child runs.
+
+    Child progress is not copied into the parent's event stream. Monitoring
+    both made a quiet QA coordinator look stalled while its worker was busy.
+    Each child is monitored in its own right, including nested coordinators.
+    """
+    live = [s for s in states if not s.done and s.process_running]
+    coordinators = {(os.path.realpath(s.project_root), s.parent_run_id)
+                    for s in live if s.parent_run_id}
+    return [s for s in live
+            if (os.path.realpath(s.project_root), s.run_id) not in coordinators
+            and (not s.turn_done or _pending_run_jobs(s))]
+
+
+def _stall_watch_round(states, seen, now):
+    alive = set()
+    for s in _stall_watch_candidates(states):
+        alive.add(s.run_id)
+        with s.lock:
+            seq = s.events[-1]["seq"] if s.events else -1
+        row = seen.get(s.run_id)
+        if row is None or row[0] != seq:
+            seen[s.run_id] = [seq, now, False]
+            continue
+        idle = now - row[1]
+        if row[2] or idle < STALL_AFTER_S:
+            continue
+        mins = int(idle // 60)
+        where = s.workflow_node_id or s.kind or "run"
+        print(f"[stall] {s.run_id} ({where}) - no new events for "
+              f"{mins} min: {s.title}", flush=True)
+        try:
+            s.append("status", {
+                "label": "stalled",
+                "promptPreview": f"no new events for {mins} min; check pending work",
+            })
+        except Exception:
+            pass
+        _stall_tell_parent(s, mins)
+        # Our warning must not count as progress and trigger repeat warnings.
+        with s.lock:
+            seq = s.events[-1]["seq"] if s.events else seq
+        seen[s.run_id] = [seq, now, True]
+    for rid in list(seen):
+        if rid not in alive:
+            seen.pop(rid, None)
+
+
 def _stall_watch_loop() -> None:
     # runId -> [lastSeq, unchanged_since, warned]
     seen = {}
@@ -36234,6 +36521,8 @@ def _stall_watch_loop() -> None:
         try:
             with RUNS_LOCK:
                 states = list(RUNS.values())
+            # Keep the loop awake while a coordinator has pending work, even
+            # if its child is temporarily waiting for a user decision.
             busy = any(not s.done and s.process_running and (not s.turn_done or _pending_run_jobs(s))
                        for s in states)
         except Exception:
@@ -36247,47 +36536,7 @@ def _stall_watch_loop() -> None:
             now = time.time()
             with RUNS_LOCK:
                 states = list(RUNS.values())
-            alive = set()
-            for s in states:
-                # turn_done means it finished its turn and is waiting on the
-                # USER - that's idle by design, not a stall.
-                if s.done or not s.process_running or (s.turn_done and not _pending_run_jobs(s)):
-                    continue
-                alive.add(s.run_id)
-                with s.lock:
-                    seq = s.events[-1]["seq"] if s.events else -1
-                row = seen.get(s.run_id)
-                if row is None or row[0] != seq:
-                    seen[s.run_id] = [seq, now, False]   # moving = healthy
-                    continue
-                idle = now - row[1]
-                if row[2] or idle < STALL_AFTER_S:
-                    continue
-                mins = int(idle // 60)
-                where = s.workflow_node_id or s.kind or "run"
-                print(f"[stall] {s.run_id} ({where}) - no new events for "
-                      f"{mins} min: {s.title}", flush=True)
-                # Renders as a plain chat row ("stalled - no new events for
-                # 15 min") in the run's own transcript, and lands in
-                # chat.jsonl so it survives a daemon restart.
-                try:
-                    s.append("status", {
-                        "label": "stalled",
-                        "promptPreview": f"no new events for {mins} min",
-                    })
-                except Exception:
-                    pass
-                _stall_tell_parent(s, mins)
-                # Re-read the seq AFTER our own append, or the warning we just
-                # wrote would read as fresh activity next round and we'd warn
-                # again every 15 min. One line per silent stretch; real work
-                # moving the seq resets the row and re-arms the check.
-                with s.lock:
-                    seq = s.events[-1]["seq"] if s.events else seq
-                seen[s.run_id] = [seq, now, True]
-            for rid in list(seen):
-                if rid not in alive:
-                    seen.pop(rid, None)
+            _stall_watch_round(states, seen, now)
         except Exception as e:
             print(f"[stall] watchdog round failed: {e}", flush=True)
 
@@ -36362,7 +36611,7 @@ if __name__ == "__main__":
         _print_url_banner(f"http://localhost:{PORT}/")
     print(
         "  endpoints: /__save  /__layout  /__workflow\n"
-        "             /__agents  /__run  /__runs  /__stream\n"
+        "             /__agents  /__run  /__runs  /__runs/delete  /__run/<id>/rename  /__stream\n"
         "             /__workspace  /__projects  /__projects/new  /__projects/rename  /__projects/delete  /__projects/duplicate",
         flush=True,
     )

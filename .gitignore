@@ -48,3 +48,7 @@ links.json
 # Every project is user content, never source. The editor scaffolds these at
 # runtime; nothing in the repo needs them.
 projects/
+
+# Per-run rename overlay, written beside the chat transcript it annotates
+# (runId -> title). Per-install runtime state like the transcript itself.
+run-titles.json

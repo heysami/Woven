@@ -24962,6 +24962,35 @@ a.ds-badge:hover, button.ds-badge:hover {
   text-align: center;
   font-style: italic;
 }
+/* New chat + the Select toggle share one row. Select lives here rather than in
+   a bar of its own: the list keeps ONE control surface at the top, and a rare
+   cleanup action does not get to push the rows down permanently. */
+.runs-list-head {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.runs-list-head .runs-new-chat { flex: 1 1 auto; margin-bottom: 0; }
+.runs-select-toggle {
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.runs-select-toggle:hover { background: var(--surface-2); color: var(--text); }
+.runs-select-toggle[data-on="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
 .runs-new-chat {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -25111,7 +25140,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: var(--radius-sm);
 }
 .runs-unread-all:hover { background: var(--surface-2); color: var(--text); }
-.runs-row-del {
+.runs-row-act {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -25127,26 +25156,111 @@ a.ds-badge:hover, button.ds-badge:hover {
   opacity: 0;
   transition: opacity .12s ease, color .12s ease, background .12s ease;
 }
-.runs-row-wrap:hover .runs-row-del,
-.runs-row-wrap:focus-within .runs-row-del { opacity: 1; }
+.runs-row-wrap:hover .runs-row-act,
+.runs-row-wrap:focus-within .runs-row-act { opacity: 1; }
+.runs-row-act:hover { color: var(--text); background: var(--surface-2); }
 .runs-row-del:hover { color: var(--danger); background: var(--surface-2); }
-.runs-row-del svg { display: block; }
+.runs-row-act svg { display: block; }
+/* The shared status-dot vocabulary. Used by the runs list AND by the plan /
+   task / agent lists, which still want the full live-waiting-done-fail
+   palette - do not delete a status here without checking every caller.
+   `none` is the runs list's addition: an explicitly BLANK dot that still
+   occupies its grid cell, so titles stay on one vertical line whether or not
+   a neighbour is live. See LeftChatRunsList for why finished / stopped /
+   failed threads render `none` rather than a colour. */
 .runs-row-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
   background: var(--text-faint);
+  flex-shrink: 0;
 }
+.runs-row-dot[data-status="none"] { background: transparent; box-shadow: none; }
 .runs-row-dot[data-status="live"] {
   background: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 25%, transparent);
   animation: chat-pulse 1.4s ease-in-out infinite;
 }
+/* "Waiting on a pick from you." `attention` is the runs list's name for it;
+   `waiting` is the same mark under the plan/task lists' older vocabulary. */
+.runs-row-dot[data-status="attention"],
 .runs-row-dot[data-status="waiting"] {
   background: var(--warning);
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--warning) 25%, transparent);
 }
 .runs-row-dot[data-status="done"] { background: var(--success); }
 .runs-row-dot[data-status="fail"] { background: var(--danger); }
+/* A gated row already wears the yellow dot on the LEADING edge - the trailing
+   new-activity dot would make it two yellow marks on one line. */
+.runs-row[data-gate="true"] .runs-row-new {
+  background: transparent;
+  box-shadow: none;
+}
+/* Selection mode reuses the dot's grid cell for the checkbox, so turning it on
+   and off never reflows the titles. */
+.runs-row-check {
+  width: 13px; height: 13px;
+  border-radius: 3px;
+  border: 1px solid var(--border-strong, var(--border));
+  background: var(--surface);
+  color: var(--surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.runs-row-check[data-on="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.runs-row-check svg { display: block; width: 10px; height: 10px; stroke-width: 2.5; }
+/* Selection actions - the sticky strip the unread bar would otherwise occupy.
+   Only one of the two is ever mounted. */
+.runs-select-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 2px 0;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+.runs-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-text);
+  cursor: pointer;
+}
+.runs-select-all input { margin: 0; accent-color: var(--accent); cursor: pointer; }
+.runs-select-del {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--danger);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.runs-select-del:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger) 14%, transparent);
+}
+.runs-select-del:disabled { color: var(--text-faint); cursor: default; }
+.runs-select-del svg { display: block; }
+.runs-row-wrap[data-picked="true"] .runs-row { background: var(--accent-soft); }
 .runs-row-title {
   font-size: 12.5px;
   font-weight: 500;
