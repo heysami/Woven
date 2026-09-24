@@ -141,6 +141,12 @@ function activePrototypeSlug() {
   return (m && m[1]) || (D && D.meta && D.meta.activeBranch) || "main";
 }
 
+// These scripts are captured at boot by every Architecture view.
+function isEditorBootDataPath(path) {
+  const norm = String(path || "").replace(/\\/g, "/");
+  return /(?:^|\/)editor\/(?:data\.js|[^/]+\.data\.js|(?:branches|design-systems)\/[^/]+\.js)$/.test(norm);
+}
+
 // Resolve the editor data file the daemon serves back for a given prototype
 // slug, expressed as an agent instruction. The daemon (serve.py do_GET) serves
 // editor/<slug>.data.js when it exists, else falls back to editor/data.js (the
@@ -2832,7 +2838,10 @@ function applyModelEdits(D, edits) {
         // Insert a new step in the middle of an existing arrow:
         // old A→B becomes A→new + new→B
         const a = arrows.find(x => x.id === ed.arrowId); if (a && ed.newFrame) {
-          if (!frames.find(f => f.id === ed.newFrame.id)) frames.push({ ...ed.newFrame });
+          if (!frames.find(f => f.id === ed.newFrame.id)) {
+            frames.push({ ...ed.newFrame });
+            framesEntities[ed.newFrame.id] = new Set(ed.newFrame.entities || []);
+          }
           const origTo = a.to;
           a.to = ed.newFrame.id; a.action = ed.actionA || a.action;
           arrows.push({ id: modelUid("arr"), from: ed.newFrame.id, to: origTo, action: ed.actionB || "" });
@@ -10556,9 +10565,7 @@ function useHistory({ onAfterRestore } = {}) {
   const applyRestoreSideEffects = useCallback((changedFiles, label) => {
     if (!Array.isArray(changedFiles) || changedFiles.length === 0) return;
     const touches = (re) => changedFiles.some(p => re.test(p));
-    const needsHardReload = touches(/^editor\/data\.js$/)
-      || touches(/^editor\/branches\/[^/]+\.js$/)
-      || touches(/^editor\/design-systems\/[^/]+\.js$/);
+    const needsHardReload = changedFiles.some(isEditorBootDataPath);
     const onlyWorkflow = changedFiles.length > 0
       && changedFiles.every(p => p === "workflow/workflow.json");
     const touchesSource = touches(/^source\//);
@@ -24338,24 +24345,60 @@ function ChatEventRow({ ev, runId, answers, onAnswered }) {
   return null;
 }
 
-function GenerateRequestButton({ kind, label, body }) {
+async function requestViewGeneration(kind, body) {
+  const files = { stateMachine: "STATEMACHINE_REQUEST.md", timeline: "TIMELINE_REQUEST.md", grid: "GRID_REQUEST.md" };
+  const file = files[kind];
+  if (!file) throw new Error("Unknown Architecture view: " + kind);
+  const slug = activePrototypeSlug();
+  const scopedBody = [
+    `Generate the ${kind} view for prototype "${slug}" only. Source root: source/${slug}/.`,
+    String(body || "")
+      .replaceAll("source/prototype.json", `source/${slug}/prototype.json`)
+      .replaceAll("editor/data.js", "the selected prototype's editor data file (resolved below)"),
+    editorDataTargetInstruction(slug),
+    `Read protocol playbooks under TH_PROTOCOL_ROOT in workspace mode. Do not modify sibling prototypes. Delete ${file} only after generation succeeds.`,
+  ].join("\n\n");
+  const saved = await saveFile(file, scopedBody, "text/markdown");
+  if (saved.cancelled) return { cancelled: true };
+  // A downloaded request is not on the daemon's disk. Keep the manual path
+  // useful for static servers without claiming that generation has started.
+  if (!saved.server) return { ok: true, manual: true };
+  try {
+    const run = await triggerRun({
+      branch: slug, prototype: slug, kind: "freeform",
+      prompt: scopedBody, title: `Generate ${kind} - ${slug}`,
+      guards: loadChatGuards(),
+    });
+    return { ok: true, run };
+  } catch (err) {
+    throw new Error(`Request saved to ${file}, but generation could not start: ${err.message || err}`);
+  }
+}
+
+function GenerateRequestButton({ kind, label, body, onGenerate, generationBusy }) {
   const [state, setState] = useState("idle"); // idle | sending | sent | error
+  const [error, setError] = useState("");
   const onClick = async () => {
     setState("sending");
+    setError("");
     try {
-      const r = await requestViewGeneration(kind, body);
-      setState(r.ok ? "sent" : "error");
-    } catch { setState("error"); }
+      const r = await (onGenerate || requestViewGeneration)(kind, body);
+      setState(r.cancelled ? "idle" : r.manual ? "manual" : r.ok ? "sent" : "error");
+    } catch (err) { setState("error"); setError(err.message || String(err)); }
   };
   const text = state === "idle"    ? label
-             : state === "sending" ? "Writing request…"
-             : state === "sent"    ? "Request saved - run Claude to populate"
-             :                       "Couldn't write file";
+             : state === "sending" ? "Starting generation…"
+             : state === "sent"    ? "Generation started"
+             : state === "manual"  ? "Request saved - run an agent to populate"
+             :                       "Retry generation";
   return html`
+    <${React.Fragment}>
     <button className="tbtn tbtn-primary empty-view-cta"
-      onClick=${onClick} disabled=${state === "sending" || state === "sent"}>
+      onClick=${onClick} disabled=${generationBusy || state === "sending" || state === "sent" || state === "manual"}>
       <${Icon.Send}/> ${text}
     </button>
+    ${error && html`<p role="alert">${error}</p>`}
+    <//>
   `;
 }
 
@@ -24366,7 +24409,7 @@ function GenerateRequestButton({ kind, label, body }) {
    left, terminals at right, others auto-placed by longest-path from initial.
    Read-only for now - Workflow 1 populates `stateMachines[]` per entity that
    has a lifecycle field (see AGENTS.md → Step 5d.A). */
-function StateMachineView({ model, setEdits }) {
+function StateMachineView({ model, setEdits, onGenerate, generationBusy }) {
   const machines = model.stateMachines || [];
   const [activeId, setActiveId] = useState(() => machines[0]?.id || null);
   const active = machines.find(m => m.id === activeId) || machines[0];
@@ -24428,7 +24471,7 @@ Workflow 1. Delete this request file when done.
           <p>This view visualises lifecycle FSMs for entities - <em>draft → submitted → approved/rejected/expired</em>-style state graphs. State machines are <strong>optional</strong>: they earn their keep only when an entity has 3+ meaningful states with branching transitions. Binary toggles (active/inactive, deleted/not-deleted) skip this view.</p>
           <p>Two ways to populate:</p>
           <ul>
-            <li><strong>Auto:</strong> click "Generate" below. Writes <code>STATEMACHINE_REQUEST.md</code> at the repo root. Run Claude in this folder; it walks Workflow 1 → Step 5d.A and writes <code>stateMachines[]</code> into <code>prototype.json</code> for every entity that qualifies.</li>
+            <li><strong>Auto:</strong> click "Generate" below to start an agent for this prototype. Progress appears in chat; qualifying entities are saved as <code>stateMachines[]</code>.</li>
             <li><strong>Manual:</strong> hand-author the array in <code>source/${"<branch>"}/prototype.json</code>:</li>
           </ul>
           <pre>"stateMachines": [
@@ -24450,7 +24493,7 @@ Workflow 1. Delete this request file when done.
     ]
   }
 ]</pre>
-          <${GenerateRequestButton} kind="stateMachine" label="Generate state machines" body=${reqBody}/>
+          <${GenerateRequestButton} kind="stateMachine" label="Generate state machines" body=${reqBody} onGenerate=${onGenerate} generationBusy=${generationBusy}/>
         </div>
       </div>
     `;
@@ -24611,7 +24654,7 @@ Workflow 1. Delete this request file when done.
    Each timeline = one horizontal track with events plotted at relative time
    positions. The agent declares events with `at: "T+0d"`-style offsets; this
    view parses them into a numeric scale and lays them out left-to-right. */
-function TimelineView({ model, setEdits }) {
+function TimelineView({ model, setEdits, onGenerate, generationBusy }) {
   const embed = viewIsEmbed();
   const timelines = model.timelines || [];
   const { commentAt, setCommentAt, commentsOf, submitComment, CommentBtn } =
@@ -24672,7 +24715,7 @@ this file anyway.
           <p>This view plots time-driven changes - review windows, reminder cron, auto-expiry, SLA deadlines - along a horizontal axis. Timelines are <strong>optional</strong>: they only earn their keep when something in the system advances <em>over time</em> without user action.</p>
           <p>Two ways to populate:</p>
           <ul>
-            <li><strong>Auto:</strong> click "Generate" below. Writes <code>TIMELINE_REQUEST.md</code> at the repo root. Run Claude in this folder; it scans for cron / scheduled / "after N days" logic in source and writes <code>timelines[]</code> entries into <code>prototype.json</code>.</li>
+            <li><strong>Auto:</strong> click "Generate" below to start an agent for this prototype. Progress appears in chat; time-driven changes are saved as <code>timelines[]</code>.</li>
             <li><strong>Manual:</strong> hand-author in <code>source/${"<branch>"}/prototype.json</code>:</li>
           </ul>
           <pre>"timelines": [
@@ -24688,7 +24731,7 @@ this file anyway.
     ]
   }
 ]</pre>
-          <${GenerateRequestButton} kind="timeline" label="Generate timelines" body=${reqBody}/>
+          ${!embed && html`<${GenerateRequestButton} kind="timeline" label="Generate timelines" body=${reqBody} onGenerate=${onGenerate} generationBusy=${generationBusy}/>`}
         </div>
       </div>
     `;
@@ -24751,7 +24794,7 @@ this file anyway.
    Matrix of row-axis values × col-axis values, with declared cells filling
    the intersections. Use cases: "what does each role see when application
    is in state X?", "which fields are editable per role × per status?". */
-function GridView({ model, setEdits }) {
+function GridView({ model, setEdits, onGenerate, generationBusy }) {
   const grids = model.grids || [];
   const { commentAt, setCommentAt, commentsOf, submitComment, CommentBtn } =
     useCommentAffordance(model, setEdits, "view-comment");
@@ -24798,7 +24841,7 @@ and delete this file anyway.
           <p>A grid has <strong>one axis describing <em>what</em></strong> (a form's fields, or an entity's operations) and <strong>one axis describing the <em>use-case</em></strong> (status, field-value, timeline, role, or a compound). Cells describe the variance at each intersection.</p>
           <p>Two ways to populate:</p>
           <ul>
-            <li><strong>Auto:</strong> click "Generate" below. Writes <code>GRID_REQUEST.md</code> at the repo root. Run Claude in this folder; it walks every form and every entity for 2D variance, emitting one grid per (subject, use-case axis) pair.</li>
+            <li><strong>Auto:</strong> click "Generate" below to start an agent for this prototype. Progress appears in chat; the agent builds grids for forms and entities whose behavior varies across use cases.</li>
             <li><strong>Manual:</strong> hand-author entries in <code>source/${"<branch>"}/prototype.json</code>.</li>
           </ul>
           <p style=${{ marginTop: 18, marginBottom: 6, fontWeight: 600, color: "var(--text)" }}>Form-field × status - the most common shape:</p>
@@ -24847,7 +24890,7 @@ and delete this file anyway.
     { "row": "milestones",   "col": "enterprise", "render": "1-12 rows" }
   ]
 }</pre>
-          <${GenerateRequestButton} kind="grid" label="Generate grids" body=${reqBody}/>
+          <${GenerateRequestButton} kind="grid" label="Generate grids" body=${reqBody} onGenerate=${onGenerate} generationBusy=${generationBusy}/>
         </div>
       </div>
     `;
@@ -107721,7 +107764,7 @@ function App() {
   // process is still alive waiting for follow-up. New Submit always spawns a
   // fresh run; if the user wants to keep talking to the existing agent, they
   // use the chat composer in the drawer instead.
-  const runActive = !!chatRun && !runFinished;
+  const runActive = !!chatRun?.runId && !runFinished;
   const permissionMode = usePermissionMode();
 
   // Fires when ChatDrawer detects the agent's turn ended. Decides between:
@@ -107752,15 +107795,7 @@ function App() {
     // no reload). The agent typically touches source/* on a chat - those
     // don't need a reload.
     const paths = Array.isArray(modifiedPaths) ? modifiedPaths : [];
-    const touchesEditorBoot = paths.some(p => {
-      if (!p) return false;
-      const norm = String(p).replace(/\\/g, "/");
-      // editor/data.js is the canonical model file. Design-system *.js files
-      // are also <script src>'d at boot (one per DS, picked by meta.dsRef).
-      if (/(^|\/)editor\/data\.js$/.test(norm)) return true;
-      if (/(^|\/)editor\/design-systems\/[^/]+\.js$/.test(norm)) return true;
-      return false;
-    });
+    const touchesEditorBoot = paths.some(isEditorBootDataPath);
 
     if (status === "done" && didModifyFiles && touchesEditorBoot) {
       const alreadyReloadedFor = sessionStorage.getItem("th.autoReloadedForRun");
@@ -107945,6 +107980,22 @@ function App() {
     }
     return run;
   }, [activeBranchIdForChat, agentId, permissionMode, runActive]);
+
+  const generationPending = useRef(false);
+  const generateView = useCallback(async (kind, body) => {
+    if (runActive || agentBusy || generationPending.current) return { cancelled: true };
+    generationPending.current = true;
+    try {
+      const result = await requestViewGeneration(kind, body);
+      if (result.run) {
+        setChatRun(result.run);
+        setLastRun(result.run);
+        setRunFinished(false);
+        saveSettings({ lastRunId: result.run.runId });
+      }
+      return result;
+    } finally { generationPending.current = false; }
+  }, [runActive, agentBusy]);
 
   // Spawn Workflow 6 (DS proposals dispatch) right after the user commits
   // verdicts in the DS-proposal modal. Wires the resulting run into the chat
@@ -108185,7 +108236,7 @@ function App() {
   const submit = async () => {
     const hasStrokes = Object.values(strokes).some(arr => arr?.length);
     if (!edits.length && !hasStrokes) return;
-    if (chatRun) return;  // a run is already in flight; let the user stop it first
+    if (runActive || agentBusy || capturing) return;
     setCapturing(true);
     const { annotations, failures } = await captureAnnotations();
     setCapturing(false);
@@ -108212,6 +108263,8 @@ function App() {
       const run = await triggerRun({
         agentId,
         kind: "edits-apply",
+        branch: activePrototypeSlug(),
+        prototype: activePrototypeSlug(),
         title: `Applying ${edits.length} edit${edits.length===1?"":"s"}`,
         permissionMode,
         meta: { editCount: edits.length, annotationCount: annotations.length },
@@ -108380,9 +108433,9 @@ function App() {
       ${view === "ia"        && html`<${IAView}      model=${model} setEdits=${setEdits}/>`}
       ${view === "ds"        && html`<${DSView} model=${model} setEdits=${setEdits}/>`}
       ${view === "entities"  && html`<${EntitiesView} model=${model} setEdits=${setEdits}/>`}
-      ${view === "stateMachine" && html`<${StateMachineView} model=${model} setEdits=${setEdits}/>`}
-      ${view === "timeline"     && html`<${TimelineView}     model=${model} setEdits=${setEdits}/>`}
-      ${view === "grid"         && html`<${GridView}         model=${model} setEdits=${setEdits}/>`}
+      ${view === "stateMachine" && html`<${StateMachineView} model=${model} setEdits=${setEdits} onGenerate=${generateView} generationBusy=${runActive || agentBusy}/>`}
+      ${view === "timeline"     && html`<${TimelineView}     model=${model} setEdits=${setEdits} onGenerate=${generateView} generationBusy=${runActive || agentBusy}/>`}
+      ${view === "grid"         && html`<${GridView}         model=${model} setEdits=${setEdits} onGenerate=${generateView} generationBusy=${runActive || agentBusy}/>`}
       ${!embedMode && html`<${EditsPanel}
         edits=${edits}
         strokes=${strokes}

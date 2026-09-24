@@ -16222,8 +16222,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
     # ── POST /__layout ───────────────────────────────────────────────────
-    # Persist Canvas-view frame positions + meta overrides (default frame
-    # size, canvas gap) to a sidecar file the editor reloads on next boot.
+    # Persist Canvas-view positions, sizes and sections in the editor data
+    # file. Legacy layout sidecars are retired after their contents are saved.
     # This is intentionally separate from the design-edits queue
     # (edits.json + Workflow 2): rearranging frames and tweaking the grid
     # are editor-organization, not "design changes" that should round-trip
@@ -16232,10 +16232,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Body: { "positions": { "<frame-id>": { "col": <int>, "row": <int> }, ... },
     #         "meta":      { "defaultFrame": { "w": <int>, "h": <int> },
     #                        "canvasGap":    <int> } }
-    # Writes: editor/branches/<slug>.layout.js with `window.EDITOR_LAYOUT = …`.
-    #
-    # The sidecar shape is { positions: {...}, meta: {...} }. Legacy sidecars
-    # (flat id → {col,row}) are auto-upgraded on the next write.
+    # Writes: editor/<slug>.data.js, or editor/data.js for the default.
     @staticmethod
     def _data_file_for(project_root, slug):
         """The data file the editor is served for `?prototype=<slug>`.
@@ -16252,168 +16249,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         return os.path.join(editor_dir, "data.js")
 
     @staticmethod
-    def _scan_block(text, open_idx):
-        """Index just past the bracket/brace that closes the one at open_idx.
-
-        STRING-AWARE: a naive depth counter breaks on this file, because
-        frames carry setupScript strings full of braces
-        (`setTimeout(function(){...},80)`). Skips over double-quoted strings
-        and their backslash escapes.
-        """
-        opener = text[open_idx]
-        closer = {"{": "}", "[": "]"}[opener]
-        depth, i, n = 0, open_idx, len(text)
-        while i < n:
-            c = text[i]
-            if c == '"':
-                i += 1
-                while i < n:
-                    if text[i] == "\\":
-                        i += 2
-                        continue
-                    if text[i] == '"':
-                        break
-                    i += 1
-            elif c == opener:
-                depth += 1
-            elif c == closer:
-                depth -= 1
-                if depth == 0:
-                    return i + 1
-            i += 1
-        raise ValueError("unbalanced %s at %d" % (opener, open_idx))
-
-    @staticmethod
     def _patch_data_layout(path, positions, meta, sections):
-        """Write canvas layout INTO the prototype's data file, in place.
-
-        Layout used to live in a second file (editor/<slug>.layout.js) that the
-        editor merged over the data file at boot. Two writers, two files, one
-        truth - and they drifted: an agent regen rewrote col/row in data.js
-        while the sidecar kept overriding them, so the file the agent read was
-        never the canvas the user saw. The data file is now the single source
-        of truth and this patches it surgically.
-
-        SURGICAL on purpose - the file is agent-authored JS with comments and
-        hand formatting (`// -- Applicant portal --` group headers and the
-        like). Individual numeric fields and the `sections:` array are
-        rewritten; the document is never reserialised. Handles both key styles
-        agents emit: bare (`col: 3`) and JSON-quoted (`"col": 3`).
-
-        Returns (text, changed_count). Raises ValueError when the file can't be
-        parsed well enough to patch safely - the caller keeps the old file.
-        """
+        """Patch literal frame objects, preserving unrelated JS and comments."""
+        import data_layout
         with open(path, "r", encoding="utf-8") as f:
-            text = f.read()
-        changed = 0
-
-        def set_num(chunk, key, value, insert_after_id=False):
-            """Set `key` to `value` inside one object literal's text.
-
-            `insert_after_id` is for FRAME objects only, where the chunk IS the
-            frame and its `id` field is the right anchor for a missing key. It
-            must stay off for the meta block: the first `id:` in there belongs
-            to the nested dsRef, and an insert would land inside it.
-            """
-            pat = re.compile(r'(?<=[{,\s])("%s"|%s)(\s*:\s*)(-?\d+(?:\.\d+)?)' % (key, key))
-            m = pat.search(chunk)
-            if m:
-                if m.group(3) == str(value):
-                    return chunk, False
-                return chunk[:m.start(3)] + str(value) + chunk[m.end(3):], True
-            if not insert_after_id:
-                return chunk, False
-            mid = re.search(r'("id"|\bid)(\s*:\s*)("[^"]*")', chunk)
-            if not mid:
-                return chunk, False
-            quoted = chunk[mid.start(1)] == '"'
-            ins = ', "%s": %d' % (key, value) if quoted else ", %s: %d" % (key, value)
-            return chunk[:mid.end(3)] + ins + chunk[mid.end(3):], True
-
-        # -- frames: col / row / w / h per id -----------------------------
-        # Line-scoped: agents emit one frame object per line, and a frame's
-        # setupScript can contain anything, so bounding the rewrite to the
-        # frame's own line(s) is safer than parsing the object.
-        lines = text.split("\n")
-        for fid, pos in (positions or {}).items():
-            idpat = re.compile(r'("id"|\bid)\s*:\s*"%s"' % re.escape(fid))
-            for li, line in enumerate(lines):
-                if not idpat.search(line):
-                    continue
-                new_line = line
-                for key in ("col", "row", "w", "h"):
-                    if isinstance(pos.get(key), int):
-                        new_line, hit = set_num(new_line, key, pos[key], insert_after_id=True)
-                        if hit:
-                            changed += 1
-                if new_line != line:
-                    lines[li] = new_line
-                break
-        text = "\n".join(lines)
-
-        # -- meta: defaultFrame + canvasGap -------------------------------
-        mm = re.search(r'("meta"|\bmeta)\s*:\s*\{', text)
-        if mm and isinstance(meta, dict):
-            start = text.index("{", mm.end() - 1)
-            end = H._scan_block(text, start)
-            meta_text = text[start:end]
-            new_meta = meta_text
-            df = meta.get("defaultFrame")
-            if isinstance(df, dict) and isinstance(df.get("w"), int) and isinstance(df.get("h"), int):
-                emit = '"defaultFrame": {"w": %d, "h": %d}' % (df["w"], df["h"])
-                dm = re.search(r'("defaultFrame"|\bdefaultFrame)\s*:\s*\{[^{}]*\}', new_meta)
-                if dm:
-                    if dm.group(0) != emit:
-                        new_meta = new_meta[:dm.start()] + emit + new_meta[dm.end():]
-                        changed += 1
-                else:
-                    new_meta = new_meta[:1] + " " + emit + "," + new_meta[1:]
-                    changed += 1
-            if isinstance(meta.get("canvasGap"), int):
-                # Top-level meta key only. If it isn't there, insert at the
-                # FRONT of the block - never anchored on an `id` field, which
-                # in meta belongs to the nested dsRef.
-                gm = re.search(r'(?<=[{,\s])("canvasGap"|canvasGap)(\s*:\s*)(-?\d+)', new_meta)
-                if gm:
-                    if gm.group(3) != str(meta["canvasGap"]):
-                        new_meta = new_meta[:gm.start(3)] + str(meta["canvasGap"]) + new_meta[gm.end(3):]
-                        changed += 1
-                else:
-                    new_meta = new_meta[:1] + ' "canvasGap": %d,' % meta["canvasGap"] + new_meta[1:]
-                    changed += 1
-            if new_meta != meta_text:
-                text = text[:start] + new_meta + text[end:]
-
-        # -- sections: replace the whole array (or insert one) ------------
-        if isinstance(sections, list):
-            live = [s for s in sections if isinstance(s, dict) and not s.get("deleted")]
-            body = ",\n".join(
-                "    " + json.dumps({k: s[k] for k in ("id", "label", "col", "row", "col2", "row2", "tone", "members") if k in s},
-                                    ensure_ascii=False)
-                for s in live
-            )
-            block = "sections: [\n%s\n  ]" % body if live else "sections: []"
-            sm = re.search(r'("sections"|\bsections)\s*:\s*\[', text)
-            if sm:
-                open_idx = text.index("[", sm.end() - 1)
-                end = H._scan_block(text, open_idx)
-                if text[sm.start():end] != block:
-                    text = text[:sm.start()] + block + text[end:]
-                    changed += 1
-            elif live:
-                am = re.search(r'("arrows"|\barrows)\s*:\s*\[', text)
-                if not am:
-                    raise ValueError("cannot locate an insertion point for sections")
-                anchor = H._scan_block(text, text.index("[", am.end() - 1))
-                tail = text[anchor:]
-                if tail.lstrip().startswith(","):
-                    ci = anchor + tail.index(",") + 1
-                    text = text[:ci] + "\n  " + block + "," + text[ci:]
-                else:
-                    text = text[:anchor] + ",\n  " + block + text[anchor:]
-                changed += 1
-
-        return text, changed
+            return data_layout.patch(f.read(), positions, meta, sections)
 
     @staticmethod
     def _layout_read_sections(path):
