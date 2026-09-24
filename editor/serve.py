@@ -53,6 +53,7 @@ import mcp_routing
 import runtime_drivers
 import review_evidence
 import helper_jobs
+import jev
 import datetime as _dt
 import difflib
 import glob
@@ -961,6 +962,14 @@ COMPACT_DEFAULTS         = {"autoCompact": False, "thresholdTokens": 400_000,
                             # there is "continue". Send it for them.
                             "autoContinue": True, "summaryModel": "fast",
                             "referenceReuse": True, "compactQa": True,
+                            # ONE global switch for the Jev typed-judgment fast
+                            # path (docs/features/jev-integration.md). NOT a
+                            # fourth checkbox in the composer's Checks chip:
+                            # Jev is a different EXECUTION PATH for checks that
+                            # already exist, not a new check. So reqQa on + this
+                            # on = fan-out; reqQa on + this off = today's
+                            # behaviour; no key = today's behaviour, silently.
+                            "jevJudge": False,
                             "contractWriterModel": "fast", "contractWriterOverrides": {},
                             "economyModels": dict(model_routing.DEFAULTS), "modelCatalog": [],
                             "runtimeDrivers": {"codex": "exec", "opencode": "run"},
@@ -991,7 +1000,7 @@ def _compact_config() -> dict:
         if isinstance(overrides, dict):
             cfg["contractWriterOverrides"] = {key: value for key, value in overrides.items()
                 if re.fullmatch(r"[a-z0-9-]+-orchestrator", key) and contract_writer.valid_model(value)}
-        for key in ("referenceReuse", "compactQa"):
+        for key in ("referenceReuse", "compactQa", "jevJudge"):
             if isinstance(saved.get(key), bool):
                 cfg[key] = saved[key]
         thr = saved.get("thresholdTokens")
@@ -1161,6 +1170,13 @@ _PROVIDER_ENV_KEYS = {
     # "never auto-run, offer first" cost rule in capabilities.py. Reached by the
     # editor via the daemon /__exa/search endpoint so the key stays server-side.
     "exa":         "TH_EXA_API_KEY",
+    # TypeSafe "System One" (Jev) - typed judgment, not generation. Answers N
+    # independent typed questions about one state and returns calibrated
+    # probabilities. Reached by every runtime via the daemon /__jev endpoint so
+    # the key stays server-side. Text only, no images - see the rejected image
+    # path in docs/features/jev-integration.md. Cheap ($0.042/Mtok in, output
+    # free) and fail-soft: no key means every consumer keeps its old judgment.
+    "typesafe":    "TH_TYPESAFE_API_KEY",
     # SAM 3D Objects (facebookresearch/sam-3d-objects) image→Gaussian-splat
     # service. Runs on an external CUDA GPU (Modal/RunPod/Replicate/own box) -
     # NOT in this daemon. Key is OPTIONAL (self-hosted endpoints may be
@@ -15374,6 +15390,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._llm_run(qs)
             if parsed.path == "/__exa/search":
                 return self._exa_search_run(qs)
+            if parsed.path == "/__jev":
+                return self._jev_run(qs)
             if parsed.path == "/__assistant/tester":
                 return self._assistant_tester_run(qs)
             if parsed.path == "/__assistant/research":
@@ -22632,7 +22650,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if not model_routing.valid_model(body["summaryModel"]):
                 return self._reply(400, {"error": "invalid summary model"})
             cfg["summaryModel"] = body["summaryModel"]
-        for key in ("referenceReuse", "compactQa"):
+        for key in ("referenceReuse", "compactQa", "jevJudge"):
             if key in body:
                 if not isinstance(body[key], bool):
                     return self._reply(400, {"error": key + " must be a boolean"})
@@ -22912,6 +22930,20 @@ class H(http.server.SimpleHTTPRequestHandler):
                 except urllib.error.HTTPError as e:
                     ok = e.code not in (401, 403)
                     if not ok: detail = {"status": e.code, "hint": "exa rejected the key"}
+            elif provider == "typesafe":
+                # Cheapest valid call: ONE noul over a two-word state. Jev
+                # prices input only ($0.042/Mtok) and output is free, so this
+                # costs a rounding error. 200 with an answers object → the key
+                # works; 401/403 → it does not.
+                try:
+                    answers = jev.ask("The sky is blue.",
+                                      {"t": {"type": "noul",
+                                             "instructions": "This statement mentions the sky."}},
+                                      api_key=api_key, timeout=20, max_retries=0)
+                    ok = isinstance(answers, dict) and bool(answers)
+                except jev.JevError as e:
+                    ok = False
+                    detail = {"hint": str(e)[:200]}
             elif provider == "worldlabs":
                 # Cheapest valid call: GET remaining API credits. 200 → key works,
                 # 401/403 → bad key. Never spends credits (no world generated).
@@ -22980,6 +23012,66 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(502, {"ok": False, "error": f"{type(e).__name__}: {e}"})
         return self._reply(200, {"ok": True, "results": _exa_normalize_results(payload),
                                  "raw": payload if isinstance(payload, dict) else None})
+
+    def _jev_run(self, qs):
+        """POST /__jev  Body: { state, questions, model?, kind? }.
+        Proxies TypeSafe System One (Jev) server-side so the key never reaches
+        the browser and every runtime (claude / codex / opencode) reaches the
+        judge with one curl instead of an SDK. Returns
+        { ok, answers, thresholds } - `thresholds` is the calibrated
+        {low, high, noul} band for `kind` so the caller routes with the same
+        numbers every other consumer uses instead of inventing its own.
+
+        FAIL-SOFT CONTRACT. Every caller of this endpoint has a non-Jev path it
+        must take when this replies non-200. A 503 means "not wired up, use
+        your old judgment", never "the build failed". Jev only ever ADDS
+        findings (invariant I3 in docs/features/jev-integration.md); a caller
+        that DROPS a deterministic finding because this endpoint answered is
+        wrong even when Jev is right."""
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > MAX_BYTES:
+            return self._reply(400, {"error": "payload missing or too large"})
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception as e:
+            return self._reply(400, {"error": "invalid JSON body", "detail": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        state = body.get("state")
+        questions = body.get("questions")
+        if state is None or not isinstance(questions, dict) or not questions:
+            return self._reply(400, {"error": "state and a non-empty questions object are required"})
+        kind = body.get("kind") if isinstance(body.get("kind"), str) else "default"
+        # The global switch is enforced HERE, not only in the preamble, because
+        # the callers that need it most (a Task subagent running requirement QA,
+        # ds_lint under the ds-guardian) never see a preamble. One switch, one
+        # place, every consumer.
+        if not _compact_config().get("jevJudge"):
+            return self._reply(503, {"ok": False, "available": False,
+                                     "error": "typed judgment is turned off",
+                                     "hint": "Settings -> Context and cost -> Typed judgment. "
+                                             "Run the check the way you would without it."})
+        api_key = _resolve_provider_key("typesafe")
+        if not api_key:
+            # 503, not 502: nothing is broken, the judge is simply not wired up.
+            return self._reply(503, {"ok": False, "available": False,
+                                     "error": "no typesafe api key configured",
+                                     "hint": "Settings -> Model Config -> API keys -> TypeSafe (Jev). "
+                                             "Every check that uses it falls back without one."})
+        try:
+            answers = jev.ask(state, questions,
+                              model=body.get("model") or jev.DEFAULT_MODEL,
+                              api_key=api_key)
+        except ValueError as e:
+            # Question shape / context budget - a caller bug, not an outage.
+            return self._reply(400, {"ok": False, "available": True, "error": str(e)})
+        except jev.JevError as e:
+            return self._reply(502, {"ok": False, "available": True, "error": str(e)})
+        except Exception as e:
+            return self._reply(502, {"ok": False, "available": True,
+                                     "error": f"{type(e).__name__}: {e}"})
+        return self._reply(200, {"ok": True, "available": True, "answers": answers,
+                                 "thresholds": jev.thresholds(kind)})
 
     def _assistant_tester_run(self, qs):
         """POST /__assistant/tester  Body: { model, system, prompt, useBrowser? }.
@@ -27077,11 +27169,17 @@ class H(http.server.SimpleHTTPRequestHandler):
         pages = (qs.get("pages") or [""])[0].strip()
         if pages:
             cmd += ["--pages", pages]
+        # Typed judgment on the ambiguous residue. Always passed when the global
+        # switch is on: ds_lint itself re-checks the switch and the key, so the
+        # flag is a silent no-op without them and the report is byte-identical
+        # to the one this endpoint returned before typed judgment existed.
+        if _compact_config().get("jevJudge"):
+            cmd.append("--jev")
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
         except subprocess.TimeoutExpired:
             return self._reply(200, {"ok": False, "status": "error",
-                                     "error": "ds lint timed out after 120s"})
+                                     "error": "ds lint timed out after 180s"})
         try:
             report = json.loads(proc.stdout or "{}")
         except ValueError:

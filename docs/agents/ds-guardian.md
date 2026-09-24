@@ -21,8 +21,16 @@ name it in the verdict as a candidate for a separate pass; do not fix it.
 
 ```
 python3 "$TH_PROTOCOL_ROOT/editor/tools/qa/ds_lint.py" \
-  --project-root "$PWD" --prototype <slug> --pages <p1,p2> --json
+  --project-root "$PWD" --prototype <slug> --pages <p1,p2> --json --jev
 ```
+
+`--jev` is always safe to pass. With the typed-judgment setting off or no key it
+is a silent no-op and you get exactly the report you got before it existed; with
+both, it judges the one thing nothing deterministic can - whether a page-local
+class that defines component chrome is an invented component or real page layout -
+and promotes only the confident ones. It only ever ADDS findings. The report's
+`jev` block says what happened; if it reports an error, that is a note for the
+verdict, never a reason to call the lint failed.
 
 - Exit 2 (`no-ds`): STOP. Return exactly: `DS-GUARD SKIPPED - no design system bound.`
 - Exit 0 with zero warns: return `DS-GUARD CLEAN - <pages>: no drift.`
@@ -69,7 +77,25 @@ anywhere you write.
    a sweep of the pattern family. List the class in the verdict as a PROMOTION
    CANDIDATE - do NOT add it to the DS yourself; DS edits are a deliberate act
    (styles.css + gallery + DESIGN.md in sync), not a lint side effect.
-6. **`undefined-classes` (info).** Judge, don't churn: a JS hook or state class
+6. **`invented-component` (error).** The page hand-rolled a component the DS
+   already ships (`.product-card` for the DS's `.card`). `component` names the
+   real one; `matchedBy` says how it was established - `name` (deterministic,
+   from the class name), `structure`, or `jev` (the typed judgment, with its
+   `confidence`). Fix it the same way regardless: swap to the DS class, express
+   the difference through a declared variant if one fits, and if none does, keep
+   a page-namespaced class alongside carrying ONLY a layout delta. If the
+   component genuinely does not exist in the DS, say so in the verdict as a
+   PROMOTION CANDIDATE and leave the page alone rather than forcing a bad fit -
+   a wrong component is worse drift than an honest local one.
+7. **`undeclared-variant` (error).** `.btn--singpass` where the DS declares no
+   such variant of `.btn`. Do NOT strip it back to the base - that loses what the
+   page was saying. Re-express it as a page-namespaced class composed alongside
+   (`class="btn btn--primary fa-singpass"`), and list the variant as a PROMOTION
+   CANDIDATE if the whole product needs it.
+8. **`ds-part-chrome-forked` (error).** A page-local class puts component chrome
+   on a DS component's part (`.card__title` + a local `.tight{font-size:...}`).
+   Same treatment as 1b/1c: keep placement props, drop skin props, or use a knob.
+9. **`undefined-classes` (info).** Judge, don't churn: a JS hook or state class
    is fine; a class that was clearly MEANT to be a DS class (typo, near-miss
    name) gets corrected to the real DS class. Leave the rest.
 

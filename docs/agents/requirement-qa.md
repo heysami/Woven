@@ -51,6 +51,46 @@ prototype, cover every file a user would see: markup, copy, data/seed files,
 schema, and the strings inside JS that render as UI. You are checking CONTENT and
 LOGIC, not code style and not visuals.
 
+## Step 2b - the fast path, when typed judgment is wired up (optional)
+
+Probe once, before Step 3:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}' -X POST "$TH_DAEMON_URL/__jev" \
+  -H 'Content-Type: application/json' \
+  -d '{"kind":"requirement_item","state":"probe","questions":{"p":{"type":"noul","instructions":"This state is the word probe."}}}'
+```
+
+Anything but `200` means the fast path is unavailable (no key, or the user turned it off). Go straight to Step 3 and read the build yourself, exactly as this spec has always said. Never report a check as done because the probe failed.
+
+On `200`, run Step 3 as a FAN-OUT instead of as a sequential read. It is the same classification against the same checklist; the only difference is that a 40-item checklist gets 40 judgments instead of a skim, which is the whole point.
+
+**One request, one Noul per checklist item.** State is the built artefact (markup, copy, data, schema). Each question is one checklist entry, verbatim, as a STATEMENT the artefact either satisfies or does not:
+
+```json
+{
+  "kind": "requirement_item",
+  "state": "<the built artefact>",
+  "questions": {
+    "req_1": {"type": "noul", "instructions": "<checklist item 1, verbatim>"},
+    "req_2": {"type": "noul", "instructions": "<checklist item 2, verbatim>"}
+  }
+}
+```
+
+Where an item needs a BUCKET rather than a boolean, ask that one as a Choice over `{satisfied, drift, missing, hallucination, not_applicable}` with this spec's own Step 3 definitions as the criteria, verbatim. Do not paraphrase them into something shorter: a vague rubric yields a confidently wrong bucket.
+
+**Never ask one global "is anything unfulfilled" question.** Counting is a documented failure mode and the error grows with the count. One question per item, and `sum()` the answers yourself - that is exact.
+
+**Shard by budget, not by patience.** State plus all questions must fit 64k tokens. A long checklist or a big artefact means several requests (one per artefact file, or per checklist chunk), never a truncated one.
+
+**Route each answer on the `thresholds` the response hands back:**
+- noul at or above `thresholds.noul` with `confidence` at or above `thresholds.high`: satisfied. Silent, counted in `ok=`.
+- noul below `thresholds.noul` with `confidence` at or above `thresholds.high`: a finding. Classify it into Step 3's buckets and carry it into the report.
+- anything in between, or any missing confidence: escalate THAT ONE ITEM to your own read of the artefact. Do not re-ask it in different words.
+
+**Three things the fan-out does not change.** It only ever ADDS findings: never drop or soften one your own read already made because a noul came back high. It cannot generate, so every verdict line, every evidence location and every `fix:` string in Step 5 is still yours to write. And it never sees a pixel, so anything about how the thing LOOKS was never in this agent's scope and still is not.
+
 ## Step 3 - classify every divergence
 
 Four buckets. Each finding needs the requirement location, the artefact location,

@@ -273,9 +273,124 @@ def build_index(lib):
     print(f"[{lib['name']}] {len(entries)} entries, decisionTree={len(decision_tree)} slugs → {os.path.basename(out_path)} ({size_kb:.1f}KB)")
 
 
+# ── Direction axes, for the typed-judgment (Jev) direction picker ───────────
+# Emits docs/research/direction-axes.jev.json by SCRAPING the four rosters that
+# already live in PROTOTYPE.md. Nothing here is hand-written and nothing here
+# is new vocabulary: if this file and PROTOTYPE.md ever disagree about what
+# exists, the Jev path is wrong even when Jev is right (invariant I1 in
+# docs/features/jev-integration.md, asserted by P1 in
+# editor/tests/test_jev_parity.py).
+#
+# Shape is the Choice `criteria` map each axis question sends verbatim:
+# {optionId: rubric}. The rubric is the roster's own tag block plus its own
+# one-line description, because a thin rubric is the same failure as a thin
+# library index - vague prose yields CONFIDENTLY WRONG inference, and here it
+# steers what the user is offered.
+PROTOTYPE_MD = os.path.join(ROOT, "PROTOTYPE.md")
+DIRECTION_AXES_OUT = "docs/research/direction-axes.jev.json"
+
+# Heading -> axis id, and how many of each the roster is expected to hold
+# (a sanity floor, not a lock: adding an entry is normal, losing the whole
+# section to a heading rename is not).
+DIRECTION_AXES = [
+    ("shell",     "## Shell index",         "Page structure: layout, navigation pattern, density class. Pick exactly 1."),
+    ("style",     "## Visual styles index", "Surface treatment: depth grammar, decoration vocabulary, materials, type discipline. Pick exactly 1."),
+    ("aesthetic", "## Aesthetics index",    "Cultural identity: era, movement, subculture. Optional - many adult-pro briefs have none."),
+    ("recipe",    "## Recipes index",       "A known-good (shell + style + aesthetic) bundle. Optional short-circuit for a familiar product type."),
+]
+# Axes where "the brief implies none of these" is a real answer, not a failure
+# to choose. Without this option Jev is forced to pick an aesthetic for a
+# Bloomberg terminal.
+DIRECTION_NONE_OPTION = {
+    "aesthetic": "The brief implies no cultural, era or subculture layer at all - a plain professional surface. Many adult-pro briefs (Linear, Bloomberg, Aesop) sit here.",
+    "recipe":    "No recipe matches this brief closely enough; compose the three axes individually instead.",
+}
+
+ROSTER_ROW = re.compile(
+    r"^-\s+\*\*(?P<id>[^*]+)\*\*\s*(?:`\[(?P<tags>[^\]]*)\]`)?\s*[-=]\s*(?P<desc>.+)$")
+# Trailing "→ [`file.md`](./design-library/file.md)" pointer - useful to a
+# reading agent, pure noise inside a judgment rubric.
+ROSTER_POINTER = re.compile(r"\s*(?:→|->)\s*\[.*$")
+
+
+def parse_direction_axis(lines, start, end):
+    """Rows of ONE roster section as an ordered {id: rubric} map."""
+    out = OrderedDict()
+    for raw in lines[start + 1:end]:
+        m = ROSTER_ROW.match(raw.strip())
+        if not m:
+            continue
+        entry_id = m.group("id").strip().strip("`")
+        desc = ROSTER_POINTER.sub("", m.group("desc")).strip().rstrip(".")
+        tags = (m.group("tags") or "").strip()
+        rubric = f"[{tags}] {desc}" if tags else desc
+        if entry_id:
+            out[entry_id] = rubric
+    return out
+
+
+def build_direction_axes():
+    """docs/research/direction-axes.jev.json - the Choice criteria for the four
+    direction axes, lifted from PROTOTYPE.md's own rosters."""
+    with open(PROTOTYPE_MD, encoding="utf-8") as f:
+        lines = f.read().splitlines()
+
+    found = []
+    for axis, heading, _blurb in DIRECTION_AXES:
+        idx = next((i for i, l in enumerate(lines) if l.startswith(heading)), None)
+        if idx is None:
+            raise SystemExit(
+                f"[direction-axes] PROTOTYPE.md has no '{heading}' heading. The roster was "
+                f"renamed or removed; fix DIRECTION_AXES rather than letting the Jev path "
+                f"offer a vocabulary the prompt does not state.")
+        found.append((axis, idx))
+    # Sections end where the next ## heading begins, whichever it is - relying
+    # on roster order would silently swallow anything inserted between them.
+    axes = OrderedDict()
+    for axis, idx in found:
+        end = next((i for i in range(idx + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+        criteria = parse_direction_axis(lines, idx, end)
+        if not criteria:
+            raise SystemExit(f"[direction-axes] '{axis}' parsed to zero entries - the roster "
+                             f"row format changed; update ROSTER_ROW.")
+        if len(criteria) > 255:
+            raise SystemExit(f"[direction-axes] '{axis}' has {len(criteria)} entries, over the "
+                             f"255-option Choice cap. Split the axis before shipping it.")
+        blurb = next(b for a, _h, b in DIRECTION_AXES if a == axis)
+        entry = OrderedDict()
+        entry["question"] = f"Which {axis} does this request imply?"
+        entry["axis"] = blurb
+        entry["optional"] = axis in DIRECTION_NONE_OPTION
+        if axis in DIRECTION_NONE_OPTION:
+            criteria["none"] = DIRECTION_NONE_OPTION[axis]
+        entry["criteria"] = criteria
+        axes[axis] = entry
+
+    out = OrderedDict()
+    out["version"] = "1.0"
+    out["generatedFrom"] = "PROTOTYPE.md"
+    out["generator"] = "scripts/build-library-indexes.py"
+    out["note"] = (
+        "Choice criteria for the direction-picking axes, scraped from PROTOTYPE.md's own "
+        "rosters. Never hand-edit: edit PROTOTYPE.md and re-run the generator. Jev ranks on "
+        "roster PROSE and cannot see the design-library/*-ui.png previews the user actually "
+        "chooses from, so it narrows candidates and nothing more - the agent still composes "
+        "the option cards and runs the recolour pipeline.")
+    out["axes"] = axes
+
+    out_path = os.path.join(ROOT, DIRECTION_AXES_OUT)
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(out, f, indent=2, ensure_ascii=False)
+    counts = ", ".join(f"{a}={len(axes[a]['criteria'])}" for a in axes)
+    size_kb = os.path.getsize(out_path) / 1024
+    print(f"[direction-axes] {counts} -> {os.path.basename(out_path)} ({size_kb:.1f}KB)")
+
+
 def main():
     for lib in LIBS:
         build_index(lib)
+    build_direction_axes()
     print(f"\nIndexes regenerated by scanning {os.path.relpath(DESIGN_LIBRARY_DIR, ROOT)}/ - per-entry files are the source of truth.")
 
 

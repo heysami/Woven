@@ -240,7 +240,8 @@ def _daemon_endpoints() -> list:
         {"method": "GET",  "path": "/__stories",             "purpose": "USER STORIES + WHERE THEY LIVE. Returns the project's stories parsed out of docs/user-stories.xlsx (normalised - never parse the .xlsx yourself) joined to docs/story-map.json, plus a validation report. Each row: id, title/role/want/benefit/acceptance from the sheet, and screen/page/selector/reach from the map. When a project has this sheet, it is a REQUIREMENT SOURCE - read it before building or judging what was built."},
         {"method": "POST", "path": "/__stories/validate",    "purpose": "Re-check the story map against the sheet and the built pages. Reports stories with no location (unmapped), locations whose page or element is gone (missing-page / missing-element), map rows for IDs the sheet no longer has (orphan-mapping), and mappings whose story text changed since it was recorded (stale). Mechanical only - it checks that a mapping still RESOLVES, never whether the element satisfies the story."},
         {"method": "POST", "path": "/__stories/map",         "purpose": "Replace docs/story-map.json (body {prototype, rows:[...]}) - the whole table, same full-replace contract as /__workflow. Prefer writing the file directly when you are wired into a story-map node's edit port; that node carries the schema."},
-        {"method": "POST", "path": "/__ds/validate",         "purpose": "Design-system drift check: runs the DS linter over the built pages and reports where the prototype forked away from the bound DS (component classes redefined in a page's local <style>, tokens that do not exist, hardcoded values duplicating a token, one class forked across sibling pages). Read-only. status no-ds means no design system is bound, which is not a failure."},
+        {"method": "POST", "path": "/__ds/validate",         "purpose": "Design-system drift check: runs the DS linter over the built pages and reports where the prototype forked away from the bound DS (component classes redefined in a page's local <style>, tokens that do not exist, hardcoded values duplicating a token, one class forked across sibling pages, a page hand-rolling a component the DS already ships, a variant the DS never declares). Read-only. status no-ds means no design system is bound, which is not a failure."},
+        {"method": "POST", "path": "/__jev",                "purpose": "TYPED JUDGMENT - answers MANY small typed questions about ONE state in a single sub-second request and returns a calibrated probability each. Body {state, questions:{id:{type:noul|choice|score, instructions, criteria?}}, kind?, model?} -> {ok, answers, thresholds}. It does NOT generate: no prose, no fix text, no images (text input only). Used ONLY by requirement QA, ds_lint --jev and direction picking. 503 = off or no key, which means run the check the way you would without it. See the typed-judgment block in your preamble when the user has it on"},
         {"method": "GET",  "path": "/__design_system",      "purpose": "Read DS metadata + token files (incl. per-DS local fonts)"},
         {"method": "POST", "path": "/__design_system",      "purpose": "Write a DS trio (vars/primitives/index)"},
         {"method": "GET",  "path": "/__fonts",              "purpose": "LOCAL FONT LIBRARY - every user-uploaded font under design-systems/*/fonts/ (family, cssUrl, ds, note = how the face reads)"},
@@ -751,6 +752,57 @@ This thread checks its work against the REQUIREMENT it was given. A requirement 
 - Report the outcome in one line the user can trust: what the QA found, what you auto-fixed, and what needs their decision. If the dispatch itself failed, say that rather than implying the check passed."""
 
 
+# TYPED JUDGMENT (Jev). ONE global setting, not a fourth check: Jev is a
+# different EXECUTION PATH for checks that already exist. The block is appended
+# only when the setting is on AND a TypeSafe key resolves - a preamble that
+# names an endpoint the daemon will 503 is worse than silence, because the
+# agent then reports "the judge failed" on a project that simply never had one.
+#
+# It is ONE contiguous block and it is the ONLY thing the toggle changes in the
+# preamble (asserted by P5 in editor/tests/test_jev_parity.py). A second copy
+# of a rule elsewhere, phrased for the Jev path, is how the two paths start
+# building differently - which is invariant I4 in the plan.
+#
+# NOT on the leaf tier: a leaf builder was dispatched to make ONE decided
+# thing. It picks no direction and runs no requirement QA, so the endpoint is
+# noise there. The DS role judgment reaches ds_lint through its own --jev flag,
+# not through anybody's preamble.
+def _jev_enabled() -> bool:
+    """Global `jevJudge` setting AND a resolvable TypeSafe key. Both, always:
+    the setting alone is an intent, the key alone is a capability, and only the
+    pair makes the fast path real. Any failure resolving either answers False -
+    the non-Jev path is the one that always works."""
+    try:
+        _jev = _editor_import("jev")
+        return bool(_jev.enabled() and _jev.available())
+    except Exception:
+        return False
+
+
+JEV_FAST_PATH_STUB = """
+
+### Typed judgment is available on this install (the user turned it on)
+A judgment model that answers MANY small typed questions about ONE state in a single sub-second request, and returns a calibrated probability for each. It does not generate text: no fix prose, no rewrite, no explanation. You still write every report.
+
+`curl -sS -X POST "$TH_DAEMON_URL/__jev" -H 'Content-Type: application/json' -d '{"state": "<the thing being judged>", "kind": "<requirement_item|ds_role|direction_axis>", "questions": {"q1": {"type": "noul", "instructions": "<one clause, read literally>"}}}'`
+
+Question types: `noul` (a yes/no statement, optional `criteria.true`/`criteria.false`, returns `noul` 0-1), `choice` (a `criteria` map of optionId to rubric, max 255 options, returns the FULL `probabilities` map plus `confidence`), `score` (an ordered `criteria` array of 2-10 levels). The reply is `{ok, answers, thresholds}`; `thresholds` is the calibrated `{low, high, noul}` band for the `kind` you named - route with those numbers, never with one you invented.
+
+WHERE IT APPLIES. Exactly three places, all of them checks that already exist: requirement QA (one noul per checklist item instead of one long read), design-system conformance (`ds_lint.py --jev`), and picking a visual direction when the brief states none. Nowhere else. It has NO image input, so it judges nothing about how anything LOOKS - the visual gate and the lens trio are unaffected and stay exactly as they are.
+
+HOW TO USE IT WITHOUT GETTING IT WRONG:
+- **It narrows what you CONSIDER, never what you CONCLUDE.** A ranked shortlist feeds the same composition step you would have run anyway. Branching straight off a probability into a committed decision is the one thing that makes this path produce a different product from the path without it.
+- **It only ever ADDS findings.** Never drop, downgrade or soften a finding your deterministic checks already made because Jev disagreed.
+- **One clause per question, read literally.** It answers the question as WRITTEN, not as meant. Boundary cases belong in `criteria`, not in a longer sentence.
+- **Never ask it to count** ("how many X are missing"). Fan out one question per item and sum the answers yourself. Counting is a documented failure mode and the error grows with the count.
+- **Never ask it to do arithmetic or date maths.** Extract with the question, compute in code.
+- **Never ask it about colour.** Hex values underperform English names and it cannot judge whether two are near each other. Colour comparison stays deterministic.
+- **Send small state.** The question's own context, never the whole page. A large state full of irrelevant detail is a named failure mode, and the budget is 64k tokens for state plus all questions together - shard per page or per chunk rather than truncating.
+- **Point at the exact field.** A property of a property costs accuracy.
+- **Low confidence is information, not an error.** A flat distribution means the state genuinely does not imply an answer. Escalate that ONE item to your own read; do not re-ask in different words.
+- **If the call fails, 503s, or the answers look malformed: carry on with the check exactly as you would have without it, and say you did.** Never report a check as passed because the judge was unreachable."""
+
+
 # PLAN FIRST. Deliberately NOT one of the checks, and not offered as one in
 # the UI: the three gates above all fire at the END of the work (did you look
 # at it, did it drift from the design system, does it match the requirement),
@@ -1225,7 +1277,7 @@ class _SkipCatalog(Exception):
 
 
 def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full", prototype: Optional[str] = None,
-                          guards: Optional[dict] = None) -> str:
+                          guards: Optional[dict] = None, jev: Optional[bool] = None) -> str:
     """A compact summary to inject into every spawn's system prompt. Includes
     the names + one-line purposes - not the full catalog - so the agent
     knows what EXISTS without burning 3KB of tokens. For details the agent
@@ -1246,6 +1298,11 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     independent, so every combination is legal. A dropped always-on flag
     removes that gate's blocks from the preamble entirely; an armed opt-in one
     appends its block - see normalize_guards.
+
+    `jev` forces the typed-judgment block on (True) or off (False); None - the
+    default - resolves it from the global `jevJudge` setting AND a configured
+    TypeSafe key, since a block naming an endpoint that will 503 is worse than
+    no block. It is the ONLY thing that flag changes here (P5 asserts it).
 
     `project_root` lets the preamble respect the project's orchestrator
     disable list (`.orchestrators-disabled.json`). Hard-rule blocks for disabled
@@ -3089,6 +3146,10 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     # leaf tier: a leaf was dispatched to build ONE already-decided thing, and
     # a leaf that stops to plan stalls the run that is waiting on it.
     _plan_block = PLAN_MODE_STUB if _g["plan"] else ""
+    # Typed judgment. Global setting, not per-thread, so it is resolved here
+    # rather than carried on the guards bag - and it is ANDed with key
+    # availability so the block never promises an endpoint that 503s.
+    _jev_block = JEV_FAST_PATH_STUB if (_jev_enabled() if jev is None else jev) else ""
     # Accept the legacy cost-name aliases full/slim for the setup/leaf paths.
     if tier == "full":
         tier = "setup"
@@ -3110,7 +3171,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root, embedded=bool(_catalog)) + _catalog + _ds_block + _req_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
+        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root, embedded=bool(_catalog)) + _catalog + _ds_block + _req_block + _jev_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
     # NORMAL path: the project's everyday chat, the untargeted default. Same
     # routing strip as scoped (routing is fetched on demand only when the user
     # asks for a genuine new build), but NOT bound to one prototype - a general
@@ -3118,13 +3179,13 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "normal":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _normal_general_stub() + _catalog + _ds_block + _req_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
+        return _preamble + _normal_general_stub() + _catalog + _ds_block + _req_block + _jev_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
     # SETUP path (default): a new prototype build. Keeps the full routing
     # catalog. Append manifest-carried hard rules for orchestrators added
     # after ship time (not covered by the static prose above). Appended AFTER
     # the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
-    return _preamble + _catalog + _ds_block + _req_block + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
+    return _preamble + _catalog + _ds_block + _req_block + _jev_block + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
 
 
 def orchestrator_routing_text(project_root: Optional[str] = None) -> str:

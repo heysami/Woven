@@ -1,0 +1,28 @@
+{
+  "_recorded": "Shape of a TypeSafe System One response, kept as a fixture so the client is tested without a key or a network. One question of each type. Re-record from a real call if the wire format changes; the readers in editor/jev.py are total, so a shape change degrades to 'no verdict' rather than an exception.",
+  "model": "jev-1.13",
+  "usage": {"inputTokens": 1840, "outputTokens": 0},
+  "answers": {
+    "states_a_direction": {
+      "noul": 0.08,
+      "confidence": 0.93
+    },
+    "shell": {
+      "choice": "three-column-app",
+      "confidence": 0.86,
+      "probabilities": {
+        "three-column-app": 0.71,
+        "two-column-app": 0.18,
+        "centered-narrow-column": 0.07,
+        "bento-grid": 0.04
+      }
+    },
+    "polish": {
+      "score": 3.4,
+      "confidence": 0.62,
+      "legend": ["absent", "thin", "adequate", "considered", "exceptional"],
+      "probabilities": {"absent": 0.02, "thin": 0.11, "adequate": 0.42,
+                        "considered": 0.38, "exceptional": 0.07}
+    }
+  }
+}

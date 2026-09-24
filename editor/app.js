@@ -2648,8 +2648,8 @@ function applyModelEdits(D, edits) {
 
   // Arrows in source data have no stable id; mint one so updates/deletes can target them.
   const arrows = (D.arrows || []).map((a, i) => ({ id: a.id || `a-base-${i}`, ...a }));
-  const links = [];               // entity↔entity relationships (not in source data - purely editor-time)
-  const framesEntities = {};      // frameId → Set<entityId>
+  const links = (D.links || []).map((l, i) => ({ ...l, id: l.id || `l-base-${i}` }));
+  const framesEntities = Object.fromEntries(frames.map(f => [f.id, new Set(f.entities || [])]));
   const commentsByTarget = {};    // "entity:User" / "frame:home" / "arrow:a-base-0" / "field:User.email" → [text]
   const lanesById = new Map();
   ((D.meta && D.meta.lanes) || [{ id: "user", label: "User", kind: "user" }]).forEach((l) => lanesById.set(l.id, { ...l }));
@@ -2691,6 +2691,13 @@ function applyModelEdits(D, edits) {
             if (typeof f.type === "string" && f.type.startsWith(oldId + ".")) f.type = ed.newId + f.type.slice(oldId.length);
             if (typeof f.type === "string" && f.type.startsWith(oldId + ".id[]")) f.type = ed.newId + ".id[]";
           }));
+          links.forEach(l => {
+            if (l.from === oldId) l.from = ed.newId;
+            if (l.to === oldId) l.to = ed.newId;
+          });
+          Object.values(framesEntities).forEach(ids => {
+            if (ids.delete(oldId)) ids.add(ed.newId);
+          });
         }
       } else if (ed.kind === "delete") {
         const i = entities.findIndex(e => e.id === ed.entityId);
@@ -2775,11 +2782,15 @@ function applyModelEdits(D, edits) {
     if (t === "frame") {
       const map = frameById();
       if (ed.kind === "add") {
-        if (ed.frame && !map[ed.frame.id]) frames.push({ ...ed.frame });
+        if (ed.frame && !map[ed.frame.id]) {
+          frames.push({ ...ed.frame });
+          framesEntities[ed.frame.id] = new Set(ed.frame.entities || []);
+        }
       } else if (ed.kind === "rename") {
         const f = map[ed.frameId]; if (f) f.label = ed.newLabel ?? f.label;
       } else if (ed.kind === "delete") {
         const i = frames.findIndex(f => f.id === ed.frameId); if (i >= 0) frames.splice(i, 1);
+        delete framesEntities[ed.frameId];
         // also drop arrows touching this frame
         for (let k = arrows.length - 1; k >= 0; k--) if (arrows[k].from === ed.frameId || arrows[k].to === ed.frameId) arrows.splice(k, 1);
       } else if (ed.kind === "comment") {
@@ -2897,6 +2908,7 @@ function applyModelEdits(D, edits) {
   // Materialize sets → arrays
   const framesEntitiesArr = {};
   Object.entries(framesEntities).forEach(([k, set]) => framesEntitiesArr[k] = [...set]);
+  frames.forEach(f => { f.entities = framesEntitiesArr[f.id] || []; });
   const lanes = [...lanesById.values()];
   if (!lanes.length) lanes.push({ id: "user", label: "User", kind: "user" });
 
@@ -99505,8 +99517,12 @@ function OrchestratorWriterSettings({ orchestratorId, disabled }) {
     </div>`;
 }
 
-function WorkflowContextCostSection() {
+/* `mediaConfig` (from /__media_config) is passed in for ONE row: the typed-judgment
+   toggle below is inert without a TypeSafe key, and a switch that silently does
+   nothing is worse than no switch. The row says which state it is in. */
+function WorkflowContextCostSection({ mediaConfig }) {
   const { config, saving, error, save } = useContextCostConfig();
+  const jevKeyed = !!(mediaConfig?.providers?.typesafe?.has_key);
   const disabled = !config || saving;
   const thresholds = [...new Set([50000, 100000, 200000, 400000, 600000, 800000, 1000000, 2000000,
     config?.thresholdTokens || 400000])].sort((a, b) => a - b);
@@ -99558,6 +99574,22 @@ function WorkflowContextCostSection() {
           "Image descriptions reuse matching image content, request, and model. Figma readers can reuse saved notes after verifying the same node revision and request.")}
         ${toggle("compactQa", "Concise QA results",
           "Keeps failures, measurements, and image evidence available. Passing cases use short receipts; the complete report stays on disk. All required checks still run.")}
+      </div>
+      <div className="workflow-default-providers">
+        <div className="workflow-settings-section-group-head">Typed judgment</div>
+        <div className="workflow-settings-section-group-sub">
+          A judgment model that answers many small typed questions about one state at once, instead of
+          one long read. It runs the checks you already have, not new ones, so a long requirement list
+          gets checked item by item rather than skimmed. It never decides on its own: it narrows what
+          the agent considers, and the agent still writes every report.
+        </div>
+        ${toggle("jevJudge", "Use typed judgment for checks that support it",
+          "Applies to requirement QA, design-system conformance and direction picking. Off, or with no key, each of those keeps exactly the behaviour it has today. It only ever adds findings, never removes one.")}
+        <div className="workflow-settings-section-group-sub">
+          ${jevKeyed
+            ? "TypeSafe key configured, so this takes effect on the next request."
+            : "No TypeSafe key yet. Add one under Model Config, API keys. Until then this switch changes nothing."}
+        </div>
       </div>
       <div className="workflow-default-providers">
         <div className="workflow-settings-section-group-head">Automatic compaction</div>
@@ -100218,7 +100250,7 @@ function WorkflowSettingsDialog({ onClose }) {
             <${WorkflowDefaultProvidersSection} mediaConfig=${config}/>
             <${WorkflowSearchDefaultsSection} mediaConfig=${config}/>
           `) : tab === "context" ? html`
-            <${WorkflowContextCostSection}/>
+            <${WorkflowContextCostSection} mediaConfig=${config}/>
           ` : tab === "install" ? html`
             ${LOCAL_PACKAGES.map(p => html`<${WorkflowLocalPackageRow} key=${p.id} pkg=${p}/>`)}
             <${WorkflowUserTestingSettingsRow}/>

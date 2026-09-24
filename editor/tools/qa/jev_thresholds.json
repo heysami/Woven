@@ -1,0 +1,15 @@
+{
+  "_readme": [
+    "Confidence thresholds for the Jev typed-judgment consumers, PER QUESTION KIND.",
+    "Written by tools/qa/jev_calibrate.py (docs/features/jev-integration.md Phase 4);",
+    "these shipped values are the PRE-CALIBRATION defaults and are deliberately high.",
+    "Posture until calibration has run on real Woven data: flag, never block.",
+    "  low  - below this, escalate the item to a Claude read",
+    "  high - at or above this, the verdict may be acted on",
+    "  noul - the 0-1 point at which a noul statement counts as TRUE"
+  ],
+  "default":         {"low": 0.55, "high": 0.80, "noul": 0.50},
+  "direction_axis":  {"low": 0.45, "high": 0.70, "noul": 0.50},
+  "requirement_item":{"low": 0.60, "high": 0.85, "noul": 0.50},
+  "ds_role":         {"low": 0.65, "high": 0.90, "noul": 0.60}
+}

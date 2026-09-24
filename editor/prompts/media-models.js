@@ -153,6 +153,14 @@
       integrated: true,
       testable: true, // /search with numResults:1 validates the key
     },
+    typesafe: {
+      id: "typesafe",
+      label: "TypeSafe (Jev)",
+      hint: "Typed judgment, not generation - the fast path for requirement QA, design-system conformance and direction picking. Optional: every check falls back to the model judgment it replaced when this is blank",
+      docsUrl: "https://docs.typesafe.ai/api",
+      integrated: true,
+      testable: true, // one noul over a two-word state; costs ~nothing
+    },
   };
 
   // v3.4.8 (July 2026) - Text + video rows refreshed:
