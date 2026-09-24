@@ -168,6 +168,7 @@ _GITIGNORE_LOCAL = [
     "workflow/views/",          # generated per-version prototype snapshots - GBs
     "editor/chat.jsonl",        # local chat transcript - large, machine-local, never sync
     "editor/chat-queues.json",  # pending follow-ups per run - machine-local, same lifecycle as chat.jsonl
+    "editor/.chat-trash.jsonl", # LEGACY deleted-chat log, no longer written (see _chat_jsonl_purge_run); listed so projects that already committed one untrack it
     ".history/",                # undo stack - transient (matches duplicate's skip set)
     ".trash/",                  # transient scratch
     ".DS_Store",                # macOS junk
@@ -10209,11 +10210,17 @@ def _chat_jsonl_append(state, seq: int, ev_type: str, data) -> None:
 
 def _chat_jsonl_purge_run(path: str, run_id) -> int:
     """Rewrite `path` dropping every line whose runId is `run_id` - a single id
-    or any iterable of them, so a bulk delete rewrites the file ONCE - moving the
-    removed lines into a sibling .chat-trash.jsonl so the delete is
-    recoverable (mirrors the source/.trash/ convention for prototype deletes).
+    or any iterable of them, so a bulk delete rewrites the file ONCE.
     Returns the count of purged lines. Best-effort; never raises - chat history
     persistence must never break the caller.
+
+    The delete is REAL: the lines are gone. There used to be a sibling
+    .chat-trash.jsonl holding a copy "so the delete is recoverable", but
+    nothing ever read it back - no endpoint, no UI, no restore path - while it
+    grew without bound (1.2 GB against a 300 MB live transcript on one real
+    project, four times the file it was shadowing) and, being unignored, kept
+    turning up in the project's git status. An unbounded append log nobody can
+    restore from is not a safety net, it is a leak.
 
     Serializes against _chat_jsonl_append via the same per-path lock so a
     concurrent run writing to the file can't interleave with the rewrite."""
@@ -10243,13 +10250,6 @@ def _chat_jsonl_purge_run(path: str, run_id) -> int:
                         kept.append(s)
             if not removed:
                 return 0
-            trash = os.path.join(os.path.dirname(path), ".chat-trash.jsonl")
-            try:
-                with open(trash, "a", encoding="utf-8") as tf:
-                    for s in removed:
-                        tf.write(s + "\n")
-            except OSError:
-                pass  # trash is a nicety; proceed with the purge regardless
             tmp = path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 for s in kept:
@@ -33853,7 +33853,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             truncated = truncated or more
             for h in hits:
                 rid = h.get("runId")
-                # A deleted run's lines are moved to .chat-trash.jsonl, but a
+                # A deleted run's lines are purged from chat.jsonl, but a
                 # delete raced by an in-flight append can leave one behind.
                 if not rid or rid in _DELETED_RUN_IDS:
                     continue
@@ -35425,7 +35425,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # POST /__run/<id>/delete
     #   Remove a run entirely: stop it if still live (stop-then-delete), drop it
     #   from the in-memory registry, and purge its lines from the persisted chat
-    #   JSONL (moving them to a recoverable .chat-trash.jsonl). Handles project
+    #   JSONL - the lines are gone, not trashed. Handles project
     #   runs and system-thread runs, plus history-only ghosts no longer in RUNS.
     def _run_delete(self, run_id, qs):
         with RUNS_LOCK:

@@ -174,8 +174,10 @@ def test_bulk_purge():
         _check(purged == 3, f"all three lines of both runs purged (got {purged})")
         left = [json.loads(l)["runId"] for l in open(chat, encoding="utf-8") if l.strip()]
         _check(left == [keep] * 3, "the untouched run's lines all survive")
+        # Delete means delete: no trash sibling is written. The old copy was
+        # never readable back (no restore path anywhere) and grew unbounded.
         trash = os.path.join(root, "editor", ".chat-trash.jsonl")
-        _check(os.path.isfile(trash), "removed lines are recoverable from .chat-trash.jsonl")
+        _check(not os.path.exists(trash), "no .chat-trash.jsonl is left behind")
         # The single-id call path must keep working unchanged.
         _check(serve._chat_jsonl_purge_run(chat, keep) == 3,
                "a single run id still purges")
