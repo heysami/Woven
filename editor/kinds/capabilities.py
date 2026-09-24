@@ -796,7 +796,12 @@ Then STOP. End the reply with this card, in the gate-card syntax, and nothing af
 <option value="review">Review the plan first - I want to change something</option>
 </decision-request>
 
-- On **split**: dispatch one subagent per Split item, in parallel where they do not touch the same file, each with a SELF-CONTAINED brief (it sees neither this plan nor this preamble, so restate the item's UI rows, logic rows and copy rows inside the brief). Report back what each one landed.
+- On **split**: dispatch one subagent per Split item, each with a SELF-CONTAINED brief (it sees neither this plan nor this preamble, so restate the item's UI rows, logic rows and copy rows inside the brief). Report back what each one landed.
+  - **EVERY Split item is dispatched in THIS turn. There is no wave two.** File overlap is a SEQUENCING problem, never a reason to defer: items that touch the same file either go to ONE agent as a combined brief, or run back to back inside this turn. Announcing a "Wave B to follow when these land" ends the turn with items undispatched and nothing left to trigger them - the work silently never happens.
+  - **THE DRIVE MECHANICS ARE NON-NEGOTIABLE, and they are repeated here because you may not have them anywhere else in this preamble** (they live in the normal-tier build stub; this gate also fires on the scoped and setup tiers, which do not carry it):
+    - Dispatch every agent with the Agent tool **SYNCHRONOUSLY - `run_in_background: false`** - and hold the turn until all of them are `done` / `error`. Backgrounding is the default, so this has to be passed explicitly every time.
+    - **Never end your turn while a dispatched agent is still in flight**, on the bet of being woken when it lands. A turn that ends STOPS its children mid-run: to the user the build simply dies, half-applied, with the thread showing done.
+    - Report what each agent landed only after it has actually landed.
 - On **review**: apply what the user says, re-emit the WHOLE plan and the SAME card. Never start building on a partial approval or on silence.
 - Once a plan is approved, this gate is SPENT for that request: carry it out, and do NOT re-plan the follow-ups it produces (an answer to the card, a correction, a "yes go"). A genuinely NEW request in this thread re-arms it.
 - This gate does NOT re-open a decision already locked elsewhere. If a build plan is locked for this project (Role A, a `pipeline.json` you were handed off to drive), drive it - the planning happened before you got here. This gate covers what the user asks for in THIS thread on top of that."""
