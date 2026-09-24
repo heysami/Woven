@@ -14447,7 +14447,16 @@ def _normalize_chat_guards(raw) -> dict:
 
 
 def _delegated_context(project_root, body, qs):
-    """Inherit scope/checks only from a dispatcher in the same project."""
+    """Inherit scope/checks only from a dispatcher in the same project.
+
+    PLAN MODE IS NEVER INHERITED. The checks describe how work should be
+    graded and a child doing work should be graded the same way, so they ride
+    down. "Plan first" is the opposite: it says STOP AND PLAN INSTEAD OF
+    BUILDING, and it belongs to the one thread the user armed it on. Passed to
+    a child it breaks the child - an `-orchestrator` planner spawns at SETUP
+    tier, which carries the plan block, so a dispatch out of a plan-armed
+    thread would answer with its own plan gate card instead of doing the job
+    it was dispatched for, and the parent would wait forever on it."""
     parent_id = body.get("parent") or _qs_get(qs, "parent")
     with RUNS_LOCK:
         parent = RUNS.get(parent_id) if parent_id else None
@@ -14461,8 +14470,16 @@ def _delegated_context(project_root, body, qs):
             "runtime": getattr(parent, "agent_id", None),
             "model": getattr(parent, "model", None),
             "executionProfile": getattr(parent, "execution_profile", None),
-            "guards": _normalize_chat_guards(body.get("guards", getattr(parent, "guards", None))),
+            "guards": _delegated_guards(body.get("guards", getattr(parent, "guards", None))),
             "parent": parent.run_id if parent else None}
+
+
+def _delegated_guards(raw) -> dict:
+    """The parent's flags as a CHILD should run them: checks intact, plan mode
+    forced off. See _delegated_context's docstring for why."""
+    out = _normalize_chat_guards(raw)
+    out["plan"] = False
+    return out
 
 
 def _apply_guard_env(env: dict, guards: dict) -> dict:

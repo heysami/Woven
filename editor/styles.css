@@ -12428,7 +12428,11 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 .th-portal-tip::before {
   content: "";
   position: absolute;
-  left: 50%;
+  /* --tip-arrow-shift is set by HoverTip when it had to clamp a centered
+     bubble away from a viewport edge: the arrow slides back by the same
+     amount so it keeps pointing at the anchor. Clamped so a heavily shifted
+     bubble cannot push the arrow out past its own rounded corners. */
+  left: clamp(9px, calc(50% + var(--tip-arrow-shift, 0px)), calc(100% - 9px));
   transform: translateX(-50%) rotate(45deg);
   width: 6px; height: 6px;
   background: inherit;
@@ -24226,6 +24230,16 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-color: transparent;
   background: transparent;
 }
+/* Inert = Plan first is armed, so the checks have nothing to grade on the turn
+   about to be sent and the chip is not selectable. Distinct from :disabled's
+   flat 0.55 fade, which means "this thread's checks can never change again":
+   inert is a TEMPORARY state the user can leave by turning Plan first off, so
+   it stays more legible than locked and keeps a not-allowed cursor to say the
+   click was refused rather than missed. */
+.guards-picker[data-inert="true"] .perm-trigger:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
 .guard-check {
   width: 15px; height: 15px;
   margin-top: 1px;
@@ -24487,6 +24501,16 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-color: color-mix(in oklab, var(--accent) 45%, transparent);
   background: var(--accent-soft);
   color: var(--accent-text);
+}
+/* Plan mode sits next to the checks chip and stages onto the SPAWN the same
+   way they do, so it needs their staged-change marker too: a dashed ring says
+   "armed, but it cannot reach the thread you are looking at - the next Send
+   opens a successor with it". Matches .guards-picker [data-pending] in intent;
+   dashed rather than solid so an armed-and-staged toggle is still told apart
+   from an armed-and-live one at 28px. */
+.chat-plan-toggle-pending {
+  border-style: dashed;
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent) !important;
 }
 
 /* Permission mode in Settings > Preferences: the segmented option carries the

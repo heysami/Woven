@@ -751,11 +751,15 @@ This thread checks its work against the REQUIREMENT it was given. A requirement 
 - Report the outcome in one line the user can trust: what the QA found, what you auto-fixed, and what needs their decision. If the dispatch itself failed, say that rather than implying the check passed."""
 
 
-# The FUNCTIONAL check. The other three gates all fire at the END of the work
-# (did you look at it, did it drift from the design system, does it match the
-# requirement); this one fires BEFORE any of it, and it is the only guard that
-# can stop a turn rather than grade it. It is off by default because most
-# messages in a thread are small and a plan for them is pure ceremony.
+# PLAN FIRST. Deliberately NOT one of the checks, and not offered as one in
+# the UI: the three gates above all fire at the END of the work (did you look
+# at it, did it drift from the design system, does it match the requirement),
+# whereas this fires BEFORE any of it and stops the turn rather than grading
+# it. It shares their transport (the `guards` bag) only because it is compiled
+# into the system prompt the same way. The checks are not redundant under it -
+# they just have nothing to grade on the planning turn, and fire on the build
+# that follows approval. Off by default: most messages in a thread are small
+# and a plan for them is pure ceremony.
 #
 # Format is prescriptive on purpose. Left to itself the agent writes a prose
 # plan, which is unreadable and unsplittable; the three fixed sections (UI as
@@ -769,7 +773,7 @@ This thread checks its work against the REQUIREMENT it was given. A requirement 
 # not three units of work.
 PLAN_MODE_STUB = """
 
-### FUNCTIONAL PLAN - mandatory gate (the user turned this check ON for this thread)
+### PLAN FIRST - mandatory gate (the user turned "Plan first" ON for this thread)
 Before you BUILD anything asked for in this thread, your reply is a PLAN and nothing else. Do not write a file, dispatch a subagent, or commit a canvas node until the user has answered the gate at the end of the plan. Reading to understand the request first is expected; changing things is not.
 
 Hard format rules, every section, no exceptions: ONE SENTENCE per point. A point that needs a second sentence becomes a second bullet instead. NEVER more than 4 bullets, rows or items in any one place. NO paragraphs anywhere in the plan.

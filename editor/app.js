@@ -923,6 +923,7 @@ const Icon = {
   Chev:     () => html`<svg viewBox="0 0 16 16" width="10" height="10" ...${stroke}><path d="M4 6l4 4 4-4"/></svg>`,
   // Phase 5a - branch-doc toolbar icons.
   NotesDoc: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="3" y="2" width="10" height="12" rx="1"/><path d="M5.5 5h5M5.5 7.5h5M5.5 10h3"/></svg>`,
+  DocPencil: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M12.5 7.2V3a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h3.6"/><path d="M5.5 5h5M5.5 7.5h4M5.5 10h2.5"/><path d="M9.6 14.2l.35-1.6 3.4-3.4 1.25 1.25-3.4 3.4z"/></svg>`,
   Brand:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="2.5" width="5" height="5" rx="0.6"/><rect x="8.5" y="2.5" width="5" height="5" rx="0.6"/><rect x="2.5" y="8.5" width="5" height="5" rx="0.6"/><path d="M9.5 11.5h3M11 9.5v4"/></svg>`,
   Spark:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2l1.4 4.2L13.5 8l-4.1 1.8L8 14l-1.4-4.2L2.5 8l4.1-1.8z"/></svg>`,
   Bot:      () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="3" y="5" width="10" height="8" rx="2"/><path d="M8 5V3M6 9h.01M10 9h.01M6.5 11.5h3"/><path d="M2.5 8.5v2M13.5 8.5v2"/></svg>`,
@@ -12113,12 +12114,12 @@ function ChatComposerAddMenu({ busy, attachBusy, pickBusy, uploadBusy, onAttachI
   `;
 }
 
-/* Per-thread agent checks - what the preamble carries on top of the work
-   itself. Two are MANDATORY gates the user can drop for a thread where they
-   are pure overhead (a copy tweak, a docs pass, a question); two are opt-in.
-   They are INDEPENDENT, so every combination is legal: visual alone, visual +
-   design system, all three of those plus the functional plan, or the plan on
-   its own with every other check dropped.
+/* Per-thread agent checks - the gates that grade work that ALREADY EXISTS,
+   which the user can drop for a thread where they are pure overhead (a copy
+   tweak, a docs pass, a question). Plan mode is deliberately NOT one of these
+   and does not belong in this dropdown: a check runs at the end of a turn and
+   judges what was built, while planning runs at the start and builds nothing.
+   It is its own control next to this one - see PLAN_MODE_OPTION.
      - visual   the visual-verification gate: render + look (delegated to a
                 visual-verifier subagent) before claiming a visual or canvas
                 deliverable is done. Off also releases the PreToolUse hook
@@ -12130,39 +12131,86 @@ function ChatComposerAddMenu({ busy, attachBusy, pickBusy, uploadBusy, onAttachI
                 system bound - the preamble emits nothing there either way.
      - reqQa    the requirement gate: a QA subagent diffs the build against the
                 requirement source it was given. Opt-in.
-     - plan     the FUNCTIONAL gate: plan the UI, the logic and the copy before
-                building any of it, then offer to split the plan one agent run
-                per point. Opt-in, and the only check that fires BEFORE the
-                work instead of grading it after - it can stop a turn, not just
-                mark it.
    The first two default ON. They shape the SPAWN's system prompt, so like the
-   permission mode they apply to the next run, not the one already streaming -
-   which is also why arming the plan check under a live thread stages it and
-   the next Send opens a new thread carrying this one's summary.
+   permission mode they apply to the next run, not the one already streaming.
    Persisted in the shared editor settings blob (a sticky user preference). */
 const CHAT_GUARD_OPTIONS = [
   { key: "visual",  def: true,  icon: "Eye",      label: "Visual verification", hint: "Agent renders and looks at what it built (via a throwaway verifier subagent) before saying it is done - including anything it creates on the canvas. Off: it reports without checking, and may glance inline." },
   { key: "dsGuard", def: true,  icon: "Palette",  label: "Design system guard", hint: "Includes the full bound DESIGN.md during generation and runs the DS-drift check after markup or CSS edits. Off: no full catalog injection or drift check; the design system still applies. Projects with no design system are unaffected." },
   { key: "reqQa",   def: false, icon: "NotesDoc", label: "Requirement QA",      hint: "For work driven by a requirement doc or referenced file: a QA subagent re-reads the requirement and checks the build's terms, logic and facts against it. The agent auto-fixes hallucinated facts and mechanical drift, and brings anything needing a decision to you. Off unless the thread has a requirement to check." },
-  { key: "plan",    def: false, icon: "List",     label: "Functional plan",     hint: "The agent plans before it builds: a text wireframe of the screen (before and after, for a change), a table of the logic, and a table of the copy with the component and dynamic value behind each line. One sentence per point, four bullets at most, no paragraphs. It then offers to split the plan across one agent run per point, or to let you edit the plan first. Nothing is built until you answer." },
 ];
+
+/* PLAN MODE - its own control, sitting NEXT TO the checks chip, never inside
+   it. The distinction is not cosmetic: the three checks above all fire at the
+   END of a turn and grade something that exists, so a planning turn - which
+   deliberately builds nothing and stops on a gate card - has nothing for them
+   to judge. Filing it as a fourth "check before done" made a control that
+   means "stop before you start" read as one that means "look harder when you
+   finish".
+   They are not redundant either, which is why the checks stay armed while
+   planning rather than being forced off: they simply do not fire on the
+   planning turn, because it produces no artefact. They fire on the BUILD that
+   follows once the plan is approved - which this same thread carries out under
+   this same preamble. (Daemon-dispatched children inherit them too, via
+   serve.py _delegated_context; Task-tool subagents do not - those carry their
+   own agent spec, which is why the plan stub makes every split brief
+   self-contained.)
+   Plan rides the same spawn-flags payload as the checks (the daemon's
+   `guards` bag - see GUARD_DEFAULTS in kinds/capabilities.py) because it is
+   compiled into the system prompt the same way, which is also what gives it
+   the staged-change handoff for free. That shared transport is the ONLY thing
+   it shares with them; it is not a row in their menu.
+   It is also NOT STICKY, unlike every check: it is never written to the
+   settings blob and never read back, so each chat starts with it off and
+   arming it is always a deliberate act for the request in front of you. A
+   remembered "plan first" would quietly turn every later send into a planning
+   turn. It is not inherited by dispatched CHILD runs either - see
+   _delegated_context in serve.py, where a child that planned instead of
+   building would hang the parent waiting on it. */
+const PLAN_MODE_OPTION = {
+  key: "plan", def: false, icon: "DocPencil", label: "Plan first",
+  hint: "The agent plans before it builds anything: a text wireframe of the screen (before and after, for a change), a table of the logic, and a table of the copy with the component and dynamic value behind each line. One sentence per point, four bullets at most, no paragraphs. It stops there and offers to split the plan across one agent run per point, or to let you edit the plan first. Applies to the run you start next and is not remembered: every chat begins with it off.",
+};
+// Everything the composer stages onto a SPAWN. The checks and plan mode are
+// separate controls with separate meanings, but one payload and one staging
+// rule: both are baked into the system prompt at spawn, so changing either
+// under a running thread hands that thread off on the next Send. Use this for
+// load / save / compare / diff; use CHAT_GUARD_OPTIONS only for the rows of
+// the checks dropdown.
+const CHAT_SPAWN_FLAGS = [...CHAT_GUARD_OPTIONS, PLAN_MODE_OPTION];
 // The spawn defaults, mirroring kinds/capabilities.py GUARD_DEFAULTS: not all
 // guards default the same way (the two always-on gates catch silent, expensive
 // failures; requirement QA is opt-in because most threads have no requirement
 // document to check against). Also what a thread runs with when its spawn event
 // carries no `guards` at all - spawned before the flags shipped, or by a caller
 // that passes none, which is exactly what the daemon defaults such a spawn to.
-const GUARD_SPAWN_DEFAULTS = Object.fromEntries(CHAT_GUARD_OPTIONS.map(o => [o.key, !!o.def]));
+const GUARD_SPAWN_DEFAULTS = Object.fromEntries(CHAT_SPAWN_FLAGS.map(o => [o.key, !!o.def]));
+// PLAN MODE IS NEVER STICKY. The checks are a standing preference - how you
+// want your work graded does not change message to message, so they persist.
+// Plan first is a decision about ONE request ("lay this out before you build
+// it"), and a sticky version of that silently re-arms itself on the next chat
+// and the one after, turning every send into a planning turn nobody asked
+// for. So it is read from the DEFAULT every time and never written back: a
+// new chat always starts with it off, and arming it is always deliberate.
+// A RUNNING thread still reports its own spawn value (see runGuards) - that
+// is the thread telling you what it is, not a preference persisting.
 function loadChatGuards() {
   const raw = loadSettings().chatGuards;
   const out = {};
-  for (const o of CHAT_GUARD_OPTIONS) {
-    out[o.key] = (raw && typeof raw === "object" && o.key in raw) ? !!raw[o.key] : !!o.def;
+  for (const o of CHAT_SPAWN_FLAGS) {
+    const sticky = o.key !== PLAN_MODE_OPTION.key;
+    out[o.key] = (sticky && raw && typeof raw === "object" && o.key in raw) ? !!raw[o.key] : !!o.def;
   }
   return out;
 }
 function saveChatGuards(next) {
-  saveSettings({ chatGuards: next });
+  // Strip the non-sticky flags on the way out, so an armed plan can never
+  // reach the settings blob and be read back by the next chat.
+  const persist = {};
+  for (const o of CHAT_SPAWN_FLAGS) {
+    if (o.key !== PLAN_MODE_OPTION.key) persist[o.key] = !!next[o.key];
+  }
+  saveSettings({ chatGuards: persist });
   // Two surfaces edit this: the composer dropdown and Settings > Preferences.
   // Broadcast so whichever one is not the editor re-reads instead of showing a
   // stale tick (same pattern as th:editor-theme-changed).
@@ -12171,12 +12219,22 @@ function saveChatGuards(next) {
 }
 function sameChatGuards(a, b) {
   if (!a || !b) return false;
-  return CHAT_GUARD_OPTIONS.every(o => !!a[o.key] === !!b[o.key]);
+  return CHAT_SPAWN_FLAGS.every(o => !!a[o.key] === !!b[o.key]);
 }
-// Human-readable diff for the staged-change note: only the checks that
-// actually moved, in the order the dropdown lists them.
+// Human-readable diff for the staged-change note: only the flags that
+// actually moved, checks first and plan mode last, matching the footer order.
+// The note's HEADING follows from which side moved - a note headed "Checks
+// changed" is simply wrong when the only thing the user touched is plan mode,
+// which is not a check.
+function chatGuardsDiffHead(from, to) {
+  const moved = CHAT_SPAWN_FLAGS.filter(o => !!(from || {})[o.key] !== !!(to || {})[o.key]);
+  const checks = moved.some(o => o.key !== PLAN_MODE_OPTION.key);
+  const plan = moved.some(o => o.key === PLAN_MODE_OPTION.key);
+  if (checks && plan) return "Checks and plan mode changed";
+  return plan ? "Plan mode changed" : "Checks changed";
+}
 function chatGuardsDiffLabel(from, to) {
-  const moved = CHAT_GUARD_OPTIONS.filter(o => !!(from || {})[o.key] !== !!(to || {})[o.key]);
+  const moved = CHAT_SPAWN_FLAGS.filter(o => !!(from || {})[o.key] !== !!(to || {})[o.key]);
   if (!moved.length) return "";
   return moved.map(o => `${o.label} ${to[o.key] ? "on" : "off"}`).join(", ");
 }
@@ -12221,9 +12279,18 @@ function chatGuardsStateLine(g) {
    `locked` still exists for surfaces with nowhere to go (a historical run
    that can no longer be handed off); a LIVE thread is editable - see
    `pending`, which reports that the change lands on a NEW thread. */
-function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending }) {
+function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending, planning }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  // Plan first is on, so there is nothing for these to grade: a planning turn
+  // stops on a gate card and builds no artefact. They are shown but NOT
+  // selectable while it is armed - offering a choice that cannot apply to the
+  // turn you are about to send is worse than showing it settled. The flags
+  // themselves are untouched, so the build you approve is still graded by
+  // whatever is ticked here. `shut` is "the menu cannot open", for either
+  // reason; only `locked` means the VALUE can never change again.
+  const inert = !!planning && !locked;
+  const shut = locked || inert;
   useEffect(() => {
     if (!open) return;
     const off = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -12239,7 +12306,7 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending })
   // spawn callback at all - nowhere for a successor to go. It used to also
   // lock every `historical` run, which meant any thread reopened from the
   // runs list refused the change while still inviting a reply.
-  useEffect(() => { if (locked) setOpen(false); }, [locked]);
+  useEffect(() => { if (shut) setOpen(false); }, [shut]);
   // Amber = a gate that normally runs has been DROPPED. Arming an extra
   // opt-in check (requirement QA) is not a caution, so it does not colour the
   // chip; the count already shows it.
@@ -12248,22 +12315,24 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending })
   const onNow = chatGuardsOnList(value);
   const lockedTitle = locked
     ? `This thread ran with: ${stateLine}. There is no way to start a follow-on thread from here, so its checks are fixed.`
+    : inert
+    ? `Plan first is on, so these are not selectable: a planning turn builds nothing for them to check. They stay as they are (${stateLine}) and grade the build you get once you approve the plan. Turn Plan first off to change them.`
     : pending
       ? `Staged: ${stateLine}. Checks are baked into a thread's system prompt, so Send starts a NEW thread with these, carrying a summary of this one.`
       : running
         ? `This thread's checks: ${stateLine}. Changing one here starts a new thread (summary carried) on your next Send.`
-        : "Which checks this thread runs: what it plans before building, and what it verifies before calling the work done";
+        : "Which checks the agent runs before it calls work done";
   return html`
-    <div className="perm-picker guards-picker" ref=${ref} data-up=${!!openUp} data-locked=${!!locked}>
+    <div className="perm-picker guards-picker" ref=${ref} data-up=${!!openUp} data-locked=${!!shut} data-inert=${!!inert}>
       <button
         className="perm-trigger"
         data-open=${open}
         data-off=${anyOff}
         data-pending=${!!pending}
-        disabled=${!!locked}
-        aria-disabled=${!!locked}
+        disabled=${!!shut}
+        aria-disabled=${!!shut}
         title=${lockedTitle}
-        onClick=${() => { if (!locked) setOpen(o => !o); }}
+        onClick=${() => { if (!shut) setOpen(o => !o); }}
       >
         ${onNow.length
           ? html`<span className="guards-trigger-icons">
@@ -12277,11 +12346,11 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending })
             </span>`
           : html`<span className="perm-trigger-label">Checks: off</span>`}
         ${pending && html`<span className="guards-trigger-pending" aria-hidden="true">*</span>`}
-        ${!locked && html`<span className="perm-chev">${openUp ? "▴" : "▾"}</span>`}
+        ${!shut && html`<span className="perm-chev">${openUp ? "▴" : "▾"}</span>`}
       </button>
-      ${open && !locked && html`
+      ${open && !shut && html`
         <div className="perm-menu">
-          <div className="perm-menu-head">Checks on this thread</div>
+          <div className="perm-menu-head">Checks before "done"</div>
           ${CHAT_GUARD_OPTIONS.map(opt => html`
             <button
               key=${opt.key}
@@ -12306,12 +12375,45 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending })
           <div className="perm-menu-foot">
             ${running
               ? "Checks are baked into a thread's system prompt, so they can't change under a running thread. Change one here and your next Send starts a new thread with it, carrying a summary of this one."
-              : "The first two run by default; the last two are opt-in. Each one adds or drops a block of the agent's instructions for the thread this message starts."}
+              : "On by default. Unticking one drops it from the agent's instructions for the thread this message starts."}
           </div>
         </div>
       `}
     </div>
   `;
+}
+
+/* Plan mode - an ICON next to the checks chip, not a row inside it. Same
+   two-state icon-toggle family as ChatViewModeToggle (a binary that the lit
+   icon carries on its own never earns a 340px menu), but it stages onto the
+   spawn the way the checks do, so it carries their `pending` marker too: armed
+   under a running thread it cannot reach that thread, and the next Send opens
+   a successor with it. `locked` mirrors the chip - a thread with nowhere to
+   send a successor cannot change either. */
+function ChatPlanModeToggle({ value, onChange, locked, running, pending }) {
+  const on = !!value;
+  let tip;
+  if (locked) {
+    tip = on
+      ? "This thread planned before building. There is no way to start a follow-on thread from here, so that is fixed."
+      : "This thread built without planning first. There is no way to start a follow-on thread from here, so that is fixed.";
+  } else if (pending) {
+    tip = on
+      ? "Plan first is STAGED. Send starts a new thread that plans before it builds, carrying a summary of this one."
+      : "Plan first is STAGED off. Send starts a new thread that builds without planning, carrying a summary of this one.";
+  } else if (on) {
+    tip = "Plan first - the agent answers with the UI, the logic and the copy it intends to write, then stops and offers to split the plan across one agent run per point. Nothing is built until you answer, and the runs it dispatches build rather than re-plan. Click to turn off.";
+  } else {
+    tip = "Plan first - have the agent lay out the UI, the logic and the copy before it builds any of it, then split the plan across one run per point. Applies to the next run only: it is never remembered, so every chat starts with it off. Click to turn on.";
+    if (running) tip += " Planning is baked into a thread's system prompt, so this starts a new thread on your next Send.";
+  }
+  return html`<${HoverTip}
+    className=${"chat-composer-icon-toggle chat-plan-toggle" + (pending ? " chat-plan-toggle-pending" : "")}
+    ariaLabel=${on ? "Plan first is on" : "Plan first is off"}
+    disabled=${!!locked}
+    tip=${tip}
+    onClick=${() => { if (!locked) onChange(!on); }}
+  ><span className="chat-composer-icon-toggle-mark" data-on=${on}><${Icon[PLAN_MODE_OPTION.icon]}/></span><//>`;
 }
 
 function AgentPicker({ agents, value, onChange, disabled }) {
@@ -16989,7 +17091,15 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   const [chatGuards, setChatGuards] = useState(loadChatGuards);
   const changeChatGuards = (g) => { setChatGuards(g); saveChatGuards(g); };
   useEffect(() => {
-    const on = () => setChatGuards(loadChatGuards());
+    // Resync the STICKY flags only. saveChatGuards fires this event in the
+    // same window, and plan mode is deliberately absent from what it persists
+    // (see loadChatGuards), so a blind re-read would snap an armed plan back
+    // off the instant the user clicked it. Carry the live value forward and
+    // let the checks come from settings.
+    const on = () => setChatGuards(prev => ({
+      ...loadChatGuards(),
+      [PLAN_MODE_OPTION.key]: !!(prev || {})[PLAN_MODE_OPTION.key],
+    }));
     window.addEventListener("th:chat-guards-changed", on);
     return () => window.removeEventListener("th:chat-guards-changed", on);
   }, []);
@@ -17854,17 +17964,22 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     () => events.reduce((n, ev) => n + (ev.type === "user_message" || ev.event === "user_message" ? 1 : 0), 0),
     [events]);
 
-  // Same idea for the per-thread checks: the spawn event carries the guards
-  // the system prompt was actually built with. Threads spawned before the
-  // toggles existed carry none - they ran with both gates on, which is what
-  // loadChatGuards-shaped defaults give us.
+  // Same idea for the per-thread checks AND plan mode: the spawn event carries
+  // the flags the system prompt was actually built with. Threads spawned
+  // before a given toggle existed carry none for it - they ran with that
+  // flag's default, which is what loadChatGuards-shaped defaults give us.
+  // Iterates CHAT_SPAWN_FLAGS, not CHAT_GUARD_OPTIONS: plan mode is not a row
+  // in the checks menu but it IS in this payload, and reading only the checks
+  // here left a planning thread rehydrating as plan-off - the toggle would
+  // show the wrong state, and arming it would stage a pointless handoff onto a
+  // thread that already had it.
   const runGuards = useMemo(() => {
     for (const ev of events) {
       if (ev.event === "agent" && ev.data?.type === "raw") continue;
       const g = ev.data && ev.data.guards;
       if (g && typeof g === "object") {
         const out = {};
-        for (const o of CHAT_GUARD_OPTIONS) out[o.key] = (o.key in g) ? !!g[o.key] : !!o.def;
+        for (const o of CHAT_SPAWN_FLAGS) out[o.key] = (o.key in g) ? !!g[o.key] : !!o.def;
         return out;
       }
     }
@@ -17877,6 +17992,18 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   const effGuards = isNew ? chatGuards : (pendingGuards || runGuards || GUARD_SPAWN_DEFAULTS);
   const guardsChanged = !isNew && !!pendingGuards
                         && !sameChatGuards(pendingGuards, runGuards || GUARD_SPAWN_DEFAULTS);
+  // The isNew spawn path. The composer calls onStartNewChat(body) with no
+  // options, and the spawn sites default to `loadChatGuards()` - which no
+  // longer reports plan mode, by design (it is not sticky). So the armed
+  // value has to be handed over explicitly here or a plan armed on a fresh
+  // chat would be silently dropped at Send. Explicit opts still win, which
+  // keeps the handoff path (which passes its own guards) unchanged.
+  const startNewChatWithFlags = useCallback((prompt, opts) => {
+    const o = { ...(opts || {}) };
+    if (!o.guards) o.guards = effGuards;
+    return onStartNewChat(prompt, o);
+  }, [onStartNewChat, effGuards]);
+
   const stageGuards = useCallback((next) => {
     if (isNew) { changeChatGuards(next); return; }
     // Toggling back to what the thread is actually running with is not a
@@ -18054,11 +18181,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           ${handoffBusy ? html`
             <strong>Summarising this thread…</strong> - the new thread opens with the summary and your message as soon as it lands.
           ` : html`
-            <strong>Checks changed</strong> - ${chatGuardsDiffLabel(runGuards || GUARD_SPAWN_DEFAULTS, pendingGuards)}.
-            A thread's checks are fixed when it starts, so Send
+            <strong>${chatGuardsDiffHead(runGuards || GUARD_SPAWN_DEFAULTS, pendingGuards)}</strong> - ${chatGuardsDiffLabel(runGuards || GUARD_SPAWN_DEFAULTS, pendingGuards)}.
+            Both are fixed when a thread starts, so Send
             ${(status === "streaming" || status === "connecting") ? " stops this thread and starts " : " starts "}
-            a new one with the new checks, carrying a summary of this one. This thread stays reopenable with its full history.
-            ${" "}<button type="button" className="chat-guards-note-undo" onClick=${() => setPendingGuards(null)}>Keep this thread's checks</button>
+            a new one with the new settings, carrying a summary of this one. This thread stays reopenable with its full history.
+            ${" "}<button type="button" className="chat-guards-note-undo" onClick=${() => setPendingGuards(null)}>Keep this thread's settings</button>
           `}
         </div>
       `}
@@ -18083,6 +18210,14 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
               openUp=${true}
               running=${!isNew}
               pending=${guardsChanged}
+              planning=${!!effGuards.plan}
+              locked=${!isNew && !onStartNewChat}
+            />
+            <${ChatPlanModeToggle}
+              value=${effGuards.plan}
+              onChange=${(on) => stageGuards({ ...effGuards, plan: on })}
+              running=${!isNew}
+              pending=${guardsChanged}
               locked=${!isNew && !onStartNewChat}
             />
           `}
@@ -18102,7 +18237,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             onChange=${changeViewMode}
           />
         `}
-        onStartNewChat=${onStartNewChat}
+        onStartNewChat=${onStartNewChat ? startNewChatWithFlags : onStartNewChat}
         onResumed=${() => {
           // /resume succeeded - bump sseEpoch so the SSE consumer re-opens
           // and picks up the new process's events. completedRef resets so
@@ -20130,7 +20265,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
             title=${(() => {
               const baseTitle = canSend
                 ? (interceptSend
-                    ? "Checks changed - Send starts a new thread with them, carrying a summary of this one  ⌘/Ctrl+Enter"
+                    ? "Checks or plan mode changed - Send starts a new thread with them, carrying a summary of this one  ⌘/Ctrl+Enter"
                     : wouldQueue
                     ? "Agent is working - Send will queue this and fire it the moment the turn ends  ⌘/Ctrl+Enter"
                     : (isNew
@@ -73782,6 +73917,32 @@ async function captureAssetThumbnail(filePath, targetWidth = 320, kind = "html")
 function HoverTip({ tip, className, disabled, onClick, onMouseDown, ariaLabel, as, style, placement: placementProp, children }) {
   const anchorRef = useRef(null);
   const [pos, setPos] = useState(null);
+  // Post-layout viewport clamp for the CENTERED placements. `left` is the
+  // anchor's midpoint and the bubble centres itself on it with
+  // translateX(-50%), so a wide tip on an anchor near either viewport edge
+  // hangs off it and the browser clips the overflowing words - measured at
+  // x:-33 on the composer footer's plan toggle, which ate the first word of
+  // every line. The width is only knowable AFTER the bubble renders and
+  // wraps, so this cannot be done in place(): measure here, shift by however
+  // far it overruns, and let the arrow slide back the other way so it still
+  // points at the anchor. The opt-in left/right placements already solve this
+  // by construction and are left alone.
+  const bubbleRef = useRef(null);
+  const [shift, setShift] = useState(0);
+  useLayoutEffect(() => {
+    const centered = pos && (pos.placement === "above" || pos.placement === "below");
+    if (!centered) { if (shift) setShift(0); return; }
+    const el = bubbleRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const M = 8;   // breathing room from the viewport edge
+    let d = 0;
+    if (r.left < M) d = M - r.left;
+    else if (r.right > window.innerWidth - M) d = (window.innerWidth - M) - r.right;
+    // Sub-pixel settle guard: without it the measure -> shift -> re-measure
+    // loop can oscillate forever on fractional layouts.
+    if (Math.abs(d) > 0.5) setShift(s => s + d);
+  }, [pos, shift]);
   const place = () => {
     const el = anchorRef.current;
     if (!el) return;
@@ -73831,9 +73992,14 @@ function HoverTip({ tip, className, disabled, onClick, onMouseDown, ariaLabel, a
   // read WHY a control is disabled (the tip text usually carries that reason).
   const bubble = pos ? createPortal(html`
     <div
+      ref=${bubbleRef}
       className=${"th-portal-tip th-portal-tip-" + pos.placement}
       style=${{
         position: "fixed",
+        // Arrow slides back by whatever the bubble was shifted, so a clamped
+        // bubble still points at its anchor. Clamped inside the bubble's own
+        // rounded corners by the stylesheet.
+        "--tip-arrow-shift": (-shift) + "px",
         // Left placement anchors by the RIGHT edge (see place()); everything
         // else anchors by `left`.
         ...(pos.placement === "left"
@@ -73845,12 +74011,12 @@ function HoverTip({ tip, className, disabled, onClick, onMouseDown, ariaLabel, a
         // Right: anchor by left edge, vertically centered.
         // Left: anchored by `right` already, so only center vertically.
         transform: pos.placement === "above"
-          ? "translate(-50%, -100%)"
+          ? `translate(-50%, -100%) translateX(${shift}px)`
           : pos.placement === "right"
             ? "translate(0, -50%)"
             : pos.placement === "left"
               ? "translate(0, -50%)"
-              : "translate(-50%, 0)",
+              : `translate(-50%, 0) translateX(${shift}px)`,
       }}>
       ${tip}
     </div>
@@ -100021,8 +100187,8 @@ function WorkflowSendKeySection() {
       </div>
       <div className="workflow-settings-section">
         <div className="onboarding-sendkey-head">
-          <span className="onboarding-sendkey-title">Checks on a chat</span>
-          <span className="onboarding-sendkey-desc">What a NEW chat starts with: what it plans before it builds, and what it verifies before it calls the work done. Any chat can change these from the Checks dropdown next to the composer; changing them under a RUNNING thread hands that thread off - the next Send opens a new thread with the new checks, carrying a summary of the old one.</span>
+          <span className="onboarding-sendkey-title">Checks before "done"</span>
+          <span className="onboarding-sendkey-desc">What a NEW chat starts with. Any chat can change these from the Checks dropdown next to the composer; changing them under a RUNNING thread hands that thread off - the next Send opens a new thread with the new checks, carrying a summary of the old one.</span>
         </div>
         ${CHAT_GUARD_OPTIONS.map(opt => html`
           <label className="chat-ctx-auto-toggle chat-ctx-auto-settings settings-guard-row" key=${opt.key}>
@@ -100035,6 +100201,7 @@ function WorkflowSendKeySection() {
           </label>
         `)}
       </div>
+
       <div className="workflow-settings-section">
         <div className="onboarding-sendkey-head">
           <span className="onboarding-sendkey-title">Canvas nodes</span>
