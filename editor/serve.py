@@ -34665,6 +34665,25 @@ class H(http.server.SimpleHTTPRequestHandler):
         # project's DEFAULT prototype (the slug editor/data.js's sourceRoot
         # points at - "prototype" for new projects, "main" for legacy ones)
         # so the agent always gets a usable scope.
+        # DELEGATED spawn (today: the plan-mode fan-out, which opens one real
+        # thread per plan point). A `parent` run id means this thread inherits
+        # the thread it came from - and it has to happen HERE, before branch
+        # and tier are resolved below, because an unspecified freeform run
+        # defaults to the NORMAL tier and the project's DEFAULT prototype. A
+        # split off a thread scoped to another prototype would otherwise open
+        # its children pointed at the wrong source tree. Each field inherits
+        # only when the caller did not ask for something specific.
+        _parent_inherit = None
+        if body.get("parent"):
+            with RUNS_LOCK:
+                _cand = RUNS.get(str(body.get("parent")))
+            if _cand is not None and os.path.realpath(
+                    getattr(_cand, "project_root", "") or "") == os.path.realpath(project_root):
+                _parent_inherit = _cand
+                if not body.get("tier"):
+                    body["tier"] = _normalize_chat_tier(getattr(_cand, "tier", None))
+                if not body.get("branch") and getattr(_cand, "prototype", None):
+                    body["branch"] = _cand.prototype
         _default_branch = self._default_prototype_slug(project_root) or "main"
         _raw_branch = (body.get("branch") or _default_branch).strip()
         if re.match(r"^[A-Za-z0-9_.-]{1,80}(?:/[A-Za-z0-9_.-]{1,80})?$", _raw_branch):
@@ -34717,12 +34736,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         # way: they were opened to BUILD an already-decided point, and a
         # thread that stopped to re-plan it would never do the job.
         _chat_guards = _normalize_chat_guards(body.get("guards"))
-        if body.get("guards") is None and body.get("parent"):
-            with RUNS_LOCK:
-                _parent_run = RUNS.get(str(body.get("parent")))
-            if _parent_run is not None and os.path.realpath(
-                    getattr(_parent_run, "project_root", "")) == os.path.realpath(project_root):
-                _chat_guards = _delegated_guards(getattr(_parent_run, "guards", None))
+        if _parent_inherit is not None and body.get("guards") is None:
+            _chat_guards = _delegated_guards(getattr(_parent_inherit, "guards", None))
         spawn_args = list(defs["args"])
         # Claude Code 2.1.163 split the bypass into TWO
         # flags. --dangerously-skip-permissions alone no longer skips
