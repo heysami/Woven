@@ -12113,9 +12113,12 @@ function ChatComposerAddMenu({ busy, attachBusy, pickBusy, uploadBusy, onAttachI
   `;
 }
 
-/* Per-thread agent checks - the two MANDATORY gates the preamble carries,
-   which the user can drop for a thread where they are pure overhead (a copy
-   tweak, a docs pass, a question):
+/* Per-thread agent checks - what the preamble carries on top of the work
+   itself. Two are MANDATORY gates the user can drop for a thread where they
+   are pure overhead (a copy tweak, a docs pass, a question); two are opt-in.
+   They are INDEPENDENT, so every combination is legal: visual alone, visual +
+   design system, all three of those plus the functional plan, or the plan on
+   its own with every other check dropped.
      - visual   the visual-verification gate: render + look (delegated to a
                 visual-verifier subagent) before claiming a visual or canvas
                 deliverable is done. Off also releases the PreToolUse hook
@@ -12125,13 +12128,23 @@ function ChatComposerAddMenu({ busy, attachBusy, pickBusy, uploadBusy, onAttachI
      - dsGuard  the DS-drift gate: the ds-guardian dispatch after any markup /
                 CSS edit on a DS-bound page. No-op on projects with no design
                 system bound - the preamble emits nothing there either way.
-   Both default ON. They shape the SPAWN's system prompt, so like the
-   permission mode they apply to the next run, not the one already streaming.
+     - reqQa    the requirement gate: a QA subagent diffs the build against the
+                requirement source it was given. Opt-in.
+     - plan     the FUNCTIONAL gate: plan the UI, the logic and the copy before
+                building any of it, then offer to split the plan one agent run
+                per point. Opt-in, and the only check that fires BEFORE the
+                work instead of grading it after - it can stop a turn, not just
+                mark it.
+   The first two default ON. They shape the SPAWN's system prompt, so like the
+   permission mode they apply to the next run, not the one already streaming -
+   which is also why arming the plan check under a live thread stages it and
+   the next Send opens a new thread carrying this one's summary.
    Persisted in the shared editor settings blob (a sticky user preference). */
 const CHAT_GUARD_OPTIONS = [
   { key: "visual",  def: true,  icon: "Eye",      label: "Visual verification", hint: "Agent renders and looks at what it built (via a throwaway verifier subagent) before saying it is done - including anything it creates on the canvas. Off: it reports without checking, and may glance inline." },
   { key: "dsGuard", def: true,  icon: "Palette",  label: "Design system guard", hint: "Includes the full bound DESIGN.md during generation and runs the DS-drift check after markup or CSS edits. Off: no full catalog injection or drift check; the design system still applies. Projects with no design system are unaffected." },
   { key: "reqQa",   def: false, icon: "NotesDoc", label: "Requirement QA",      hint: "For work driven by a requirement doc or referenced file: a QA subagent re-reads the requirement and checks the build's terms, logic and facts against it. The agent auto-fixes hallucinated facts and mechanical drift, and brings anything needing a decision to you. Off unless the thread has a requirement to check." },
+  { key: "plan",    def: false, icon: "List",     label: "Functional plan",     hint: "The agent plans before it builds: a text wireframe of the screen (before and after, for a change), a table of the logic, and a table of the copy with the component and dynamic value behind each line. One sentence per point, four bullets at most, no paragraphs. It then offers to split the plan across one agent run per point, or to let you edit the plan first. Nothing is built until you answer." },
 ];
 // The spawn defaults, mirroring kinds/capabilities.py GUARD_DEFAULTS: not all
 // guards default the same way (the two always-on gates catch silent, expensive
@@ -12239,7 +12252,7 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending })
       ? `Staged: ${stateLine}. Checks are baked into a thread's system prompt, so Send starts a NEW thread with these, carrying a summary of this one.`
       : running
         ? `This thread's checks: ${stateLine}. Changing one here starts a new thread (summary carried) on your next Send.`
-        : "Which checks the agent runs before it calls work done";
+        : "Which checks this thread runs: what it plans before building, and what it verifies before calling the work done";
   return html`
     <div className="perm-picker guards-picker" ref=${ref} data-up=${!!openUp} data-locked=${!!locked}>
       <button
@@ -12268,7 +12281,7 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending })
       </button>
       ${open && !locked && html`
         <div className="perm-menu">
-          <div className="perm-menu-head">Checks before "done"</div>
+          <div className="perm-menu-head">Checks on this thread</div>
           ${CHAT_GUARD_OPTIONS.map(opt => html`
             <button
               key=${opt.key}
@@ -12293,7 +12306,7 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending })
           <div className="perm-menu-foot">
             ${running
               ? "Checks are baked into a thread's system prompt, so they can't change under a running thread. Change one here and your next Send starts a new thread with it, carrying a summary of this one."
-              : "On by default. Unticking one drops it from the agent's instructions for the thread this message starts."}
+              : "The first two run by default; the last two are opt-in. Each one adds or drops a block of the agent's instructions for the thread this message starts."}
           </div>
         </div>
       `}
@@ -100008,8 +100021,8 @@ function WorkflowSendKeySection() {
       </div>
       <div className="workflow-settings-section">
         <div className="onboarding-sendkey-head">
-          <span className="onboarding-sendkey-title">Checks before "done"</span>
-          <span className="onboarding-sendkey-desc">What a NEW chat starts with. Any chat can change these from the Checks dropdown next to the composer; changing them under a RUNNING thread hands that thread off - the next Send opens a new thread with the new checks, carrying a summary of the old one.</span>
+          <span className="onboarding-sendkey-title">Checks on a chat</span>
+          <span className="onboarding-sendkey-desc">What a NEW chat starts with: what it plans before it builds, and what it verifies before it calls the work done. Any chat can change these from the Checks dropdown next to the composer; changing them under a RUNNING thread hands that thread off - the next Send opens a new thread with the new checks, carrying a summary of the old one.</span>
         </div>
         ${CHAT_GUARD_OPTIONS.map(opt => html`
           <label className="chat-ctx-auto-toggle chat-ctx-auto-settings settings-guard-row" key=${opt.key}>

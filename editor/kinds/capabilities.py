@@ -695,13 +695,14 @@ HOW:
 # and expensive, while requirement QA is off because most threads have no
 # requirement document to check against - dispatching it there would burn a
 # subagent to report "no source named".
-GUARD_DEFAULTS = {"visual": True, "dsGuard": True, "reqQa": False}
+GUARD_DEFAULTS = {"visual": True, "dsGuard": True, "reqQa": False, "plan": False}
 
 
 def normalize_guards(raw) -> dict:
-    """Coerce whatever the client sent onto the two known boolean flags.
-    Missing / malformed -> the gate stays ON: a guard must never be dropped
-    by an absent field, only by an explicit false."""
+    """Coerce whatever the client sent onto the known boolean flags.
+    Missing / malformed -> each flag falls back to its GUARD_DEFAULTS value:
+    an always-on gate is never dropped by an absent field, only by an
+    explicit false, and an opt-in one is never armed by accident."""
     out = dict(GUARD_DEFAULTS)
     if isinstance(raw, dict):
         for k in out:
@@ -748,6 +749,53 @@ This thread checks its work against the REQUIREMENT it was given. A requirement 
   - **Non-mechanical findings (`mechanical: no`) and every `ambiguous` line: STOP and ask the user.** These need a product decision - the requirement is ambiguous, two requirements conflict, or the fix changes scope or a flow already built. Put them to the user as a short numbered list: what the requirement says, what the build does, and the options. Do not pick for them, and do not bury it in a summary.
   - **Findings you deliberately reject: say so and why.** You may know something the subagent cannot (the user asked for it in chat, the item is deferred to a later step, the "invention" is agreed placeholder data). Overriding is legitimate; overriding silently is not - one line per rejection.
 - Report the outcome in one line the user can trust: what the QA found, what you auto-fixed, and what needs their decision. If the dispatch itself failed, say that rather than implying the check passed."""
+
+
+# The FUNCTIONAL check. The other three gates all fire at the END of the work
+# (did you look at it, did it drift from the design system, does it match the
+# requirement); this one fires BEFORE any of it, and it is the only guard that
+# can stop a turn rather than grade it. It is off by default because most
+# messages in a thread are small and a plan for them is pure ceremony.
+#
+# Format is prescriptive on purpose. Left to itself the agent writes a prose
+# plan, which is unreadable and unsplittable; the three fixed sections (UI as
+# a text wireframe, logic as a table, copy as a table) are the three things
+# that actually have to be decided before a screen gets built, and the "one
+# sentence, else another bullet, never more than four" rule is what keeps the
+# plan a plan instead of a document.
+#
+# The SPLIT list exists so the closing gate means something: "one agent per
+# point" needs points, and the three sections are three VIEWS of one change,
+# not three units of work.
+PLAN_MODE_STUB = """
+
+### FUNCTIONAL PLAN - mandatory gate (the user turned this check ON for this thread)
+Before you BUILD anything asked for in this thread, your reply is a PLAN and nothing else. Do not write a file, dispatch a subagent, or commit a canvas node until the user has answered the gate at the end of the plan. Reading to understand the request first is expected; changing things is not.
+
+Hard format rules, every section, no exceptions: ONE SENTENCE per point. A point that needs a second sentence becomes a second bullet instead. NEVER more than 4 bullets, rows or items in any one place. NO paragraphs anywhere in the plan.
+
+Write exactly these four sections, in this order:
+
+**1. UI** - how the request becomes screen. Text only, no images, no code.
+  - Something NEW: one text wireframe - an ASCII box sketch naming the regions and the controls inside them, and nothing else.
+  - An UPDATE to something that exists: a BEFORE wireframe and an AFTER wireframe of the SAME region, so the change reads as a diff. Go look at what is there now before you draw the BEFORE.
+
+**2. Logic** - one markdown table, columns exactly: `Trigger | What happens | State read or written | Edge case`.
+
+**3. Copy** - one markdown table of the text you will WRITE, columns exactly: `New copy | Component | Dynamic value | Case | Type family`. `Dynamic value` is the live value that copy interpolates or reacts to, or `-` for static text. Fill `Case` and `Type family` ONLY for text that is not the label of an action component: a button, link, tab or menu item takes its case and type from the component it lives in, so write `-` in both columns for those.
+
+**4. Split** - the work items this plan breaks into, numbered, at most 4, one sentence each. Each must be buildable on its own by an agent that never sees this plan.
+
+Then STOP. End the reply with this card, in the gate-card syntax, and nothing after it but one line saying the runs show up in "Tasks & subagents" on the right rail:
+<decision-request id="plan-next" prompt="Plan ready - how do you want to run it?">
+<option value="split">Split it - one agent run per point in Split, dispatched now</option>
+<option value="review">Review the plan first - I want to change something</option>
+</decision-request>
+
+- On **split**: dispatch one subagent per Split item, in parallel where they do not touch the same file, each with a SELF-CONTAINED brief (it sees neither this plan nor this preamble, so restate the item's UI rows, logic rows and copy rows inside the brief). Report back what each one landed.
+- On **review**: apply what the user says, re-emit the WHOLE plan and the SAME card. Never start building on a partial approval or on silence.
+- Once a plan is approved, this gate is SPENT for that request: carry it out, and do NOT re-plan the follow-ups it produces (an answer to the card, a correction, a "yes go"). A genuinely NEW request in this thread re-arms it.
+- This gate does NOT re-open a decision already locked elsewhere. If a build plan is locked for this project (Role A, a `pipeline.json` you were handed off to drive), drive it - the planning happened before you got here. This gate covers what the user asks for in THIS thread on top of that."""
 
 
 # design goal is skim-proofing: a leaf's correct default is to PROCEED (not to
@@ -1184,8 +1232,11 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
         App-capabilities + verify gates are kept (a leaf needs those).
 
     `guards` carries the chat composer's per-thread check toggles
-    ({"visual": bool, "dsGuard": bool}, both default True). A false flag drops
-    that gate's blocks from the preamble entirely - see normalize_guards.
+    ({"visual": bool, "dsGuard": bool, "reqQa": bool, "plan": bool} - see
+    GUARD_DEFAULTS; the first two default on, the last two off). The flags are
+    independent, so every combination is legal. A dropped always-on flag
+    removes that gate's blocks from the preamble entirely; an armed opt-in one
+    appends its block - see normalize_guards.
 
     `project_root` lets the preamble respect the project's orchestrator
     disable list (`.orchestrators-disabled.json`). Hard-rule blocks for disabled
@@ -3022,6 +3073,13 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     _ds_block = _ds_guard_stub(project_root, prototype) if _g["dsGuard"] else ""
     # Opt-in, so it is empty on almost every thread.
     _req_block = REQUIREMENT_QA_STUB if _g["reqQa"] else ""
+    # The functional check: plan the UI / logic / copy before building. Also
+    # opt-in, and the only guard that runs BEFORE the work rather than grading
+    # it after, so it rides at the very END of the preamble where a
+    # stop-before-you-build rule is least likely to be read past. Never on the
+    # leaf tier: a leaf was dispatched to build ONE already-decided thing, and
+    # a leaf that stops to plan stalls the run that is waiting on it.
+    _plan_block = PLAN_MODE_STUB if _g["plan"] else ""
     # Accept the legacy cost-name aliases full/slim for the setup/leaf paths.
     if tier == "full":
         tier = "setup"
@@ -3043,7 +3101,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root, embedded=bool(_catalog)) + _catalog + _ds_block + _req_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root, embedded=bool(_catalog)) + _catalog + _ds_block + _req_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
     # NORMAL path: the project's everyday chat, the untargeted default. Same
     # routing strip as scoped (routing is fetched on demand only when the user
     # asks for a genuine new build), but NOT bound to one prototype - a general
@@ -3051,13 +3109,13 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "normal":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _normal_general_stub() + _catalog + _ds_block + _req_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+        return _preamble + _normal_general_stub() + _catalog + _ds_block + _req_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
     # SETUP path (default): a new prototype build. Keeps the full routing
     # catalog. Append manifest-carried hard rules for orchestrators added
     # after ship time (not covered by the static prose above). Appended AFTER
     # the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
-    return _preamble + _catalog + _ds_block + _req_block + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+    return _preamble + _catalog + _ds_block + _req_block + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
 
 
 def orchestrator_routing_text(project_root: Optional[str] = None) -> str:
