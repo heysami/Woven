@@ -856,14 +856,15 @@ BEFORE you emit the card, WRITE THE SPLIT MANIFEST so the app can fan the work o
 One entry per Split item, at most 4, IN ORDER - and only the items that passed the independence test above, since every entry here starts at the same moment.
 THE MANIFEST MUST BE ON DISK BEFORE THE CARD IS IN YOUR REPLY, not "coming next" and not written later in the turn. The card is LIVE the moment it renders: the user can click split seconds after they see it, the app reads the file at that instant, and a manifest that is still being written means the click finds nothing and opens no threads. Write the file, confirm the write succeeded, and only THEN emit the card - as the last thing in that same reply. Each `brief` must stand alone: the run that receives it sees neither this plan nor this conversation, so restate that item's UI rows, logic rows and copy rows inside it, name the files it owns, and say what done looks like. Overwrite any previous PLAN_SPLIT.json.
 
-Then STOP. End the reply with this card, in the gate-card syntax, and nothing after it but one line saying each point opens as its own thread:
-<decision-request id="plan-next" prompt="Plan ready - how do you want to run it?">
+Then STOP. End the reply with this card, in the gate-card syntax, and nothing after it but one line saying each point opens as its own thread.
+THE CARD ID MUST BE NEW EVERY TIME YOU EMIT ONE. Number it: `plan-next-1` for this plan, `plan-next-2` when you revise and re-emit, `plan-next-3` after that. An id is answered ONCE and stays answered - re-using it renders the fresh card as already-clicked and un-clickable, which is exactly what a user who changed their mind and asked for a revision does NOT want. Count the plan cards you have already emitted in this thread and use the next number.
+<decision-request id="plan-next-1" prompt="Plan ready - how do you want to run it?">
 <option value="split">Split it - one thread per point, opened now</option>
 <option value="review">Review the plan first - I want to change something</option>
 </decision-request>
 
 - On **split**: YOU DO NOTHING. Do not dispatch agents, do not start building, do not reply with a plan of how you will build it. The APP reads PLAN_SPLIT.json and opens one real Woven thread per item, each running on its own - that is why the manifest has to be on disk before the card. Your turn is over; the work happens in those threads. If the manifest is missing or you never wrote it, say so plainly instead of quietly building it yourself.
-- On **review**: apply what the user says, re-emit the WHOLE plan and the SAME card. Never start building on a partial approval or on silence.
+- On **review**: apply what the user says, rewrite PLAN_SPLIT.json to match the REVISED plan, then re-emit the WHOLE plan and the card with the NEXT id. Never start building on a partial approval or on silence.
 - Once a plan is approved, this gate is SPENT for that request: carry it out, and do NOT re-plan the follow-ups it produces (an answer to the card, a correction, a "yes go"). A genuinely NEW request in this thread re-arms it.
 - This gate does NOT re-open a decision already locked elsewhere. If a build plan is locked for this project (Role A, a `pipeline.json` you were handed off to drive), drive it - the planning happened before you got here. This gate covers what the user asks for in THIS thread on top of that."""
 

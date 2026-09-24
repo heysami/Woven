@@ -23370,6 +23370,14 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
    off: they were dispatched to BUILD an already-decided point, and a thread
    that stopped to re-plan it would never do the job. Same rule the daemon
    applies to delegated children in _delegated_guards. */
+/* The plan gate is re-emitted with a NEW id every time the plan is revised
+   (plan-next-1, plan-next-2, ...), because an answered id stays answered for
+   the life of the thread - re-using it rendered a freshly revised plan's card
+   as already-clicked. So match the family, never one literal id. */
+function isPlanSplitGate(id) {
+  return typeof id === "string" && /^plan-next(-\d+)?$/.test(id);
+}
+
 async function spawnPlanSplitRuns(parentRunId) {
   // The project root is served statically, same way DECISION_*.json is read
   // back. Cache-busted: the manifest is rewritten on every re-plan, and a
@@ -23439,7 +23447,7 @@ async function spawnPlanSplitRuns(parentRunId) {
       // reply + the durability POST so the gate is recorded as answered even
       // if spawning fails, and surfaced as a warning rather than an error
       // because the answer itself did land.
-      if (decision.id === "plan-next" && values[0] === "split") {
+      if (isPlanSplitGate(decision.id) && values[0] === "split") {
         await runSplitFanOut();
       }
       // Onward state: a single pick stays as a string (legacy), multi/grouped become an array.
@@ -23553,7 +23561,7 @@ async function spawnPlanSplitRuns(parentRunId) {
       ${error && html`<div className="chat-decision-error">${error}</div>`}
       ${warning && html`<div className="chat-decision-warning">${warning}</div>`}
       ${splitNote && html`<div className="chat-decision-split-note">${splitNote}</div>`}
-      ${(splitRetry || (isAnswered && answeredArr[0] === "split" && !splitNote)) && html`
+      ${(splitRetry || (isAnswered && isPlanSplitGate(decision.id) && answeredArr[0] === "split" && !splitNote)) && html`
         <div className="chat-decision-split-note">
           <button type="button" className="chat-decision-split-retry"
                   disabled=${splitBusy} onClick=${runSplitFanOut}>
