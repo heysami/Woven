@@ -9665,8 +9665,15 @@ function activeProjectId() {
 function apiUrl(path) {
   const proj = activeProjectId();
   if (!proj) return path;
-  const sep = path.includes("?") ? "&" : "?";
-  return path + sep + "project=" + encodeURIComponent(proj);
+  // A `#fragment` has to stay LAST. Appending the query after it buries the
+  // whole `?project=` inside the fragment, so the server never sees it and
+  // silently serves whichever project happens to be active - which is how a
+  // gallery preview ended up rendering a stale copy of its own page.
+  const cut  = path.indexOf("#");
+  const base = cut >= 0 ? path.slice(0, cut) : path;
+  const frag = cut >= 0 ? path.slice(cut) : "";
+  const sep  = base.includes("?") ? "&" : "?";
+  return base + sep + "project=" + encodeURIComponent(proj) + frag;
 }
 
 /* Canvas background colour - PROJECT-SPECIFIC, a separate value per light/dark
@@ -18704,6 +18711,41 @@ function __pickerSectionClasses(rawHtml) {
   }
   return out;
 }
+// Every DISTINCT class COMBINATION the gallery actually renders, per section.
+// A section id is the finest handle the markup offers and it is far too
+// coarse: #c-button is 12KB holding nine variants x four states x four sizes
+// plus icon-only and split, and none of those permutations carries an id.
+// The combination IS their identity - `.btn.btn--outline-mono.is-pressed`
+// names exactly one of them, and it is the same string you would write in
+// markup, so it needs nothing stamped into the gallery to work. The nearest
+// preceding <h5> rides along as the group label ("Variant x state"), which is
+// what tells two neighbouring combos apart in a one-line row.
+function __pickerSectionCombos(rawHtml) {
+  const out = new Map();
+  const secRe = /<section\b[^>]*\bid="([A-Za-z0-9_-]+)"/g;
+  const marks = [];
+  let m;
+  while ((m = secRe.exec(rawHtml))) marks.push([m.index, m[1]]);
+  for (let i = 0; i < marks.length; i++) {
+    const chunk = rawHtml.slice(marks[i][0], i + 1 < marks.length ? marks[i + 1][0] : rawHtml.length);
+    const rows = [];
+    let group = "";
+    // One pass over headings AND class attributes together, so each combo
+    // keeps the heading that was most recently in scope above it.
+    const tokRe = /<h5[^>]*>([\s\S]*?)<\/h5>|class="([^"]+)"/g;
+    let t;
+    while ((t = tokRe.exec(chunk))) {
+      if (t[1] != null) {
+        group = t[1].replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+        continue;
+      }
+      const cls = t[2].split(/\s+/).filter(Boolean);
+      if (cls.length >= 2) rows.push({ classes: cls, group });
+    }
+    out.set(marks[i][1], rows);
+  }
+  return out;
+}
 // A class or token belongs to the section whose signature names its ROOT:
 // ".modal" claims modal, modal--sm, modal__body; "--space-*" claims
 // --space-4. Everything else is still real API, it just has no anchor.
@@ -18744,10 +18786,14 @@ async function __pickerLoadDesignSystems() {
       ref: { path: "design-systems/" + ds.id + "/", name: ds.id, scope: "project", label: "design system" },
       preview: ds.hasGallery ? { kind: "page", src: "/" + galleryRel } : { kind: "glyph" },
     });
-    // Three levels of vocabulary, pushed in that order so a capped list shows
-    // the coarsest first: SECTION (the anchor you read), then CLASS (what you
-    // write in markup), then TOKEN (what you write in CSS).
-    let sections = [], sectionClasses = new Map();
+    // Four levels of vocabulary, pushed coarsest-first so a capped list stays
+    // browsable: SECTION (the anchor you read), then VARIANT (one rendered
+    // permutation, named by the class combination that produces it), then
+    // CLASS (one lever of the API on its own), then TOKEN (what you write in
+    // CSS). Variants outrank bare classes because they are what you point an
+    // agent AT - ".btn--primary" is a concept, ".btn.btn--primary.is-hover"
+    // is a thing on the page.
+    let sections = [], sectionClasses = new Map(), sectionCombos = new Map();
     if (ds.hasGallery) {
       try {
         const g = await fetch(apiUrl("/" + galleryRel));
@@ -18755,6 +18801,7 @@ async function __pickerLoadDesignSystems() {
           const raw = await g.text();
           sections = __pickerGallerySections(raw);
           sectionClasses = __pickerSectionClasses(raw);
+          sectionCombos = __pickerSectionCombos(raw);
         }
       } catch { /* a DS without a parseable gallery still contributes its root row */ }
     }
@@ -18805,6 +18852,49 @@ async function __pickerLoadDesignSystems() {
           : { kind: "glyph" },
       });
     };
+    // VARIANTS: one row per distinct permutation the gallery renders. The
+    // stylesheet is the authority here too, and doing the filter that way is
+    // what keeps gallery chrome out for free - `.comp`, `.vgroup`, `.matrix`
+    // live in the gallery's own <style>, never in the DS sheet, so they drop
+    // out without a denylist to maintain. A combo also has to be OWNED by the
+    // section it sits in (a stray `.btn` demoed inside #c-table belongs to
+    // the button section, not the table one).
+    const seenCombo = new Set();
+    for (const sec of sections) {
+      const roots = __pickerSignatureRoots(sec.code).cls;
+      if (!roots.size) continue;
+      for (const row of (sectionCombos.get(sec.id) || [])) {
+        const cls = row.classes.filter(c => vocab.classes.has(c));
+        if (cls.length < 2) continue;
+        if (!cls.some(c => roots.has(__pickerClassRoot(c)))) continue;
+        const sel = "." + cls.join(".");
+        if (seenCombo.has(sel)) continue;
+        seenCombo.add(sel);
+        out.push({
+          ns: "designsystem", kind: "ds-variant", slug: ds.id + "/" + sel,
+          name: sel,
+          code: sec.code || "",
+          // The section title is what carries the human word ("Button") into
+          // the search haystack - the classes only ever spell "btn".
+          description: sec.title + (row.group ? " \u00b7 " + row.group : "") + " \u00b7 " + ds.id,
+          token: "@designsystem/" + ds.id + "/" + sel,
+          insertText: sel + " ",
+          ref: {
+            path: galleryRel + "#" + sec.id,
+            name: sel,
+            scope: "project",
+            label: ds.id + " " + sec.title + (row.group ? " (" + row.group + ")" : ""),
+          },
+          // Scoped to the owning section, because querySelector searches the
+          // WHOLE document - an unscoped two-class combo would happily frame
+          // the first lookalike in an earlier section.
+          preview: {
+            kind: "page", src: "/" + galleryRel + "#" + sec.id, anchor: sec.id,
+            el: "#" + escAttr(sec.id) + " " + cls.map(c => "." + escAttr(c)).join(""),
+          },
+        });
+      }
+    }
     // Owned first, section by section, so the list reads in gallery order.
     for (const sec of sections) {
       const roots = __pickerSignatureRoots(sec.code).cls;
@@ -18948,8 +19038,20 @@ function PickerPreview({ item }) {
     holder.scrollLeft = 0;
     const box = holder.getBoundingClientRect();
     const W = box.width || 300, H = box.height || 132;
-    const el = target ? doc.querySelector(target) : null;
-    if (target && !el) {
+    // Resolve what to frame, widening as each step fails: the exact element,
+    // then the section holding it, then the whole page. A variant that is
+    // HIDDEN by default - an inactive tab panel, a collapsed timeline row -
+    // resolves to a real element with a zero box, and framing its section
+    // still shows the component, which beats dropping to a generic glyph.
+    const seeable = (n) => {
+      if (!n) return null;
+      const b = n.getBoundingClientRect();
+      return (b.width && b.height) ? n : null;
+    };
+    const fallback = anchor ? "#" + escAttr(anchor) : null;
+    let el = target ? seeable(doc.querySelector(target)) : null;
+    if (!el && fallback && fallback !== target) el = seeable(doc.querySelector(fallback));
+    if (!el && target) {
       // Galleries that paint from JS need a beat before the element exists.
       if (attempt < 2) { setTimeout(() => fitTarget(frame, attempt + 1), 450); return; }
       setState("noel");
