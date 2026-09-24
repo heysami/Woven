@@ -842,9 +842,13 @@ Write exactly these four sections, in this order:
 
 **4. Split** - the work items this plan breaks into, numbered, at most 4, one sentence each. Each must be buildable on its own by an agent that never sees this plan.
 
+SPLIT ONLY WHAT IS GENUINELY PARALLEL. These items become SEPARATE THREADS running AT THE SAME TIME, so an item may only stand alone if all three are true: nothing in it needs another item's output, no other item needs its output, and no two items write the same file. If any of those fails, the pieces are ONE item whose brief does them in the right order - a dependent step split into its own thread starts before the thing it depends on exists, and either builds against a stale file or overwrites the other thread's work.
+  - So merge freely. Four items that are really a sequence are ONE item, not four, and a plan whose work is entirely sequential has a Split section with exactly ONE item - which is the correct answer, not a failure. Say in one line that it is sequential, so the user knows why there is only one.
+  - Never pad the list to look parallel, and never split by "phase" (design, then logic, then copy) - that is a sequence by definition. Split by INDEPENDENT SURFACE: distinct screens, distinct files, distinct flows that happen not to touch.
+
 BEFORE you emit the card, WRITE THE SPLIT MANIFEST so the app can fan the work out for you. Write `PLAN_SPLIT.json` at the project root:
   `{"items": [{"title": "<short run title, <=60 chars>", "brief": "<the whole self-contained brief for this item>"}, ...]}`
-One entry per Split item, at most 4, IN ORDER. Each `brief` must stand alone: the run that receives it sees neither this plan nor this conversation, so restate that item's UI rows, logic rows and copy rows inside it, name the files it owns, and say what done looks like. Overwrite any previous PLAN_SPLIT.json.
+One entry per Split item, at most 4, IN ORDER - and only the items that passed the independence test above, since every entry here starts at the same moment. Each `brief` must stand alone: the run that receives it sees neither this plan nor this conversation, so restate that item's UI rows, logic rows and copy rows inside it, name the files it owns, and say what done looks like. Overwrite any previous PLAN_SPLIT.json.
 
 Then STOP. End the reply with this card, in the gate-card syntax, and nothing after it but one line saying each point opens as its own thread:
 <decision-request id="plan-next" prompt="Plan ready - how do you want to run it?">
