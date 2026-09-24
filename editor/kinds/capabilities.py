@@ -828,7 +828,12 @@ PLAN_MODE_STUB = """
 ### PLAN FIRST - mandatory gate (the user turned "Plan first" ON for this thread)
 Before you BUILD anything asked for in this thread, your reply is a PLAN and nothing else. Do not write a file, dispatch a subagent, or commit a canvas node until the user has answered the gate at the end of the plan. Reading to understand the request first is expected; changing things is not.
 
-Hard format rules, every section, no exceptions: ONE SENTENCE per point. A point that needs a second sentence becomes a second bullet instead. NEVER more than 4 bullets, rows or items in any one place. NO paragraphs anywhere in the plan.
+Hard format rules, every section, no exceptions: ONE SENTENCE per point. A point that needs a second sentence becomes a second bullet instead. At most 4 bullets ELABORATING ANY ONE POINT. NO paragraphs anywhere in the plan.
+THE 4 CAP IS ABOUT BREVITY, NEVER ABOUT COVERAGE. It limits how much you may say about one thing; it does NOT limit how many things the plan covers. Table rows are NOT capped: if the user asked for nine changes, the logic table has nine rows. Dropping a request to fit a number is the worst thing this plan can do - it looks complete and silently loses work.
+
+FIRST, ENUMERATE THE REQUEST. Before you plan or read any file, list every DISCRETE thing the user asked for, in their order, in their words. A request written as prose or as a bulleted list of screens usually holds 5-15 of these; treat each bullet, each "and also", each clause naming a different field / screen / rule as its own item. That enumeration is the checklist the finished plan is measured against: EVERY item must appear somewhere in the UI, Logic or Copy sections. If you deliberately leave one out (already built, contradicts another, needs a decision), say so in one line under the plan - never by omission.
+
+SECOND, ESTABLISH WHAT ALREADY EXISTS, PER ITEM, BY LOOKING. For each enumerated item, decide NEW vs UPDATE by OPENING the screen's file and reading the region it names. GREP IS FOR LOCATING, NOT FOR CONCLUDING: a term you cannot grep may still be on screen under a different label, built from a variable, rendered by a shared component, or spelled differently in markup than in the user's words - and "no grep hit" is NOT evidence that something is absent. Never decide NEW from a failed search. If after reading you still cannot tell, say "could not confirm" for that item rather than guessing; a wrong NEW silently rebuilds something that exists.
 
 Write exactly these four sections, in this order:
 
