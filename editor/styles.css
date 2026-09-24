@@ -31481,6 +31481,21 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   line-height: 1.4;
   color: var(--text-muted);
 }
+/* The fan-out is one click on an answered card, so a failure (usually: the
+   plan had not finished writing PLAN_SPLIT.json when the button was hit)
+   would otherwise be unrecoverable - the card is already answered and
+   disabled. This re-runs just the spawn, never the answer. */
+.chat-decision-split-retry {
+  font: inherit;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.chat-decision-split-retry:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-text); }
+.chat-decision-split-retry:disabled { opacity: 0.6; cursor: default; }
 .chat-decision-status {
   font-size: 11px;
   color: var(--text-muted);

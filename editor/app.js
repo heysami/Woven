@@ -23266,6 +23266,26 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
   // Set when the plan gate's "split" answer opened the per-point threads, so
   // the card can say how many went out and where to find them.
   const [splitNote, setSplitNote] = useState(null);
+  // Set when answering "split" did NOT manage to open the threads - almost
+  // always because the plan had not written PLAN_SPLIT.json yet when the
+  // button was clicked. The answer itself is recorded, so the card is
+  // already disabled; without a retry that is a dead end the user cannot get
+  // out of even once the manifest lands.
+  const [splitRetry, setSplitRetry] = useState(false);
+  const [splitBusy, setSplitBusy] = useState(false);
+  const runSplitFanOut = async () => {
+    setSplitBusy(true); setWarning(null);
+    try {
+      const opened = await spawnPlanSplitRuns(runId);
+      setSplitRetry(false);
+      setSplitNote(`Opened ${opened.length} thread${opened.length === 1 ? "" : "s"}, one per point. They run on their own - find them in the runs list.`);
+    } catch (e) {
+      setSplitRetry(true);
+      setWarning(`Could not open the split threads (${e.message || e}). Nothing was built. If the plan is still writing its split manifest, wait for it to finish and try again.`);
+    } finally {
+      setSplitBusy(false);
+    }
+  };
   // Which "steer"-style option is expanded for freeform input (its value), and
   // the text typed into it. Clicking a needsInput option opens this panel
   // instead of submitting; the message is sent only on confirm.
@@ -23420,13 +23440,7 @@ async function spawnPlanSplitRuns(parentRunId) {
       // if spawning fails, and surfaced as a warning rather than an error
       // because the answer itself did land.
       if (decision.id === "plan-next" && values[0] === "split") {
-        try {
-          const opened = await spawnPlanSplitRuns(runId);
-          setWarning(null);
-          setSplitNote(`Opened ${opened.length} thread${opened.length === 1 ? "" : "s"}, one per point. They run on their own - find them in the runs list.`);
-        } catch (e3) {
-          setWarning(`Could not open the split threads (${e3.message || e3}). The plan is still here; nothing was built.`);
-        }
+        await runSplitFanOut();
       }
       // Onward state: a single pick stays as a string (legacy), multi/grouped become an array.
       if (onAnswered) onAnswered(key, isSinglePick ? values[0] : values);
@@ -23539,6 +23553,14 @@ async function spawnPlanSplitRuns(parentRunId) {
       ${error && html`<div className="chat-decision-error">${error}</div>`}
       ${warning && html`<div className="chat-decision-warning">${warning}</div>`}
       ${splitNote && html`<div className="chat-decision-split-note">${splitNote}</div>`}
+      ${(splitRetry || (isAnswered && answeredArr[0] === "split" && !splitNote)) && html`
+        <div className="chat-decision-split-note">
+          <button type="button" className="chat-decision-split-retry"
+                  disabled=${splitBusy} onClick=${runSplitFanOut}>
+            ${splitBusy ? "Opening…" : (splitRetry ? "Try again - open the split threads" : "Open the split threads")}
+          </button>
+        </div>
+      `}
       ${isAnswered && html`<div className="chat-decision-status">Sent · agent will continue from here</div>`}
       ${processEnded && !isAnswered && html`<div className="chat-decision-status">Run ended - sending a pick resumes it.</div>`}
     </div>

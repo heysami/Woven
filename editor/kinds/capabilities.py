@@ -853,7 +853,8 @@ SPLIT ONLY WHAT IS GENUINELY PARALLEL. These items become SEPARATE THREADS runni
 
 BEFORE you emit the card, WRITE THE SPLIT MANIFEST so the app can fan the work out for you. Write `PLAN_SPLIT.json` at the project root:
   `{"items": [{"title": "<short run title, <=60 chars>", "brief": "<the whole self-contained brief for this item>"}, ...]}`
-One entry per Split item, at most 4, IN ORDER - and only the items that passed the independence test above, since every entry here starts at the same moment. Each `brief` must stand alone: the run that receives it sees neither this plan nor this conversation, so restate that item's UI rows, logic rows and copy rows inside it, name the files it owns, and say what done looks like. Overwrite any previous PLAN_SPLIT.json.
+One entry per Split item, at most 4, IN ORDER - and only the items that passed the independence test above, since every entry here starts at the same moment.
+THE MANIFEST MUST BE ON DISK BEFORE THE CARD IS IN YOUR REPLY, not "coming next" and not written later in the turn. The card is LIVE the moment it renders: the user can click split seconds after they see it, the app reads the file at that instant, and a manifest that is still being written means the click finds nothing and opens no threads. Write the file, confirm the write succeeded, and only THEN emit the card - as the last thing in that same reply. Each `brief` must stand alone: the run that receives it sees neither this plan nor this conversation, so restate that item's UI rows, logic rows and copy rows inside it, name the files it owns, and say what done looks like. Overwrite any previous PLAN_SPLIT.json.
 
 Then STOP. End the reply with this card, in the gate-card syntax, and nothing after it but one line saying each point opens as its own thread:
 <decision-request id="plan-next" prompt="Plan ready - how do you want to run it?">
