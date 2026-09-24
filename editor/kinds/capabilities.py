@@ -842,19 +842,17 @@ Write exactly these four sections, in this order:
 
 **4. Split** - the work items this plan breaks into, numbered, at most 4, one sentence each. Each must be buildable on its own by an agent that never sees this plan.
 
-Then STOP. End the reply with this card, in the gate-card syntax, and nothing after it but one line saying the runs show up in "Tasks & subagents" on the right rail:
+BEFORE you emit the card, WRITE THE SPLIT MANIFEST so the app can fan the work out for you. Write `PLAN_SPLIT.json` at the project root:
+  `{"items": [{"title": "<short run title, <=60 chars>", "brief": "<the whole self-contained brief for this item>"}, ...]}`
+One entry per Split item, at most 4, IN ORDER. Each `brief` must stand alone: the run that receives it sees neither this plan nor this conversation, so restate that item's UI rows, logic rows and copy rows inside it, name the files it owns, and say what done looks like. Overwrite any previous PLAN_SPLIT.json.
+
+Then STOP. End the reply with this card, in the gate-card syntax, and nothing after it but one line saying each point opens as its own thread:
 <decision-request id="plan-next" prompt="Plan ready - how do you want to run it?">
-<option value="split">Split it - one agent run per point in Split, dispatched now</option>
+<option value="split">Split it - one thread per point, opened now</option>
 <option value="review">Review the plan first - I want to change something</option>
 </decision-request>
 
-- On **split**: dispatch one subagent per Split item, each with a SELF-CONTAINED brief (it sees neither this plan nor this preamble, so restate the item's UI rows, logic rows and copy rows inside the brief). Report back what each one landed.
-  - **EVERY Split item goes out in THIS turn, and they ALL GO OUT AT ONCE. There is no wave two, and no one-at-a-time.** Put every Agent call as its own tool block in the SAME assistant message - that is the only thing that makes them run concurrently and show up together in "Tasks & subagents". Issuing one call, waiting for its result, then issuing the next is SERIAL: the user watches a single agent at a time and the whole split takes as long as the sum of its parts. Splitting into one run per point is the POINT of this gate; a serial chain of one is the thing it exists to replace.
-  - File overlap is a MERGE problem, never a reason to defer OR to serialise. Items that touch the same file go to ONE agent as a single combined brief, and that agent orders them internally. Two agents never share a file, and every item still goes out in this one message. Announcing a "Wave B to follow when these land" ends the turn with items undispatched and nothing left to trigger them - the work silently never happens.
-  - **THE DRIVE MECHANICS ARE NON-NEGOTIABLE, and they are repeated here because you may not have them anywhere else in this preamble** (they live in the normal-tier build stub; this gate also fires on the scoped and setup tiers, which do not carry it):
-    - Pass **`run_in_background: false`** on every one of those calls, in that same single message, and let the turn block until they have all returned `done` / `error`. Backgrounding is the DEFAULT, so this has to be passed explicitly every time. Note these two rules work together and neither one alone is right: all the calls in ONE message is what makes them parallel, `run_in_background: false` is what makes the turn wait for them.
-    - **Never end your turn while a dispatched agent is still in flight**, on the bet of being woken when it lands. A turn that ends STOPS its children mid-run: to the user the build simply dies, half-applied, with the thread showing done.
-    - Report what each agent landed only after it has actually landed.
+- On **split**: YOU DO NOTHING. Do not dispatch agents, do not start building, do not reply with a plan of how you will build it. The APP reads PLAN_SPLIT.json and opens one real Woven thread per item, each running on its own - that is why the manifest has to be on disk before the card. Your turn is over; the work happens in those threads. If the manifest is missing or you never wrote it, say so plainly instead of quietly building it yourself.
 - On **review**: apply what the user says, re-emit the WHOLE plan and the SAME card. Never start building on a partial approval or on silence.
 - Once a plan is approved, this gate is SPENT for that request: carry it out, and do NOT re-plan the follow-ups it produces (an answer to the card, a correction, a "yes go"). A genuinely NEW request in this thread re-arms it.
 - This gate does NOT re-open a decision already locked elsewhere. If a build plan is locked for this project (Role A, a `pipeline.json` you were handed off to drive), drive it - the planning happened before you got here. This gate covers what the user asks for in THIS thread on top of that."""

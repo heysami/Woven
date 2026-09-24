@@ -31461,6 +31461,15 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   padding: 6px 9px;
   border-radius: 4px;
 }
+/* Confirmation that the plan gate fanned out: N real threads opened, one per
+   point. Positive outcome, so it reads as a note rather than the amber
+   warning right above it. */
+.chat-decision-split-note {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
 .chat-decision-status {
   font-size: 11px;
   color: var(--text-muted);

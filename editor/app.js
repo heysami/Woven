@@ -17326,6 +17326,18 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // seconds - the note says so rather than leaving Send looking stuck.
   const [handoffBusy, setHandoffBusy] = useState(false);
   useEffect(() => { setPendingGuards(null); setHandoffBusy(false); }, [run?.runId]);
+  // Plan mode is PER RUN, and this component outlives the run it shows: the
+  // drawer is not keyed on the thread, so swapping to another thread - or to
+  // a fresh "new chat" shell - keeps whatever `chatGuards` held. That is how
+  // an armed plan survived into the next thread even though it is never
+  // persisted: the stickiness was in memory, not in settings. Clear it on
+  // every run change so arming it is deliberate each time. The checks are
+  // untouched - those ARE meant to carry.
+  useEffect(() => {
+    setChatGuards(prev => (prev && prev[PLAN_MODE_OPTION.key])
+      ? { ...prev, [PLAN_MODE_OPTION.key]: false }
+      : prev);
+  }, [run?.runId, run?.isNew]);
   const [answers, setAnswers] = useState({});   // { toolUseId: [{ question, answer }, …] }
   // A clicked DecisionRequestCard sends a user-message shaped
   // `[decision:<id>] <v1>[,v2,…] - <label1>[; label2;…]`.
@@ -23243,6 +23255,9 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [warning, setWarning] = useState(null);
+  // Set when the plan gate's "split" answer opened the per-point threads, so
+  // the card can say how many went out and where to find them.
+  const [splitNote, setSplitNote] = useState(null);
   // Which "steer"-style option is expanded for freeform input (its value), and
   // the text typed into it. Clicking a needsInput option opens this panel
   // instead of submitting; the message is sent only on confirm.
@@ -23314,6 +23329,51 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
   // For multi-select / grouped, an explicit Send button submits.
   const isSinglePick = !isMulti && !decision.groupBy;
 
+/* Plan-mode fan-out. Answering the `plan-next` gate with "split" opens ONE
+   REAL WOVEN THREAD per plan point - not Task subagents, which only ever
+   appear nested under the thread that spawned them and die with its turn.
+   The planning agent wrote PLAN_SPLIT.json before emitting the card; we read
+   it here and POST /__run once per item, which is the same path "New chat"
+   uses, so each item shows up as its own thread and runs as its own process.
+
+   CHECKS RIDE ALONG, PLAN MODE DOES NOT. Each spawned thread inherits the
+   parent thread's checks, because those describe how work should be graded
+   and these threads are the ones actually doing the work. Plan mode is forced
+   off: they were dispatched to BUILD an already-decided point, and a thread
+   that stopped to re-plan it would never do the job. Same rule the daemon
+   applies to delegated children in _delegated_guards. */
+async function spawnPlanSplitRuns(parentRunId) {
+  // The project root is served statically, same way DECISION_*.json is read
+  // back. Cache-busted: the manifest is rewritten on every re-plan, and a
+  // stale copy would fan out the PREVIOUS plan's items.
+  const r = await fetch(apiUrl("/PLAN_SPLIT.json") + "&_=" + Date.now(), { cache: "no-store" });
+  if (!r.ok) throw new Error("no PLAN_SPLIT.json - the plan did not write a split manifest");
+  const raw = await r.text();
+  let items;
+  try { items = (JSON.parse(raw).items || []).filter(it => it && it.brief); }
+  catch { throw new Error("PLAN_SPLIT.json is not valid JSON"); }
+  if (!items.length) throw new Error("PLAN_SPLIT.json has no items");
+  const opened = [];
+  for (const it of items.slice(0, 4)) {
+    const res = await fetch(apiUrl("/__run"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "freeform",
+        prompt: String(it.brief),
+        title: String(it.title || "Plan item").slice(0, 60),
+        // No `guards` on purpose: passing `parent` makes the daemon inherit
+        // THIS thread's real checks (serve.py _run_create -> _delegated_guards),
+        // which is the live value, not the sticky preference this card can see.
+        parent: parentRunId,
+      }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || `HTTP ${res.status} opening "${it.title}"`);
+    opened.push(j.runId || j.id);
+  }
+  return opened;
+}
+
   const submit = async (overridePicks, extra) => {
     const picks = overridePicks || localPicks;
     if (!runId || isAnswered || busy || picks.length === 0) return;
@@ -23345,6 +23405,20 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
         }
       } catch (e2) {
         setWarning(`Choice sent, but not persisted (${e2.message || e2}). Reloading the page will re-ask this checkpoint.`);
+      }
+      // Plan-mode fan-out. "split" on the plan gate means the APP opens one
+      // real thread per plan point - see spawnPlanSplitRuns. Done after the
+      // reply + the durability POST so the gate is recorded as answered even
+      // if spawning fails, and surfaced as a warning rather than an error
+      // because the answer itself did land.
+      if (decision.id === "plan-next" && values[0] === "split") {
+        try {
+          const opened = await spawnPlanSplitRuns(runId);
+          setWarning(null);
+          setSplitNote(`Opened ${opened.length} thread${opened.length === 1 ? "" : "s"}, one per point. They run on their own - find them in the runs list.`);
+        } catch (e3) {
+          setWarning(`Could not open the split threads (${e3.message || e3}). The plan is still here; nothing was built.`);
+        }
       }
       // Onward state: a single pick stays as a string (legacy), multi/grouped become an array.
       if (onAnswered) onAnswered(key, isSinglePick ? values[0] : values);
@@ -23456,6 +23530,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
       `}
       ${error && html`<div className="chat-decision-error">${error}</div>`}
       ${warning && html`<div className="chat-decision-warning">${warning}</div>`}
+      ${splitNote && html`<div className="chat-decision-split-note">${splitNote}</div>`}
       ${isAnswered && html`<div className="chat-decision-status">Sent · agent will continue from here</div>`}
       ${processEnded && !isAnswered && html`<div className="chat-decision-status">Run ended - sending a pick resumes it.</div>`}
     </div>

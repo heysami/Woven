@@ -34708,7 +34708,21 @@ class H(http.server.SimpleHTTPRequestHandler):
         # They shape the preamble, so they are fixed at spawn time like the
         # tier - and persisted on the spawn event so /resume rebuilds the
         # SAME prompt instead of cache-busting the session.
+        # Per-thread checks. An explicit `guards` in the body wins. Failing
+        # that, a `parent` run id makes this a DELEGATED spawn (today: the
+        # plan-mode fan-out, which opens one real thread per plan point) and
+        # it inherits the parent thread's ACTUAL checks - visual / DS / req QA
+        # all ride down, because these threads are the ones doing the work the
+        # parent only planned. _delegated_guards forces plan mode OFF on the
+        # way: they were opened to BUILD an already-decided point, and a
+        # thread that stopped to re-plan it would never do the job.
         _chat_guards = _normalize_chat_guards(body.get("guards"))
+        if body.get("guards") is None and body.get("parent"):
+            with RUNS_LOCK:
+                _parent_run = RUNS.get(str(body.get("parent")))
+            if _parent_run is not None and os.path.realpath(
+                    getattr(_parent_run, "project_root", "")) == os.path.realpath(project_root):
+                _chat_guards = _delegated_guards(getattr(_parent_run, "guards", None))
         spawn_args = list(defs["args"])
         # Claude Code 2.1.163 split the bypass into TWO
         # flags. --dangerously-skip-permissions alone no longer skips
