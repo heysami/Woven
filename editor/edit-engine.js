@@ -7,6 +7,7 @@
   let clipboard = null;
   const draftKey = key => 'woven.edit.v1:' + encodeURIComponent(key);
   function remember(state) {
+    if (state.retired) return;
     try {
       if (!state.dirty) { root.localStorage?.removeItem(draftKey(state.key)); return; }
       if (!state.source) return;
@@ -91,6 +92,7 @@
     if (!state?.dirty) frame.removeAttribute('srcdoc');
   }
   function notify(state, doc) {
+    if (state.retired) return;
     remember(state);
     for (const ref of state.documents) {
       const other = ref.deref();
@@ -487,9 +489,28 @@
     state.baseSource = state.source; state.pending = []; state.history = []; state.cursor = -1; state.savedCursor = -1;
     state.revision++; notify(state, doc);
   }
+  function forget(path, apiUrl) {
+    const key = apiUrl('/' + path), state = sessions.get(key);
+    if (state?.saving) throw new Error('This draft is still saving. Wait for Save to finish, then try again.');
+    sessions.delete(key);
+    try { root.localStorage?.removeItem(draftKey(key)); } catch {}
+    if (!state) return;
+    const doc = [...state.documents].map(ref => ref.deref()).find(n => n?.defaultView?.frameElement?.isConnected);
+    for (const ref of state.documents) { const other = ref.deref(); if (other) docs.delete(other); }
+    state.retired = true; state.dirty = false; state.documents.clear();
+    root.dispatchEvent?.(new CustomEvent('woven:edit-session', { detail: { state, doc } }));
+  }
+  async function readSource(path, apiUrl) {
+    const url = new URL(apiUrl('/__edit_source'), root.location.href);
+    url.searchParams.set('path', path);
+    const data = await fetch(url.href, { cache: 'no-store' }).then(r => readResponse(r, 'Read source'));
+    if (typeof data.html !== 'string' || typeof data.version !== 'string') throw new Error('The editing service returned an invalid source file.');
+    return data;
+  }
   async function save(doc, path, apiUrl, ops, inject, serialized, wholeSession = false) {
     const state = bind(doc, path, apiUrl);
     try { await state.ready; } catch (error) { state.error = error.message; notify(state, doc); throw error; }
+    if (state.retired) throw new Error("This draft was closed before saving finished.");
     if (state.saving) throw new Error("A save is already in progress.");
     state.saving = true; state.error = null;
     const revision = state.revision;
@@ -563,6 +584,6 @@
   root.WovenEdit = { ID, uid, identify, selector, cleanClone, isTextInput, copy, setClipboard, readResponse,
     retry: doc => !docs.get(doc)?.baselineReady ? docs.get(doc)?.retry?.() : Promise.resolve(),
     getClipboard: () => clipboard, paste, applyStyles, sizing, sizeMode, dimension, sizingNote, move, variables, modes, bind, stage, save, digest,
-    state: doc => docs.get(doc), serialize, restore, sourcePath, isolate, release, history, discard, download, reload };
+    state: doc => docs.get(doc), serialize, restore, sourcePath, isolate, release, history, discard, forget, readSource, download, reload };
   if (typeof module !== "undefined") module.exports = root.WovenEdit;
 })(typeof window !== "undefined" ? window : globalThis);

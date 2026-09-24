@@ -60,6 +60,21 @@ Download pending edits and Reload latest source in the inspector. Edits arriving
 during a save remain dirty. Imported source documents have separate sessions
 and save results; a failed imported save stays pending.
 
+### Canvas frame drafts
+
+Draft on a Canvas frames node opens the same authoring editor inside its nested
+frame. Layers, Design, Add, components, variables, inline text, clipboard, and
+keyboard commands target that draft. The navigation guard recognizes the frozen
+authoring document, so it does not reload it while editing.
+
+Each node and frame gets a separate clone beside the source page, preserving
+relative asset paths. Clones use raw source bytes without server instrumentation.
+Apply first saves that draft's pending commands, then writes its source back with
+a revision check. Failed saves or conflicting source writes leave the draft open.
+New edits arriving during Apply remain in the draft. Discard and successful Apply
+retire the draft's session and recovery data; drafting again starts from the
+current source. Returning to the real frame replaces the authoring iframe.
+
 ## Clipboard
 
 Copy captures an immutable element snapshot. Paste and Duplicate assign fresh
@@ -160,10 +175,12 @@ node editor/tests/test-edit-session.cjs
 node editor/tests/test-edit-components.cjs
 node editor/tests/test-edit-movement.cjs
 node editor/tests/test-edit-ui.cjs
+node editor/tests/test-frame-draft.cjs
 python3 -B -m unittest discover -s editor/tests -p 'test_edit_*.py'
 ```
 
-The UI test mounts the production preview overlay and workflow inspector, using
+The UI tests mount the production preview overlay, workflow inspector, and
+nested Canvas frame Draft editor, using
 the repository's Playwright installation and the same React/htm CDN scripts as
 the editor. Fixtures use temporary servers and do not mutate user projects or
 start the production daemon. Restart the daemon and reload the editor to load

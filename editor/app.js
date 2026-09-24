@@ -1751,7 +1751,7 @@ function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onSta
     // dormant frame comes back on-screen - without re-running, the new iframe
     // would carry no load handler and its setupScript would never fire (it'd
     // show the default screen). When live=false there's no iframe (early return).
-  }, [frame.id, live]);
+  }, [frame.id, live, draft && draft.createdAt]);
 
   // Only DOM-target edits carry a `rect` for the picker-anchor overlay below.
   // Model edits (target: "frame"/"arrow"/"entity"/...) also share `frameId` but
@@ -1889,6 +1889,7 @@ function Frame({ frame, selected, dimmed, tool, onSelect, onPick, onClone, onSta
           // updateFrameVisibility + CanvasView's __wovenSetFrameVisibility.
           ? html`<div className="frame-body-dormant" aria-hidden="true"></div>`
           : html`<iframe
+              key=${draft ? draft.path + ":" + draft.createdAt : "source"}
               ref=${iframeRef}
               src=${draft
                 // Draft mode: this frame shows its own editable CLONE, not the
@@ -38596,6 +38597,11 @@ function wfFindEmbedFrameIframe(nodeId, frameId) {
   } catch { return null; }
 }
 
+function wfPickOwnerNode(nodes, pickedId) {
+  return (nodes || []).find(node => node.id === pickedId)
+    || (nodes || []).find(node => node.kind === 'frames' && Object.values(node.drafts || {}).some(draft => draft.id === pickedId));
+}
+
 function wfPickHostId(ifr) {
   if (!ifr || !ifr.getAttribute) return "";
   return ifr.getAttribute("data-prototype-id")
@@ -49969,12 +49975,13 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     let cancelled = false;
     // Map<iframeEl, teardownFn> - one entry per attached iframe.
     const teardowns = new Map();
+    const loads = new Map();
     // Best-effort match across iframes; ignore any that can't be reached
     // (cross-origin, contentDocument null) - they simply won't participate
     // in pick mode this session.
     const findEligible = () => wfPickHostIframes();
     const installOn = (ifr) => {
-      if (cancelled || teardowns.has(ifr)) return;
+      if (cancelled || loads.has(ifr)) return;
       const owningId = wfPickHostId(ifr);
       const tryInstall = () => {
         if (cancelled) return;
@@ -50030,6 +50037,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       ifr.addEventListener("load", onLoad);
       // Stash the listener on the iframe so the outer cleanup can remove it.
       ifr.__thPickOnLoad = onLoad;
+      loads.set(ifr, onLoad);
       if (!ifr.contentDocument || ifr.contentDocument.readyState === "loading") {
         // Initial install waits for first load - handled by onLoad above.
       } else {
@@ -50046,7 +50054,8 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       if (cancelled) { clearInterval(intervalId); return; }
       const current = new Set(findEligible());
       // Attach to any iframe we haven't seen yet.
-      for (const ifr of current) if (!teardowns.has(ifr)) installOn(ifr);
+      for (const ifr of current) if (!loads.has(ifr)) installOn(ifr);
+      for (const [ifr, onLoad] of loads) if (!current.has(ifr)) { ifr.removeEventListener("load", onLoad); loads.delete(ifr); }
       // Detach from any iframe that's gone (DOM-removed mid-session).
       for (const [ifr, td] of teardowns) {
         if (!current.has(ifr)) {
@@ -50062,6 +50071,8 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     return () => {
       cancelled = true;
       clearInterval(intervalId);
+      for (const [ifr, onLoad] of loads) ifr.removeEventListener("load", onLoad);
+      loads.clear();
       for (const [ifr, td] of teardowns) {
         try { td(); } catch {}
         WovenEdit.release(ifr);
@@ -50330,7 +50341,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   useEffect(() => {
     const onSession = event => {
       const { state, doc } = event.detail;
-      const origin = doc.defaultView?.frameElement;
+      const origin = doc?.defaultView?.frameElement;
       const ifr = origin && wfPickHostId(origin) ? origin : wfPickHostIframes().find(frame => WovenEdit.sourcePath(frame) === state.path);
       if (!ifr) return;
       setPendingInspectorEdits(prev => {
@@ -50680,16 +50691,17 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     return true;
   }, [resolveIframePath, flashPickOp]);
 
-  const commitInspectorEdits = useCallback(async () => {
-    const snapshot = Array.from(pendingInspectorEdits.values());
-    if (!snapshot.length) return;
+  const commitInspectorEdits = useCallback(async (onlyPath) => {
+    const snapshot = Array.from(pendingInspectorEdits.values()).filter(entry => !onlyPath || entry.path === onlyPath);
+    if (!snapshot.length) return true;
     const completed = new Map();
     const errors = [];
     flashPickOp("pending", "Saving edits...");
     for (const entry of snapshot) {
       try {
         if (!entry.ifr?.isConnected || entry.ifr.contentDocument !== entry.doc) throw new Error("The editing frame changed. Your edits remain pending.");
-        await WovenEdit.save(entry.doc, entry.path, apiUrl, entry.ops, _injectInspectorPatch, pickSerializeClean(entry.doc));
+        const result = await WovenEdit.save(entry.doc, entry.path, apiUrl, entry.ops, _injectInspectorPatch, pickSerializeClean(entry.doc));
+        if (result.newerEdits) throw new Error("The draft changed while saving. Apply again to include the latest edits.");
         completed.set(entry.path, entry);
       } catch (error) { errors.push(error.message); }
     }
@@ -50704,6 +50716,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       return next;
     });
     flashPickOp(errors.length ? "error" : "done", errors.length ? errors.join("; ") : "Edits saved");
+    return errors.length === 0;
   }, [pendingInspectorEdits, flashPickOp, _dispatchPendingDigest]);
   const revertInspectorEdits = useCallback(() => {
     const snapshot = Array.from(pendingInspectorEdits.values());
@@ -50744,6 +50757,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     };
   }, [commitInspectorEdits, revertInspectorEdits]);
 
+  const applyingDraftsRef = useRef(new Set());
   /* ── Draft apply ────────────────────────────────────────────────────────
      A drafted page carries two KINDS of change, and they want different
      treatment:
@@ -50915,7 +50929,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       if (gone.length) removeWbItems(new Set(gone));
     };
 
-    const onApply = async (e) => {
+    const applyDraftChanges = async (e) => {
       const det = (e && e.detail) || {};
       const { nodeId, frameId, draftId, path, from, label, worldRect } = det;
       if (!nodeId || !frameId || !path || !from) {
@@ -50926,9 +50940,12 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       // 1. Flush anything still staged so the draft file on disk is what the
       //    user is actually looking at. Save is idempotent when nothing is
       //    pending, so this costs nothing in the common case.
-      try { await commitInspectorEdits(); } catch {}
+      if (!await commitInspectorEdits(path)) return;
 
       const ifr = wfFindPickHost(draftId);
+      const session = WovenEdit.state(ifr?.contentDocument);
+      const revision = session?.revision;
+      const changed = () => session && (session.retired || session.dirty || session.saving || session.revision !== revision);
       let innerW = 0, innerH = 0;
       try {
         innerW = (ifr && ifr.clientWidth) || 0;
@@ -50938,16 +50955,11 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       // 2. Read the draft's bytes + the real page's current bytes. If the real
       //    page moved under us (an agent run, a hand edit) say so BEFORE
       //    overwriting it - the draft was forked from an older version.
-      const readFile = async (rel) => {
-        const u = apiUrl("/" + rel);
-        const r = await fetch(u + (u.includes("?") ? "&" : "?") + "_a=" + Date.now(), { cache: "no-store" });
-        if (!r.ok) throw new Error(`${rel}: HTTP ${r.status}`);
-        return await r.text();
-      };
-      let draftHtml = "", realHtml = "";
+      let draftHtml = "", realHtml = "", realVersion = "";
       try {
-        draftHtml = await readFile(path);
-        realHtml = await readFile(from);
+        const draftSource = await WovenEdit.readSource(path, apiUrl);
+        const realSource = await WovenEdit.readSource(from, apiUrl);
+        draftHtml = draftSource.html; realHtml = realSource.html; realVersion = realSource.version;
       } catch (err) {
         uiAlert(`Couldn't read the files to apply: ${(err && err.message) || err}`);
         return;
@@ -50957,6 +50969,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
           `${from} has changed since this draft was created. Applying overwrites those changes with the draft. Continue?`);
         if (!ok) return;
       }
+      if (changed()) { flashPickOp("error", "The draft changed while applying. Apply again to include the latest edits."); return; }
 
       // 3. Collect the annotations before anything is written, so a failed
       //    write leaves the draft (and its notes) intact.
@@ -50977,7 +50990,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         const resp = await fetch(u, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: from, html: draftHtml, project }),
+          body: JSON.stringify({ path: from, html: draftHtml, expectedVersion: realVersion, project }),
         });
         if (!resp.ok) {
           const j = await resp.json().catch(() => ({}));
@@ -50987,6 +51000,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         uiAlert(`Couldn't write ${from}: ${(err && err.message) || err}\n\nThe draft is untouched - fix the problem and apply again.`);
         return;
       }
+      if (changed()) { flashPickOp("error", "Applied the saved draft. Newer edits are still in the draft; apply again to include them."); return; }
 
       // 5. Annotations → an agent scoped to this one page. No annotations means
       //    no agent: the direct write above was the whole change.
@@ -51024,6 +51038,8 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       // 6. Reset. The annotations were instructions and have been delivered, so
       //    they come off the canvas with the draft; the node flips its frame
       //    back to the real page, which now carries the edits.
+      if (changed()) { flashPickOp("error", "Newer edits remain in this draft. Apply again to include them."); return; }
+      WovenEdit.forget(path, apiUrl);
       dropDraftAnnotations(nodeId, frameId);
       window.dispatchEvent(new CustomEvent("th:frame-draft-reset", { detail: { nodeId, frameId } }));
       try {
@@ -51031,6 +51047,15 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
           ? `Applied to ${from} - agent is working the ${items.length} annotation${items.length === 1 ? "" : "s"}`
           : `Applied to ${from}`);
       } catch {}
+    };
+
+    const onApply = async (event) => {
+      const path = event.detail?.path;
+      if (applyingDraftsRef.current.has(path)) return;
+      applyingDraftsRef.current.add(path);
+      try { await applyDraftChanges(event); }
+      catch (error) { flashPickOp("error", error.message || "Couldn't apply this draft. Your edits remain staged."); }
+      finally { applyingDraftsRef.current.delete(path); }
     };
 
     // Discarding a draft takes its annotations with it - they described a page
@@ -57185,31 +57210,28 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   dblTextRef.current = {
     openCodePanelAt, stageInspectorEdit, flashPickOp,
     enterEdit: setPickModeNodeId,
-    findNode: (id) => (data.nodes || []).find(n => n.id === id),
+    findNode: (id) => wfPickOwnerNode(data.nodes, id),
   };
   useEffect(() => {
     let cancelled = false;
     const attached = new Map(); // iframe → teardown
-    const findEligible = () => Array.from(
-      document.querySelectorAll('iframe[data-prototype-id], iframe[data-asset-id]')
-    );
+    const findEligible = () => wfPickHostIframes();
     const handlerFor = (ifr) => {
       let doc; try { doc = ifr.contentDocument; } catch { return null; }
       if (!doc) return null;
       const onDbl = async (e) => {
         if (wbModeRef.current) return; // whiteboard items handle their own dbl
-        const nodeId = ifr.getAttribute("data-prototype-id")
-                    || ifr.getAttribute("data-asset-id") || "";
+        const nodeId = wfPickHostId(ifr);
+        const api = dblTextRef.current;
+        const node = api.findNode(nodeId);
         // Only the selected (interactive) node - matches the iframe's
         // pointer-events:auto gate so we never fire on a stray hover.
-        if (!nodeId || !selectedNodeIdsRef.current.has(nodeId)) return;
+        if (!node || !selectedNodeIdsRef.current.has(node.id)) return;
         let el; try { el = doc.elementFromPoint(e.clientX, e.clientY); } catch { el = e.target; }
         if (!el || el.tagName === "HTML" || el.tagName === "BODY" || el.tagName === "IFRAME") return;
         const needle = thNeedleFor(el);
         if (!needle) return;
         e.preventDefault(); e.stopPropagation();
-        const api = dblTextRef.current;
-        const node = api.findNode(nodeId);
         const branch = nodePrototype(node);
         const path = WovenEdit.sourcePath(ifr);
         if (path && !doc.querySelector('meta[name="woven-authoring"]')) {
@@ -59238,7 +59260,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
               // the right of that owning node - same docking pattern as
               // the code panel. Reuses zoom-mode's PickedInspectorBody
               // so future updates land in both places.
-              const host = (data.nodes || []).find(n => n.id === pickedShownElement.nodeId);
+              const host = wfPickOwnerNode(data.nodes, pickedShownElement.nodeId);
               if (!host) return null;
               return html`<${WorkflowPickedInspectorDock}
                 key=${"inspector-" + host.id}
@@ -71724,13 +71746,13 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
         } catch { return false; }
       };
       const handler = (e) => {
+        if (e.defaultPrevented || isEditing()) return;
         const cmd = e.metaKey || e.ctrlKey;
         const nav = e.key === "ArrowUp" || e.key === "ArrowDown"
                  || e.key === "ArrowLeft" || e.key === "ArrowRight"
                  || e.key === "Delete" || e.key === "Backspace";
         if (e.key !== "Escape") {
           if (!cmd && !nav) return;
-          if (isEditing()) return;
         }
         try {
           const ev = new KeyboardEvent("keydown", {
@@ -71782,13 +71804,18 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
         const ifr = doc && doc.querySelector('.frame[data-frame-id="' + esc + '"] iframe[data-draft-id]');
         if (ifr) {
           let here = "";
-          try { here = String(ifr.contentWindow.location.pathname || "").replace(/^\/+/, ""); } catch { here = ""; }
+          try {
+            const url = ifr.contentWindow.location;
+            here = url.href === "about:srcdoc"
+              ? ifr.contentDocument.querySelector('meta[name="woven-authoring"]')?.content || "srcdoc"
+              : url.href === "about:blank" ? "" : url.pathname.replace(/^\/+/, "");
+          } catch { here = "external"; }
           // Empty means mid-load (about:blank) - not a navigation, leave it be.
           if (here && here !== want) {
             const back = ifr.getAttribute("src");
             // replace(), not assignment: a bounce must not pile up history the
             // user can walk back into.
-            if (back) { try { ifr.contentWindow.location.replace(back); } catch {} }
+            if (back) { try { ifr.removeAttribute("srcdoc"); ifr.contentWindow.location.replace(back); } catch {} }
             if (!warned) {
               warned = true;
               window.dispatchEvent(new CustomEvent("th:frame-draft-pinned", {
@@ -71834,7 +71861,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
   }, []);
 
   const startDraft = useCallback(async (frameId) => {
-    if (!onChange) return;
+    if (!onChange || draftFrameId === frameId) return;
     const from = readFrameRealPath(frameId);
     if (!from) {
       uiAlert("Couldn't work out which file this screen renders. Open the editor from this node's title bar and check the frame's entry.");
@@ -71859,20 +71886,18 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     // dot-prefixed FILES too, and so does the daemon's file watcher, so draft
     // writes neither leak to a share nor strobe the node.
     //
-    // Named after the FILE, not the frame, so the sibling rule holds however the
-    // prototype is laid out. Deterministic and overwritten on each re-draft:
+    // Include the node and frame so two drafts of the same page stay isolated.
+    // Deterministic and overwritten on each re-draft:
     // there is no file-delete endpoint, so a stamped name would orphan a file
     // every time.
     const slash = from.lastIndexOf("/");
     const dir = from.slice(0, slash + 1);
     const base = from.slice(slash + 1).replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 80) || "screen.html";
-    const path = `${dir}.draft-${base}`;
+    const owner = (node.id + "-" + frameId).replace(/[^a-zA-Z0-9_-]+/g, "-");
+    const path = `${dir}.draft-${owner}-${base}`;
     let src = "";
     try {
-      const u = apiUrl("/" + from);
-      const r = await fetch(u + (u.includes("?") ? "&" : "?") + "_d=" + Date.now(), { cache: "no-store" });
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      src = await r.text();
+      src = (await WovenEdit.readSource(from, apiUrl)).html;
     } catch (err) {
       uiAlert(`Couldn't read ${from}: ${(err && err.message) || err}`);
       return;
@@ -71891,6 +71916,11 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
       uiAlert(`Couldn't create the draft: ${(err && err.message) || err}`);
       return;
     }
+    if (activeDraft) {
+      try { WovenEdit.forget(activeDraft.path, apiUrl); } catch (error) { uiAlert(error.message); return; }
+      window.dispatchEvent(new CustomEvent('th:frame-draft-ended', { detail: { nodeId: node.id, frameId: draftFrameId } }));
+    }
+    WovenEdit.forget(path, apiUrl);
     onChange({ drafts: { [frameId]: {
       id: `${node.id}:${frameId}`, path, from,
       // Fingerprint of what the draft was forked FROM. Apply compares it
@@ -71915,13 +71945,14 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
     window.dispatchEvent(new CustomEvent("th:frame-draft-started", {
       detail: { nodeId: node.id, frameId },
     }));
-  }, [onChange, readFrameRealPath, draftFrameId, frameGeom, protoSlug, node.id]);
+  }, [onChange, readFrameRealPath, draftFrameId, activeDraft, frameGeom, protoSlug, node.id]);
 
   const discardDraft = useCallback(async () => {
     if (!onChange || !draftFrameId) return;
     const ok = await uiConfirm(
       "Discard this draft? Edits staged on it are lost, along with any whiteboard notes bound to it. The real screen is untouched.");
     if (!ok) return;
+    try { WovenEdit.forget(activeDraft.path, apiUrl); } catch (error) { uiAlert(error.message); return; }
     window.dispatchEvent(new CustomEvent("th:frame-draft-ended", {
       detail: { nodeId: node.id, frameId: draftFrameId },
     }));
@@ -71931,7 +71962,7 @@ function WorkflowFramesNode({ node, zoom, selected, onSelect, onMove, onResize, 
       }
     } catch {}
     onChange({ drafts: {} });
-  }, [onChange, draftFrameId, node.id]);
+  }, [onChange, draftFrameId, activeDraft, node.id]);
 
   const applyDraft = useCallback(() => {
     if (!activeDraft || !draftFrameId) return;
