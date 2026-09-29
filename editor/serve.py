@@ -54,6 +54,7 @@ import runtime_drivers
 import review_evidence
 import helper_jobs
 import jev
+import plan_split
 import datetime as _dt
 import difflib
 import glob
@@ -10023,6 +10024,77 @@ def _queue_deliver_via_resume(state, text: str, auto: str = "") -> bool:
         return False
 
 
+# Split groups whose plan check has already been queued, this daemon life. The
+# durable record is the `split-reconcile` status on the planning thread, which
+# survives a restart; this set only closes the race of two siblings finishing
+# in the same instant.
+_SPLIT_JOINED: set = set()
+_SPLIT_JOIN_LOCK = threading.Lock()
+
+
+def _split_member_row(s) -> dict:
+    with s.lock:
+        last = next((e["data"] for e in reversed(s.events)
+                     if isinstance(e.get("data"), dict) and e["data"].get("type") == "status"
+                     and not e["data"].get("sidechain")
+                     and e["data"].get("label") in ("done", "error")), {})
+    status = ("stopped" if getattr(s, "stop_reason", None) == "user-stop"
+              else "error" if last.get("label") == "error" or _turn_result_failure(last) else "done")
+    finished = bool(s.done or (s.turn_done and s.turns_completed >= 1)) and not _pending_run_jobs(s)
+    return {"index": (s.split or {}).get("index"), "title": s.title, "runId": s.run_id,
+            "status": status, "finished": finished,
+            "report": last.get("result") if isinstance(last.get("result"), str) else ""}
+
+
+def _split_join_maybe(state) -> None:
+    """Once EVERY thread of a plan split has finished its turn, queue the plan
+    check on the planning thread (see plan_split.py). Called at each turn end
+    and process exit of a split thread; a no-op for everything else, for a
+    group that still has a thread working, and for a group already checked.
+    Rides the ordinary follow-up queue, so it waits for the planning thread's
+    own turn boundary and survives a dead process via /resume."""
+    split = getattr(state, "split", None)
+    if not split:
+        return
+    try:
+        with RUNS_LOCK:
+            parent = RUNS.get(split.get("parent"))
+            members = [s for s in RUNS.values()
+                       if (getattr(s, "split", None) or {}).get("id") == split.get("id")]
+        if parent is None:
+            return
+        rows = [_split_member_row(s) for s in members]
+        if not plan_split.group_ready(split, rows):
+            return
+        with _SPLIT_JOIN_LOCK:
+            if split["id"] in _SPLIT_JOINED:
+                return
+            with parent.lock:
+                already = any(isinstance(e.get("data"), dict)
+                              and e["data"].get("label") == "split-reconcile"
+                              and e["data"].get("splitId") == split["id"]
+                              for e in parent.events)
+            _SPLIT_JOINED.add(split["id"])
+            if already:
+                return
+        # Group metadata from the first member that has it: every member
+        # carries the same items, and `state` may be the least complete copy.
+        group = next((s.split for s in members if (s.split or {}).get("items")), split)
+        text = plan_split.reconcile_message(group, rows)
+        parent.append("status", {"label": "split-reconcile", "splitId": split["id"],
+                                 "runs": [r["runId"] for r in rows]})
+        entry = {"id": uuid.uuid4().hex[:12], "text": text, "send": text,
+                 "meta": {"auto": "split-reconcile", "splitId": split["id"]},
+                 "at": time.time()}
+        with _QUEUE_LOCK:
+            parent.msg_queue = list(getattr(parent, "msg_queue", None) or []) + [entry]
+        _queue_persist(parent)
+        _queue_drain_maybe(parent, mode="stdin")
+        _queue_drain_maybe(parent, mode="resume")
+    except Exception as e:
+        print(f"[split] join failed run={getattr(state, 'run_id', '?')}: {e}", flush=True)
+
+
 # How long an SSE tail waits, after a run goes done, for a respawn the DAEMON
 # is about to perform itself. Long enough to cover summarise -> kill -> resume
 # on a slow machine, short enough that a genuinely finished run closes.
@@ -11076,6 +11148,8 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
                 state.execution_profile["resolvedModel"] = data["model"]
             if data.get("parentRunId"):
                 state.parent_run_id = data["parentRunId"]
+            if data.get("label") == "spawned" and isinstance(data.get("split"), dict):
+                state.split = data["split"]
         for job in state.jobs.values():
             if job.get("status") not in run_jobs.TERMINAL:
                 job["status"] = "unknown"
@@ -11329,6 +11403,11 @@ class RunState:
                  # guard. Daemon-owned so the queue drains whether or not the
                  # chat drawer is open.
                  "msg_queue", "_queue_draining", "jobs", "execution_profile",
+                 # Plan-mode split group this thread belongs to (see
+                 # plan_split.py): {id, parent, index, items[{title, owns}]}.
+                 # None for every other run. NOT parent_run_id on purpose -
+                 # that would make the planning thread's Stop kill its splits.
+                 "split",
                  # "waiting on YOU to pick a card" - see _gate_feed. Folded
                  # forward one event at a time by append(); rebuilt wholesale
                  # by _gate_recompute for rehydrated runs. gate_tail is the
@@ -11352,6 +11431,7 @@ class RunState:
         # not the chat drawer is open. Entries: {id, text, send?, meta?, at}.
         self.msg_queue = []
         self._queue_draining = False
+        self.split = None   # plan-mode split group; set by _run_create
         # prototype slug the scoped preamble was built for; set by _run_create.
         self.prototype = None
         # Chosen default model (Settings > Agent model); set by _run_create.
@@ -13370,6 +13450,10 @@ def _drain_stdout(state: "RunState") -> None:
                             _queue_drain_maybe(state, mode="stdin")
                         except Exception:
                             pass
+                        # Last split thread of a plan to finish: queue the
+                        # plan check on the planning thread.
+                        if not _stale:
+                            _split_join_maybe(state)
                         # Build cards do not change the spawn tier on resume.
                         # verify shaders at TURN-done, not just process-exit.
                         # Freeform/chat agents stay alive across turns (stream-json),
@@ -13480,6 +13564,9 @@ def _drain_stdout(state: "RunState") -> None:
             _queue_drain_maybe(state, mode="resume")
         except Exception:
             pass
+        # A split thread that exited (crash, stop) still counts as finished
+        # for its group's plan check.
+        _split_join_maybe(state)
         # Nothing queued and the compact is what ended this process: carry the
         # thread on rather than leaving the user to type "continue".
         try:
@@ -14832,6 +14919,17 @@ def _ensure_harness_settings() -> "str | None":
         settings["hooks"]["PreToolUse"].append({
             "matcher": "Read|mcp__claude_preview__preview_screenshot",
             "hooks":   [{"type": "command", "command": shlex.quote(visual_hook)}],
+        })
+    # Shared-tree guard: no git discard (checkout / restore / stash / reset
+    # --hard / clean -f) from any project agent. Split threads, other chats
+    # and their subagents all edit one working tree at once; a discard wipes
+    # everyone's work in that path (suss-cal 2026-09-29: a split thread
+    # reverted its sibling's file). Optional, same as the visual hook.
+    tree_hook = os.path.join(INSTALL_ROOT, ".claude", "hooks", "guard-shared-tree.py")
+    if os.path.isfile(tree_hook):
+        settings["hooks"]["PreToolUse"].append({
+            "matcher": "Bash",
+            "hooks":   [{"type": "command", "command": shlex.quote(tree_hook)}],
         })
     # Short-circuit if the file already matches - avoid disk churn at every
     # spawn (a typical session triggers many spawns).
@@ -34695,6 +34793,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         if kind == "freeform" and not user_prompt:
             return self._reply(400, {"error": "freeform run requires a prompt"})
         title = (body.get("title") or _default_run_title(kind, body)).strip()
+        # Plan-mode split group (see plan_split.py). Only honoured on a
+        # delegated spawn, so `parent` is always a real run in this project.
+        # The thread is told who its siblings are and what each one owns, in
+        # its own brief, because they all edit this tree at the same moment.
+        _split = plan_split.normalize(body.get("split"), _parent_inherit.run_id) \
+            if _parent_inherit is not None else None
+        if _split and kind == "freeform" and user_prompt:
+            user_prompt = user_prompt + plan_split.sibling_block(_split)
 
         prompt_text = _compose_initial_prompt(kind, user_prompt)
         defs = AGENT_DEFS[agent_id]
@@ -34894,6 +35000,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.guards = _chat_guards     # per-thread check toggles; re-used on resume
         state.model = agent_model or None   # Settings > Agent model; re-applied on resume
         state.execution_profile = profile
+        state.split = _split            # plan-mode split group, or None
         # ── History snapshot - BEFORE state ──────────────────────────────
         # The subprocess is running but hasn't received its prompt yet (we
         # write to stdin further down). It can't have produced any file
@@ -34933,6 +35040,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             "prototype": _chat_proto,
             "guards": _chat_guards,
             "model": agent_model or None,
+            # the split group survives a restart through this field alone
+            **({"split": _split} if _split else {}),
             "promptPreview": prompt_text[:240],
         })
         # For freeform chats, the prompt IS the user's first message - echo it

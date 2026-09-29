@@ -23278,7 +23278,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
     try {
       const opened = await spawnPlanSplitRuns(runId);
       setSplitRetry(false);
-      setSplitNote(`Opened ${opened.length} thread${opened.length === 1 ? "" : "s"}, one per point. They run on their own - find them in the runs list.`);
+      setSplitNote(`Opened ${opened.length} thread${opened.length === 1 ? "" : "s"}, one per point, in the runs list. When the last one finishes, this thread checks the result against the plan.`);
     } catch (e) {
       setSplitRetry(true);
       setWarning(`Could not open the split threads (${e.message || e}). Nothing was built. If the plan is still writing its split manifest, wait for it to finish and try again.`);
@@ -23389,18 +23389,38 @@ async function spawnPlanSplitRuns(parentRunId) {
   try { items = (JSON.parse(raw).items || []).filter(it => it && it.brief); }
   catch { throw new Error("PLAN_SPLIT.json is not valid JSON"); }
   if (!items.length) throw new Error("PLAN_SPLIT.json has no items");
+  // The threads below start at the same moment in the same working tree, so
+  // they go out as ONE GROUP (serve.py + plan_split.py): each is told what
+  // its siblings own, and when the last one finishes the daemon hands the
+  // planning thread a plan check. Two items owning one file would overwrite
+  // each other, so that manifest is refused outright rather than opened. A
+  // manifest from before `owns` existed still opens, just unchecked.
+  const norm = (p) => String(p || "").trim().replace(/^(\.\/)+/, "");
+  const group = items.slice(0, 4).map((it) => ({
+    title: String(it.title || "Plan item").slice(0, 60),
+    owns: [...new Set((Array.isArray(it.owns) ? it.owns : []).map(norm).filter(Boolean))],
+  }));
+  const claimed = new Map();
+  for (const g of group) {
+    for (const p of g.owns) {
+      if (claimed.has(p)) throw new Error(`"${claimed.get(p)}" and "${g.title}" both own ${p}, so they would overwrite each other. Ask the plan to merge them into one item`);
+      claimed.set(p, g.title);
+    }
+  }
+  const splitId = `${parentRunId}-${Date.now().toString(36)}`;
   const opened = [];
-  for (const it of items.slice(0, 4)) {
+  for (const [index, it] of items.slice(0, 4).entries()) {
     const res = await fetch(apiUrl("/__run"), {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         kind: "freeform",
         prompt: String(it.brief),
-        title: String(it.title || "Plan item").slice(0, 60),
+        title: group[index].title,
         // No `guards` on purpose: passing `parent` makes the daemon inherit
         // THIS thread's real checks (serve.py _run_create -> _delegated_guards),
         // which is the live value, not the sticky preference this card can see.
         parent: parentRunId,
+        split: { id: splitId, index, items: group },
       }),
     });
     const j = await res.json().catch(() => ({}));
