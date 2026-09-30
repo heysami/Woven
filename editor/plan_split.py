@@ -1,34 +1,40 @@
-"""Plan-mode split groups: who owns what, and the plan check once they finish.
+"""Plan-mode split groups: who claims what, and the plan check once they finish.
 
 Answering a plan gate with "split" makes the APP open one real thread per plan
 item (app.js spawnPlanSplitRuns). Those threads start at the same moment in
-the SAME working tree, and before this module nothing connected them: the
-daemon kept no record that they belonged together, no thread knew which files
-its siblings were writing, and nothing ever compared the finished work with
-the plan. On suss-cal (2026-09-29) one split thread saw its sibling's edit in
-`git status`, took it for its own subagent's stray, and ran
-`git checkout -- admin-nav.js`, wiping the sibling's work. Nothing noticed
-until the user did.
+the SAME working tree. On suss-cal (2026-09-29) one split thread saw its
+sibling's edit in `git status`, took it for its own subagent's stray, and ran
+`git checkout -- admin-nav.js`, wiping the sibling's work; nothing ever
+compared the finished work with the plan.
 
-So a split is now a GROUP:
-  - each thread is told who its siblings are and which files each one owns
-    (`sibling_block`, appended to its brief at spawn);
+So a split is a GROUP:
+  - each item CLAIMS what it writes: a whole file (`path`) or a region of a
+    shared file (`path#region`). Parallelism is decided by region, not file:
+    unrelated changes to different parts of one big file are the normal case
+    for a split (suss-cal 2026-09-30: seven unrelated changes to one form were
+    merged into ONE thread because they "share two files");
+  - each thread is told its siblings' claims (`sibling_block`);
   - the daemon records the group on every thread (`RunState.split`, persisted
-    on the spawned event so it survives a restart);
-  - when the last thread in the group finishes its turn, the daemon queues a
-    `[split-reconcile]` message on the planning thread (`reconcile_message`),
-    which checks every item against the plan on disk and re-applies what was
-    missed or overwritten.
+    on the spawned event) and snapshots the approved plan onto item 0;
+  - when every thread has finished or been stopped, the daemon opens a
+    SEPARATE plan-check thread (`check_brief`). Not the planning thread: that
+    one may be stopped, and the user stopping it must stay stopped.
 
-Pure functions only: serve.py owns RUNS and the queue, this owns the shapes and
+Pure functions only: serve.py owns RUNS and spawning, this owns the shapes and
 the words. Python 3.9-safe (the daemon runs 3.9).
 """
 import re
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 MAX_ITEMS = 4
 MAX_OWNS = 40
 REPORT_CHARS = 1500
+BRIEF_CHARS = 6000
+PLAN_CHARS = 15000
+ASK_CHARS = 3000
+SIBLING_MARK = "\n\n---\nPARALLEL THREADS"
+# Typed go-aheads in the planning thread are commands, not asks.
+_APPROVALS = {"split", "split it", "yes", "go", "yes go", "go ahead", "do it", "ok", "okay"}
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,120}$")
 
@@ -43,6 +49,23 @@ def _clean_path(p) -> Optional[str]:
     if not p or len(p) > 300 or p.startswith("/") or ".." in p.split("/"):
         return None
     return p
+
+
+def _clean_claim(c) -> Optional[str]:
+    """`path` or `path#region`, normalised; None when unusable."""
+    if not isinstance(c, str):
+        return None
+    path, sep, region = c.partition("#")
+    path = _clean_path(path)
+    if not path:
+        return None
+    region = " ".join(region.split())[:120]
+    return path + "#" + region if sep and region else path
+
+
+def claim_parts(claim: str) -> Tuple[str, Optional[str]]:
+    path, sep, region = claim.partition("#")
+    return path, (region.strip().lower() if sep and region.strip() else None)
 
 
 def normalize(raw, parent_run_id) -> Optional[dict]:
@@ -66,8 +89,8 @@ def normalize(raw, parent_run_id) -> Optional[dict]:
         title = str(it.get("title") or "Plan item").strip()[:60] or "Plan item"
         owns = []
         raw_owns = it.get("owns") if isinstance(it.get("owns"), list) else []
-        for p in raw_owns[:MAX_OWNS]:
-            c = _clean_path(p)
+        for c in raw_owns[:MAX_OWNS]:
+            c = _clean_claim(c)
             if c and c not in owns:
                 owns.append(c)
         items.append({"title": title, "owns": owns})
@@ -75,6 +98,30 @@ def normalize(raw, parent_run_id) -> Optional[dict]:
     if not isinstance(idx, int) or isinstance(idx, bool) or not (0 <= idx < len(items)):
         return None
     return {"id": sid, "parent": str(parent_run_id), "index": idx, "items": items}
+
+
+def overlaps(items: List[dict]) -> List[dict]:
+    """Claims two items cannot both hold: the same file whole in two items, a
+    whole file in one and a region of it in another, or the same region
+    named twice. Different regions of one file are fine. [{"path", "titles"}]"""
+    whole, regions = {}, {}
+    for it in items:
+        t = it.get("title") or "Plan item"
+        for c in it.get("owns") or []:
+            path, region = claim_parts(c)
+            if region is None:
+                whole.setdefault(path, []).append(t)
+            else:
+                regions.setdefault((path, region), []).append(t)
+    out = []
+    for path, ts in whole.items():
+        others = [x for (p, _), rs in regions.items() if p == path for x in rs]
+        if len(ts) > 1 or others:
+            out.append({"path": path, "titles": ts + others})
+    for (path, region), ts in regions.items():
+        if len(ts) > 1 and path not in whole:
+            out.append({"path": path + "#" + region, "titles": ts})
+    return out
 
 
 def _owns_line(owns: List[str]) -> str:
@@ -85,101 +132,154 @@ def sibling_block(split: dict) -> str:
     """Appended to a split thread's brief, so it knows it is not alone."""
     items = split["items"]
     me = split["index"]
-    others = [(i, it) for i, it in enumerate(items) if i != me]
     lines = [
-        "",
-        "",
-        "---",
-        "PARALLEL THREADS - read this before you run git or touch a file you do not own.",
+        SIBLING_MARK.lstrip("\n") + " - read this before you run git or edit a shared file.",
         "You are item %d of %d split from one plan. The other items run AT THE SAME TIME, "
-        "in this SAME working tree:" % (me + 1, len(items)),
+        "in this SAME working tree. `path#region` means only that part of a shared file:"
+        % (me + 1, len(items)),
     ]
-    for i, it in others:
-        lines.append('  - item %d "%s" owns: %s' % (i + 1, it["title"], _owns_line(it["owns"])))
+    for i, it in enumerate(items):
+        if i != me:
+            lines.append('  - item %d "%s" claims: %s' % (i + 1, it["title"], _owns_line(it["owns"])))
     lines += [
-        "You own: %s" % _owns_line(items[me]["owns"]),
-        "- `git status` and `git diff` show EVERY thread's uncommitted work, not only yours. "
-        "A changed file you did not change is another thread's work in progress: leave it "
-        "alone. Mention it in your report only if it blocks you.",
-        "- Never discard changes: no `git checkout`, `git restore`, `git stash`, "
-        "`git reset --hard` or `git clean`. They wipe EVERY thread's edits in that path, "
-        "not just yours. To undo your own edit, edit it back.",
-        "- Do not write to a file another item owns. If your item needs a change there, "
-        "say so in your report: the plan check that runs after every thread finishes "
-        "picks it up.",
-        "- A subagent you dispatch (ds-guardian, visual-verifier) works in this same tree. "
-        "If it reports touching a file outside yours, report that; never revert it.",
+        "You claim: %s" % _owns_line(items[me]["owns"]),
+        "- In a file you share with a sibling, change ONLY your regions: re-read the lines "
+        "right before each edit, use a targeted replacement (Edit, or an exact-string "
+        "replace), and never rewrite, reformat or re-save the whole file. A whole-file write "
+        "from an earlier read erases whatever a sibling changed since.",
+        "- `git status` and `git diff` show EVERY thread's uncommitted work. A change you did "
+        "not make is a sibling's work in progress: leave it alone.",
+        "- Never discard changes (`git checkout`, `git restore`, `git stash`, "
+        "`git reset --hard`, `git clean`): they wipe every thread's edits in that path. To "
+        "undo your own edit, edit it back.",
+        "- If your item needs a change in a sibling's claim, say so in your report instead of "
+        "making it: a plan-check thread runs after every item finishes and picks it up.",
+        "- A subagent you dispatch (ds-guardian, visual-verifier) works in this same tree. If "
+        "it reports touching something outside your claims, report that; never revert it.",
     ]
-    return "\n".join(lines)
+    return "\n\n" + "\n".join(lines)
 
 
-def overlaps(items: List[dict]) -> List[dict]:
-    """Files claimed by more than one item: [{"path", "titles"}]."""
-    seen = {}
-    for it in items:
-        for p in it.get("owns") or []:
-            seen.setdefault(p, []).append(it.get("title") or "Plan item")
-    return [{"path": p, "titles": t} for p, t in seen.items() if len(t) > 1]
+def strip_sibling_block(text: str) -> str:
+    i = (text or "").find(SIBLING_MARK)
+    return text[:i] if i >= 0 else (text or "")
 
 
 def group_ready(split: dict, members: List[dict]) -> bool:
-    """True once every item in the group has a thread and every thread has
-    finished a turn. `members` rows: {"index", "finished"}. A thread that is
-    mid-turn again (the user replied to it) holds the check back, so the plan
-    check never races a thread that is still editing."""
+    """True once every item has a thread and every thread is SETTLED: finished
+    a turn, or stopped by the user. A thread that is mid-turn (including a
+    user follow-up) holds the check back, so it never races live edits.
+    `members` rows: {"index", "settled"}."""
     n = len(split.get("items") or [])
     if n == 0 or not members:
         return False
     have = {m.get("index") for m in members}
     if not all(i in have for i in range(n)):
         return False
-    return all(m.get("finished") for m in members)
+    return all(m.get("settled") for m in members)
 
 
-def reconcile_message(split: dict, members: List[dict]) -> str:
-    """The message queued on the PLANNING thread once the group is done.
+def worth_checking(members: List[dict]) -> bool:
+    """A group the user stopped entirely has nothing to check."""
+    return any(not m.get("stopped") for m in members)
 
-    `members` rows: {"index", "title", "runId", "status", "owns", "report"}.
-    Self-contained on purpose: it must work on a thread whose preamble predates
-    this feature, and on any runtime."""
+
+def _user_words(text: str) -> str:
+    """The user's own words from a chat message: the app wraps the first one
+    in routing context, and the user's text follows the last context tag."""
+    text = text or ""
+    cut = max((text.rfind(tag) + len(tag) for tag in ("</chat-target>", "</selected-nodes>")
+               if text.rfind(tag) >= 0), default=0)
+    text = text[cut:].strip()
+    return text if len(text) <= ASK_CHARS else "[...] " + text[-ASK_CHARS:]
+
+
+def plan_snapshot(events: List[dict]) -> dict:
+    """The approved plan + the user's asks, read off the planning thread's
+    events at the moment the split opens. {"plan": str, "asks": [str]}.
+
+    The plan is the latest assistant turn that carried a plan gate card and
+    has real body (a re-emitted bare card after a typed "split" does not)."""
+    turns, cur, asks = [], [], []
+    for e in events or []:
+        d = e.get("data") if isinstance(e.get("data"), dict) else {}
+        if e.get("type") == "user_message":
+            turns.append("".join(cur))
+            cur = []
+            t = d.get("text") or ""
+            if (t and not t.startswith(("[decision:", "[split-reconcile]", "[watchdog]"))
+                    and re.sub(r"[^a-z ]", "", t.lower()).strip() not in _APPROVALS):
+                asks.append(_user_words(t))
+        elif d.get("type") == "text_delta":
+            cur.append(d.get("delta") or "")
+        elif d.get("type") == "text" and isinstance(d.get("text"), str):
+            cur.append(d["text"])
+    turns.append("".join(cur))
+    carded = [t for t in turns if 'id="plan-next' in t]
+    plan = next((t for t in reversed(carded) if len(t) >= 800), carded[-1] if carded else "")
+    if len(plan) > PLAN_CHARS:
+        plan = plan[:PLAN_CHARS] + " [...]"
+    return {"plan": plan, "asks": [a for a in asks if a][-6:]}
+
+
+def _cap(text: str, n: int) -> str:
+    text = (text or "").strip()
+    return text if len(text) <= n else text[:n] + " [...]"
+
+
+def check_brief(split: dict, members: List[dict], snapshot: Optional[dict]) -> str:
+    """The first message of the plan-check thread the daemon opens once the
+    group settles. Self-contained: this thread saw neither the plan nor any of
+    the work. `members` rows: {"index", "runId", "status", "stopped", "brief",
+    "report"}."""
+    snapshot = snapshot or {}
     by_index = {}
     for m in members:
         by_index.setdefault(m.get("index"), m)
     n = len(split["items"])
     out = [
-        "[split-reconcile] All %d threads opened from your plan have finished. This is "
-        "the plan check. It is part of the plan the user already approved: do NOT answer "
-        "it with a new plan or a plan gate card, and do not wait for the user. Do it now, "
-        "in this turn." % n,
+        "PLAN CHECK. The user approved a plan and it was split into %d threads that ran at "
+        "the same time in this working tree. You built none of it. Check what is on disk "
+        "NOW against the plan, fix what is missing or was overwritten, and report. Do not "
+        "re-plan and do not wait for the user: do it in this turn." % n,
         "",
-        "Items, as the user approved them:",
     ]
+    if snapshot.get("asks"):
+        out.append("WHAT THE USER ASKED (their own words, in order):")
+        out += ["<<<", "\n---\n".join(snapshot["asks"]), ">>>", ""]
+    if snapshot.get("plan"):
+        out += ["THE PLAN THEY APPROVED:", "<<<", snapshot["plan"].strip(), ">>>", ""]
+    out.append("THE ITEMS:")
     for i in range(n):
         it = split["items"][i]
         m = by_index.get(i) or {}
-        report = (m.get("report") or "").strip()
-        if len(report) > REPORT_CHARS:
-            report = report[:REPORT_CHARS] + " [...]"
         out.append('%d. "%s" - thread %s - %s' % (
-            i + 1, it["title"], m.get("runId") or "?", m.get("status") or "finished"))
-        out.append("   owns: %s" % _owns_line(it["owns"]))
-        out.append("   its closing report: %s" % (report or "(none)"))
+            i + 1, it["title"], m.get("runId") or "?",
+            "STOPPED by the user" if m.get("stopped") else (m.get("status") or "done")))
+        out.append("   claims: %s" % _owns_line(it["owns"]))
+        if m.get("stopped"):
+            out.append("   The user stopped this thread. Do NOT check it and do NOT build it; "
+                       "list it as STOPPED.")
+            continue
+        out.append("   its brief: <<<\n%s\n>>>" % _cap(strip_sibling_block(m.get("brief") or ""), BRIEF_CHARS))
+        out.append("   its closing report: <<<\n%s\n>>>" % (_cap(m.get("report") or "", REPORT_CHARS) or "(none)"))
     out += [
         "",
-        "Check each item against the PLAN you wrote in this thread (its UI, Logic and Copy "
-        "rows), not against the reports above. A report that says done is a claim.",
-        "1. Open the files each item owns and confirm every one of its rows is on disk NOW.",
-        "2. A row that was built and is no longer there was overwritten by another thread: "
-        "that is UNDONE, not MISSING. Look for it in the thread's report and in the file.",
-        "3. Give each item exactly one verdict: DONE, MISSING (a row was never built), "
-        "UNDONE (built, then overwritten) or DRIFT (built differently from the plan).",
-        "4. Re-apply MISSING and UNDONE rows yourself, now, touching only those rows. DRIFT, "
-        "or anything that needs a judgment call, goes to the user as a decision card: do "
-        "not silently rebuild it to match the plan.",
-        "5. Never run `git checkout`, `git restore`, `git stash`, `git reset --hard` or "
-        "`git clean`: other threads may still be working in this tree. Changes in "
-        "`git status` that belong to no item are other threads' work; leave them.",
-        "6. Run any subagent in the foreground (run_in_background: false) and do not end "
+        "HOW TO CHECK. A report that says done is a claim; the files are the evidence.",
+        "1. For each item that was not stopped, open what it claims and confirm every UI, "
+        "Logic and Copy row of its brief is on disk NOW.",
+        "2. A row that was built and is gone was overwritten by another thread: that is "
+        "UNDONE, not MISSING. The thread's report and the file tell them apart.",
+        "3. Check coverage too: anything the user asked for that no item carried is MISSING.",
+        "4. One verdict per item: DONE, MISSING (never built), UNDONE (built, then "
+        "overwritten) or DRIFT (built differently from the plan).",
+        "5. Re-apply MISSING and UNDONE rows yourself with targeted edits, touching only "
+        "those rows. DRIFT, or anything that needs a judgment call, goes to the user as a "
+        "decision card: never silently rebuild it to match the plan.",
+        "6. Never run `git checkout`, `git restore`, `git stash`, `git reset --hard` or "
+        "`git clean`. Changes in `git status` that belong to no item are other threads' "
+        "work; leave them.",
+        "7. Run any subagent in the foreground (run_in_background: false) and do not end "
         "this turn before the verdicts are written.",
         "Finish with one line per item: its title, its verdict, and what you fixed.",
     ]

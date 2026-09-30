@@ -6,6 +6,11 @@ the same working tree with no link between them. One saw its sibling's edit in
 `git checkout -- source/prototype/admin-nav.js`, wiping the sibling's work.
 Nothing ever compared the finished threads with the plan.
 
+And suss-cal (2026-09-30): seven unrelated changes to one form were merged into
+ONE thread because they "share two files"; the plan check ran inside the
+planning thread the user had stopped; a user-stopped duplicate triggered that
+check; and a typed "split" opened a second copy of a still-running item.
+
 Run: python3 -m unittest discover -s editor/tests -p test_plan_split.py -v
 """
 import importlib.util
@@ -61,6 +66,11 @@ class NormalizeTests(unittest.TestCase):
         self.assertIsNone(plan_split.normalize({"id": "x", "index": 0, "items": ITEMS}, None))
         self.assertIsNone(plan_split.normalize({"id": "x", "index": True, "items": ITEMS}, "p"))
 
+    def test_region_claims_are_kept_and_cleaned(self):
+        s = plan_split.normalize({"id": "x", "index": 0, "items": [
+            {"title": "t", "owns": ["./form.html#  awardDueCard()   and CSS ", "form.html#"]}]}, "p")
+        self.assertEqual(s["items"][0]["owns"], ["form.html#awardDueCard() and CSS", "form.html"])
+
     def test_escaping_paths_are_dropped(self):
         s = plan_split.normalize({"id": "x", "index": 0, "items": [
             {"title": "t", "owns": ["../other/secret.js", "/etc/passwd", "ok.js"]}]}, "p")
@@ -68,38 +78,76 @@ class NormalizeTests(unittest.TestCase):
 
 
 class SiblingBlockTests(unittest.TestCase):
-    def test_names_siblings_and_their_files_not_itself(self):
+    def test_names_siblings_and_their_claims_not_itself(self):
         text = plan_split.sibling_block(split(0))
-        self.assertIn('"Rename the sidebar entry" owns: source/prototype/admin-nav.js', text)
-        self.assertIn("You own: source/prototype/fa-fund.js", text)
+        self.assertIn('"Rename the sidebar entry" claims: source/prototype/admin-nav.js', text)
+        self.assertIn("You claim: source/prototype/fa-fund.js", text)
         self.assertNotIn('item 1 "Quota utilisation screen"', text)
         self.assertIn("git checkout", text)
-        self.assertIn("EVERY thread's uncommitted work", text)
+        self.assertIn("never rewrite, reformat or re-save the whole file", text)
+        self.assertEqual(plan_split.strip_sibling_block("brief" + text), "brief")
 
-    def test_overlaps(self):
-        self.assertEqual(plan_split.overlaps(ITEMS), [])
-        clash = ITEMS + [{"title": "C", "owns": ["source/prototype/admin-nav.js"]}]
-        self.assertEqual(plan_split.overlaps(clash)[0]["path"], "source/prototype/admin-nav.js")
+    def test_different_regions_of_one_file_run_in_parallel(self):
+        items = [{"title": "Award date", "owns": ["form.html#awardDueCard()", "model.js#validators: award date"]},
+                 {"title": "Quota copy", "owns": ["form.html#quota field", "model.js#labels: quota"]},
+                 {"title": "Export", "owns": ["export.html"]}]
+        self.assertEqual(plan_split.overlaps(items), [])
+
+    def test_real_collisions_are_caught(self):
+        same_whole = ITEMS + [{"title": "C", "owns": ["source/prototype/admin-nav.js"]}]
+        self.assertEqual(plan_split.overlaps(same_whole)[0]["path"], "source/prototype/admin-nav.js")
+        whole_and_part = [{"title": "A", "owns": ["form.html"]}, {"title": "B", "owns": ["form.html#x()"]}]
+        self.assertEqual(plan_split.overlaps(whole_and_part)[0]["titles"], ["A", "B"])
+        same_region = [{"title": "A", "owns": ["form.html#X()"]}, {"title": "B", "owns": ["form.html#x()"]}]
+        self.assertEqual(plan_split.overlaps(same_region)[0]["path"], "form.html#x()")
+
+
+PLAN_EVENTS = [
+    {"type": "user_message", "data": {"text": "[Context: routing...]\n<chat-target prototype=\"p\">x</chat-target>\n\nrename award due date\nadd programme split"}},
+    {"type": "agent", "data": {"type": "text_delta", "delta": "**1. UI** " + "row " * 300}},
+    {"type": "agent", "data": {"type": "text_delta", "delta": '<decision-request id="plan-next-1">'}},
+    {"type": "user_message", "data": {"text": "wrong text, call it Indicative First Award Date"}},
+    {"type": "agent", "data": {"type": "text_delta", "delta": "**1. UI** revised " + "row " * 300 + '<decision-request id="plan-next-2">'}},
+    {"type": "user_message", "data": {"text": "split"}},
+    {"type": "agent", "data": {"type": "text_delta", "delta": '<decision-request id="plan-next-3">'}},
+    {"type": "user_message", "data": {"text": "[decision:plan-next-3] split - Split it"}},
+]
 
 
 class GroupReadyTests(unittest.TestCase):
     def test_waits_for_every_item_and_every_thread(self):
         s = split(0)
-        self.assertFalse(plan_split.group_ready(s, [{"index": 0, "finished": True}]))
-        self.assertFalse(plan_split.group_ready(s, [{"index": 0, "finished": True},
-                                                    {"index": 1, "finished": False}]))
-        self.assertTrue(plan_split.group_ready(s, [{"index": 0, "finished": True},
-                                                   {"index": 1, "finished": True}]))
+        self.assertFalse(plan_split.group_ready(s, [{"index": 0, "settled": True}]))
+        self.assertFalse(plan_split.group_ready(s, [{"index": 0, "settled": True},
+                                                    {"index": 1, "settled": False}]))
+        self.assertTrue(plan_split.group_ready(s, [{"index": 0, "settled": True},
+                                                   {"index": 1, "settled": True}]))
 
-    def test_reconcile_message_is_a_plan_check_not_a_report_relay(self):
-        rows = [{"index": 0, "runId": "a", "status": "done", "report": "x" * 5000},
-                {"index": 1, "runId": "b", "status": "error", "report": "renamed"}]
-        text = plan_split.reconcile_message(split(0), rows)
-        self.assertTrue(text.startswith("[split-reconcile]"))
-        for word in ("DONE", "MISSING", "UNDONE", "DRIFT", "not against the reports"):
+    def test_a_fully_stopped_group_is_not_checked(self):
+        self.assertFalse(plan_split.worth_checking([{"stopped": True}, {"stopped": True}]))
+        self.assertTrue(plan_split.worth_checking([{"stopped": True}, {"stopped": False}]))
+
+    def test_snapshot_takes_the_approved_plan_not_a_bare_re_emitted_card(self):
+        snap = plan_split.plan_snapshot(PLAN_EVENTS)
+        self.assertTrue(snap["plan"].startswith("**1. UI** revised"))
+        self.assertEqual(snap["asks"][0], "rename award due date\nadd programme split")
+        self.assertIn("wrong text, call it Indicative First Award Date", snap["asks"])
+        self.assertFalse(any(a.startswith("[decision:") for a in snap["asks"]))
+
+    def test_check_brief_is_self_contained_and_skips_stopped_items(self):
+        rows = [{"index": 0, "runId": "a", "status": "done", "report": "x" * 5000,
+                 "brief": "build the quota screen" + plan_split.sibling_block(split(0))},
+                {"index": 1, "runId": "b", "status": "stopped", "stopped": True, "brief": "rename"}]
+        text = plan_split.check_brief(split(0), rows, plan_split.plan_snapshot(PLAN_EVENTS))
+        self.assertTrue(text.startswith("PLAN CHECK"))
+        for word in ("DONE", "MISSING", "UNDONE", "DRIFT", "THE PLAN THEY APPROVED",
+                     "WHAT THE USER ASKED", "build the quota screen"):
             self.assertIn(word, text)
-        self.assertIn('"Rename the sidebar entry" - thread b - error', text)
-        self.assertLess(len(text), 6000)   # a long report is truncated
+        self.assertNotIn("PARALLEL THREADS", text)      # sibling block stripped
+        self.assertIn("STOPPED by the user", text)
+        self.assertIn("Do NOT check it and do NOT build it", text)
+        self.assertNotIn("its brief: <<<\nrename", text)
+        self.assertLess(len(text), 12000)              # a long report is truncated
 
 
 class GuardHookTests(unittest.TestCase):
@@ -150,13 +198,17 @@ class GuardHookTests(unittest.TestCase):
         self.assertEqual(json.loads(ok), {})   # fails open
 
 
-def fake_run(rid, split_obj=None, turn_done=True, turns=1, done=False, result="ok"):
+def fake_run(rid, split_obj=None, turn_done=True, turns=1, done=False, result="ok",
+             brief="brief"):
     state = SimpleNamespace(run_id=rid, title=rid, split=split_obj, parent_run_id=None,
-        project_root="/fixture/suss", done=done, turn_done=turn_done, turns_completed=turns,
-        stop_reason=None, jobs={}, lock=threading.Lock(), events=[], msg_queue=[])
+        project_root="/fixture/suss", project_id="suss", done=done, turn_done=turn_done,
+        turns_completed=turns, stop_reason=None, jobs={}, lock=threading.Lock(), events=[],
+        msg_queue=[], tier="scoped", prototype="prototype",
+        guards={"visual": True, "dsGuard": True, "plan": True})
     def append(kind, data):
         state.events.append({"seq": len(state.events), "type": kind, "data": data})
     state.append = append
+    append("user_message", {"text": brief})
     if turns:   # the CLI's result frame, as _drain_stdout records it
         append("agent", {"type": "status", "label": "done", "result": result})
     return state
@@ -166,40 +218,81 @@ class JoinTests(unittest.TestCase):
     def setUp(self):
         serve._SPLIT_JOINED.clear()
         self.parent = fake_run("plan1")
-        self.a = fake_run("a", split(0), result="quota built")
+        s0 = split(0)
+        s0["snapshot"] = plan_split.plan_snapshot(PLAN_EVENTS)
+        self.a = fake_run("a", s0, result="quota built", brief="build the quota screen")
         self.b = fake_run("b", split(1), turn_done=False, turns=0)
         self.runs = {"plan1": self.parent, "a": self.a, "b": self.b}
+        self.opened = []
         patches = [patch.dict(serve.RUNS, self.runs, clear=True),
-                   patch.object(serve, "_queue_drain_maybe"),
-                   patch.object(serve, "_queue_persist")]
+                   patch.object(serve, "_split_open_check",
+                                lambda body, pid, parent: self.opened.append((body, pid, parent)))]
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
 
-    def test_waits_for_the_last_sibling_then_queues_one_check(self):
-        serve._split_join_maybe(self.a)
-        self.assertEqual(self.parent.msg_queue, [])
+    def finish_b(self, result="renamed"):
         self.b.turn_done, self.b.turns_completed = True, 1
-        self.b.append("agent", {"type": "status", "label": "done", "result": "renamed"})
+        self.b.append("agent", {"type": "status", "label": "done", "result": result})
+
+    def test_opens_one_separate_check_thread_after_the_last_sibling(self):
+        serve._split_join_maybe(self.a)
+        self.assertEqual(self.opened, [])
+        self.finish_b()
         serve._split_join_maybe(self.b)
         serve._split_join_maybe(self.a)          # a later turn end must not re-fire
-        self.assertEqual(len(self.parent.msg_queue), 1)
-        text = self.parent.msg_queue[0]["send"]
-        self.assertIn("[split-reconcile]", text)
-        self.assertIn("quota built", text)
-        self.assertIn("renamed", text)
-        labels = [e["data"].get("label") for e in self.parent.events]
-        self.assertEqual(labels.count("split-reconcile"), 1)
+        self.assertEqual(len(self.opened), 1)
+        body, pid, parent = self.opened[0]
+        self.assertEqual((pid, parent, body["parent"]), ("suss", self.parent, "plan1"))
+        self.assertNotIn("split", body)          # the check is not a split member
+        self.assertIn("quota built", body["prompt"])
+        self.assertIn("THE PLAN THEY APPROVED", body["prompt"])
+        self.assertTrue(body["title"].startswith("Plan check: "))
+        self.assertEqual(self.parent.msg_queue, [])   # never queued on the planner
+
+    def test_a_stopped_planning_thread_does_not_matter(self):
+        self.parent.stop_reason, self.parent.done = "user-stop", True
+        self.finish_b()
+        serve._split_join_maybe(self.b)
+        self.assertEqual(len(self.opened), 1)
+
+    def test_missing_planning_thread_still_gets_a_check(self):
+        del serve.RUNS["plan1"]
+        self.finish_b()
+        serve._split_join_maybe(self.b)
+        body = self.opened[0][0]
+        self.assertNotIn("parent", body)
+        self.assertEqual((body["tier"], body["prototype"], body["guards"]["plan"]),
+                         ("scoped", "prototype", False))
+
+    def test_a_user_stopped_thread_settles_but_is_not_rebuilt(self):
+        self.b.stop_reason, self.b.done = "user-stop", True
+        serve._split_join_maybe(self.b)
+        prompt = self.opened[0][0]["prompt"]
+        self.assertIn('"Rename the sidebar entry" - thread b - STOPPED by the user', prompt)
+
+    def test_a_fully_stopped_group_opens_nothing(self):
+        for r in (self.a, self.b):
+            r.stop_reason, r.done = "user-stop", True
+        serve._split_join_maybe(self.b)
+        self.assertEqual(self.opened, [])
 
     def test_a_restart_does_not_re_fire_a_checked_group(self):
-        self.b.turn_done, self.b.turns_completed = True, 1
-        self.parent.append("status", {"label": "split-reconcile", "splitId": "plan1-abc"})
+        self.finish_b()
+        self.parent.append("status", {"label": "split-check", "splitId": "plan1-abc"})
         serve._split_join_maybe(self.b)
-        self.assertEqual(self.parent.msg_queue, [])
+        self.assertEqual(self.opened, [])
 
     def test_ordinary_runs_are_untouched(self):
         serve._split_join_maybe(fake_run("solo"))
-        self.assertEqual(self.parent.msg_queue, [])
+        self.assertEqual(self.opened, [])
+
+    def test_a_second_split_is_refused_while_the_first_is_working(self):
+        busy = serve._split_busy_group("plan1", "plan1-new")
+        self.assertIs(busy, self.b)                       # b is still mid-turn
+        self.assertIsNone(serve._split_busy_group("plan1", "plan1-abc"))   # own group
+        self.finish_b()
+        self.assertIsNone(serve._split_busy_group("plan1", "plan1-new"))
 
 
 class WiringTests(unittest.TestCase):
@@ -217,9 +310,14 @@ class WiringTests(unittest.TestCase):
         self.assertEqual(len(bash), 1)
         self.assertIn("guard-shared-tree.py", bash[0]["hooks"][0]["command"])
 
-    def test_plan_stub_asks_for_owns_and_knows_the_check(self):
-        self.assertIn('"owns"', caps.PLAN_MODE_STUB)
-        self.assertIn("[split-reconcile]", caps.PLAN_MODE_STUB)
+    def test_plan_stub_splits_by_region_not_by_file(self):
+        stub = caps.PLAN_MODE_STUB
+        self.assertIn('"owns"', stub)
+        self.assertIn("path#region", stub)
+        self.assertIn("SHARING A FILE IS NOT COUPLING", stub)
+        self.assertNotIn("no two items write the same file", stub)
+        self.assertIn("SEPARATE plan-check thread", stub)
+        self.assertNotIn("[split-reconcile]", stub)
 
 
 if __name__ == "__main__":

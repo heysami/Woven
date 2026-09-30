@@ -23278,7 +23278,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
     try {
       const opened = await spawnPlanSplitRuns(runId);
       setSplitRetry(false);
-      setSplitNote(`Opened ${opened.length} thread${opened.length === 1 ? "" : "s"}, one per point, in the runs list. When the last one finishes, this thread checks the result against the plan.`);
+      setSplitNote(`Opened ${opened.length} thread${opened.length === 1 ? "" : "s"}, one per point, in the runs list. When they are all done, a plan-check thread opens and checks the result against the plan.`);
     } catch (e) {
       setSplitRetry(true);
       setWarning(`Could not open the split threads (${e.message || e}). Nothing was built. If the plan is still writing its split manifest, wait for it to finish and try again.`);
@@ -23391,20 +23391,39 @@ async function spawnPlanSplitRuns(parentRunId) {
   if (!items.length) throw new Error("PLAN_SPLIT.json has no items");
   // The threads below start at the same moment in the same working tree, so
   // they go out as ONE GROUP (serve.py + plan_split.py): each is told what
-  // its siblings own, and when the last one finishes the daemon hands the
-  // planning thread a plan check. Two items owning one file would overwrite
-  // each other, so that manifest is refused outright rather than opened. A
-  // manifest from before `owns` existed still opens, just unchecked.
-  const norm = (p) => String(p || "").trim().replace(/^(\.\/)+/, "");
+  // its siblings claim, and once every one has finished (or been stopped)
+  // the daemon opens a separate plan-check thread. A claim is a whole file
+  // (`path`) or a region of a shared file (`path#region`): different regions
+  // of one file run in parallel, but the same file whole twice, a whole file
+  // plus a region of it, or one region twice would overwrite each other, so
+  // that manifest is refused rather than opened. Same rules as
+  // plan_split.overlaps. A manifest without `owns` still opens, unchecked.
+  const norm = (c) => {
+    const [path, ...rest] = String(c || "").split("#");
+    const p = path.trim().replace(/^(\.\/)+/, "");
+    const region = rest.join("#").replace(/\s+/g, " ").trim().slice(0, 120);
+    return p ? (region ? `${p}#${region}` : p) : "";
+  };
   const group = items.slice(0, 4).map((it) => ({
     title: String(it.title || "Plan item").slice(0, 60),
     owns: [...new Set((Array.isArray(it.owns) ? it.owns : []).map(norm).filter(Boolean))],
   }));
-  const claimed = new Map();
+  const whole = new Map(), regions = new Map();
+  const clash = (a, b, what) => new Error(`"${a}" and "${b}" both claim ${what}, so they would overwrite each other. Ask the plan to merge them into one item, or claim different regions`);
   for (const g of group) {
-    for (const p of g.owns) {
-      if (claimed.has(p)) throw new Error(`"${claimed.get(p)}" and "${g.title}" both own ${p}, so they would overwrite each other. Ask the plan to merge them into one item`);
-      claimed.set(p, g.title);
+    for (const c of g.owns) {
+      const [path, ...rest] = c.split("#");
+      const region = rest.join("#").toLowerCase();
+      if (!region) {
+        if (whole.has(path)) throw clash(whole.get(path), g.title, path);
+        const r = [...regions.entries()].find(([k]) => k.startsWith(path + "#"));
+        if (r) throw clash(r[1], g.title, path);
+        whole.set(path, g.title);
+      } else {
+        if (whole.has(path)) throw clash(whole.get(path), g.title, path);
+        if (regions.has(`${path}#${region}`)) throw clash(regions.get(`${path}#${region}`), g.title, c);
+        regions.set(`${path}#${region}`, g.title);
+      }
     }
   }
   const splitId = `${parentRunId}-${Date.now().toString(36)}`;

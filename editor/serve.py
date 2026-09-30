@@ -10024,9 +10024,9 @@ def _queue_deliver_via_resume(state, text: str, auto: str = "") -> bool:
         return False
 
 
-# Split groups whose plan check has already been queued, this daemon life. The
-# durable record is the `split-reconcile` status on the planning thread, which
-# survives a restart; this set only closes the race of two siblings finishing
+# Split groups whose plan check has already been opened, this daemon life. The
+# durable record is the `split-check` status on the planning thread, which
+# survives a restart; this set only closes the race of two siblings settling
 # in the same instant.
 _SPLIT_JOINED: set = set()
 _SPLIT_JOIN_LOCK = threading.Lock()
@@ -10038,21 +10038,64 @@ def _split_member_row(s) -> dict:
                      if isinstance(e.get("data"), dict) and e["data"].get("type") == "status"
                      and not e["data"].get("sidechain")
                      and e["data"].get("label") in ("done", "error")), {})
-    status = ("stopped" if getattr(s, "stop_reason", None) == "user-stop"
+        brief = next((e["data"].get("text") or "" for e in s.events
+                      if e.get("type") == "user_message" and isinstance(e.get("data"), dict)), "")
+    stopped = getattr(s, "stop_reason", None) == "user-stop"
+    status = ("stopped" if stopped
               else "error" if last.get("label") == "error" or _turn_result_failure(last) else "done")
     finished = bool(s.done or (s.turn_done and s.turns_completed >= 1)) and not _pending_run_jobs(s)
     return {"index": (s.split or {}).get("index"), "title": s.title, "runId": s.run_id,
-            "status": status, "finished": finished,
+            "status": status, "stopped": stopped, "settled": finished or stopped,
+            "brief": brief,
             "report": last.get("result") if isinstance(last.get("result"), str) else ""}
 
 
+def _split_busy_group(parent_id, split_id):
+    """A thread of an EARLIER split from the same plan that is still working,
+    or None. Opening a second group while the first builds puts two threads
+    on the same work in the same files (suss-cal 2026-09-30: a typed "split"
+    re-opened the scheme-version item while the first copy was mid-build)."""
+    with RUNS_LOCK:
+        runs = list(RUNS.values())
+    for s in runs:
+        sp = getattr(s, "split", None) or {}
+        if sp.get("parent") != parent_id or sp.get("id") == split_id:
+            continue
+        if not _split_member_row(s)["settled"]:
+            return s
+    return None
+
+
+def _split_open_check(body: dict, project_id: str, parent) -> None:
+    """Open the plan-check thread through our own POST /__run, off the drain
+    thread, so it is spawned exactly like any chat (tier / prototype / checks
+    rebuilt by the one handler that owns them)."""
+    def _work():
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{PORT}/__run?project={urllib.parse.quote(project_id)}",
+                data=json.dumps(body).encode("utf-8"),
+                headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=120) as r:
+                opened = json.loads(r.read().decode("utf-8") or "{}")
+            if parent is not None:
+                parent.append("status", {"label": "split-check",
+                                         "splitId": body.get("_splitId"),
+                                         "checkRunId": opened.get("runId") or opened.get("id")})
+        except Exception as e:
+            print(f"[split] could not open the plan check for {body.get('_splitId')}: {e}", flush=True)
+    threading.Thread(target=_work, daemon=True, name="split-check-open").start()
+
+
 def _split_join_maybe(state) -> None:
-    """Once EVERY thread of a plan split has finished its turn, queue the plan
-    check on the planning thread (see plan_split.py). Called at each turn end
-    and process exit of a split thread; a no-op for everything else, for a
-    group that still has a thread working, and for a group already checked.
-    Rides the ordinary follow-up queue, so it waits for the planning thread's
-    own turn boundary and survives a dead process via /resume."""
+    """Once EVERY thread of a plan split has settled (finished its turn, or
+    was stopped by the user), open a SEPARATE plan-check thread (see
+    plan_split.py). Never the planning thread: the user may have stopped it,
+    and a stop must stay a stop. Called at each turn end and process exit of
+    a split thread; a no-op for everything else, for a group with a thread
+    still working, for a group already checked, and for a group the user
+    stopped entirely."""
     split = getattr(state, "split", None)
     if not split:
         return
@@ -10061,36 +10104,37 @@ def _split_join_maybe(state) -> None:
             parent = RUNS.get(split.get("parent"))
             members = [s for s in RUNS.values()
                        if (getattr(s, "split", None) or {}).get("id") == split.get("id")]
-        if parent is None:
-            return
         rows = [_split_member_row(s) for s in members]
         if not plan_split.group_ready(split, rows):
             return
         with _SPLIT_JOIN_LOCK:
             if split["id"] in _SPLIT_JOINED:
                 return
-            with parent.lock:
-                already = any(isinstance(e.get("data"), dict)
-                              and e["data"].get("label") == "split-reconcile"
-                              and e["data"].get("splitId") == split["id"]
-                              for e in parent.events)
             _SPLIT_JOINED.add(split["id"])
-            if already:
-                return
-        # Group metadata from the first member that has it: every member
-        # carries the same items, and `state` may be the least complete copy.
-        group = next((s.split for s in members if (s.split or {}).get("items")), split)
-        text = plan_split.reconcile_message(group, rows)
-        parent.append("status", {"label": "split-reconcile", "splitId": split["id"],
-                                 "runs": [r["runId"] for r in rows]})
-        entry = {"id": uuid.uuid4().hex[:12], "text": text, "send": text,
-                 "meta": {"auto": "split-reconcile", "splitId": split["id"]},
-                 "at": time.time()}
-        with _QUEUE_LOCK:
-            parent.msg_queue = list(getattr(parent, "msg_queue", None) or []) + [entry]
-        _queue_persist(parent)
-        _queue_drain_maybe(parent, mode="stdin")
-        _queue_drain_maybe(parent, mode="resume")
+            if parent is not None:
+                with parent.lock:
+                    if any(isinstance(e.get("data"), dict)
+                           and e["data"].get("label") in ("split-check", "split-reconcile")
+                           and e["data"].get("splitId") == split["id"]
+                           for e in parent.events):
+                        return
+        if not plan_split.worth_checking(rows):
+            return
+        # Group metadata from the member that carries it: item 0 holds the
+        # plan snapshot, and `state` may be the least complete copy.
+        group = next((s.split for s in members if (s.split or {}).get("snapshot")),
+                     next((s.split for s in members if (s.split or {}).get("items")), split))
+        title = ("Plan check: " + ((getattr(parent, "title", None) or "")
+                                   or group["items"][0]["title"]))[:60]
+        body = {"kind": "freeform", "title": title, "_splitId": split["id"],
+                "prompt": plan_split.check_brief(group, rows, group.get("snapshot"))}
+        if parent is not None:
+            body["parent"] = parent.run_id   # inherits tier / prototype / checks
+        else:
+            ref = members[0]
+            body.update({"tier": ref.tier, "branch": ref.prototype, "prototype": ref.prototype,
+                         "guards": dict(ref.guards or {}, plan=False)})
+        _split_open_check(body, state.project_id, parent)
     except Exception as e:
         print(f"[split] join failed run={getattr(state, 'run_id', '?')}: {e}", flush=True)
 
@@ -34799,6 +34843,18 @@ class H(http.server.SimpleHTTPRequestHandler):
         # its own brief, because they all edit this tree at the same moment.
         _split = plan_split.normalize(body.get("split"), _parent_inherit.run_id) \
             if _parent_inherit is not None else None
+        if _split:
+            _busy = _split_busy_group(_split["parent"], _split["id"])
+            if _busy is not None:
+                return self._reply(409, {"error": (
+                    f'the split opened earlier from this plan is still working ("{_busy.title}"). '
+                    "Opening another now puts two threads on the same work in the same files. "
+                    "Let it finish or stop it first"), "busyRunId": _busy.run_id})
+            if _split["index"] == 0:
+                # The approved plan, read off the planning thread NOW: by the
+                # time the check runs it may have moved on, or been stopped.
+                with _parent_inherit.lock:
+                    _split["snapshot"] = plan_split.plan_snapshot(list(_parent_inherit.events))
         if _split and kind == "freeform" and user_prompt:
             user_prompt = user_prompt + plan_split.sibling_block(_split)
 
