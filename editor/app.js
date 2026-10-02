@@ -32438,11 +32438,13 @@ function _stableEqual(a, b) {
 function planRoleBadge(run) {
   const r = run && run.planRole;
   if (!r || !r.role) return null;
-  const from = r.parentTitle ? `the plan "${r.parentTitle}"` : "its planning thread";
+  const plan = String(r.parentTitle || "").replace(/\s+/g, " ").trim();
+  const from = plan ? `the plan "${plan}"` : "its planning thread";
   if (r.role === "plan")
     return { label: "Plan", cls: "plan", title: "Plan thread: answers with a plan, then splits it into threads that run in parallel." };
   if (r.role === "split") {
     const n = Math.max(1, r.count || 1), i = Math.min(n, (r.index || 0) + 1);
+    if (n === 1) return { label: "Split", cls: "split", title: `The one item split from ${from}.` };
     return { label: `Split ${i}/${n}`, cls: "split",
       title: `Split item ${i} of ${n} from ${from}. Runs at the same time as the other items.` };
   }
