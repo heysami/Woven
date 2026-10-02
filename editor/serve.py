@@ -167,6 +167,7 @@ _GITIGNORE_LOCAL = [
     "workflow/scratch/",        # scratchpad canvases - deliberate thinking space, never synced (see _scratch_list)
     "workflow/runs/",           # generated run artifacts (assets/thumbnails) - GBs
     "workflow/views/",          # generated per-version prototype snapshots - GBs
+    "plan-splits/",             # one split manifest per planning run (<runId>.json) - per-thread scratch, see spawnPlanSplitRuns
     "editor/chat.jsonl",        # local chat transcript - large, machine-local, never sync
     "editor/chat-queues.json",  # pending follow-ups per run - machine-local, same lifecycle as chat.jsonl
     "editor/.chat-trash.jsonl", # LEGACY deleted-chat log, no longer written (see _chat_jsonl_purge_run); listed so projects that already committed one untrack it

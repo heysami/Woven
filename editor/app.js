@@ -23267,7 +23267,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
   // the card can say how many went out and where to find them.
   const [splitNote, setSplitNote] = useState(null);
   // Set when answering "split" did NOT manage to open the threads - almost
-  // always because the plan had not written PLAN_SPLIT.json yet when the
+  // always because the plan had not written its split manifest yet when the
   // button was clicked. The answer itself is recorded, so the card is
   // already disabled; without a retry that is a dead end the user cannot get
   // out of even once the manifest lands.
@@ -23360,8 +23360,8 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
 /* Plan-mode fan-out. Answering the `plan-next` gate with "split" opens ONE
    REAL WOVEN THREAD per plan point - not Task subagents, which only ever
    appear nested under the thread that spawned them and die with its turn.
-   The planning agent wrote PLAN_SPLIT.json before emitting the card; we read
-   it here and POST /__run once per item, which is the same path "New chat"
+   The planning agent wrote plan-splits/<its runId>.json before emitting the
+   card; we read it here and POST /__run once per item, which is the same path "New chat"
    uses, so each item shows up as its own thread and runs as its own process.
 
    CHECKS RIDE ALONG, PLAN MODE DOES NOT. Each spawned thread inherits the
@@ -23382,13 +23382,31 @@ async function spawnPlanSplitRuns(parentRunId) {
   // The project root is served statically, same way DECISION_*.json is read
   // back. Cache-busted: the manifest is rewritten on every re-plan, and a
   // stale copy would fan out the PREVIOUS plan's items.
-  const r = await fetch(apiUrl("/PLAN_SPLIT.json") + "&_=" + Date.now(), { cache: "no-store" });
-  if (!r.ok) throw new Error("no PLAN_SPLIT.json - the plan did not write a split manifest");
+  //
+  // ONE MANIFEST PER PLANNING RUN, named by its run id. The old single
+  // PLAN_SPLIT.json was shared by every plan in the project: on suss-cal
+  // three plans ran at once and one overwrote another's manifest, so a click
+  // would have opened the OTHER plan's threads. The shared file is still read
+  // as a fallback, for plans written before the daemon learned the per-run
+  // path, but only when it is newer than this run's start - after the
+  // switch nothing writes it, so a stale one can never fan out.
+  const bust = "&_=" + Date.now();
+  let r = await fetch(apiUrl(`/plan-splits/${encodeURIComponent(parentRunId)}.json`) + bust, { cache: "no-store" });
+  let name = `plan-splits/${parentRunId}.json`;
+  if (!r.ok) {
+    const legacy = await fetch(apiUrl("/PLAN_SPLIT.json") + bust, { cache: "no-store" }).catch(() => null);
+    const run = await fetch(apiUrl(`/__run/${encodeURIComponent(parentRunId)}`))
+      .then((x) => (x.ok ? x.json() : null)).catch(() => null);
+    const written = Date.parse((legacy && legacy.headers.get("Last-Modified")) || "") / 1000;
+    if (!legacy || !legacy.ok || !run || !(written >= Math.floor(run.startedAt || 0)))
+      throw new Error(`no split manifest from this plan (${name}) - the plan did not write one`);
+    r = legacy; name = "PLAN_SPLIT.json";
+  }
   const raw = await r.text();
   let items;
   try { items = (JSON.parse(raw).items || []).filter(it => it && it.brief); }
-  catch { throw new Error("PLAN_SPLIT.json is not valid JSON"); }
-  if (!items.length) throw new Error("PLAN_SPLIT.json has no items");
+  catch { throw new Error(`${name} is not valid JSON`); }
+  if (!items.length) throw new Error(`${name} has no items`);
   // The threads below start at the same moment in the same working tree, so
   // they go out as ONE GROUP (serve.py + plan_split.py): each is told what
   // its siblings claim, and once every one has finished (or been stopped)

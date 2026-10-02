@@ -319,6 +319,15 @@ class WiringTests(unittest.TestCase):
         self.assertIn("SEPARATE plan-check thread", stub)
         self.assertNotIn("[split-reconcile]", stub)
 
+    def test_each_plan_writes_its_own_manifest(self):
+        # 2026-10-02: three plans shared PLAN_SPLIT.json and overwrote each other.
+        stub = caps.PLAN_MODE_STUB
+        self.assertIn("plan-splits/<your run id>.json", stub)
+        self.assertIn("$TH_RUN_ID", stub)
+        self.assertEqual(stub.count("PLAN_SPLIT.json"), 1)   # only the "never write it" warning
+        self.assertIn("NEVER write `PLAN_SPLIT.json`", stub)
+        self.assertIn("plan-splits/", serve._GITIGNORE_LOCAL)
+
 
 if __name__ == "__main__":
     unittest.main()
