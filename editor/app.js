@@ -17250,6 +17250,8 @@ function chatStatusReducer(prev, ev) {
 // surface-specific layout. Workflow mode passes "dock" so the panel docks
 // BELOW the workflow bar instead of overlaying the full viewport height.
 function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onStartNewChat, preamble, selectionCount, onResizeStart, variant, targetBar }) {
+  // Plan / Split n/N / Plan check, the same pill as the runs list row.
+  const planBadge = planRoleBadge(run);
   // Publish WHICH thread is open, so the runs list can mark that row as the one
   // you are looking at. Done from the drawer rather than prop-drilled: the
   // drawer is the single component that knows, and it is hosted by four
@@ -18299,9 +18301,13 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       <div className="chat-header">
         <div className="chat-title-group">
           <span className="chat-title">${run.title || "Agent run"}</span>
-          ${run.turnsCompleted > 0 && html`
-          <span className="chat-meta">
-            ${run.turnsCompleted} turn${run.turnsCompleted === 1 ? "" : "s"}
+          ${(planBadge || run.turnsCompleted > 0) && html`
+          <span className="chat-meta-row">
+            ${planBadge && html`<span className=${"chat-thread-badge chat-thread-badge-" + planBadge.cls} title=${planBadge.title}>${planBadge.label}</span>`}
+            ${run.turnsCompleted > 0 && html`
+            <span className="chat-meta">
+              ${run.turnsCompleted} turn${run.turnsCompleted === 1 ? "" : "s"}
+            </span>`}
           </span>`}
         </div>
         <div className="chat-status-group">
@@ -32432,9 +32438,11 @@ function _stableEqual(a, b) {
 
 // Plan / Split n/N / Plan check badge, from the daemon's `planRole` (serve.py
 // plan_split.thread_role, read off the spawn record, so historical runs keep
-// it). Shared by the thread header and the runs list rows: split threads and
-// the thread that planned them otherwise look identical in the list, and the
-// split ones run in parallel on the same files.
+// it). Shared by the chat drawer header (ChatDrawer, every surface) and the
+// runs list rows - NOT the canvas target bar, which sits under that same
+// header and would show it twice. Split threads and the thread that planned
+// them otherwise look identical, and the split ones run in parallel on the
+// same files.
 function planRoleBadge(run) {
   const r = run && run.planRole;
   if (!r || !r.role) return null;
@@ -32467,9 +32475,6 @@ function planRoleBadge(run) {
 // kinds are background and get none.
 function threadKindBadge(run) {
   if (!run) return null;
-  // A thread's place in the plan flow says more than its tier, so it wins.
-  const role = planRoleBadge(run);
-  if (role) return role;
   if (run.kind === "node-agent")
     return { label: "Subagent", cls: "subagent", title: "A pseudo-subagent drawer: one per-node builder run." };
   if (run.kind === "freeform") {

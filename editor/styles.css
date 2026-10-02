@@ -25867,6 +25867,9 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.chat-meta-row {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+}
 .chat-meta {
   font-family: var(--font-mono);
   font-size: 10.5px;
