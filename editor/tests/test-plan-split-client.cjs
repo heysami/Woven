@@ -65,18 +65,20 @@ const item = (title, owns) => ({ title, owns, brief: "b" });
     r = await harness({ perRun: { items: [item("A", a), item("B", b)] } });
     assert.ok(!r.ok && /both claim/.test(r.e) && r.posts.length === 0, `${a} vs ${b}: ${r.e}`);
   }
-  // 5. The badge that tells the planning thread, its split items and the check apart.
+  // 5. The mark that tells the planning thread, its split items and the check
+  //    apart: an existing icon (no pill), plus "2/3" on a split item.
   const bStart = src.indexOf("function planRoleBadge(");
-  const badge = new Function(src.slice(bStart, src.indexOf("\n}\n", bStart) + 3) + "\nreturn planRoleBadge;")();
-  assert.strictEqual(badge({ planRole: { role: "plan" } }).label, "Plan");
+  const Icon = { DocPencil: "DocPencil", Fork: "Fork", CheckList: "CheckList" };
+  const badge = new Function("Icon", src.slice(bStart, src.indexOf("\n}\n", bStart) + 3) + "\nreturn planRoleBadge;")(Icon);
+  assert.strictEqual(badge({ planRole: { role: "plan" } }).icon, "DocPencil");
   const sp = badge({ planRole: { role: "split", index: 1, count: 3, parentTitle: "offers" } });
-  assert.strictEqual(sp.label, "Split 2/3");
+  assert.deepStrictEqual([sp.icon, sp.count, sp.label], ["Fork", "2/3", "Split 2 of 3"]);
   assert.ok(sp.title.includes('"offers"'));
   const one = badge({ planRole: { role: "split", index: 0, count: 1, parentTitle: "under scheme config :\nunder monitoring" } });
-  assert.strictEqual(one.label, "Split");
+  assert.strictEqual(one.count, undefined);
   assert.ok(!one.title.includes("\n") && !one.title.includes("other items"), one.title);
-  assert.strictEqual(badge({ planRole: { role: "check" } }).label, "Plan check");
+  assert.strictEqual(badge({ planRole: { role: "check" } }).icon, "CheckList");
   assert.strictEqual(badge({ planRole: null }), null);
   assert.strictEqual(badge({}), null);
-  console.log("PASS: per-run manifest, guarded legacy fallback, one group, region claims, collisions refused, role badges");
+  console.log("PASS: per-run manifest, guarded legacy fallback, one group, region claims, collisions refused, role icons");
 })().catch((e) => { console.error("FAIL", e.message || e); process.exit(1); });

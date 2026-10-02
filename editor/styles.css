@@ -34499,27 +34499,26 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   border-color: var(--border);
   background: var(--surface-2);
 }
-/* Plan flow: the planning thread, one split item, the plan check. Plan is
-   accent-outlined (Setup is accent-filled); split items and the check stay
-   neutral - the label carries it, and amber is kept for the runs list's
-   attention + unread dots. Shared by the header and the runs list rows. */
-.chat-thread-badge-plan {
-  color: var(--accent-text);
-  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
-  background: transparent;
-}
-.chat-thread-badge-split,
-.chat-thread-badge-check {
+/* Plan flow marks: the planning thread (DocPencil, the plan toggle's own
+   icon), one split item (Fork + "2/3"), the plan check (CheckList). Icons
+   only, no pill. Plan takes the accent; the others stay muted. Amber is kept
+   for the runs list's attention + unread dots. Shared by the runs list rows
+   and the chat drawer header. */
+.plan-role {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   color: var(--text-muted);
-  border-color: var(--border);
-  background: var(--surface-2);
 }
-.runs-row[data-role] { grid-template-columns: auto 1fr auto auto auto; }
-.runs-row-role {
-  padding: 0 6px;
-  font-size: 9.5px;
+.plan-role svg { display: block; width: 13px; height: 13px; }
+.plan-role-plan { color: var(--accent-text); }
+.plan-role-n {
+  font-size: 10.5px;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
+.runs-row[data-role] { grid-template-columns: auto 1fr auto auto auto; }
 
 /* Warning strip above the composer when the open thread is a node-agent
    (pseudo-subagent) run: replies there re-open a one-shot builder context

@@ -13104,7 +13104,7 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
                 </span>
               ` : html`<span className="runs-row-dot" data-status=${status}/>`}
               <span className="runs-row-title">${r.title || r.kind}</span>
-              ${role && html`<span className=${"chat-thread-badge runs-row-role chat-thread-badge-" + role.cls} title=${role.title}>${role.label}</span>`}
+              ${role && html`<${PlanRoleMark} badge=${role}/>`}
               <span className="runs-row-age">${formatRunAge(r.updatedAt || r.startedAt)}</span>
               ${/* Unread marker. A dot on the TRAILING edge rather than a bar on
                   the leading one: the leading edge already carries the status
@@ -17250,7 +17250,7 @@ function chatStatusReducer(prev, ev) {
 // surface-specific layout. Workflow mode passes "dock" so the panel docks
 // BELOW the workflow bar instead of overlaying the full viewport height.
 function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onStartNewChat, preamble, selectionCount, onResizeStart, variant, targetBar }) {
-  // Plan / Split n/N / Plan check, the same pill as the runs list row.
+  // Plan / Split n/N / Plan check, the same mark as the runs list row.
   const planBadge = planRoleBadge(run);
   // Publish WHICH thread is open, so the runs list can mark that row as the one
   // you are looking at. Done from the drawer rather than prop-drilled: the
@@ -18303,7 +18303,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           <span className="chat-title">${run.title || "Agent run"}</span>
           ${(planBadge || run.turnsCompleted > 0) && html`
           <span className="chat-meta-row">
-            ${planBadge && html`<span className=${"chat-thread-badge chat-thread-badge-" + planBadge.cls} title=${planBadge.title}>${planBadge.label}</span>`}
+            ${planBadge && html`<${PlanRoleMark} badge=${planBadge}/>`}
             ${run.turnsCompleted > 0 && html`
             <span className="chat-meta">
               ${run.turnsCompleted} turn${run.turnsCompleted === 1 ? "" : "s"}
@@ -32436,7 +32436,7 @@ function _stableEqual(a, b) {
   try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
 }
 
-// Plan / Split n/N / Plan check badge, from the daemon's `planRole` (serve.py
+// Plan / Split n/N / Plan check mark, from the daemon's `planRole` (serve.py
 // plan_split.thread_role, read off the spawn record, so historical runs keep
 // it). Shared by the chat drawer header (ChatDrawer, every surface) and the
 // runs list rows - NOT the canvas target bar, which sits under that same
@@ -32449,17 +32449,28 @@ function planRoleBadge(run) {
   const plan = String(r.parentTitle || "").replace(/\s+/g, " ").trim();
   const from = plan ? `the plan "${plan}"` : "its planning thread";
   if (r.role === "plan")
-    return { label: "Plan", cls: "plan", title: "Plan thread: answers with a plan, then splits it into threads that run in parallel." };
+    return { icon: Icon.DocPencil, label: "Plan", cls: "plan",
+      title: "Plan thread: answers with a plan, then splits it into threads that run in parallel." };
   if (r.role === "split") {
     const n = Math.max(1, r.count || 1), i = Math.min(n, (r.index || 0) + 1);
-    if (n === 1) return { label: "Split", cls: "split", title: `The one item split from ${from}.` };
-    return { label: `Split ${i}/${n}`, cls: "split",
+    if (n === 1) return { icon: Icon.Fork, label: "Split", cls: "split", title: `The one item split from ${from}.` };
+    return { icon: Icon.Fork, label: `Split ${i} of ${n}`, count: `${i}/${n}`, cls: "split",
       title: `Split item ${i} of ${n} from ${from}. Runs at the same time as the other items.` };
   }
   if (r.role === "check")
-    return { label: "Plan check", cls: "check",
+    return { icon: Icon.CheckList, label: "Plan check", cls: "check",
       title: `Checks what the split threads built against ${from}.` };
   return null;
+}
+
+// The mark itself: the same icon the plan toggle (DocPencil) and the fork
+// glyph use elsewhere, plus "2/3" for a split item. No pill - an icon.
+function PlanRoleMark({ badge, className }) {
+  if (!badge) return null;
+  return html`<span className=${"plan-role plan-role-" + badge.cls + (className ? " " + className : "")}
+    title=${badge.title} aria-label=${badge.label} role="img">
+    <${badge.icon}/>${badge.count && html`<span className="plan-role-n">${badge.count}</span>`}
+  </span>`;
 }
 
 // Chat target bar - rendered just above the workflow chat textarea. Two
