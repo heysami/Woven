@@ -15,6 +15,7 @@ Run: python3 -m unittest discover -s editor/tests -p test_plan_split.py -v
 """
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -293,6 +294,72 @@ class JoinTests(unittest.TestCase):
         self.assertIsNone(serve._split_busy_group("plan1", "plan1-abc"))   # own group
         self.finish_b()
         self.assertIsNone(serve._split_busy_group("plan1", "plan1-new"))
+
+
+class PlanRoleBadgeTests(unittest.TestCase):
+    """The runs list and thread header tell the planning thread, its split
+    items and the plan check apart (they otherwise look identical)."""
+
+    def test_thread_role(self):
+        self.assertEqual(plan_split.thread_role({"plan": True}, None, None), {"role": "plan"})
+        self.assertEqual(plan_split.thread_role({"plan": False}, split(1), None),
+                         {"role": "split", "index": 1, "count": 2, "parent": "plan1", "group": "plan1-abc"})
+        self.assertEqual(plan_split.thread_role(None, None, {"group": "g", "parent": "plan1"}),
+                         {"role": "check", "parent": "plan1", "group": "g"})
+        self.assertIsNone(plan_split.thread_role({"plan": False}, None, None))
+        self.assertIsNone(plan_split.thread_role(None, None, None))
+
+    def _write_history(self, root):
+        lines = []
+        def spawned(rid, title, **extra):
+            lines.append({"runId": rid, "branch": "prototype", "agentId": "claude", "kind": "freeform",
+                          "title": title, "startedAt": 1000.0, "seq": 0, "type": "status", "ts": 1000.0,
+                          "data": {"label": "spawned", "guards": extra.pop("guards", {"plan": False}), **extra}})
+        spawned("plan1", "offers and awards", guards={"plan": True})
+        spawned("a", "Remove reinstate", split=split(0))
+        spawned("b", "Fix the Columns control", split=split(1))
+        spawned("chk", "Plan check: offers", splitCheck={"group": "plan1-abc", "parent": "plan1"})
+        spawned("solo", "just a chat")
+        os.makedirs(os.path.join(root, "editor"), exist_ok=True)
+        with open(os.path.join(root, "editor", "chat.jsonl"), "w") as f:
+            f.write("\n".join(json.dumps(l) for l in lines) + "\n")
+
+    def test_runs_list_tags_every_role_and_names_the_plan(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        self._write_history(root)
+        got = {}
+        fake = SimpleNamespace(_reply=lambda code, body: got.update(body))
+        with patch.object(serve, "resolve_project_root", lambda qs: root), \
+             patch.dict(serve.RUNS, {}, clear=True):
+            serve.H._runs_list(fake, {"project": ["suss"]})
+        roles = {r["runId"]: r.get("planRole") for r in got["runs"]}
+        self.assertEqual(roles["plan1"], {"role": "plan"})
+        self.assertEqual((roles["b"]["role"], roles["b"]["index"], roles["b"]["count"]), ("split", 1, 2))
+        self.assertEqual(roles["b"]["parentTitle"], "offers and awards")
+        self.assertEqual((roles["chk"]["role"], roles["chk"]["parentTitle"]), ("check", "offers and awards"))
+        self.assertIsNone(roles["solo"])
+
+    def test_live_run_row_carries_its_role(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        os.makedirs(os.path.join(root, "editor"))
+        live = fake_run("a", split(0))
+        live.__dict__.update(agent_id="claude", branch="prototype", kind="freeform", started_at=1.0,
+                             updated_at=2.0, gate_pending=False, execution_profile=None,
+                             process_running=True, exit_code=None, modifying=False,
+                             touched_paths=[], split_check=None)
+        parent = fake_run("plan1")
+        parent.__dict__.update(live.__dict__, run_id="plan1", title="offers and awards",
+                               split=None, guards={"plan": True}, events=[], lock=threading.Lock())
+        got = {}
+        fake = SimpleNamespace(_reply=lambda code, body: got.update(body))
+        with patch.object(serve, "resolve_project_root", lambda qs: root), \
+             patch.dict(serve.RUNS, {"a": live, "plan1": parent}, clear=True):
+            serve.H._runs_list(fake, {"project": ["suss"]})
+        roles = {r["runId"]: r["planRole"] for r in got["runs"]}
+        self.assertEqual(roles["plan1"], {"role": "plan"})
+        self.assertEqual((roles["a"]["role"], roles["a"]["parentTitle"]), ("split", "offers and awards"))
 
 
 class WiringTests(unittest.TestCase):

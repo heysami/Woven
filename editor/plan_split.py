@@ -160,6 +160,21 @@ def sibling_block(split: dict) -> str:
     return "\n\n" + "\n".join(lines)
 
 
+def thread_role(guards, split, split_check) -> Optional[dict]:
+    """What a thread is in the plan/split flow, for the runs list and the
+    thread header: the PLANNING thread (plan mode armed at spawn), one SPLIT
+    item, or the PLAN CHECK opened after a split settles. None otherwise.
+    Read off the spawn record, so it holds for historical runs too."""
+    if isinstance(split, dict) and isinstance(split.get("items"), list):
+        return {"role": "split", "index": split.get("index", 0), "count": len(split["items"]),
+                "parent": split.get("parent"), "group": split.get("id")}
+    if isinstance(split_check, dict):
+        return {"role": "check", "parent": split_check.get("parent"), "group": split_check.get("group")}
+    if isinstance(guards, dict) and guards.get("plan"):
+        return {"role": "plan"}
+    return None
+
+
 def strip_sibling_block(text: str) -> str:
     i = (text or "").find(SIBLING_MARK)
     return text[:i] if i >= 0 else (text or "")

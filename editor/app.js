@@ -13068,10 +13068,12 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
         const gate = !!r.gatePending && unread;
         const status = (!r.done && !r.turnDone) ? "live" : gate ? "attention" : "none";
         const picked = selected.has(r.runId);
+        const role = planRoleBadge(r);
         return html`
           <div className="runs-row-wrap" key=${r.runId} data-picked=${picked ? "true" : "false"}>
             <button
               className="runs-row"
+              data-role=${role ? role.cls : undefined}
               data-unread=${unread ? "true" : "false"}
               data-gate=${gate ? "true" : "false"}
               data-open=${r.runId === openRunId ? "true" : "false"}
@@ -13102,6 +13104,7 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
                 </span>
               ` : html`<span className="runs-row-dot" data-status=${status}/>`}
               <span className="runs-row-title">${r.title || r.kind}</span>
+              ${role && html`<span className=${"chat-thread-badge runs-row-role chat-thread-badge-" + role.cls} title=${role.title}>${role.label}</span>`}
               <span className="runs-row-age">${formatRunAge(r.updatedAt || r.startedAt)}</span>
               ${/* Unread marker. A dot on the TRAILING edge rather than a bar on
                   the leading one: the leading edge already carries the status
@@ -32427,6 +32430,28 @@ function _stableEqual(a, b) {
   try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
 }
 
+// Plan / Split n/N / Plan check badge, from the daemon's `planRole` (serve.py
+// plan_split.thread_role, read off the spawn record, so historical runs keep
+// it). Shared by the thread header and the runs list rows: split threads and
+// the thread that planned them otherwise look identical in the list, and the
+// split ones run in parallel on the same files.
+function planRoleBadge(run) {
+  const r = run && run.planRole;
+  if (!r || !r.role) return null;
+  const from = r.parentTitle ? `the plan "${r.parentTitle}"` : "its planning thread";
+  if (r.role === "plan")
+    return { label: "Plan", cls: "plan", title: "Plan thread: answers with a plan, then splits it into threads that run in parallel." };
+  if (r.role === "split") {
+    const n = Math.max(1, r.count || 1), i = Math.min(n, (r.index || 0) + 1);
+    return { label: `Split ${i}/${n}`, cls: "split",
+      title: `Split item ${i} of ${n} from ${from}. Runs at the same time as the other items.` };
+  }
+  if (r.role === "check")
+    return { label: "Plan check", cls: "check",
+      title: `Checks what the split threads built against ${from}.` };
+  return null;
+}
+
 // Chat target bar - rendered just above the workflow chat textarea. Two
 // states: (a) something selected on the canvas → show what the chat will act
 // on, prototype/html node first then "+N others"; (b) nothing selected → an
@@ -32440,6 +32465,9 @@ function _stableEqual(a, b) {
 // kinds are background and get none.
 function threadKindBadge(run) {
   if (!run) return null;
+  // A thread's place in the plan flow says more than its tier, so it wins.
+  const role = planRoleBadge(run);
+  if (role) return role;
   if (run.kind === "node-agent")
     return { label: "Subagent", cls: "subagent", title: "A pseudo-subagent drawer: one per-node builder run." };
   if (run.kind === "freeform") {

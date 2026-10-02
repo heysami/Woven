@@ -65,5 +65,15 @@ const item = (title, owns) => ({ title, owns, brief: "b" });
     r = await harness({ perRun: { items: [item("A", a), item("B", b)] } });
     assert.ok(!r.ok && /both claim/.test(r.e) && r.posts.length === 0, `${a} vs ${b}: ${r.e}`);
   }
-  console.log("PASS: per-run manifest, guarded legacy fallback, one group, region claims, collisions refused");
+  // 5. The badge that tells the planning thread, its split items and the check apart.
+  const bStart = src.indexOf("function planRoleBadge(");
+  const badge = new Function(src.slice(bStart, src.indexOf("\n}\n", bStart) + 3) + "\nreturn planRoleBadge;")();
+  assert.strictEqual(badge({ planRole: { role: "plan" } }).label, "Plan");
+  const sp = badge({ planRole: { role: "split", index: 1, count: 3, parentTitle: "offers" } });
+  assert.strictEqual(sp.label, "Split 2/3");
+  assert.ok(sp.title.includes('"offers"'));
+  assert.strictEqual(badge({ planRole: { role: "check" } }).label, "Plan check");
+  assert.strictEqual(badge({ planRole: null }), null);
+  assert.strictEqual(badge({}), null);
+  console.log("PASS: per-run manifest, guarded legacy fallback, one group, region claims, collisions refused, role badges");
 })().catch((e) => { console.error("FAIL", e.message || e); process.exit(1); });

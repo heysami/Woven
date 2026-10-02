@@ -34496,6 +34496,27 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   border-color: var(--border);
   background: var(--surface-2);
 }
+/* Plan flow: the planning thread, one split item, the plan check. Plan is
+   accent-outlined (Setup is accent-filled); split items and the check stay
+   neutral - the label carries it, and amber is kept for the runs list's
+   attention + unread dots. Shared by the header and the runs list rows. */
+.chat-thread-badge-plan {
+  color: var(--accent-text);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  background: transparent;
+}
+.chat-thread-badge-split,
+.chat-thread-badge-check {
+  color: var(--text-muted);
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+.runs-row[data-role] { grid-template-columns: auto 1fr auto auto auto; }
+.runs-row-role {
+  padding: 0 6px;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
 
 /* Warning strip above the composer when the open thread is a node-agent
    (pseudo-subagent) run: replies there re-open a one-shot builder context

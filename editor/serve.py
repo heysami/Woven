@@ -10643,6 +10643,10 @@ class _ChatFileIndex:
                     p_v = rec["data"].get("prototype")
                 if p_v:
                     meta["prototype"] = p_v
+            # Plan / split / plan-check badge, off the spawn banner.
+            if isinstance(rec.get("data"), dict) and rec["data"].get("label") == "spawned":
+                _d = rec["data"]
+                meta["planRole"] = plan_split.thread_role(_d.get("guards"), _d.get("split"), _d.get("splitCheck"))
             # Same gate fold the live RunState.append does, so a run the
             # daemon no longer holds still says "this one wants an answer".
             gate = {"pending": meta["gatePending"], "tail": meta["_gateTail"]}
@@ -11195,6 +11199,8 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
                 state.parent_run_id = data["parentRunId"]
             if data.get("label") == "spawned" and isinstance(data.get("split"), dict):
                 state.split = data["split"]
+            if data.get("label") == "spawned" and isinstance(data.get("splitCheck"), dict):
+                state.split_check = data["splitCheck"]
         for job in state.jobs.values():
             if job.get("status") not in run_jobs.TERMINAL:
                 job["status"] = "unknown"
@@ -11453,6 +11459,9 @@ class RunState:
                  # None for every other run. NOT parent_run_id on purpose -
                  # that would make the planning thread's Stop kill its splits.
                  "split",
+                 # {group, parent} on the plan-check thread a settled split
+                 # group opens; None elsewhere. Drives its runs-list badge.
+                 "split_check",
                  # "waiting on YOU to pick a card" - see _gate_feed. Folded
                  # forward one event at a time by append(); rebuilt wholesale
                  # by _gate_recompute for rehydrated runs. gate_tail is the
@@ -11477,6 +11486,7 @@ class RunState:
         self.msg_queue = []
         self._queue_draining = False
         self.split = None   # plan-mode split group; set by _run_create
+        self.split_check = None   # set on a plan-check thread by _run_create
         # prototype slug the scoped preamble was built for; set by _run_create.
         self.prototype = None
         # Chosen default model (Settings > Agent model); set by _run_create.
@@ -33722,6 +33732,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "touchedPaths": list(s.touched_paths),
                 "project": s.project_id,
                 "historical": False,
+                "planRole": plan_split.thread_role(getattr(s, "guards", None),
+                                                   getattr(s, "split", None),
+                                                   getattr(s, "split_check", None)),
             })
         # Merge in historical runs that aren't in RUNS. Only runs from the
         # active project - the chat JSONLs live under the project root so this
@@ -33745,6 +33758,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         # at the top. startedAt is the tiebreak for runs with no activity ts.
         live.sort(key=lambda r: (r.get("updatedAt") or r.get("startedAt") or 0,
                                  r.get("startedAt") or 0), reverse=True)
+        # A split item / plan check names the plan it came from.
+        titles = {r.get("runId"): r.get("title") for r in live}
+        for r in live:
+            role = r.get("planRole")
+            if role and role.get("parent"):
+                role = dict(role, parentTitle=titles.get(role["parent"]) or "")
+                r["planRole"] = role
         return self._reply(200, {"runs": live})
 
     # GET /__chat?branch=<slug>[&runId=<id>][&project=<id>]
@@ -34574,6 +34594,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             # live context size of the CLI session (tokens), or null when
             # unknown (codex, or a freshly-compacted session pre-turn).
             "contextTokens": _run_context_tokens(state),
+            "planRole": plan_split.thread_role(getattr(state, "guards", None),
+                                               getattr(state, "split", None),
+                                               getattr(state, "split_check", None)),
         })
 
     def _read_json_body(self, max_bytes: int = 256 * 1024):
@@ -34858,6 +34881,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                     _split["snapshot"] = plan_split.plan_snapshot(list(_parent_inherit.events))
         if _split and kind == "freeform" and user_prompt:
             user_prompt = user_prompt + plan_split.sibling_block(_split)
+        # The plan-check thread _split_open_check opens for a settled group.
+        _split_check = None
+        if (_parent_inherit is not None and isinstance(body.get("_splitId"), str)
+                and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", body["_splitId"])):
+            _split_check = {"group": body["_splitId"], "parent": _parent_inherit.run_id}
 
         prompt_text = _compose_initial_prompt(kind, user_prompt)
         defs = AGENT_DEFS[agent_id]
@@ -35058,6 +35086,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.model = agent_model or None   # Settings > Agent model; re-applied on resume
         state.execution_profile = profile
         state.split = _split            # plan-mode split group, or None
+        state.split_check = _split_check
         # ── History snapshot - BEFORE state ──────────────────────────────
         # The subprocess is running but hasn't received its prompt yet (we
         # write to stdin further down). It can't have produced any file
@@ -35099,6 +35128,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "model": agent_model or None,
             # the split group survives a restart through this field alone
             **({"split": _split} if _split else {}),
+            **({"splitCheck": _split_check} if _split_check else {}),
             "promptPreview": prompt_text[:240],
         })
         # For freeform chats, the prompt IS the user's first message - echo it
@@ -35135,6 +35165,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             "tier": _chat_tier,   # so the chat header can badge Setup vs scoped
             "prototype": _chat_proto,   # target bar locks onto this once the thread exists
             "title": title,
+            # the header's Plan / Split / Plan check badge, from the first frame
+            "planRole": plan_split.thread_role(_chat_guards, _split, _split_check),
         })
 
     # GET /__stream?runId=<id>&after=<seq>  →  Server-Sent Events
