@@ -10494,7 +10494,7 @@ function composeModeAwarePrompt(mode, userText) {
     return [
       "[Context: you're chatting from WORKFLOW MODE of the prototype editor.]",
       "The canvas holds two kinds of object: (a) workflow NODES + edges - prompt → skill → asset trios that generate ideas + visual content (generate-image, svg-gen, shader, threejs, rembg), AND native interactive app nodes (a live logic graph: input-pointer / touch / keyboard / scroll / gyro / audio / camera / video, vision-detect, operators, if / while / state, and renderable blocks layer / position / effect / shape / Kinetic Type wired into a live composer); and (b) WHITEBOARD ITEMS - the top-level `wb` array (siblings of nodes): text, textbox, sticky (post-it), ink, shape, arrow, image.",
-      "ROUTING - DEFAULT TO ACTING ON THE CANVAS. If the user refers to NODES or ITEMS ON THE CANVAS (any node/edge, or a whiteboard item: sticky / post-it / textbox / text / shape / arrow / image / ink) and asks to add / change / move / connect / arrange / group / convert / delete / run them, that is a CANVAS operation - do it, do NOT route to PROTOTYPE.md and do NOT scaffold a prototype or an interactive-media runtime.html. Node + edge ops: commit to workflow.json via POST `$TH_DAEMON_URL/__workflow/node/<id>/commit?project=$TH_PROJECT_ID` (addNodes / edges). Whiteboard ops: POST `$TH_DAEMON_URL/__workflow/wb?project=$TH_PROJECT_ID` with {add/update/remove} (never edit workflow.json directly). The app-node / canvas surface is OPT-IN BY EXPLICIT VOCABULARY, never the default. Dispatch the `app-node-orchestrator` subagent ONLY when (a) the user explicitly names the surface - \"use app nodes\", \"build this with logic nodes\", \"on the canvas\", \"in the composer\", \"the logic graph\", \"mm-composer\" - OR (b) the user points at existing app / logic nodes already on the canvas and asks to build / wire / extend an interactive behaviour from them. In those cases FIRST fetch the authoring guide `GET $TH_DAEMON_URL/__logic_guide?project=$TH_PROJECT_ID`, then dispatch `app-node-orchestrator` (never hand-wire a build solo): it decomposes the interaction into slots, classifies each to the nearest primitive, scaffolds the nodes on the canvas, and hands back a manifest so you fan out one `app-node-slot-author` per slot. Each author CUSTOMISES or EXTENDS its primitive - tuning the spec, or extending the primitive's runtime code (the logic-graph evaluator / composer effect+render engine in editor/) when no existing primitive can yet express the slot; extending a primitive is the DEFAULT, never decline because no built-in effect fits. BUT if the user describes an interactive / reactive piece WITHOUT naming the app-node / canvas / logic-graph surface (e.g. \"a camera surface of living ink\", \"a voice-reactive visual\", \"make it interactive\"), do NOT assume the canvas is the deliverable - that is a normal build request: follow `PROTOTYPE.md` and the capabilities routing table EXACTLY as the main chat would (a body / device-driven brief routes to `interactive-media-orchestrator` as a prototype). This matches the \"Surface check FIRST\" rule in capabilities.py: naming the surface is the one thing that opts into the canvas; absent it, fall through to the standard prototype routing.",
+      "ROUTING - DEFAULT TO ACTING ON THE CANVAS. If the user refers to NODES or ITEMS ON THE CANVAS (any node/edge, or a whiteboard item: sticky / post-it / textbox / text / shape / arrow / image / ink) and asks to add / change / move / connect / arrange / group / convert / delete / run them, that is a CANVAS operation - do it, do NOT route to PROTOTYPE.md and do NOT scaffold a prototype or an interactive-media runtime.html. Node + edge ops: commit to workflow.json via POST `$TH_DAEMON_URL/__workflow/nodes/add?project=$TH_PROJECT_ID` (addNodes / addEdges); update existing specs with node/<id>/status. Whiteboard ops: POST `$TH_DAEMON_URL/__workflow/wb?project=$TH_PROJECT_ID` with {add/update/remove} (never edit workflow.json directly). The app-node / canvas surface is OPT-IN BY EXPLICIT VOCABULARY, never the default. Dispatch the `app-node-orchestrator` subagent ONLY when (a) the user explicitly names the surface - \"use app nodes\", \"build this with logic nodes\", \"on the canvas\", \"in the composer\", \"the logic graph\", \"mm-composer\" - OR (b) the user points at existing app / logic nodes already on the canvas and asks to build / wire / extend an interactive behaviour from them. In those cases FIRST fetch the authoring guide `GET $TH_DAEMON_URL/__logic_guide?project=$TH_PROJECT_ID`, then dispatch `app-node-orchestrator` (never hand-wire a build solo): it decomposes the interaction into slots, classifies each to the nearest primitive, scaffolds the nodes on the canvas, and hands back a manifest so you fan out one `app-node-slot-author` per slot. Each author customises project-local controls, a custom effect, or a sketch. Project agents must never edit the shared editor engine or TH_PROTOCOL_ROOT. If those mechanisms cannot deliver a required behavior, report the precise missing capability and request a separately authorized editor maintenance task. BUT if the user describes an interactive / reactive piece WITHOUT naming the app-node / canvas / logic-graph surface (e.g. \"a camera surface of living ink\", \"a voice-reactive visual\", \"make it interactive\"), do NOT assume the canvas is the deliverable - that is a normal build request: follow `PROTOTYPE.md` and the capabilities routing table EXACTLY as the main chat would (a body / device-driven brief routes to `interactive-media-orchestrator` as a prototype). This matches the \"Surface check FIRST\" rule in capabilities.py: naming the surface is the one thing that opts into the canvas; absent it, fall through to the standard prototype routing.",
       "Editor data (frames, IA, user flow, entities) is secondary context - only touch editor/data.js or source/ files if the user explicitly asks.",
       "**If the user asks to generate / build / create / make / scaffold ANY `source/*` build - a WEBSITE / multi-page APP / dashboard / landing / portfolio / mobile UI / DS gallery / editorial spread, AND EQUALLY a GAME / simulation / interactive or reactive experience / narrative piece / any other `source/*` artefact (a 'prototype' here means ANY built artefact under `source/`, NOT only a page: a game or simulation IS a prototype - an owns-surface built inside one - so it goes through the SAME pipeline and the SAME direction pick) (NOT operations on canvas nodes or whiteboard items - see ROUTING above), you MUST first `Read` the repo's prototype discipline file `PROTOTYPE.md` IN FULL (at the protocol/install root - try `$TH_PROTOCOL_ROOT/PROTOTYPE.md`) and follow its pipeline BEFORE any write to `source/<branch>/` and BEFORE deciding a genre / style / aesthetic / palette / typography. Do NOT invoke a `/prototype` slash command - it is disabled in this runtime and the installed copy is stale; `PROTOTYPE.md` plus its sibling `design-library/` and `prototype/` folders are the ONLY source of truth. Do NOT commit a 'genre' or pick a recipe from training-data design vocabulary - the discipline (Step -1 stop-and-ask, the `<direction-options>` three-options pick UI with palette + type + recoloured design-library preview, photo / illust register strips, image-gen availability gating) lives in `PROTOTYPE.md` and the detail files it points to (e.g. `prototype/step-neg1-emit-ui.md`); Read them in full before composing your reply, and emit the real `<direction-options>` XML card - never improvise options in its place, whether as prose OR as an ad-hoc `<question-form>` of your own; a game / simulation / interactive brief goes through this SAME `<direction-options>` direction pick, never a substitute.**",
       "",
@@ -37385,7 +37385,7 @@ const WORKFLOW_CONNECT_DEFS = {
   "mm-composer": {
     label: "Interactive composer",
     provides: { out: { label: "Baked HTML", tags: ["asset", "blendable"] } },
-    accepts:  { in:   { label: "Layer content", tags: ["asset", "layer"] },
+    accepts:  { in:   { label: "Layer content / owned signal sink", tags: ["asset", "layer", "force", "audio-out"] },
                 edit: { label: "Edit composition", tags: ["text-gen", "asset-gen"] } },
   },
   "hyperframes": {
@@ -79883,47 +79883,12 @@ function workflowKindIo(kind) {
     const r = (typeof window !== "undefined") && window.__thKindRegistry;
     const fromReg = (r && r.KINDS && r.KINDS[kind] && r.KINDS[kind].io) || null;
     if (fromReg) return fromReg;
-    // `shape` is registered client-side (LOGIC_NODE_DEFS), not in the backend
-    // KIND_IO registry. Synthesize the io contract so the composer's upstream
-    // resolver ingests it as a LAYER (flavor "layer") - it then joins the
-    // z-stack + effect pipeline like any wired layer (see _SHAPE_KIND_IO).
-    if (kind === "shape") return _SHAPE_KIND_IO;
-    // `type-motion` is registered client-side (LOGIC_NODE_DEFS), not in the
-    // backend KIND_IO registry. Synthesize the io so its `out` port resolves as
-    // a LAYER (flavor "layer") - it then joins the z-stack + effect pipeline
-    // like any wired layer (mirrors _SHAPE_KIND_IO). See _TYPEMOTION_KIND_IO.
-    if (kind === "type-motion") return _TYPEMOTION_KIND_IO;
-    // `input-camera` / `input-video` are logic kinds (not in the backend KIND_IO
-    // registry). Synthesize an io whose `layer` port resolves as a LAYER so the
-    // composer ingests the live feed as renderable, effect-able content. Their
-    // detection/stream ports are unaffected (handled via the logic projection).
-    if (kind === "input-camera" || kind === "input-video") return _CAMERA_KIND_IO;
+    const def = globalThis.TH_LOGIC_NODE_DEFS && globalThis.TH_LOGIC_NODE_DEFS[kind];
+    if (def) return {provides:Object.entries(def.provides).map(([port, spec]) => ({port, ...spec,
+      resolve:"typed", resolveArgs:{flavor:spec.dtype || port}})), accepts:[]};
     return null;
   } catch (_e) { return null; }
 }
-// Client-side io contract for the `shape` render node (no backend KIND_IO).
-const _SHAPE_KIND_IO = {
-  provides: [{ port: "out", label: "Layer", tags: ["layer"],
-    resolve: "typed", resolveArgs: { flavor: "layer" } }],
-  accepts: [],
-};
-// Client-side io contract for the `type-motion` (Kinetic Type) render node (no
-// backend KIND_IO). Its `out` resolves as a LAYER so the composer ingests the
-// per-glyph animated text as renderable, effect-able content (mirrors shape).
-const _TYPEMOTION_KIND_IO = {
-  provides: [{ port: "out", label: "Layer", tags: ["layer"],
-    resolve: "typed", resolveArgs: { flavor: "layer" } }],
-  accepts: [],
-};
-// Client-side io contract for the camera/video Source nodes' `layer` port: the
-// live feed flows into a composer as a layer (content kind set in
-// _wiredLayerSpec). Only the `layer` port is a layer source; other ports stay
-// logic-only (resolved via _logicProjection, not as upstream inputs).
-const _CAMERA_KIND_IO = {
-  provides: [{ port: "layer", label: "Layer", tags: ["layer"],
-    resolve: "typed", resolveArgs: { flavor: "layer" } }],
-  accepts: [],
-};
 function _ioProvideForPort(io, port) {
   const list = (io && io.provides) || [];
   if (!list.length) return null;
@@ -80033,7 +79998,7 @@ function resolveUpstreamInputs(node, allNodes, allEdges, opts) {
           // separately via _shapePointBindings / _shapeColorBindings).
           const synth = (allEdges || [])
             .filter(e => (e.to || "").split(".", 1)[0] === up.id)
-            .map(e => { const p = (e.to || "").split(".")[1] || "in"; return { from: e.from, to: "__layer__." + (p === "content" ? "in" : p) }; });
+            .map(e => { const p = (e.to || "").split(".")[1] || "in"; return { from: e.from, to: "__layer__." + (p === "content" || (up.kind === "input-video" && p === "asset") ? "in" : p) }; });
           children = resolveUpstreamInputs({ id: "__layer__" }, allNodes, synth, { _depth: depth + 1, toPort: "in" });
         }
         out.push({ ...base, type: "layer", label, spec: up.spec || {}, layerId: up.id, children });
@@ -86610,8 +86575,32 @@ function _wiredLayerSpec(i, allNodes, allEdges) {
 // / timeline) that feeds a logic accept port, so the engine can Sources.eval it.
 // `edges` are wires whose TARGET is a logic accept port. `outputs` are wires from
 // a logic OUTPUT port into a target's `param:<key>` port (pre-resolved).
-function _logicProjection(allNodes, allEdges) {
-  const nodes = allNodes || [], edges = allEdges || [];
+async function _writeToolArtifact(url, options) {
+  const response = await fetch(url, options);
+  if (!response.ok) throw new Error("HTTP " + response.status + ": " + (await response.text()).slice(0, 240));
+  return response;
+}
+
+function _logicProjection(allNodes, allEdges, composerId) {
+  // Only ancestors of this composer execute. Sinks without a wire must name an
+  // explicit composerId; canvas proximity never grants ownership.
+  const owned = new Set(composerId ? [composerId] : []);
+  for (const n of (allNodes || [])) if (composerId && n.composerId === composerId) owned.add(n.id);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const e of (allEdges || [])) {
+      const from = workflowParseEdgeRef(e.from || ""), to = workflowParseEdgeRef(e.to || "");
+      if (from && to && to.port !== "edit" && owned.has(to.node) && !owned.has(from.node)) {
+        owned.add(from.node); changed = true;
+      }
+    }
+  }
+  const nodes = (allNodes || []).filter(n => owned.has(n.id));
+  const edges = (allEdges || []).filter(e => {
+    const from = workflowParseEdgeRef(e.from || ""), to = workflowParseEdgeRef(e.to || "");
+    return from && to && to.port !== "edit" && owned.has(from.node) && owned.has(to.node);
+  });
   const byId = {};
   for (const n of nodes) { if (n && n.id != null) byId[n.id] = n; }
   const include = {};                  // nodeId -> projection node body
@@ -86622,6 +86611,12 @@ function _logicProjection(allNodes, allEdges) {
     // values on spec.params; logic falls back to its kind default.
     const params = (spec && spec.params) ? spec.params : ((_specDefault(n.kind) || {}).params || {});
     include[n.id] = { id: n.id, kind: spec.kind || n.kind, params, spec };
+    if (n.kind === "input-audio" || n.kind === "input-video") {
+      const edge = edges.find(e => e.to === n.id + ".asset");
+      const ref = edge && workflowParseEdgeRef(edge.from);
+      const asset = ref && byId[ref.node];
+      include[n.id].params = { ...params, _assetUrl: asset ? _composerAssetUrl(asset) : null };
+    }
   };
   const projEdges = [];
   const outputs = [];
@@ -86704,7 +86699,7 @@ function _logicProjection(allNodes, allEdges) {
         include[n.id] = { ...include[n.id],
           params: { ...(include[n.id].params || {}), _imageUrl: url } };
       }
-    } else if (n.kind === "audio-out") {
+    } else if (n.kind === "audio-out" || n.kind === "input-camera" || n.kind === "input-video") {
       projNode(n);
     }
   }
@@ -86904,7 +86899,7 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
       // Logic Graph (W2C): serialized logic-graph projection (contract §3) sent
       // alongside effects/positions/triggers/layers so the tool runtime can
       // LogicGraph.compile/tick and resolve `kind:"logic"` param bindings.
-      logic: _logicProjection(allNodes, allEdges),
+      logic: _logicProjection(allNodes, allEdges, node.id),
     };
   }, [inputs, allNodes, allEdges]);
   const contentKey = JSON.stringify(contentAssets);
@@ -86969,37 +86964,37 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
       const text = JSON.stringify(pend.state);
       const sig = text + "|" + (pend.baked ? "b" : "");
       if (sig === lastWrittenRef.current) return;
-      lastWrittenRef.current = text;   // echo-suppress on the canonical text
       const patch = {}; patch[cfg.stateField] = pend.state;
       onChange(patch);
       try {
-        await fetch(apiUrl("/__write_text"), {
+        await _writeToolArtifact(apiUrl("/__write_text"), {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ path: canonicalPath, text }),
         });
+        lastWrittenRef.current = text;
         let finalBaked = null;
         if (cfg.canonicalIsBaked) {
           finalBaked = canonicalPath;
         } else if (pend.baked && (pend.baked.dataUrl || typeof pend.baked.text === "string")) {
           if (pend.baked.dataUrl) {
-            await fetch(apiUrl("/__write_binary"), {
+            await _writeToolArtifact(apiUrl("/__write_binary"), {
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ path: bakedPathTarget, dataUrl: pend.baked.dataUrl }),
             });
           } else {
-            await fetch(apiUrl("/__write_text"), {
+            await _writeToolArtifact(apiUrl("/__write_text"), {
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ path: bakedPathTarget, text: pend.baked.text }),
             });
           }
           finalBaked = bakedPathTarget;
         }
-        if (finalBaked && node.bakedPath !== finalBaked) {
-          onChange({ bakedPath: finalBaked, bakedAt: new Date().toISOString() });
+        if (finalBaked) {
+          onChange({ bakedPath: finalBaked, bakedAt: new Date().toISOString(), runStatus: "done", runError: "" });
           try { onBakeAutoCreateOutput && onBakeAutoCreateOutput(finalBaked); } catch (_e) {}
           try { window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [finalBaked] } })); } catch (_e) {}
         }
-      } catch (_e) {}
+      } catch (error) { lastWrittenRef.current = null; onChange({ runStatus: "error", runError: "Could not save bake: " + error.message }); }
     }, 900);
   }, [canonicalPath, bakedPathTarget, cfg.canonicalIsBaked, cfg.stateField, node.bakedPath, onChange, onBakeAutoCreateOutput]);
 
@@ -87016,22 +87011,22 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
     bakedSaveTimerRef.current = setTimeout(async () => {
       try {
         if (baked.dataUrl) {
-          await fetch(apiUrl("/__write_binary"), {
+          await _writeToolArtifact(apiUrl("/__write_binary"), {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ path: bakedPathTarget, dataUrl: baked.dataUrl }),
           });
         } else {
-          await fetch(apiUrl("/__write_text"), {
+          await _writeToolArtifact(apiUrl("/__write_text"), {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ path: bakedPathTarget, text: baked.text }),
           });
         }
-        if (node.bakedPath !== bakedPathTarget) {
-          onChange({ bakedPath: bakedPathTarget, bakedAt: new Date().toISOString() });
+        {
+          onChange({ bakedPath: bakedPathTarget, bakedAt: new Date().toISOString(), runStatus: "done", runError: "" });
           try { onBakeAutoCreateOutput && onBakeAutoCreateOutput(bakedPathTarget); } catch (_e) {}
         }
         try { window.dispatchEvent(new CustomEvent("th:asset-refresh", { detail: { paths: [bakedPathTarget] } })); } catch (_e) {}
-      } catch (_e) {}
+      } catch (error) { lastWrittenRef.current = null; onChange({ runStatus: "error", runError: "Could not save bake: " + error.message }); }
     }, 900);
   }, [bakedPathTarget, cfg.canonicalIsBaked, node.bakedPath, onChange, onBakeAutoCreateOutput]);
 
@@ -87063,6 +87058,8 @@ function WorkflowDrivenToolNode({ node, zoom, selected, onSelect, onDeselect, on
         sendInit();
       } else if (d.type === cfg.prefix + ":state") {
         persistState(d.state, d.baked || null);
+      } else if (d.type === cfg.prefix + ":bake-error") {
+        onChange({runStatus:"error",runError:"Bake failed: " + d.error});
       } else if (d.type === cfg.prefix + ":baked") {
         // Baked-only refresh (wiring changed): write the baked artifact + stamp
         // bakedPath WITHOUT touching the saved doc. Keeps the published / QA
@@ -87392,7 +87389,7 @@ function WorkflowCustomAppNode({ node, zoom, selected, onSelect, onDeselect, onM
         children: (i.children || []).map(mapMember),
       })),
       // Logic Graph (W2C): projection scoped to the custom-app subgraph.
-      logic: _logicProjection(scopedNodes, scopedEdges),
+      logic: _logicProjection(scopedNodes, scopedEdges, previewNode && previewNode.id),
     };
   }, [previewInputs, scopedNodes, scopedEdges]);
 
@@ -87821,787 +87818,7 @@ function _triggerTemplate(id, label, source, controls, params, helpers, impacts)
      accepts   left-side input ports:  { port: { label, dtype } }.
    The persisted spec is { v:1, kind, params:{...controls values} } - the
    projection the future engine (W1B) reads. */
-const LOGIC_NODE_DEFS = {
-  // ── 2.1 Sources (no inputs; emit typed outputs) ──────────────────────
-  "input-pointer": {
-    glyph: "‹", label: "Pointer", section: "Sources", w: 220, h: 300,
-    desc: "Mouse / single-pointer on the render surface",
-    controls: {
-      space:  { type: "select", value: "normalized", options: ["normalized", "pixels"] },
-      button: { type: "select", value: "any", options: ["any", "left", "right", "middle"] },
-    },
-    provides: {
-      x:       { label: "x", dtype: "number" },
-      y:       { label: "y", dtype: "number" },
-      isDown:  { label: "isDown", dtype: "boolean" },
-      clicked: { label: "clicked", dtype: "event" },
-      downX:   { label: "downX", dtype: "number" },
-      downY:   { label: "downY", dtype: "number" },
-      upX:     { label: "upX", dtype: "number" },
-      upY:     { label: "upY", dtype: "number" },
-      hover:   { label: "hover", dtype: "boolean" },
-      pos:     { label: "pos", dtype: "vector2" },
-    },
-    accepts: {},
-  },
-  "input-touch": {
-    glyph: "⊛", label: "Touch", section: "Sources", w: 220, h: 320,
-    desc: "Multi-touch on the render surface",
-    controls: {
-      maxPoints: { type: "number", value: 5, min: 1, max: 10, step: 1 },
-      space:     { type: "select", value: "normalized", options: ["normalized", "pixels"] },
-    },
-    provides: {
-      count:      { label: "count", dtype: "number" },
-      pos:        { label: "pos", dtype: "vector2" },
-      touches:    { label: "touches", dtype: "vector2" },
-      isDown:     { label: "isDown", dtype: "boolean" },
-      center:     { label: "center", dtype: "vector2" },
-      spread:     { label: "spread", dtype: "number" },
-      pinchDelta: { label: "pinchDelta", dtype: "number" },
-      rotation:   { label: "rotation", dtype: "number" },
-      tap:        { label: "tap", dtype: "event" },
-    },
-    accepts: {},
-  },
-  "input-keyboard": {
-    glyph: "⎄", label: "Keyboard", section: "Sources", w: 220, h: 280,
-    desc: "Keyboard on the render surface",
-    controls: {
-      key:    { type: "text", value: "" },
-      repeat: { type: "boolean", value: false },
-    },
-    provides: {
-      key:      { label: "key", dtype: "string" },
-      isDown:   { label: "isDown", dtype: "boolean" },
-      pressed:  { label: "pressed", dtype: "event" },
-      released: { label: "released", dtype: "event" },
-      axisX:    { label: "axisX", dtype: "number" },
-      axisY:    { label: "axisY", dtype: "number" },
-    },
-    accepts: {},
-  },
-  "input-scroll": {
-    glyph: "⇕", label: "Scroll", section: "Sources", w: 220, h: 280,
-    desc: "Wheel / scroll on the render surface",
-    controls: {
-      space:    { type: "select", value: "normalized", options: ["normalized", "pixels"] },
-      clampMin: { type: "number", value: 0, step: 0.01 },
-      clampMax: { type: "number", value: 1, step: 0.01 },
-    },
-    provides: {
-      deltaY:   { label: "deltaY", dtype: "number" },
-      deltaX:   { label: "deltaX", dtype: "number" },
-      accumY:   { label: "accumY", dtype: "number" },
-      accumX:   { label: "accumX", dtype: "number" },
-      velocity: { label: "velocity", dtype: "number" },
-    },
-    accepts: {},
-  },
-  "input-gyro": {
-    glyph: "┑", label: "Gyro", section: "Sources", w: 220, h: 260,
-    desc: "Device orientation (mobile-primary)",
-    controls: {
-      smoothing: { type: "number", value: 0.2, min: 0, max: 1, step: 0.01 },
-    },
-    provides: {
-      alpha: { label: "alpha", dtype: "number" },
-      beta:  { label: "beta", dtype: "number" },
-      gamma: { label: "gamma", dtype: "number" },
-      tilt:  { label: "tilt", dtype: "vector2" },
-      ready: { label: "ready", dtype: "boolean" },
-    },
-    accepts: {},
-  },
-  "input-audio": {
-    glyph: "▿", label: "Audio", section: "Sources", w: 220, h: 300,
-    desc: "Microphone / audio asset level, pitch, bands",
-    controls: {
-      source:    { type: "select", value: "mic", options: ["mic", "asset"] },
-      band:      { type: "select", value: "full", options: ["bass", "mid", "treble", "full"] },
-      fftSize:   { type: "number", value: 2048, min: 32, max: 32768, step: 1 },
-      smoothing: { type: "number", value: 0.8, min: 0, max: 1, step: 0.01 },
-    },
-    provides: {
-      level: { label: "level", dtype: "number" },
-      pitch: { label: "pitch", dtype: "number" },
-      band:  { label: "band", dtype: "number" },
-      beat:  { label: "beat", dtype: "event" },
-      spectrum: { label: "spectrum", dtype: "channel" },
-      bands: { label: "bands", dtype: "channel" },
-    },
-    accepts: {
-      asset: { label: "Audio asset (source=asset)", dtype: "string", tags: ["asset", "audio"] },
-    },
-  },
-  "input-gamepad": {
-    glyph: "⊞", label: "Gamepad", section: "Sources", w: 220, h: 300,
-    desc: "Gamepad sticks + buttons (no permission)",
-    controls: {},
-    provides: {
-      leftStick: { label: "leftStick", dtype: "vector2" },
-      rightStick: { label: "rightStick", dtype: "vector2" },
-      x: { label: "x", dtype: "number" }, y: { label: "y", dtype: "number" },
-      a: { label: "a", dtype: "boolean" }, b: { label: "b", dtype: "boolean" },
-      connected: { label: "connected", dtype: "boolean" },
-    },
-    accepts: {},
-  },
-  "input-accel": {
-    glyph: "⊕", label: "Accel", section: "Sources", w: 220, h: 240,
-    desc: "Device motion / accelerometer (permission-gated)",
-    controls: {},
-    provides: {
-      x: { label: "x", dtype: "number" }, y: { label: "y", dtype: "number" },
-      z: { label: "z", dtype: "number" }, ready: { label: "ready", dtype: "boolean" },
-    },
-    accepts: {},
-  },
-  "input-midi": {
-    glyph: "⊟", label: "MIDI", section: "Sources", w: 220, h: 300,
-    desc: "WebMIDI controller: note / velocity / CC (permission-gated)",
-    controls: {},
-    provides: {
-      note: { label: "note", dtype: "number" }, velocity: { label: "velocity", dtype: "number" },
-      cc: { label: "cc", dtype: "number" }, ccValue: { label: "ccValue", dtype: "number" },
-      gate: { label: "gate", dtype: "boolean" }, ready: { label: "ready", dtype: "boolean" },
-    },
-    accepts: {},
-  },
-  "input-camera": {
-    glyph: "⊙", label: "Camera", section: "Sources", w: 220, h: 240,
-    desc: "Live webcam stream handle",
-    controls: {
-      facing:     { type: "select", value: "user", options: ["user", "environment"] },
-      resolution: { type: "select", value: "medium", options: ["low", "medium", "high"] },
-    },
-    provides: {
-      stream: { label: "stream", dtype: "string" },
-      ready:  { label: "ready", dtype: "boolean" },
-      // A LAYER output: wiring `layer` into a composer `in` makes the live webcam
-      // feed a renderable layer (content.kind === "camera"), effect-able by the
-      // per-layer effect stack. Mirrors the shape node's `out` layer port. The
-      // detection ports above stay intact (camera-feed / vision-detect still work).
-      layer:  { label: "Layer", dtype: "layer", tags: ["layer"] },
-    },
-    accepts: {},
-  },
-  "input-video": {
-    glyph: "▷", label: "Video", section: "Sources", w: 220, h: 240,
-    desc: "A video asset / clip as a stream handle",
-    controls: {
-      loop:     { type: "boolean", value: true },
-      autoplay: { type: "boolean", value: true },
-    },
-    provides: {
-      stream:  { label: "stream", dtype: "string" },
-      t:       { label: "t", dtype: "number" },
-      playing: { label: "playing", dtype: "boolean" },
-      // A LAYER output: wiring `layer` into a composer `in` renders the video
-      // element (the wired asset if a url is present, else the live <video>).
-      layer:   { label: "Layer", dtype: "layer", tags: ["layer"] },
-    },
-    accepts: {
-      asset: { label: "Video asset", dtype: "string", tags: ["asset", "video"] },
-    },
-  },
-  // ── 2.2 Processors (stream in -> structured data out) ─────────────────
-  "vision-detect": {
-    glyph: "◉", label: "Vision detect", section: "Processors", w: 240, h: 480,
-    desc: "MediaPipe Tasks Vision: face / hand / object detection",
-    controls: {
-      detector: { type: "select", value: "face", options: ["face", "hand", "object"] },
-      target:   { type: "select", value: "present", options: ["present", "count", "location", "gesture"] },
-      hand:     { type: "select", value: "primary", options: ["primary", "leftmost", "rightmost", "second"] },
-    },
-    provides: {
-      present:    { label: "present", dtype: "boolean" },
-      count:      { label: "count", dtype: "number" },
-      pos:        { label: "pos", dtype: "vector2" },
-      region:     { label: "region", dtype: "region" },
-      gesture:    { label: "gesture", dtype: "string" },
-      confidence: { label: "confidence", dtype: "number" },
-      // Per-landmark points of the PRIMARY detection (normalized 0..1). Hand
-      // fingertips (detector=hand) + face features (detector=face); each missing
-      // point degrades to {x:0,y:0}. See logicvision.js / logicgraph.js.
-      wrist:     { label: "wrist", dtype: "vector2" },
-      thumbTip:  { label: "thumbTip", dtype: "vector2" },
-      indexTip:  { label: "indexTip", dtype: "vector2" },
-      middleTip: { label: "middleTip", dtype: "vector2" },
-      ringTip:   { label: "ringTip", dtype: "vector2" },
-      pinkyTip:  { label: "pinkyTip", dtype: "vector2" },
-      nose:      { label: "nose", dtype: "vector2" },
-      leftEye:   { label: "leftEye", dtype: "vector2" },
-      rightEye:  { label: "rightEye", dtype: "vector2" },
-    },
-    accepts: {
-      stream: { label: "stream", dtype: "string" },
-    },
-  },
-  "vision-ocr": {
-    glyph: "⊜", label: "Vision OCR", section: "Processors", w: 240, h: 280,
-    desc: "tesseract.js text recognition over a stream",
-    controls: {
-      query:    { type: "text", value: "" },
-      interval: { type: "number", value: 500, min: 50, max: 10000, step: 50 },
-    },
-    provides: {
-      text:    { label: "text", dtype: "string" },
-      matched: { label: "matched", dtype: "boolean" },
-      region:  { label: "region", dtype: "region" },
-      count:   { label: "count", dtype: "number" },
-    },
-    accepts: {
-      stream: { label: "stream", dtype: "string" },
-    },
-  },
-  // ── Palette extraction (image -> N dominant colors) ───────────────────
-  // Takes a wired IMAGE asset and emits its N dominant colors. Extraction
-  // (downsample + median-cut) runs in the mmcomposer / slimPlayer runtime
-  // (canvas/image decode, like number-generator pixel-map), cached by
-  // image-url + count; the colors reach the engine via frame.palettes[nodeId]
-  // (exactly how vision-detect results reach it via frame.streams). color0..7
-  // are dtype `color`; domR/domG/domB expose the dominant color's channels as
-  // NUMBERS so it can also drive numeric params. See LOGICGRAPH_DESIGN.md §2.2.
-  "palette": {
-    glyph: "◧", label: "Palette", section: "Processors", w: 240, h: 440,
-    desc: "Extract N dominant colors from a wired image",
-    controls: {
-      count:   { type: "number", value: 5, min: 2, max: 8, step: 1 },
-      quality: { type: "number", value: 4, min: 1, max: 16, step: 1 },
-    },
-    provides: {
-      color0:   { label: "color0", dtype: "color" },
-      color1:   { label: "color1", dtype: "color" },
-      color2:   { label: "color2", dtype: "color" },
-      color3:   { label: "color3", dtype: "color" },
-      color4:   { label: "color4", dtype: "color" },
-      color5:   { label: "color5", dtype: "color" },
-      color6:   { label: "color6", dtype: "color" },
-      color7:   { label: "color7", dtype: "color" },
-      dominant: { label: "dominant", dtype: "color" },
-      domR:     { label: "dom R", dtype: "number" },
-      domG:     { label: "dom G", dtype: "number" },
-      domB:     { label: "dom B", dtype: "number" },
-      ready:    { label: "ready", dtype: "boolean" },
-      count:    { label: "count", dtype: "number" },
-    },
-    accepts: {
-      image: { label: "Image asset", dtype: "string", tags: ["asset", "image"] },
-    },
-  },
-  // ── 2.3 Literals (number is number-generator - not re-added here) ──────
-  "value-bool": {
-    glyph: "⊤", label: "Boolean", section: "Literals", w: 200, h: 200,
-    desc: "Constant boolean value",
-    controls: { value: { type: "boolean", value: true } },
-    provides: { value: { label: "value", dtype: "boolean" } },
-    accepts: {},
-  },
-  "value-string": {
-    glyph: "⊏", label: "String", section: "Literals", w: 220, h: 220,
-    desc: "Constant text value",
-    controls: { value: { type: "text", value: "" } },
-    provides: { value: { label: "value", dtype: "string" } },
-    accepts: {},
-  },
-  "value-vec2": {
-    glyph: "⊕", label: "Vector2", section: "Literals", w: 200, h: 240,
-    desc: "Constant {x,y} vector",
-    controls: {
-      x: { type: "number", value: 0.5, step: 0.01 },
-      y: { type: "number", value: 0.5, step: 0.01 },
-    },
-    provides: { value: { label: "value", dtype: "vector2" } },
-    accepts: {},
-  },
-  // ── 2.4 Operators (pure, stateless) ──────────────────────────────────
-  "op-math": {
-    glyph: "∑", label: "Math", section: "Operators", w: 220, h: 240,
-    desc: "Binary math on two numbers",
-    controls: { op: { type: "select", value: "add", options: ["add", "sub", "mul", "div", "mod", "min", "max", "pow", "atan2"] } },
-    provides: { r: { label: "r", dtype: "number" } },
-    accepts: { a: { label: "a", dtype: "number" }, b: { label: "b", dtype: "number" } },
-  },
-  "op-unary": {
-    glyph: "ƒ", label: "Unary", section: "Operators", w: 220, h: 220,
-    desc: "Unary math on one number",
-    controls: { op: { type: "select", value: "abs", options: ["abs", "neg", "floor", "round", "sin", "cos", "sqrt", "sign"] } },
-    provides: { r: { label: "r", dtype: "number" } },
-    accepts: { a: { label: "a", dtype: "number" } },
-  },
-  "op-compare": {
-    glyph: "≷", label: "Compare", section: "Operators", w: 220, h: 240,
-    desc: "Compare two numbers, emit boolean",
-    controls: {
-      op:      { type: "select", value: "gt", options: ["eq", "ne", "lt", "gt", "le", "ge"] },
-      epsilon: { type: "number", value: 0.0001, step: 0.0001 },
-    },
-    provides: { r: { label: "r", dtype: "boolean" } },
-    accepts: { a: { label: "a", dtype: "number" }, b: { label: "b", dtype: "number" } },
-  },
-  "op-logic": {
-    glyph: "&", label: "Logic", section: "Operators", w: 220, h: 240,
-    desc: "Boolean logic on two booleans",
-    controls: { op: { type: "select", value: "and", options: ["and", "or", "xor", "nand", "nor"] } },
-    provides: { r: { label: "r", dtype: "boolean" } },
-    accepts: { a: { label: "a", dtype: "boolean" }, b: { label: "b", dtype: "boolean" } },
-  },
-  "op-map": {
-    glyph: "↦", label: "Map", section: "Operators", w: 240, h: 320,
-    desc: "Remap + clamp + ease a number",
-    controls: {
-      inMin:  { type: "number", value: 0, step: 0.01 },
-      inMax:  { type: "number", value: 1, step: 0.01 },
-      outMin: { type: "number", value: 0, step: 0.01 },
-      outMax: { type: "number", value: 1, step: 0.01 },
-      clamp:  { type: "boolean", value: true },
-      ease:   { type: "select", value: "linear", options: ["linear", "in", "out", "inout"] },
-    },
-    provides: { r: { label: "r", dtype: "number" } },
-    accepts: { x: { label: "x", dtype: "number" } },
-  },
-  "op-vector": {
-    glyph: "⊿", label: "Vector", section: "Operators", w: 240, h: 280,
-    desc: "Make / break / measure vec2",
-    controls: { mode: { type: "select", value: "make", options: ["make", "break", "distance", "add", "scale", "lerp"] } },
-    // W1A exposes the SUPERSET of ports across modes; the engine (W1B) reads
-    // only the ports relevant to the selected mode.
-    provides: {
-      v: { label: "v", dtype: "vector2" },
-      x: { label: "x", dtype: "number" },
-      y: { label: "y", dtype: "number" },
-      d: { label: "d", dtype: "number" },
-    },
-    accepts: {
-      x: { label: "x", dtype: "number" },
-      y: { label: "y", dtype: "number" },
-      v: { label: "v", dtype: "vector2" },
-      a: { label: "a", dtype: "vector2" },
-      b: { label: "b", dtype: "vector2" },
-      t: { label: "t", dtype: "number" },
-    },
-  },
-  "op-tostring": {
-    glyph: "“”", label: "To string", section: "Operators", w: 240, h: 240,
-    desc: "Format a value into a string",
-    controls: { template: { type: "text", value: "{v}" } },
-    provides: { s: { label: "s", dtype: "string" } },
-    // `a` accepts the union number|boolean|vector2; W1A picks one dtype for the
-    // port (number) - the explicit op-tostring is the only coercion path per
-    // §1, so its input is intentionally permissive and the engine reads
-    // whatever is wired. number<->boolean already mate; vector2 needs op-vector
-    // break first or a vector2-tagged wire (no dtype gate blocks vector2->this
-    // because string only takes string, see note in report).
-    accepts: { a: { label: "a", dtype: "number" } },
-  },
-  // ── 2.5 Control flow ─────────────────────────────────────────────────
-  "flow-if": {
-    glyph: "⋔", label: "If / select", section: "Control flow", w: 240, h: 260,
-    desc: "Pass then-branch when cond, else else-branch",
-    controls: {},
-    provides: { r: { label: "r", dtype: "number" } },
-    accepts: {
-      cond: { label: "cond", dtype: "boolean" },
-      then: { label: "then", dtype: "number" },
-      else: { label: "else", dtype: "number" },
-    },
-  },
-  "flow-gate": {
-    glyph: "⊳", label: "Gate", section: "Control flow", w: 240, h: 240,
-    desc: "Pass value only while open; else hold last",
-    controls: { holdLast: { type: "boolean", value: true } },
-    provides: { r: { label: "r", dtype: "number" } },
-    accepts: {
-      value: { label: "value", dtype: "number" },
-      open:  { label: "open", dtype: "boolean" },
-    },
-  },
-  "flow-while": {
-    glyph: "↻", label: "While", section: "Control flow", w: 240, h: 260,
-    desc: "Bounded per-frame loop while cond holds",
-    controls: { maxIterations: { type: "number", value: 64, min: 1, max: 10000, step: 1 } },
-    provides: {
-      count: { label: "count", dtype: "number" },
-      last:  { label: "last", dtype: "number" },
-    },
-    accepts: {
-      cond: { label: "cond", dtype: "boolean" },
-      body: { label: "body", dtype: "number" },
-    },
-  },
-  "flow-repeat": {
-    glyph: "⟳", label: "Repeat", section: "Control flow", w: 240, h: 240,
-    desc: "Run body n times; emit per-iteration vector",
-    controls: {},
-    provides: {
-      sum:    { label: "sum", dtype: "number" },
-      values: { label: "values", dtype: "number" },
-    },
-    accepts: {
-      n:    { label: "n", dtype: "number" },
-      body: { label: "body", dtype: "number" },
-    },
-  },
-  // ── 2.6 State (reactive memory; the legal cycle breakers) ─────────────
-  "state-counter": {
-    glyph: "№", label: "Counter", section: "State", w: 220, h: 260,
-    desc: "Count inc events; reset clears",
-    controls: {
-      step: { type: "number", value: 1, step: 1 },
-      wrap: { type: "number", value: 0, step: 1 },
-    },
-    provides: { count: { label: "count", dtype: "number" } },
-    accepts: {
-      inc:   { label: "inc", dtype: "event" },
-      reset: { label: "reset", dtype: "event" },
-    },
-  },
-  "state-toggle": {
-    glyph: "⇄", label: "Toggle", section: "State", w: 220, h: 220,
-    desc: "Flip a boolean on each flip event",
-    controls: { initial: { type: "boolean", value: false } },
-    provides: { on: { label: "on", dtype: "boolean" } },
-    accepts: { flip: { label: "flip", dtype: "event" } },
-  },
-  "state-latch": {
-    glyph: "⎍", label: "Latch", section: "State", w: 220, h: 240,
-    desc: "Sample hold when set rises, then keep it",
-    controls: {},
-    provides: { value: { label: "value", dtype: "number" } },
-    accepts: {
-      set:  { label: "set", dtype: "boolean" },
-      hold: { label: "hold", dtype: "number" },
-    },
-  },
-  "state-timer": {
-    glyph: "⧗", label: "Timer", section: "State", w: 220, h: 260,
-    desc: "Elapsed time between start / stop events",
-    controls: { autostart: { type: "boolean", value: false } },
-    provides: {
-      elapsed: { label: "elapsed", dtype: "number" },
-      running: { label: "running", dtype: "boolean" },
-    },
-    accepts: {
-      start: { label: "start", dtype: "event" },
-      stop:  { label: "stop", dtype: "event" },
-    },
-  },
-  "state-smooth": {
-    glyph: "∿", label: "Smooth", section: "State", w: 220, h: 240,
-    desc: "Critically-damped pursuit of a target number",
-    controls: {
-      stiffness: { type: "number", value: 8, min: 0, max: 200, step: 0.1 },
-      damping:   { type: "number", value: 1, min: 0, max: 10, step: 0.01 },
-    },
-    provides: { value: { label: "value", dtype: "number" } },
-    accepts: { target: { label: "target", dtype: "number" } },
-  },
-  // ── 2.65 CHOP signal layer (generators / operators / channel bridges) ──────
-  "gen-lfo": {
-    glyph: "∿", label: "LFO", section: "Generate", w: 220, h: 300,
-    desc: "Low-frequency oscillator (sine/tri/saw/square)",
-    controls: {
-      wave: { type: "select", value: "sine", options: ["sine", "tri", "saw", "square"] },
-      freq: { type: "number", value: 1, min: 0, max: 30, step: 0.01 },
-      phase: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
-      lo: { type: "number", value: 0, step: 0.01 },
-      hi: { type: "number", value: 1, step: 0.01 },
-    },
-    provides: { value: { label: "value", dtype: "number" }, phase: { label: "phase", dtype: "number" } },
-    accepts: {},
-  },
-  "gen-noise": {
-    glyph: "≈", label: "Noise", section: "Generate", w: 220, h: 280,
-    desc: "Smooth value noise over time",
-    controls: {
-      speed: { type: "number", value: 1, min: 0, max: 20, step: 0.01 },
-      seed: { type: "number", value: 0, step: 1 },
-      lo: { type: "number", value: 0, step: 0.01 },
-      hi: { type: "number", value: 1, step: 0.01 },
-    },
-    provides: { value: { label: "value", dtype: "number" } },
-    accepts: {},
-  },
-  "gen-clock": {
-    glyph: "◷", label: "Clock", section: "Generate", w: 220, h: 220,
-    desc: "Wall clock: time, frame count, fps",
-    controls: {},
-    provides: { time: { label: "time", dtype: "number" }, frame: { label: "frame", dtype: "number" }, fps: { label: "fps", dtype: "number" } },
-    accepts: {},
-  },
-  "op-slope": {
-    glyph: "∂", label: "Slope", section: "Operators", w: 220, h: 200,
-    desc: "Rate of change (derivative) of a number",
-    controls: {},
-    provides: { slope: { label: "slope", dtype: "number" } },
-    accepts: { x: { label: "x", dtype: "number" } },
-  },
-  "chop-filter": {
-    glyph: "≀", label: "Filter", section: "Operators", w: 220, h: 240,
-    desc: "One-pole low/high-pass smoothing filter",
-    controls: {
-      mode: { type: "select", value: "low", options: ["low", "high"] },
-      cutoff: { type: "number", value: 0.2, min: 0, max: 1, step: 0.01 },
-    },
-    provides: { value: { label: "value", dtype: "number" } },
-    accepts: { x: { label: "x", dtype: "number" } },
-  },
-  "state-delay": {
-    glyph: "⇥", label: "Delay", section: "State", w: 220, h: 220,
-    desc: "Delay a number by N frames",
-    controls: { frames: { type: "number", value: 8, min: 1, max: 240, step: 1 } },
-    provides: { value: { label: "value", dtype: "number" } },
-    accepts: { x: { label: "x", dtype: "number" } },
-  },
-  "state-trigger": {
-    glyph: "◺", label: "Envelope", section: "State", w: 220, h: 320,
-    desc: "ADSR envelope driven by a gate event",
-    controls: {
-      attack: { type: "number", value: 0.05, min: 0.001, max: 5, step: 0.01 },
-      decay: { type: "number", value: 0.1, min: 0.001, max: 5, step: 0.01 },
-      sustain: { type: "number", value: 0.6, min: 0, max: 1, step: 0.01 },
-      release: { type: "number", value: 0.3, min: 0.001, max: 5, step: 0.01 },
-    },
-    provides: { value: { label: "value", dtype: "number" } },
-    accepts: { gate: { label: "gate", dtype: "event" } },
-  },
-  "state-trail": {
-    glyph: "≋", label: "Trail", section: "State", w: 220, h: 220,
-    desc: "Record a number into a rolling channel (a scope)",
-    controls: { length: { type: "number", value: 128, min: 2, max: 4096, step: 1 } },
-    provides: { channel: { label: "channel", dtype: "channel" } },
-    accepts: { x: { label: "x", dtype: "number" } },
-  },
-  "chan-sample": {
-    glyph: "⊏", label: "Sample", section: "Channel", w: 220, h: 240,
-    desc: "Read one sample of a channel by index or phase",
-    controls: { mode: { type: "select", value: "index", options: ["index", "phase"] } },
-    provides: { value: { label: "value", dtype: "number" } },
-    accepts: {
-      channel: { label: "channel", dtype: "channel" },
-      index: { label: "index", dtype: "number" },
-      phase: { label: "phase", dtype: "number" },
-    },
-  },
-  "chan-analyze": {
-    glyph: "Σ", label: "Analyze", section: "Channel", w: 220, h: 220,
-    desc: "Reduce a channel to a number (min/max/avg/rms/sum)",
-    controls: { mode: { type: "select", value: "avg", options: ["avg", "min", "max", "rms", "sum"] } },
-    provides: { value: { label: "value", dtype: "number" } },
-    accepts: { channel: { label: "channel", dtype: "channel" } },
-  },
-  // ── 2.68 DAT web/data ──────────────────────────────────────────────────────
-  "dat-fetch": {
-    glyph: "⇄", label: "Fetch", section: "Data", w: 240, h: 320,
-    desc: "Poll a URL (CORS) and cache the response",
-    controls: {
-      url: { type: "text", value: "" },
-      method: { type: "select", value: "GET", options: ["GET", "POST"] },
-      pollMs: { type: "number", value: 0, min: 0, max: 600000, step: 100 },
-    },
-    provides: {
-      text: { label: "text", dtype: "string" },
-      value: { label: "value", dtype: "number" },
-      ok: { label: "ok", dtype: "boolean" },
-      updated: { label: "updated", dtype: "event" },
-    },
-    accepts: {},
-  },
-  "op-json-path": {
-    glyph: "{}", label: "JSON path", section: "Data", w: 220, h: 240,
-    desc: "Extract a value from a JSON string by dotted path (a.b[0].c)",
-    controls: { path: { type: "text", value: "" } },
-    provides: { value: { label: "value", dtype: "number" }, text: { label: "text", dtype: "string" } },
-    accepts: { text: { label: "text", dtype: "string" } },
-  },
-  "dat-websocket": {
-    glyph: "⇌", label: "WebSocket", section: "Data", w: 240, h: 280,
-    desc: "Live WebSocket: latest message + connected flag",
-    controls: { url: { type: "text", value: "" } },
-    provides: {
-      message: { label: "message", dtype: "string" },
-      value: { label: "value", dtype: "number" },
-      connected: { label: "connected", dtype: "boolean" },
-      updated: { label: "updated", dtype: "event" },
-    },
-    accepts: {},
-  },
-  "control-panel": {
-    glyph: "▥", label: "Control panel", section: "Control", w: 240, h: 380,
-    desc: "Live sliders + toggle to drive params",
-    controls: {
-      a: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
-      b: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
-      c: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
-      d: { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
-      toggle: { type: "select", value: "off", options: ["off", "on"] },
-    },
-    provides: {
-      a: { label: "a", dtype: "number" }, b: { label: "b", dtype: "number" },
-      c: { label: "c", dtype: "number" }, d: { label: "d", dtype: "number" },
-      on: { label: "on", dtype: "boolean" },
-    },
-    accepts: {},
-  },
-  // ── 2.75 Physics (generic force field for the composer's unified world) ──
-  // The `force` node is a SINK that injects a GENERIC force into the mm-composer's
-  // ONE shared Matter world (see editor/tools/_shared/PHYSICS_WORLD_DESIGN.md). It
-  // is never hardcoded to the mouse: its `pos` accept takes ANY wired vector2
-  // (input-pointer.pos, input-touch.pos, vision-detect.indexTip, an op-vector
-  // output, ...). The composer collects every force node into projection.forces
-  // (see _logicProjection) and applies it to all world bodies within `radius` each
-  // frame, resolving `pos` per-frame via LogicBridge.vec. type picks the field
-  // shape; for `wind`, pos is read as a DIRECTION (heading) rather than a center.
-  // It is a true logic kind (projected + ticked) but emits NO output port - the
-  // composer enumerates it directly, so it needs no engine evaluator.
-  "force": {
-    glyph: "⌖", label: "Force", section: "Physics", w: 240, h: 320,
-    desc: "Generic physics force into the composer's shared world",
-    controls: {
-      type:     { type: "select", value: "attract", options: ["attract", "repel", "vortex", "drag", "wind"] },
-      radius:   { type: "number", value: 0.3, min: 0.01, max: 2, step: 0.01 },
-      strength: { type: "number", value: 1, min: -10, max: 10, step: 0.05 },
-      falloff:  { type: "number", value: 1, min: 0, max: 4, step: 0.05 },
-    },
-    provides: {},
-    accepts: {
-      pos: { label: "pos", dtype: "vector2" },
-    },
-  },
-  // ── 2.8 Render (a renderable composition primitive, NOT a pure logic node)
-  // The `shape` node draws a polygon / polyline from up to 8 logic vector2
-  // points. It is wired into a composer/mm-composer `in` port like a layer (its
-  // `out` carries the "layer" flavor) so it joins the z-stack and the effect +
-  // blend pipeline exactly like every other layer. Its p0..p7 accepts take logic
-  // vector2 outputs (e.g. vision-detect.indexTip); the runtime resolves each
-  // wired point per-frame from the SAME LogicBridge value path the bindings use.
-  // It is deliberately EXCLUDED from `_isLogicKind` (it is a sink, not a graph
-  // node the engine evaluates) - see _isLogicKind + _shapePointBindings.
-  "shape": {
-    glyph: "⬡", label: "Shape", section: "Render", w: 240, h: 420,
-    desc: "Polygon / polyline from wired vector2 points",
-    controls: {
-      closed:      { type: "boolean", value: true },
-      fill:        { type: "text", value: "" },
-      stroke:      { type: "text", value: "#6ee7ff" },
-      strokeWidth: { type: "number", value: 2, min: 0, max: 64, step: 0.5 },
-      opacity:     { type: "number", value: 1, min: 0, max: 1, step: 0.01 },
-      blend:       { type: "select", value: "normal", options: ["normal", "multiply", "screen", "overlay"] },
-      z:           { type: "number", value: 0, step: 1 },
-      smoothing:   { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
-    },
-    provides: {
-      // tags:["layer"] so the connect-snap + composer-ingest tag intersection
-      // treats the shape `out` like a layer source (it carries dtype "layer"
-      // too, but only mates with untyped legacy accepts like composer.in).
-      out: { label: "Layer", dtype: "layer", tags: ["layer"] },
-    },
-    accepts: {
-      p0: { label: "p0", dtype: "vector2" },
-      p1: { label: "p1", dtype: "vector2" },
-      p2: { label: "p2", dtype: "vector2" },
-      p3: { label: "p3", dtype: "vector2" },
-      p4: { label: "p4", dtype: "vector2" },
-      p5: { label: "p5", dtype: "vector2" },
-      p6: { label: "p6", dtype: "vector2" },
-      p7: { label: "p7", dtype: "vector2" },
-      // COLOR accept ports: wire a palette `colorN` / `dominant` (dtype color)
-      // here to drive the shape's fill / stroke at runtime, overriding the text
-      // controls. Resolved per-frame via LogicBridge.color (see _shapeColorBindings
-      // + drawPolyShape). This is the working color->control path (PART A).
-      fill:   { label: "fill (color)", dtype: "color" },
-      stroke: { label: "stroke (color)", dtype: "color" },
-      // CONTENT FILL: wire a layer-flavored source (input-camera.layer or an
-      // image asset) here to FILL + CLIP the polygon with that content instead
-      // of a flat color; wire an `effect` here too and it applies ONLY inside
-      // the polygon (the shape becomes a live clip mask). Multi-wire like
-      // layer.in - the composer reads these as the shape layer's content + fx.
-      content:{ label: "Fill content / effect", tags: ["asset", "layer", "effect"] },
-    },
-  },
-  // The `type-motion` node draws PER-GLYPH animated text into a layer buffer.
-  // Like `shape`, it is a renderable LAYER sink (its `out` carries the "layer"
-  // flavor) so it joins the z-stack + per-layer effect / feedback / blend
-  // pipeline exactly like every other layer. Its glyph loop is driven by
-  // Input.clock + the per-glyph behavior library (see the composer drawContent
-  // 'typemotion' branch). It is a SINK, not a graph node the engine evaluates,
-  // so it is EXCLUDED from _isLogicKind (mirrors `shape`). Uses canvas
-  // measureText advances + per-glyph transforms (no opentype); supports
-  // text-on-path glyph BASE placement (path controls, §12.6). The glyph-outline
-  // -> ordered points bridge SHIPS as the `text-outline` POSITION mode (§11.6).
-  // See editor/tools/_shared/LOGICGRAPH_DESIGN.md.
-  "type-motion": {
-    glyph: "⒜", label: "Kinetic Type", section: "Render", w: 240, h: 560,
-    desc: "Per-glyph animated text (kinetic typography)",
-    controls: {
-      text:      { type: "text", value: "WOVEN" },
-      font:      { type: "text", value: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif" },
-      weight:    { type: "number", value: 800, min: 100, max: 900, step: 100 },
-      size:      { type: "number", value: 120, min: 4, max: 1000, step: 1 },
-      color:     { type: "text", value: "#ffffff" },
-      tracking:  { type: "number", value: 0, min: -0.5, max: 2, step: 0.01 },
-      align:     { type: "select", value: "center", options: ["center", "left", "right"] },
-      behavior:  { type: "select", value: "wave", options: [
-        "none", "wave", "jitter", "rotate-cycle", "scale-pulse", "slot-cycle",
-        "fade-stagger", "typewriter", "fall-gravity", "elastic-hop",
-        "weightless-float", "rainbow-cycle", "skew-sway", "blur-in",
-        "squash-stretch", "orbit",
-      ] },
-      speed:     { type: "number", value: 1, min: 0, max: 20, step: 0.05 },
-      amplitude: { type: "number", value: 1, min: 0, max: 10, step: 0.01 },
-      stagger:   { type: "number", value: 0.08, min: 0, max: 2, step: 0.01 },
-      // TEXT ON PATH: lay each glyph's BASE position along a curve (advance by
-      // glyph width along arc-length). The per-glyph BEHAVIOR animation still
-      // applies ON TOP. path=straight = current straight layout (no regression).
-      // path=circle/ring + behavior=rotate-cycle gives the "Spoke & Word Type"
-      // text-wraps-around-a-wheel look. See LOGICGRAPH_DESIGN.md §12.6.
-      path:        { type: "select", value: "straight", options: ["straight", "arc", "circle", "wave", "ring"] },
-      pathRadius:  { type: "number", value: 0.3, min: 0.02, max: 2, step: 0.01 },
-      pathAmplitude: { type: "number", value: 30, min: 0, max: 400, step: 1 },
-      pathRotate:  { type: "boolean", value: true },
-      loop:      { type: "boolean", value: true },
-      opacity:   { type: "number", value: 1, min: 0, max: 1, step: 0.01 },
-      blend:     { type: "select", value: "normal", options: ["normal", "multiply", "screen", "overlay"] },
-      z:         { type: "number", value: 0, step: 1 },
-      feedback:  { type: "number", value: 0, min: 0, max: 1, step: 0.01 },
-    },
-    provides: {
-      // tags:["layer"] + dtype "layer" so the connect-snap + composer-ingest
-      // treats `out` as a layer source (mirrors `shape` / camera / video).
-      out: { label: "Layer", dtype: "layer", tags: ["layer"] },
-    },
-    accepts: {},
-  },
-  // ── 2.9 Output (audio synth SINK) ─────────────────────────────────────
-  // audio-out is the missing "audio output / image->sound" category: wire
-  // number-generator / timeline / vision / palette outputs into its frequency /
-  // gain / cutoff / trigger and the piece makes sound that reacts to visuals.
-  // It is a true logic node (the engine evaluates it as a SINK that republishes
-  // resolved params), and the mmcomposer LogicBridge feeds those resolved values
-  // into LogicAudio.set() each frame while Live. The WebAudio graph
-  // (oscillator -> gain -> lowpass -> destination) and the gesture-gated
-  // AudioContext live in editor/tools/_shared/logicaudio.js. Baked slimPlayer
-  // parity: the published piece can also produce audio (gesture-gated). See
-  // LOGICGRAPH_DESIGN.md §2.9.
-  "audio-out": {
-    glyph: "◢", label: "Audio out", section: "Output", w: 240, h: 360,
-    desc: "WebAudio synth: oscillator -> gain -> lowpass -> out",
-    controls: {
-      waveform:  { type: "select", value: "sine", options: ["sine", "square", "saw", "triangle"] },
-      frequency: { type: "number", value: 220, min: 20, max: 20000, step: 1 },
-      gain:      { type: "number", value: 0.2, min: 0, max: 1, step: 0.01 },
-      cutoff:    { type: "number", value: 8000, min: 20, max: 20000, step: 1 },
-    },
-    provides: {},
-    accepts: {
-      frequency: { label: "frequency", dtype: "number" },
-      gain:      { label: "gain", dtype: "number" },
-      cutoff:    { label: "cutoff", dtype: "number" },
-      trigger:   { label: "trigger", dtype: "event" },
-    },
-  },
-};
+const LOGIC_NODE_DEFS = globalThis.TH_LOGIC_NODE_DEFS;
 
 // Stable palette ordering for the Logic section.
 const LOGIC_NODE_SECTIONS = ["Sources", "Processors", "Literals", "Operators", "Control flow", "State", "Physics", "Render", "Output"];

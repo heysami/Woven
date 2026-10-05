@@ -4163,7 +4163,7 @@ KIND_IO = {
         "provides": [{"port": "out", "label": "Baked HTML", "tags": ["asset", "blendable"],
                        "resolve": "bakedFile", "resolveArgs": {"ext": "html"}}],
         "accepts":  [
-            {"port": "in", "label": "Layer content", "tags": ["asset", "layer"], "ingest": "context"},
+            {"port": "in", "label": "Layer content", "tags": ["asset", "layer", "force", "audio-out"], "ingest": "context"},
             {"port": "edit", "label": "Edit composition", "tags": ["text-gen", "asset-gen"],
               "ingest": "editTarget", "canonical": "source/{branch}/mm-{id}.json",
               "authoring": _MM_AUTHORING},
@@ -4341,6 +4341,39 @@ def io_contract_violations():
                 f"an ASSET_KIND_AUTHORING[{ak!r}] entry (NODE_IO_FRAMEWORK.md step 4).")
     return problems
 
+
+# The browser reads the same JSON-compatible assignment before app.js. No
+# generated mirror: adding a visible logic kind also registers its server API.
+import json as _json
+from pathlib import Path as _Path
+
+LOGIC_NODE_DEFS = _json.loads(
+    (_Path(__file__).with_name("logic_nodes.js").read_text(encoding="utf-8")
+     .split("globalThis.TH_LOGIC_NODE_DEFS = ", 1)[1].strip().removesuffix(";"))
+)
+for _kind, _def in LOGIC_NODE_DEFS.items():
+    _canonical = "source/{branch}/logic-{id}.js"
+    _authoring = (
+        "Author the project-local module `" + _canonical + "`. Export `controls` using "
+        "the schema below, and `buildSpec(values) { return {v:1,kind:'" + _kind + "',params:{...values}}; }`. "
+        "The editor compiles it to `source/{branch}/logic-{id}.json`. Preserve declared ports; "
+        "do not edit the shared editor engine. Controls: " + _json.dumps(_def["controls"], ensure_ascii=False)
+    )
+    KINDS[_kind] = {
+        **KINDS["effect"], "title": _def["label"], "notes": _def["desc"],
+        "controls": _def["controls"], "canonical": _canonical,
+        "compiled": "source/{branch}/logic-{id}.json", "authoring": _authoring,
+    }
+    KIND_IO[_kind] = {
+        "provides": [{"port": name, **port, "tags": port.get("tags", []), "resolve": "typed",
+                      "resolveArgs": {"flavor": port.get("dtype", name)}}
+                     for name, port in _def["provides"].items()],
+        "accepts": [{"port": name, **port, "tags": port.get("tags", []), "ingest": "context"}
+                    for name, port in _def["accepts"].items()] + [
+            {"port": "edit", "label": "Edit " + _def["label"], "tags": ["text-gen", "asset-gen"],
+             "ingest": "editTarget", "canonical": _canonical, "authoring": _authoring}],
+    }
+    KINDS[_kind]["io"] = KIND_IO[_kind]
 
 _io_problems = io_contract_violations()
 if _io_problems:

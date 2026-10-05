@@ -217,18 +217,10 @@ function loadMod(key){
 import { createFXChain, fxProgramSpecs, fxCustomFrag, FX_VERT, FX_TYPES, FX_LABELS, fxUniformValue, FX_HISTORY_DEPTH } from '../_shared/fx.js';
 import { createPOPEngine } from '../_shared/pop.js';
 import { createScene3D } from '../_shared/scene3d.js';
-// Baked-export parity: the standalone player is .toString()'d, so it can't
-// reference these module imports - it needs the engine SOURCE inlined as globals.
-// Fetch it once at load (single source of truth, so the export can never drift
-// from the live engine); bake() embeds it. `export` is stripped so the source
-// runs as a plain script that defines window.createPOPEngine / createScene3D.
-let POP_ENGINE_SRC = '', SCENE3D_ENGINE_SRC = '';
-try {
-  fetch(new URL('../_shared/pop.js', import.meta.url)).then(r => r.ok ? r.text() : '').then(t => { POP_ENGINE_SRC = String(t).replace(/\bexport\s+/g, ''); }).catch(() => {});
-  fetch(new URL('../_shared/scene3d.js', import.meta.url)).then(r => r.ok ? r.text() : '').then(t => { SCENE3D_ENGINE_SRC = String(t).replace(/\bexport\s+/g, ''); }).catch(() => {});
-} catch (_e) {}
+// bake() fetches and embeds the engine source after validating every response.
 import { Sources } from '../_shared/sources.js';
 import { LogicGraph } from '../_shared/logicgraph.js';
+import { bundleRuntime, bundleLocalMedia } from '../_shared/bundle-runtime.js';
 const EFFECT_SPECS = fxProgramSpecs();
 // 'fluid' is a composer-local per-layer effect (a CPU Stam stable-fluids sim that
 // stirs the layer buffer; see FluidSim) - it is NOT a GL shader in fx.js, so we
@@ -306,6 +298,9 @@ const LogicBridge = {
     let sig=''; try{ sig=JSON.stringify(next); }catch(e){ sig=String(Math.random()); }
     if(sig===this._sig) return;
     this._sig=sig; this.projection=next;
+    LogicGraph.dispose(this.plan);
+    try{this._inputHandle&&this._inputHandle.dispose();}catch(e){}
+    this._inputHandle=null; this._attachedEl=null;
     this.plan = (next && this.active()) ? LogicGraph.compile(next) : null;
     // Build the readback synthetic-node lookup (per-frame mutated constants).
     this._readbacks = (next && Array.isArray(next.readbacks)) ? next.readbacks : [];
@@ -408,7 +403,7 @@ const LogicBridge = {
     if(!this.inputsMod || !surfaceEl) return;
     if(this._inputHandle && this._attachedEl===surfaceEl) return;
     try{ this._inputHandle && this._inputHandle.dispose && this._inputHandle.dispose(); }catch(e){}
-    try{ this._inputHandle=this.inputsMod.attach(surfaceEl,{}); this._attachedEl=surfaceEl; }
+    try{ this._inputHandle=this.inputsMod.attach(surfaceEl,{audioNodes:((this.projection&&this.projection.nodes)||[]).filter(n=>n.kind==='input-audio')}); this._attachedEl=surfaceEl; }
     catch(e){ this._inputHandle=null; }
   },
   // Build the per-frame inputs object per contract §6.1: merge LogicInputs.sample()
@@ -426,7 +421,8 @@ const LogicBridge = {
       // what makes frame() actually detect (idempotent intent update per frame).
       // ALSO hand LogicVision the already-running camera <video> element under
       // the same handle, so it has something to detect on (no 2nd getUserMedia).
-      const camVidFor=(srcKind,handle)=>{ try{ if(srcKind==='input-camera'){ return (typeof Input!=='undefined'&&Input.cam&&Input.cam.on&&Input.cam.video)?Input.cam.video:null; } if(srcKind==='input-video'&&typeof vstream==='function'){ return vstream(handle); } }catch(e){} return null; };
+      const camVidFor=(srcKind,handle)=>{ try{ if(srcKind==='input-camera'){ return (typeof Input!=='undefined'&&Input.cam&&Input.cam.on&&Input.cam.video)?Input.cam.video:null; } if(srcKind==='input-video'){ return videoStreamEl(handle); } }catch(e){} return null; };
+      for(const n of ((this.projection&&this.projection.nodes)||[])){if(n.kind==='input-video'){const v=videoStreamEl(n.id);if(v)this.visionMod.attachVideoAs(n.id,v,'video');}}
       if(this._streamDetectors){
         for(const d of this._streamDetectors){
           try{ this.visionMod.detect && this.visionMod.detect(d.handle,{detector:d.detector,target:d.target}); }catch(e){}
@@ -802,7 +798,7 @@ function buildOneWiredLayer(wl,wi){
         const aid = assetK.fromId||assetK.id||assetK.assetId||('wv'+wi);
         if(!CONTENT.find(c=>c.id===aid))
           CONTENT.push({id:aid,url:assetK.url,kind:'video',label:assetK.label||aid});
-        content = { kind:'asset', assetId:aid };
+        content = { kind:'videostream', nodeId: wl.id };
       } else {
         content = { kind:'videostream', nodeId: wl.id };
       }
@@ -2282,17 +2278,9 @@ const Positioning = {
     return out;
   },
   cameraFeed(L,p){
-    const det=p.detector;
-    const lm=Input.detect.landmarks;
-    if(!lm||!lm.length) return [];
-    const out=[];
-    for(const set of lm){
-      // sample a few landmarks (or all for face/hand)
-      const step=Math.max(1,Math.floor(set.length/24));
-      for(let i=0;i<set.length;i+=step){ const k=set[i];
-        out.push({x:clamp(k.x,0,1),y:clamp(k.y,0,1),scale:p.size,rot:0}); }
-    }
-    return out;
+    LogicBridge._ensureModules();
+    const v=p.source&&p.source.startsWith('video:')?Assets.video(p.source.slice(6)):(Input.cam.on?Input.cam.video:null);
+    return LogicBridge.visionMod ? LogicBridge.visionMod.positions('position:'+L.id,v,p) : [];
   },
   // TEXT INK: sample a CSS-font glyph string into a normalized point cloud, then
   // render the layer content (a small shape/asset) at each ink point - "text made
@@ -2362,18 +2350,8 @@ const Positioning = {
     if(!s.pts.length) return [{x:0.5,y:0.5,scale:size,rot:0}];
     return s.pts;
   },
-  face3d(L,p){
-    // minimal stub: arrange instances on a sphere-ish face mask, optionally
-    // driven by face landmarks if a camera detector is active.
-    const lm=Input.detect.landmarks;
-    if(lm&&lm[0]){ const step=Math.max(1,Math.floor(lm[0].length/40));
-      const out=[]; for(let i=0;i<lm[0].length;i+=step){ const k=lm[0][i];
-        out.push({x:k.x,y:k.y,scale:p.size*0.4,rot:0}); } return out; }
-    const out=[],n=60;
-    for(let i=0;i<n;i++){ const a=i/n*Math.PI*2, r=0.18*(0.6+0.4*Math.sin(a*3+Input.clock));
-      out.push({x:0.5+Math.cos(a)*r,y:0.5+Math.sin(a)*r*1.2,scale:p.size*0.4,rot:a}); }
-    return out;
-  }
+  face3d(L,p){ return this.cameraFeed(L,{...p,mode:'face-3d'}); }
+
 };
 function hash(s){ let h=2166136261; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
 function mulberry(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
@@ -4018,8 +3996,11 @@ const _vidStreams={};
 function videoStreamEl(nodeId){
   if(!nodeId) return null;
   let v=_vidStreams[nodeId];
-  if(!v){ v=document.createElement('video'); v.muted=true; v.playsInline=true; v.loop=true;
+  if(!v){ v=document.createElement('video'); v.crossOrigin='anonymous'; v.muted=true; v.playsInline=true; v.loop=true;
     v.autoplay=true; _vidStreams[nodeId]=v; }
+  const n=LogicBridge.projection&&LogicBridge.projection.nodes.find(n=>n.id===nodeId), p=(n&&n.params)||{};
+  v.loop=p.loop!==false; v.autoplay=p.autoplay!==false;
+  if(p._assetUrl&&v.getAttribute('src')!==p._assetUrl){v.src=p._assetUrl;if(v.autoplay)v.play().catch(()=>{});}
   return v;
 }
 
@@ -4442,6 +4423,7 @@ const Engine = {
     if(Input.cam.on || this._camReq || Input.camOff) return;   // respect an explicit camera-off toggle
     let need=false;
     for(const L of allRuntimeLayers()){
+      if(['camera-feed','face-3d'].includes((L.positioning||{}).mode)&&!(L.positioning.source||'').startsWith('video:')){need=true;break;}
       if(L.content && L.content.kind==='camera'){ need=true; break; }
       // a polyshape filled with the camera (content.fillSrc) also needs the webcam
       if(L.content && L.content.fillSrc==='camera'){ need=true; break; }
@@ -5034,7 +5016,7 @@ function renderInspector(){
     } else if(p.mode==='face-3d'){
       b.appendChild(fSelect('Mesh',p.meshId||'',assetOpts(['mesh','model','glb']),v=>p.meshId=v));
       b.appendChild(fSlider('Size',p.size,0.1,3,0.05,v=>p.size=v));
-      b.appendChild(html('<p class="hint">Stub: maps instances onto face landmarks (camera) or a procedural face mask.</p>'));
+      b.appendChild(html('<p class="hint">Maps instances onto detected face landmarks. Enable the camera to track a face.</p>'));
     }
   },'pos'));
 
@@ -5330,14 +5312,16 @@ function rebuild(){
   renderAll();
 }
 
-let emitTimer=null;
+let emitTimer=null, bakeGeneration=0;
 function emit(){
   renderLayerList(); renderCanvasControls();
   if(!EMBEDDED || suppressEmit) return;
+  const generation=++bakeGeneration;
   clearTimeout(emitTimer);
-  emitTimer=setTimeout(()=>{
+  emitTimer=setTimeout(async()=>{
     let baked=null;
-    try{ baked={text:bake()}; }catch(e){ console.warn('bake failed',e); }
+    try{ baked={text:await bake()}; }catch(e){ console.warn('bake failed',e);if(generation===bakeGeneration)parent.postMessage({type:'mm:bake-error',nodeId:NODE,error:String(e.message||e)},'*'); }
+    if(generation!==bakeGeneration)return;
     try{ parent.postMessage({type:'mm:state',nodeId:NODE,state:deep(STATE),baked},'*'); }catch(e){}
   },700);
 }
@@ -5353,10 +5337,12 @@ function emit(){
 let bakedTimer=null;
 function scheduleBakedRefresh(){
   if(!EMBEDDED) return;
+  const generation=++bakeGeneration;
   clearTimeout(bakedTimer);
-  bakedTimer=setTimeout(()=>{
+  bakedTimer=setTimeout(async()=>{
     let baked=null;
-    try{ baked={text:bake()}; }catch(e){ console.warn('bake failed',e); }
+    try{ baked={text:await bake()}; }catch(e){ console.warn('bake failed',e);if(generation===bakeGeneration)parent.postMessage({type:'mm:bake-error',nodeId:NODE,error:String(e.message||e)},'*'); }
+    if(generation!==bakeGeneration)return;
     if(baked){ try{ parent.postMessage({type:'mm:baked',nodeId:NODE,baked},'*'); }catch(e){} }
   },700);
 }
@@ -5486,7 +5472,7 @@ if(EMBEDDED){
    It embeds a slim runtime (positioning + triggers + impacts + effects) and
    the config. Camera/mic still gated behind a user gesture button.
    ===========================================================================*/
-function bake(){
+async function bake(){
   const cfg=deep(STATE);
   // Merge the WIRED runtime layers into the baked config so the standalone
   // file plays the SAME composition (inline + wired layers). wiredRuntimeLayers
@@ -5519,7 +5505,10 @@ function bake(){
   const topFx=(WIRED.effects||[]).map(e=>{ const fp=e.params||{}; const ty=e.type||fp.type; const inten=e.intensity!=null?e.intensity:(fp.intensity!=null?fp.intensity:1); return bakeEffect({type:(e.glsl&&String(e.glsl).trim())?'custom':ty, params:fp, intensity:inten, glsl:e.glsl}); });
   // W2C: bake the logic-graph projection so the published piece reacts to real
   // input (the slim player loads logicgraph.js + W2D capture, contract §5.5).
-  const logic=(WIRED.logic && typeof WIRED.logic==='object')?WIRED.logic:null;
+  const logic=(WIRED.logic && typeof WIRED.logic==='object')?deep(WIRED.logic):null;
+  const moduleNames=['logicgraph','logicinputs','logicvision','logicaudio'];
+  const modules=await bundleRuntime(Object.fromEntries(moduleNames.map(name=>[name,new URL('../_shared/'+name+'.js',import.meta.url).href])));
+  const engineSources=await Promise.all(['pop','scene3d'].map(async name=>{const r=await fetch(new URL('../_shared/'+name+'.js',import.meta.url));if(!r.ok)throw new Error('Export engine HTTP '+r.status);return (await r.text()).replace(/\bexport\s+/g,'');}));
   // Inline the particle / 3D engine source as PLAIN JS inside the template's
   // one <script> block (defining the createPOPEngine / createScene3D globals
   // the slimPlayer's hosts call) so a baked composition with particles/scene3d
@@ -5532,8 +5521,8 @@ function bake(){
   // reason. (These comments spell it out rather than writing the tag - a
   // literal one HERE would truncate THIS tool's own inline script block.)
   const escCloseTag = s => String(s).replace(/<\/(script)/gi, '<\\/$1');
-  const engines = (POP_ENGINE_SRC && SCENE3D_ENGINE_SRC)
-    ? (escCloseTag(POP_ENGINE_SRC) + '\n' + escCloseTag(SCENE3D_ENGINE_SRC) +
+  const engines = (engineSources[0] && engineSources[1])
+    ? (escCloseTag(engineSources[0]) + '\n' + escCloseTag(engineSources[1]) +
        '\ntry{window.createPOPEngine=createPOPEngine;window.createScene3D=createScene3D;}catch(e){}')
     : '';
   // JSON payloads live inside the same script block: escape every `<` as
@@ -5543,11 +5532,18 @@ function bake(){
   // patterns, which silently corrupts engine source or user JSON containing
   // them.
   const js = v => JSON.stringify(v).replace(/</g, '\\u003c');
+  const packed=await bundleLocalMedia({cfg,assets,logic},location.href);
+  let htmlRaster='';
+  if(assets.some(a=>a.kind==='html'||/\.html?(?:[?#]|$)/i.test(a.url||''))){
+    const r=await fetch('../materiallab/html2canvas-pro.min.js');if(!r.ok)throw new Error('HTML raster runtime HTTP '+r.status);
+    htmlRaster=escCloseTag(await r.text());
+  }
   return BAKED_TEMPLATE
-    .replace('/*__CFG__*/', () => 'window.__MM_CFG__='+js(cfg)+';')
-    .replace('/*__ASSETS__*/', () => 'window.__MM_ASSETS__='+js(assets)+';')
+    .replace('/*__MODULES__*/',()=> 'window.__MM_MODULES__='+js(modules)+';'+htmlRaster)
+    .replace('/*__CFG__*/', () => 'window.__MM_CFG__='+js(packed.cfg)+';')
+    .replace('/*__ASSETS__*/', () => 'window.__MM_ASSETS__='+js(packed.assets)+';')
     .replace('/*__TOPFX__*/', () => 'window.__MM_TOPFX__='+js(topFx)+';')
-    .replace('/*__LOGIC__*/', () => 'window.__MM_LOGIC__='+js(logic)+';')
+    .replace('/*__LOGIC__*/', () => 'window.__MM_LOGIC__='+js(packed.logic)+';')
     .replace('/*__ENGINES__*/', () => engines);
 }
 /* Serialize one effect for the baked player. Custom effects carry a precompiled
@@ -5573,6 +5569,7 @@ const BAKED_TEMPLATE = `<!doctype html><html><head><meta charset="utf-8">
 </style></head><body>
 <div id="h"><div id="s"><canvas id="c2d"></canvas><canvas id="cgl"></canvas></div></div>
 <script>
+/*__MODULES__*/
 /*__CFG__*/
 /*__ASSETS__*/
 /*__TOPFX__*/
@@ -5598,9 +5595,8 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
     stage.style.width=w+'px'; stage.style.height=h+'px'; rect=stage.getBoundingClientRect(); }
   let rect={left:0,top:0,width:1,height:1}; addEventListener('resize',fit); fit();
   /* W2C live/share logic bridge: the published piece reacts to real input.
-     logicgraph.js + the W2D capture modules are loaded by ABSOLUTE URL (same
-     origin as the served editor toolchain) and feature-detected; a missing
-     module degrades to no logic (the rest of the composition still plays).
+     logicgraph.js and capture modules are embedded data URLs in the artifact.
+     Export fails if a required module cannot be bundled.
      Defaults to LIVE (a published piece runs on load). */
   const LB={plan:null,ports:{},mod:null,vis:null,handle:null,audio:null,audioHandle:null,audioNodes:[],readbacks:[],streams:[],streamDetectors:[],streamOcr:[],sensors:[],paletteNodes:[],paletteCache:{},last:performance.now(),live:true,
     value(ref){ if(!ref)return undefined; const o=this.ports[ref.node]; if(!o)return undefined; const v=o[ref.port];
@@ -5638,11 +5634,12 @@ function slimPlayer(CFG, ASSETS, SPECS, VS, TOPFX, LOGIC){
       // request device sensors (gyro/mic) ONCE - else input-gyro/input-audio stay 0
       if(this.handle&&this.handle.requestSensor&&this.sensors){ const done=this._sensorReq||(this._sensorReq={}); for(const k of this.sensors){ if(done[k])continue; done[k]=true; try{ this.handle.requestSensor(k); }catch(e){} } }
       const camVidFor=(srcKind,handle)=>{ try{ if(srcKind==='input-camera'){ return (IN.cam&&IN.cam.on&&IN.cam.video)?IN.cam.video:null; } if(srcKind==='input-video'&&typeof vstream==='function'){ return vstream(handle); } }catch(e){} return null; };
-      let streams={}; if(this.vis&&this.vis.frame&&this.streams.length){ if(this.streamDetectors){for(const d of this.streamDetectors){ try{this.vis.detect&&this.vis.detect(d.handle,{detector:d.detector,target:d.target});}catch(e){} try{const vel=camVidFor(d.srcKind,d.handle);if(vel&&this.vis.attachVideoAs)this.vis.attachVideoAs(d.handle,vel,d.srcKind==='input-video'?'video':'camera');}catch(e){} }} if(this.streamOcr){for(const d of this.streamOcr){ try{this.vis.ocr&&this.vis.ocr(d.handle,{query:d.query,interval:d.interval});}catch(e){} try{const vel=camVidFor(d.srcKind,d.handle);if(vel&&this.vis.attachVideoAs)this.vis.attachVideoAs(d.handle,vel,d.srcKind==='input-video'?'video':'camera');}catch(e){} }} try{ streams=this.vis.frame(this.streams)||{}; }catch(e){} }
+      let streams={}; if(this.vis&&this.vis.frame&&this.streams.length){for(const n of ((LOGIC&&LOGIC.nodes)||[])){if(n.kind==='input-video'){const v=vstream(n.id);if(v)this.vis.attachVideoAs(n.id,v,'video');}} if(this.streamDetectors){for(const d of this.streamDetectors){ try{this.vis.detect&&this.vis.detect(d.handle,{detector:d.detector,target:d.target});}catch(e){} try{const vel=camVidFor(d.srcKind,d.handle);if(vel&&this.vis.attachVideoAs)this.vis.attachVideoAs(d.handle,vel,d.srcKind==='input-video'?'video':'camera');}catch(e){} }} if(this.streamOcr){for(const d of this.streamOcr){ try{this.vis.ocr&&this.vis.ocr(d.handle,{query:d.query,interval:d.interval});}catch(e){} try{const vel=camVidFor(d.srcKind,d.handle);if(vel&&this.vis.attachVideoAs)this.vis.attachVideoAs(d.handle,vel,d.srcKind==='input-video'?'video':'camera');}catch(e){} }} try{ streams=this.vis.frame(this.streams)||{}; }catch(e){} }
       inp.streams=streams; inp.palettes=this.paletteFrame(); inp.readback=this.readbackMap();
       let out; try{ out=this.LG.tick(this.plan,inp,{index:0,count:1}); }catch(e){ out={}; } this.ports=(out&&out._ports)||{};
       this.driveAudio(); },
   };
+  addEventListener('pagehide',()=>{if(LB.LG)LB.LG.dispose(LB.plan);if(LB.handle)LB.handle.dispose();if(LB.audioHandle)LB.audioHandle.dispose();});
   // ── Sketch (imperative code layer) host - baked twin of the editor SketchHost.
   // Same sandboxed-iframe + drawImage-readback contract so the published piece is
   // interactive identically to the editor. ──
@@ -5672,17 +5669,17 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
     LB.sensors=Array.from(new Set((LOGIC.nodes||[]).map(n=>{ if(!n)return null; const k=n.kind; return k==='input-gyro'?'gyro':k==='input-audio'?'audio':k==='input-accel'?'accel':k==='input-midi'?'midi':null; }).filter(Boolean)));
     LB.paletteNodes=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='palette'&&n.params&&n.params._imageUrl).map(n=>({id:n.id,url:n.params._imageUrl,count:Math.max(2,Math.min(8,(n.params.count|0)||5)),quality:Math.max(1,Math.min(16,(n.params.quality|0)||4))}));
     LB.audioNodes=(LOGIC.nodes||[]).filter(n=>n&&n.kind==='audio-out').map(n=>n.id);
-    import('/editor/tools/_shared/logicgraph.js').then(m=>{ LB.LG=m&&m.LogicGraph; if(LB.LG)LB.plan=LB.LG.compile(LOGIC); }).catch(()=>{});
-    import('/editor/tools/_shared/logicinputs.js').then(m=>{ const M=m&&m.LogicInputs; if(M&&M.attach){ try{ LB.handle=M.attach(stage,{}); }catch(e){} } }).catch(()=>{});
-    import('/editor/tools/_shared/logicvision.js').then(m=>{ LB.vis=m&&m.LogicVision; }).catch(()=>{});
-    if(LB.audioNodes.length) import('/editor/tools/_shared/logicaudio.js').then(m=>{ LB.audio=m&&m.LogicAudio; }).catch(()=>{});
+    import(window.__MM_MODULES__.logicgraph).then(m=>{ LB.LG=m&&m.LogicGraph; if(LB.LG)LB.plan=LB.LG.compile(LOGIC); }).catch(()=>{});
+    import(window.__MM_MODULES__.logicinputs).then(m=>{ const M=m&&m.LogicInputs; if(M&&M.attach){ try{ LB.handle=M.attach(stage,{audioNodes:(LOGIC.nodes||[]).filter(n=>n.kind==='input-audio')}); }catch(e){} } }).catch(()=>{});
+    import(window.__MM_MODULES__.logicvision).then(m=>{ LB.vis=m&&m.LogicVision; }).catch(()=>{});
+    if(LB.audioNodes.length) import(window.__MM_MODULES__.logicaudio).then(m=>{ LB.audio=m&&m.LogicAudio; }).catch(()=>{});
   }
   /* FACE-MORPH needs logicvision (FaceLandmarker) even when there is no logic
      graph: load it lazily if any layer carries a face-morph effect. Fail-soft
      (a missing module just means no warp). */
   if(!LB.vis){ let hasMorph=false;
-    for(const L of CFG.layers){ if(layerMorph(L)){ hasMorph=true; break; } }
-    if(hasMorph) import('/editor/tools/_shared/logicvision.js').then(m=>{ LB.vis=m&&m.LogicVision; }).catch(()=>{});
+    for(const L of CFG.layers){ if(layerMorph(L)||['camera-feed','face-3d'].includes((L.positioning||{}).mode)){ hasMorph=true; break; } }
+    if(hasMorph) import(window.__MM_MODULES__.logicvision).then(m=>{ LB.vis=m&&m.LogicVision; }).catch(()=>{});
   }
   /* Palette extraction parity (PART A): downsample + median-cut once per
      (url+count), cached forever (never per frame). Mirrors the editor runtime. */
@@ -5737,7 +5734,7 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
       fr=document.createElement('iframe'); fr.setAttribute('aria-hidden','true');
       fr.style.cssText='position:fixed;left:-10000px;top:0;border:0;visibility:hidden;pointer-events:none';
       fr.width=W; fr.height=H; fr.style.width=W+'px'; fr.style.height=H+'px'; fr._u=url; rec.iframe=fr; document.body.appendChild(fr);
-      fr.onload=()=>captureHtml(rec,fr); fr.onerror=()=>{rec.busy=false;rec.err='iframe';}; try{fr.src=url;}catch(e){rec.busy=false;rec.err='src';}
+      fr.onload=()=>captureHtml(rec,fr); fr.onerror=()=>{rec.busy=false;rec.err='iframe';}; try{if(/^data:text\/html[^,]*;base64,/.test(url)){const binary=atob(url.slice(url.indexOf(',')+1));fr.srcdoc=new TextDecoder().decode(Uint8Array.from(binary,c=>c.charCodeAt(0)));}else fr.src=url;}catch(e){rec.busy=false;rec.err='src';}
     } else { fr.width=W; fr.height=H; fr.style.width=W+'px'; fr.style.height=H+'px'; captureHtml(rec,fr); } }
   function captureHtml(rec,fr){ let doc=null; try{doc=fr.contentDocument||(fr.contentWindow&&fr.contentWindow.document);}catch(e){doc=null;}
     if(!doc||!doc.body){rec.busy=false;rec.err='cross-origin';return;}
@@ -5748,12 +5745,12 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
   /* per-node <video> for input-video layers wired without a clip url (logic stream
      capture may set srcObject; until then readyState<2 and nothing draws) */
   const VSTREAMS={};
-  function vstream(nodeId){ if(!nodeId)return null; let v=VSTREAMS[nodeId]; if(!v){ v=document.createElement('video'); v.muted=true; v.playsInline=true; v.loop=true; v.autoplay=true; VSTREAMS[nodeId]=v; } return v; }
+  function vstream(nodeId){ if(!nodeId)return null; let v=VSTREAMS[nodeId]; if(!v){v=document.createElement('video');v.crossOrigin='anonymous';v.muted=true;v.playsInline=true;VSTREAMS[nodeId]=v;} const n=LOGIC&&(LOGIC.nodes||[]).find(n=>n.id===nodeId),p=(n&&n.params)||{};v.loop=p.loop!==false;v.autoplay=p.autoplay!==false;if(p._assetUrl&&v.getAttribute('src')!==p._assetUrl){v.src=p._assetUrl;if(v.autoplay)v.play().catch(()=>{});}return v;}
   /* a camera-content layer needs the webcam; request it once (getUserMedia may
      need a gesture, the camera button stays the manual fallback) */
   let camReq=false;
   function ensureCam(){ if(IN.cam.on||camReq)return; let need=false;
-    for(const L of CFG.layers){ if(L.content&&L.content.kind==='camera'){need=true;break;} if(L.content&&L.content.fillSrc==='camera'){need=true;break;} const mm=layerMorph(L); if(mm&&(mm.params||{}).source==='camera'){need=true;break;} } if(!need)return;
+    for(const L of CFG.layers){ if(['camera-feed','face-3d'].includes((L.positioning||{}).mode)&&!(L.positioning.source||'').startsWith('video:')){need=true;break;} if(L.content&&L.content.kind==='camera'){need=true;break;} if(L.content&&L.content.fillSrc==='camera'){need=true;break;} const mm=layerMorph(L); if(mm&&(mm.params||{}).source==='camera'){need=true;break;} } if(!need)return;
     camReq=true; navigator.mediaDevices.getUserMedia({video:true}).then(st=>{ const v=document.createElement('video');v.autoplay=true;v.playsInline=true;v.muted=true;v.srcObject=st; return v.play().then(()=>{ IN.cam={on:true,video:v}; }); }).catch(()=>{}).then(()=>{ camReq=false; }); }
   /* permissions - the baked output shows NO camera/mic chips. getUserMedia is
      blocked outside a user gesture in many browsers, so we grant on the first
@@ -6029,7 +6026,7 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
       for(let i=0;i<N;i++){const a=rs[i],nb=rs[(i+1)%N],pb=rs[(i-1+N)%N],rot=Math.atan2(nb[1]-pb[1],nb[0]-pb[0]);out.push({x:clamp((a[0]*stride)/ww,0,1),y:clamp((a[1]*stride)/hh,0,1),scale:size,rot});}}
     return out;
   }
-  /* positioning (subset: single/grid/instances/rope/rope-ink/drawn/text-ink/text-outline/camera-feed; physics→grid fallback, face-3d→procedural) */
+  /* positioning (subset: single/grid/instances/rope/rope-ink/drawn/text-ink/text-outline/camera-feed; physics grid fallback; tracked face landmarks) */
   const SIM={};
   function positions(L,dt){ const p=L.positioning;
     LB.applyScalar(p);   // W2C: overlay logic-graph scalar bindings before resolve
@@ -6137,9 +6134,10 @@ window.__sketchTick=function(W,H,frame,vals,content){if(_cv.width!==W)_cv.width=
       if(!s||s.toSig!==sig){ s={toSig:sig,pts:traceInk(text,font,weight,density,size,simplify)}; SIM[L.id]=s; }
       if(!s.pts.length)return[{x:.5,y:.5,scale:size,rot:0}];
       return s.pts; }
-    if(p.mode==='camera-feed'){ const lm=IN.detect.landmarks; if(!lm||!lm.length)return[]; const out=[];
-      for(const set of lm){const step=Math.max(1,(set.length/24)|0);for(let i=0;i<set.length;i+=step){const kp=set[i];out.push({x:clamp(kp.x,0,1),y:clamp(kp.y,0,1),scale:p.size||0.05,rot:0});}} return out; }
-    if(p.mode==='face-3d'){ const out=[],n=60; for(let i=0;i<n;i++){const a=i/n*Math.PI*2,r=0.18*(0.6+0.4*Math.sin(a*3+IN.clock));out.push({x:0.5+Math.cos(a)*r,y:0.5+Math.sin(a)*r*1.2,scale:(p.size||1)*0.16,rot:a});} return out; }
+    if(p.mode==='camera-feed'||p.mode==='face-3d'){
+      const v=p.source&&p.source.startsWith('video:')?video(p.source.slice(6)):(IN.cam.on?IN.cam.video:null);
+      return LB.vis?LB.vis.positions('position:'+L.id,v,p):[];
+    }
     return[{x:.5,y:.5,scale:1,rot:0}]; }
   /* triggers */
   function trigVal(L){ const t=L.trigger;
@@ -6534,6 +6532,7 @@ LogicBridge.setReadbackProvider((nodeId, param)=>{
 
 // W3E seam: toggle logic-graph execution + input capture from the host (Run/Live).
 window.__mmLogicRun=function(on){ Engine.logicRun=!!on; };
+window.addEventListener('pagehide',()=>{LogicGraph.dispose(LogicBridge.plan);if(LogicBridge._inputHandle)LogicBridge._inputHandle.dispose();});
 
 if(EMBEDDED){
   const announce=()=>{ try{ parent.postMessage({type:'mm:ready',nodeId:NODE},'*'); }catch(e){} };

@@ -17695,6 +17695,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._workflow_nodes_add_body(project_root, body)
 
     def _workflow_nodes_add_body(self, project_root, body):
+        if "edges" in body:
+            return self._reply(400, {"error": "use addEdges, not edges"})
         add_nodes = body.get("addNodes") or []
         add_edges = body.get("addEdges") or []
         if not isinstance(add_nodes, list) or not isinstance(add_edges, list):
@@ -19659,6 +19661,10 @@ class H(http.server.SimpleHTTPRequestHandler):
           run_error = body.get("runError") or ""
           add_nodes = body.get("addNodes") or []
           add_edges = body.get("addEdges") or []
+          if "edges" in body:
+            return self._reply(400, {"error": "use addEdges, not edges"})
+          if not isinstance(add_nodes, list) or not isinstance(add_edges, list):
+            return self._reply(400, {"error": "addNodes and addEdges must be arrays"})
           caller_session_id = self.headers.get("X-Claude-Session-Id") or body.get("callerSessionId") or ""
 
           if not isinstance(posted_outputs, dict):
@@ -19691,6 +19697,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             contract = kind_contract(node.get("kind"), node_id)
             if not contract:
               return self._reply(400, {"error": f"unknown kind {node.get('kind')!r}", "nodeId": node_id})
+            if (add_nodes or add_edges) and not contract.get("extendsGraph"):
+              return self._reply(400, {"error": "this kind cannot extend the graph; use /__workflow/nodes/add"})
+            duplicates = [n.get("id") for n in add_nodes if isinstance(n, dict) and n.get("id") in nodes_by_id]
+            if duplicates:
+              return self._reply(400, {"error": "addNodes cannot update existing nodes; use node update", "ids": duplicates})
 
             # Build a probe-node mirroring the proposed final state for
             # validation. Don't mutate workflow.json yet.
@@ -26768,6 +26779,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                                 "node.bakedPath)"),
             }
         rel = baked_path.lstrip("/")
+        absolute = os.path.realpath(os.path.join(project_root, rel))
+        if not absolute.startswith(os.path.realpath(project_root) + os.sep):
+            raise _QAResolveError(400, {"error": "baked path escapes project root"})
+        if not os.path.isfile(absolute):
+            raise _QAResolveError(404, {"error": "baked artifact is missing", "bakedPath": baked_path})
+        if node.get("runStatus") == "error":
+            raise _QAResolveError(409, {"error": "node has an unresolved error; bake again before QA",
+                                        "runError": node.get("runError")})
         url = "http://127.0.0.1:" + str(PORT) + "/" + urllib.parse.quote(rel)
         if project_id:
             url += "?project=" + urllib.parse.quote(project_id)

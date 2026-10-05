@@ -87,7 +87,6 @@ export const LogicGraph = {
       if (byId[t.node] == null) continue;
       wiring[t.node][t.port] = { node: f.node, port: f.port };
       if (byId[f.node] == null) continue;            // wired from a non-logic node
-      if (f.node === t.node) continue;               // ignore trivial self-loop here
       deps[t.node].add(f.node);
       dependents[f.node].add(t.node);
     }
@@ -127,13 +126,16 @@ export const LogicGraph = {
     };
     for (const id in byId) if (color[id] === WHITE) dfs(id, []);
 
-    // Rebuild hard deps + dependents minus the dropped state back-edges.
+    // A feedback state has a read phase before the graph and a write phase after
+    // it. All its incoming dependencies belong to the write phase.
+    const feedback = new Set(Object.keys(drop).map(key => key.slice(key.indexOf('->') + 2)));
+    // Rebuild hard deps + dependents minus the state write dependencies.
     for (const id in byId) { deps[id] = new Set(); dependents[id] = new Set(); }
     for (const e of edges) {
       if (!e || !e.from || !e.to) continue;
       const f = e.from, t = e.to;
-      if (byId[f.node] == null || byId[t.node] == null || f.node === t.node) continue;
-      if (drop[f.node + '->' + t.node]) continue;
+      if (byId[f.node] == null || byId[t.node] == null) continue;
+      if (feedback.has(t.node)) continue;
       deps[t.node].add(f.node);
       dependents[f.node].add(t.node);
     }
@@ -171,6 +173,8 @@ export const LogicGraph = {
       wiring: wiring,
       outputs: outputs,
       errors: dedup,
+      feedback,
+      feedbackValues: {},
       state: {},      // per-node persistent memory + event edge-detect cache
       _ports: {},     // last frame's resolved out-ports per node (UI preview)
     };
@@ -181,19 +185,36 @@ export const LogicGraph = {
   // Evaluate one frame in topo order. Memoize each node's out-ports for the frame
   // in plan._ports. Returns { "<targetNode>.<param>": value } for every output.
   tick(plan, inputs, ctx) {
-    if (!plan) return {};
+    if (!plan || plan.disposed) return {};
     inputs = inputs || {};
     ctx = ctx || {};
     const frame = {
       pointer: inputs.pointer || {}, touch: inputs.touch || {},
       keyboard: inputs.keyboard || {}, scroll: inputs.scroll || {},
       gyro: inputs.gyro || {}, audio: inputs.audio || {},
+      audioNodes: inputs.audioNodes || {}, surface: inputs.surface || {},
+      gamepad: inputs.gamepad || {}, accel: inputs.accel || {}, midi: inputs.midi || {},
       streams: inputs.streams || {}, readback: inputs.readback || {},
       palettes: inputs.palettes || {},
       dt: finiteNumber(inputs.dt, 0), time: finiteNumber(inputs.time, ctx.time || 0),
     };
     const ports = {};
     plan._ports = ports;
+
+    for (const id of plan.feedback) {
+      const node = plan.nodes[id];
+      if (node.kind === 'state-delay') {
+        const n = Math.max(1, Math.min(240, Math.round(finiteNumber(node.params && node.params.frames, 8))));
+        const s = plan.state[id];
+        ports[id] = { value: s && s.n === n && s.buf.length >= n ? s.buf[0] : 0 };
+      } else {
+        if (!plan.feedbackValues[id]) {
+          const ev = this.evaluators[node.kind];
+          plan.feedbackValues[id] = ev ? ev(node, (_id, _port, fallback) => fallback, {...frame, dt: 0}, ctx, plan.state) : {};
+        }
+        ports[id] = plan.feedbackValues[id];
+      }
+    }
 
     const readIn = (nodeId, inPort, fallback) => {
       const src = plan.wiring[nodeId] && plan.wiring[nodeId][inPort];
@@ -213,6 +234,7 @@ export const LogicGraph = {
     };
 
     for (const id of plan.order) {
+      if (plan.feedback.has(id)) continue;
       const node = plan.nodes[id];
       if (!node) { ports[id] = {}; continue; }
       const ev = this.evaluators[node.kind];
@@ -221,6 +243,11 @@ export const LogicGraph = {
       try { out = ev(node, readIn, frame, ctx, plan.state); }
       catch (e) { out = {}; }
       ports[id] = out || {};
+    }
+
+    for (const id of plan.feedback) {
+      const node = plan.nodes[id], ev = this.evaluators[node.kind];
+      if (ev) plan.feedbackValues[id] = ev(node, readIn, frame, ctx, plan.state) || {};
     }
 
     const outMap = {};
@@ -232,6 +259,21 @@ export const LogicGraph = {
     }
     outMap._ports = ports;
     return outMap;
+  },
+
+  dispose(plan) {
+    if (!plan || plan.disposed) return;
+    plan.disposed = true;
+    for (const s of Object.values(plan.state)) {
+      if (!s || typeof s !== 'object') continue;
+      s.disposed = true;
+      if (s.abort) s.abort.abort();
+      if (s.ws) {
+        s.ws.onopen = s.ws.onclose = s.ws.onerror = s.ws.onmessage = null;
+        try { s.ws.close(); } catch (_) {}
+        s.ws = null;
+      }
+    }
   },
 
   // ── read ─────────────────────────────────────────────────────────────────--
@@ -257,33 +299,50 @@ export const LogicGraph = {
     // ---- 2.1 input sources (map already-captured frame state to ports) --------
     'input-pointer'(node, read, frame, ctx, state) {
       const p = frame.pointer || {};
-      const clicked = LogicGraph._rise(state, node.id + ':click', p.isDown) || !!p.clicked;
+      const cfg = node.params || {}, surface = frame.surface || {};
+      const sx = cfg.space === 'pixels' ? finiteNumber(surface.width, 1) : 1;
+      const sy = cfg.space === 'pixels' ? finiteNumber(surface.height, 1) : 1;
+      const mask = { left: 1, right: 2, middle: 4 }[cfg.button];
+      const down = mask ? !!((p.buttons || 0) & mask) : !!p.isDown;
+      const clicked = LogicGraph._rise(state, node.id + ':click', down) || (mask ? !!((p.clickedButtons || 0) & mask) : !!p.clicked);
       return {
-        x: finiteNumber(p.x, 0), y: finiteNumber(p.y, 0),
-        isDown: !!p.isDown, clicked: clicked,
-        downX: finiteNumber(p.downX, 0), downY: finiteNumber(p.downY, 0),
-        upX: finiteNumber(p.upX, 0), upY: finiteNumber(p.upY, 0),
-        hover: !!p.hover, pos: vec2(p.x, p.y),
+        x: finiteNumber(p.x, 0) * sx, y: finiteNumber(p.y, 0) * sy,
+        isDown: down, clicked,
+        downX: finiteNumber(p.downX, 0) * sx, downY: finiteNumber(p.downY, 0) * sy,
+        upX: finiteNumber(p.upX, 0) * sx, upY: finiteNumber(p.upY, 0) * sy,
+        hover: !!p.hover, pos: vec2(p.x * sx, p.y * sy),
       };
     },
 
     'input-touch'(node, read, frame, ctx, state) {
       const t = frame.touch || {};
-      const tap = LogicGraph._rise(state, node.id + ':tap', t.isDown) || !!t.tap;
+      const cfg = node.params || {}, surface = frame.surface || {};
+      const sx = cfg.space === 'pixels' ? finiteNumber(surface.width, 1) : 1;
+      const sy = cfg.space === 'pixels' ? finiteNumber(surface.height, 1) : 1;
+      const pts = (Array.isArray(t.touches) ? t.touches : []).slice(0, Math.max(1, Math.min(10, Math.floor(finiteNumber(cfg.maxPoints, 5))))).map(p => vec2(p.x * sx, p.y * sy));
+      const center = pts.reduce((v, p) => vec2(v.x + p.x / pts.length, v.y + p.y / pts.length), vec2(0, 0));
+      const s = state[node.id] || (state[node.id] = {});
+      const spread = pts.length > 1 ? Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) : 0;
+      const angle = pts.length > 1 ? Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x) : null;
+      if (angle == null) s.angle = null;
+      else if (s.angle == null) s.angle = angle;
+      const pinchDelta = spread && s.spread ? spread - s.spread : 0;
+      s.spread = spread;
+      const tap = LogicGraph._rise(state, node.id + ':tap', pts.length > 0) || !!t.tap;
       return {
-        count: finiteNumber(t.count, 0), pos: vec2((t.pos || {}).x, (t.pos || {}).y),
-        touches: Array.isArray(t.touches) ? t.touches : [],
-        isDown: !!t.isDown, center: vec2((t.center || {}).x, (t.center || {}).y),
-        spread: finiteNumber(t.spread, 0), pinchDelta: finiteNumber(t.pinchDelta, 0),
-        rotation: finiteNumber(t.rotation, 0), tap: tap,
+        count: pts.length, pos: pts[0] || vec2(0, 0), touches: pts,
+        isDown: pts.length > 0, center, spread, pinchDelta,
+        rotation: angle == null ? 0 : angle - s.angle, tap,
       };
     },
 
     'input-keyboard'(node, read, frame, ctx, state) {
       const k = frame.keyboard || {};
       const filter = (node.params && node.params.key) || '';
-      const isDown = filter ? (k.key === filter && !!k.isDown) : !!k.isDown;
-      const pressed = LogicGraph._rise(state, node.id + ':press', isDown);
+      const isDown = filter ? (Array.isArray(k.keys) ? k.keys.includes(filter) : k.key === filter && !!k.isDown) : !!k.isDown;
+      const pulse = (k.pressedKeys || []).some(key => !filter || key === filter);
+      const repeated = !!(node.params && node.params.repeat) && (k.repeatKeys || []).some(key => !filter || key === filter);
+      const pressed = LogicGraph._rise(state, node.id + ':press', isDown) || pulse || repeated;
       const released = !isDown && !!(state.__kbWasDown && state.__kbWasDown[node.id]);
       (state.__kbWasDown || (state.__kbWasDown = {}))[node.id] = isDown;
       return {
@@ -295,25 +354,32 @@ export const LogicGraph = {
 
     'input-scroll'(node, read, frame, ctx, state) {
       const s = frame.scroll || {};
+      const p = node.params || {}, surface = frame.surface || {};
+      const sx = p.space === 'pixels' ? 1 : 1 / Math.max(1, finiteNumber(surface.width, 1));
+      const sy = p.space === 'pixels' ? 1 : 1 / Math.max(1, finiteNumber(surface.height, 1));
+      const lo = finiteNumber(p.clampMin, 0), hi = finiteNumber(p.clampMax, 1);
+      const bounded = v => clamp(v, Math.min(lo, hi), Math.max(lo, hi));
       return {
-        deltaY: finiteNumber(s.deltaY, 0), deltaX: finiteNumber(s.deltaX, 0),
-        accumY: finiteNumber(s.accumY, 0), accumX: finiteNumber(s.accumX, 0),
-        velocity: finiteNumber(s.velocity, 0),
+        deltaY: finiteNumber(s.deltaY, 0) * sy, deltaX: finiteNumber(s.deltaX, 0) * sx,
+        accumY: bounded(finiteNumber(s.accumY, 0) * sy), accumX: bounded(finiteNumber(s.accumX, 0) * sx),
+        velocity: finiteNumber(s.velocity, 0) * sy,
       };
     },
 
     'input-gyro'(node, read, frame, ctx, state) {
-      const g = frame.gyro || {};
+      const raw = frame.gyro || {}, g = state[node.id] || (state[node.id] = {alpha: 0, beta: 0, gamma: 0});
+      const k = clamp(finiteNumber(node.params && node.params.smoothing, 0.2), 0, 1);
+      for (const key of ['alpha', 'beta', 'gamma']) g[key] = g[key] * k + finiteNumber(raw[key], 0) * (1 - k);
       return {
         alpha: finiteNumber(g.alpha, 0), beta: finiteNumber(g.beta, 0),
         gamma: finiteNumber(g.gamma, 0),
         tilt: vec2(clamp(finiteNumber(g.beta, 0) / 90, -1, 1), clamp(finiteNumber(g.gamma, 0) / 90, -1, 1)),
-        ready: !!g.ready,
+        ready: !!raw.ready,
       };
     },
 
     'input-audio'(node, read, frame, ctx, state) {
-      const a = frame.audio || {};
+      const a = (frame.audioNodes || {})[node.id] || ((node.params || {}).source === 'asset' ? {} : frame.audio) || {};
       const beat = LogicGraph._rise(state, node.id + ':beat', a.beat) || !!a.beat;
       return {
         level: finiteNumber(a.level, 0), pitch: finiteNumber(a.pitch, 0),
@@ -357,7 +423,8 @@ export const LogicGraph = {
     'vision-detect'(node, read, frame, ctx, state) {
       const handle = read(node.id, 'stream', null);
       const st = handle != null ? (frame.streams && frame.streams[handle]) : null;
-      const dets = (st && Array.isArray(st.detections)) ? st.detections : [];
+      const detector = (node.params && node.params.detector) || 'face';
+      const dets = st && st.byDetector ? (st.byDetector[detector] || []) : (st && Array.isArray(st.detections) ? st.detections : []);
       const present = dets.length > 0;
       // Detection selector. Default `primary` = dets[0].
       // With more than one detection present (e.g. detector=hand running two
@@ -545,7 +612,7 @@ export const LogicGraph = {
         return { d: Math.sqrt(dx * dx + dy * dy) };
       }
       if (mode === 'add') { return { v: vec2(finiteNumber(a.x, 0) + finiteNumber(b.x, 0), finiteNumber(a.y, 0) + finiteNumber(b.y, 0)) }; }
-      if (mode === 'scale') { const s = asNumber(read(node.id, 's', 1)); return { v: vec2(finiteNumber(a.x, 0) * s, finiteNumber(a.y, 0) * s) }; }
+      if (mode === 'scale') { const v = read(node.id, 'v', a), s = asNumber(read(node.id, 't', read(node.id, 's', 1))); return { v: vec2(finiteNumber(v.x, 0) * s, finiteNumber(v.y, 0) * s) }; }
       if (mode === 'lerp') { const t = clamp(asNumber(read(node.id, 't', 0)), 0, 1); return { v: vec2(finiteNumber(a.x, 0) + (finiteNumber(b.x, 0) - finiteNumber(a.x, 0)) * t, finiteNumber(a.y, 0) + (finiteNumber(b.y, 0) - finiteNumber(a.y, 0)) * t) }; }
       return { v: vec2(0, 0) };
     },
@@ -559,7 +626,7 @@ export const LogicGraph = {
       if (tmpl) {
         const ax = (a && typeof a === 'object') ? finiteNumber(a.x, 0) : a;
         const ay = (a && typeof a === 'object') ? finiteNumber(a.y, 0) : '';
-        s = tmpl.replace(/\{x\}/g, ax).replace(/\{y\}/g, ay).replace(/\{a\}/g, String(a));
+        s = tmpl.replace(/\{x\}/g, () => ax).replace(/\{y\}/g, () => ay).replace(/\{a\}/g, () => String(a)).replace(/\{v\}/g, () => s);
       }
       return { s: String(s) };
     },
@@ -712,8 +779,9 @@ export const LogicGraph = {
       const s = (state[node.id] || (state[node.id] = { buf: [], n }));
       if (s.n !== n) { s.buf = []; s.n = n; }
       const x = asNumber(read(node.id, 'x', 0));
+      const value = s.buf.length >= n ? s.buf[0] : 0;
       s.buf.push(x); while (s.buf.length > n) s.buf.shift();
-      return { value: s.buf.length >= n ? s.buf[0] : x };
+      return { value };
     },
     // ADSR envelope driven by a gate event/boolean.
     'state-trigger'(node, read, frame, ctx, state) {
@@ -778,9 +846,9 @@ export const LogicGraph = {
       const due = url && (s.url !== url || s.last < 0 || (pollMs > 0 && now - s.last >= pollMs));
       if (due && !s.busy && typeof fetch === 'function') {
         s.busy = true; s.last = now; s.url = url;
-        fetch(url, { method: (p.method || 'GET') })
+        fetch(url, { method: (p.method || 'GET'), signal: (s.abort = new AbortController()).signal })
           .then((r) => { s.ok = !!r.ok; return r.text(); })
-          .then((t) => { s.text = String(t); const n = Number(t); s.value = Number.isFinite(n) ? n : 0; s.ver++; s.busy = false; })
+          .then((t) => { if (s.disposed) return; s.text = String(t); const n = Number(t); s.value = Number.isFinite(n) ? n : 0; s.ver++; s.busy = false; })
           .catch(() => { s.ok = false; s.busy = false; });
       }
       let updated = false;
@@ -806,29 +874,30 @@ export const LogicGraph = {
       const num = Number(v);
       return { value: Number.isFinite(num) ? num : 0, text: v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v)) };
     },
-    // Live WebSocket: open on first eval, reconnect when the url changes, expose
-    // the latest message + a connected flag + an `updated` pulse. Self-contained
-    // in node state (the socket closes on url change; a deleted node's socket is
-    // GC-pressured but a centralized conductor would manage that more strictly).
+    // Retry while the graph ticks, with capped exponential backoff. Closing or
+    // replacing a graph detaches callbacks before closing its sockets.
     'dat-websocket'(node, read, frame, ctx, state) {
-      const s = state[node.id] || (state[node.id] = { ws: null, url: '', open: false, last: '', ver: 0, emit: 0 });
+      const s = state[node.id] || (state[node.id] = {ws:null,url:'',open:false,last:'',ver:0,emit:0,retryAt:0,attempt:0});
       const url = String((node.params && node.params.url) || '').trim();
+      const now = finiteNumber(frame.time, 0) * 1000;
       if (url !== s.url) {
-        if (s.ws) { try { s.ws.close(); } catch (_e) {} s.ws = null; s.open = false; }
-        s.url = url;
-        if (url && typeof WebSocket === 'function') {
-          try {
-            const ws = new WebSocket(url); s.ws = ws;
-            ws.onopen = () => { s.open = true; };
-            ws.onclose = () => { s.open = false; };
-            ws.onerror = () => { s.open = false; };
-            ws.onmessage = (e) => { s.last = (typeof e.data === 'string') ? e.data : ''; s.ver++; };
-          } catch (_e) { s.ws = null; }
-        }
+        if (s.ws) { s.ws.onopen=s.ws.onclose=s.ws.onerror=s.ws.onmessage=null; try { s.ws.close(); } catch (_) {} }
+        s.ws=null; s.open=false; s.url=url; s.retryAt=0; s.attempt=0;
       }
-      let updated = false; if (s.ver !== s.emit) { updated = true; s.emit = s.ver; }
-      const num = Number(s.last);
-      return { message: s.last, value: Number.isFinite(num) ? num : 0, connected: !!s.open, updated: updated };
+      if (!s.disposed && url && !s.ws && now >= s.retryAt && typeof WebSocket === 'function') {
+        const retry = () => { s.open=false; s.ws=null; s.retryAt=now+Math.min(30000,1000*Math.pow(2,s.attempt++)); };
+        try {
+          const ws = new WebSocket(url); s.ws=ws;
+          ws.onopen=()=>{ if(s.ws!==ws||s.disposed)return; s.open=true; s.attempt=0; };
+          ws.onclose=()=>{ if(s.ws===ws&&!s.disposed) { s.open=false; s.ws=null; s.retryAt=s.now+Math.min(30000,1000*Math.pow(2,s.attempt++)); } };
+          ws.onerror=()=>{ if(s.ws===ws&&!s.disposed) { try { ws.close(); } catch (_) {} ws.onclose(); } };
+          ws.onmessage=e=>{ if(s.ws!==ws||s.disposed)return; s.last=typeof e.data==='string'?e.data:''; s.ver++; };
+        } catch (_) { retry(); }
+      }
+      s.now=now;
+      let updated=false; if(s.ver!==s.emit){updated=true;s.emit=s.ver;}
+      const num=Number(s.last);
+      return {message:s.last,value:Number.isFinite(num)?num:0,connected:!!s.open,updated};
     },
     // Control panel: live sliders + a toggle exposed as outputs, wired onto any
     // params (the missing TD-style control surface). Pure - the values ARE the

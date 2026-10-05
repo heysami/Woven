@@ -72,8 +72,30 @@ function loadEsm(url) {
 
 export const LogicVision = {
 
+  // Shared by live and baked legacy positioning. No synthetic face fallback.
+  positions(handle, videoEl, params) {
+    if (!videoEl) return [];
+    const p = params || {}, face = p.mode === 'face-3d';
+    const detector = face ? 'face' : (p.detector || 'hand');
+    this.attachVideoAs(handle, videoEl, 'video');
+    if (detector === 'ocr') this.ocr(handle, {});
+    else this.detect(handle, {detector});
+    const frame = this.frame([handle])[handle];
+    const dets = detector === 'ocr' ? (frame.ocr.words || []) : (frame.byDetector[detector] || []);
+    const out = [];
+    for (const det of (face ? dets.slice(0, 1) : dets)) {
+      const points = det.landmarks && det.landmarks.length ? det.landmarks : [det];
+      const step = Math.max(1, Math.floor(points.length / (face ? 40 : 24)));
+      for (let i = 0; i < points.length; i += step) {
+        out.push({x:clamp01(num(points[i].x,0)), y:clamp01(num(points[i].y,0)),
+          scale: num(p.size, face ? 1 : 0.05) * (face ? 0.4 : 1), rot:0});
+      }
+    }
+    return out;
+  },
+
   _streams: {},     // handle -> { kind:'camera'|'video', el, stream, t, playing }
-  _detect: {},      // handle -> { detector, target, last, result, busy }
+  _detect: {},      // handle -> detector type -> { detector, target, last, result, busy }
   _ocr: {},         // handle -> { query, interval, last, result, busy }
   _mp: null,        // resolved MediaPipe vision namespace (or false)
   _mpTasks: {},     // detector -> task instance (or null)
@@ -136,8 +158,10 @@ export const LogicVision = {
   detect(handle, opts) {
     opts = opts || {};
     if (handle == null) return emptyDetect();
-    let rec = this._detect[handle];
-    if (!rec) { rec = this._detect[handle] = { detector: 'face', target: 'present', last: 0, result: emptyDetect(), busy: false }; }
+    const detector = opts.detector || 'face';
+    const processors = this._detect[handle] || (this._detect[handle] = {});
+    let rec = processors[detector];
+    if (!rec) { rec = processors[detector] = { detector, target: 'present', last: 0, result: emptyDetect(), busy: false }; }
     rec.detector = opts.detector || rec.detector || 'face';
     rec.target = opts.target || rec.target || 'present';
     return rec.result;
@@ -224,13 +248,14 @@ export const LogicVision = {
         st.t = entry.t; st.playing = entry.playing;
       }
 
-      const dRec = this._detect[handle];
-      if (dRec) {
+      entry.byDetector = {};
+      for (const [detector, dRec] of Object.entries(this._detect[handle] || {})) {
         if (!dRec.busy && (t - dRec.last) >= DETECT_INTERVAL_MS && st && st.el) {
           dRec.last = t; dRec.busy = true;
           this._runDetect(st.el, dRec).then((r) => { dRec.result = r; dRec.busy = false; }).catch(() => { dRec.busy = false; });
         }
-        entry.detections = (dRec.result && dRec.result._dets) || [];
+        entry.byDetector[detector] = (dRec.result && dRec.result._dets) || [];
+        if (detector === 'face') entry.detections = entry.byDetector[detector];
       }
 
       const oRec = this._ocr[handle];
