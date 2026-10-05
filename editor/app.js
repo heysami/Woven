@@ -13104,7 +13104,7 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
                 </span>
               ` : html`<span className="runs-row-dot" data-status=${status}/>`}
               <span className="runs-row-title">${r.title || r.kind}</span>
-              ${role && html`<${PlanRoleMark} badge=${role}/>`}
+              ${role && html`<${PlanRoleMark} badge=${role} noCount/>`}
               <span className="runs-row-age">${formatRunAge(r.updatedAt || r.startedAt)}</span>
               ${/* Unread marker. A dot on the TRAILING edge rather than a bar on
                   the leading one: the leading edge already carries the status
@@ -32475,11 +32475,11 @@ function planRoleBadge(run) {
 
 // The mark itself: the same icon the plan toggle (DocPencil) and the fork
 // glyph use elsewhere, plus "2/3" for a split item. No pill - an icon.
-function PlanRoleMark({ badge, className }) {
+function PlanRoleMark({ badge, className, noCount }) {
   if (!badge) return null;
   return html`<span className=${"plan-role plan-role-" + badge.cls + (className ? " " + className : "")}
     title=${badge.title} aria-label=${badge.label} role="img">
-    <${badge.icon}/>${badge.count && html`<span className="plan-role-n">${badge.count}</span>`}
+    <${badge.icon}/>${badge.count && !noCount && html`<span className="plan-role-n">${badge.count}</span>`}
   </span>`;
 }
 
