@@ -25,7 +25,7 @@ class ContractTests(unittest.TestCase):
     def test_all_visible_logic_kinds_have_server_contracts_and_edit_destinations(self):
         self.assertEqual(len(LOGIC_NODE_DEFS), 51)
         self.assertIn('kinds/logic_nodes.js', (EDITOR / 'index.html').read_text())
-        self.assertIn('const LOGIC_NODE_DEFS = globalThis.TH_LOGIC_NODE_DEFS;', (EDITOR / 'app.js').read_text())
+        self.assertIn('const LOGIC_NODE_DEFS = globalThis.TH_LOGIC_NODE_DEFS || {};', (EDITOR / 'app.js').read_text())
         self.assertFalse(io_contract_violations())
         for kind, definition in LOGIC_NODE_DEFS.items():
             with self.subTest(kind=kind):

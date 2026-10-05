@@ -87818,7 +87818,10 @@ function _triggerTemplate(id, label, source, controls, params, helpers, impacts)
      accepts   left-side input ports:  { port: { label, dtype } }.
    The persisted spec is { v:1, kind, params:{...controls values} } - the
    projection the future engine (W1B) reads. */
-const LOGIC_NODE_DEFS = globalThis.TH_LOGIC_NODE_DEFS;
+// Loaded by kinds/logic_nodes.js. A page that misses that script loses the
+// logic nodes, not the whole editor.
+const LOGIC_NODE_DEFS = globalThis.TH_LOGIC_NODE_DEFS || {};
+if (!globalThis.TH_LOGIC_NODE_DEFS) console.error("kinds/logic_nodes.js did not load; logic nodes are unavailable");
 
 // Stable palette ordering for the Logic section.
 const LOGIC_NODE_SECTIONS = ["Sources", "Processors", "Literals", "Operators", "Control flow", "State", "Physics", "Render", "Output"];

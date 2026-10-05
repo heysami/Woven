@@ -878,9 +878,13 @@ def release_agent_lease(project_id, node_id):
 # Writes are refused. This deliberately widens the gate to a read-proxy - scoped
 # to one project + a read whitelist.
 
-# Editor files served verbatim from <install>/editor/.
+# Editor files served verbatim from <install>/editor/. Every local <script> in
+# index.html must be here: kinds/logic_nodes.js in particular is read at
+# app.js load, so a guest that 404s it gets a white page.
 _EDITOR_STATIC_FILES = {
     "app.js", "styles.css", "landing-shaders.js", "index.html",
+    "figma-bridge.js", "compress.js", "context-policy.js", "edit-engine.js",
+    "edit-components.js", "edit-controls.js", "kinds/logic_nodes.js",
 }
 _EDITOR_STATIC_DIR_PREFIXES = ("prompts/",)
 # Root-absolute daemon GET paths a guest may read. Everything else 404s.
@@ -1316,8 +1320,8 @@ class _LiveGate:
             return _serve_client(h, "locks.js")     # editor/live/locks.js
         if sub == "/live/aikey.js":
             return _serve_client(h, "aikey.js")     # editor/live/aikey.js
-        if sub in ("/live/app.js", "/live/styles.css", "/live/landing-shaders.js") \
-                or sub.startswith("/live/prompts/"):
+        if (sub.startswith("/live/") and sub[len("/live/"):] in _EDITOR_STATIC_FILES
+                and sub != "/live/index.html") or sub.startswith("/live/prompts/"):
             return _serve_editor_static(h, sub[len("/live/"):])
         m = re.match(r"^/live/(data\.js|[A-Za-z0-9_.-]{1,80}\.layout\.js)$", sub)
         if m:

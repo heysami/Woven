@@ -57,11 +57,12 @@ const server = http.createServer(async(req,res)=>{
   const file=url.pathname.slice(1);
   if(files.has(file)){const html=files.get(file);res.setHeader('content-type','text/html');return res.end(html.replace('<head>','<head><meta name="woven-source-revision" content="'+revision(html)+'">'));}
   if(url.pathname==='/editor/app.js'){res.setHeader('content-type','text/javascript');return res.end(app);}
+  if(url.pathname==='/editor/kinds/logic_nodes.js'){res.setHeader('content-type','text/javascript');return res.end(fs.readFileSync(path.join(root,'kinds','logic_nodes.js')));}
   if(['/editor/styles.css','/editor/edit-engine.js','/editor/edit-components.js','/editor/edit-controls.js','/editor/context-policy.js'].includes(url.pathname)) {
     res.setHeader('content-type',url.pathname.endsWith('.css')?'text/css':'text/javascript');return res.end(fs.readFileSync(path.join(root,path.basename(url.pathname))));
   }
   res.setHeader('content-type','text/html');
-  res.end('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/editor/styles.css"></head><body><div id="root"></div><script>localStorage.setItem("th-workflow-wb-mode","0");window.EDITOR_DATA='+JSON.stringify(data)+';</script>'+['https://unpkg.com/react@18.3.1/umd/react.development.js','https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js','https://unpkg.com/htm@3.1.1/dist/htm.umd.js','/editor/context-policy.js','/editor/edit-engine.js','/editor/edit-components.js','/editor/edit-controls.js','/editor/app.js'].map(src=>'<script src="'+src+'"></script>').join('')+'</body></html>');
+  res.end('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/editor/styles.css"></head><body><div id="root"></div><script>localStorage.setItem("th-workflow-wb-mode","0");window.EDITOR_DATA='+JSON.stringify(data)+';</script>'+['https://unpkg.com/react@18.3.1/umd/react.development.js','https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js','https://unpkg.com/htm@3.1.1/dist/htm.umd.js','/editor/context-policy.js','/editor/edit-engine.js','/editor/edit-components.js','/editor/edit-controls.js','/editor/kinds/logic_nodes.js','/editor/app.js'].map(src=>'<script src="'+src+'"></script>').join('')+'</body></html>');
 });
 (async()=>{
   await new Promise(r=>server.listen(0,'127.0.0.1',r));

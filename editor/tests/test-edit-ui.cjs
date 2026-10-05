@@ -44,7 +44,7 @@ const server = http.createServer(async (req,res)=>{
     await page.goto('http://127.0.0.1:'+server.address().port+'/?project=fixture');
     for (const url of ['https://unpkg.com/react@18.3.1/umd/react.development.js','https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js','https://unpkg.com/htm@3.1.1/dist/htm.umd.js']) await page.addScriptTag({url});
     await page.addStyleTag({content:fs.readFileSync(path.join(root,'styles.css'),'utf8')});
-    for (const name of ['edit-engine.js','edit-components.js','edit-controls.js','context-policy.js']) await page.addScriptTag({path:path.join(root,name)});
+    for (const name of ['edit-engine.js','edit-components.js','edit-controls.js','context-policy.js','kinds/logic_nodes.js']) await page.addScriptTag({path:path.join(root,name)});
     await page.evaluate(()=>{ window.EDITOR_DATA={meta:{project:'Fixture',prototype:'demo',dsRef:{id:'fixture',version:'1'}},frames:[],entities:[],tokens:[],library:[],primitives:[{name:'Button',variants:['primary'],htmlByVariant:{primary:'<button class="button"><span>Button</span></button>'}}]}; });
     let app=fs.readFileSync(path.join(root,'app.js'),'utf8');
     app=app.replace('createRoot(document.getElementById("root")).render(html`<${React.Fragment}><${Root}/><${DialogHost}/><//>`);', 'window.fixtureRoot = createRoot(document.getElementById("root")); window.fixtureRoot.render(html`<${React.Fragment}><${ZoomOverlay} filePath="source/demo/index.html" branch="demo" data=${{nodes:[],edges:[]}} setData=${()=>{}} onClose=${()=>{}}/><${DialogHost}/><//>`);');
