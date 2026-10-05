@@ -180,6 +180,9 @@ class ContextPolicyTests(unittest.TestCase):
             self.assertNotIn("--append-system-prompt", args)
             self.assertEqual(args[args.index("--setting-sources") + 1], "")
             self.assertNotIn("--effort", args)
+            self.assertNotIn("transcript", args)
+            self.assertEqual(run.call_args.kwargs["input"], "transcript")
+            self.assertNotIn("stdin", run.call_args.kwargs)
 
     def test_invalid_summary_does_not_replace_history(self):
         with patch.object(serve, "_compact_config", return_value={"summaryModel": "fast"}), \

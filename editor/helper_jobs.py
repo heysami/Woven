@@ -76,6 +76,11 @@ def run(args, capture_output=True, text=True, timeout=None, **kwargs):
     job = getattr(_LOCAL, "job", None)
     if job is None:
         return subprocess.run(args, capture_output=capture_output, text=text, timeout=timeout, **kwargs)
+    input_text = kwargs.pop("input", None)
+    if input_text is not None:
+        if "stdin" in kwargs:
+            raise ValueError("stdin and input arguments may not both be used")
+        kwargs["stdin"] = subprocess.PIPE
     # Register the process atomically with cancellation. Otherwise a stop
     # between Popen and assignment could miss the process's escalation timer.
     with _LOCK:
@@ -85,7 +90,7 @@ def run(args, capture_output=True, text=True, timeout=None, **kwargs):
                                 text=text, start_new_session=True, **kwargs)
         job["proc"] = proc
     try:
-        stdout, stderr = proc.communicate(timeout=timeout)
+        stdout, stderr = proc.communicate(input=input_text, timeout=timeout)
     except subprocess.TimeoutExpired:
         _signal(proc, signal.SIGKILL)
         proc.communicate()

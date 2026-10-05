@@ -263,6 +263,19 @@ class EvidenceTests(unittest.TestCase):
 
 
 class HelperTests(unittest.TestCase):
+    def test_tracked_and_untracked_helpers_receive_large_input_intact(self):
+        import hashlib
+        payload = "A long conversation with approved decisions.\n" * 30000
+        expected = hashlib.sha256(payload.encode()).hexdigest()
+        args = [sys.executable, "-c",
+                "import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())"]
+        result = helper_jobs.run(args, input=payload, timeout=10)
+        self.assertEqual(result.stdout.strip(), expected)
+        with helper_jobs.execution("large-input", "parent", "claude"):
+            result = helper_jobs.run(args, input=payload, timeout=10)
+        self.assertEqual(result.stdout.strip(), expected)
+        self.assertFalse(helper_jobs._JOBS)
+
     def test_stop_before_registration_cannot_launch_helper(self):
         with patch.object(helper_jobs.subprocess, "Popen") as spawn:
             with self.assertRaises(helper_jobs.Cancelled):
