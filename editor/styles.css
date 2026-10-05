@@ -25048,17 +25048,17 @@ a.ds-badge:hover, button.ds-badge:hover {
   letter-spacing: 0.02em;
 }
 .runs-row-wrap {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 2px;
 }
 .runs-row-wrap .runs-row { flex: 1 1 auto; min-width: 0; }
 .runs-row {
   /* Square. A run row is a full-bleed list line, not a card - rounding it made
      each row read as its own floating object and fought the flush hairlines of
-     the panel it sits in. */
-  display: grid;
-  grid-template-columns: auto 1fr auto auto;
+     the panel it sits in. Flex rather than grid so the trailing meta can drop
+     out on hover without leaving empty tracks + gaps behind. */
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 8px;
@@ -25068,14 +25068,16 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text);
   cursor: pointer;
 }
-.runs-row:hover { background: var(--surface-2); }
+/* On the WRAP, so the row stays lit while the cursor is over the overlaid
+   rename / delete buttons (siblings of the row, not children). */
+.runs-row-wrap:hover .runs-row { background: var(--surface-2); }
 /* The thread you are LOOKING AT. A filled background rather than an edge mark,
    so "where am I" is answered by the shape of the whole row and can never be
    confused with the unread dot on the trailing edge. Wins over :hover, which
    would otherwise make the open row indistinguishable from whatever the cursor
    is passing over. */
 .runs-row[data-open="true"],
-.runs-row[data-open="true"]:hover {
+.runs-row-wrap:hover .runs-row[data-open="true"] {
   background: var(--accent-soft);
   color: var(--accent-text);
 }
@@ -25157,6 +25159,32 @@ a.ds-badge:hover, button.ds-badge:hover {
   border-radius: var(--radius-sm);
 }
 .runs-unread-all:hover { background: var(--surface-2); color: var(--text); }
+/* Rename / delete. Absolutely placed over the row's trailing edge so they
+   never claim width at rest; on hover (or keyboard focus) the trailing meta
+   hides and the row reserves padding so the title truncates short of them. */
+.runs-row-acts {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+.runs-row-wrap:hover .runs-row-acts,
+.runs-row-wrap:has(.runs-row-act:focus-visible) .runs-row-acts {
+  opacity: 1;
+  pointer-events: auto;
+}
+.runs-row-wrap:is(:hover, :has(.runs-row-act:focus-visible)):has(> .runs-row-acts) .runs-row {
+  padding-right: 66px;
+}
+.runs-row-wrap:is(:hover, :has(.runs-row-act:focus-visible)):has(> .runs-row-acts) :is(.plan-role, .runs-row-age, .runs-row-new) {
+  display: none;
+}
 .runs-row-act {
   flex: 0 0 auto;
   display: inline-flex;
@@ -25170,13 +25198,10 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text-faint);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity .12s ease, color .12s ease, background .12s ease;
+  transition: color .12s ease, background .12s ease;
 }
-.runs-row-wrap:hover .runs-row-act,
-.runs-row-wrap:focus-within .runs-row-act { opacity: 1; }
-.runs-row-act:hover { color: var(--text); background: var(--surface-2); }
-.runs-row-del:hover { color: var(--danger); background: var(--surface-2); }
+.runs-row-act:hover { color: var(--text); background: var(--surface-3); }
+.runs-row-del:hover { color: var(--danger); background: var(--surface-3); }
 .runs-row-act svg { display: block; }
 /* The shared status-dot vocabulary. Used by the runs list AND by the plan /
    task / agent lists, which still want the full live-waiting-done-fail
@@ -25279,6 +25304,7 @@ a.ds-badge:hover, button.ds-badge:hover {
 .runs-select-del svg { display: block; }
 .runs-row-wrap[data-picked="true"] .runs-row { background: var(--accent-soft); }
 .runs-row-title {
+  flex: 1 1 auto;
   font-size: 12.5px;
   font-weight: 500;
   color: var(--text);
@@ -34518,7 +34544,6 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
-.runs-row[data-role] { grid-template-columns: auto 1fr auto auto auto; }
 
 /* Warning strip above the composer when the open thread is a node-agent
    (pseudo-subagent) run: replies there re-open a one-shot builder context

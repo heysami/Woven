@@ -13113,25 +13113,28 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
                   reflow as rows go read/unread. */ ""}
               <span className="runs-row-new" aria-label=${unread ? "New activity" : undefined}/>
             </button>
+            ${/* Hover actions OVERLAY the row's trailing meta (plan mark, age,
+                 unread dot) instead of reserving their own column, so a row at
+                 rest spends its full width on the title. */ ""}
             ${!selectMode && html`
-              <button
-                className="runs-row-act"
-                title="Rename this run"
-                aria-label=${`Rename run ${r.title || r.kind}`}
-                onClick=${(e) => { e.stopPropagation(); renameRun(r); }}
-              >
-                <${Icon.Pen}/>
-              </button>
-            `}
-            ${!selectMode && html`
-              <button
-                className="runs-row-act runs-row-del"
-                title="Delete this run"
-                aria-label=${`Delete run ${r.title || r.kind}`}
-                onClick=${(e) => { e.stopPropagation(); deleteRun(r); }}
-              >
-                <${Icon.Trash}/>
-              </button>
+              <span className="runs-row-acts">
+                <button
+                  className="runs-row-act"
+                  title="Rename this run"
+                  aria-label=${`Rename run ${r.title || r.kind}`}
+                  onClick=${(e) => { e.stopPropagation(); renameRun(r); }}
+                >
+                  <${Icon.Pen}/>
+                </button>
+                <button
+                  className="runs-row-act runs-row-del"
+                  title="Delete this run"
+                  aria-label=${`Delete run ${r.title || r.kind}`}
+                  onClick=${(e) => { e.stopPropagation(); deleteRun(r); }}
+                >
+                  <${Icon.Trash}/>
+                </button>
+              </span>
             `}
           </div>
         `;
