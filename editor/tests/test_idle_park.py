@@ -407,5 +407,105 @@ class ParkResumeEndToEndTests(unittest.TestCase):
         self.assertTrue(state.done)
 
 
+FAKE_SINGLE_SHOT = textwrap.dedent("""
+    import json, os, sys
+    root, log = sys.argv[1], sys.argv[2]
+    with open(log, "a") as f:
+        f.write(json.dumps(sys.argv[3:]) + "\\n")
+    with open(os.path.join(root, "source", "turn-%d.txt" % os.getpid()), "w") as f:
+        f.write("edited")
+""")
+
+
+class SingleShotResumeTests(unittest.TestCase):
+    """codex / opencode exit after every turn and resume through
+    _run_resume_codex. Each turn's process must get its own undo entry."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = os.path.join(self.tmp.name, "proj")
+        for d in ("source", "editor", "workflow"):
+            os.makedirs(os.path.join(self.root, d))
+        self.fake = os.path.join(self.tmp.name, "fake_agent.py")
+        with open(self.fake, "w") as f:
+            f.write(FAKE_SINGLE_SHOT)
+        self.argv_log = os.path.join(self.tmp.name, "argv.jsonl")
+
+    def spawn(self, *args, **kw):
+        kw.pop("bufsize", None)
+        kw.pop("resume_id", None)
+        kw.pop("driver_mode", None)
+        return subprocess.Popen([sys.executable, self.fake, self.root, self.argv_log, *args], **kw)
+
+    def settle(self, state):
+        self.assertTrue(_wait(lambda: state.proc.poll() is not None))
+        self.assertTrue(_wait(lambda: state.exit_settled.is_set()
+                              and not state.history_pending_id))
+
+    def first_turn(self, agent_id):
+        state = serve.RunState("ss%014d" % len(agent_id), None, agent_id, "main", "freeform",
+                               "chat", project_id="p", project_root=self.root)
+        state.bin_path = "/fake/" + agent_id
+        serve.RUNS[state.run_id] = state
+        self.addCleanup(serve.RUNS.pop, state.run_id, None)
+        serve._history_open_for_respawn(state)          # what _run_create does
+        state.proc = self.spawn("first", stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, start_new_session=True)
+        threading.Thread(target=serve._drain_stdout, args=(state,), daemon=True).start()
+        threading.Thread(target=serve._drain_stderr, args=(state,), daemon=True).start()
+        self.settle(state)
+        return state
+
+    def resume(self, state, text):
+        h = object.__new__(serve.H)
+        h.path = "/__run/x?project=p"
+        h._reply = lambda status, value: (status, value)
+        h._read_json_body = lambda **kw: {"text": text}
+        spawn = lambda agent_id, argv, **kw: self.spawn(*argv[1:], **kw)
+        with patch.object(serve, "_spawn_runtime_process", side_effect=spawn), \
+             patch.object(serve, "_build_child_env", return_value=dict(os.environ)), \
+             patch.object(serve, "_codex_chat_preamble", return_value="PRE"), \
+             patch.object(serve, "_codex_mcp_spawn_args", return_value=[]), \
+             patch.object(serve, "_agent_model_spawn_args", return_value=[]), \
+             patch.object(serve, "_codex_exec_resume_supported", return_value=True), \
+             patch.object(serve, "_codex_session_file_exists", return_value=True):
+            return h._run_resume(state.run_id)
+
+    def entries(self):
+        return serve._history_load_index(self.root)["entries"]
+
+    def changed(self, entry):
+        return sorted(r["path"] for r in entry["after"])
+
+    def test_opencode_every_turn_gets_its_own_undo_entry(self):
+        state = self.first_turn("opencode")
+        self.assertEqual(len(self.entries()), 1)
+        for n in (2, 3):
+            status, reply = self.resume(state, "turn %d" % n)
+            self.assertEqual(status, 200, reply)
+            self.settle(state)
+        entries = self.entries()
+        self.assertEqual(len(entries), 3)
+        self.assertEqual(len({e["id"] for e in entries}), 3)
+        for entry in entries:
+            self.assertEqual(len(self.changed(entry)), 1, "one turn's edit per entry")
+
+    def test_codex_exec_resume_after_stop_is_not_stopped(self):
+        state = self.first_turn("codex")
+        state.session_id = "codex-sid"
+        state.stop_reason = "user-stop"
+        status, reply = self.resume(state, "carry on")
+        self.assertEqual(status, 200, reply)
+        self.assertEqual(reply.get("resume"), "session")
+        self.assertIsNone(state.stop_reason)
+        self.settle(state)
+        with open(self.argv_log) as f:
+            argv = json.loads(f.read().splitlines()[-1])
+        self.assertEqual(argv[:2], ["exec", "resume"])
+        self.assertIn("codex-sid", argv)
+        self.assertEqual(len(self.entries()), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

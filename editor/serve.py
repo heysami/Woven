@@ -7424,6 +7424,24 @@ def _history_run_snapshot_before(project_root: str):
             pass
         return None, [], [], None
 
+def _history_open_for_respawn(state) -> None:
+    """Open a fresh undo entry for a resumed run's new process. The exited
+    process's entry was committed (or dropped) by its drain, which then
+    cleared history_pending_id; without this, nothing the resumed process
+    edits is undoable. codex/opencode resume on EVERY turn, so for them this
+    is every turn after the first. No-op when an entry is already open."""
+    if (getattr(state, "scope", None) == "system" or not state.project_root
+            or getattr(state, "history_pending_id", None)):
+        return
+    try:
+        eid, paths, rows, _ = _history_run_snapshot_before(state.project_root)
+        state.history_pending_id = eid
+        state.history_before_paths = paths
+        state.history_before_rows = rows
+    except Exception as e:
+        state.append("status", {"label": "history-snapshot-failed", "detail": str(e)})
+
+
 def _history_run_snapshot_finish(project_root: str, eid: str, before_paths: list,
                                  before_rows: list, *, kind: str, label: str,
                                  source: str, extra=None, scope_walker=None):
@@ -36100,6 +36118,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         frozen_mode = (state.execution_profile or {}).get("driver")
         if frozen_mode:
             env["WOVEN_" + state.agent_id.upper() + "_DRIVER"] = frozen_mode
+        # BEFORE the spawn: these runtimes take the prompt in argv and start
+        # editing as soon as they are up, unlike claude's stdin frame.
+        _history_open_for_respawn(state)
         if frozen_mode in ("app-server", "http"):
             spawn_args = list(defs["args"]) + _agent_model_spawn_args(state.agent_id, defs, state.model, resolved=bool(state.execution_profile))
             if state.agent_id == "codex":
@@ -36154,6 +36175,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             state.done = False
             state.exit_code = None
             state.turn_done = False
+            # The other resume paths clear it too. Left set, a resume after
+            # Stop kept "user-stop": queued follow-ups never sent and the
+            # resumed turn was reported as stopped.
+            state.stop_reason = None
             state.append("status", {"label": "resumed", "agentId": "codex",
                                     "resume": "session"})
             state.append("user_message", dict({"text": text},
@@ -36495,18 +36520,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.exit_code = None
         state.turn_done = False
         state._resume_probe = bool(state.session_id)
-        # Each process gets its own undo entry: the exited one was committed by
-        # its drain. Same placement as _run_create - after Popen, before the
-        # prompt goes in - so nothing can have been edited yet.
-        if (getattr(state, "scope", None) != "system" and state.project_root
-                and not getattr(state, "history_pending_id", None)):
-            try:
-                eid, paths, rows, _ = _history_run_snapshot_before(state.project_root)
-                state.history_pending_id = eid
-                state.history_before_paths = paths
-                state.history_before_rows = rows
-            except Exception as e:
-                state.append("status", {"label": "history-snapshot-failed", "detail": str(e)})
+        # Same placement as _run_create: after Popen, before the prompt goes
+        # in over stdin, so nothing can have been edited yet.
+        _history_open_for_respawn(state)
         state.append("status", {
             "label": "resumed",
             "sessionId": state.session_id,
