@@ -7865,6 +7865,33 @@ def _codex_exec_resume_supported(bin_path) -> bool:
     return ok
 
 
+# opencode >= 1.18.20 answers subagent permission requests in `run` mode and
+# REJECTS them unless `--auto` is passed (older versions ignored them, which
+# could hang the turn). Woven's other runtimes already run unattended
+# (claude bypassPermissions, codex danger-full-access), so agent spawns pass
+# --auto when the installed CLI has it. Keyed by the resolved binary: a brew
+# upgrade swaps the Cellar path, so a mid-daemon upgrade is re-probed.
+_OPENCODE_AUTO_PROBE: dict = {}
+
+
+def _opencode_run_supports_auto(bin_path) -> bool:
+    try:
+        key = os.path.realpath(bin_path)
+    except Exception:
+        key = bin_path
+    if key in _OPENCODE_AUTO_PROBE:
+        return _OPENCODE_AUTO_PROBE[key]
+    ok = False
+    try:
+        r = subprocess.run([bin_path, "run", "--help"], capture_output=True, text=True,
+                           timeout=15, stdin=subprocess.DEVNULL)
+        ok = bool(re.search(r"(?m)^\s*(?:-\w,\s*)?--auto\b", (r.stdout or "") + (r.stderr or "")))
+    except Exception:
+        ok = False
+    _OPENCODE_AUTO_PROBE[key] = ok
+    return ok
+
+
 def _codex_session_file_exists(session_id, env) -> bool:
     """True when codex recorded a rollout file for this session id under the
     CODEX_HOME the child would use (Live Session guests get a sandboxed
@@ -7881,6 +7908,66 @@ def _codex_session_file_exists(session_id, env) -> bool:
         return bool(glob.glob(pattern))
     except Exception:
         return False
+
+
+# opencode puts its own 5-minute Anthropic cache breakpoints on every request,
+# so a thread resumed after a short pause re-pays its whole context. A
+# `cacheControl` MODEL option replaces them with one top-level breakpoint at
+# the TTL given here. Model-level on purpose: provider-wide options never
+# reach the request, and an agent-level option would also be sent to
+# non-Anthropic providers (an OpenAI-compatible one forwards unknown options
+# into the request body).
+OPENCODE_ANTHROPIC_CACHE = {"type": "ephemeral", "ttl": "1h"}
+_OPENCODE_ANTHROPIC_MODELS: dict = {}
+
+
+def _opencode_anthropic_models() -> list:
+    """Model ids opencode can reach through its `anthropic` provider; [] when
+    that provider is not set up. Cached per binary + credentials so adding a
+    key or upgrading opencode is picked up without a daemon restart."""
+    bin_path = detect_agent_bin("opencode")
+    if not bin_path:
+        return []
+    try:
+        auth_m = os.path.getmtime(os.path.expanduser("~/.local/share/opencode/auth.json"))
+    except OSError:
+        auth_m = None
+    key = (os.path.realpath(bin_path), auth_m, bool(os.environ.get("ANTHROPIC_API_KEY")))
+    if key in _OPENCODE_ANTHROPIC_MODELS:
+        return _OPENCODE_ANTHROPIC_MODELS[key]
+    ids = []
+    try:
+        r = subprocess.run([bin_path, "models", "anthropic"], capture_output=True, text=True,
+                           timeout=30, stdin=subprocess.DEVNULL)
+        if r.returncode == 0:
+            for line in (r.stdout or "").splitlines():
+                m = re.fullmatch(r"\s*anthropic/([A-Za-z0-9._:@-]+)\s*",
+                                 re.sub(r"\x1b\[[0-9;]*m", "", line))
+                if m:
+                    ids.append(m.group(1))
+    except Exception:
+        ids = []
+    _OPENCODE_ANTHROPIC_MODELS.clear()      # only the current key matters
+    _OPENCODE_ANTHROPIC_MODELS[key] = ids
+    return ids
+
+
+def _opencode_apply_anthropic_cache(merged: dict, model_ids) -> None:
+    """Give each listed anthropic model the OPENCODE_ANTHROPIC_CACHE option,
+    merged into `merged` in place. A cacheControl the user set wins."""
+    if not model_ids:
+        return
+    prov = merged.get("provider") if isinstance(merged.get("provider"), dict) else {}
+    anth = dict(prov["anthropic"]) if isinstance(prov.get("anthropic"), dict) else {}
+    models = dict(anth["models"]) if isinstance(anth.get("models"), dict) else {}
+    for mid in model_ids:
+        entry = dict(models[mid]) if isinstance(models.get(mid), dict) else {}
+        opts = dict(entry["options"]) if isinstance(entry.get("options"), dict) else {}
+        opts.setdefault("cacheControl", dict(OPENCODE_ANTHROPIC_CACHE))
+        entry["options"] = opts
+        models[mid] = entry
+    anth["models"] = models
+    merged["provider"] = {**prov, "anthropic": anth}
 
 
 def _ensure_opencode_mcp_config(visual_deny=False):
@@ -7941,6 +8028,10 @@ def _ensure_opencode_mcp_config(visual_deny=False):
                 ext.setdefault(_g, "allow")
             perm["external_directory"] = ext
             merged["permission"] = perm
+    except Exception:
+        pass
+    try:
+        _opencode_apply_anthropic_cache(merged, _opencode_anthropic_models())
     except Exception:
         pass
     path = os.path.join(INSTALL_ROOT,
@@ -8142,6 +8233,10 @@ def _spawn_runtime_process(agent_id, argv, resume_id=None, driver_mode=None, **k
             patch[sid] = base
         env["OPENCODE_CONFIG_CONTENT"] = json.dumps({**existing, "mcp": {**existing.get("mcp", {}), **patch}})
         kwargs["env"] = env
+        # Unattended like the other runtimes; see _opencode_run_supports_auto.
+        if (len(argv) > 1 and argv[1] == "run" and "--auto" not in argv
+                and mode not in ("app-server", "http") and _opencode_run_supports_auto(argv[0])):
+            argv = argv[:2] + ["--auto"] + argv[2:]
     if runtime == "claude" or mode not in ("app-server", "http"):
         return subprocess.Popen(argv, **kwargs)
     model, config_args = None, []
