@@ -17188,8 +17188,10 @@ function AskUserQuestionCard({ ev, runId, answered, onAnswered }) {
 // out (_cleanup_subprocesses). The exit code that produces is ours, not the
 // agent's - without this the whole runs list came back red after every
 // restart, which is the fastest way to teach someone to ignore red.
+// "parked": the daemon released an idle thread's process (_idle_watch_loop);
+// the next message resumes the same session.
 const INTENTIONAL_STOPS = ["user-stop", "completed-orchestrator", "compacted",
-                           "daemon-shutdown"];
+                           "daemon-shutdown", "parked"];
 function isIntentionalStop(stopReason) {
   return INTENTIONAL_STOPS.indexOf(stopReason) >= 0;
 }
@@ -24429,6 +24431,8 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
     case "end":
       if (block.data.stopReason === "compacted")
         return html`<div className="chat-row chat-end">session compacted · send a message to continue</div>`;
+      if (block.data.stopReason === "parked")
+        return html`<div className="chat-row chat-end">idle · process released, your next message picks it up</div>`;
       return html`<div className="chat-row chat-end">finished${
         block.data.exitCode != null && !isIntentionalStop(block.data.stopReason)
           ? ` · exit ${block.data.exitCode}` : ""}</div>`;
@@ -24517,6 +24521,8 @@ function ChatEventRow({ ev, runId, answers, onAnswered }) {
   if (ev.event === "end" && data) {
     if (data.stopReason === "compacted")
       return html`<div className="chat-row chat-end">session compacted · send a message to continue</div>`;
+    if (data.stopReason === "parked")
+      return html`<div className="chat-row chat-end">idle · process released, your next message picks it up</div>`;
     return html`<div className="chat-row chat-end">finished${
       data.exitCode != null && !isIntentionalStop(data.stopReason)
         ? ` · exit ${data.exitCode}` : ""}</div>`;
@@ -28236,6 +28242,7 @@ function systemThreadStatus(r) {
   if (!r.done && !r.historical) return r.turnDone ? "waiting" : "live";
   if (r.stopReason === "user-stop") return "stopped";
   if (r.stopReason === "compacted") return "done";
+  if (r.stopReason === "parked") return "waiting";   // idle, resumes on reply
   return (r.exitCode === 0 || r.exitCode == null) ? "done" : "failed";
 }
 function fmtSystemThreadWhen(t) {

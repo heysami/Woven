@@ -9940,7 +9940,9 @@ def _queue_deliverable(state, mode: str) -> bool:
     if getattr(state, "stop_reason", None) == "user-stop":
         return False
     if mode == "stdin":
+        # A parking process is exiting; its drain re-runs this with "resume".
         return bool(state.is_live and not state.done and getattr(state, "turn_done", False)
+                    and getattr(state, "stop_reason", None) != "parked"
                     and AGENT_DEFS.get(state.agent_id, {}).get("prompt_via_stdin"))
     return not state.is_live
 
@@ -9982,12 +9984,18 @@ def _queue_drain_maybe(state, mode: str = "stdin") -> None:
             ok = False
             if mode == "stdin":
                 try:
-                    state.proc.stdin.write(_claude_user_frame(text))
-                    state.proc.stdin.flush()
-                    state.turn_done = False
-                    state.append("user_message", {"text": head.get("text") or text,
-                                                  "queued": True})
-                    ok = True
+                    # Same lock as /user-message: never write into a process
+                    # the idle loop has just started parking. The message stays
+                    # queued and the parked run's drain delivers it via resume.
+                    with _PARK_LOCK:
+                        if getattr(state, "stop_reason", None) != "parked":
+                            state.proc.stdin.write(_claude_user_frame(text))
+                            state.proc.stdin.flush()
+                            state.turn_done = False
+                            ok = True
+                    if ok:
+                        state.append("user_message", {"text": head.get("text") or text,
+                                                      "queued": True})
                 except Exception as e:
                     print(f"[queue] stdin deliver failed run={state.run_id}: {e}", flush=True)
             else:
@@ -11466,7 +11474,16 @@ class RunState:
                  # forward one event at a time by append(); rebuilt wholesale
                  # by _gate_recompute for rehydrated runs. gate_tail is the
                  # 64-char carry so a tag split across two text_deltas matches.
-                 "gate_pending", "gate_tail")
+                 "gate_pending", "gate_tail",
+                 # Clear while a _drain_stdout is running, set once its exit
+                 # handling (finish, history commit, hooks) is over. /resume
+                 # waits on it: respawning while the old drain is still in its
+                 # finally-block lets that block finish() the NEW process.
+                 "exit_settled",
+                 # Set by /resume; the drain logs the first turn's cache read
+                 # vs write after a respawn, then clears it. A miss there means
+                 # the resume did not rebuild a byte-identical prefix.
+                 "_resume_probe")
 
     def __init__(self, run_id, proc, agent_id, branch, kind, title, project_id=None, project_root=None):
         self.run_id = run_id
@@ -11495,6 +11512,9 @@ class RunState:
         self.execution_profile = None
         self.gate_pending = False
         self.gate_tail = ""
+        self.exit_settled = threading.Event()
+        self.exit_settled.set()     # no drain yet; _drain_stdout clears it
+        self._resume_probe = False
         # Live context tokens (see __slots__ comment). Lazily backfilled from
         # the event log for rehydrated runs by _run_context_tokens().
         self.context_tokens = None
@@ -13383,6 +13403,19 @@ def _transcript_from_run_events(state: "RunState") -> str:
 
 
 def _drain_stdout(state: "RunState") -> None:
+    """Thread target for every spawn: _drain_stdout_body plus the
+    exit_settled bracket /resume waits on (see RunState.__slots__)."""
+    settled = getattr(state, "exit_settled", None)
+    if settled is not None:
+        settled.clear()
+    try:
+        _drain_stdout_body(state)
+    finally:
+        if settled is not None:
+            settled.set()
+
+
+def _drain_stdout_body(state: "RunState") -> None:
     """Read newline-delimited JSON from the child, normalise, append events.
 
     Claude Code in `--input-format stream-json` mode keeps the agent process
@@ -13459,6 +13492,12 @@ def _drain_stdout(state: "RunState") -> None:
                     _ctx = _context_tokens_from_usage(ev.get("usage") or {})
                     if _ctx:
                         state.context_tokens = _ctx
+                    if getattr(state, "_resume_probe", False):
+                        state._resume_probe = False
+                        _u = ev.get("usage") or {}
+                        print(f"[resume-cache] {state.run_id} read="
+                              f"{_u.get('cache_read_input_tokens') or 0} write="
+                              f"{_u.get('cache_creation_input_tokens') or 0}", flush=True)
                 # Promote chat runs to "modifying" the first time the agent
                 # actually touches a file. The lock is scoped to runs that
                 # need it; ad-hoc chats (visualization, Q&A) don't freeze
@@ -13589,8 +13628,10 @@ def _drain_stdout(state: "RunState") -> None:
         # "daemon-shutdown" belongs here for the same reason: the SIGTERM came
         # from OUR shutdown hook, so the run did not fail. Keep in sync with
         # INTENTIONAL_STOPS in app.js.
+        # "parked": _idle_watch_loop released an idle thread's process; the
+        # next message resumes it, so the SIGTERM is ours, not a failure.
         if state.stop_reason in ("completed-orchestrator", "user-stop", "compacted",
-                                 "daemon-shutdown") and exit_code in (143, -15, None):
+                                 "daemon-shutdown", "parked") and exit_code in (143, -15, None):
             effective_exit = 0
         else:
             effective_exit = exit_code or 0 if exit_code is not None else exit_code
@@ -13685,6 +13726,10 @@ def _drain_stdout(state: "RunState") -> None:
             except Exception as e:
                 # Don't crash the run-finish path on history failure.
                 state.append("status", {"label": "history-finalize-failed", "detail": str(e)})
+            # Committed (or dropped) - a resumed process opens its own entry.
+            # Left set, the next exit re-finished this id: a duplicate undo
+            # row diffed against a before/ already pruned of unchanged files.
+            state.history_pending_id = None
         _notify_bridge_parent(state, "stopped" if state.stop_reason == "user-stop" else
             "failed" if state.exit_code or run_jobs.failed(state.jobs) or _pending_run_jobs(state) else "completed")
 
@@ -15168,10 +15213,15 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
     # API or a real gateway - so we ALWAYS route through it (chain, never skip;
     # an existing base URL of https://api.anthropic.com must not bypass us).
     # Fail-open: the helper returns None if the proxy didn't start.
+    # The /r/<runId> suffix tells the proxy whose request it is (the CLI keeps
+    # a base-URL path), which is what lets _idle_watch_loop keep this run's
+    # prompt cache warm while it sits idle.
     if agent_id == "claude":
         _evict_url = _evict_base_url(env.get("ANTHROPIC_BASE_URL"))
         if _evict_url:
-            env["ANTHROPIC_BASE_URL"] = _evict_url
+            env["ANTHROPIC_BASE_URL"] = (_evict_url + "/r/" + run_id
+                                         if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", run_id or "")
+                                         else _evict_url)
     # Skill isolation for Claude: use the `--disable-slash-commands` CLI flag
     # (added to spawn_args at dispatch time, see _spawn_node_agent and the
     # freeform spawn paths). It hides the user's ~/.claude/commands/ WITHOUT
@@ -35734,20 +35784,36 @@ class H(http.server.SimpleHTTPRequestHandler):
         # as "process gone" and auto-retries via /resume (it matches on "not
         # running"); needsResume is the explicit signal for any future caller.
         # See RunState.is_live and app.js dispatch().
-        if not state.is_live:
+        # A thread _idle_watch_loop is parking right now: its process is on
+        # the way out, so stdin would go into a dying CLI. Let it exit, then
+        # send the client to /resume like any other exited run.
+        if state.stop_reason == "parked":
+            try:
+                state.proc.wait(timeout=8)
+            except Exception:
+                pass
+        if not state.is_live or state.stop_reason == "parked":
             return self._reply(409, {
                 "error": "agent process is not running - resume to continue",
                 "needsResume": True,
             })
-        try:
-            state.proc.stdin.write(_claude_user_frame(text))
-            state.proc.stdin.flush()
-        except Exception as e:
-            return self._reply(500, {"error": f"stdin write failed: {e}"})
-        # Flip turn back to in-flight so the chip + Runs row reflect "agent
-        # is processing the reply" instead of "done, waiting on you."
-        state.turn_done = False
-        state.stop_reason = None
+        # Under _PARK_LOCK so the idle loop cannot park between our checks
+        # and the write: it re-checks turn_done under the same lock.
+        with _PARK_LOCK:
+            if state.stop_reason == "parked":
+                return self._reply(409, {
+                    "error": "agent process is not running - resume to continue",
+                    "needsResume": True,
+                })
+            try:
+                state.proc.stdin.write(_claude_user_frame(text))
+                state.proc.stdin.flush()
+            except Exception as e:
+                return self._reply(500, {"error": f"stdin write failed: {e}"})
+            # Flip turn back to in-flight so the chip + Runs row reflect "agent
+            # is processing the reply" instead of "done, waiting on you."
+            state.turn_done = False
+            state.stop_reason = None
         # Echo into the event log so the UI shows the message in-thread.
         state.append("user_message", {"text": text})
         return self._reply(200, {"ok": True})
@@ -36231,6 +36297,18 @@ class H(http.server.SimpleHTTPRequestHandler):
                          "wait for it to complete or press Stop, then send again",
                 "busy": True,
             })
+        # The old process has exited, but its drain may still be in its
+        # finally-block (end event, finish(), undo commit, hooks). Respawning
+        # under it lets that block finish() the NEW process. A parked thread
+        # hits this every time its next message arrives right after the park.
+        # If the drain is wedged (a grandchild holding stdout), take the old
+        # group down and carry on after a bounded wait rather than refuse.
+        _settled = getattr(state, "exit_settled", None)
+        if _settled is not None and not _settled.wait(timeout=15):
+            _kill_run_tree(state)
+            if not _settled.wait(timeout=5):
+                print(f"[resume] {run_id}: previous drain still open after 20s; "
+                      "resuming anyway", flush=True)
         # Last line of defence for compaction: never resume a session a
         # compact retired, whatever restored the id. Clearing it here routes
         # every runtime to its compact-aware seed path instead.
@@ -36397,6 +36475,19 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.done = False
         state.exit_code = None
         state.turn_done = False
+        state._resume_probe = bool(state.session_id)
+        # Each process gets its own undo entry: the exited one was committed by
+        # its drain. Same placement as _run_create - after Popen, before the
+        # prompt goes in - so nothing can have been edited yet.
+        if (getattr(state, "scope", None) != "system" and state.project_root
+                and not getattr(state, "history_pending_id", None)):
+            try:
+                eid, paths, rows, _ = _history_run_snapshot_before(state.project_root)
+                state.history_pending_id = eid
+                state.history_before_paths = paths
+                state.history_before_rows = rows
+            except Exception as e:
+                state.append("status", {"label": "history-snapshot-failed", "detail": str(e)})
         state.append("status", {
             "label": "resumed",
             "sessionId": state.session_id,
@@ -36706,6 +36797,162 @@ def _stall_watch_loop() -> None:
             print(f"[stall] watchdog round failed: {e}", flush=True)
 
 
+# ── idle park + prompt-cache keep-alive ─────────────────────────────────────
+# A chat's `claude` process stays up after its turn, waiting on stdin for the
+# next message - and with it its MCP servers and their headless browsers.
+# Nothing ever closed an idle one: a week of suss-cal threads ended with 57 of
+# those trees alive (dozens of GB) and the daemon out of file descriptors.
+# The process is not what remembers the conversation. The session is on disk
+# and /resume reattaches to it with a byte-identical system prompt, so an
+# idle thread is PARKED: its process tree goes, and the next message resumes
+# it exactly the way the composer already continues a stopped thread.
+#
+# The prompt cache is upstream and keyed by the request prefix, not by the
+# process, and it expires an hour after its last read whether or not the
+# process is alive. While a thread rests, the evict proxy re-sends its last
+# request with max_tokens 0 every KEEPALIVE_EVERY_S - billed as a cache read,
+# it restarts the hour - for up to KEEPALIVE_WINDOW_S after the thread's last
+# real request. Resuming inside that window costs what a live process would.
+def _idle_env_s(name: str, default: int) -> int:
+    try:
+        return max(0, int(os.environ.get(name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+PARK_AFTER_S = _idle_env_s("WOVEN_PARK_AFTER_S", 900)                 # 0 = never park
+KEEPALIVE_WINDOW_S = _idle_env_s("WOVEN_CACHE_KEEPALIVE_S", 4 * 3600)  # 0 = no keep-alive
+KEEPALIVE_EVERY_S = 50 * 60     # the CLI writes 1-hour entries; re-read before they lapse
+IDLE_POLL_S = 60
+# Parking and an incoming /user-message must not interleave: one decides the
+# turn is over while the other is writing the next one into stdin.
+_PARK_LOCK = threading.Lock()
+
+
+def _idle_resumable(s) -> bool:
+    """Threads that continue through `claude --resume <session>` with the
+    same system prompt as their first spawn. Node runs settle themselves
+    (_settle_run_jobs), planners keep no session on disk, and a codex /
+    opencode "resume" replays the transcript as text - none of those may be
+    parked or kept warm."""
+    return (getattr(s, "agent_id", None) == "claude"
+            and not isinstance(getattr(s, "proc", None), runtime_drivers.ProcessDriver)
+            and not getattr(s, "workflow_node_id", None)
+            and not getattr(s, "parent_run_id", None)
+            and getattr(s, "kind", None) != "node-agent"
+            and not str(getattr(s, "kind", "") or "").startswith("planner:")
+            and bool(getattr(s, "session_id", None)))
+
+
+def _parkable(s, now: float) -> bool:
+    """Idle at a turn boundary with nothing owed to anyone - the state a Stop
+    followed by a reply already handles, minus the Stop."""
+    if not _idle_resumable(s) or s.done or not s.turn_done or s.stop_reason:
+        return False
+    if not s.is_live or getattr(s, "msg_queue", None) or getattr(s, "_queue_draining", False):
+        return False
+    if getattr(s, "_compact_inflight", False) or getattr(s, "_compact_pending", None):
+        return False
+    if _pending_run_jobs(s):
+        return False
+    return now - (getattr(s, "updated_at", None) or s.started_at) >= PARK_AFTER_S
+
+
+def _park_run(s, now: float) -> bool:
+    with _PARK_LOCK:
+        if not _parkable(s, now):
+            return False
+        s.stop_reason = "parked"
+    mins = int((now - (getattr(s, "updated_at", None) or s.started_at)) // 60)
+    print(f"[park] {s.run_id} idle {mins} min - released its process tree: {s.title}",
+          flush=True)
+    _kill_run_tree(s)
+    return True
+
+
+def _run_writes_1h_cache(s) -> bool:
+    """Whether the run's latest cache write was a 1-hour entry. A 5-minute
+    entry is long gone by KEEPALIVE_EVERY_S, so pinging it would pay for a
+    fresh write each time instead of a read."""
+    with s.lock:
+        tail = s.events[-2000:]
+    for ev in reversed(tail):
+        d = ev.get("data")
+        if ev.get("type") != "agent" or not isinstance(d, dict):
+            continue
+        if d.get("type") != "usage" or d.get("sidechain"):
+            continue
+        cc = (d.get("usage") or {}).get("cache_creation") or {}
+        if cc.get("ephemeral_1h_input_tokens"):
+            return True
+        if cc.get("ephemeral_5m_input_tokens"):
+            return False
+    return False
+
+
+def _keepalive_maybe(s, now: float, proxy) -> None:
+    resting = (s.stop_reason == "parked"
+               or (not s.done and s.turn_done and not s.stop_reason))
+    if not resting or not _idle_resumable(s) or getattr(s, "msg_queue", None):
+        return
+    st = proxy.keepalive_status(s.run_id)
+    if not st:
+        return
+    if now - st["realAt"] >= KEEPALIVE_WINDOW_S:
+        proxy.keepalive_forget(s.run_id)
+        return
+    if now - st["touchedAt"] < KEEPALIVE_EVERY_S:
+        return
+    if not _run_writes_1h_cache(s):
+        proxy.keepalive_forget(s.run_id)
+        return
+    res = proxy.keepalive(s.run_id)
+    if not res:
+        return
+    usage = res.get("usage") or {}
+    read = usage.get("cache_read_input_tokens") or 0
+    wrote = usage.get("cache_creation_input_tokens") or 0
+    print(f"[keepalive] {s.run_id} status={res.get('status')} read={read} write={wrote}"
+          + ("" if res.get("ok") else f" - {res.get('reason')}"), flush=True)
+    # A ping that WROTE the prefix missed: the entry had already lapsed, or
+    # the replay isn't byte-identical to what the CLI sends. Either way more
+    # pings would pay a write each time, so stop for this run.
+    if res.get("ok") and wrote > read:
+        proxy.keepalive_forget(s.run_id)
+
+
+def _idle_watch_round(states, now: float) -> None:
+    if PARK_AFTER_S:
+        for s in states:
+            try:
+                _park_run(s, now)
+            except Exception as e:
+                print(f"[park] {getattr(s, 'run_id', '?')} failed: {e}", flush=True)
+    if not KEEPALIVE_WINDOW_S or not _EVICT_BASE_URL:
+        return
+    import anthropic_evict_proxy as proxy
+    for s in states:
+        try:
+            _keepalive_maybe(s, now, proxy)
+        except Exception as e:
+            print(f"[keepalive] {getattr(s, 'run_id', '?')} failed: {e}", flush=True)
+    known = {s.run_id for s in states}
+    for rid in proxy.keepalive_runs():
+        if rid not in known:            # thread deleted
+            proxy.keepalive_forget(rid)
+
+
+def _idle_watch_loop() -> None:
+    while True:
+        time.sleep(IDLE_POLL_S)
+        try:
+            with RUNS_LOCK:
+                states = list(RUNS.values())
+            _idle_watch_round(states, time.time())
+        except Exception as e:
+            print(f"[park] idle round failed: {e}", flush=True)
+
+
 if __name__ == "__main__":
     # ── Highlighted startup URL banner ──
     # ANSI escapes when stdout is a TTY and NO_COLOR isn't set; plain ASCII
@@ -36888,6 +37135,9 @@ if __name__ == "__main__":
     # runs, not shares, and must come up even when share mode is disabled.
     threading.Thread(target=_stall_watch_loop, daemon=True,
                      name="stall-watch").start()
+    # Idle threads: release their process trees, keep their prompt cache warm.
+    threading.Thread(target=_idle_watch_loop, daemon=True,
+                     name="idle-watch").start()
     # auto-replace any stale serve.py holding our port. Without this,
     # the user gets EADDRINUSE every time the previous daemon wasn't cleaned
     # up (common during development: editor reloads, separate launchers, my

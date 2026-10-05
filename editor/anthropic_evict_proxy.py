@@ -41,15 +41,31 @@ CONFIG (env)
   EVICT_PROXY_PORT    listen port (default 8787)
   EVICT_KEEP_IMAGES   how many most-recent images to keep (default 10)
   EVICT_UPSTREAM_HOST upstream host (default api.anthropic.com)
+
+CACHE KEEP-ALIVE
+----------------
+The prompt cache lives upstream and expires an hour after its last read,
+whether or not the CLI process is still alive. serve.py gives each spawn its
+own base URL, `<proxy>/r/<runId>`, so the proxy knows which run a request
+belongs to and remembers that run's latest main-thread request. keepalive()
+re-sends it with `max_tokens: 0`: billed as a cache read, it restarts the
+hour without generating anything. serve.py decides WHEN (idle chat threads,
+for a few hours after their last real request); this file only knows HOW.
 """
 from __future__ import annotations
 
+import atexit
 import gzip
+import hashlib
 import http.client
 import json
 import os
+import re
+import shutil
 import sys
+import tempfile
 import threading
+import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -155,21 +171,197 @@ def _evict_images(payload: dict, keep_last: int) -> int:
     return n
 
 
-def _rewrite_body(raw: bytes, content_encoding: str):
-    """Return (new_bytes, evicted_count). Fail-open: on any trouble return raw."""
+def _rewrite_body_ex(raw: bytes, content_encoding: str):
+    """Return (new_bytes, evicted_count, sent_json). `sent_json` is the
+    uncompressed JSON upstream receives (None when the body is not a Messages
+    request) - what a keep-alive must replay. Fail-open: on any trouble return
+    raw."""
     try:
         data = gzip.decompress(raw) if content_encoding == "gzip" else raw
         payload = json.loads(data)
         if not isinstance(payload, dict) or "messages" not in payload:
-            return raw, 0  # not a Messages request — pass through
+            return raw, 0, None  # not a Messages request — pass through
         n = _evict_images(payload, KEEP_IMAGES)
         if n == 0:
-            return raw, 0
+            return raw, 0, data
         # Re-serialize compactly + deterministically (stable bytes => stable cache).
         new = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        return new, n
+        return new, n, new
     except Exception:
-        return raw, 0  # FAIL-OPEN
+        return raw, 0, None  # FAIL-OPEN
+
+
+def _rewrite_body(raw: bytes, content_encoding: str):
+    """Return (new_bytes, evicted_count). Fail-open: on any trouble return raw."""
+    new, n, _sent = _rewrite_body_ex(raw, content_encoding)
+    return new, n
+
+
+# ── cache keep-alive ─────────────────────────────────────────────────────────
+# runId -> {key: entry}. One entry per (model, system prompt), so a run's own
+# subagents and side calls don't overwrite its main conversation; keepalive()
+# replays the entry with the most messages. Bodies live on disk (a long
+# thread's request is megabytes, and the point of all this is less memory);
+# only the small header dict stays in memory, so credentials never touch disk.
+_RUN_PREFIX_RE = re.compile(r"^/r/([A-Za-z0-9_-]{1,64})(/.*)$")
+_KA_LOCK = threading.Lock()
+_KA: dict = {}
+_KA_DIR = None
+_KA_MAX_KEYS = 4
+# The keep-alive request must not stream; everything else goes as recorded.
+_KA_DROP_HEADERS = {"accept", "content-length"}
+
+
+def _split_run_path(path: str):
+    """'/r/<runId>/v1/messages?x' -> ('<runId>', '/v1/messages?x');
+    any other path -> (None, path)."""
+    m = _RUN_PREFIX_RE.match(path or "")
+    if not m:
+        return None, path
+    return m.group(1), m.group(2)
+
+
+def _ka_dir() -> str:
+    global _KA_DIR
+    if _KA_DIR is None:
+        _KA_DIR = tempfile.mkdtemp(prefix="woven-keepalive-")   # 0700
+        atexit.register(shutil.rmtree, _KA_DIR, True)
+    return _KA_DIR
+
+
+def _ka_record(run_id: str, path: str, headers: dict, sent_json: bytes) -> None:
+    """Remember the request a keep-alive for `run_id` would replay. Best-effort:
+    a failure here only means no keep-alive, never a broken request."""
+    try:
+        if path.split("?", 1)[0] != "/v1/messages":
+            return                       # count_tokens, batches: nothing to keep warm
+        payload = json.loads(sent_json)
+        msgs = payload.get("messages")
+        if not isinstance(msgs, list) or not msgs or payload.get("max_tokens") == 0:
+            return
+        key = hashlib.sha1((str(payload.get("model")) + "\0" +
+                            json.dumps(payload.get("system"), sort_keys=True))
+                           .encode("utf-8")).hexdigest()[:16]
+        file = os.path.join(_ka_dir(), "%s-%s.json" % (run_id, key))
+        tmp = file + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(sent_json)
+        os.replace(tmp, file)
+        now = time.time()
+        keep = {k: v for k, v in headers.items() if k.lower() not in _KA_DROP_HEADERS}
+        with _KA_LOCK:
+            entries = _KA.setdefault(run_id, {})
+            entries[key] = {"file": file, "path": path, "headers": keep,
+                            "nmsg": len(msgs), "real_at": now, "touched_at": now,
+                            "dead": False}
+            while len(entries) > _KA_MAX_KEYS:
+                oldest = min(entries, key=lambda k: entries[k]["real_at"])
+                gone = entries.pop(oldest)
+                if gone["file"] != file:
+                    try: os.remove(gone["file"])
+                    except OSError: pass
+    except Exception:
+        pass
+
+
+def _ka_main(run_id: str):
+    """The entry keepalive() would replay for `run_id` (a copy), or None."""
+    with _KA_LOCK:
+        live = [e for e in (_KA.get(run_id) or {}).values() if not e["dead"]]
+        if not live:
+            return None
+        return dict(max(live, key=lambda e: (e["nmsg"], e["real_at"])))
+
+
+def keepalive_status(run_id: str):
+    """{realAt, touchedAt} for the run's main conversation, or None when
+    nothing replayable was recorded. realAt = last request the CLI itself
+    sent; touchedAt = last time anything (CLI or keep-alive) read the cache."""
+    e = _ka_main(run_id)
+    if e is None:
+        return None
+    return {"realAt": e["real_at"], "touchedAt": e["touched_at"], "messages": e["nmsg"]}
+
+
+def keepalive(run_id: str, timeout: float = 120.0):
+    """Re-send the run's main request with max_tokens 0 so the upstream prompt
+    cache counts a read and restarts its TTL. Returns {ok, status, usage} or
+    None when there is nothing to replay. A request shape the API rejects
+    with max_tokens 0 (or any other 4xx) retires the entry - no retry loop
+    against an error."""
+    e = _ka_main(run_id)
+    if e is None:
+        return None
+
+    def _retire():
+        with _KA_LOCK:
+            for cur in (_KA.get(run_id) or {}).values():
+                if cur["file"] == e["file"]:
+                    cur["dead"] = True
+
+    try:
+        with open(e["file"], "rb") as f:
+            payload = json.loads(f.read())
+    except Exception:
+        _retire()
+        return None
+    # max_tokens 0 is rejected with these; the CLI's normal adaptive-thinking
+    # request has none of them.
+    if ((payload.get("thinking") or {}).get("type") == "enabled"
+            or (payload.get("output_config") or {}).get("format")
+            or (payload.get("tool_choice") or {}).get("type") in ("any", "tool")):
+        _retire()
+        return {"ok": False, "status": None, "usage": None, "reason": "unsupported"}
+    payload["max_tokens"] = 0
+    payload.pop("stream", None)
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    headers = dict(e["headers"])
+    headers["Accept"] = "application/json"
+    headers["Accept-Encoding"] = "identity"
+    headers["Content-Length"] = str(len(body))
+    started = time.time()
+    scheme, uhost, uport = UPSTREAM
+    try:
+        if scheme == "https":
+            conn = http.client.HTTPSConnection(uhost, uport, timeout=timeout)
+        else:
+            conn = http.client.HTTPConnection(uhost, uport, timeout=timeout)
+        conn.request("POST", e["path"], body=body, headers=headers)
+        resp = conn.getresponse()
+        data = resp.read()
+        conn.close()
+    except Exception as err:
+        return {"ok": False, "status": None, "usage": None, "reason": str(err)[:200]}
+    usage = None
+    try:
+        usage = json.loads(data).get("usage")
+    except Exception:
+        pass
+    if resp.status == 200:
+        with _KA_LOCK:
+            for cur in (_KA.get(run_id) or {}).values():
+                if cur["file"] == e["file"]:
+                    cur["touched_at"] = max(cur["touched_at"], started)
+    elif 400 <= resp.status < 500 and resp.status not in (408, 409, 429):
+        _retire()
+    return {"ok": resp.status == 200, "status": resp.status, "usage": usage,
+            "reason": None if resp.status == 200 else data[:300].decode("utf-8", "replace")}
+
+
+def keepalive_runs() -> list:
+    """Run ids with something recorded."""
+    with _KA_LOCK:
+        return list(_KA)
+
+
+def keepalive_forget(run_id: str) -> None:
+    """Drop everything recorded for `run_id` (thread deleted, window over)."""
+    with _KA_LOCK:
+        entries = _KA.pop(run_id, None) or {}
+    for e in entries.values():
+        try: os.remove(e["file"])
+        except OSError: pass
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -183,11 +375,16 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(length) if length else b""
 
+            # serve.py points each spawn at <proxy>/r/<runId>; upstream never
+            # sees that prefix.
+            run_id, path = _split_run_path(self.path)
+
             # Rewrite only Messages POSTs; everything else passes through.
             evicted = 0
+            sent_json = None
             if self.command == "POST" and body:
                 enc = (self.headers.get("Content-Encoding") or "").lower()
-                body, evicted = _rewrite_body(body, enc)
+                body, evicted, sent_json = _rewrite_body_ex(body, enc)
 
             # Build upstream headers: copy, drop hop-by-hop, force identity,
             # recompute length (and clear content-encoding since we decompressed).
@@ -198,13 +395,15 @@ class Handler(BaseHTTPRequestHandler):
                 up_headers[k] = self.headers[k]
             up_headers["Content-Length"] = str(len(body))
             up_headers["Accept-Encoding"] = "identity"  # avoid gzip relay complexity
+            if run_id and sent_json is not None:
+                _ka_record(run_id, path, up_headers, sent_json)
 
             scheme, uhost, uport = UPSTREAM
             if scheme == "https":
                 conn = http.client.HTTPSConnection(uhost, uport, timeout=UPSTREAM_TIMEOUT)
             else:
                 conn = http.client.HTTPConnection(uhost, uport, timeout=UPSTREAM_TIMEOUT)
-            conn.request(self.command, self.path, body=body or None, headers=up_headers)
+            conn.request(self.command, path, body=body or None, headers=up_headers)
             resp = conn.getresponse()
 
             # Relay status + headers, then stream the body back as chunked so SSE
