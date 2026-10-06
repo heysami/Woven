@@ -164,6 +164,79 @@ class JobTests(unittest.TestCase):
                 self.assertIn(child, [c.args[0] for c in kill.call_args_list])
 
 
+class QaCancelTests(unittest.TestCase):
+    def _tool_use(self, subagent, prompt="", **extra):
+        return {"type": "tool_use", "id": "call", "name": "Agent",
+                "input": {"subagent_type": subagent, "prompt": prompt}, **extra}
+
+    def test_only_the_threads_own_checks_are_classified(self):
+        self.assertEqual(run_jobs.observe({}, self._tool_use("woven:visual-verifier"), "claude")["qaCheck"], "visual verification")
+        self.assertEqual(run_jobs.observe({}, self._tool_use("general-purpose", "Read /x/docs/agents/requirement-qa.md and execute it."), "claude")["qaCheck"], "requirement QA")
+        self.assertNotIn("qaCheck", run_jobs.observe({}, self._tool_use("general-purpose", "Build the hero."), "claude"))
+        # A lens a subagent dispatched belongs to that subagent's loop.
+        self.assertNotIn("qaCheck", run_jobs.observe({}, self._tool_use("craft-lens", sidechain=True), "claude"))
+        self.assertEqual(run_jobs.qa_check("ds-guardian"), "DS guard")
+
+    def test_waived_stop_is_not_a_failed_worker(self):
+        jobs = {}
+        run_jobs.reduce_job(jobs, run_jobs.observe(jobs, self._tool_use("visual-verifier"), "claude"))
+        run_jobs.reduce_job(jobs, run_jobs.claude_job({"subtype": "task_started", "task_id": "task", "tool_use_id": "call"}))
+        run_jobs.reduce_job(jobs, {"type": "job", "jobId": "task", "toolUseId": "call", "waived": True})
+        run_jobs.reduce_job(jobs, run_jobs.claude_job({"subtype": "task_notification", "task_id": "task", "tool_use_id": "call", "status": "stopped"}))
+        self.assertEqual(jobs["task"]["qaCheck"], "visual verification")
+        self.assertTrue(jobs["task"]["waived"])
+        self.assertFalse(run_jobs.failed(jobs))
+        self.assertFalse(run_jobs.pending(jobs))
+
+    def _live_claude(self, root):
+        proc = Mock(poll=Mock(return_value=None), stdin=io.BytesIO())
+        return serve.RunState("p", proc, "claude", "main", "freeform", "test", project_root=root), proc
+
+    def test_reply_stops_a_running_check_before_the_message_lands(self):
+        with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"):
+            state, proc = self._live_claude(root)
+            state.append("agent", self._tool_use("woven:visual-verifier"))
+            state.append("agent", run_jobs.claude_job({"subtype": "task_started", "task_id": "task", "tool_use_id": "call"}))
+            handler = SimpleNamespace(_read_json_body=lambda max_bytes=0: {"text": "make it blue"},
+                                      _reply=lambda code, body: (code, body))
+            with patch.object(serve, "RUNS", {"p": state}):
+                self.assertEqual(serve.H._run_user_message(handler, "p")[0], 200)
+            frames = [json.loads(line) for line in proc.stdin.getvalue().decode().splitlines()]
+            self.assertEqual(frames[0]["request"], {"subtype": "stop_task", "task_id": "task"})
+            sent = frames[1]["message"]["content"][0]["text"]
+            self.assertTrue(sent.startswith("[Woven: your visual verification check was cancelled"))
+            self.assertTrue(sent.endswith("make it blue"))
+            self.assertTrue(state.jobs["task"]["waived"])
+            echo = [e["data"] for e in state.events if e["type"] == "user_message"]
+            self.assertEqual(echo, [{"text": "make it blue"}])
+
+    def test_reply_without_a_running_check_is_untouched(self):
+        with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"):
+            state, proc = self._live_claude(root)
+            state.append("agent", self._tool_use("general-purpose", "Build the hero."))
+            state.append("agent", run_jobs.claude_job({"subtype": "task_started", "task_id": "task", "tool_use_id": "call"}))
+            handler = SimpleNamespace(_read_json_body=lambda max_bytes=0: {"text": "make it blue"},
+                                      _reply=lambda code, body: (code, body))
+            with patch.object(serve, "RUNS", {"p": state}):
+                serve.H._run_user_message(handler, "p")
+            frames = [json.loads(line) for line in proc.stdin.getvalue().decode().splitlines()]
+            self.assertEqual(len(frames), 1)
+            self.assertEqual(frames[0]["message"]["content"][0]["text"], "make it blue")
+
+    def test_reply_stops_a_planner_dispatched_check(self):
+        with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"):
+            parent, _ = self._live_claude(root)
+            child = serve.RunState("c", Mock(poll=Mock(return_value=None)), "codex", "planner", "planner:visual-verifier", "test", project_root=root)
+            child.parent_run_id, child.qa_check = "p", run_jobs.qa_check("visual-verifier", "")
+            other = serve.RunState("o", Mock(poll=Mock(return_value=None)), "codex", "planner", "planner:3d", "test", project_root=root)
+            other.parent_run_id = "p"
+            with patch.object(serve, "RUNS", {"p": parent, "c": child, "o": other}), patch.object(serve, "_kill_run_tree") as kill:
+                self.assertEqual(serve._cancel_qa_checks(parent), ["visual verification"])
+            self.assertEqual([c.args[0] for c in kill.call_args_list], [child])
+            self.assertEqual(child.stop_reason, "user-stop")
+            self.assertTrue(parent.jobs["c"]["waived"])
+
+
 class MCPTests(unittest.TestCase):
     def test_remote_and_timeout_units(self):
         spec = {"url": "https://example.test/mcp", "headers": {"X-Test": "value"}, "startupTimeoutMs": 15000}

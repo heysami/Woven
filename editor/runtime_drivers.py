@@ -294,10 +294,13 @@ class CodexDriver(ProcessDriver):
             self.request("turn/interrupt", {"threadId": self.session_id, "turnId": self.turn_id})
         for sid in self.children:
             # The parent interruption need not stop independent child turns.
-            result = self.request("thread/read", {"threadId": sid, "includeTurns": True})
-            for turn in result.get("thread", {}).get("turns", []):
-                if turn.get("status") == "inProgress":
-                    self.request("turn/interrupt", {"threadId": sid, "turnId": turn["id"]})
+            self.interrupt_child(sid)
+
+    def interrupt_child(self, sid):
+        result = self.request("thread/read", {"threadId": sid, "includeTurns": True})
+        for turn in result.get("thread", {}).get("turns", []):
+            if turn.get("status") == "inProgress":
+                self.request("turn/interrupt", {"threadId": sid, "turnId": turn["id"]})
 
 
 class OpenCodeDriver(ProcessDriver):

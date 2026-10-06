@@ -10102,7 +10102,9 @@ def _queue_drain_maybe(state, mode: str = "stdin") -> None:
                     # queued and the parked run's drain delivers it via resume.
                     with _PARK_LOCK:
                         if getattr(state, "stop_reason", None) != "parked":
-                            state.proc.stdin.write(_claude_user_frame(text))
+                            cancelled = _cancel_qa_checks(state)
+                            state.proc.stdin.write(_claude_user_frame(
+                                _qa_cancel_note(cancelled) + text if cancelled else text))
                             state.proc.stdin.flush()
                             state.turn_done = False
                             ok = True
@@ -11513,6 +11515,9 @@ class RunState:
                  # just polls "running" forever - so the stall watchdog needs
                  # a way back up the tree to tell someone who can act.
                  "parent_run_id",
+                 # the QA check a dispatched planner run is (see
+                 # _cancel_qa_checks); None for every other run.
+                 "qa_check",
                  # intentional-termination flag ("completed-orchestrator",
                  # "user-stop", or None for natural exit). Lets finish() report
                  # SIGTERM-after-success as exit 0 instead of "failed".
@@ -11703,6 +11708,9 @@ class RunState:
         # auto-chain) so a stalled child can be reported UP to whoever is
         # waiting on it. None for a run nobody dispatched.
         self.parent_run_id = None
+        # Which QA check a dispatched planner run IS (run_jobs.qa_check), so
+        # a message to its parent can cancel it. None for everything else.
+        self.qa_check = None
         # Wake the stall watchdog - it sleeps on this while the daemon is idle
         # rather than polling an empty registry forever.
         STALL_WAKE.set()
@@ -13192,6 +13200,78 @@ def _stop_run_family(state):
             if job.get("source") == "native" and job.get("status") not in run_jobs.TERMINAL:
                 current.append("agent", {**job, "status": "stopped"})
         _kill_run_tree(current)
+
+
+# A user message that reaches a run while one of its QA checks is running
+# cancels the check. The check grades the state the user is steering away
+# from: a foreground one holds the steer until it finishes, and either way it
+# hands the agent a stale verdict to act on. Probed on claude 2.1.260: a
+# `stop_task` control frame stops a FOREGROUND subagent too, its Agent call
+# returns "[Request interrupted by user for tool use]", and the message
+# written right after is read in the same beat.
+def _cancel_qa_checks(state) -> list:
+    """Stop every QA check (run_jobs.QA_CHECK_AGENTS) in flight on `state`
+    and return their names. The caller holds _PARK_LOCK and writes the user
+    frame next, so the stop always lands ahead of the message.
+      - claude: one `stop_task` control frame per task.
+      - codex app-server: interrupt the child thread's turn.
+      - planner children (codex / opencode reach visual-verifier through
+        /__dispatch_planner): stop the child run.
+    Each one is `waived`, so its stop never reads as a failed worker."""
+    with state.lock:
+        jobs = [dict(j) for j in state.jobs.values()
+                if j.get("qaCheck") and not j.get("waived") and j.get("source") == "native"
+                and j.get("status") not in run_jobs.TERMINAL]
+    proc, stopped = state.proc, []
+    for job in jobs:
+        task_id = job.get("jobId")
+        # Keyed by its tool use id until the runtime names the task: nothing
+        # to address a stop to yet.
+        if not task_id or task_id == job.get("toolUseId"):
+            continue
+        try:
+            if isinstance(proc, runtime_drivers.CodexDriver):
+                proc.interrupt_child(task_id)
+            elif state.agent_id == "claude" and not isinstance(proc, runtime_drivers.ProcessDriver):
+                proc.stdin.write((json.dumps({
+                    "type": "control_request", "request_id": uuid.uuid4().hex,
+                    "request": {"subtype": "stop_task", "task_id": task_id},
+                }) + "\n").encode("utf-8"))
+                proc.stdin.flush()
+            else:
+                continue
+        except Exception as e:
+            print(f"[qa-cancel] run={state.run_id} task={task_id}: {e}", flush=True)
+            continue
+        state.append("agent", {"type": "job", "jobId": task_id,
+                               "toolUseId": job.get("toolUseId"), "waived": True})
+        stopped.append(job["qaCheck"])
+    with RUNS_LOCK:
+        children = [s for s in RUNS.values() if s.parent_run_id == state.run_id
+                    and getattr(s, "qa_check", None) and not s.done
+                    and os.path.realpath(s.project_root) == os.path.realpath(state.project_root)]
+    for child in children:
+        state.append("agent", {"type": "job", "jobId": child.run_id, "source": "bridge",
+                               "childRunId": child.run_id, "waived": True})
+        _stop_run_family(child)
+        stopped.append(child.qa_check)
+    if stopped:
+        names = " and ".join(sorted(set(stopped)))
+        state.append("agent", {"type": "status",
+                               "label": f"QA cancelled · {names} · you replied mid-check"})
+    return stopped
+
+
+def _qa_cancel_note(checks) -> str:
+    """Prefix for the user frame that follows a cancel, so the agent reads the
+    interrupted check as the user's doing rather than re-running it at once
+    against the state the user just steered away from. The thread echo keeps
+    the user's own words."""
+    names = sorted(set(checks))
+    what = " and ".join(names) + (" check was" if len(names) == 1 else " checks were")
+    return (f"[Woven: your {what} cancelled because this message arrived while it was running. "
+            "Act on this message first and do not re-run the cancelled check against the earlier "
+            "state; this thread's checks apply again to the result once that work is done.]\n\n")
 
 
 def _context_tokens_from_usage(u: dict):
@@ -24243,6 +24323,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.prototype = _planner_context.get("prototype")
         state.guards = _planner_context.get("guards")
         state.parent_run_id = _planner_context.get("parent")
+        state.qa_check = run_jobs.qa_check(planner_type, brief)
         state.model = _omodel or None
         state.execution_profile = profile
         with RUNS_LOCK:
@@ -35937,8 +36018,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "error": "agent process is not running - resume to continue",
                     "needsResume": True,
                 })
+            cancelled = _cancel_qa_checks(state)
             try:
-                state.proc.stdin.write(_claude_user_frame(text))
+                state.proc.stdin.write(_claude_user_frame(
+                    _qa_cancel_note(cancelled) + text if cancelled else text))
                 state.proc.stdin.flush()
             except Exception as e:
                 return self._reply(500, {"error": f"stdin write failed: {e}"})

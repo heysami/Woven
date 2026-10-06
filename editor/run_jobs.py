@@ -5,6 +5,31 @@ import re
 TERMINAL = frozenset(("completed", "failed", "stopped", "killed", "cancelled"))
 ACTIVE = frozenset(("pending", "running", "unknown"))
 
+# Subagents that grade work the thread already did: the chat checks
+# (capabilities.py visual / dsGuard / reqQa) and the lens judges. A user
+# message that reaches the run while one is in flight cancels it (serve.py
+# _cancel_qa_checks), because it is grading the state the user just steered
+# away from.
+QA_CHECK_AGENTS = {
+    "visual-verifier": "visual verification",
+    "ds-guardian": "DS guard",
+    "craft-lens": "craft lens",
+    "aesthetic-lens": "aesthetic lens",
+    "concept-lens": "concept lens",
+}
+
+
+def qa_check(subagent_type, prompt=""):
+    """The QA check a subagent dispatch runs, or None. Claude namespaces plugin
+    agents (`woven:visual-verifier`); requirement QA is a general-purpose
+    dispatch, recognisable only by the playbook its brief points at."""
+    name = str(subagent_type or "").rsplit(":", 1)[-1].strip()
+    if name in QA_CHECK_AGENTS:
+        return QA_CHECK_AGENTS[name]
+    if "requirement-qa.md" in str(prompt or ""):
+        return "requirement QA"
+    return None
+
 
 def observe(jobs, event, runtime):
     """Compatibility events for older CLIs lacking explicit task status."""
@@ -13,10 +38,16 @@ def observe(jobs, event, runtime):
         if any(v.get("toolUseId") == event.get("id") for v in jobs.values()):
             return None
         inp = event.get("input") or {}
-        return {"type": "job", "jobId": event.get("id"), "toolUseId": event.get("id"),
-                "source": "native", "runtime": runtime, "status": "pending",
-                "background": inp.get("run_in_background", inp.get("background", False)),
-                "description": inp.get("description"), "required": True}
+        job = {"type": "job", "jobId": event.get("id"), "toolUseId": event.get("id"),
+               "source": "native", "runtime": runtime, "status": "pending",
+               "background": inp.get("run_in_background", inp.get("background", False)),
+               "description": inp.get("description"), "required": True}
+        # Only the thread's OWN checks. A lens a subagent dispatched belongs to
+        # that subagent's loop; the user's message does not reach it.
+        check = None if event.get("sidechain") else qa_check(inp.get("subagent_type"), inp.get("prompt"))
+        if check:
+            job["qaCheck"] = check
+        return job
     if kind == "tool_result":
         prev = next((v for v in jobs.values() if v.get("toolUseId") == event.get("toolUseId")), None)
         if not prev or prev.get("status") in TERMINAL:
@@ -59,12 +90,17 @@ def reduce_job(jobs, event):
     jobs[identity] = value
 
 
+# `waived` marks a job the daemon stopped on purpose (a QA check cancelled by
+# the user's message). Its stop is not a worker failure, and later lifecycle
+# frames re-send required=True, so the waiver is its own sticky key.
 def pending(jobs):
-    return [v for v in jobs.values() if v.get("required", True) and v.get("status") not in TERMINAL]
+    return [v for v in jobs.values() if v.get("required", True) and not v.get("waived")
+            and v.get("status") not in TERMINAL]
 
 
 def failed(jobs):
-    return [v for v in jobs.values() if v.get("required", True) and v.get("status") in TERMINAL - {"completed"}]
+    return [v for v in jobs.values() if v.get("required", True) and not v.get("waived")
+            and v.get("status") in TERMINAL - {"completed"}]
 
 
 def claude_job(frame):
