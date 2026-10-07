@@ -1,0 +1,40 @@
+{
+  "contractVersion": 1,
+  "bindingRules": {
+    "inheritFromPlate": [
+      "colour ratios",
+      "value structure",
+      "composition logic",
+      "material logic",
+      "type rhythm",
+      "motion character"
+    ],
+    "doNotReplicate": [
+      "the plate's literal subject",
+      "its exact layout / coordinates",
+      "its specific copy",
+      "any single-screen framing - the app has many screens"
+    ],
+    "principleNotPixels": "The build inherits the plate's design DNA. If a build step is reproducing the plate's content rather than its principles, it is wrong.",
+    "plateIsNotAnAsset": "The plate + its crops (_artdir/, _artdir_refs/, workflow/artdirection/) are planning artefacts and i2i references - shipped HTML/CSS/JS must never load them (img src, background-image, poster). A shell/title screen that needs keyart commissions a dedicated asset i2i-conditioned on the plate, inheriting the DNA without the baked chrome.",
+    "buildRegister": "buildRegister obeys aesthetic-authority - translate the committed vibe into a register, never default to a generic 'creative' voice.",
+    "formatCommitmentsAreHard": "Every formatCommitments entry is a boolean deliverable, not direction. Downstream research MUST copy each applicable entry into its slot's deliverables.json (capabilities.py, 'The deliverables ledger'); the runtime/composer marks delivery; the final qa_gate audits it and cannot commit with an unresolved item. Downgrading a committed format (2d standing in for 3d, a still standing in for video) is allowed ONLY through a user-accepted decision-request recorded in the ledger - never through a graceful fallback, a code comment, or a lens pass."
+  },
+  "voice": {
+    "addressPrinciple": "Copy is addressed TO the audience and talks about THEIR world. It NEVER answers the build brief, narrates the product to whoever commissioned it, or describes a feature to a 'development team'. Ship the line the reader should see: 'Ship when the data says ship.' - NOT 'This is a landing page for a developer-analytics SaaS.'",
+    "copyAntiPatterns": [
+      "instruction-echo - restating the brief/prompt back as copy ('A clean, modern dashboard that displays your key metrics')",
+      "meta-narration - copy that describes the page to the reader ('This section showcases...', 'Below you will find...', 'Welcome to our website')",
+      "spec / dev-team address - talking to the builder or stakeholder instead of the actual user",
+      "lorem / placeholder / [BRACKETED TODO] shipped as final copy",
+      "feature-listing where a benefit is owed - naming the mechanism, not what it does for the reader"
+    ]
+  },
+  "buildRegister": {
+    "antiVoice": [
+      "no 'imagine you are a...'",
+      "no adjective-decoration",
+      "no reaching for a house vocabulary the project didn't earn"
+    ]
+  }
+}

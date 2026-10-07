@@ -98,13 +98,14 @@ def test_layer_specs_flow_through_layer_except_no_layer_position_hosts():
     """
     direct_position_hosts = {
         "layer",
+        "layer-group",
         "pixel-editor",
         "spline-3d",
         "voxel-3d",
         "gaussian-splat-3d",
     }
-    direct_effect_hosts = {"layer"}
-    direct_trigger_hosts = {"layer"}
+    direct_effect_hosts = {"layer", "layer-group", "shape"}
+    direct_trigger_hosts = {"layer", "layer-group"}
 
     offenders = []
     for kind, io in KIND_IO.items():

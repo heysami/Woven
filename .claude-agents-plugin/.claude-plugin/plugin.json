@@ -1,0 +1,5 @@
+{
+  "name": "woven",
+  "version": "1.0.0",
+  "description": "Woven's drawer / lens / orchestrator subagent set. Loaded per-spawn via --plugin-dir so it survives a project that is its own git repo (the CLI's upward search for .claude/agents stops at a git root)."
+}

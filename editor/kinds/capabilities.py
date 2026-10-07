@@ -237,6 +237,11 @@ def _daemon_endpoints() -> list:
         {"method": "GET",  "path": "/__qa/resolve",         "purpose": "Resolve a baked node OR a composed page to the daemon-served runtime URL (node=<id> | page=<slug|path>)"},
         {"method": "GET",  "path": "/__qa/run",             "purpose": "VERIFY VISUAL WORK - THE PRIMARY verification path (drives real Chrome via Playwright inside the daemon; needs NO preview/chrome MCP, so it works even when those tools are absent or their handshake failed). headless-render a node (mode=interactive) or page (mode=render) in real Chrome, capture frames + simulate input, return a pass/static/no-reaction/blank/error/effect-wrong verdict. MANDATORY discipline: HTTP 200 + clean console is plumbing, NOT verification - you MUST then READ the returned idleFrames[].path PNGs (open them with Read) and confirm with your eyes that the intended content actually rendered and the load-bearing text is readable; add judge=<expected> for a vision-LLM 'right thing rendered?' check. If preview_*/chrome MCP tools are unavailable (common in this runtime), DO NOT report 'can't verify' - use THIS endpoint and read the frames. Never claim 'verified' off status codes alone. When a test-cases.json sits next to the target (written at research time), this endpoint auto-runs CASES mode instead: every planned case end to end (journeys / intent x phase matrix / abuse / seeded soak), verdict pass|cases-fail with per-case repro; &cases=0 forces the generic battery"},
         {"method": "GET",  "path": "/__capabilities",       "purpose": "This catalog - what the app can do"},
+        {"method": "GET",  "path": "/__stories",             "purpose": "USER STORIES + WHERE THEY LIVE. Returns the project's stories parsed out of docs/user-stories.xlsx (normalised - never parse the .xlsx yourself) joined to docs/story-map.json, plus a validation report. Each row: id, title/role/want/benefit/acceptance from the sheet, and screen/page/selector/reach from the map. When a project has this sheet, it is a REQUIREMENT SOURCE - read it before building or judging what was built."},
+        {"method": "POST", "path": "/__stories/validate",    "purpose": "Re-check the story map against the sheet and the built pages. Reports stories with no location (unmapped), locations whose page or element is gone (missing-page / missing-element), map rows for IDs the sheet no longer has (orphan-mapping), and mappings whose story text changed since it was recorded (stale). Mechanical only - it checks that a mapping still RESOLVES, never whether the element satisfies the story."},
+        {"method": "POST", "path": "/__stories/map",         "purpose": "Replace docs/story-map.json (body {prototype, rows:[...]}) - the whole table, same full-replace contract as /__workflow. Prefer writing the file directly when you are wired into a story-map node's edit port; that node carries the schema."},
+        {"method": "POST", "path": "/__ds/validate",         "purpose": "Design-system drift check: runs the DS linter over the built pages and reports where the prototype forked away from the bound DS (component classes redefined in a page's local <style>, tokens that do not exist, hardcoded values duplicating a token, one class forked across sibling pages, a page hand-rolling a component the DS already ships, a variant the DS never declares). Read-only. status no-ds means no design system is bound, which is not a failure."},
+        {"method": "POST", "path": "/__jev",                "purpose": "TYPED JUDGMENT - answers MANY small typed questions about ONE state in a single sub-second request and returns a calibrated probability each. Body {state, questions:{id:{type:noul|choice|score, instructions, criteria?}}, kind?, model?} -> {ok, answers, thresholds}. It does NOT generate: no prose, no fix text, no images (text input only). Used ONLY by requirement QA, ds_lint --jev and direction picking. 503 = off or no key, which means run the check the way you would without it. See the typed-judgment block in your preamble when the user has it on"},
         {"method": "GET",  "path": "/__design_system",      "purpose": "Read DS metadata + token files (incl. per-DS local fonts)"},
         {"method": "POST", "path": "/__design_system",      "purpose": "Write a DS trio (vars/primitives/index)"},
         {"method": "GET",  "path": "/__fonts",              "purpose": "LOCAL FONT LIBRARY - every user-uploaded font under design-systems/*/fonts/ (family, cssUrl, ds, note = how the face reads)"},
@@ -609,7 +614,7 @@ VISUAL_DELEGATION_DISCIPLINE = """
 
 ### Visual verification + bulk retrieval - ALWAYS delegate to a subagent (mandatory procedure)
 Images and bulk tool payloads ingested into THIS conversation poison its prompt cache later (each image past the harness's ~10-image cap forces a full re-upload of the conversation; bulk dumps rush the context ceiling). You cannot know at ingest time whether this thread stays short, so these rules are unconditional - no session-length judgment call, ever:
-  - VISUAL VERIFICATION: you MUST NOT take a browser screenshot or Read an image file to check or judge work yourself - not once, not "just a quick look". Whenever you need to LOOK at anything (browser state after an edit, `/__qa/run` idleFrames, a rendered page, before/after comparisons, generated plates or candidates), dispatch a `Task` subagent to do the whole look-loop (the `visual-verifier` agent type exists for exactly this; on runtimes without a Task tool, dispatch type `visual-verifier` through the planner-dispatch bridge). It screenshots as freely as QA needs in its own throwaway context and returns a text verdict; your context keeps only the verdict. The subagent does NOT get this preamble, so write a SELF-CONTAINED brief: the exact URL(s) or file paths, what must be true visually, which interactions to try, and that it must report pass/fail with specifics. Visual QA rigor is unchanged - same checks, same screenshots, different context.
+  - VISUAL VERIFICATION: you MUST NOT take a browser screenshot or Read an image file to check or judge work yourself - not once, not "just a quick look". Whenever you need to LOOK at anything (browser state after an edit, `/__qa/run` idleFrames, a rendered page, THE WORKFLOW CANVAS after you created or rearranged nodes, before/after comparisons, generated plates or candidates), dispatch a `Task` subagent to do the whole look-loop (the `visual-verifier` agent type exists for exactly this; on runtimes without a Task tool, dispatch type `visual-verifier` through the planner-dispatch bridge). It screenshots as freely as QA needs in its own throwaway context and returns a text verdict; your context keeps only the verdict. The subagent does NOT get this preamble, so write a SELF-CONTAINED brief: the exact URL(s) or file paths, what must be true visually, which interactions to try, and that it must report pass/fail with specifics. Visual QA rigor is unchanged - same checks, same screenshots, different context.
   - FIGMA / BULK RETRIEVAL: you MUST NOT call Figma MCP document/node-dump tools (or any tool returning a bulk single-use payload - large API responses, log dumps) directly in this chat. Dispatch a `Task` subagent that fetches the payload, extracts exactly what the task needs (tokens, measurements, component structure, layout spec), and returns it as structured text. If you later need a detail the brief missed, re-dispatch - never hold the raw dump here.
   - USER-PASTED images are the one exception physics forces: they are already in your context before you act. View each ONCE, write down what you concluded, and never Read that image again - your recorded observation is durable, the pixels are dead weight."""
 
@@ -671,6 +676,201 @@ HOW:
   3. ALL INTACT -> present the gate as normal and say nothing extra. Do NOT ask the user to re-confirm content that did not change: a reflex confirmation on every gate trains the user to stop reading gates.
   4. ANY reinterpretation / merge / drop / clash -> the gate MUST open with a **Content changes from your request** section, one plain line per divergence stating what they asked for, what the concept does instead, and why (e.g. "you asked for 'extremely futuristic' as the final era; this concept renders it as the OLDEST stone form under a sourceless light - conceptually future, visually ancient", or "you said 'drag each object to rotate it'; this concept is scroll-driven with no per-object drag"). Offer the resolution explicitly: keep the concept's version / restore the literal content / adjust. Never bury the delta inside the concept prose - the user must see it without reading the docs.
   5. RECORD the user's resolution in the decision's `detail.steers` (`POST $TH_DAEMON_URL/__decision/<gate-id>?project=$TH_PROJECT_ID`, same shape as the direction lock), so the build thread and every later gate inherit it as committed intent. A divergence the user resolved is committed; a divergence discovered later that was NEVER surfaced and resolved (e.g. at the final gate's PROMISED diff against the ledger `brief`) is a gate FAILURE that routes back to the responsible step, not a footnote."""
+
+
+# ── Per-thread guard toggles ────────────────────────────────────────────
+# The chat composer's "Checks" dropdown (editor/app.js ChatGuardsPicker) lets
+# the user drop either MANDATORY gate for one thread. Both default ON - the
+# gates exist because self-certified "done" and silent DS drift are the two
+# failures that cost the most rework - so the toggles are an escape hatch for
+# the threads where the gate is pure overhead (a copy tweak, a docs pass, a
+# question), never the normal way to work.
+#
+# A toggle changes the PREAMBLE the spawn carries, so it is fixed at spawn
+# time like the tier: flipping it applies to the next chat, and /resume
+# rebuilds the same prompt from the persisted flags (a resume that rebuilt a
+# different preamble would cache-bust the whole session - see
+# serve.py _run_resume).
+# Per-guard DEFAULT. Not all default the same way: the two original gates are
+# on because their failures (self-certified "done", silent DS drift) are silent
+# and expensive, while requirement QA is off because most threads have no
+# requirement document to check against - dispatching it there would burn a
+# subagent to report "no source named".
+GUARD_DEFAULTS = {"visual": True, "dsGuard": True, "reqQa": False, "plan": False}
+
+
+def normalize_guards(raw) -> dict:
+    """Coerce whatever the client sent onto the known boolean flags.
+    Missing / malformed -> each flag falls back to its GUARD_DEFAULTS value:
+    an always-on gate is never dropped by an absent field, only by an
+    explicit false, and an opt-in one is never armed by accident."""
+    out = dict(GUARD_DEFAULTS)
+    if isinstance(raw, dict):
+        for k in out:
+            if k in raw:
+                out[k] = bool(raw[k])
+    return out
+
+
+# Header of the mandatory visual gate, stripped when the user turns the check
+# off (the whole section, so its ~1.5K of QA protocol goes too).
+_VISUAL_GATE_HEADER = "## Verify your visual work before you tell the user it is done (hard rule)"
+
+# What replaces it. Deliberately short, and it still NAMES the endpoint: the
+# user turned off the obligation, not the capability - an agent that answers
+# "I can't check that" because the section is gone is a worse outcome than
+# the gate it replaced.
+VISUAL_GUARD_OFF_STUB = """
+
+### Visual verification - turned OFF for this thread (by the user)
+The user has switched the mandatory visual-verification gate off for this chat, so you are NOT required to render, screenshot, or QA what you build before reporting it, and you should NOT spend a subagent dispatch on a look-loop unless asked. Say plainly what you changed and that you did not verify it visually; never claim a visual result you did not see.
+The tooling stays available for when the user DOES ask to check something: `GET $TH_DAEMON_URL/__qa/run?project=$TH_PROJECT_ID&page=<slug>` (composed page) or `&node=<nodeId>` (one baked interactive piece), plus the `mcp__claude_preview__*` browser tools. Screenshots you take land in THIS conversation, so take the fewest that answer the question."""
+
+
+# Rides on the interactive tiers ONLY when the user ticks it on (default off).
+# The failure it targets is the one no visual check and no linter can see: the
+# build is rendered, styled and internally consistent, and it quietly says
+# something the requirement never said. Wording drifts to a synonym, a rule is
+# softened, a figure or a status is invented outright and reads as authoritative
+# because everything around it is real.
+#
+# Report-only by design. The subagent finds and evidences; the MAIN agent
+# decides, because only the main thread knows why it built what it built (a
+# "missing" item may be deliberately deferred, an "invented" field may be
+# something the user asked for in chat). See docs/agents/requirement-qa.md.
+REQUIREMENT_QA_STUB = """
+
+### REQUIREMENT QA - mandatory gate (the user turned this check ON for this thread)
+This thread checks its work against the REQUIREMENT it was given. A requirement source is any input that says what the thing must be: a document or file the user pointed you at (a spec, a brief, a ticket, a transcript, a data dictionary, an uploaded PDF/doc under `source/uploads/` or `attachments/`), or the user's own request when it carries concrete requirements. If this thread has NO such source, this gate is a no-op - do not dispatch, and do not invent a source to check against.
+
+- AFTER you finish a change that was DRIVEN by a requirement source, and BEFORE you tell the user it is done: dispatch ONE general-purpose `Task` subagent with this self-contained brief (it does not see this preamble): "Read $TH_PROTOCOL_ROOT/docs/agents/requirement-qa.md and execute it. Project root: <absolute cwd>. Requirement sources: <exact file paths, and any requirement the user stated in chat quoted verbatim>. Artefacts changed: <the exact files you touched>." It re-reads the requirement, reads what shipped, and returns a compact `REQ-QA` report: hallucination / drift / missing, each with the requirement location, the artefact location, a one-line fix, and whether that fix is `mechanical`. Batch ONE dispatch per reply covering everything that reply touched. It does not edit anything - fixing is yours.
+- THEN ACT ON THE REPORT, do not just relay it:
+  - **HALLUCINATION findings: fix them, always.** An invented fact, figure, date, name, status, rule or citation is never a judgement call and never something to ask the user about - the requirement does not say it, so it does not ship. Delete it, or replace it with what the requirement actually states. Say what you removed.
+  - **Mechanical DRIFT and MISSING (`mechanical: yes`): fix them too.** A term swapped back to the requirement's own word, a rule restored to what it says, a listed item added: apply it, then say you did.
+  - **Non-mechanical findings (`mechanical: no`) and every `ambiguous` line: STOP and ask the user.** These need a product decision - the requirement is ambiguous, two requirements conflict, or the fix changes scope or a flow already built. Put them to the user as a short numbered list: what the requirement says, what the build does, and the options. Do not pick for them, and do not bury it in a summary.
+  - **Findings you deliberately reject: say so and why.** You may know something the subagent cannot (the user asked for it in chat, the item is deferred to a later step, the "invention" is agreed placeholder data). Overriding is legitimate; overriding silently is not - one line per rejection.
+- Report the outcome in one line the user can trust: what the QA found, what you auto-fixed, and what needs their decision. If the dispatch itself failed, say that rather than implying the check passed."""
+
+
+# TYPED JUDGMENT (Jev). ONE global setting, not a fourth check: Jev is a
+# different EXECUTION PATH for checks that already exist. The block is appended
+# only when the setting is on AND a TypeSafe key resolves - a preamble that
+# names an endpoint the daemon will 503 is worse than silence, because the
+# agent then reports "the judge failed" on a project that simply never had one.
+#
+# It is ONE contiguous block and it is the ONLY thing the toggle changes in the
+# preamble (asserted by P5 in editor/tests/test_jev_parity.py). A second copy
+# of a rule elsewhere, phrased for the Jev path, is how the two paths start
+# building differently - which is invariant I4 in the plan.
+#
+# NOT on the leaf tier: a leaf builder was dispatched to make ONE decided
+# thing. It picks no direction and runs no requirement QA, so the endpoint is
+# noise there. The DS role judgment reaches ds_lint through its own --jev flag,
+# not through anybody's preamble.
+def _jev_enabled() -> bool:
+    """Global `jevJudge` setting AND a resolvable TypeSafe key. Both, always:
+    the setting alone is an intent, the key alone is a capability, and only the
+    pair makes the fast path real. Any failure resolving either answers False -
+    the non-Jev path is the one that always works."""
+    try:
+        _jev = _editor_import("jev")
+        return bool(_jev.enabled() and _jev.available())
+    except Exception:
+        return False
+
+
+JEV_FAST_PATH_STUB = """
+
+### Typed judgment is available on this install (the user turned it on)
+A judgment model that answers MANY small typed questions about ONE state in a single sub-second request, and returns a calibrated probability for each. It does not generate text: no fix prose, no rewrite, no explanation. You still write every report.
+
+`curl -sS -X POST "$TH_DAEMON_URL/__jev" -H 'Content-Type: application/json' -d '{"state": "<the thing being judged>", "kind": "<requirement_item|ds_role|direction_axis>", "questions": {"q1": {"type": "noul", "instructions": "<one clause, read literally>"}}}'`
+
+Question types: `noul` (a yes/no statement, optional `criteria.true`/`criteria.false`, returns `noul` 0-1), `choice` (a `criteria` map of optionId to rubric, max 255 options, returns the FULL `probabilities` map plus `confidence`), `score` (an ordered `criteria` array of 2-10 levels). The reply is `{ok, answers, thresholds}`; `thresholds` is the calibrated `{low, high, noul}` band for the `kind` you named - route with those numbers, never with one you invented.
+
+WHERE IT APPLIES. Exactly three places, all of them checks that already exist: requirement QA (one noul per checklist item instead of one long read), design-system conformance (`ds_lint.py --jev`), and picking a visual direction when the brief states none. Nowhere else. It has NO image input, so it judges nothing about how anything LOOKS - the visual gate and the lens trio are unaffected and stay exactly as they are.
+
+HOW TO USE IT WITHOUT GETTING IT WRONG:
+- **It narrows what you CONSIDER, never what you CONCLUDE.** A ranked shortlist feeds the same composition step you would have run anyway. Branching straight off a probability into a committed decision is the one thing that makes this path produce a different product from the path without it.
+- **It only ever ADDS findings.** Never drop, downgrade or soften a finding your deterministic checks already made because Jev disagreed.
+- **One clause per question, read literally.** It answers the question as WRITTEN, not as meant. Boundary cases belong in `criteria`, not in a longer sentence.
+- **Never ask it to count** ("how many X are missing"). Fan out one question per item and sum the answers yourself. Counting is a documented failure mode and the error grows with the count.
+- **Never ask it to do arithmetic or date maths.** Extract with the question, compute in code.
+- **Never ask it about colour.** Hex values underperform English names and it cannot judge whether two are near each other. Colour comparison stays deterministic.
+- **Send small state.** The question's own context, never the whole page. A large state full of irrelevant detail is a named failure mode, and the budget is 64k tokens for state plus all questions together - shard per page or per chunk rather than truncating.
+- **Point at the exact field.** A property of a property costs accuracy.
+- **Low confidence is information, not an error.** A flat distribution means the state genuinely does not imply an answer. Escalate that ONE item to your own read; do not re-ask in different words.
+- **If the call fails, 503s, or the answers look malformed: carry on with the check exactly as you would have without it, and say you did.** Never report a check as passed because the judge was unreachable."""
+
+
+# PLAN FIRST. Deliberately NOT one of the checks, and not offered as one in
+# the UI: the three gates above all fire at the END of the work (did you look
+# at it, did it drift from the design system, does it match the requirement),
+# whereas this fires BEFORE any of it and stops the turn rather than grading
+# it. It shares their transport (the `guards` bag) only because it is compiled
+# into the system prompt the same way. The checks are not redundant under it -
+# they just have nothing to grade on the planning turn, and fire on the build
+# that follows approval. Off by default: most messages in a thread are small
+# and a plan for them is pure ceremony.
+#
+# Format is prescriptive on purpose. Left to itself the agent writes a prose
+# plan, which is unreadable and unsplittable; the three fixed sections (UI as
+# a text wireframe, logic as a table, copy as a table) are the three things
+# that actually have to be decided before a screen gets built, and the "one
+# sentence, else another bullet, never more than four" rule is what keeps the
+# plan a plan instead of a document.
+#
+# The SPLIT list exists so the closing gate means something: "one agent per
+# point" needs points, and the three sections are three VIEWS of one change,
+# not three units of work.
+PLAN_MODE_STUB = """
+
+### PLAN FIRST - mandatory gate (the user turned "Plan first" ON for this thread)
+Before you BUILD anything asked for in this thread, your reply is a PLAN and nothing else. Do not write a file, dispatch a subagent, or commit a canvas node until the user has answered the gate at the end of the plan. Reading to understand the request first is expected; changing things is not.
+
+Hard format rules, every section, no exceptions: ONE SENTENCE per point. A point that needs a second sentence becomes a second bullet instead. At most 4 bullets ELABORATING ANY ONE POINT. NO paragraphs anywhere in the plan.
+THE 4 CAP IS ABOUT BREVITY, NEVER ABOUT COVERAGE. It limits how much you may say about one thing; it does NOT limit how many things the plan covers. Table rows are NOT capped: if the user asked for nine changes, the logic table has nine rows. Dropping a request to fit a number is the worst thing this plan can do - it looks complete and silently loses work.
+
+FIRST, ENUMERATE THE REQUEST. Before you plan or read any file, list every DISCRETE thing the user asked for, in their order, in their words. A request written as prose or as a bulleted list of screens usually holds 5-15 of these; treat each bullet, each "and also", each clause naming a different field / screen / rule as its own item. That enumeration is the checklist the finished plan is measured against: EVERY item must appear somewhere in the UI, Logic or Copy sections. If you deliberately leave one out (already built, contradicts another, needs a decision), say so in one line under the plan - never by omission.
+
+SECOND, ESTABLISH WHAT ALREADY EXISTS, PER ITEM, BY LOOKING. For each enumerated item, decide NEW vs UPDATE by OPENING the screen's file and reading the region it names. GREP IS FOR LOCATING, NOT FOR CONCLUDING: a term you cannot grep may still be on screen under a different label, built from a variable, rendered by a shared component, or spelled differently in markup than in the user's words - and "no grep hit" is NOT evidence that something is absent. Never decide NEW from a failed search. If after reading you still cannot tell, say "could not confirm" for that item rather than guessing; a wrong NEW silently rebuilds something that exists.
+
+Write exactly these four sections, in this order:
+
+**1. UI** - how the request becomes screen. Text only, no images, no code.
+  - Something NEW: one text wireframe - an ASCII box sketch naming the regions and the controls inside them, and nothing else.
+  - An UPDATE to something that exists: a BEFORE wireframe and an AFTER wireframe of the SAME region, so the change reads as a diff. Go look at what is there now before you draw the BEFORE.
+
+**2. Logic** - one markdown table, columns exactly: `Trigger | What happens | State read or written | Edge case`.
+
+**3. Copy** - one markdown table of the text you will WRITE, columns exactly: `New copy | Component | Dynamic value | Case | Type family`. `Dynamic value` is the live value that copy interpolates or reacts to, or `-` for static text. Fill `Case` and `Type family` ONLY for text that is not the label of an action component: a button, link, tab or menu item takes its case and type from the component it lives in, so write `-` in both columns for those.
+
+**4. Split** - the work items this plan breaks into, numbered, at most 4, one sentence each. Each must be buildable on its own by an agent that never sees this plan.
+
+SPLIT BY INDEPENDENT CHANGE, NOT BY FILE. These items become SEPARATE THREADS running AT THE SAME TIME. Two changes belong in ONE item only when they are COUPLED, which means one of exactly two things: (a) one needs the other's output to exist first (it acts on a field, component or data the other builds), or (b) they edit the same REGION of code - the same function, the same markup block, the same CSS rule. Anything else runs in parallel.
+  - SHARING A FILE IS NOT COUPLING. Split threads edit with targeted replacements, are shown each other's claimed regions, and cannot discard each other's work, so unrelated changes to different parts of one big file run in parallel safely. Several unrelated asks on one screen is the NORMAL case for a split, not an exception to it: never merge them because "they all touch the same file".
+  - Merge only what truly couples: a label that must read the same in the form and in its validator is ONE change (one item takes both regions); two features that edit the same function are one item; a step that acts on what another item builds goes in that item, after it.
+  - Group the independent changes into at most 4 items of similar weight. One item is right only when every change couples to the others; then say in one line WHICH coupling, naming the shared function or the dependency - "they share a file" is never that reason.
+  - Never pad the list, and never split by "phase" (design, then logic, then copy): that is a sequence by definition.
+
+BEFORE you emit the card, WRITE THE SPLIT MANIFEST so the app can fan the work out for you. Write it to `plan-splits/<your run id>.json` at the project root - your run id is `$TH_RUN_ID` (run `echo $TH_RUN_ID` once to learn it). The file is YOURS ALONE: other plans in this project run at the same time, so NEVER write `PLAN_SPLIT.json`, the old shared file: another plan overwrites it, and a click then opens THAT plan's threads.
+  `{"items": [{"title": "<short run title, <=60 chars>", "owns": ["<claim>", ...], "brief": "<the whole self-contained brief for this item>"}, ...]}`
+One entry per Split item, at most 4, IN ORDER - every entry here starts at the same moment.
+`owns` lists EVERYTHING that item will write, one claim each: `path` for a file no other item touches, `path#region` for the item's part of a shared file, where the region names the functions, markup blocks or CSS rules (`source/<prototype>/form.html#awardDueCard()`, `source/<prototype>/model.js#validators: award date`). The app refuses a split where two items claim the same file whole, or one claims a file whole and another claims part of it, or two items name the same region. Each thread is shown its siblings' claims so it stays out of them - a missing or vague claim is exactly how one thread ends up overwriting another.
+THE MANIFEST MUST BE ON DISK BEFORE THE CARD IS IN YOUR REPLY, not "coming next" and not written later in the turn. The card is LIVE the moment it renders: the user can click split seconds after they see it, the app reads the file at that instant, and a manifest that is still being written means the click finds nothing and opens no threads. Write the file, confirm the write succeeded, and only THEN emit the card - as the last thing in that same reply. Each `brief` must stand alone: the run that receives it sees neither this plan nor this conversation, so restate that item's UI rows, logic rows and copy rows inside it, name what it claims, and say what done looks like. Overwrite your own previous manifest.
+
+Then STOP. End the reply with this card, in the gate-card syntax, and nothing after it but one line saying each point opens as its own thread.
+THE CARD ID MUST BE NEW EVERY TIME YOU EMIT ONE. Number it: `plan-next-1` for this plan, `plan-next-2` when you revise and re-emit, `plan-next-3` after that. An id is answered ONCE and stays answered - re-using it renders the fresh card as already-clicked and un-clickable, which is exactly what a user who changed their mind and asked for a revision does NOT want. Count the plan cards you have already emitted in this thread and use the next number.
+<decision-request id="plan-next-1" prompt="Plan ready - how do you want to run it?">
+<option value="split">Split it - one thread per point, opened now</option>
+<option value="review">Review the plan first - I want to change something</option>
+</decision-request>
+
+- IF THE USER APPROVES IN CHAT INSTEAD OF ON THE CARD ("split it", "yes go", "do it") - which happens whenever the card is missing, stale or already answered - YOU STILL CANNOT SPLIT. The fan-out is driven by the APP when the card is clicked; a typed approval reaches you and nothing else, and there is no tool you can call to open those threads. NEVER answer it with "splitting now" or "dispatching" - that is a claim that nothing will make true, and the user is left watching for threads that never appear. Instead: rewrite your manifest if the plan has changed since you last wrote it, re-emit the card with the NEXT id, and say in one line that the split needs the button because the app opens the threads, not you.
+- On **split** (the card was clicked): YOU DO NOTHING. Do not dispatch agents, do not start building, do not reply with a plan of how you will build it. The APP reads your manifest and opens one real Woven thread per item, each running on its own - that is why the manifest has to be on disk before the card. Your turn is over; the work happens in those threads. If the manifest is missing or you never wrote it, say so plainly instead of quietly building it yourself. Once every split thread has finished, the daemon opens a SEPARATE plan-check thread that verifies the work against this plan; you are not part of it.
+- On **review**: apply what the user says, rewrite your manifest to match the REVISED plan, then re-emit the WHOLE plan and the card with the NEXT id. Never start building on a partial approval or on silence.
+- Once a plan is approved, this gate is SPENT for that request: carry it out, and do NOT re-plan the follow-ups it produces (an answer to the card, a correction, a "yes go"). A genuinely NEW request in this thread re-arms it.
+- This gate does NOT re-open a decision already locked elsewhere. If a build plan is locked for this project (Role A, a `pipeline.json` you were handed off to drive), drive it - the planning happened before you got here. This gate covers what the user asks for in THIS thread on top of that."""
 
 
 # design goal is skim-proofing: a leaf's correct default is to PROCEED (not to
@@ -766,32 +966,25 @@ def _resolve_ds_binding(project_root: Optional[str], prototype: Optional[str]) -
         return None
 
 
-def _scoped_iteration_stub(prototype: Optional[str] = None,
-                           project_root: Optional[str] = None) -> str:
-    scope = f"`source/{prototype}/`" if prototype else "the committed prototype's `source/<slug>/` subtree"
-    slug = prototype or "<slug>"
-    # Style-source discipline. The #1 iteration failure mode is the
-    # agent editing markup/CSS after reading ONLY the one file it's changing,
-    # then inventing class names / CSS variables that don't exist (hallucinated
-    # styles). A prototype's visual vocabulary lives in TWO places: its own
-    # `source/<slug>/styles.css`, and - when a design system is committed - the
-    # DS token + component sheet it @imports. Name both, and require reading
-    # them BEFORE authoring any style.
+# Advisory size guide for a bound design system's DESIGN.md catalog, in
+# CHARACTERS. It is NOT a cap - the catalog embeds whole no matter how big
+# (see _scoped_iteration_stub). It exists so the design-system canvas node
+# can show the author what the catalog costs on EVERY agent turn, and how
+# far past the comfortable size it has grown. Mirrored client-side as
+# DS_INDEX_BUDGET_CHARS in app.js; keep the two in step.
+DS_INDEX_BUDGET_CHARS = 30000
+
+
+def _design_system_catalog(project_root=None, prototype=None):
+    """Full catalog, no silent size cap. Caller gates this on DS QA."""
     ds = _resolve_ds_binding(project_root, prototype)
-    # When the bound DS carries a DESIGN.md catalog, EMBED it in the preamble
-    # instead of only naming it. Rationale (suss-cal drift, 2026-07-16): the
-    # catalog gets Read once at turn 2 and is buried 200k tokens back by the
-    # time styling happens, so the agent invents classes. The preamble rides
-    # at the top of EVERY call - always in view, fully prompt-cached (~4k
-    # tokens). Size-capped so a pathological DESIGN.md can't balloon spawns;
-    # over-cap or unreadable falls back to today's name-the-file behavior.
     ds_index = ""
     if ds and ds.get("designMd") and project_root:
         try:
             with open(os.path.join(project_root, ds["designMd"]), "r",
                       encoding="utf-8", errors="replace") as f:
                 _idx_txt = f.read().strip()
-            if _idx_txt and len(_idx_txt) <= 30000:
+            if _idx_txt:
                 ds_index = (
                     "\n\n## Committed design-system vocabulary (embedded from `" + ds["designMd"] + "`)\n\n"
                     "This is the COMPLETE token + component-class catalog of the bound design system. "
@@ -805,8 +998,23 @@ def _scoped_iteration_stub(prototype: Optional[str] = None,
                 )
         except Exception:
             ds_index = ""
+    return ds_index
+
+
+def _scoped_iteration_stub(prototype: Optional[str] = None,
+                           project_root: Optional[str] = None, embedded=False) -> str:
+    scope = f"`source/{prototype}/`" if prototype else "the committed prototype's `source/<slug>/` subtree"
+    slug = prototype or "<slug>"
+    # Style-source discipline. The #1 iteration failure mode is the
+    # agent editing markup/CSS after reading ONLY the one file it's changing,
+    # then inventing class names / CSS variables that don't exist (hallucinated
+    # styles). A prototype's visual vocabulary lives in TWO places: its own
+    # `source/<slug>/styles.css`, and - when a design system is committed - the
+    # DS token + component sheet it @imports. Name both, and require reading
+    # them BEFORE authoring any style.
+    ds = _resolve_ds_binding(project_root, prototype)
     if ds:
-        _ds_srcs = ((None if ds_index else ds.get("designMd")), ds.get("stylesCss"), ds.get("allCss"))
+        _ds_srcs = ((None if embedded else ds.get("designMd")), ds.get("stylesCss"), ds.get("allCss"))
         ds_reads = ", ".join(f"`{p}`" for p in _ds_srcs if p)
         ds_line = (
             f"- This prototype is BOUND to design system `{ds['id']}` (`design-systems/{ds['id']}/`). "
@@ -835,7 +1043,7 @@ You need the full routing rules ONLY IF the user now asks to do one of these - a
   - start a NEW prototype from scratch (a different `source/<slug>/`).
 If NONE apply -> iterate in place, do not go fetch routing. If ANY apply -> STOP and fetch them first:
   `GET $TH_DAEMON_URL/__capabilities?section=orchestrators&project=$TH_PROJECT_ID`
-returns the authoritative setup-path routing blocks. Treat what it returns as binding. (For a genuinely new prototype, tell the user it is a fresh build, and name its `source/<slug>/` after the user's word for it - if unnamed, use the next free `prototype<N>` slug (`prototype2`, `prototype3`, ...), never `main`.)""" + ds_index
+returns the authoritative setup-path routing blocks. Treat what it returns as binding. (For a genuinely new prototype, tell the user it is a fresh build, and name its `source/<slug>/` after the user's word for it - if unnamed, use the next free `prototype<N>` slug (`prototype2`, `prototype3`, ...), never `main`.)"""
 
 
 def _ds_guard_stub(project_root: Optional[str] = None,
@@ -859,7 +1067,7 @@ def _ds_guard_stub(project_root: Optional[str] = None,
 
 ### DS GUARD - mandatory drift gate (this project is bound to design system `{ds['id']}`)
 - NEVER redefine a class the DS defines inside a page `<style>` block - not as a "small tweak", not with extra context selectors that change its skin. Vary a component ONLY via its custom-property knobs (e.g. `style="--kv-cols:2"` - the DS rule + `DESIGN.md` name them), or a NEW page-namespaced class composed alongside (`class="kv-grid fa-kv"` + `.fa-kv{{...}}`) carrying a layout/placement delta only. If the DS genuinely lacks a pattern, extend the DS itself (`styles.css` + `gallery.html` + `DESIGN.md`, all three in sync) - never fork it locally in a page.
-- AFTER any edit that touches the markup or CSS of a page under `source/{slug}/`, and BEFORE you tell the user the change is done: dispatch ONE general-purpose `Task` subagent with this self-contained brief (it does not see this preamble): "Read $TH_PROTOCOL_ROOT/docs/agents/ds-guardian.md and execute it. Project root: <absolute cwd>. Prototype: {slug}. Pages: <the exact page files you touched>." It runs the deterministic DS-drift linter, AUTOFIXES violations (the DS wins over local forks), re-lints until clean, render-checks the pages, and returns a compact `DS-GUARD` verdict. Relay that verdict line to the user; if it reports FAILED, or that it dropped a divergence the page needed, surface that instead of claiming done. This dispatch is unconditional for style/markup edits on DS-bound pages - your own screenshots do NOT substitute (drift is invisible in a single-page screenshot; the linter sees it deterministically). Batch one dispatch per reply, covering every page that reply touched, not one per file."""
+- AFTER any edit that touches the markup or CSS of a page under `source/{slug}/`, and BEFORE you tell the user the change is done: dispatch ONE `ds-guardian` `Task` subagent (subagent_type="ds-guardian") with this self-contained brief (it does not see this preamble): "Project root: <absolute cwd>. Prototype: {slug}. Pages: <the exact page files you touched>." It runs the deterministic DS-drift linter, AUTOFIXES violations (the DS wins over local forks), re-lints until clean, render-checks the pages, and returns a compact `DS-GUARD` verdict. Its scope is exactly those pages: an edit that simply USES the bound DS costs one lint and returns clean, and it reaches into a sibling page only when your edit forked a class that sibling already defines. It is a gate on your edit, never a whole-prototype audit. Relay that verdict line to the user; if it reports FAILED, or that it dropped a divergence the page needed, surface that instead of claiming done. This dispatch is unconditional for style/markup edits on DS-bound pages - your own screenshots do NOT substitute (drift is invisible in a single-page screenshot; the linter sees it deterministically). Batch one dispatch per reply, covering every page that reply touched, not one per file."""
 
 
 def _normal_general_stub() -> str:
@@ -879,6 +1087,7 @@ Before anything else, check whether a build plan is already locked for this proj
 The user was handed off here to run an already-decided build. DRIVE it: the locked `pipeline.json` IS your build script - execute its phases in the ledger's order, dispatch each orchestrator it names, honour each phase's gate, and record progress with `POST $TH_DAEMON_URL/__pipeline/step`. The plan carries the routing for THIS build, so you do NOT need to fetch the orchestrator catalog. Drive it to completion, then iterate on whatever the user asks next.
 
 THE DRIVE MECHANICS ARE NON-NEGOTIABLE (they used to live only in the routing catalog you are told not to fetch - that is how a build thread ran every builder through the Agent tool while the canvas sat dead at `pending`):
+  - **Orchestrators run INSIDE your turn, and your turn does not end mid-build.** Dispatch every orchestrator (and every verifier / lens subagent) with the Agent tool SYNCHRONOUSLY - `run_in_background: false` - and hold a blocking poll on any node chain until it is `done` / `error`. Never end your turn while an orchestrator, a chain, or a QA run is still in flight on the bet of being woken when it lands: to the user that turn-end IS the build stopping (the thread shows done, the job narration goes dark for the whole wait, and the stall watchdog treats a finished turn as idle by design). A phased orchestrator (art-director plate -> finalize) is re-dispatched with a fresh synchronous Agent call carrying the pick, never `SendMessage`d - its reply would only land as a background notice. The ONLY reason to end a turn before the plan is complete is a gate card the user must answer (plan, plate, research, final gate): relay the card, and end with nothing else running.
   - **Builders run as NODE RUNS, never Agent-tool dispatches.** After an orchestrator hands back its scaffolded builder nodes, dispatch the FIRST node with the rest as an auto-chain and let the daemon advance it: `POST $TH_DAEMON_URL/__workflow/node/<first>/run?project=$TH_PROJECT_ID&parent=$TH_RUN_ID&chain=<comma-joined rest>`. Always pass `parent=$TH_RUN_ID` - it is how the daemon's stall watchdog knows to tell YOU when a builder hangs instead of leaving you polling a dead node forever. Poll until the last is `done`; a builder `error` HALTS the chain daemon-side - surface it, don't silently retry. The canvas nodes ARE the build (live badges, per-node re-run, node-anchored envelopes, crash-resume). Agent dispatch of a scaffolded builder is allowed ONLY when its node /run POST itself errors, and you must say so in chat.
   - **Final gate = QA + PROMISED + lenses, on the assembled runtime.** Before judging quality, re-read the family's `research.md` FROM DISK and diff every committed mechanism (chromeStrategy, sprite inventory + cycles, paradigm, inputs, audio) against the shipped files - a commitment that shipped as something else or silently vanished FAILS the gate and routes back to the responsible builder, even when the result looks fine. The PROMISED diff has a second axis: the ledger `brief`'s content list (per the Content fidelity reflection - enumerations AND stated details of look / interaction / motion) - each named item must ship as something the user would recognise, and each stated detail must ship uncontradicted, unless a recorded resolution in a `DECISION_*.json` `detail.steers` says the user approved the rewrite; an unsurfaced rewrite or clash FAILS the gate the same way a vanished mechanism does. The PROMISED diff needs nothing but file reads: run it ESPECIALLY when lens subagents or the vision judge are unavailable - a degraded runtime is never a reason to self-certify obedience. Then `GET /__qa/run` (+ judge) and the lens trio per the routing catalog's contract 3; fetch `GET $TH_DAEMON_URL/__capabilities?section=orchestrators` for the full gate loop when you reach it.
   - **Disk outranks memory.** research.md, DECISION_*.json and pipeline.json can be corrected on disk mid-build; re-read before composing any brief or INTEGRATION doc, reference doctrine instead of restating it, and never bake premises like "no direction committed" without reading the ledger.
@@ -1077,7 +1286,12 @@ def _orchestrator_roster_block(project_root: Optional[str] = None) -> str:
     return "\n".join(out)
 
 
-def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full", prototype: Optional[str] = None) -> str:
+class _SkipCatalog(Exception):
+    """Internal sentinel: the lean tiers skip the model-id enumeration."""
+
+
+def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full", prototype: Optional[str] = None,
+                          guards: Optional[dict] = None, jev: Optional[bool] = None) -> str:
     """A compact summary to inject into every spawn's system prompt. Includes
     the names + one-line purposes - not the full catalog - so the agent
     knows what EXISTS without burning 3KB of tokens. For details the agent
@@ -1091,6 +1305,18 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
         and appends LEAF_ROUTER_STUB, which proceeds-by-default and gates
         escalation on a closed checklist + a `?section=orchestrators` fetch.
         App-capabilities + verify gates are kept (a leaf needs those).
+
+    `guards` carries the chat composer's per-thread check toggles
+    ({"visual": bool, "dsGuard": bool, "reqQa": bool, "plan": bool} - see
+    GUARD_DEFAULTS; the first two default on, the last two off). The flags are
+    independent, so every combination is legal. A dropped always-on flag
+    removes that gate's blocks from the preamble entirely; an armed opt-in one
+    appends its block - see normalize_guards.
+
+    `jev` forces the typed-judgment block on (True) or off (False); None - the
+    default - resolves it from the global `jevJudge` setting AND a configured
+    TypeSafe key, since a block naming an endpoint that will 503 is worse than
+    no block. It is the ONLY thing that flag changes here (P5 asserts it).
 
     `project_root` lets the preamble respect the project's orchestrator
     disable list (`.orchestrators-disabled.json`). Hard-rule blocks for disabled
@@ -1200,7 +1426,14 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     # principle as the orchestrator roster: recall-based lists hide whole
     # families forever.
     model_catalog_block = ""
+    # Lean tiers carry the DEFAULTS + live availability (above) but not the
+    # full id enumeration. A scoped/leaf run should OMIT `model` and let the
+    # daemon pick the project default; when it genuinely needs to name one, the
+    # catalog is one fetch away. Full/setup keep it - those tiers choose models.
+    _skip_model_catalog = tier in ("slim", "leaf", "scoped", "normal")
     try:
+        if _skip_model_catalog:
+            raise _SkipCatalog()
         _status_by_provider = {r["id"]: r["status"] for r in avail_rows}
         # A catalog row whose provider has NO dispatch entry is not a
         # missing-key problem - the daemon has no renderer for it at all, and it
@@ -1262,6 +1495,14 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
                 "to the user and point at Settings, don't call it. `✗` = catalogued but the daemon has no "
                 "renderer for that provider, so it 400s no matter what key is pasted - never promise it.\n\n"
                 + "\n\n".join(sections))
+    except _SkipCatalog:
+        model_catalog_block = (
+            "\n\n**Model ids.** OMIT `model` on `/__asset_generate` and the daemon uses the "
+            "project default shown above - that is the correct call for almost every asset. "
+            "Only when you must name a specific model, GET "
+            "$TH_DAEMON_URL/__capabilities?project=$TH_PROJECT_ID for the id catalog and its "
+            "live key status; never invent an id (an unlisted id 400s)."
+        )
     except Exception:
         model_catalog_block = ""
 
@@ -1426,8 +1667,8 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
     # on the highest-volume agent type - it fetches /__capabilities when it
     # needs a drawer's purpose. Full tier (orchestrators + main chat, the
     # agents that actually pick a drawer) keeps the descriptions.
-    if tier in ("slim", "leaf"):
-        _names = ", ".join(sa["name"] for sa in caps["subagents"][:100])
+    if tier in ("slim", "leaf", "scoped", "normal"):
+        _names = ", ".join("woven:" + sa["name"] for sa in caps["subagents"][:100])
         subagent_lines = (
             f"  {_names}\n"
             "  (names only - you are a leaf and rarely dispatch; for the one-line purpose of any drawer "
@@ -1435,11 +1676,24 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
         )
     else:
         subagent_lines = "\n".join(
-            f"  • {sa['name']} - {sa['description'][:140]}" for sa in caps["subagents"][:100]
+            f"  • woven:{sa['name']} - {sa['description'][:140]}" for sa in caps["subagents"][:100]
         )
-    endpoint_lines = "\n".join(
-        f"  • {ep['method']:5s} {ep['path']:42s} {ep['purpose']}" for ep in caps["endpoints"]
-    )
+    # Lean tiers carry the endpoints an iterating / leaf agent actually calls;
+    # the rest are one fetch away. The full roster is ~9K chars of catalog that
+    # a scoped thread re-reads on every turn and uses maybe three lines of.
+    _HOT_ENDPOINTS = ("/__qa/run", "/__workflow", "/__capabilities", "/__asset_generate",
+                      "/__kinds/registry", "/__design_systems", "/__save", "/__history")
+    if tier in ("slim", "leaf", "scoped", "normal"):
+        _eps = [ep for ep in caps["endpoints"]
+                if any(ep["path"].startswith(h) for h in _HOT_ENDPOINTS)]
+        endpoint_lines = "\n".join(
+            f"  • {ep['method']:5s} {ep['path']:42s} {ep['purpose']}" for ep in _eps
+        ) + ("\n  (the hot subset - for any other endpoint, GET "
+             "$TH_DAEMON_URL/__capabilities?project=$TH_PROJECT_ID for the full roster)")
+    else:
+        endpoint_lines = "\n".join(
+            f"  • {ep['method']:5s} {ep['path']:42s} {ep['purpose']}" for ep in caps["endpoints"]
+        )
     # Resolve which orchestrators are enabled for this project. On import
     # failure or no project context, default to "all enabled" (the safest
     # fallback - the agent sees every orchestrator rule, never silently misses one).
@@ -1523,7 +1777,19 @@ If MCP tool schemas are deferred in your runtime, load every tool you need in ON
         _authorable_lines = "  (none resolved - GET /__kinds/registry)"
     _other_kinds_line = ", ".join(k["kind"] for k in _other_kinds) or "(none)"
 
-    node_kinds_block = f"""**Workflow nodes you can BUILD & AUTHOR for the user** ({len(_authorable)} authorable of {len(caps['kinds'])} kinds). You assemble a node graph on the user's canvas by committing nodes (`POST $TH_DAEMON_URL/__workflow/node/<id>/commit?project=$TH_PROJECT_ID` with `addNodes:[…]`) and wiring them with edges. For an *authorable* node you also write its **canonical file** under `source/<branch>/…` following that kind's `authoring` schema (`GET /__kinds/registry`) - the node re-imports it live, so this is how you "fill in" an editor or a building block by code:
+    # Lean tiers drop the node catalogue. A scoped iteration thread edits an
+    # existing prototype's source; a leaf builds ONE asset. Neither assembles a
+    # node graph, and the catalogue was ALSO misfiled inside the visual-guard
+    # section, so switching the visual check off silently dropped it too.
+    if tier in ("slim", "leaf", "scoped", "normal"):
+        node_kinds_block = (
+            "**Workflow nodes.** You can build + author nodes on the user's canvas "
+            "(`POST $TH_DAEMON_URL/__workflow/node/<id>/commit?project=$TH_PROJECT_ID`). "
+            "If this task needs one, GET $TH_DAEMON_URL/__kinds/registry for the kinds, "
+            "their `authoring` schemas, and the building blocks that wire into them."
+        )
+    else:
+        node_kinds_block = f"""**Workflow nodes you can BUILD & AUTHOR for the user** ({len(_authorable)} authorable of {len(caps['kinds'])} kinds). You assemble a node graph on the user's canvas by committing nodes (`POST $TH_DAEMON_URL/__workflow/node/<id>/commit?project=$TH_PROJECT_ID` with `addNodes:[…]`) and wiring them with edges. For an *authorable* node you also write its **canonical file** under `source/<branch>/…` following that kind's `authoring` schema (`GET /__kinds/registry`) - the node re-imports it live, so this is how you "fill in" an editor or a building block by code:
 {_authorable_lines}
 
 These split into **app-node editors** (bake a deliverable asset - e.g. Splat Lab → a Gaussian-splat viewer, Voxel/Spline 3D → .glb, Material Lab / Interactive composer → .html, Image/Pixel/Font editors, Music/Synth → audio) and **building blocks** (typed spec providers - Effect / Position / Trigger / Layer / Number generator / Timeline - that you WIRE INTO an editor's port to drive it; e.g. a Timeline or Number generator animating a composer's effect params). Wire an Agent into any of their `edit` ports to delegate the authoring, or write the canonical file yourself.
@@ -1533,7 +1799,7 @@ See `GET /__kinds/registry` for full per-kind contracts + each authoring schema.
 
 **Blend node (`iterator-blend`).** Merges N wired inputs (text / html / palette / typography / image) into ONE output. Each input `slot` carries two controls: `weight` (0-10, heavier dominates overall tone / structure / palette) and `criteria` (a string). `criteria` is NOT a description of why the input is nice - it is a HARD RETAIN directive: whatever it names MUST survive into the blended output intact and recognizable, and retain directives OUTRANK weight (a low-weight input's criteria still wins for that one specific detail; never average it away). When you scaffold a blend node for the user, set each slot's `criteria` to the thing that must be preserved from that input, leaving it empty only when that input should blend freely.
 
-**Building an interactive / reactive app (the Logic graph).** ONLY when the user wants to make an interactive app node - input that drives output in real time (pointer / touch / keyboard / scroll / gyro / mic / camera / video sources, operators, if-else / while / state, vision hand-face detection, OCR, and a shape primitive, all wired into effect / position / param bindings) - FETCH the authoring guide first. It is MODULAR: `GET $TH_DAEMON_URL/__logic_guide?project=$TH_PROJECT_ID` returns the short INDEX (the build flow + section map), then fetch focused sections on demand with `?section=runtime|recipes|catalogue|dataflow|patterns|verify`. The `runtime` section documents every composer position mode / effect type / force / camera / feedback, so you NEVER need to read the composer source. For an interactive app-node build, ALWAYS dispatch `app-node-orchestrator` (no single-vs-multi threshold, never hand-wire a build solo): it decomposes the interaction into slots, classifies each to the nearest primitive, scaffolds the nodes, and hands back a manifest so you fan out one `app-node-slot-author` per slot. Each author CUSTOMISES or EXTENDS its primitive - tuning the spec, or extending the primitive's runtime code (the logic-graph evaluator / composer effect+render engine in editor/) when no existing primitive can yet express the slot. Extending a primitive is the DEFAULT, not an escape hatch: never decline because "no built-in fits". Only a genuine web-platform impossibility is a real limit, and even then scope it precisely and build the closest thing. For any other request, ignore this line."""
+**Building an interactive / reactive app (the Logic graph).** ONLY when the user wants to make an interactive app node - input that drives output in real time (pointer / touch / keyboard / scroll / gyro / mic / camera / video sources, operators, if-else / while / state, vision hand-face detection, OCR, and a shape primitive, all wired into effect / position / param bindings) - FETCH the authoring guide first. It is MODULAR: `GET $TH_DAEMON_URL/__logic_guide?project=$TH_PROJECT_ID` returns the short INDEX (the build flow + section map), then fetch focused sections on demand with `?section=runtime|recipes|catalogue|dataflow|patterns|verify`. The `runtime` section documents every composer position mode / effect type / force / camera / feedback, so you NEVER need to read the composer source. For an interactive app-node build, ALWAYS dispatch `app-node-orchestrator` (no single-vs-multi threshold, never hand-wire a build solo): it decomposes the interaction into slots, classifies each to the nearest primitive, scaffolds the nodes, and hands back a manifest so you fan out one `app-node-slot-author` per slot. Each author customises project-local controls, a custom effect, or a sketch. Project agents must not edit the shared editor engine or TH_PROTOCOL_ROOT. A missing engine capability is a valid scoped limit: explain it precisely and request a separately authorized editor maintenance task. For any other request, ignore this line."""
 
     # The user's app-wide web-search default (Settings → Web search, "app" tier
     # → "global" tier → "agent"). When they've set it to Exa, that is a standing
@@ -1634,6 +1900,7 @@ The canvas Run reads these, injects the matching directive into the prompt, and 
 **Masked outpaint / inpaint on `generate-image` - extend a canvas, fill a hole, replace a region.** Pass `mask_data_uri` (a PNG the SAME pixel size as the input, **transparent where the model should paint, opaque where it must be preserved**) alongside `input_data_uri` (or `input_path`) on the same POST `/__asset_generate` call. Mask-less i2i regenerates the WHOLE frame; the mask is what pins the original so only the marked area changes - that is the difference between "restyle this image" and "extend / repair this image". To OUTPAINT, composite the source onto a larger transparent canvas (the new margin stays transparent), make a mask that is opaque over the original and transparent over the new margin, and request the gpt-image size bucket nearest the new aspect. gpt-image family only (same 400 as plain i2i otherwise). This is the exact mechanism behind the user's image-node Crop -> Expand "Regenerate fill" button.
 
 **Subagent drawers available** ({len(caps['subagents'])}, dispatch via the Task tool):
+> **Dispatch them by the `woven:` name EXACTLY as listed - `subagent_type: "woven:ds-guardian"`, never bare `ds-guardian`.** They reach claude as a plugin, which namespaces them; the bare name resolves only in projects that are not their own git repo, so it fails silently on exactly the published ones. The specs themselves still refer to each other bare (codex/opencode dispatch through the daemon, which accepts either) - so when a spec tells you to dispatch `foo-orchestrator`, you send `woven:foo-orchestrator`.
 {subagent_lines}
 
 **Daemon HTTP endpoints**:
@@ -1652,6 +1919,7 @@ You CANNOT see what you built by reading the source you wrote. "I wrote the HTML
 Pick the target:
 - **`&page=<slug>`** (or `&page=<slug>/<file>.html`) - the COMPOSED page/app surface as the user sees it: chrome + design-system shells + every piece in place. Defaults to `mode=render`: it passes a correctly painted page, and FAILS `blank` if the page rendered an unstyled flat wash (the classic broken-`?project`-stamping / 404'd-DS-imports bug). **This is the realistic view** - it serves through the daemon at the same `/source/...?project=` URL the editor iframe loads, NOT a raw `file://` or a separate sandbox that misses the design-system imports.
 - **`&node=<nodeId>`** - ONE baked interactive piece in isolation. Defaults to `mode=interactive`: it captures an idle timeline AND simulates input (pointer / click / drag / scroll / key), so it tells `static` (nothing moves) and `no-reaction` (ignores input) apart from a real `pass`. Bake the node first (the bake stamps `node.bakedPath`).
+- **Canvas creations** - when the thing you made lives ON THE WORKFLOW CANVAS (nodes, whiteboard items, a section, a table, an app node - anything you committed through `/__workflow` or a node run), the same rule holds: you CANNOT see it by re-reading `workflow.json`. Before you say it is done, LOOK at the canvas as the user sees it - `$TH_DAEMON_URL/?project=$TH_PROJECT_ID&view=workflow` - and check what actually landed: did every node you created appear at all, is each the KIND you intended, is it placed where you meant (not stacked on an existing node, not off-screen, not overlapping the piece it belongs next to), and are the wires you drew attached to the ports you meant? Then verify each node's OWN output by its own target above (`&node=<id>` for a baked interactive piece, `&page=<slug>` for a section/prototype node, and for a generated image / video node the asset file the node points at). Report what you SAW, not what you wrote.
 
 CAMERA / VISION pieces ARE verifiable - the QA injects a SYNTHETIC camera (a stock hand + face that MediaPipe detects, moving) in place of the real webcam, auto-grants camera/mic permission, and warms up for the model to load. So NEVER say "I can't verify a webcam/camera/mouse piece without a real camera or a human" - run the QA. The report has `cameraMock` (the fixture fed in) and `cameraUsed` (did the piece actually call getUserMedia). KEY DIAGNOSTIC: if `cameraUsed` is false/absent while `cameraMock` is set, the camera fed in fine but YOUR PIECE never requested it - the camera input is not wired (often a stock `placeholder` content layer that a slot-author never customised). That is a `static` because the piece is incomplete, NOT a QA limitation - finish wiring the camera, re-bake, re-run. (Optional `&camera=hand|face|both|off`.)
 
@@ -1800,9 +2068,9 @@ The rule:
 
 **One dispatch per family, not one per slot. The orchestrator does the per-slot fan-out, not the agent.**
 
-**Time-based media is opt-out when wired, not opt-in (v3.16 hard rule).** The buildPolicy `imagery` mandate below has a time-based twin that applies to EVERY build, DS-bound or not: if a video provider shows `✓ KEY` in the live-availability block this run AND the brief's register implies motion (product launch, brand page, hero with atmosphere, "should feel alive", energy/cinema words, ambient mood, and equally the cultural registers - a museum or exhibition walk, a heritage or era journey, a documentary explainer, anything "immersive" or "cinematic"), the step-4 shell SHOULD carry at least one time-based slot - a `<video data-medium="video">` slot for filmic/photographic motion, or a `motion-placeholder` for authored-graphics motion (typography reveals, vector scenes) - and `visual-orchestrator`'s video/motion drawers fill it. Authoring a fully-static shell for such a brief is a silent downgrade, the exact failure that kept the video lane at zero use for months: if you skip the time-based slot, say WHY in one line (data-dense utility genre, user asked for stills, no video provider wired) instead of defaulting to `<img>` heroes. This governs what the shell OFFERS; the Step-3 orchestrator plan gate remains the user's cost decision point, and one time-based slot per page is the sane ceiling (1V-video.md).
+**Time-based media is opt-out, not opt-in (v3.16 hard rule).** The buildPolicy `imagery` mandate below has a time-based twin that applies to EVERY build, DS-bound or not: if the brief's register implies motion (product launch, brand page, hero with atmosphere, "should feel alive", energy/cinema words, ambient mood, and equally the cultural registers - a museum or exhibition walk, a heritage or era journey, a documentary explainer, anything "immersive" or "cinematic"), the step-4 shell SHOULD carry at least one time-based slot, and its FORM follows the frame's substance (the same drawn-vs-generated principle that splits stills between `vector-mark` and `raster-photo`): a `motion-placeholder` when the moving frame is vector substance - typography reveals, shape transforms, graphic/UI-narrative scenes (Hyperframes; needs NO key, so this half of the rule holds on every install) - or a `<video data-medium="video">` slot when the moving frame is raster substance - filmic/photographic motion (needs a video provider `✓ KEY`; without one, degrade that slot to a generated still + CSS motion instead). `visual-orchestrator`'s motion/video drawers fill them. Authoring a fully-static shell for such a brief is a silent downgrade, the exact failure that kept the video lane at zero use for months - and its mirror image, authoring only `<video>` slots because a key is wired while vector-substance moments ship static, is how the Hyperframes lane sat at zero. If you skip the time-based slot entirely, say WHY in one line (data-dense utility genre, user asked for stills) instead of defaulting to `<img>` heroes. This governs what the shell OFFERS; the Step-3 orchestrator plan gate remains the user's cost decision point, and one time-based slot per page is the sane ceiling (1V-video.md).
 
-**Surface check FIRST (v3.7) - the one place vocabulary DOES decide.** Before the structural table below, check whether the user named a SURFACE. An interactive piece can be delivered two ways from the same building blocks: as a baked **prototype** (an `<iframe>` + `runtime.html`, built by `interactive-media-orchestrator`) OR as **app nodes** (a live logic graph in `mm-composer` on the canvas, built by `app-node-orchestrator`). If the user explicitly asks for the work as **app nodes / canvas nodes / the logic graph / the composer / mm-composer** ("use app nodes", "build this with logic nodes", "on the canvas", "in the composer"), dispatch `app-node-orchestrator` and do **NOT** dispatch `interactive-media-orchestrator` - the body/device predicate in the table is then satisfied by the app-node surface. `app-node-orchestrator` decomposes the interaction into slots (driver / sense / logic / physics / render), classifies each to ONE existing primitive (`input-pointer`, `input-camera`, `vision-detect`, the `rope`/`boids`/`shatter` position modes, `force`, `effect`, `shape`, `type-motion`, `audio-out`, `op-*`, `state-*`, `flow-*`), scaffolds the real nodes onto the canvas, and hands back a manifest so you fan out one `app-node-slot-author` per slot. Each author CUSTOMISES or EXTENDS its primitive: tunes the spec, or extends the primitive's runtime code (the logic-graph evaluator / composer effect+render engine in editor/) when no existing primitive can yet express the slot. Extending a primitive is the DEFAULT, never decline because "no built-in fits" - only a genuine web-platform impossibility is a real limit. The scaffolded logic nodes are the deliverable: re-runnable app nodes the user sees and rewires. This is the ONLY case where an explicit word overrides the structural routing below; absent a named surface, fall through to the table (interactive briefs default to the prototype surface).
+**Surface check FIRST (v3.7) - the one place vocabulary DOES decide.** Before the structural table below, check whether the user named a SURFACE. An interactive piece can be delivered two ways from the same building blocks: as a baked **prototype** (an `<iframe>` + `runtime.html`, built by `interactive-media-orchestrator`) OR as **app nodes** (a live logic graph in `mm-composer` on the canvas, built by `app-node-orchestrator`). If the user explicitly asks for the work as **app nodes / canvas nodes / the logic graph / the composer / mm-composer** ("use app nodes", "build this with logic nodes", "on the canvas", "in the composer"), dispatch `app-node-orchestrator` and do **NOT** dispatch `interactive-media-orchestrator` - the body/device predicate in the table is then satisfied by the app-node surface. `app-node-orchestrator` decomposes the interaction into slots (driver / sense / logic / physics / render), classifies each to ONE existing primitive (`input-pointer`, `input-camera`, `vision-detect`, the `rope`/`boids`/`shatter` position modes, `force`, `effect`, `shape`, `type-motion`, `audio-out`, `op-*`, `state-*`, `flow-*`), scaffolds the real nodes onto the canvas, and hands back a manifest so you fan out one `app-node-slot-author` per slot. Each author customises project-local controls, a custom effect, or a sketch. Project agents must not edit the shared editor engine or TH_PROTOCOL_ROOT. A missing engine capability is a valid scoped limit: explain it precisely and request a separately authorized editor maintenance task. The scaffolded logic nodes are the deliverable: re-runnable app nodes the user sees and rewires. This is the ONLY case where an explicit word overrides the structural routing below; absent a named surface, fall through to the table (interactive briefs default to the prototype surface).
 
 **The routing decision is otherwise structural, not vocabulary.** Run each predicate test BEFORE picking a family:
 
@@ -1820,7 +2088,7 @@ A brief can pass MULTIPLE predicates - dispatch all matching families. A Studio-
 
 Per-slot builder cardinality varies by family. **The heavy families below list their FULL-tier builder set; the committed `buildTier` (simple / standard / full - see "Build tier" above) scopes it down, and the lens is NOT per-builder - it runs once at the final QA+lens gate (contract 3 above).**
 
-- **visual** - one drawer per slot (one of `raster-foreground` / `raster-photo` / `vector-icon` / `vector-mark` / `shader` / `particle-2d` / `particle-gl` / `lottie` / `3d` / `video` / `motion`). `motion` = Hyperframes HTML composition (https://hyperframes.heygen.com/) - a single `.html` file with a paused GSAP timeline + clip elements, plays in-browser AND renders to video via the Hyperframes runtime. The WORKHORSE for narrative HTML animation (typography reveals, multi-clip scenes, hero animations). Picked when motion is needed but a real `.mp4` isn't (and as a fallback when `video` can't run because no fal API key is configured).
+- **visual** - one drawer per slot (one of `raster-foreground` / `raster-photo` / `vector-icon` / `vector-mark` / `shader` / `particle-2d` / `particle-gl` / `lottie` / `3d` / `video` / `motion`). `motion` = Hyperframes HTML composition (https://hyperframes.heygen.com/) - a single `.html` file with a paused GSAP timeline + clip elements, plays in-browser AND renders to video via the Hyperframes runtime. The WORKHORSE for narrative HTML animation (typography reveals, multi-clip scenes, hero animations). `motion` vs `video` is decided by the SAME principle that splits stills between `vector-mark` (drawn SVG) and `raster-photo` (generated pixels): freeze the intended motion at a frame - vector substance (type, flat shapes, graphic illustration, UI-narrative) is `motion`; raster substance (photographic light, continuous tone, physical matter) is `video`. Per-slot judgment, never inherited from the project register and never decided by key presence - a wired video key gates whether `video` CAN run, it never argues for promoting a drawn frame to diffusion footage (exactly as an image key never argues for rasterising a logo).
 - **simulation** - seven drawers per slot (`sim_research_<simId>`, `sim_entities_<simId>`, `sim_scene_<simId>`, `sim_loop_<simId>`, `sim_controls_<simId>`, `sim_overlay_<simId>`, `sim_runtime_<simId>`).
 - **interactive-media** - five-to-seven drawers per slot (`im_research_<imId>`, one or more `im_input_<imId>_<modality>`, `im_mapping_<imId>`, one or more `im_output_<imId>_<medium>`, `im_runtime_<imId>`).
 - **narrative-experience** - seven drawers per slot (`nx_research_<nxId>`, `nx_spine_<nxId>`, `nx_scene_<nxId>`, `nx_ambient_<nxId>`, `nx_reveal_<nxId>`, `nx_overlay_<nxId>`, `nx_runtime_<nxId>`).
@@ -2866,6 +3134,36 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     # is None - see the import-failure fallback above).
     if enabled_orchestrators is not None:
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, enabled_orchestrators)
+    # Per-thread guard toggles. `_visual_block` is what rides at the end of
+    # every interactive tier: the delegation discipline when the gate is on,
+    # the short "it's off" note when the user turned it off. Turning the gate
+    # off ALSO strips the mandatory verify section - leaving it in while the
+    # discipline is gone would tell the agent to verify but not how to keep
+    # the pixels out of this thread.
+    _g = normalize_guards(guards)
+    from context_policy import WRITING_DISCIPLINE
+    _preamble += WRITING_DISCIPLINE
+    _catalog = _design_system_catalog(project_root, prototype) if _g["dsGuard"] else ""
+    _visual_block = VISUAL_DELEGATION_DISCIPLINE
+    if not _g["visual"]:
+        _preamble = _strip_sections_by_header(_preamble, [_VISUAL_GATE_HEADER])
+        _visual_block = VISUAL_GUARD_OFF_STUB
+    # The DS drift gate is per-prototype (empty string when no DS is bound),
+    # and the user can drop it for this thread the same way.
+    _ds_block = _ds_guard_stub(project_root, prototype) if _g["dsGuard"] else ""
+    # Opt-in, so it is empty on almost every thread.
+    _req_block = REQUIREMENT_QA_STUB if _g["reqQa"] else ""
+    # The functional check: plan the UI / logic / copy before building. Also
+    # opt-in, and the only guard that runs BEFORE the work rather than grading
+    # it after, so it rides at the very END of the preamble where a
+    # stop-before-you-build rule is least likely to be read past. Never on the
+    # leaf tier: a leaf was dispatched to build ONE already-decided thing, and
+    # a leaf that stops to plan stalls the run that is waiting on it.
+    _plan_block = PLAN_MODE_STUB if _g["plan"] else ""
+    # Typed judgment. Global setting, not per-thread, so it is resolved here
+    # rather than carried on the guards bag - and it is ANDed with key
+    # availability so the block never promises an endpoint that 503s.
+    _jev_block = JEV_FAST_PATH_STUB if (_jev_enabled() if jev is None else jev) else ""
     # Accept the legacy cost-name aliases full/slim for the setup/leaf paths.
     if tier == "full":
         tier = "setup"
@@ -2879,7 +3177,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "leaf":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + LEAF_ROUTER_STUB + GATE_CARD_SYNTAX + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+        return _preamble + _catalog + LEAF_ROUTER_STUB + GATE_CARD_SYNTAX + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
     # SCOPED path: editing an existing prototype. Same routing strip as leaf
     # (the prototype is committed, routing is decided), but keeps the full
     # app-capabilities surface and swaps in the iterate-in-place stub (named to
@@ -2887,7 +3185,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root) + _ds_guard_stub(project_root, prototype) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root, embedded=bool(_catalog)) + _catalog + _ds_block + _req_block + _jev_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
     # NORMAL path: the project's everyday chat, the untargeted default. Same
     # routing strip as scoped (routing is fetched on demand only when the user
     # asks for a genuine new build), but NOT bound to one prototype - a general
@@ -2895,13 +3193,13 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "normal":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _normal_general_stub() + _ds_guard_stub(project_root, prototype) + GATE_CARD_SYNTAX + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+        return _preamble + _normal_general_stub() + _catalog + _ds_block + _req_block + _jev_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
     # SETUP path (default): a new prototype build. Keeps the full routing
     # catalog. Append manifest-carried hard rules for orchestrators added
     # after ship time (not covered by the static prose above). Appended AFTER
     # the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
-    return _preamble + VISUAL_DELEGATION_DISCIPLINE + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION
+    return _preamble + _catalog + _ds_block + _req_block + _jev_block + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
 
 
 def orchestrator_routing_text(project_root: Optional[str] = None) -> str:

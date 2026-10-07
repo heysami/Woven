@@ -44,6 +44,17 @@ if _sys.version_info < (3, 9):
     raise SystemExit(1)
 
 import atexit
+import context_policy
+import context_artifacts
+import contract_writer
+import model_routing
+import run_jobs
+import mcp_routing
+import runtime_drivers
+import review_evidence
+import helper_jobs
+import jev
+import plan_split
 import datetime as _dt
 import difflib
 import glob
@@ -99,6 +110,8 @@ import usertesting_gate as _ut_gate  # user testing gate delegate (/t/ testee, /
 import git_ops as _gitops    # git/GitHub backbone - deliberate commit/publish + fork/PR
 import providers as _providers  # host-side connect store for backend/db providers (Supabase, ...)
 import voicekit as _voicekit  # runtime voice core (dynamic TTS/STT) - daemon + share gate
+import stories as _stories  # user-story sheet (docs/user-stories.xlsx) + prototype location map
+import xlsx_io as _xlsx_io  # dependency-free .xlsx read/write (user-story sheet)
 
 
 def _pick_port() -> int:
@@ -151,9 +164,13 @@ WOVEN_SYNC_VERSION = 1
 # 100MB-per-file limit.
 _GITIGNORE_LOCAL = [
     "workflow/viewport.json",   # per-machine camera pan/zoom only (see _workflow_save); node position/size sync in workflow.json
+    "workflow/scratch/",        # scratchpad canvases - deliberate thinking space, never synced (see _scratch_list)
     "workflow/runs/",           # generated run artifacts (assets/thumbnails) - GBs
     "workflow/views/",          # generated per-version prototype snapshots - GBs
+    "plan-splits/",             # one split manifest per planning run (<runId>.json) - per-thread scratch, see spawnPlanSplitRuns
     "editor/chat.jsonl",        # local chat transcript - large, machine-local, never sync
+    "editor/chat-queues.json",  # pending follow-ups per run - machine-local, same lifecycle as chat.jsonl
+    "editor/.chat-trash.jsonl", # LEGACY deleted-chat log, no longer written (see _chat_jsonl_purge_run); listed so projects that already committed one untrack it
     ".history/",                # undo stack - transient (matches duplicate's skip set)
     ".trash/",                  # transient scratch
     ".DS_Store",                # macOS junk
@@ -908,6 +925,9 @@ PROJECTS_DIR = os.path.join(WORKSPACE_DIR, "projects") if WORKSPACE_DIR else Non
 
 NAME_OK = re.compile(r"^[A-Za-z0-9._-]+$")
 SLUG_OK = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
+# Prototype slugs are looser than project ids - they carry dots, underscores
+# and case (see _default_prototype_slug).
+_PROTO_SLUG_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,60}$")
 PROJECT_ID_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 ALLOWED_NAMES = {
     # branches deprecated. MERGES.md / FORK_REQUEST.md no longer allowed.
@@ -930,6 +950,7 @@ MEDIA_CONFIG_PATH = os.path.join(MEDIA_CONFIG_DIR, "media-config.json")
 DEFAULT_PROVIDERS_PATH   = os.path.join(MEDIA_CONFIG_DIR, "default-providers.json")
 ORCHESTRATOR_MODELS_PATH = os.path.join(MEDIA_CONFIG_DIR, "orchestrator-models.json")
 SUBAGENT_MODELS_PATH     = os.path.join(MEDIA_CONFIG_DIR, "subagent-models.json")
+MODEL_DISCOVERY_PATH     = os.path.join(MEDIA_CONFIG_DIR, "model-discovery.json")
 SEARCH_DEFAULTS_PATH     = os.path.join(MEDIA_CONFIG_DIR, "search-defaults.json")
 # Context-compaction policy for chat threads (the "compact by handoff"
 # feature): manual compaction is always available; auto-compact fires at the
@@ -937,7 +958,25 @@ SEARCH_DEFAULTS_PATH     = os.path.join(MEDIA_CONFIG_DIR, "search-defaults.json"
 # Global (cross-project) on purpose - it's a cost preference, not project
 # state. Defaults: auto OFF, threshold 400k (~40% of a 1M-window claude chat).
 COMPACT_CONFIG_PATH      = os.path.join(MEDIA_CONFIG_DIR, "compact-config.json")
-COMPACT_DEFAULTS         = {"autoCompact": False, "thresholdTokens": 400_000}
+COMPACT_CONFIG_LOCK      = threading.Lock()
+COMPACT_DEFAULTS         = {"autoCompact": False, "thresholdTokens": 400_000,
+                            # After an AUTO compact the thread is left waiting
+                            # for a message, and the message every user types
+                            # there is "continue". Send it for them.
+                            "autoContinue": True, "summaryModel": "fast",
+                            "referenceReuse": True, "compactQa": True,
+                            # ONE global switch for the Jev typed-judgment fast
+                            # path (docs/features/jev-integration.md). NOT a
+                            # fourth checkbox in the composer's Checks chip:
+                            # Jev is a different EXECUTION PATH for checks that
+                            # already exist, not a new check. So reqQa on + this
+                            # on = fan-out; reqQa on + this off = today's
+                            # behaviour; no key = today's behaviour, silently.
+                            "jevJudge": False,
+                            "contractWriterModel": "fast", "contractWriterOverrides": {},
+                            "economyModels": dict(model_routing.DEFAULTS), "modelCatalog": [],
+                            "runtimeDrivers": {"codex": "exec", "opencode": "run"},
+                            "helperConcurrency": {"codex": 2, "claude": 2, "opencode": 2}}
 
 
 def _compact_config() -> dict:
@@ -946,6 +985,27 @@ def _compact_config() -> dict:
         saved = _persist_json_load(COMPACT_CONFIG_PATH)
         if isinstance(saved.get("autoCompact"), bool):
             cfg["autoCompact"] = saved["autoCompact"]
+        if isinstance(saved.get("autoContinue"), bool):
+            cfg["autoContinue"] = saved["autoContinue"]
+        if model_routing.valid_model(saved.get("summaryModel")):
+            cfg["summaryModel"] = saved["summaryModel"]
+        cfg["economyModels"] = {**model_routing.DEFAULTS, **model_routing.validate_economy(saved.get("economyModels", {}))}
+        cfg["modelCatalog"] = model_routing.validate_catalog(saved.get("modelCatalog", []))
+        cfg["helperConcurrency"] = {**cfg["helperConcurrency"], **{k: v for k, v in saved.get("helperConcurrency", {}).items()
+            if k in model_routing.RUNTIMES and type(v) is int and 1 <= v <= 16}}
+        for runtime, choices in (("codex", ("exec", "app-server")), ("opencode", ("run", "http"))):
+            value = saved.get("runtimeDrivers", {}).get(runtime)
+            if value in choices:
+                cfg["runtimeDrivers"] = {**cfg["runtimeDrivers"], runtime: value}
+        if contract_writer.valid_model(saved.get("contractWriterModel")):
+            cfg["contractWriterModel"] = saved["contractWriterModel"]
+        overrides = saved.get("contractWriterOverrides")
+        if isinstance(overrides, dict):
+            cfg["contractWriterOverrides"] = {key: value for key, value in overrides.items()
+                if re.fullmatch(r"[a-z0-9-]+-orchestrator", key) and contract_writer.valid_model(value)}
+        for key in ("referenceReuse", "compactQa", "jevJudge"):
+            if isinstance(saved.get(key), bool):
+                cfg[key] = saved[key]
         thr = saved.get("thresholdTokens")
         if isinstance(thr, (int, float)) and 50_000 <= int(thr) <= 2_000_000:
             cfg["thresholdTokens"] = int(thr)
@@ -1113,6 +1173,13 @@ _PROVIDER_ENV_KEYS = {
     # "never auto-run, offer first" cost rule in capabilities.py. Reached by the
     # editor via the daemon /__exa/search endpoint so the key stays server-side.
     "exa":         "TH_EXA_API_KEY",
+    # TypeSafe "System One" (Jev) - typed judgment, not generation. Answers N
+    # independent typed questions about one state and returns calibrated
+    # probabilities. Reached by every runtime via the daemon /__jev endpoint so
+    # the key stays server-side. Text only, no images - see the rejected image
+    # path in docs/features/jev-integration.md. Cheap ($0.042/Mtok in, output
+    # free) and fail-soft: no key means every consumer keeps its old judgment.
+    "typesafe":    "TH_TYPESAFE_API_KEY",
     # SAM 3D Objects (facebookresearch/sam-3d-objects) image→Gaussian-splat
     # service. Runs on an external CUDA GPU (Modal/RunPod/Replicate/own box) -
     # NOT in this daemon. Key is OPTIONAL (self-hosted endpoints may be
@@ -1208,9 +1275,12 @@ def _guest_cli_env(agent_id):
         okey = (gmap.get("openai") or "").strip()
         if okey:
             env["OPENAI_API_KEY"] = okey
+            cfg = os.path.join(tempfile.gettempdir(), "woven-guest-codex-" + hashlib.sha256(okey.encode()).hexdigest()[:16])
+            os.makedirs(cfg, mode=0o700, exist_ok=True)
+            env["CODEX_HOME"] = cfg
             return env
         raise RuntimeError("connect your OpenAI API key to use Codex in this live session")
-    return env
+    raise RuntimeError("guest credentials are not isolated for this runtime; choose Claude or Codex")
 
 
 def _resolve_provider_key(provider):
@@ -4096,13 +4166,7 @@ def _claude_cli_complete(messages, model=None, timeout=600):
     ]
     if system_parts:
         args.extend(["--append-system-prompt", "\n\n".join(system_parts)])
-    # Map full model IDs onto CLI aliases when possible - they accept either,
-    # but the alias is more forgiving across CLI versions.
-    if model:
-        m = model.lower()
-        if "sonnet" in m:    args.extend(["--model", "sonnet"])
-        elif "opus" in m:    args.extend(["--model", "opus"])
-        elif "haiku" in m:   args.extend(["--model", "haiku"])
+    args.extend(model_routing.spawn_model("claude", model, _compact_config()))
     args.append(flat)
     # Live Session - a guest's /__llm_run must spend the GUEST's credentials,
     # never the host's logged-in CLI. If this is a guest request, run the CLI
@@ -4177,7 +4241,7 @@ def _codex_cli_complete(messages, model=None, timeout=600, extra_args=None, cwd=
     # host's `codex login`. Guest request → env with the guest's OpenAI key (or
     # refuse); host request → inherited env (host's Codex auth).
     _cli_env = _guest_cli_env("codex")
-    result = subprocess.run(
+    result = helper_jobs.run(
         args,
         capture_output=True,
         text=True,
@@ -4192,7 +4256,66 @@ def _codex_cli_complete(messages, model=None, timeout=600, extra_args=None, cwd=
     return (result.stdout or "").rstrip("\n")
 
 
-def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=600):
+def _opencode_text_complete(system, prompt, model=None, timeout=300, cwd=None, tools="none"):
+    """OpenCode's native text helper, with an explicit tools-denied agent."""
+    if tools != "none":
+        raise ValueError("OpenCode helper supports text-only work; use a tracked worker for browser or web work")
+    binary = detect_agent_bin("opencode")
+    if not binary:
+        raise FileNotFoundError("opencode")
+    env = dict(_guest_cli_env("opencode") or os.environ)
+    # Inline config has the highest precedence. No edits to personal config.
+    env["OPENCODE_CONFIG_CONTENT"] = json.dumps({
+        "agent": {"woven-text": {"description": "Woven text-only helper", "mode": "primary",
+            "prompt": system, "permission": {"*": "deny"}, "tools": {"*": False}}},
+        "permission": {"*": "deny"}, "tools": {"*": False}})
+    args = [binary, "run", "--pure", "--format", "json", "--agent", "woven-text"]
+    if model:
+        args.extend(["--model", model])
+    args.append(prompt or "Proceed.")
+    result = helper_jobs.run(args, capture_output=True, text=True, timeout=timeout,
+                            stdin=subprocess.DEVNULL, cwd=cwd, env=env)
+    if result.returncode:
+        raise RuntimeError((result.stderr or "OpenCode helper failed")[:600])
+    parser, chunks = _OpenCodeStreamParser(), []
+    for line in result.stdout.splitlines():
+        try:
+            frame = json.loads(line)
+        except ValueError:
+            continue
+        for event in parser.feed(frame):
+            if event.get("type") == "text_delta":
+                chunks.append(event.get("delta") or "")
+            if event.get("type") == "error":
+                raise RuntimeError(str(event.get("message") or "OpenCode helper failed"))
+    return "".join(chunks)
+
+
+def _tracked_helper_complete(state, profile, system, prompt, **kwargs):
+    job_id = "helper-" + uuid.uuid4().hex
+    started = time.time()
+    def emit(status, **extra):
+        if callable(getattr(state, "append", None)):
+            state.append("agent", {"type": "job", "jobId": job_id, "source": "helper",
+                "status": status, "required": True, "profile": profile, **extra})
+    emit("pending")
+    try:
+        with helper_jobs.execution(job_id, getattr(state, "run_id", None), profile["runtime"],
+                                   _compact_config().get("helperConcurrency", {}).get(profile["runtime"], 2),
+                                   cancelled=lambda: getattr(state, "stop_reason", None) == "user-stop"):
+            emit("running")
+            result = _assistant_agent_complete(system, prompt, model=profile["model"],
+                runtime=profile["runtime"], execution_profile=profile, **kwargs)
+        emit("completed", durationMs=round((time.time() - started) * 1000), usage=None,
+             outputChars=len(result), costUsd=None)
+        return result
+    except Exception as error:
+        emit("stopped" if isinstance(error, helper_jobs.Cancelled) else "failed",
+             error=str(error)[:400], durationMs=round((time.time() - started) * 1000))
+        raise
+
+
+def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=600, reasoning=None, runtime=None, execution_profile=None):
     """One-shot "simple agent" for the assistant nodes - a REAL Claude Code (or
     Codex) subagent that receives ONLY the given system prompt + task, with NO
     Woven capabilities preamble (that bloat is for orchestrators).
@@ -4223,7 +4346,11 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
         system = ((system or "").strip() + "\n\n" + no_files_note).strip()
     scratch = tempfile.mkdtemp(prefix="woven-assistant-")
     try:
-        prov = "openai" if re.match(r"^(gpt|o\d|codex)", (model or "").lower()) else "anthropic"
+        profile = execution_profile or model_routing.resolve(model or "inherit", runtime=runtime or "claude", config=_compact_config())
+        runtime, model = profile["runtime"], profile["model"]
+        if runtime == "opencode":
+            return _opencode_text_complete(system, prompt, model=model, timeout=timeout, cwd=scratch, tools=tools)
+        prov = model_routing.PROVIDERS[runtime]
         if prov == "anthropic":
             bin_path = detect_agent_bin("claude")
             if not bin_path:
@@ -4231,9 +4358,15 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
             args = [bin_path, "--print", "--output-format", "text",
                     "--no-session-persistence", "--disable-slash-commands"]
             if system and system.strip():
-                args.extend(["--append-system-prompt", system.strip()])
-            if model:
+                # A text-only summarizer must not inherit the coding-agent role.
+                args.extend(["--system-prompt" if tools == "none" else "--append-system-prompt", system.strip()])
+            if model and model != "claude-default":
                 args.extend(["--model", model])
+            if reasoning and reasoning in profile["capabilities"].get("efforts", []):
+                args.extend(["--effort", reasoning])
+            if tools == "none":
+                args.extend(["--tools", "", "--strict-mcp-config"])
+                args.extend(["--setting-sources", ""])
             if tools == "browser":
                 # No --add-dir: the agent reads the asset over its served URL.
                 mcp = _mcp_config_spawn_args()
@@ -4244,10 +4377,11 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
                 # Claude Code ships WebSearch + WebFetch built in; bypassing
                 # permissions lets them run headless without a prompt.
                 args.extend(["--allow-dangerously-skip-permissions", "--dangerously-skip-permissions"])
-            args.append(prompt or "Proceed.")
             _cli_env = _guest_cli_env("claude")
-            result = subprocess.run(args, capture_output=True, text=True, timeout=timeout,
-                                    stdin=subprocess.DEVNULL, env=_cli_env, cwd=scratch)
+            # Transcripts can exceed the OS argument limit. Pipe the full text
+            # instead of putting it in argv; no context needs to be discarded.
+            result = helper_jobs.run(args, capture_output=True, text=True, timeout=timeout,
+                                    input=prompt or "Proceed.", env=_cli_env, cwd=scratch)
             if result.returncode != 0:
                 raise RuntimeError((result.stderr or f"exit {result.returncode}").strip()[:600])
             return (result.stdout or "").rstrip("\n")
@@ -4258,8 +4392,19 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
         if system and system.strip():
             msgs.append({"role": "system", "content": system})
         msgs.append({"role": "user", "content": prompt or "Proceed."})
-        extra = _codex_mcp_spawn_args() if tools == "browser" else None
-        return _codex_cli_complete(msgs, model=model, timeout=timeout, extra_args=extra, cwd=scratch)
+        extra = _codex_mcp_spawn_args() if tools == "browser" else []
+        if tools == "none":
+            extra += ["--skip-git-repo-check", "--ephemeral",
+                      "--disable", "shell_tool", "--disable", "apps", "--disable", "plugins",
+                      "--disable", "multi_agent", "--disable", "browser_use",
+                      "--disable", "computer_use", "--disable", "image_generation",
+                      "--disable", "view_image", "-c", 'web_search="disabled"']
+            # Isolation belongs to the text-only role, regardless of model.
+            extra += ["--ignore-user-config"]
+        if reasoning:
+            extra += ["-c", "model_reasoning_effort=" + json.dumps(reasoning)]
+        return _codex_cli_complete(msgs, model=None if model == "codex-default" else model,
+                                   timeout=timeout, extra_args=extra, cwd=scratch)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -5105,6 +5250,54 @@ def _resolve_git_root(qs_or_body):
     if gds:
         return _global_ds_dir(gds, must_exist=True)
     return resolve_project_root(qs_or_body, require_explicit=True)
+
+
+def _worktree_project_id(path):
+    """Map a git-worktree checkout path to its projects/<id> when it lives
+    directly under PROJECTS_DIR (a parallel-branch project); '' otherwise."""
+    try:
+        if not PROJECTS_DIR or not path:
+            return ""
+        rp = os.path.realpath(path)
+        if os.path.dirname(rp) == os.path.realpath(PROJECTS_DIR):
+            return os.path.basename(rp)
+    except Exception:
+        pass
+    return ""
+
+
+def _worktree_link_info(path):
+    """When `path` is a LINKED git worktree (a parallel-branch project), return
+    {worktreeOf: <parent project id>, branch: <its branch>} so the project list
+    can badge it. Pure file reads - a linked checkout's `.git` is a one-line
+    FILE `gitdir: <parent>/.git/worktrees/<name>`, and that dir's HEAD says the
+    branch. None for a normal project (`.git` is a directory) or on any doubt."""
+    try:
+        gf = os.path.join(path, ".git")
+        if not os.path.isfile(gf):
+            return None
+        with open(gf, "r", encoding="utf-8") as f:
+            line = f.read().strip()
+        if not line.startswith("gitdir:"):
+            return None
+        gd = line[len("gitdir:"):].strip()
+        if not os.path.isabs(gd):
+            gd = os.path.normpath(os.path.join(path, gd))
+        m = re.match(r"^(.*)[/\\]\.git[/\\]worktrees[/\\][^/\\]+$", gd)
+        if not m:
+            return None
+        parent = os.path.basename(m.group(1))
+        branch = ""
+        try:
+            with open(os.path.join(gd, "HEAD"), "r", encoding="utf-8") as f:
+                head = f.read().strip()
+            if head.startswith("ref: refs/heads/"):
+                branch = head[len("ref: refs/heads/"):]
+        except OSError:
+            pass
+        return {"worktreeOf": parent, "branch": branch}
+    except Exception:
+        return None
 
 
 def _prune_baked_ds(ds_dir, style_id):
@@ -6428,6 +6621,13 @@ def _list_projects() -> list:
                 })
         except OSError:
             pass
+    # Badge parallel checkouts: a linked worktree gets {worktreeOf, branch} so
+    # the landing shows "branch of <parent>" instead of a lookalike project.
+    for entry in out:
+        wt = _worktree_link_info(entry.get("path") or "")
+        if wt:
+            entry["worktreeOf"] = wt["worktreeOf"]
+            entry["worktreeBranch"] = wt["branch"]
     return out
 
 
@@ -7046,6 +7246,32 @@ def _history_sweep_orphans(project_root: str) -> int:
         removed += 1
     return removed
 
+def _history_blocking_runs(project_root: str) -> list:
+    """Runs that must block undo/redo for THIS project.
+
+    Only a run that is ACTIVELY mid-turn counts (alive AND its current turn
+    hasn't finished) - such a run is about to land an atomic history entry,
+    so stepping would race it. A run that finished its turn and is idle
+    waiting for the user's reply (turnDone=True, done=False) is the normal
+    resting state of every open chat and must NOT block: a project with four
+    open threads would otherwise have undo greyed out forever.
+
+    Scoped to the project so another project's run never blocks this one.
+    GET /__history and POST /__history/(undo|redo) MUST use this same
+    predicate - when they disagreed, the buttons were disabled while the
+    endpoint would happily have stepped.
+    """
+    this_project = os.path.basename(project_root.rstrip("/"))
+    try:
+        with RUNS_LOCK:
+            return [
+                s for s in RUNS.values()
+                if (getattr(s, "project_id", None) in (None, this_project))
+                and not s.done and not getattr(s, "turn_done", False)
+            ]
+    except Exception:
+        return []
+
 # Leaked automation-browser guard. Every test/verify path launches a real
 # browser through some driver: chrome-devtools-mcp (puppeteer), Playwright
 # (bundled chromium OR system Chrome via channel=chrome), preview_mcp.py.
@@ -7197,6 +7423,24 @@ def _history_run_snapshot_before(project_root: str):
         except Exception:
             pass
         return None, [], [], None
+
+def _history_open_for_respawn(state) -> None:
+    """Open a fresh undo entry for a resumed run's new process. The exited
+    process's entry was committed (or dropped) by its drain, which then
+    cleared history_pending_id; without this, nothing the resumed process
+    edits is undoable. codex/opencode resume on EVERY turn, so for them this
+    is every turn after the first. No-op when an entry is already open."""
+    if (getattr(state, "scope", None) == "system" or not state.project_root
+            or getattr(state, "history_pending_id", None)):
+        return
+    try:
+        eid, paths, rows, _ = _history_run_snapshot_before(state.project_root)
+        state.history_pending_id = eid
+        state.history_before_paths = paths
+        state.history_before_rows = rows
+    except Exception as e:
+        state.append("status", {"label": "history-snapshot-failed", "detail": str(e)})
+
 
 def _history_run_snapshot_finish(project_root: str, eid: str, before_paths: list,
                                  before_rows: list, *, kind: str, label: str,
@@ -7501,6 +7745,23 @@ AGENT_MCP_CONFIG = os.environ.get("TH_MCP_CONFIG") or os.path.join(
 )
 
 
+AGENTS_PLUGIN_DIR = os.environ.get("TH_AGENTS_PLUGIN") or os.path.join(
+    INSTALL_ROOT, ".claude-agents-plugin"
+)
+
+
+def _agents_plugin_spawn_args() -> list:
+    """Load callable woven:* agents once in the model-visible catalog.
+
+    The plugin keeps dispatch working across project git boundaries. Its bare
+    aliases, discovered through .claude/agents, are excluded from the prompt by
+    the same launch arguments on chat, planner, node, and resume paths. Full
+    playbooks remain in place for direct reads and non-Claude runtimes.
+    """
+    from agent_catalog import plugin_spawn_args
+    return plugin_spawn_args(AGENTS_PLUGIN_DIR)
+
+
 def _mcp_config_spawn_args() -> list:
     """Return `["--mcp-config", <path>]` if the config file exists, else `[]`.
 
@@ -7575,17 +7836,9 @@ def _codex_mcp_spawn_args(visual_deny=False) -> list:
     for MAIN CHAT spawns only (see _mcp_server_env)."""
     args = []
     for sid, spec in _mcp_servers_from_config().items():
-        cmd = (spec or {}).get("command")
-        if not cmd or not isinstance(cmd, str):
-            continue
-        safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", sid)
-        args += ["-c", "mcp_servers.%s.command=%s" % (safe_id, json.dumps(cmd))]
-        sargs = (spec or {}).get("args") or []
-        sargs = [a for a in sargs if isinstance(a, str)]
-        args += ["-c", "mcp_servers.%s.args=[%s]"
-                 % (safe_id, ", ".join(json.dumps(a) for a in sargs))]
-        for k, v in sorted(_mcp_server_env(spec, visual_deny=visual_deny).items()):
-            args += ["-c", "mcp_servers.%s.env.%s=%s" % (safe_id, k, json.dumps(v))]
+        translated = mcp_routing.translate(spec, "codex", _mcp_server_env(spec, visual_deny=visual_deny))
+        for key, value in translated.items():
+            args += ["-c", "mcp_servers.%s.%s=%s" % (json.dumps(sid), key, mcp_routing.toml(value))]
     return args
 
 
@@ -7612,6 +7865,33 @@ def _codex_exec_resume_supported(bin_path) -> bool:
     return ok
 
 
+# opencode >= 1.18.20 answers subagent permission requests in `run` mode and
+# REJECTS them unless `--auto` is passed (older versions ignored them, which
+# could hang the turn). Woven's other runtimes already run unattended
+# (claude bypassPermissions, codex danger-full-access), so agent spawns pass
+# --auto when the installed CLI has it. Keyed by the resolved binary: a brew
+# upgrade swaps the Cellar path, so a mid-daemon upgrade is re-probed.
+_OPENCODE_AUTO_PROBE: dict = {}
+
+
+def _opencode_run_supports_auto(bin_path) -> bool:
+    try:
+        key = os.path.realpath(bin_path)
+    except Exception:
+        key = bin_path
+    if key in _OPENCODE_AUTO_PROBE:
+        return _OPENCODE_AUTO_PROBE[key]
+    ok = False
+    try:
+        r = subprocess.run([bin_path, "run", "--help"], capture_output=True, text=True,
+                           timeout=15, stdin=subprocess.DEVNULL)
+        ok = bool(re.search(r"(?m)^\s*(?:-\w,\s*)?--auto\b", (r.stdout or "") + (r.stderr or "")))
+    except Exception:
+        ok = False
+    _OPENCODE_AUTO_PROBE[key] = ok
+    return ok
+
+
 def _codex_session_file_exists(session_id, env) -> bool:
     """True when codex recorded a rollout file for this session id under the
     CODEX_HOME the child would use (Live Session guests get a sandboxed
@@ -7628,6 +7908,66 @@ def _codex_session_file_exists(session_id, env) -> bool:
         return bool(glob.glob(pattern))
     except Exception:
         return False
+
+
+# opencode puts its own 5-minute Anthropic cache breakpoints on every request,
+# so a thread resumed after a short pause re-pays its whole context. A
+# `cacheControl` MODEL option replaces them with one top-level breakpoint at
+# the TTL given here. Model-level on purpose: provider-wide options never
+# reach the request, and an agent-level option would also be sent to
+# non-Anthropic providers (an OpenAI-compatible one forwards unknown options
+# into the request body).
+OPENCODE_ANTHROPIC_CACHE = {"type": "ephemeral", "ttl": "1h"}
+_OPENCODE_ANTHROPIC_MODELS: dict = {}
+
+
+def _opencode_anthropic_models() -> list:
+    """Model ids opencode can reach through its `anthropic` provider; [] when
+    that provider is not set up. Cached per binary + credentials so adding a
+    key or upgrading opencode is picked up without a daemon restart."""
+    bin_path = detect_agent_bin("opencode")
+    if not bin_path:
+        return []
+    try:
+        auth_m = os.path.getmtime(os.path.expanduser("~/.local/share/opencode/auth.json"))
+    except OSError:
+        auth_m = None
+    key = (os.path.realpath(bin_path), auth_m, bool(os.environ.get("ANTHROPIC_API_KEY")))
+    if key in _OPENCODE_ANTHROPIC_MODELS:
+        return _OPENCODE_ANTHROPIC_MODELS[key]
+    ids = []
+    try:
+        r = subprocess.run([bin_path, "models", "anthropic"], capture_output=True, text=True,
+                           timeout=30, stdin=subprocess.DEVNULL)
+        if r.returncode == 0:
+            for line in (r.stdout or "").splitlines():
+                m = re.fullmatch(r"\s*anthropic/([A-Za-z0-9._:@-]+)\s*",
+                                 re.sub(r"\x1b\[[0-9;]*m", "", line))
+                if m:
+                    ids.append(m.group(1))
+    except Exception:
+        ids = []
+    _OPENCODE_ANTHROPIC_MODELS.clear()      # only the current key matters
+    _OPENCODE_ANTHROPIC_MODELS[key] = ids
+    return ids
+
+
+def _opencode_apply_anthropic_cache(merged: dict, model_ids) -> None:
+    """Give each listed anthropic model the OPENCODE_ANTHROPIC_CACHE option,
+    merged into `merged` in place. A cacheControl the user set wins."""
+    if not model_ids:
+        return
+    prov = merged.get("provider") if isinstance(merged.get("provider"), dict) else {}
+    anth = dict(prov["anthropic"]) if isinstance(prov.get("anthropic"), dict) else {}
+    models = dict(anth["models"]) if isinstance(anth.get("models"), dict) else {}
+    for mid in model_ids:
+        entry = dict(models[mid]) if isinstance(models.get(mid), dict) else {}
+        opts = dict(entry["options"]) if isinstance(entry.get("options"), dict) else {}
+        opts.setdefault("cacheControl", dict(OPENCODE_ANTHROPIC_CACHE))
+        entry["options"] = opts
+        models[mid] = entry
+    anth["models"] = models
+    merged["provider"] = {**prov, "anthropic": anth}
 
 
 def _ensure_opencode_mcp_config(visual_deny=False):
@@ -7651,7 +7991,7 @@ def _ensure_opencode_mcp_config(visual_deny=False):
                  "~/.config/opencode/opencode.jsonc"):
         try:
             with open(os.path.expanduser(cand), "r", encoding="utf-8") as f:
-                user_cfg = json.load(f)
+                user_cfg = mcp_routing.jsonc_loads(f.read())
             if isinstance(user_cfg, dict):
                 merged.update(user_cfg)
                 break
@@ -7659,15 +7999,12 @@ def _ensure_opencode_mcp_config(visual_deny=False):
             continue  # missing, or jsonc comments - harness entries only
     mcp = merged.get("mcp") if isinstance(merged.get("mcp"), dict) else {}
     for sid, spec in servers.items():
-        cmd = (spec or {}).get("command")
-        if not cmd or not isinstance(cmd, str) or sid in mcp:
+        if sid in mcp:
             continue  # a user-defined server with the same id wins
-        sargs = [a for a in ((spec or {}).get("args") or []) if isinstance(a, str)]
         # Explicit environment per server (same rationale as the codex
         # translation - see _mcp_server_env): don't rely on opencode
         # inheriting the spawn env into MCP server subprocesses.
-        mcp[sid] = {"type": "local", "command": [cmd] + sargs, "enabled": True,
-                    "environment": _mcp_server_env(spec, visual_deny=visual_deny)}
+        mcp[sid] = mcp_routing.translate(spec, "opencode", _mcp_server_env(spec, visual_deny=visual_deny))
     merged["mcp"] = mcp
     # Permission grant: the visual-QA engine (/__qa/run) writes its frame
     # screenshots to tempfile.mkdtemp(prefix="woven-qa-") - OUTSIDE the
@@ -7680,8 +8017,9 @@ def _ensure_opencode_mcp_config(visual_deny=False):
     # /var -> /private/var). A user-set blanket string action wins.
     try:
         _tmp = tempfile.gettempdir().rstrip("/")
-        _qa_globs = sorted({os.path.join(t, "woven-qa-*", "*")
-                            for t in (_tmp, os.path.realpath(_tmp))})
+        _qa_globs = sorted({os.path.join(t, prefix, "*")
+                            for t in (_tmp, os.path.realpath(_tmp))
+                            for prefix in ("woven-qa-*", "woven-preview-mcp")})
         perm = merged.get("permission") if isinstance(merged.get("permission"), dict) else {}
         ext = perm.get("external_directory")
         if not isinstance(ext, str):  # respect a user's blanket allow/deny/ask
@@ -7690,6 +8028,10 @@ def _ensure_opencode_mcp_config(visual_deny=False):
                 ext.setdefault(_g, "allow")
             perm["external_directory"] = ext
             merged["permission"] = perm
+    except Exception:
+        pass
+    try:
+        _opencode_apply_anthropic_cache(merged, _opencode_anthropic_models())
     except Exception:
         pass
     path = os.path.join(INSTALL_ROOT,
@@ -7823,7 +8165,7 @@ AGENT_DEFS = {
         # opencode manages its own model in its own config (`opencode auth login`
         # + config file); model_flag None = we never pass --model, it stays on its
         # own configured default (skipped per the Settings picker too).
-        "model_flag": None,
+        "model_flag": "--model",
     },
 }
 
@@ -7838,24 +8180,83 @@ AGENT_DEFAULT = "claude"
 _CLI_DEFAULT_MODEL_SENTINELS = {"claude-default", "codex-default", "opencode-default"}
 
 
-def _agent_model_spawn_args(agent_id, defs, model):
-    """The `--model` flag pair to append at spawn for a chosen default model, or
-    [] when none is chosen / it's a CLI-default sentinel / the agent has no model
-    flag (opencode). A blank model means 'let the CLI use its own default'. For
-    Claude, map a full model id onto the short alias when possible (both are
-    accepted, the alias is more forgiving across CLI versions) - mirrors
-    _claude_cli_complete's mapping."""
-    model = (model or "").strip()
-    flag = defs.get("model_flag")
-    if not model or model in _CLI_DEFAULT_MODEL_SENTINELS or not flag:
-        return []
-    if agent_id == "claude":
-        m = model.lower()
-        if   "sonnet" in m: model = "sonnet"
-        elif "opus"   in m: model = "opus"
-        elif "haiku"  in m: model = "haiku"
-        # else pass the value through verbatim (a full id / a Custom entry)
-    return [flag, model]
+def _agent_model_spawn_args(agent_id, defs, model, resolved=False):
+    """Preserve exact IDs, including provider/model IDs for OpenCode."""
+    if resolved:
+        if model is None:
+            return []
+        if not model_routing.valid_model(model):
+            raise ValueError("invalid native model ID")
+        return ["--model", model]
+    return model_routing.spawn_model(agent_id, model, _compact_config())
+
+
+def _spawn_runtime_process(agent_id, argv, resume_id=None, driver_mode=None, **kwargs):
+    """Choose once before any prompt is sent. Never fall back after a send."""
+    runtime = agent_id
+    env = dict(kwargs.get("env") or os.environ)
+    configured = _compact_config().get("runtimeDrivers", {})
+    mode = driver_mode or env.get("WOVEN_" + runtime.upper() + "_DRIVER") or configured.get(runtime)
+    if runtime == "codex" and "resume" in argv[1:3]:
+        resume_id = resume_id or argv[-2]
+    # Correct project/run scope and guard policy reach every managed MCP process.
+    if runtime == "codex":
+        additions = []
+        for sid, spec in _mcp_servers_from_config().items():
+            if not spec.get("command"):
+                continue
+            values = {k: env[k] for k in ("TH_PROJECT_ROOT", "TH_PROJECT_ID", "TH_RUN_ID", "TH_VISUAL_GUARD", "TH_VISUAL_DENY") if k in env}
+            if env.get("TH_VISUAL_GUARD") == "0":
+                values["TH_VISUAL_DENY"] = "0"
+            for key, value in values.items():
+                additions += ["-c", "mcp_servers.%s.env.%s=%s" % (json.dumps(sid), key, json.dumps(value))]
+        argv = argv[:-1] + additions + argv[-1:]
+    elif runtime == "opencode":
+        patch = {}
+        existing = json.loads(env.get("OPENCODE_CONFIG_CONTENT") or "{}")
+        effective = {}
+        config_path = env.get("OPENCODE_CONFIG")
+        if config_path:
+            try:
+                with open(config_path, encoding="utf-8") as handle:
+                    effective = mcp_routing.jsonc_loads(handle.read()).get("mcp", {})
+            except (OSError, ValueError):
+                pass
+        effective = {**effective, **existing.get("mcp", {})}
+        for sid, spec in _mcp_servers_from_config().items():
+            base = effective.get(sid) or mcp_routing.translate(spec, "opencode", _mcp_server_env(spec))
+            if base.get("type") == "local":
+                values = {k: env[k] for k in ("TH_PROJECT_ROOT", "TH_PROJECT_ID", "TH_RUN_ID", "TH_VISUAL_GUARD", "TH_VISUAL_DENY") if k in env}
+                if env.get("TH_VISUAL_GUARD") == "0":
+                    values["TH_VISUAL_DENY"] = "0"
+                base = {**base, "environment": {**base.get("environment", {}), **values}}
+            patch[sid] = base
+        env["OPENCODE_CONFIG_CONTENT"] = json.dumps({**existing, "mcp": {**existing.get("mcp", {}), **patch}})
+        kwargs["env"] = env
+        # Unattended like the other runtimes; see _opencode_run_supports_auto.
+        if (len(argv) > 1 and argv[1] == "run" and "--auto" not in argv
+                and mode not in ("app-server", "http") and _opencode_run_supports_auto(argv[0])):
+            argv = argv[:2] + ["--auto"] + argv[2:]
+    if runtime == "claude" or mode not in ("app-server", "http"):
+        return subprocess.Popen(argv, **kwargs)
+    model, config_args = None, []
+    index = 1
+    while index < len(argv) - 1:
+        arg = argv[index]
+        if arg in ("--model", "-m"):
+            model = argv[index + 1]
+            index += 2
+        elif arg in ("-c", "--config"):
+            config_args += argv[index:index + 2]
+            index += 2
+        else:
+            index += 1
+    if runtime == "codex":
+        driver = runtime_drivers.CodexDriver(argv[0], config_args, kwargs["cwd"], env, model, resume_id)
+    else:
+        driver = runtime_drivers.OpenCodeDriver(argv[0], kwargs["cwd"], env, model, resume_id)
+    driver.start(argv[-1])
+    return driver
 
 
 def _agent_default_model():
@@ -7903,26 +8304,31 @@ def _provider_for_agent(agent_id):
 
 def _codex_task_translation_note(project_id):
     """The note that tells a codex/opencode subagent to dispatch nested Woven
-    subagents by POSTing /__dispatch_planner (neither CLI has Claude's native
-    Task tool). Shared by _dispatch_planner and _spawn_node_agent's non-claude
+    named Woven specialists by POSTing /__dispatch_planner. Native CLI workers
+    do not automatically load Woven's registered playbooks. Shared by the non-Claude
     branch so the three copies can't drift."""
     return (
         "===== RUNTIME NOTE =====\n"
-        "The spec above was written for Claude Code's `Task` tool. You are "
-        "running on a non-Claude CLI runtime. Wherever the spec instructs you "
-        "to invoke `Task(subagent_type: \"<type>\", prompt: \"<brief>\")`, "
-        "instead run this shell command:\n\n"
+        "The spec may name Claude Code's `Task` or `Agent` tool. Named Woven "
+        "specialists must load their registered playbook through the daemon "
+        "on this runtime. For a spec instruction such as "
+        "`Task(subagent_type: \"<type>\", prompt: \"<brief>\")`, "
+        "run this shell command:\n\n"
         "  curl -s -X POST "
-        f"'http://127.0.0.1:{PORT}/__dispatch_planner?project={project_id}' "
+        f'"http://127.0.0.1:{PORT}/__dispatch_planner?project={project_id}&parent=$TH_RUN_ID" '
         "-H 'content-type: application/json' "
         "-d '{\"type\": \"<type>\", \"brief\": \"<brief>\"}'\n\n"
-        "The daemon routes the nested dispatch to whichever LLM is available "
+        "The daemon preserves your runtime and model unless that specialist "
+        "has an explicit model override, "
         "and streams its events back as SSE. Parse the final `planner-done` "
         "event's `output` field and treat it the way the spec would have "
         "treated a Task tool return value. If the connection drops before "
         "`planner-done`, do NOT re-dispatch - the planner keeps running; poll "
         "`GET /__dispatch_planner/result?project=<id>&runId=<runId>` until "
-        "`done` is true and use its `output`.\n"
+        "`done` is true and use its `output`. Native CLI workers may be used "
+        "for self-contained subtasks when available, but their launch result "
+        "does not prove completion. Wait for every required worker result "
+        "before claiming the parent task is finished.\n"
         "Visual verification look-loops (screenshots, reading rendered frame "
         "PNGs, judging generated images) follow the same pattern: dispatch "
         "type \"visual-verifier\" with a self-contained brief instead of "
@@ -8055,7 +8461,11 @@ def _orch_override_model_for_node(node_id, title, want_provider=None):
     row = over.get(oid) or {}
     if want_provider and (row.get("provider") or "").strip().lower() != want_provider:
         return ""
-    return (row.get("model") or "").strip()
+    model = (row.get("model") or "").strip()
+    runtime = _PROVIDER_TO_AGENT.get(row.get("provider"))
+    if not want_provider and runtime and model and model.partition(":")[0] not in model_routing.RUNTIMES:
+        return runtime + ":" + model
+    return model
 
 
 # Generic role suffixes on subagent names that scaffolded node ids do NOT
@@ -8103,7 +8513,11 @@ def _subagent_override_model_for_node(node_id, title, prompt_text="", want_provi
     row = over.get(best_name) or {}
     if want_provider and (row.get("provider") or "").strip().lower() != want_provider:
         return ""
-    return (row.get("model") or "").strip()
+    model = (row.get("model") or "").strip()
+    runtime = _PROVIDER_TO_AGENT.get(row.get("provider"))
+    if not want_provider and runtime and model and model.partition(":")[0] not in model_routing.RUNTIMES:
+        return runtime + ":" + model
+    return model
 
 # In-memory run registry. Runs are ephemeral; if the daemon dies the user
 # re-issues. No SQLite. Map run_id → RunState.
@@ -9426,6 +9840,13 @@ def _cleanup_subprocesses(reason: str = "shutdown") -> None:
         try:
             ec = proc.poll() if proc.poll() is not None else None
             st.append("status", {"label": "interrupted", "reason": reason})
+            # WE killed this process, so its SIGTERM exit code is not a
+            # failure. Without a stop_reason the persisted __finish line
+            # carries a bare non-zero exit, and after the restart every run
+            # that happened to be alive comes back painted as a crash - in
+            # the runs list, in the drawer header, everywhere. See
+            # INTENTIONAL_STOPS in app.js for the other side of this.
+            st.stop_reason = st.stop_reason or "daemon-shutdown"
             st.finish(ec)
         except Exception: pass
 
@@ -9547,6 +9968,375 @@ def _ss_gc_locked() -> None:
 # daemon shows yesterday's conversation. Writes are best-effort; failures must
 # never break the in-memory event log that the live SSE stream consumes.
 
+# ── Per-run message queue (daemon-owned) ──────────────────────────────────
+# A follow-up typed while the agent is mid-turn is QUEUED, not sent: the CLI
+# would interleave it with the turn in flight. That queue used to live in the
+# browser and drain from the chat composer's own effect, which meant it only
+# moved while that thread's drawer was mounted - close the drawer, switch view,
+# or reload, and the messages sat there forever while the user believed the
+# agent would pick them up "automatically" (the composer placeholder says so).
+#
+# The daemon owns it now: it already knows when a turn ends (same boundary
+# auto-compact fires on) and it keeps running whether or not anything is
+# watching. The browser only enqueues, reorders, and renders.
+#
+# One file per project, `editor/chat-queues.json`, keyed by runId - the same
+# place and lifecycle as chat.jsonl, so a daemon restart keeps pending work.
+_QUEUE_LOCK = threading.Lock()
+
+
+def _queue_path(project_root: str) -> str:
+    return os.path.join(project_root, "editor", "chat-queues.json")
+
+
+def _queue_load_all(project_root: str) -> dict:
+    try:
+        with open(_queue_path(project_root), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _queue_persist(state) -> None:
+    """Write the whole project map back. Best-effort: a queue that fails to
+    persist still works for this daemon lifetime, and blowing up a turn
+    boundary over a disk error would be worse than losing the sidecar."""
+    root = getattr(state, "project_root", None)
+    if not root:
+        return
+    try:
+        with _QUEUE_LOCK:
+            allq = _queue_load_all(root)
+            q = list(getattr(state, "msg_queue", None) or [])
+            if q:
+                allq[state.run_id] = q
+            else:
+                allq.pop(state.run_id, None)
+            path = _queue_path(root)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(allq, f)
+            os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def _queue_restore(state) -> None:
+    root = getattr(state, "project_root", None)
+    if not root:
+        return
+    try:
+        q = _queue_load_all(root).get(state.run_id)
+        if isinstance(q, list):
+            state.msg_queue = [e for e in q if isinstance(e, dict) and isinstance(e.get("text"), str)]
+    except Exception:
+        pass
+
+
+def _queue_deliverable(state, mode: str) -> bool:
+    """Is now a moment to hand the head of the queue to the agent?
+
+    Never after the user pressed Stop: an explicit stop must not be undone by
+    messages typed before it. Those stay queued for the user to send by hand.
+    Otherwise it depends which door we came in:
+      - "stdin": a turn just ended on a still-running, stdin-driven process.
+        Requires the turn to actually be over - that is the whole reason the
+        queue exists.
+      - "resume": the process is gone. There is no turn in flight to protect,
+        and this is the ONLY delivery route left, so a crash mid-turn still
+        gets the follow-up out (matching what the old client-side drain did).
+    """
+    if not getattr(state, "msg_queue", None):
+        return False
+    if getattr(state, "stop_reason", None) == "user-stop":
+        return False
+    if mode == "stdin":
+        # A parking process is exiting; its drain re-runs this with "resume".
+        return bool(state.is_live and not state.done and getattr(state, "turn_done", False)
+                    and getattr(state, "stop_reason", None) != "parked"
+                    and AGENT_DEFS.get(state.agent_id, {}).get("prompt_via_stdin"))
+    return not state.is_live
+
+
+def _queue_drain_maybe(state, mode: str = "stdin") -> None:
+    """Deliver ONE queued message if the run is ready for it. One per turn, so
+    each queued follow-up gets a whole turn to itself exactly as it would have
+    if the user had typed it at the prompt.
+
+    Two delivery routes, and the CALLER picks which by `mode`, so they can
+    never race each other on a single-shot runtime (codex / opencode exit after
+    every turn, so their turn-end and process-exit moments are microseconds
+    apart):
+      - "stdin"  - turn-end on a live stream-json process: write the user frame.
+      - "resume" - process exit: respawn through our own /resume handler, which
+        is the only thing that knows how to rebuild this thread's spawn. Doing
+        it inline here would duplicate the tier / prototype / guards / MCP
+        reconstruction, and a second copy of that is exactly how a resumed
+        thread ends up on a different system prompt.
+    The server is threading, so self-calling from this background thread is safe.
+    """
+    if not _queue_deliverable(state, mode):
+        return
+    if getattr(state, "_queue_draining", False):
+        return
+    state._queue_draining = True
+
+    def _work():
+        try:
+            with _QUEUE_LOCK:
+                q = list(getattr(state, "msg_queue", None) or [])
+            head = q[0] if q else None
+            if head is None:
+                return
+            text = head.get("send") or head.get("text") or ""
+            if not text.strip():
+                _queue_drop(state, head.get("id"))
+                return
+            ok = False
+            if mode == "stdin":
+                try:
+                    # Same lock as /user-message: never write into a process
+                    # the idle loop has just started parking. The message stays
+                    # queued and the parked run's drain delivers it via resume.
+                    with _PARK_LOCK:
+                        if getattr(state, "stop_reason", None) != "parked":
+                            cancelled = _cancel_qa_checks(state)
+                            state.proc.stdin.write(_claude_user_frame(
+                                _qa_cancel_note(cancelled) + text if cancelled else text))
+                            state.proc.stdin.flush()
+                            state.turn_done = False
+                            ok = True
+                    if ok:
+                        state.append("user_message", {"text": head.get("text") or text,
+                                                      "queued": True})
+                except Exception as e:
+                    print(f"[queue] stdin deliver failed run={state.run_id}: {e}", flush=True)
+            else:
+                ok = _queue_deliver_via_resume(state, text)
+            if ok:
+                _queue_drop(state, head.get("id"))
+            # A failed delivery leaves the message at the head: the next turn
+            # boundary (or the next enqueue) retries. Never silently drop.
+        finally:
+            state._queue_draining = False
+
+    threading.Thread(target=_work, daemon=True,
+                     name=f"queue-drain-{state.run_id}").start()
+
+
+def _queue_deliver_via_resume(state, text: str, auto: str = "") -> bool:
+    """Respawn the run with the queued text as its next message, by POSTing our
+    own /resume. Building the resume spawn inline here would mean duplicating
+    the tier / prototype / guards / MCP reconstruction that handler owns, and a
+    second copy of that is exactly how a resumed thread ends up on a different
+    system prompt (the resume-tier-balloon class of bug)."""
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{PORT}/__run/{state.run_id}/resume",
+            data=json.dumps({"text": text, "auto": auto} if auto
+                            else {"text": text}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=120) as r:
+            return 200 <= r.status < 300
+    except Exception as e:
+        print(f"[queue] resume deliver failed run={state.run_id}: {e}", flush=True)
+        return False
+
+
+# Split groups whose plan check has already been opened, this daemon life. The
+# durable record is the `split-check` status on the planning thread, which
+# survives a restart; this set only closes the race of two siblings settling
+# in the same instant.
+_SPLIT_JOINED: set = set()
+_SPLIT_JOIN_LOCK = threading.Lock()
+
+
+def _split_member_row(s) -> dict:
+    with s.lock:
+        last = next((e["data"] for e in reversed(s.events)
+                     if isinstance(e.get("data"), dict) and e["data"].get("type") == "status"
+                     and not e["data"].get("sidechain")
+                     and e["data"].get("label") in ("done", "error")), {})
+        brief = next((e["data"].get("text") or "" for e in s.events
+                      if e.get("type") == "user_message" and isinstance(e.get("data"), dict)), "")
+    stopped = getattr(s, "stop_reason", None) == "user-stop"
+    status = ("stopped" if stopped
+              else "error" if last.get("label") == "error" or _turn_result_failure(last) else "done")
+    finished = bool(s.done or (s.turn_done and s.turns_completed >= 1)) and not _pending_run_jobs(s)
+    return {"index": (s.split or {}).get("index"), "title": s.title, "runId": s.run_id,
+            "status": status, "stopped": stopped, "settled": finished or stopped,
+            "brief": brief,
+            "report": last.get("result") if isinstance(last.get("result"), str) else ""}
+
+
+def _split_busy_group(parent_id, split_id):
+    """A thread of an EARLIER split from the same plan that is still working,
+    or None. Opening a second group while the first builds puts two threads
+    on the same work in the same files (suss-cal 2026-09-30: a typed "split"
+    re-opened the scheme-version item while the first copy was mid-build)."""
+    with RUNS_LOCK:
+        runs = list(RUNS.values())
+    for s in runs:
+        sp = getattr(s, "split", None) or {}
+        if sp.get("parent") != parent_id or sp.get("id") == split_id:
+            continue
+        if not _split_member_row(s)["settled"]:
+            return s
+    return None
+
+
+def _split_open_check(body: dict, project_id: str, parent) -> None:
+    """Open the plan-check thread through our own POST /__run, off the drain
+    thread, so it is spawned exactly like any chat (tier / prototype / checks
+    rebuilt by the one handler that owns them)."""
+    def _work():
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{PORT}/__run?project={urllib.parse.quote(project_id)}",
+                data=json.dumps(body).encode("utf-8"),
+                headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=120) as r:
+                opened = json.loads(r.read().decode("utf-8") or "{}")
+            if parent is not None:
+                parent.append("status", {"label": "split-check",
+                                         "splitId": body.get("_splitId"),
+                                         "checkRunId": opened.get("runId") or opened.get("id")})
+        except Exception as e:
+            print(f"[split] could not open the plan check for {body.get('_splitId')}: {e}", flush=True)
+    threading.Thread(target=_work, daemon=True, name="split-check-open").start()
+
+
+def _split_join_maybe(state) -> None:
+    """Once EVERY thread of a plan split has settled (finished its turn, or
+    was stopped by the user), open a SEPARATE plan-check thread (see
+    plan_split.py). Never the planning thread: the user may have stopped it,
+    and a stop must stay a stop. Called at each turn end and process exit of
+    a split thread; a no-op for everything else, for a group with a thread
+    still working, for a group already checked, and for a group the user
+    stopped entirely."""
+    split = getattr(state, "split", None)
+    if not split:
+        return
+    try:
+        with RUNS_LOCK:
+            parent = RUNS.get(split.get("parent"))
+            members = [s for s in RUNS.values()
+                       if (getattr(s, "split", None) or {}).get("id") == split.get("id")]
+        rows = [_split_member_row(s) for s in members]
+        if not plan_split.group_ready(split, rows):
+            return
+        with _SPLIT_JOIN_LOCK:
+            if split["id"] in _SPLIT_JOINED:
+                return
+            _SPLIT_JOINED.add(split["id"])
+            if parent is not None:
+                with parent.lock:
+                    if any(isinstance(e.get("data"), dict)
+                           and e["data"].get("label") in ("split-check", "split-reconcile")
+                           and e["data"].get("splitId") == split["id"]
+                           for e in parent.events):
+                        return
+        if not plan_split.worth_checking(rows):
+            return
+        # Group metadata from the member that carries it: item 0 holds the
+        # plan snapshot, and `state` may be the least complete copy.
+        group = next((s.split for s in members if (s.split or {}).get("snapshot")),
+                     next((s.split for s in members if (s.split or {}).get("items")), split))
+        title = ("Plan check: " + ((getattr(parent, "title", None) or "")
+                                   or group["items"][0]["title"]))[:60]
+        body = {"kind": "freeform", "title": title, "_splitId": split["id"],
+                "prompt": plan_split.check_brief(group, rows, group.get("snapshot"))}
+        if parent is not None:
+            body["parent"] = parent.run_id   # inherits tier / prototype / checks
+        else:
+            ref = members[0]
+            body.update({"tier": ref.tier, "branch": ref.prototype, "prototype": ref.prototype,
+                         "guards": dict(ref.guards or {}, plan=False)})
+        _split_open_check(body, state.project_id, parent)
+    except Exception as e:
+        print(f"[split] join failed run={getattr(state, 'run_id', '?')}: {e}", flush=True)
+
+
+# How long an SSE tail waits, after a run goes done, for a respawn the DAEMON
+# is about to perform itself. Long enough to cover summarise -> kill -> resume
+# on a slow machine, short enough that a genuinely finished run closes.
+_RESPAWN_LINGER_SECS = 90
+
+
+def _run_respawn_expected(state) -> bool:
+    """True while the daemon is about to bring this run back WITHOUT the client
+    asking: a queued follow-up to deliver, a compact summary still to apply, or
+    an auto compact whose auto-continue has not fired yet.
+
+    The chat's SSE tail closes when a run goes done, and the browser only
+    re-opens it when the USER does something. So a daemon-side respawn streamed
+    into a connection nobody was reading: the agent worked the whole time and
+    the drawer showed nothing until a manual refresh. While this is true the
+    tail lingers instead of closing, and the respawned process streams into the
+    same connection the drawer is already reading."""
+    try:
+        if getattr(state, "_compact_pending", None) or getattr(state, "_compact_inflight", False):
+            return True
+        with _QUEUE_LOCK:
+            if list(getattr(state, "msg_queue", None) or []):
+                return True
+        if (getattr(state, "stop_reason", None) == "compacted"
+                and _compact_config().get("autoContinue")):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _compact_autocontinue_maybe(state) -> None:
+    """Process-exit hook: pick the thread back up after an AUTO compact.
+
+    A compact ends the process on purpose, and the thread then sits waiting for
+    a message. In practice the message is always the same one - the user comes
+    back minutes later and types "continue" - so the daemon sends it. Only for
+    compacts it started itself; a compact the user asked for leaves the thread
+    where they put it.
+
+    Guards: nothing queued (the queue drain already respawns for that, and it
+    carries the user's real next message), and never twice without a human turn
+    in between, so a thread whose floor sits near the threshold cannot spin
+    compact -> continue -> compact on its own."""
+    if state.stop_reason != "compacted":
+        return
+    if not _compact_config().get("autoContinue"):
+        return
+    with _QUEUE_LOCK:
+        queued = list(getattr(state, "msg_queue", None) or [])
+    if queued or getattr(state, "_queue_draining", False):
+        return
+    with state.lock:
+        events = list(state.events)
+    ci = _last_compact_index(events)
+    if ci < 0 or (events[ci].get("data") or {}).get("reason") != "auto":
+        return
+    for ev in reversed(events[:ci]):
+        if ev.get("type") == "user_message":
+            if (ev.get("data") or {}).get("auto"):
+                return          # the last turn was already an auto-continue
+            break
+    state.append("status", {"label": "auto-continue",
+                            "detail": "picking the thread back up after the compact"})
+    _queue_deliver_via_resume(state, "continue", auto="compact-continue")
+
+
+def _queue_drop(state, entry_id) -> None:
+    with _QUEUE_LOCK:
+        state.msg_queue = [e for e in (getattr(state, "msg_queue", None) or [])
+                           if e.get("id") != entry_id]
+    _queue_persist(state)
+
+
 # Serialize writes per file path. Multiple runs on the same branch race here.
 _CHAT_JSONL_LOCKS: dict = {}
 _CHAT_JSONL_LOCKS_GUARD = threading.Lock()
@@ -9637,6 +10427,9 @@ def _chat_jsonl_append(state, seq: int, ev_type: str, data) -> None:
         "agentId": state.agent_id,
         "kind":    state.kind,
         "tier":    getattr(state, "tier", None),   # setup vs scoped badge
+        # scoped-preamble target, stamped on every line so the chat target
+        # bar can show a live thread the prototype it actually committed to.
+        "prototype": getattr(state, "prototype", None),
         "title":   state.title,
         "startedAt": state.started_at,
         "seq":     seq,
@@ -9655,16 +10448,26 @@ def _chat_jsonl_append(state, seq: int, ev_type: str, data) -> None:
             f.write(serialized + "\n")
 
 
-def _chat_jsonl_purge_run(path: str, run_id: str) -> int:
-    """Rewrite `path` dropping every line whose runId == run_id, moving the
-    removed lines into a sibling .chat-trash.jsonl so the delete is
-    recoverable (mirrors the source/.trash/ convention for prototype deletes).
+def _chat_jsonl_purge_run(path: str, run_id) -> int:
+    """Rewrite `path` dropping every line whose runId is `run_id` - a single id
+    or any iterable of them, so a bulk delete rewrites the file ONCE.
     Returns the count of purged lines. Best-effort; never raises - chat history
     persistence must never break the caller.
+
+    The delete is REAL: the lines are gone. There used to be a sibling
+    .chat-trash.jsonl holding a copy "so the delete is recoverable", but
+    nothing ever read it back - no endpoint, no UI, no restore path - while it
+    grew without bound (1.2 GB against a 300 MB live transcript on one real
+    project, four times the file it was shadowing) and, being unignored, kept
+    turning up in the project's git status. An unbounded append log nobody can
+    restore from is not a safety net, it is a leak.
 
     Serializes against _chat_jsonl_append via the same per-path lock so a
     concurrent run writing to the file can't interleave with the rewrite."""
     if not path or not os.path.isfile(path):
+        return 0
+    ids = {run_id} if isinstance(run_id, str) else set(run_id or ())
+    if not ids:
         return 0
     lk = _chat_jsonl_lock(path)
     with lk:
@@ -9681,19 +10484,12 @@ def _chat_jsonl_purge_run(path: str, run_id: str) -> int:
                     except Exception:
                         kept.append(s)  # keep unparseable lines untouched
                         continue
-                    if obj.get("runId") == run_id:
+                    if obj.get("runId") in ids:
                         removed.append(s)
                     else:
                         kept.append(s)
             if not removed:
                 return 0
-            trash = os.path.join(os.path.dirname(path), ".chat-trash.jsonl")
-            try:
-                with open(trash, "a", encoding="utf-8") as tf:
-                    for s in removed:
-                        tf.write(s + "\n")
-            except OSError:
-                pass  # trash is a nicety; proceed with the purge regardless
             tmp = path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 for s in kept:
@@ -9702,6 +10498,75 @@ def _chat_jsonl_purge_run(path: str, run_id: str) -> int:
             return len(removed)
         except OSError:
             return 0
+
+
+# ── run titles (rename) ───────────────────────────────────────────────────
+# A run's title is stamped on EVERY one of its chat.jsonl lines, so renaming by
+# rewriting history would mean rewriting a file that reaches nine figures of
+# bytes on a real build. The rename lives in a tiny sidecar instead - runId ->
+# title - and every reader that hands a run row to the UI overlays it. The
+# transcript is left exactly as written.
+# Same alphabet the /__run/<id>/... routes accept. Bulk endpoints take ids from
+# a JSON body rather than the path, so they have to validate for themselves.
+_RUN_ID_OK = re.compile(r"^[0-9a-f]{6,64}$")
+
+
+def _run_titles_path(project_root: str) -> str:
+    return os.path.join(project_root, "editor", "run-titles.json")
+
+
+def _system_run_titles_path() -> str:
+    return os.path.join(_system_chats_dir(), "run-titles.json")
+
+
+def _run_titles_load(path: str) -> dict:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _run_titles_set(path: str, run_id: str, title) -> None:
+    """Store (or, with a falsy title, clear) one run's rename. Best-effort."""
+    lk = _chat_jsonl_lock(path)        # one lock per path; reuse the registry
+    with lk:
+        cur = _run_titles_load(path)
+        if title:
+            cur[run_id] = str(title)
+        else:
+            cur.pop(run_id, None)
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(cur, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, path)
+        except OSError:
+            pass
+
+
+def _run_titles_forget(path: str, run_ids) -> None:
+    """Drop rename entries for deleted runs so the sidecar can't outgrow the
+    history it annotates."""
+    ids = {run_ids} if isinstance(run_ids, str) else set(run_ids or ())
+    if not ids:
+        return
+    lk = _chat_jsonl_lock(path)
+    with lk:
+        cur = _run_titles_load(path)
+        if not any(r in cur for r in ids):
+            return
+        for r in ids:
+            cur.pop(r, None)
+        try:
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(cur, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, path)
+        except OSError:
+            pass
 
 
 def _chat_jsonl_candidate_files(project_root: str) -> list:
@@ -9751,101 +10616,549 @@ def _system_chat_scan(section: str = None) -> dict:
     return out
 
 
-# (paths tuple) -> (signature, {rid: meta}). Same rationale as
-# _JSONL_ROWS_CACHE: /__runs polls this scan while the runs panel is open and
-# the files grow without bound. Callers mutate the returned metas (e.g.
-# forcing done=True), so cache hits hand out per-meta copies.
-_CHAT_SCAN_CACHE: dict = {}
-_CHAT_SCAN_CACHE_LOCK = threading.Lock()
-_CHAT_SCAN_CACHE_MAX = 64
+# path -> _ChatFileIndex. /__runs used to rebuild its whole answer by parsing
+# every byte of every chat JSONL on each request, behind a (mtime, size) cache
+# that any append invalidated. On a real project that is not viable: suss-cal's
+# editor/chat.jsonl is 339 MB / 120k rows / 74 runs, and a full scan measured
+# 1.08s. Worse, the cache lookup released its lock before scanning, so the
+# frontend's several independent /__runs pollers (1500ms working-paths, 2000ms
+# agent-busy lock, 2000ms runs list, 4000ms rail) all missed together and all
+# scanned together - and since json.loads holds the GIL, four concurrent
+# pollers measured 4.80s wall with every one of them waiting the full 4.80s.
+# That is the "the chat list opens slowly" report.
+#
+# The file is append-only in normal operation (_chat_jsonl_append), and the one
+# path that rewrites it (_chat_jsonl_purge_run) lands via os.replace, i.e. a
+# NEW inode. So we keep a byte watermark per file and parse only what arrived
+# since the last poll, rebuilding from zero whenever the identity check fails.
+# Same 339 MB file: 1.08s -> 0.4ms for a typical 8 KB append.
+_CHAT_INDEX: dict = {}
+_CHAT_INDEX_LOCK = threading.Lock()
+_CHAT_INDEX_MAX = 64
+# Row types _chat_tail_budget refuses to drop no matter how old they are: the
+# drawer replays past `[decision:<id>]` user messages to keep answered gate
+# cards answered. The index records their byte offsets so a tail-seek can go
+# back and fetch them instead of re-reading the file to find them. They are
+# rare and small - 662 rows / 966 KB out of suss-cal's 120k rows.
+_CHAT_PRESERVED_TYPES = ("user_message", "tool_answer")
+
+
+class _ChatFileIndex:
+    """Incremental index over one append-only chat JSONL.
+
+    Holds the per-run metadata /__runs needs, plus the byte offsets /__chat
+    needs to read a slice instead of the whole file. Every field is derived
+    purely from the bytes below `offset`, so refresh() only ever has to look
+    at what was appended after it."""
+
+    __slots__ = ("path", "lock", "ino", "dev", "offset", "rows",
+                 "metas", "preserved_spans", "run_spans")
+
+    def __init__(self, path):
+        self.path = path
+        # Per-file lock, held across refresh(). This is the single-flight that
+        # collapses the poller herd: concurrent callers queue here and the
+        # losers find the index already current, instead of each re-scanning.
+        self.lock = threading.Lock()
+        self._reset()
+
+    def _reset(self):
+        self.ino = -1
+        self.dev = -1
+        self.offset = 0          # bytes already folded into the fields below
+        self.rows = 0            # total parseable rows seen
+        self.metas = {}          # runId -> meta dict (the /__runs row)
+        self.preserved_spans = []   # [(offset, length)] of _CHAT_PRESERVED_TYPES
+        self.run_spans = {}      # runId -> [first_offset, end_offset]
+
+    def refresh(self):
+        """Fold any newly appended bytes into the index. Caller holds self.lock."""
+        try:
+            st = os.stat(self.path)
+        except OSError:
+            self._reset()
+            return
+        if (st.st_ino != self.ino or st.st_dev != self.dev
+                or st.st_size < self.offset):
+            # New file, or _chat_jsonl_purge_run swapped a rewritten one in
+            # under us (os.replace => new inode), or a truncation. Either way
+            # the watermark describes bytes that no longer exist.
+            self._reset()
+            self.ino, self.dev = st.st_ino, st.st_dev
+        if st.st_size == self.offset:
+            return                              # nothing appended
+        start = self.offset
+        try:
+            with open(self.path, "rb") as f:
+                f.seek(start)
+                chunk = f.read(st.st_size - start)
+        except OSError:
+            return
+        # A writer may be mid-append, so stop at the last complete line and
+        # leave the partial tail for the next refresh.
+        cut = chunk.rfind(b"\n")
+        if cut == -1:
+            return
+        chunk = chunk[:cut + 1]
+        pos = start
+        for raw in chunk.split(b"\n"):
+            here = pos
+            pos += len(raw) + 1
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                rec = json.loads(raw.decode("utf-8", "replace"))
+            except Exception:
+                continue
+            self.rows += 1
+            if rec.get("type") in _CHAT_PRESERVED_TYPES:
+                self.preserved_spans.append((here, len(raw)))
+            rid = rec.get("runId")
+            if not rid:
+                continue
+            span = self.run_spans.get(rid)
+            if span is None:
+                self.run_spans[rid] = [here, pos]
+            else:
+                span[1] = pos
+            meta = self.metas.get(rid)
+            if meta is None:
+                meta = {
+                    "runId":          rid,
+                    "agentId":        rec.get("agentId") or "claude",
+                    "branch":         rec.get("branch") or "main",
+                    "kind":           rec.get("kind") or "freeform",
+                    "tier":           rec.get("tier"),
+                    "prototype":      rec.get("prototype"),
+                    "title":          rec.get("title") or "",
+                    "startedAt":      rec.get("startedAt") or rec.get("ts") or 0,
+                    # last line seen for this run wins - the runs list
+                    # orders by updatedAt, not by when the run started.
+                    "updatedAt":      rec.get("ts") or rec.get("startedAt") or 0,
+                    "done":           False,
+                    "turnDone":       False,
+                    "turnsCompleted": 0,
+                    "exitCode":       None,
+                    "lastSeq":        -1,
+                    "modifying":      False,
+                    "historical":     True,
+                    # "waiting on YOU to pick a card" - the only state that
+                    # still earns a coloured dot in the runs list. Folded
+                    # forward line by line below (see _gate_feed); `_gateTail`
+                    # is scrubbed before the meta leaves this index.
+                    "gatePending":    False,
+                    "_gateTail":      "",
+                    # present on system-thread lines only.
+                    "section":        rec.get("section"),
+                }
+                self.metas[rid] = meta
+            ts_v = rec.get("ts")
+            if isinstance(ts_v, (int, float)) and ts_v > (meta.get("updatedAt") or 0):
+                meta["updatedAt"] = ts_v
+            # Backfill the scoped-preamble target for runs whose lines predate
+            # the per-line `prototype` stamp - the spawn banner has carried it
+            # all along, and the chat target bar needs it to show a live thread
+            # which prototype it committed to.
+            if not meta.get("prototype"):
+                p_v = rec.get("prototype")
+                if not p_v and isinstance(rec.get("data"), dict) and rec["data"].get("label") == "spawned":
+                    p_v = rec["data"].get("prototype")
+                if p_v:
+                    meta["prototype"] = p_v
+            # Plan / split / plan-check badge, off the spawn banner.
+            if isinstance(rec.get("data"), dict) and rec["data"].get("label") == "spawned":
+                _d = rec["data"]
+                meta["planRole"] = plan_split.thread_role(_d.get("guards"), _d.get("split"), _d.get("splitCheck"))
+            # Same gate fold the live RunState.append does, so a run the
+            # daemon no longer holds still says "this one wants an answer".
+            gate = {"pending": meta["gatePending"], "tail": meta["_gateTail"]}
+            _gate_feed(gate, rec.get("type"), rec.get("data"))
+            meta["gatePending"], meta["_gateTail"] = bool(gate["pending"]), gate["tail"]
+            # Track lifecycle terminators
+            if rec.get("type") == "__finish":
+                meta["done"] = True
+                ec = (rec.get("data") or {}).get("exitCode")
+                if ec is not None:
+                    meta["exitCode"] = ec
+            # Track "turn done" - claude-code emits status:done at end
+            # of each agent turn. Useful so the UI dot picks "waiting"
+            # over "live" when reopening.
+            if (rec.get("type") == "agent"
+                    and isinstance(rec.get("data"), dict)
+                    and rec["data"].get("type") == "status"
+                    and rec["data"].get("label") == "done"):
+                meta["turnDone"] = True
+                meta["turnsCompleted"] = int(meta.get("turnsCompleted") or 0) + 1
+            # Track the highest seq so the UI can compute "after"
+            seq_v = rec.get("seq")
+            if isinstance(seq_v, int) and seq_v > meta["lastSeq"]:
+                meta["lastSeq"] = seq_v
+        self.offset = start + len(chunk)
+
+
+def _chat_index(path: str) -> "_ChatFileIndex":
+    """The refreshed index for `path`. Returns with the index current; callers
+    must re-take `idx.lock` before reading its fields."""
+    with _CHAT_INDEX_LOCK:
+        idx = _CHAT_INDEX.get(path)
+        if idx is None:
+            if len(_CHAT_INDEX) >= _CHAT_INDEX_MAX:
+                _CHAT_INDEX.clear()
+            idx = _CHAT_INDEX[path] = _ChatFileIndex(path)
+    with idx.lock:
+        idx.refresh()
+    return idx
 
 
 def _scan_chat_jsonl_records(candidates: list) -> dict:
     """Shared scan body for project chat history AND system-thread history.
     candidates: [(abs_path, slug)] - slug is a branch for project files and
     a section name for system files (recorded on the meta as `section` when
-    the line carries one)."""
-    sig = []
-    for path, slug in candidates:
-        try:
-            st = os.stat(path)
-            sig.append((path, slug, st.st_mtime_ns, st.st_size))
-        except OSError:
-            sig.append((path, slug, 0, -1))
-    sig = tuple(sig)
-    key = tuple(p for p, _s in candidates)
-    with _CHAT_SCAN_CACHE_LOCK:
-        hit = _CHAT_SCAN_CACHE.get(key)
-        if hit is not None and hit[0] == sig:
-            return {rid: dict(meta) for rid, meta in hit[1].items()}
+    the line carries one).
+
+    Now a merge over the per-file incremental indexes rather than a re-read of
+    every byte: see _ChatFileIndex for why. Callers mutate the metas they get
+    back (forcing done=True, stamping project), so hand out copies."""
     out: dict = {}
     for path, _branch_slug in candidates:
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                for raw in f:
-                    raw = raw.strip()
-                    if not raw:
-                        continue
-                    try:
-                        rec = json.loads(raw)
-                    except Exception:
-                        continue
-                    rid = rec.get("runId")
-                    if not rid:
-                        continue
-                    meta = out.get(rid)
-                    if meta is None:
-                        meta = {
-                            "runId":          rid,
-                            "agentId":        rec.get("agentId") or "claude",
-                            "branch":         rec.get("branch") or "main",
-                            "kind":           rec.get("kind") or "freeform",
-                            "tier":           rec.get("tier"),
-                            "title":          rec.get("title") or "",
-                            "startedAt":      rec.get("startedAt") or rec.get("ts") or 0,
-                            # last line seen for this run wins - the runs list
-                            # orders by updatedAt, not by when the run started.
-                            "updatedAt":      rec.get("ts") or rec.get("startedAt") or 0,
-                            "done":           False,
-                            "turnDone":       False,
-                            "turnsCompleted": 0,
-                            "exitCode":       None,
-                            "lastSeq":        -1,
-                            "modifying":      False,
-                            "historical":     True,
-                            # present on system-thread lines only.
-                            "section":        rec.get("section"),
-                        }
-                        out[rid] = meta
-                    ts_v = rec.get("ts")
-                    if isinstance(ts_v, (int, float)) and ts_v > (meta.get("updatedAt") or 0):
-                        meta["updatedAt"] = ts_v
-                    # Track lifecycle terminators
-                    if rec.get("type") == "__finish":
-                        meta["done"] = True
-                        ec = (rec.get("data") or {}).get("exitCode")
-                        if ec is not None:
-                            meta["exitCode"] = ec
-                    # Track "turn done" - claude-code emits status:done at end
-                    # of each agent turn. Useful so the UI dot picks "waiting"
-                    # over "live" when reopening.
-                    if (rec.get("type") == "agent"
-                            and isinstance(rec.get("data"), dict)
-                            and rec["data"].get("type") == "status"
-                            and rec["data"].get("label") == "done"):
-                        meta["turnDone"] = True
-                        meta["turnsCompleted"] = int(meta.get("turnsCompleted") or 0) + 1
-                    # Track the highest seq so the UI can compute "after"
-                    seq_v = rec.get("seq")
-                    if isinstance(seq_v, int) and seq_v > meta["lastSeq"]:
-                        meta["lastSeq"] = seq_v
-        except OSError:
-            continue
-    with _CHAT_SCAN_CACHE_LOCK:
-        if len(_CHAT_SCAN_CACHE) >= _CHAT_SCAN_CACHE_MAX:
-            _CHAT_SCAN_CACHE.clear()
-        _CHAT_SCAN_CACHE[key] = (sig, {rid: dict(meta) for rid, meta in out.items()})
+        idx = _chat_index(path)
+        with idx.lock:
+            metas = {rid: dict(meta) for rid, meta in idx.metas.items()}
+        for rid, meta in metas.items():
+            meta.pop("_gateTail", None)   # index-internal carry, never shipped
+            cur = out.get(rid)
+            if cur is None:
+                out[rid] = meta
+                continue
+            # A runId in more than one candidate file is not expected (the
+            # flat chat.jsonl superseded the per-branch files), but the old
+            # single-pass scan folded such a run into ONE meta, so match it.
+            if (meta.get("updatedAt") or 0) > (cur.get("updatedAt") or 0):
+                cur["updatedAt"] = meta["updatedAt"]
+            if (meta.get("lastSeq") or -1) > (cur.get("lastSeq") or -1):
+                cur["lastSeq"] = meta["lastSeq"]
+            if meta.get("done"):
+                cur["done"] = True
+            if meta.get("turnDone"):
+                cur["turnDone"] = True
+            cur["turnsCompleted"] = ((cur.get("turnsCompleted") or 0)
+                                     + (meta.get("turnsCompleted") or 0))
+            if cur.get("exitCode") is None and meta.get("exitCode") is not None:
+                cur["exitCode"] = meta["exitCode"]
+            if not cur.get("section") and meta.get("section"):
+                cur["section"] = meta["section"]
+            if meta.get("gatePending"):
+                cur["gatePending"] = True
     return out
+
+
+def _chat_parse_window(path: str, start: int, length: int, drop_partial: bool):
+    """Parse [start, start+length) of a JSONL into [(byte_offset, row)].
+
+    drop_partial skips the first line when `start` landed mid-row (true for a
+    tail read, false when start is a known row boundary)."""
+    if length <= 0:
+        return []
+    try:
+        with open(path, "rb") as f:
+            f.seek(start)
+            chunk = f.read(length)
+    except OSError:
+        return []
+    if drop_partial:
+        nl = chunk.find(b"\n")
+        if nl == -1:
+            return []
+        start += nl + 1
+        chunk = chunk[nl + 1:]
+    out = []
+    pos = start
+    for raw in chunk.split(b"\n"):
+        here = pos
+        pos += len(raw) + 1
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            out.append((here, len(raw), json.loads(raw.decode("utf-8", "replace"))))
+        except Exception:
+            continue
+    return out
+
+
+def _chat_rows_for_run(path: str, run_id: str):
+    """Every row of one run, read from the run's recorded byte span instead of
+    from the whole file. Falls back to a full read when the run predates the
+    index (it cannot, in practice - the index is built from byte zero - but a
+    missing span must never mean a silently empty transcript)."""
+    idx = _chat_index(path)
+    with idx.lock:
+        span = idx.run_spans.get(run_id)
+        span = list(span) if span else None
+    if span is None:
+        return [r for r in _read_jsonl_rows(path) if r.get("runId") == run_id]
+    rows = _chat_parse_window(path, span[0], span[1] - span[0], False)
+    return [rec for _off, _ln, rec in rows if rec.get("runId") == run_id]
+
+
+def _chat_rows_tail(path: str, max_rows: int, max_bytes: int):
+    """Newest-tail slice of a whole transcript WITHOUT parsing the whole file.
+
+    Same contract as ChatHandler._chat_tail_budget - and the same load-bearing
+    exception: user-authored rows older than the cutoff are preserved anyway,
+    because the drawer replays past `[decision:<id>]` messages to keep answered
+    gate cards answered, and dropping one resurrects its gate as unanswered.
+    Here they come from the index's recorded offsets rather than from having
+    read every byte. Returns (rows, omitted_count)."""
+    idx = _chat_index(path)
+    with idx.lock:
+        total = idx.rows
+        size = idx.offset
+        spans = list(idx.preserved_spans)
+    if total <= 200:
+        return _read_jsonl_rows(path), 0
+    # Read a byte window generous enough to cover the row budget, then trim.
+    window = min(size, max_bytes + (2 << 20))
+    tail = _chat_parse_window(path, size - window, window, window < size)
+    keep = []
+    size_acc = 0
+    for off, ln, rec in reversed(tail):
+        if len(keep) >= max_rows or size_acc > max_bytes:
+            break
+        size_acc += ln
+        keep.append((off, rec))
+    keep.reverse()
+    if len(keep) >= total:
+        return [rec for _off, rec in keep], 0
+    cutoff_off = keep[0][0] if keep else size
+    preserved = []
+    for off, ln in spans:
+        if off >= cutoff_off:
+            break                                   # spans are in file order
+        got = _chat_parse_window(path, off, ln, False)
+        if got:
+            preserved.append(got[0][2])
+    out = preserved + [rec for _off, rec in keep]
+    return out, max(0, total - len(out))
+
+
+# ── Transcript full-text search ────────────────────────────────────────────
+# Backs GET /__chat_search - the "Agent chats" tab of the canvas search
+# palette, which finds any text the user or an agent ever wrote, across every
+# run of the project.
+#
+# Transcripts are the biggest files the daemon owns (suss-cal's
+# editor/chat.jsonl is 356 MB), so json.loads-ing them is not on the table: a
+# full parse of that one file measures ~1.1s, and the palette issues a query
+# per keystroke. This scans BYTES instead and parses only the lines that can
+# possibly match:
+#   1. Pick ONE prefilter token from the query - the longest run of characters
+#      that survives JSON encoding unchanged. A token carrying a quote or a
+#      backslash is stored ESCAPED in the file, so scanning for it raw would
+#      silently find nothing; the full query is confirmed later anyway.
+#   2. Walk the file BACKWARDS in windows, so the newest conversations answer
+#      first and a common word stops long before byte zero. bytes.find is
+#      memchr-fast: on that 356 MB file, a token that is not there anywhere
+#      (the whole-file worst case) measured 434ms; a token that is, 19ms.
+#   3. json.loads ONLY the lines the token landed in, then confirm the FULL
+#      query against the row's extracted human text - which drops the hits
+#      where the token matched an id, a base64 blob, or a neighbouring field.
+_CHAT_SEARCH_BLOCK    = 4 << 20     # bytes per backwards window
+_CHAT_SEARCH_BUDGET   = 4.0         # seconds; over budget answers partial
+_CHAT_SEARCH_MAX_LINE = 2 << 20     # skip absurd rows (inlined media payloads)
+_CHAT_SEARCH_MAX_TEXT = 400_000     # chars of one row we bother matching in
+_CHAT_SEARCH_SNIPPET  = 200         # chars of context around the hit
+
+
+def _chat_search_token(q: str) -> str:
+    """The substring of `q` safe to scan for at the byte level: the longest run
+    of characters json.dumps writes through unchanged. Everything else (quotes,
+    backslashes, newlines, tabs) is escaped on disk and would never match."""
+    best = ""
+    cur = ""
+    for ch in q:
+        if ch in "\"\\" or ord(ch) < 0x20:
+            if len(cur) > len(best):
+                best = cur
+            cur = ""
+        else:
+            cur += ch
+    if len(cur) > len(best):
+        best = cur
+    return best.strip()
+
+
+def _chat_search_row_text(rec):
+    """(role, label, text) for one transcript row - the human-readable part a
+    search should look at - or None for rows that are pure machinery (usage
+    counters, SDK status chatter, lifecycle markers).
+
+    `toolresult` is its own role rather than part of `tool`: a tool CALL is a
+    short line of intent (which file, which command) and belongs in a default
+    search, while its OUTPUT is a file dump that would otherwise drown every
+    query. The endpoint filters on that split - each role has its own switch;
+    see `skip_roles` in _chat_search."""
+    t = rec.get("type")
+    d = rec.get("data")
+    if not isinstance(d, dict):
+        d = {}
+    if t == "user_message":
+        return ("you", "You", d.get("text") or "")
+    if t == "tool_answer":
+        c = d.get("content")
+        return ("you", "You · answer",
+                c if isinstance(c, str) else json.dumps(c, ensure_ascii=False))
+    if t != "agent":
+        return None
+    dt = d.get("type")
+    if dt == "text_delta":
+        return ("assistant", "Agent", d.get("delta") or "")
+    if dt == "thinking_delta":
+        return ("thinking", "Thinking", d.get("delta") or "")
+    if dt == "compact":
+        return ("summary", "Compacted summary", d.get("summary") or "")
+    if dt == "tool_use":
+        inp = d.get("input")
+        if isinstance(inp, dict):
+            body = inp.get("prompt") or inp.get("text") or inp.get("command")
+            if not isinstance(body, str):
+                body = json.dumps(inp, ensure_ascii=False)
+        else:
+            body = "" if inp is None else str(inp)
+        return ("tool", "Tool · " + str(d.get("name") or "tool"), body)
+    if dt == "tool_result":
+        # _normalize_frame flattens content to a string; raw pass-through
+        # frames still carry the list-of-parts shape. Handle both.
+        parts = d.get("content")
+        if isinstance(parts, str):
+            body = parts
+        elif isinstance(parts, list):
+            body = "".join(p.get("text") or "" for p in parts
+                           if isinstance(p, dict) and p.get("type") == "text")
+        else:
+            body = ""
+        return ("toolresult", "Tool result", body)
+    if dt == "status":
+        r = d.get("result")
+        return ("assistant", "Result", str(r)) if r else None
+    return None
+
+
+def _chat_search_snippet(text: str, idx: int, qlen: int) -> str:
+    """One line of context around the hit, whitespace collapsed, ellipsised."""
+    half = max(12, (_CHAT_SEARCH_SNIPPET - qlen) // 2)
+    s = max(0, idx - half)
+    e = min(len(text), idx + qlen + half)
+    out = re.sub(r"\s+", " ", text[s:e]).strip()
+    if s > 0:
+        out = "…" + out
+    if e < len(text):
+        out = out + "…"
+    return out
+
+
+def _chat_search_scan(path: str, token: str, query_low: str, max_hits: int,
+                      deadline: float, skip_roles=()):
+    """Backwards byte scan of one transcript.
+
+    Returns ([hit, …], truncated, scanned_bytes) with hits NEWEST FIRST.
+    `truncated` is True when we stopped on the hit cap or the time budget with
+    bytes still unread - i.e. older matches may exist that this answer omits.
+    `skip_roles` drops matched rows by role BEFORE they count against the cap,
+    so excluding tool output buys the query depth rather than just hiding rows."""
+    if max_hits <= 0:
+        return [], True, 0
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return [], False, 0
+    tok = token.lower().encode("utf-8")
+    if not tok:
+        return [], False, 0
+    qlen = len(query_low)
+    hits = []
+    # A turn's closing `status.result` repeats the text the assistant already
+    # streamed as text_delta, so the same sentence would otherwise land twice
+    # under two labels. Collapse on (run, snippet).
+    seen = set()
+    scanned = 0
+    end = size
+    try:
+        f = open(path, "rb")
+    except OSError:
+        return [], False, 0
+    with f:
+        while end > 0:
+            if len(hits) >= max_hits or time.monotonic() > deadline:
+                break
+            start = max(0, end - _CHAT_SEARCH_BLOCK)
+            if start > 0:
+                # Align the window to a row boundary so every line we hand to
+                # json.loads is whole. A row longer than one window walks back
+                # a window at a time until its start comes into range.
+                f.seek(start)
+                f.readline()
+                start = f.tell()
+                if start >= end:
+                    end = max(0, end - _CHAT_SEARCH_BLOCK)
+                    continue
+            f.seek(start)
+            chunk = f.read(end - start)
+            scanned += len(chunk)
+            end = start
+            low = chunk.lower()
+            # Row spans the token landed in, in file order; at most one per row.
+            spans = []
+            pos = low.find(tok)
+            while pos != -1:
+                ls = low.rfind(b"\n", 0, pos) + 1
+                le = low.find(b"\n", pos)
+                if le == -1:
+                    le = len(low)
+                spans.append((ls, le))
+                pos = low.find(tok, le + 1)
+            for ls, le in reversed(spans):          # newest first within window
+                if le - ls > _CHAT_SEARCH_MAX_LINE:
+                    continue
+                try:
+                    rec = json.loads(chunk[ls:le].decode("utf-8", "replace"))
+                except Exception:
+                    continue
+                if not isinstance(rec, dict):
+                    continue
+                got = _chat_search_row_text(rec)
+                if not got:
+                    continue
+                role, label, text = got
+                if role in skip_roles:
+                    continue
+                if not text:
+                    continue
+                if len(text) > _CHAT_SEARCH_MAX_TEXT:
+                    text = text[:_CHAT_SEARCH_MAX_TEXT]
+                at = text.lower().find(query_low)
+                if at < 0:
+                    continue                        # token hit, full query did not
+                snippet = _chat_search_snippet(text, at, qlen)
+                dedupe = (rec.get("runId") or "", snippet)
+                if dedupe in seen:
+                    continue
+                seen.add(dedupe)
+                hits.append({
+                    "runId":   rec.get("runId") or "",
+                    "title":   rec.get("title") or "",
+                    "kind":    rec.get("kind") or "freeform",
+                    "agentId": rec.get("agentId") or "claude",
+                    "seq":     rec.get("seq"),
+                    "ts":      rec.get("ts") or 0,
+                    "role":    role,
+                    "label":   label,
+                    "snippet": snippet,
+                })
+                if len(hits) >= max_hits:
+                    break
+    return hits, end > 0, scanned
 
 
 def _rehydrate_system_run(run_id: str):
@@ -9918,6 +11231,7 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
         # routing rules mid-thread.
         permission_mode = None
         tier = first.get("tier")   # stamped on every persisted line
+        guards = None
         prototype = None
         model = None
         chain = None
@@ -9928,17 +11242,28 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
             # every (re)spawn banner emits a `codex-session` status event,
             # and only the newest recorded session holds the full context
             # for `codex exec resume` (see _run_resume_codex).
-            if isinstance(data, dict) and data.get("sessionId") and (
-                    not session_id or agent_id == "codex"):
+            # A compact retires the session it summarised. Carrying that id
+            # across a daemon restart makes the next message --resume the
+            # conversation the summary replaced, which restores the whole
+            # pre-compact context and puts the thread straight back over the
+            # auto-compact threshold: it compacts again, forever. Drop it and
+            # let a session started AFTER the compact claim the slot.
+            if isinstance(data, dict) and data.get("type") == "compact":
+                session_id = None
+            if (isinstance(data, dict) and data.get("sessionId")
+                    and not data.get("stale")
+                    and (not session_id or agent_id == "codex")):
                 session_id = data["sessionId"]
             # Capture spawn parameters from the initial spawn event
-            if isinstance(data, dict) and data.get("label") == "spawned":
+            if isinstance(data, dict) and data.get("label") in ("spawned", "planner-dispatched"):
                 if data.get("permissionMode") and permission_mode is None:
                     permission_mode = data["permissionMode"]
                 if data.get("tier") and not tier:
                     tier = data["tier"]
                 if data.get("prototype") and prototype is None:
                     prototype = data["prototype"]
+                if isinstance(data.get("guards"), dict) and guards is None:
+                    guards = data["guards"]
                 if data.get("model") and model is None:
                     model = data["model"]
                 if data.get("chain") and chain is None:
@@ -9970,17 +11295,53 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
                 run_id=run_id, proc=None, agent_id=agent_id, branch=branch_slug,
                 kind=kind, title=title, project_id=project_id, project_root=project_root,
             )
+        # A rename lives in the sidecar, not in the transcript - apply it here
+        # so a rehydrated ghost carries the name the user gave it.
+        try:
+            _rn = _run_titles_load(_system_run_titles_path() if _scope == "system"
+                                   else _run_titles_path(project_root))
+            if _rn.get(run_id):
+                state.title = _rn[run_id]
+        except Exception:
+            pass
         state.session_id = session_id
         state.started_at = started_at
         state.updated_at = updated_at
         state.done = done
         state.exit_code = exit_code
         state.events = events
+        _gate_recompute(state)
+        for event in events:
+            data = event.get("data") or {}
+            run_jobs.reduce_job(state.jobs, data)
+            if data.get("executionProfile"):
+                state.execution_profile = data["executionProfile"]
+            if data.get("type") == "status" and data.get("model") and state.execution_profile:
+                state.execution_profile["resolvedModel"] = data["model"]
+            if data.get("parentRunId"):
+                state.parent_run_id = data["parentRunId"]
+            if data.get("label") == "spawned" and isinstance(data.get("split"), dict):
+                state.split = data["split"]
+            if data.get("label") == "spawned" and isinstance(data.get("splitCheck"), dict):
+                state.split_check = data["splitCheck"]
+        for job in state.jobs.values():
+            if job.get("status") not in run_jobs.TERMINAL:
+                job["status"] = "unknown"
         # Fall back to the daemon default if the spawn event predates the
         # permissionMode field (old runs from before that field landed).
         state.permission_mode = permission_mode or AGENT_DEFS.get(agent_id, {}).get("permission_default")
         state.tier = tier or None
         state.prototype = prototype or None
+        # Runs spawned before the toggles existed carry no `guards` - they
+        # rehydrate as None, which _normalize_chat_guards turns back into
+        # "both gates on", i.e. exactly what they were spawned with.
+        state.guards = guards or None
+        # Follow-ups queued before the daemon restarted are still owed to this
+        # thread - bring them back so a restart is not a silent drop.
+        try:
+            _queue_restore(state)
+        except Exception:
+            pass
         state.model = model or None
         state.chain_rest = list(chain) if chain else []
         # A daemon restart mid build-chain loses the auto-dispatch of the
@@ -10054,6 +11415,60 @@ def _chat_jsonl_read_branch(project_root: str, branch: str) -> list:
     return _read_jsonl_rows(_chat_jsonl_path(project_root, branch))
 
 
+# ── gate-card pendency ────────────────────────────────────────────────────
+# "This thread is waiting on YOU to pick something." An agent asks by emitting
+# one of the gate markups below; the ask is answered by the next user_message
+# or tool_answer on the run. Two consumers need the answer: the compact guard
+# (compacting mid-gate orphans the pick) and the runs list (the ONLY thing that
+# earns a coloured dot on a row - see LeftChatRunsList).
+#
+# Tracked INCREMENTALLY rather than by re-scanning the event log: /__runs is
+# polled every couple of seconds by several pollers at once, and a backwards
+# scan of a marathon thread's events per poll per run is exactly the cost this
+# file spent a whole index rewrite getting rid of. Feed one event at a time,
+# keep a 64-char tail so a tag split across two text_deltas still matches.
+_GATE_MARKUP_RE = re.compile(r"<\s*(decision-request|direction-options|question-form)\b")
+_GATE_TAIL_KEEP = 64
+
+
+def _gate_feed(gate: dict, ev_type: str, data) -> None:
+    """Fold ONE persisted/streamed event into a {pending, tail} gate tracker.
+    Mutates `gate` in place. Safe on any shape - unknown events are ignored."""
+    d = data if isinstance(data, dict) else {}
+    # The user answered (or a compact retired the transcript the card lived in).
+    if ev_type in ("user_message", "tool_answer") or d.get("type") == "compact":
+        gate["pending"] = False
+        gate["tail"] = ""
+        return
+    if ev_type != "agent":
+        return
+    if d.get("type") == "text_delta":
+        chunk = d.get("delta") or ""
+    elif d.get("type") == "status" and d.get("result"):
+        chunk = str(d.get("result"))
+    else:
+        return
+    if not chunk:
+        return
+    buf = (gate.get("tail") or "") + chunk
+    if _GATE_MARKUP_RE.search(buf):
+        gate["pending"] = True
+        gate["tail"] = ""
+    else:
+        gate["tail"] = buf[-_GATE_TAIL_KEEP:]
+
+
+def _gate_recompute(state) -> None:
+    """Rebuild a run's gate tracker from its whole event log. For RunStates
+    that get their events assigned wholesale (rehydration after a daemon
+    restart) rather than through append()."""
+    gate = {"pending": False, "tail": ""}
+    for ev in (state.events or []):
+        _gate_feed(gate, ev.get("type"), ev.get("data"))
+    state.gate_pending = bool(gate["pending"])
+    state.gate_tail = gate["tail"]
+
+
 class RunState:
     """One spawned agent. Holds the subprocess, the append-only event log, and
     a set of `threading.Event`s waiters block on. SSE handlers register an
@@ -10100,6 +11515,11 @@ class RunState:
                  # just polls "running" forever - so the stall watchdog needs
                  # a way back up the tree to tell someone who can act.
                  "parent_run_id",
+                 # the QA check a dispatched planner run is (see
+                 # _cancel_qa_checks); None for every other run. qa_cancelled:
+                 # it was stopped because the user replied, so its
+                 # planner-done says that instead of a partial verdict.
+                 "qa_check", "qa_cancelled",
                  # intentional-termination flag ("completed-orchestrator",
                  # "user-stop", or None for natural exit). Lets finish() report
                  # SIGTERM-after-success as exit 0 instead of "failed".
@@ -10119,6 +11539,11 @@ class RunState:
                  # initialise, "scoped" = cheap iterate); None for node-agent /
                  # system runs. Surfaced to the UI for the thread-kind badge.
                  "tier",
+                 # per-thread check toggles from the chat's Checks dropdown
+                 # ({visual, dsGuard}); None = defaults. __init__ sets it, so it
+                 # MUST have a slot - without one every RunState construction
+                 # raises AttributeError and no run can spawn at all.
+                 "guards",
                  # prototype slug the chat's scoped preamble was built for
                  # (body.prototype at spawn, falling back to branch). Stored so
                  # /resume can rebuild the SAME system prompt - a different
@@ -10139,7 +11564,46 @@ class RunState:
                  # Guard so the auto-compact trigger fires at most once per
                  # crossing (set when a background compact is scheduled,
                  # cleared when the compact lands or fails).
-                 "_compact_inflight")
+                 "_compact_inflight",
+                 # Bumped by every compact. The stdout drain loop captures it
+                 # when it starts, so frames still in flight from the session a
+                 # compact just killed are recognisable as stale. They carry
+                 # the OLD context size and the OLD session id, and folding
+                 # either one back in re-arms the trigger (a second compact
+                 # then summarises the first summary) or resurrects the
+                 # bloated session on the next resume.
+                 "_compact_epoch",
+                 # A summary that arrived while a turn was in flight, parked
+                 # until the turn ends. Applying it there and then would kill
+                 # the agent mid-tool-call.
+                 "_compact_pending",
+                 # Follow-ups typed while a turn was in flight, delivered one
+                 # per turn boundary by _queue_drain_maybe, plus its re-entry
+                 # guard. Daemon-owned so the queue drains whether or not the
+                 # chat drawer is open.
+                 "msg_queue", "_queue_draining", "jobs", "execution_profile",
+                 # Plan-mode split group this thread belongs to (see
+                 # plan_split.py): {id, parent, index, items[{title, owns}]}.
+                 # None for every other run. NOT parent_run_id on purpose -
+                 # that would make the planning thread's Stop kill its splits.
+                 "split",
+                 # {group, parent} on the plan-check thread a settled split
+                 # group opens; None elsewhere. Drives its runs-list badge.
+                 "split_check",
+                 # "waiting on YOU to pick a card" - see _gate_feed. Folded
+                 # forward one event at a time by append(); rebuilt wholesale
+                 # by _gate_recompute for rehydrated runs. gate_tail is the
+                 # 64-char carry so a tag split across two text_deltas matches.
+                 "gate_pending", "gate_tail",
+                 # Clear while a _drain_stdout is running, set once its exit
+                 # handling (finish, history commit, hooks) is over. /resume
+                 # waits on it: respawning while the old drain is still in its
+                 # finally-block lets that block finish() the NEW process.
+                 "exit_settled",
+                 # Set by /resume; the drain logs the first turn's cache read
+                 # vs write after a respawn, then clears it. A miss there means
+                 # the resume did not rebuild a byte-identical prefix.
+                 "_resume_probe")
 
     def __init__(self, run_id, proc, agent_id, branch, kind, title, project_id=None, project_root=None):
         self.run_id = run_id
@@ -10152,14 +11616,31 @@ class RunState:
         # node-agent / system runs (their badge comes from `kind`). Surfaced to
         # the UI so the chat header can badge Setup vs Subagent vs (scoped=none).
         self.tier = None
+        self.guards = None   # per-thread check toggles (visual / dsGuard)
+        # Follow-ups typed while a turn was in flight, delivered one per turn
+        # boundary by _queue_drain_maybe. Daemon-owned so they land whether or
+        # not the chat drawer is open. Entries: {id, text, send?, meta?, at}.
+        self.msg_queue = []
+        self._queue_draining = False
+        self.split = None   # plan-mode split group; set by _run_create
+        self.split_check = None   # set on a plan-check thread by _run_create
         # prototype slug the scoped preamble was built for; set by _run_create.
         self.prototype = None
         # Chosen default model (Settings > Agent model); set by _run_create.
         self.model = None
+        self.jobs = {}
+        self.execution_profile = None
+        self.gate_pending = False
+        self.gate_tail = ""
+        self.exit_settled = threading.Event()
+        self.exit_settled.set()     # no drain yet; _drain_stdout clears it
+        self._resume_probe = False
         # Live context tokens (see __slots__ comment). Lazily backfilled from
         # the event log for rehydrated runs by _run_context_tokens().
         self.context_tokens = None
         self._compact_inflight = False
+        self._compact_epoch = 0
+        self._compact_pending = None
         self.title = title
         # Phase 6 - remember which project this run was spawned in so /resume
         # can rebuild the same env + cwd, and so /__runs can group by project.
@@ -10229,29 +11710,23 @@ class RunState:
         # auto-chain) so a stalled child can be reported UP to whoever is
         # waiting on it. None for a run nobody dispatched.
         self.parent_run_id = None
+        # Which QA check a dispatched planner run IS (run_jobs.qa_check), so
+        # a message to its parent can cancel it. None for everything else.
+        self.qa_check = None
+        self.qa_cancelled = False
         # Wake the stall watchdog - it sleeps on this while the daemon is idle
         # rather than polling an empty registry forever.
         STALL_WAKE.set()
 
     @property
+    def process_running(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    @property
     def is_live(self) -> bool:
-        """True iff a driveable subprocess is attached - i.e. we can write a
-        frame to its stdin or signal it right now.
-
-        The load-bearing case is `self.proc is None`: runs rehydrated from
-        history after a daemon restart are "ghost" RunStates (see _rehydrate,
-        proc=None) - their original subprocess died with the old daemon. Any
-        handler that touches `self.proc.<x>` MUST gate on this first, or it
-        crashes with "'NoneType' has no attribute 'stdin'/'terminate'/…". The
-        recovery path for a non-live run is /resume, which re-spawns the CLI
-        with --resume <session_id> and rebinds self.proc.
-
-        Note this is the SAME check the stdin handlers need (proc present AND
-        its stdin pipe open), so they share one source of truth - but it is
-        also correct for terminate()/signal handlers, which only require the
-        proc to exist. A closed stdin on a still-running proc is rare (we keep
-        it open for follow-ups) but counts as not-live for our purposes: there
-        is no way to drive the agent without it."""
+        """Whether the attached runtime accepts messages. Use process_running
+        for signal/stop decisions: exec/run processes can live without stdin.
+        """
         proc = self.proc
         if proc is None or proc.stdin is None or proc.stdin.closed:
             return False
@@ -10266,10 +11741,29 @@ class RunState:
         return proc.poll() is None
 
     def append(self, ev_type: str, data) -> None:
+        derived = None
         with self.lock:
+            if ev_type == "agent" and isinstance(data, dict) and not data.get("stale"):
+                derived = run_jobs.observe(self.jobs, data, self.agent_id)
+                run_jobs.reduce_job(self.jobs, data)
+                if data.get("type") == "job":
+                    key = data.get("jobId") or data.get("taskId") or data.get("toolUseId")
+                    data = dict(self.jobs.get(key, data))
+                if data.get("type") == "status" and data.get("model") and self.execution_profile:
+                    self.execution_profile["resolvedModel"] = data["model"]
+            if isinstance(data, dict) and data.get("label") in ("spawned", "planner-dispatched"):
+                if not self.execution_profile:
+                    self.execution_profile = model_routing.resolve("inherit", self.agent_id, self.model, role=self.kind)
+                self.execution_profile["driver"] = getattr(self.proc, "mode", "stream-json" if self.agent_id == "claude" else "exec" if self.agent_id == "codex" else "run")
+                data = {**data, "executionProfile": self.execution_profile, "parentRunId": self.parent_run_id}
             seq = len(self.events)
             self.events.append({"seq": seq, "type": ev_type, "data": data})
             self.updated_at = time.time()
+            # Keep "is this thread waiting on a card pick" current. Cheap fold,
+            # done here so nothing downstream ever has to rescan the log.
+            gate = {"pending": self.gate_pending, "tail": self.gate_tail}
+            _gate_feed(gate, ev_type, data)
+            self.gate_pending, self.gate_tail = bool(gate["pending"]), gate["tail"]
             waiters = list(self.waiters)
         # Phase 5a - also persist the event to the per-branch chat JSONL so the
         # conversation survives daemon restarts. Fire-and-forget; a write
@@ -10280,6 +11774,10 @@ class RunState:
             pass
         for w in waiters:
             w.set()
+        if derived:
+            self.append("agent", derived)
+        if ev_type == "agent" and isinstance(data, dict) and data.get("type") == "job" and data.get("status") in run_jobs.TERMINAL:
+            _settle_run_jobs(self)
 
     def finish(self, exit_code) -> None:
         with self.lock:
@@ -11140,6 +12638,9 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
 
     if ftype == "system":
         sub = frame.get("subtype")
+        job = run_jobs.claude_job(frame) if agent_id == "claude" else None
+        if job:
+            out.append(job)
         if sub == "init":
             out.append({
                 "type": "status",
@@ -11176,6 +12677,9 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
         # no user-actionable content, and raw JSON must not leak into chat.
         return out
 
+    if ftype == "woven_event":
+        return [frame["event"]]
+
     if ftype == "assistant":
         msg = frame.get("message") or {}
         for part in (msg.get("content") or []):
@@ -11204,6 +12708,10 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
             if frame.get("parent_tool_use_id"):
                 ev["sidechain"] = True
             out.append(ev)
+        for event in out:
+            if frame.get("parent_tool_use_id"):
+                event["parentToolUseId"] = frame["parent_tool_use_id"]
+                event["sidechain"] = True
         return out
 
     if ftype == "user":
@@ -11268,6 +12776,9 @@ def _normalize_frame(agent_id: str, frame: dict) -> list:
             # subtype:"success" with the failure text in `result`. See
             # _turn_result_failure() - the node completion hook reads both.
             "isError": frame.get("is_error"),
+            "origin": frame.get("origin"),
+            "parentToolUseId": frame.get("parent_tool_use_id"),
+            "sidechain": bool(frame.get("parent_tool_use_id")),
         })
         return out
 
@@ -11442,6 +12953,10 @@ def _fire_node_completion_hook(state, *, exit_code, error_detail=None, stopped=F
     """
     wf_node_id = getattr(state, "workflow_node_id", None)
     if not wf_node_id or not state.project_root: return
+    if exit_code == 0 and not stopped:
+        if _pending_run_jobs(state) or run_jobs.failed(state.jobs):
+            exit_code = 1
+            error_detail = "Required worker jobs are incomplete or failed; review their results before continuing"
     wf_path = os.path.join(state.project_root, "workflow", "workflow.json")
     if not os.path.isfile(wf_path): return
     # same lock as editor /__workflow + /status. Without it, the
@@ -11619,6 +13134,198 @@ def _kill_run_tree(state: "RunState", grace: float = 3.0) -> None:
                      name=f"run-{state.run_id}-reaper").start()
 
 
+def _pending_run_jobs(state):
+    with state.lock:
+        result = list(run_jobs.pending(state.jobs))
+    with RUNS_LOCK:
+        children = [s for s in RUNS.values() if s.parent_run_id == state.run_id
+                    and os.path.realpath(s.project_root) == os.path.realpath(state.project_root)
+                    and not s.done]
+    return result + [{"jobId": s.run_id, "source": "bridge", "status": "running"} for s in children]
+
+
+def _notify_bridge_parent(child, status):
+    with RUNS_LOCK:
+        parent = RUNS.get(child.parent_run_id)
+    if parent is None or os.path.realpath(parent.project_root) != os.path.realpath(child.project_root):
+        return
+    parent.append("agent", {"type": "job", "jobId": child.run_id, "source": "bridge",
+        "childRunId": child.run_id, "status": status, "description": child.title,
+        "profile": child.execution_profile, "required": True})
+
+
+def _settle_run_jobs(state):
+    """A parent's final response can precede its workers' final events."""
+    if not state.turn_done or state.done or state.stop_reason or _pending_run_jobs(state):
+        return
+    if state._compact_pending:
+        _compact_flush_pending(state)
+        if state.stop_reason:
+            return
+    is_planner = (state.kind or "").startswith("planner:")
+    if not is_planner and not state.workflow_node_id:
+        return
+    with state.lock:
+        last = next((e["data"] for e in reversed(state.events)
+            if isinstance(e.get("data"), dict) and e["data"].get("type") == "status"
+            and not e["data"].get("sidechain") and e["data"].get("label") in ("starting", "done", "error")), {})
+        if last.get("label") != "done" or getattr(state, "_node_completion_fired", False) or state.stop_reason:
+            return
+        failure = _turn_result_failure(last)
+        failed = bool(failure or run_jobs.failed(state.jobs))
+        state._node_completion_fired = bool(state.workflow_node_id)
+        state.stop_reason = "turn-failed" if failed else "completed-orchestrator"
+    try:
+        if state.workflow_node_id:
+            _fire_node_completion_hook(state, exit_code=1 if failed else 0,
+                error_detail=failure or ("Required worker jobs failed" if failed else None))
+    except Exception as error:
+        state.append("status", {"label": "node-status-update-failed", "detail": str(error)[:400]})
+    finally:
+        _kill_run_tree(state)
+
+
+def _stop_run_family(state):
+    """Stop logical child runs as well as native process-group descendants."""
+    with RUNS_LOCK:
+        runs = list(RUNS.values())
+    todo, seen = [state], set()
+    while todo:
+        current = todo.pop()
+        if current.run_id in seen:
+            continue
+        seen.add(current.run_id)
+        todo.extend(s for s in runs if s.parent_run_id == current.run_id
+                    and os.path.realpath(s.project_root) == os.path.realpath(state.project_root))
+        current.stop_reason = "user-stop"
+        helper_jobs.cancel(current.run_id)
+        for job in list(current.jobs.values()):
+            if job.get("source") == "native" and job.get("status") not in run_jobs.TERMINAL:
+                current.append("agent", {**job, "status": "stopped"})
+        _kill_run_tree(current)
+
+
+# A user message that reaches a run while one of its QA checks is running
+# cancels the check. The check grades the state the user is steering away
+# from: a foreground one holds the steer until it finishes, and either way it
+# hands the agent a stale verdict to act on. Probed on claude 2.1.260: a
+# `stop_task` control frame stops a FOREGROUND subagent too, its Agent call
+# returns "[Request interrupted by user for tool use]", and the message
+# written right after is read in the same beat.
+def _cancel_qa_checks(state) -> list:
+    """Stop every QA check (run_jobs.QA_CHECK_AGENTS) in flight on `state`
+    and return their names. The caller holds _PARK_LOCK and writes the user
+    frame next, so the stop always lands ahead of the message.
+      - claude: one `stop_task` control frame per task.
+      - codex app-server: interrupt the child thread's turn.
+      - planner children (codex / opencode reach visual-verifier through
+        /__dispatch_planner): stop the child run. Its planner-done then
+        carries _QA_CANCELLED_OUTPUT, the only channel into a codex exec /
+        opencode turn, which cannot take the message itself until it ends.
+    Each one is `waived`, so its stop never reads as a failed worker."""
+    with state.lock:
+        jobs = [dict(j) for j in state.jobs.values()
+                if j.get("qaCheck") and not j.get("waived") and j.get("source") == "native"
+                and j.get("status") not in run_jobs.TERMINAL]
+    proc, stopped = state.proc, []
+    for job in jobs:
+        task_id = job.get("jobId")
+        # Keyed by its tool use id until the runtime names the task: nothing
+        # to address a stop to yet.
+        if not task_id or task_id == job.get("toolUseId"):
+            continue
+        try:
+            if isinstance(proc, runtime_drivers.CodexDriver):
+                proc.interrupt_child(task_id)
+            elif state.agent_id == "claude" and not isinstance(proc, runtime_drivers.ProcessDriver):
+                proc.stdin.write((json.dumps({
+                    "type": "control_request", "request_id": uuid.uuid4().hex,
+                    "request": {"subtype": "stop_task", "task_id": task_id},
+                }) + "\n").encode("utf-8"))
+                proc.stdin.flush()
+            else:
+                continue
+        except Exception as e:
+            print(f"[qa-cancel] run={state.run_id} task={task_id}: {e}", flush=True)
+            continue
+        state.append("agent", {"type": "job", "jobId": task_id,
+                               "toolUseId": job.get("toolUseId"), "waived": True})
+        stopped.append(job["qaCheck"])
+    with RUNS_LOCK:
+        children = [s for s in RUNS.values() if s.parent_run_id == state.run_id
+                    and getattr(s, "qa_check", None) and not s.done
+                    and os.path.realpath(s.project_root) == os.path.realpath(state.project_root)]
+    for child in children:
+        state.append("agent", {"type": "job", "jobId": child.run_id, "source": "bridge",
+                               "childRunId": child.run_id, "waived": True})
+        child.qa_cancelled = True
+        _stop_run_family(child)
+        stopped.append(child.qa_check)
+    if stopped:
+        names = " and ".join(sorted(set(stopped)))
+        state.append("agent", {"type": "status",
+                               "label": f"QA cancelled · {names} · you replied mid-check"})
+    return stopped
+
+
+def _qa_cancel_note(checks) -> str:
+    """Prefix for the user frame that follows a cancel, so the agent reads the
+    interrupted check as the user's doing rather than re-running it at once
+    against the state the user just steered away from. The thread echo keeps
+    the user's own words."""
+    names = sorted(set(checks))
+    what = " and ".join(names) + (" check was" if len(names) == 1 else " checks were")
+    return (f"[Woven: your {what} cancelled because this message arrived while it was running. "
+            "Act on this message first and do not re-run the cancelled check against the earlier "
+            "state; this thread's checks apply again to the result once that work is done.]\n\n")
+
+
+# What a cancelled planner-dispatched check returns as its `output`. Worded
+# for both arrivals: a steered runtime already has the message in its turn,
+# a codex exec / opencode turn only gets it once the turn ends.
+_QA_CANCELLED_OUTPUT = (
+    "CANCELLED, NO VERDICT: the user sent a new message while this check was running, so "
+    "Woven stopped it. Do not re-run it now and do not report the work as verified. Turn to "
+    "the user's message: if it is already in front of you, act on it; otherwise end your turn "
+    "with one line saying the check was cancelled, and their message arrives next. This "
+    "thread's checks apply again once that work is done.")
+
+
+def _run_steerable(state) -> bool:
+    """Can a message reach this run mid-turn (claude stream-json, codex
+    app-server)? Same answer as the composer's runSteerable. The ones that
+    cannot (codex exec, opencode) cancel a running check at enqueue time."""
+    if isinstance(state.proc, runtime_drivers.ProcessDriver):
+        return bool(state.proc.steerable)
+    return bool(AGENT_DEFS.get(state.agent_id, {}).get("steerable"))
+
+
+def _planner_done_payload(state, run_id, planner_type, agent_id) -> dict:
+    """The final planner-done event: every top-level text_delta joined as the
+    planner's reply, or the cancel notice when the user's reply stopped it
+    (its partial narration is not a verdict and must not read as one)."""
+    with state.lock:
+        events_snapshot = list(state.events)
+    chunks = []
+    for ev in events_snapshot:
+        if ev["type"] != "agent":
+            continue
+        d = ev.get("data") or {}
+        if d.get("type") == "text_delta" and not d.get("sidechain"):
+            chunks.append(d.get("delta") or "")
+    payload = {
+        "runId": run_id,
+        "type": planner_type,
+        "runtime": agent_id,
+        "exitCode": state.exit_code,
+        "output": "".join(chunks).strip(),
+        "error": None if state.exit_code in (None, 0) else f"exit {state.exit_code}",
+    }
+    if state.qa_cancelled:
+        payload.update(output=_QA_CANCELLED_OUTPUT, cancelled=True, error=None)
+    return payload
+
+
 def _context_tokens_from_usage(u: dict):
     """Live context size of one API call, from a normalised `usage` event.
     Two shapes flow through the pipeline:
@@ -11655,6 +13362,33 @@ def _last_compact_index(events: list) -> int:
     return -1
 
 
+def _session_retired_by_compact(state: "RunState") -> bool:
+    """True when the run's CURRENT session id belongs to a session a compact
+    retired. Scanning backwards, a compact marker reached before the frame
+    that announced this session means the session predates the compact: the
+    conversation it holds is the very one the summary replaced, so resuming
+    it silently undoes the compact and re-bills the whole prefix.
+
+    A retired id keeps coming back because more than one path restores it: a
+    late frame from the killed process announces it again, and a rehydrated
+    ghost reads it off an old line after a daemon restart. Rather than patch
+    each source, every resume asks this before it decides to --resume."""
+    sid = getattr(state, "session_id", None)
+    if not sid:
+        return False
+    with state.lock:
+        events = list(state.events)
+    for i in range(len(events) - 1, -1, -1):
+        d = events[i].get("data") or {}
+        if not isinstance(d, dict):
+            continue
+        if d.get("type") == "compact":
+            return True
+        if d.get("sessionId") == sid and not d.get("stale"):
+            return False
+    return False
+
+
 def _run_context_tokens(state: "RunState"):
     """Live context tokens for a run, lazily backfilled from the event log
     (rehydrated ghosts never went through _drain_stdout's capture). Scans
@@ -11671,7 +13405,7 @@ def _run_context_tokens(state: "RunState"):
         d = ev.get("data") or {}
         if d.get("type") == "compact":
             return None
-        if d.get("type") == "usage" and not d.get("sidechain"):
+        if d.get("type") == "usage" and not d.get("sidechain") and not d.get("stale"):
             n = _context_tokens_from_usage(d.get("usage") or {})
             if n:
                 state.context_tokens = n
@@ -11679,68 +13413,76 @@ def _run_context_tokens(state: "RunState"):
     return None
 
 
-_GATE_MARKUP_RE = re.compile(r"<\s*(decision-request|direction-options|question-form)\b")
-
-
 def _compact_gate_pending(state: "RunState") -> bool:
     """True when the run's LAST agent output (since the user last replied)
     contains an interactive gate card - compacting now could orphan the pick.
-    Mirrors the client's gate parsing loosely; err on the side of True."""
-    with state.lock:
-        events = list(state.events)
-    tail = []
-    for i in range(len(events) - 1, -1, -1):
-        ev = events[i]
-        t = ev.get("type")
-        if t in ("user_message", "tool_answer"):
-            break
-        d = ev.get("data") or {}
-        if t == "agent":
-            if d.get("type") == "text_delta":
-                tail.append(d.get("delta") or "")
-            elif d.get("type") == "status" and d.get("result"):
-                tail.append(str(d.get("result")))
-            elif d.get("type") == "compact":
-                break
+    The tracker is maintained incrementally by RunState.append (and rebuilt by
+    _gate_recompute on rehydration); err on the side of True."""
     try:
-        return bool(_GATE_MARKUP_RE.search("".join(reversed(tail))))
+        return bool(getattr(state, "gate_pending", True))
     except Exception:
         return True
 
 
-_COMPACT_SUMMARY_SYSTEM = (
-    "You write HANDOFF SUMMARIES for coding-agent conversations. The summary "
-    "replaces the full transcript as the only memory a fresh agent process "
-    "gets, so completeness of STATE matters more than brevity of prose. "
-    "Capture, in this order: (1) the user's goal and any constraints they "
-    "stated; (2) every decision made and gate answered (with the chosen "
-    "option); (3) current state of the work - what is DONE and verified, "
-    "what is in progress, what failed and why; (4) exact file paths, ids, "
-    "commands, and URLs that later turns will need; (5) open items / next "
-    "steps. Write plain prose + bullet lists, no preamble, no meta-comments "
-    "about being a summary. Hard cap ~1500 words."
-)
+# A compact whose transcript is just the PREVIOUS summary is pure loss:
+# _transcript_from_run_events starts at the last compact marker, so the
+# summariser would be handed summary N-1 and everything it failed to restate
+# would be gone from the thread for good. Both the manual and the auto path
+# require real movement since the last handoff before they will compact again.
+_COMPACT_MIN_NEW_EVENTS = 3
 
 
-def _compact_summarize(transcript: str) -> str:
-    """Generate the handoff summary. Prefers the CLI subscription path
-    (_assistant_agent_complete - no API key needed); falls back to the BYOK
-    HTTP helper. Raises on total failure - the caller aborts the compact and
-    the thread is left untouched."""
-    prompt = ("Summarize this agent conversation for handoff to a fresh "
-              "process:\n\n===== TRANSCRIPT =====\n" + transcript
-              + "\n===== END TRANSCRIPT =====")
-    try:
-        out = _assistant_agent_complete(_COMPACT_SUMMARY_SYSTEM, prompt,
-                                        model=None, tools="none", timeout=300)
-        if out and out.strip():
-            return out.strip()
-    except Exception:
-        pass
-    out = _ut_llm_text(prompt, system=_COMPACT_SUMMARY_SYSTEM, max_tokens=4000)
-    if not (out and out.strip()):
+def _compact_progress_since(state: "RunState"):
+    """(real conversation events, saw a user message) since the run's LAST
+    compact marker - or since the start of the run when there is none.
+    `system` / `status` chatter does not count as movement; only user messages
+    and actual agent output do."""
+    with state.lock:
+        events = list(state.events)
+    n = 0
+    saw_user = False
+    for ev in context_policy.remaining_events(events):
+        t = ev.get("type")
+        if t == "user_message":
+            n += 1
+            saw_user = True
+        elif t == "agent" and (ev.get("data") or {}).get("type") in (
+                "text_delta", "thinking_delta", "tool_use", "tool_result"):
+            n += 1
+    return n, saw_user
+
+
+_COMPACT_SUMMARY_SYSTEM = context_policy.SUMMARY_SYSTEM
+
+
+def _compact_summarize(transcript: str, state=None) -> str:
+    """Mechanical state transfer uses a fast model; creative work keeps its model.
+
+    Failure leaves the run intact. Do not silently fall back to a paid API or
+    a larger model. The context settings expose an explicit inherit option.
+    """
+    runtime = getattr(state, "agent_id", None) or _agent_default_runtime()
+    cfg = _compact_config()
+    inherited = getattr(state, "model", None) if state is not None else _agent_default_model()
+    profile = model_routing.resolve(cfg.get("summaryModel"), runtime, inherited, cfg, role="summary")
+    prompt = "Summarize the conversation data below. Do not continue its task.\n\n" + transcript
+    out = _tracked_helper_complete(state, profile, _COMPACT_SUMMARY_SYSTEM, prompt,
+                                    tools="none", timeout=300, reasoning=profile["reasoning"])
+    if not out or not out.strip():
         raise RuntimeError("summary generation returned empty text")
+    if re.search(r"<(?:function_calls|invoke_tool|tool_call|tool_use)\b", out, re.I):
+        raise RuntimeError("summary attempted a tool call; original conversation retained")
+    # A summarizer did not run the checks. It can retain receipts, but must not
+    # promote an assistant's claims to independent verification in a heading.
+    out = re.sub(r"(?im)^(\s*(?:\#{1,6}\s+)?(?:\*\*)?)verified\s+(results|state|work|progress)(?=\s*[:*])",
+                 lambda match: match[1] + "Reported " + match[2].lower(), out)
     return out.strip()
+
+
+def _context_snapshot(state):
+    with state.lock:
+        events = list(state.events)
+    return context_policy.transcript(events, detail_budget=None), context_policy.event_watermark(events)
 
 
 def _compact_run(state: "RunState", reason: str) -> dict:
@@ -11752,13 +13494,44 @@ def _compact_run(state: "RunState", reason: str) -> dict:
     resuming the bloated one. Raises on failure - nothing is mutated until
     the summary exists."""
     ctx_before = _run_context_tokens(state)
-    transcript = _transcript_from_run_events(state)
+    transcript, covered_through = _context_snapshot(state)
     if not transcript:
         raise RuntimeError("nothing to compact - empty transcript")
-    summary = _compact_summarize(transcript)
-    # Summary in hand - now it's safe to mutate. Kill an idle live process
-    # (claude stream-json keeps it open between turns); codex/opencode are
-    # already dead between turns so this is a no-op for them.
+    if _compact_progress_since(state)[0] < _COMPACT_MIN_NEW_EVENTS:
+        raise RuntimeError("nothing new to compact since the last handoff summary")
+    summary = _compact_summarize(transcript, state)
+    return _compact_commit(state, summary, ctx_before, reason, covered_through)
+
+
+def _compact_commit(state: "RunState", summary: str, ctx_before, reason: str, covered_through=None) -> dict:
+    """Apply a summary that is already in hand, but ONLY at a safe moment.
+
+    Summarising takes tens of seconds, and the run does not stand still while
+    it happens: the user sends the next message, or a queued follow-up drains,
+    and by the time the summary lands the agent is mid-tool-call again. Killing
+    it there kills the tool with it - the child dies with 137, the run ends
+    143, and the thread simply stops on the user in the middle of working.
+    That is the one thing a compact must never do, so a summary that arrives
+    mid-turn is PARKED and applied at the next turn boundary instead
+    (_compact_flush_pending). The snapshot's coveredThrough boundary controls
+    replay, not the marker's eventual position. Events received while the
+    summary was being written remain available to the resumed session."""
+    if covered_through is None:
+        raise ValueError("compaction requires the snapshot coverage boundary")
+    _proc = state.proc
+    if (_proc is not None and _proc.poll() is None and not state.turn_done) or _pending_run_jobs(state):
+        state._compact_pending = {"summary": summary, "reason": reason,
+                                  "coveredThrough": covered_through,
+                                  "contextTokensBefore": ctx_before}
+        return {"ok": True, "deferred": True, "reason": reason,
+                "contextTokensBefore": ctx_before, "summaryChars": len(summary)}
+    # Safe to mutate. Everything the old session still has in flight is stale
+    # from this line on: the drain loop reading it compares its captured epoch
+    # against this one and stops folding its usage and session id back in.
+    _retired_session = state.session_id
+    state._compact_epoch += 1
+    # Kill an idle live process (claude stream-json keeps it open between
+    # turns); codex/opencode are already dead between turns so this is a no-op.
     if state.proc is not None and state.proc.poll() is None:
         state.stop_reason = "compacted"
         try:
@@ -11770,12 +13543,39 @@ def _compact_run(state: "RunState", reason: str) -> dict:
         "summary": summary,
         "reason": reason,
         "contextTokensBefore": ctx_before,
+        "retiredSessionId": _retired_session,
+        "coveredThrough": covered_through,
     })
     state.session_id = None
     state.context_tokens = None
-    return {"ok": True, "reason": reason,
+    return {"ok": True, "deferred": False, "reason": reason,
             "contextTokensBefore": ctx_before,
             "summaryChars": len(summary)}
+
+
+def _compact_flush_pending(state: "RunState") -> None:
+    """Turn-boundary hook: apply a summary _compact_commit parked mid-turn."""
+    pend = getattr(state, "_compact_pending", None)
+    if not pend:
+        return
+    state._compact_pending = None
+    try:
+        info = _compact_commit(state, pend["summary"], pend.get("contextTokensBefore"),
+                               pend.get("reason") or "auto", pend.get("coveredThrough"))
+        if info.get("deferred"):
+            state._compact_pending = pend      # still mid-turn, try again later
+            return
+        state.append("status", {
+            "label": "compacted",
+            "detail": (f"auto-compact at "
+                       f"{(info.get('contextTokensBefore') or 0)//1000}k context "
+                       f"tokens - next message starts a fresh session seeded "
+                       f"from the summary"),
+        })
+    except Exception as e:
+        state.append("status", {"label": "compact-failed", "detail": str(e)[:400]})
+    finally:
+        state._compact_inflight = False
 
 
 def _auto_compact_maybe(state: "RunState") -> None:
@@ -11786,6 +13586,8 @@ def _auto_compact_maybe(state: "RunState") -> None:
     try:
         if state.kind != "freeform" or state._compact_inflight:
             return
+        if state._compact_pending:
+            return
         cfg = _compact_config()
         if not cfg.get("autoCompact"):
             return
@@ -11794,11 +13596,27 @@ def _auto_compact_maybe(state: "RunState") -> None:
             return
         if _compact_gate_pending(state):
             return
+        # Only compact once the thread has actually moved on from the last one.
+        # Without this a single late usage frame from the session the previous
+        # compact killed re-inflates the gauge, the next `done` off that same
+        # dying stream re-arms the trigger, and the second compact summarises
+        # the first summary.
+        _new, _saw_user = _compact_progress_since(state)
+        if _new < _COMPACT_MIN_NEW_EVENTS or not _saw_user:
+            return
         state._compact_inflight = True
 
         def _bg():
+            _parked = False
             try:
                 info = _compact_run(state, "auto")
+                # The agent started another turn while we were summarising.
+                # The summary waits for the turn boundary rather than killing
+                # the tool call underneath it; _compact_flush_pending applies
+                # it and clears the in-flight flag.
+                if info.get("deferred"):
+                    _parked = True
+                    return
                 state.append("status", {
                     "label": "compacted",
                     "detail": (f"auto-compact at "
@@ -11810,7 +13628,8 @@ def _auto_compact_maybe(state: "RunState") -> None:
                 state.append("status", {"label": "compact-failed",
                                         "detail": str(e)[:400]})
             finally:
-                state._compact_inflight = False
+                if not _parked:
+                    state._compact_inflight = False
 
         threading.Thread(target=_bg, daemon=True,
                          name=f"compact-{state.run_id}").start()
@@ -11822,84 +13641,26 @@ def _auto_compact_maybe(state: "RunState") -> None:
 
 
 def _transcript_from_run_events(state: "RunState") -> str:
-    """Reconstruct a run's conversation as a plain-text transcript from its
-    event log. Used by the fake-resume paths (_run_resume_codex for the
-    argv-prompt single-shot agents, _run_resume_planner_claude for planner
-    runs whose sessions were never persisted): the rebuilt transcript is
-    prepended to the new user message so a fresh process can continue the
-    thread. Each event-log entry of type "agent" carries a normalised event
-    dict; we walk those and rebuild a transcript that reads naturally.
-
-    Compact-aware: when the run carries a `compact` marker, the transcript
-    starts from that marker's summary and only replays events AFTER it - the
-    pre-compact history is represented by the summary alone. This one seam
-    makes every resume path (codex, opencode, planner-claude, and the
-    fresh-seeded native-claude path) honour compaction automatically."""
-    lines = []
+    """Replay the checkpoint plus uncovered events, retaining user constraints."""
     with state.lock:
         events = list(state.events)
-    _ci = _last_compact_index(events)
-    if _ci >= 0:
-        _summary = ((events[_ci].get("data") or {}).get("summary") or "").strip()
-        if _summary:
-            lines.append("[SUMMARY OF EARLIER CONVERSATION - the turns before "
-                         "this point were compacted into the following summary]\n"
-                         + _summary)
-        events = events[_ci + 1:]
-    for ev in events:
-        t = ev.get("type")
-        d = ev.get("data") or {}
-        if t == "user_message":
-            u = (d.get("text") or "").strip()
-            if u:
-                lines.append(f"USER: {u}")
-        elif t == "agent":
-            dt = d.get("type")
-            if dt == "text_delta":
-                delta = (d.get("delta") or "").rstrip()
-                if delta:
-                    # Coalesce consecutive deltas into one ASSISTANT block.
-                    if lines and lines[-1].startswith("ASSISTANT: "):
-                        lines[-1] = lines[-1] + "\n" + delta
-                    else:
-                        lines.append(f"ASSISTANT: {delta}")
-            elif dt == "tool_use":
-                name = d.get("name") or "tool"
-                inp = d.get("input") or {}
-                cmd = inp.get("text") or inp.get("command") or json.dumps(inp)
-                lines.append(f"[TOOL CALL: {name}]\n{cmd}")
-            elif dt == "tool_result":
-                # _normalize_frame emits `content` as a FLAT STRING and the
-                # error flag as `isError`; only raw pass-through frames still
-                # carry the list-of-parts shape. Handle both - the list-only
-                # reading made every rebuilt transcript's tool results empty.
-                parts = d.get("content")
-                body_txt = ""
-                if isinstance(parts, str):
-                    body_txt = parts
-                elif isinstance(parts, list):
-                    for p in parts:
-                        if isinstance(p, dict) and p.get("type") == "text":
-                            body_txt += (p.get("text") or "")
-                err = " (error)" if (d.get("isError") or d.get("is_error")) else ""
-                # Truncate large tool results so the prompt doesn't blow up.
-                if len(body_txt) > 4000:
-                    body_txt = body_txt[:4000] + "\n…(truncated)"
-                lines.append(f"[TOOL RESULT{err}]\n{body_txt}")
-            # status / thinking_delta / usage - skip; transcript noise.
-    transcript = "\n\n".join(lines).strip()
-    # Cap the replayed transcript. Every stop+resume re-prepends the WHOLE
-    # history to a fresh prompt (no prompt cache), so repeated stops grow
-    # the prompt superlinearly. Keep the tail - the recent turns are what a
-    # follow-up needs.
-    _TRANSCRIPT_CAP = 80_000
-    if len(transcript) > _TRANSCRIPT_CAP:
-        transcript = ("(earlier turns omitted to keep the prompt bounded)\n\n"
-                      + transcript[-_TRANSCRIPT_CAP:])
-    return transcript
+    return context_policy.transcript(events)
 
 
 def _drain_stdout(state: "RunState") -> None:
+    """Thread target for every spawn: _drain_stdout_body plus the
+    exit_settled bracket /resume waits on (see RunState.__slots__)."""
+    settled = getattr(state, "exit_settled", None)
+    if settled is not None:
+        settled.clear()
+    try:
+        _drain_stdout_body(state)
+    finally:
+        if settled is not None:
+            settled.set()
+
+
+def _drain_stdout_body(state: "RunState") -> None:
     """Read newline-delimited JSON from the child, normalise, append events.
 
     Claude Code in `--input-format stream-json` mode keeps the agent process
@@ -11923,7 +13684,13 @@ def _drain_stdout(state: "RunState") -> None:
     # real content is on stderr; its stdout is empty so this loop just idles to
     # the finally-block). The parser's output shape matches _normalize_frame, so
     # the lifecycle code below is identical for every agent.
-    _oc_parser = _OpenCodeStreamParser() if state.agent_id == "opencode" else None
+    _oc_parser = _OpenCodeStreamParser() if state.agent_id == "opencode" and not isinstance(state.proc, runtime_drivers.ProcessDriver) else None
+    # Compact epoch this loop was started under. A compact that lands while
+    # this loop is still draining bumps the run's epoch, which retires
+    # everything the killed session has left in the pipe: its frames are still
+    # shown (the user watched them arrive) but they no longer set the session
+    # id, the context gauge, or the auto-compact trigger.
+    _epoch = state._compact_epoch
     try:
         for raw in state.proc.stdout:
             line = raw.decode("utf-8", errors="replace").strip()
@@ -11947,20 +13714,35 @@ def _drain_stdout(state: "RunState") -> None:
                 state.append("agent", {"type": "raw", "text": line})
                 continue
             _events = _oc_parser.feed(frame) if _oc_parser else _normalize_frame(state.agent_id, frame)
+            _stale = (state._compact_epoch != _epoch)
             for ev in _events:
+                # Frames the retired session was still holding when a compact
+                # killed it. They are shown (the user watched them stream) but
+                # flagged, so the client's context gauge - which scans back to
+                # the last compact marker - does not read the OLD session's
+                # size and report that the compact did nothing.
+                if _stale:
+                    ev["stale"] = True
                 state.append("agent", ev)
                 # Capture the session id off the first init frame - needed
                 # by /__run/:id/resume so post-Stop replies can rejoin the
                 # same Claude conversation instead of starting fresh.
-                if ev.get("type") == "status" and ev.get("sessionId") and not state.session_id:
+                if (ev.get("type") == "status" and ev.get("sessionId")
+                        and not state.session_id and not _stale):
                     state.session_id = ev["sessionId"]
                 # Track the live context size off every per-call usage event
                 # (claude + opencode emit them; codex has no token telemetry).
                 # Drives the chat context gauge + the auto-compact trigger.
-                if ev.get("type") == "usage" and not ev.get("sidechain"):
+                if ev.get("type") == "usage" and not ev.get("sidechain") and not _stale:
                     _ctx = _context_tokens_from_usage(ev.get("usage") or {})
                     if _ctx:
                         state.context_tokens = _ctx
+                    if getattr(state, "_resume_probe", False):
+                        state._resume_probe = False
+                        _u = ev.get("usage") or {}
+                        print(f"[resume-cache] {state.run_id} read="
+                              f"{_u.get('cache_read_input_tokens') or 0} write="
+                              f"{_u.get('cache_creation_input_tokens') or 0}", flush=True)
                 # Promote chat runs to "modifying" the first time the agent
                 # actually touches a file. The lock is scoped to runs that
                 # need it; ad-hoc chats (visualization, Q&A) don't freeze
@@ -11980,45 +13762,38 @@ def _drain_stdout(state: "RunState") -> None:
                         if _rel and not _rel.startswith("..") and _rel not in state.touched_paths:
                             state.touched_paths.append(_rel)
                 # Turn lifecycle tracking - distinct from process lifecycle.
-                if ev.get("type") == "status":
+                if ev.get("type") == "status" and not ev.get("sidechain"):
                     if ev.get("label") in ("done", "error"):
                         state.turn_done = True
                         state.turns_completed += 1
+                        # A summary parked mid-turn applies HERE - the one
+                        # moment nothing is in flight to kill.
+                        if not _stale:
+                            try:
+                                _compact_flush_pending(state)
+                            except Exception:
+                                pass
                         # Auto-compact policy check at the turn boundary -
                         # the only safe moment (mid-turn kill would lose the
                         # in-flight work). No-op unless enabled + threshold
                         # crossed + no gate card awaiting the user.
-                        if ev.get("label") == "done":
+                        if ev.get("label") == "done" and not _stale:
                             try:
                                 _auto_compact_maybe(state)
                             except Exception:
                                 pass
-                        # promote NORMAL -> SETUP for the badge when this
-                        # run starts a build. The decide phase runs on the normal
-                        # tier (untargeted default) and escalates; _drain_stdout
-                        # is the only run-aware place that sees its output. When a
-                        # turn's result carries a build marker (the Step -1
-                        # direction pick, the init-card, or the orchestration
-                        # roster gate), flip the persisted tier so the chat badges
-                        # "Setup". Promote only FROM normal, once - never touch
-                        # scoped / leaf / already-setup. Match the SPECIFIC
-                        # setup-thread card ids, never bare markup: the BUILD
-                        # thread also surfaces <direction-options> cards (the
-                        # art-direction plate gate, motion-studio concept
-                        # plates) and mentions DECISION_orchestrator-plan.json
-                        # in prose; matching bare "<direction-options" /
-                        # "orchestrator-plan" flipped build threads to setup,
-                        # and _run_resume then rebuilt them on the setup
-                        # preamble for good (citylife/teamfantasy, 2026-07).
-                        if (ev.get("label") == "done"
-                                and getattr(state, "tier", None) == "normal"):
-                            _res = ev.get("result") or ""
-                            if ("<init-card" in _res
-                                    or 'id="prototype-direction"' in _res
-                                    or "id='prototype-direction'" in _res
-                                    or 'id="orchestrator-plan"' in _res
-                                    or "id='orchestrator-plan'" in _res):
-                                state.tier = "setup"
+                        # Hand the agent the next follow-up the user queued
+                        # while it was working. Same boundary as auto-compact
+                        # and for the same reason: mid-turn is never safe.
+                        try:
+                            _queue_drain_maybe(state, mode="stdin")
+                        except Exception:
+                            pass
+                        # Last split thread of a plan to finish: queue the
+                        # plan check on the planning thread.
+                        if not _stale:
+                            _split_join_maybe(state)
+                        # Build cards do not change the spawn tier on resume.
                         # verify shaders at TURN-done, not just process-exit.
                         # Freeform/chat agents stay alive across turns (stream-json),
                         # so the process-exit hook in `finally` wouldn't fire until
@@ -12057,28 +13832,8 @@ def _drain_stdout(state: "RunState") -> None:
                                 })
                         else:
                             _turn_fail = None
-                        if (ev.get("label") == "done"
-                                and getattr(state, "workflow_node_id", None)
-                                and not getattr(state, "_node_completion_fired", False)):
-                            try:
-                                if _turn_fail:
-                                    _fire_node_completion_hook(
-                                        state, exit_code=1,
-                                        error_detail=f"turn failed: {_turn_fail}")
-                                else:
-                                    _fire_node_completion_hook(state, exit_code=0)
-                            except Exception as _e:
-                                state.append("status", {"label": "node-status-update-failed", "detail": str(_e)})
-                            state._node_completion_fired = True
-                            # Terminate the subprocess so the reader loop
-                            # exits cleanly and we stop burning the open
-                            # SSE/CLI session. Tag the termination reason so
-                            # finish() knows this was intentional; the SIGTERM
-                            # exit code (143) shouldn't be reported as a
-                            # failure to the chat UI.
-                            state.stop_reason = "turn-failed" if _turn_fail else "completed-orchestrator"
-                            try: state.proc.terminate()
-                            except Exception: pass
+                        if ev.get("label") == "done" and not _stale:
+                            _settle_run_jobs(state)
                     elif ev.get("label") == "starting":
                         state.turn_done = False
     finally:
@@ -12111,12 +13866,54 @@ def _drain_stdout(state: "RunState") -> None:
         # success path, user-stop, etc.). The actual exitCode is still stored on the
         # event payload for diagnostics; finish() also stores stopReason so
         # the chat can render "done"/"stopped" correctly.
-        if state.stop_reason in ("completed-orchestrator", "user-stop") and exit_code in (143, -15, None):
+        # "compacted" belongs here too: the compact tears the process down on
+        # purpose and the thread continues on its next message, so recording
+        # the SIGTERM as a non-zero exit made every successful compact render
+        # as a failed run.
+        # "daemon-shutdown" belongs here for the same reason: the SIGTERM came
+        # from OUR shutdown hook, so the run did not fail. Keep in sync with
+        # INTENTIONAL_STOPS in app.js.
+        # "parked": _idle_watch_loop released an idle thread's process; the
+        # next message resumes it, so the SIGTERM is ours, not a failure.
+        if state.stop_reason in ("completed-orchestrator", "user-stop", "compacted",
+                                 "daemon-shutdown", "parked") and exit_code in (143, -15, None):
             effective_exit = 0
         else:
             effective_exit = exit_code or 0 if exit_code is not None else exit_code
+        # Losing the runtime does not prove that a native worker completed.
+        for job in list(state.jobs.values()):
+            if job.get("source") == "native" and job.get("status") not in run_jobs.TERMINAL:
+                state.append("agent", {**job, "status": "unknown", "detail": "runtime disconnected before job completion"})
+        if _pending_run_jobs(state) and not state.stop_reason:
+            effective_exit = 1
+            exit_code = exit_code or 1
         state.append("end", {"exitCode": exit_code, "effectiveExitCode": effective_exit, "stopReason": state.stop_reason})
         state.finish(effective_exit if state.stop_reason else exit_code)
+        # The process is gone, so a summary parked mid-turn can land now - and
+        # it must land BEFORE the queue-driven respawn below, or that resume
+        # would seed itself from the un-compacted transcript.
+        try:
+            _compact_flush_pending(state)
+        except Exception:
+            pass
+        # The process is gone and the user still has follow-ups queued: respawn
+        # through /resume and hand it the next one. This is the ONLY route for
+        # single-shot runtimes (codex / opencode exit after every turn) and the
+        # recovery route for a claude chat that crashed or was stopped by
+        # something other than the user.
+        try:
+            _queue_drain_maybe(state, mode="resume")
+        except Exception:
+            pass
+        # A split thread that exited (crash, stop) still counts as finished
+        # for its group's plan check.
+        _split_join_maybe(state)
+        # Nothing queued and the compact is what ended this process: carry the
+        # thread on rather than leaving the user to type "continue".
+        try:
+            _compact_autocontinue_maybe(state)
+        except Exception:
+            pass
         # verify any shader HTML the run wrote (process-exit fallback for
         # single-shot runs that never emitted a turn-done status).
         try:
@@ -12174,6 +13971,12 @@ def _drain_stdout(state: "RunState") -> None:
             except Exception as e:
                 # Don't crash the run-finish path on history failure.
                 state.append("status", {"label": "history-finalize-failed", "detail": str(e)})
+            # Committed (or dropped) - a resumed process opens its own entry.
+            # Left set, the next exit re-finished this id: a duplicate undo
+            # row diffed against a before/ already pruned of unchanged files.
+            state.history_pending_id = None
+        _notify_bridge_parent(state, "stopped" if state.stop_reason == "user-stop" else
+            "failed" if state.exit_code or run_jobs.failed(state.jobs) or _pending_run_jobs(state) else "completed")
 
 
 def _drain_stderr(state: "RunState") -> None:
@@ -12183,7 +13986,7 @@ def _drain_stderr(state: "RunState") -> None:
     # the chat UI renders text + tool calls properly instead of dumping
     # every line as a "STDERR" prefixed bubble. Claude (and unknown agents)
     # keep the legacy raw-stderr passthrough.
-    if state.agent_id == "codex":
+    if state.agent_id == "codex" and not isinstance(state.proc, runtime_drivers.ProcessDriver):
         parser = _CodexStderrParser()
         try:
             for raw in state.proc.stderr:
@@ -12609,6 +14412,12 @@ class _OpenCodeStreamParser:
                     "name": tname,
                     "input": tinput if tinput is not None else {},
                 })
+            metadata = tstate.get("metadata") or {}
+            if tname == "task" and metadata.get("background"):
+                out.append({"type": "job", "source": "native", "runtime": "opencode",
+                    "jobId": metadata.get("jobId") or metadata.get("sessionId") or callid,
+                    "toolUseId": callid, "status": "failed" if status == "error" else "running",
+                    "background": True, "required": True, "childSessionId": metadata.get("sessionId")})
             if callid and status in ("completed", "error") and callid not in self._tool_done:
                 self._tool_done.add(callid)
                 output = tstate.get("output")
@@ -13039,7 +14848,8 @@ def _chat_ds_scope_note(project_root: str, branch: str) -> str:
         return ""
 
 
-def _chat_system_prompt(project_root: str, branch: str, tier: str, prototype: str) -> str:
+def _chat_system_prompt(project_root: str, branch: str, tier: str, prototype: str,
+                        guards: dict = None) -> str:
     """System prompt for an interactive project chat on the claude runtime.
 
     Used by BOTH the initial spawn (_run_create) and /resume (_run_resume) so
@@ -13075,7 +14885,7 @@ def _chat_system_prompt(project_root: str, branch: str, tier: str, prototype: st
     # features that ARE integrated. See kinds/capabilities.py.
     try:
         from kinds.capabilities import capabilities_preamble
-        sys_prompt = sys_prompt + "\n\n" + capabilities_preamble(project_root=project_root, tier=tier, prototype=prototype)
+        sys_prompt = sys_prompt + "\n\n" + capabilities_preamble(project_root=project_root, tier=tier, prototype=prototype, guards=guards)
     except Exception:
         pass
     if _mcp_config_spawn_args():
@@ -13089,7 +14899,8 @@ def _chat_system_prompt(project_root: str, branch: str, tier: str, prototype: st
 
 
 def _codex_chat_preamble(agent_id: str, project_root: str, project_id: str,
-                         branch: str, tier: str, prototype: str) -> str:
+                         branch: str, tier: str, prototype: str,
+                         guards: dict = None) -> str:
     """Harness preamble body for the argv-prompt runtimes (codex / opencode),
     which have no --append-system-prompt flag: the caller prepends this to
     the user prompt. Shared by the initial spawn (_run_create) AND the fake
@@ -13113,7 +14924,7 @@ def _codex_chat_preamble(agent_id: str, project_root: str, project_id: str,
         )
     try:
         from kinds.capabilities import capabilities_preamble
-        bits.append(capabilities_preamble(project_root=project_root, tier=tier, prototype=prototype))
+        bits.append(capabilities_preamble(project_root=project_root, tier=tier, prototype=prototype, guards=guards))
     except Exception:
         pass
     bits.append(
@@ -13124,7 +14935,7 @@ def _codex_chat_preamble(agent_id: str, project_root: str, project_id: str,
         "tool, instead run this shell command:\n\n"
         "```\n"
         "curl -N -s -X POST "
-        f"'http://127.0.0.1:{PORT}/__dispatch_planner?project={project_id}' "
+        f'"http://127.0.0.1:{PORT}/__dispatch_planner?project={project_id}&parent=$TH_RUN_ID" '
         "-H 'content-type: application/json' "
         "-d '{\"type\":\"<orchestrator-id>\",\"brief\":\"<plain text brief>\"}'\n"
         "```\n\n"
@@ -13197,6 +15008,75 @@ def _normalize_chat_tier(raw) -> str:
     if t not in ("setup", "normal", "scoped", "leaf"):
         t = "normal"
     return t
+
+
+def _normalize_chat_guards(raw) -> dict:
+    """The chat composer's per-thread check toggles (visual / dsGuard, on by
+    default; reqQa and plan, off by default) coerced onto plain booleans. Kept as a thin wrapper so
+    an import failure of kinds.capabilities (which every preamble call already
+    tolerates) still yields a usable dict rather than exploding a spawn."""
+    try:
+        from kinds.capabilities import normalize_guards
+        return normalize_guards(raw)
+    except Exception:
+        out = {"visual": True, "dsGuard": True, "reqQa": False, "plan": False}
+        if isinstance(raw, dict):
+            for k in out:
+                if k in raw:
+                    out[k] = bool(raw[k])
+        return out
+
+
+def _delegated_context(project_root, body, qs):
+    """Inherit scope/checks only from a dispatcher in the same project.
+
+    PLAN MODE IS NEVER INHERITED. The checks describe how work should be
+    graded and a child doing work should be graded the same way, so they ride
+    down. "Plan first" is the opposite: it says STOP AND PLAN INSTEAD OF
+    BUILDING, and it belongs to the one thread the user armed it on. Passed to
+    a child it breaks the child - an `-orchestrator` planner spawns at SETUP
+    tier, which carries the plan block, so a dispatch out of a plan-armed
+    thread would answer with its own plan gate card instead of doing the job
+    it was dispatched for, and the parent would wait forever on it."""
+    parent_id = body.get("parent") or _qs_get(qs, "parent")
+    with RUNS_LOCK:
+        parent = RUNS.get(parent_id) if parent_id else None
+    if parent and os.path.realpath(parent.project_root) != os.path.realpath(project_root):
+        parent = None
+    prototype = body.get("prototype") or getattr(parent, "prototype", None)
+    if prototype and (not isinstance(prototype, str) or not re.fullmatch(
+            r"[A-Za-z0-9_-][A-Za-z0-9_.-]{0,79}(?:/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,79})?", prototype)):
+        prototype = None
+    return {"prototype": prototype,
+            "runtime": getattr(parent, "agent_id", None),
+            "model": getattr(parent, "model", None),
+            "executionProfile": getattr(parent, "execution_profile", None),
+            "guards": _delegated_guards(body.get("guards", getattr(parent, "guards", None))),
+            "parent": parent.run_id if parent else None}
+
+
+def _delegated_guards(raw) -> dict:
+    """The parent's flags as a CHILD should run them: checks intact, plan mode
+    forced off. See _delegated_context's docstring for why."""
+    out = _normalize_chat_guards(raw)
+    out["plan"] = False
+    return out
+
+
+def _apply_guard_env(env: dict, guards: dict) -> dict:
+    """Mirror the visual check onto the child env so the PreToolUse hook
+    (.claude/hooks/require-visual-delegation.py) agrees with the preamble.
+    Only the OFF case is stamped; absent var = the gate is on, which keeps
+    every other spawn (node agents, planners, older callers) unchanged."""
+    try:
+        if guards and not guards.get("visual", True):
+            env["TH_VISUAL_GUARD"] = "0"
+            env["TH_VISUAL_DENY"] = "0"
+        else:
+            env.pop("TH_VISUAL_GUARD", None)
+    except Exception:
+        pass
+    return env
 
 
 # System agent threads (landing → System tab → Orchestrators /
@@ -13385,6 +15265,17 @@ def _ensure_harness_settings() -> "str | None":
             "matcher": "Read|mcp__claude_preview__preview_screenshot",
             "hooks":   [{"type": "command", "command": shlex.quote(visual_hook)}],
         })
+    # Shared-tree guard: no git discard (checkout / restore / stash / reset
+    # --hard / clean -f) from any project agent. Split threads, other chats
+    # and their subagents all edit one working tree at once; a discard wipes
+    # everyone's work in that path (suss-cal 2026-09-29: a split thread
+    # reverted its sibling's file). Optional, same as the visual hook.
+    tree_hook = os.path.join(INSTALL_ROOT, ".claude", "hooks", "guard-shared-tree.py")
+    if os.path.isfile(tree_hook):
+        settings["hooks"]["PreToolUse"].append({
+            "matcher": "Bash",
+            "hooks":   [{"type": "command", "command": shlex.quote(tree_hook)}],
+        })
     # Short-circuit if the file already matches - avoid disk churn at every
     # spawn (a typical session triggers many spawns).
     try:
@@ -13517,6 +15408,8 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
     # dropped (its tools never register) even though it kept running and opened a
     # browser - the "launched but No such tool available" race. Give the handshake
     # room so the chrome tools actually register. Only set when the user hasn't.
+    if agent_id in ("codex", "opencode"):
+        env["TH_VISUAL_DENY"] = "1" if main_thread else "0"
     env.setdefault("MCP_TIMEOUT", "60000")
     env.setdefault("MCP_TOOL_TIMEOUT", "120000")
     # opencode reads MCP servers from config files only (no CLI flag); point
@@ -13565,10 +15458,15 @@ def _build_child_env(agent_id: str, run_id: str, project_root: str = None, proje
     # API or a real gateway - so we ALWAYS route through it (chain, never skip;
     # an existing base URL of https://api.anthropic.com must not bypass us).
     # Fail-open: the helper returns None if the proxy didn't start.
+    # The /r/<runId> suffix tells the proxy whose request it is (the CLI keeps
+    # a base-URL path), which is what lets _idle_watch_loop keep this run's
+    # prompt cache warm while it sits idle.
     if agent_id == "claude":
         _evict_url = _evict_base_url(env.get("ANTHROPIC_BASE_URL"))
         if _evict_url:
-            env["ANTHROPIC_BASE_URL"] = _evict_url
+            env["ANTHROPIC_BASE_URL"] = (_evict_url + "/r/" + run_id
+                                         if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", run_id or "")
+                                         else _evict_url)
     # Skill isolation for Claude: use the `--disable-slash-commands` CLI flag
     # (added to spawn_args at dispatch time, see _spawn_node_agent and the
     # freeform spawn paths). It hides the user's ~/.claude/commands/ WITHOUT
@@ -13877,10 +15775,25 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._figma_map(qs)
             if parsed.path == "/__workflow":
                 return self._workflow_save(qs)
+            if parsed.path == "/__scratch":
+                return self._scratch_ops(qs)
+            m_sp = re.match(r"^/__scratch/(sp_[A-Za-z0-9]{4,32})$", parsed.path)
+            if m_sp:
+                return self._scratch_save(m_sp.group(1), qs)
             if parsed.path == "/__workflow/nodes/add":
                 return self._workflow_nodes_add(qs)
             if parsed.path == "/__design_system":
                 return self._design_system_save(qs)
+            if parsed.path == "/__stories/upload":
+                return self._stories_upload(qs)
+            if parsed.path == "/__stories/template":
+                return self._stories_template(qs)
+            if parsed.path == "/__stories/map":
+                return self._stories_map_save(qs)
+            if parsed.path == "/__stories/validate":
+                return self._stories_validate(qs)
+            if parsed.path == "/__ds/validate":
+                return self._ds_validate(qs)
             if parsed.path == "/__ds_proposals":
                 return self._ds_proposals_save(qs)
             if parsed.path == "/__upload_font":
@@ -13901,6 +15814,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._mcp_catalog_remove()
             if parsed.path == "/__media_config":
                 return self._media_config_set()
+            if parsed.path in ("/__context/reference", "/__context/contract"):
+                return self._context_artifact(parsed.path, qs)
+            if parsed.path in ("/__context/writer/prepare", "/__context/writer/publish"):
+                return self._context_writer(parsed.path, qs)
+            if parsed.path == "/__models/refresh":
+                return self._models_refresh()
             if parsed.path == "/__compact_config":
                 return self._compact_config_set()
             if parsed.path == "/__media_config/test":
@@ -13919,6 +15838,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._llm_run(qs)
             if parsed.path == "/__exa/search":
                 return self._exa_search_run(qs)
+            if parsed.path == "/__jev":
+                return self._jev_run(qs)
             if parsed.path == "/__assistant/tester":
                 return self._assistant_tester_run(qs)
             if parsed.path == "/__assistant/research":
@@ -13949,6 +15870,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._asset_param_set(qs)
             if parsed.path == "/__write_binary":
                 return self._write_binary(qs)
+            if parsed.path == "/__edit_components":
+                return self._edit_components(qs, True)
             if parsed.path == "/__html_save":
                 return self._html_save(qs)
             if parsed.path == "/__starred_prototypes/toggle":
@@ -13984,7 +15907,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             m_mp = re.match(r"^/__multiplayer/(start|stop)$", parsed.path)
             if m_mp:
                 return self._multiplayer_op(m_mp.group(1), qs)
-            m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull|restore|discard-local|discard-remote|branch-create|branch-switch|branch-merge|branch-delete)$", parsed.path)
+            m_git = re.match(r"^/__git/(connect|commit|publish|resolve|pull|restore|discard-local|discard-remote|branch-create|branch-switch|branch-merge|branch-delete|branch-worktree|branch-worktree-remove)$", parsed.path)
             if m_git:
                 return self._git_op(m_git.group(1), qs)
             m_gh = re.match(r"^/__github/(device/start|device/poll|signout|connect_repo|create_repo|token|fork|pr)$", parsed.path)
@@ -14163,9 +16086,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             if parsed.path == "/__run":
                 return self._run_create(qs)
             # /__run/<id>/stop · user-message · tool-result · resume · delete
-            m = re.match(r"^/__run/([0-9a-f]{6,64})/(stop|user-message|tool-result|resume|delete|compact)$", parsed.path)
+            if parsed.path == "/__runs/delete":
+                return self._runs_delete_bulk(qs)
+            m = re.match(r"^/__run/([0-9a-f]{6,64})/(stop|user-message|tool-result|resume|delete|rename|compact|handoff|enqueue|queue)$", parsed.path)
             if m:
                 run_id, action = m.group(1), m.group(2)
+                if action == "rename":
+                    return self._run_rename(run_id, qs)
                 if action == "stop":
                     return self._run_stop(run_id)
                 if action == "tool-result":
@@ -14176,6 +16103,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._run_delete(run_id, qs)
                 if action == "compact":
                     return self._run_compact(run_id, qs)
+                if action == "handoff":
+                    return self._run_handoff(run_id, qs)
+                if action == "enqueue":
+                    return self._run_enqueue(run_id)
+                if action == "queue":
+                    return self._run_queue_op(run_id)
                 return self._run_user_message(run_id)
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
@@ -14236,6 +16169,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         if url_path in ("/favicon.ico", "/favicon.svg"):
             return self._serve_root_favicon()
         # Daemon JSON endpoints first - they take precedence over static files.
+        if url_path == "/__edit_components":
+            return self._edit_components(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__edit_source":
+            return self._edit_source(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__agents":
             return self._agents_list()
         if url_path == "/__usage":
@@ -14287,6 +16224,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._qa_resolve(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__qa/run":
             return self._qa_run(urllib.parse.parse_qs(parsed.query))
+        # User stories + prototype story map (editor/stories.py).
+        if url_path == "/__stories":
+            return self._stories_get(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__stories/download":
+            return self._stories_download(urllib.parse.parse_qs(parsed.query))
         # Live Session - host-side presence (the host's own editor sees guest
         # cursors). SSE stream + the injected cursor script.
         if url_path == "/__live_events":
@@ -14322,14 +16264,26 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._dispatch_planner_result(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__system_runs":
             return self._system_runs_list(urllib.parse.parse_qs(parsed.query))
+        m_q = re.match(r"^/__run/([0-9a-f]{6,64})/queue$", url_path)
+        if m_q:
+            return self._run_queue_get(m_q.group(1))
         if url_path == "/__chat":
             return self._chat_history(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__chat_search":
+            return self._chat_search(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__run_dispatches":
+            return self._run_dispatches(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__doc":
             return self._branch_doc(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__screenshot/jobs":
             return self._screenshot_poll(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__workflow":
             return self._workflow_get(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__scratch":
+            return self._scratch_list(urllib.parse.parse_qs(parsed.query))
+        m_sp = re.match(r"^/__scratch/(sp_[A-Za-z0-9]{4,32})$", url_path)
+        if m_sp:
+            return self._scratch_get(m_sp.group(1), urllib.parse.parse_qs(parsed.query))
         if url_path == "/__design_system":
             return self._design_system_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__ds_bootstrap":
@@ -14361,6 +16315,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._global_font_file(m_gfont.group(1))
         if url_path == "/__media_config":
             return self._media_config_get()
+        if url_path == "/__models":
+            return self._reply(200, {"custom": _compact_config().get("modelCatalog", []),
+                                     "discovery": _persist_json_load(MODEL_DISCOVERY_PATH)})
         if url_path == "/__compact_config":
             return self._compact_config_get()
         if url_path == "/__export_config":
@@ -14378,6 +16335,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._user_testing_config_get()
         if url_path == "/__git/status":
             return self._git_status(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__git/freshness":
+            return self._git_freshness(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__git/log":
             return self._git_log(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__git/diff":
@@ -14612,12 +16571,24 @@ class H(http.server.SimpleHTTPRequestHandler):
                 data = f.read()
         except OSError:
             return super().do_GET()
+        source_revision = hashlib.sha256(data).hexdigest()[:16]
         # Stamp `?project=<id>` onto every relative src/href so nested loads
         # (styles.css, app.jsx, data.js, images) resolve to the right project
         # without depending on the Referer header.
         if project_id:
             data = self._stamp_project_on_html(data, project_id)
-        inject = b"<script>" + POKE_HELPER.encode("utf-8") + b"</script>"
+        inject = ('<meta name="woven-source-revision" content="' + source_revision + '">').encode() + b"<script>" + POKE_HELPER.encode("utf-8") + b"</script>"
+        # Project definitions travel with the served page; exported HTML keeps
+        # the last instance snapshot and never requires the editor to render.
+        try:
+            import component_store
+            root = resolve_project_root({"project": [project_id]} if project_id else {})
+            library = component_store.read(root)
+            if library["definitions"]:
+                encoded = json.dumps(library, ensure_ascii=False).replace("<", "\\u003c")
+                inject += ('<script type="application/json" data-woven-library>' + encoded + '</script>').encode("utf-8")
+        except (OSError, ValueError):
+            pass
         lower = data.lower()
         head = lower.find(b"<head>")
         if head >= 0:
@@ -14699,8 +16670,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
     # ── POST /__layout ───────────────────────────────────────────────────
-    # Persist Canvas-view frame positions + meta overrides (default frame
-    # size, canvas gap) to a sidecar file the editor reloads on next boot.
+    # Persist Canvas-view positions, sizes and sections in the editor data
+    # file. Legacy layout sidecars are retired after their contents are saved.
     # This is intentionally separate from the design-edits queue
     # (edits.json + Workflow 2): rearranging frames and tweaking the grid
     # are editor-organization, not "design changes" that should round-trip
@@ -14709,10 +16680,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Body: { "positions": { "<frame-id>": { "col": <int>, "row": <int> }, ... },
     #         "meta":      { "defaultFrame": { "w": <int>, "h": <int> },
     #                        "canvasGap":    <int> } }
-    # Writes: editor/branches/<slug>.layout.js with `window.EDITOR_LAYOUT = …`.
-    #
-    # The sidecar shape is { positions: {...}, meta: {...} }. Legacy sidecars
-    # (flat id → {col,row}) are auto-upgraded on the next write.
+    # Writes: editor/<slug>.data.js, or editor/data.js for the default.
     @staticmethod
     def _data_file_for(project_root, slug):
         """The data file the editor is served for `?prototype=<slug>`.
@@ -14729,168 +16697,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         return os.path.join(editor_dir, "data.js")
 
     @staticmethod
-    def _scan_block(text, open_idx):
-        """Index just past the bracket/brace that closes the one at open_idx.
-
-        STRING-AWARE: a naive depth counter breaks on this file, because
-        frames carry setupScript strings full of braces
-        (`setTimeout(function(){...},80)`). Skips over double-quoted strings
-        and their backslash escapes.
-        """
-        opener = text[open_idx]
-        closer = {"{": "}", "[": "]"}[opener]
-        depth, i, n = 0, open_idx, len(text)
-        while i < n:
-            c = text[i]
-            if c == '"':
-                i += 1
-                while i < n:
-                    if text[i] == "\\":
-                        i += 2
-                        continue
-                    if text[i] == '"':
-                        break
-                    i += 1
-            elif c == opener:
-                depth += 1
-            elif c == closer:
-                depth -= 1
-                if depth == 0:
-                    return i + 1
-            i += 1
-        raise ValueError("unbalanced %s at %d" % (opener, open_idx))
-
-    @staticmethod
     def _patch_data_layout(path, positions, meta, sections):
-        """Write canvas layout INTO the prototype's data file, in place.
-
-        Layout used to live in a second file (editor/<slug>.layout.js) that the
-        editor merged over the data file at boot. Two writers, two files, one
-        truth - and they drifted: an agent regen rewrote col/row in data.js
-        while the sidecar kept overriding them, so the file the agent read was
-        never the canvas the user saw. The data file is now the single source
-        of truth and this patches it surgically.
-
-        SURGICAL on purpose - the file is agent-authored JS with comments and
-        hand formatting (`// -- Applicant portal --` group headers and the
-        like). Individual numeric fields and the `sections:` array are
-        rewritten; the document is never reserialised. Handles both key styles
-        agents emit: bare (`col: 3`) and JSON-quoted (`"col": 3`).
-
-        Returns (text, changed_count). Raises ValueError when the file can't be
-        parsed well enough to patch safely - the caller keeps the old file.
-        """
+        """Patch literal frame objects, preserving unrelated JS and comments."""
+        import data_layout
         with open(path, "r", encoding="utf-8") as f:
-            text = f.read()
-        changed = 0
-
-        def set_num(chunk, key, value, insert_after_id=False):
-            """Set `key` to `value` inside one object literal's text.
-
-            `insert_after_id` is for FRAME objects only, where the chunk IS the
-            frame and its `id` field is the right anchor for a missing key. It
-            must stay off for the meta block: the first `id:` in there belongs
-            to the nested dsRef, and an insert would land inside it.
-            """
-            pat = re.compile(r'(?<=[{,\s])("%s"|%s)(\s*:\s*)(-?\d+(?:\.\d+)?)' % (key, key))
-            m = pat.search(chunk)
-            if m:
-                if m.group(3) == str(value):
-                    return chunk, False
-                return chunk[:m.start(3)] + str(value) + chunk[m.end(3):], True
-            if not insert_after_id:
-                return chunk, False
-            mid = re.search(r'("id"|\bid)(\s*:\s*)("[^"]*")', chunk)
-            if not mid:
-                return chunk, False
-            quoted = chunk[mid.start(1)] == '"'
-            ins = ', "%s": %d' % (key, value) if quoted else ", %s: %d" % (key, value)
-            return chunk[:mid.end(3)] + ins + chunk[mid.end(3):], True
-
-        # -- frames: col / row / w / h per id -----------------------------
-        # Line-scoped: agents emit one frame object per line, and a frame's
-        # setupScript can contain anything, so bounding the rewrite to the
-        # frame's own line(s) is safer than parsing the object.
-        lines = text.split("\n")
-        for fid, pos in (positions or {}).items():
-            idpat = re.compile(r'("id"|\bid)\s*:\s*"%s"' % re.escape(fid))
-            for li, line in enumerate(lines):
-                if not idpat.search(line):
-                    continue
-                new_line = line
-                for key in ("col", "row", "w", "h"):
-                    if isinstance(pos.get(key), int):
-                        new_line, hit = set_num(new_line, key, pos[key], insert_after_id=True)
-                        if hit:
-                            changed += 1
-                if new_line != line:
-                    lines[li] = new_line
-                break
-        text = "\n".join(lines)
-
-        # -- meta: defaultFrame + canvasGap -------------------------------
-        mm = re.search(r'("meta"|\bmeta)\s*:\s*\{', text)
-        if mm and isinstance(meta, dict):
-            start = text.index("{", mm.end() - 1)
-            end = H._scan_block(text, start)
-            meta_text = text[start:end]
-            new_meta = meta_text
-            df = meta.get("defaultFrame")
-            if isinstance(df, dict) and isinstance(df.get("w"), int) and isinstance(df.get("h"), int):
-                emit = '"defaultFrame": {"w": %d, "h": %d}' % (df["w"], df["h"])
-                dm = re.search(r'("defaultFrame"|\bdefaultFrame)\s*:\s*\{[^{}]*\}', new_meta)
-                if dm:
-                    if dm.group(0) != emit:
-                        new_meta = new_meta[:dm.start()] + emit + new_meta[dm.end():]
-                        changed += 1
-                else:
-                    new_meta = new_meta[:1] + " " + emit + "," + new_meta[1:]
-                    changed += 1
-            if isinstance(meta.get("canvasGap"), int):
-                # Top-level meta key only. If it isn't there, insert at the
-                # FRONT of the block - never anchored on an `id` field, which
-                # in meta belongs to the nested dsRef.
-                gm = re.search(r'(?<=[{,\s])("canvasGap"|canvasGap)(\s*:\s*)(-?\d+)', new_meta)
-                if gm:
-                    if gm.group(3) != str(meta["canvasGap"]):
-                        new_meta = new_meta[:gm.start(3)] + str(meta["canvasGap"]) + new_meta[gm.end(3):]
-                        changed += 1
-                else:
-                    new_meta = new_meta[:1] + ' "canvasGap": %d,' % meta["canvasGap"] + new_meta[1:]
-                    changed += 1
-            if new_meta != meta_text:
-                text = text[:start] + new_meta + text[end:]
-
-        # -- sections: replace the whole array (or insert one) ------------
-        if isinstance(sections, list):
-            live = [s for s in sections if isinstance(s, dict) and not s.get("deleted")]
-            body = ",\n".join(
-                "    " + json.dumps({k: s[k] for k in ("id", "label", "col", "row", "col2", "row2", "tone", "members") if k in s},
-                                    ensure_ascii=False)
-                for s in live
-            )
-            block = "sections: [\n%s\n  ]" % body if live else "sections: []"
-            sm = re.search(r'("sections"|\bsections)\s*:\s*\[', text)
-            if sm:
-                open_idx = text.index("[", sm.end() - 1)
-                end = H._scan_block(text, open_idx)
-                if text[sm.start():end] != block:
-                    text = text[:sm.start()] + block + text[end:]
-                    changed += 1
-            elif live:
-                am = re.search(r'("arrows"|\barrows)\s*:\s*\[', text)
-                if not am:
-                    raise ValueError("cannot locate an insertion point for sections")
-                anchor = H._scan_block(text, text.index("[", am.end() - 1))
-                tail = text[anchor:]
-                if tail.lstrip().startswith(","):
-                    ci = anchor + tail.index(",") + 1
-                    text = text[:ci] + "\n  " + block + "," + text[ci:]
-                else:
-                    text = text[:anchor] + ",\n  " + block + text[anchor:]
-                changed += 1
-
-        return text, changed
+            return data_layout.patch(f.read(), positions, meta, sections)
 
     @staticmethod
     def _layout_read_sections(path):
@@ -15901,6 +17712,187 @@ class H(http.server.SimpleHTTPRequestHandler):
         finally:
           _sem.release()
 
+    # ── Scratchpads - throwaway canvases that never reach git ────────────
+    # A scratchpad is a full canvas doc ({nodes, edges, wb, pan, zoom}) that
+    # lives in <project_root>/workflow/scratch/<id>.json. Same schema as
+    # workflow.json so the SAME canvas surface renders it and copy/paste
+    # between the two is a straight node/item transfer - but deliberately
+    # OUTSIDE the synced tree (workflow/scratch/ rides _GITIGNORE_LOCAL), so
+    # thinking-space never lands in a commit or a collaborator's pull.
+    #
+    # No index file: the list is derived by scanning the directory, so two
+    # windows creating pads at once can't corrupt a shared manifest. No
+    # merge machinery, no dirty-field tracking, no history brackets - a save
+    # is a whole-doc atomic replace. Scratch nodes are NOT runnable (the
+    # /__workflow/node/<id>/* endpoints only ever resolve workflow.json);
+    # content-bearing kinds (html / prototype / frames) still render because
+    # they read files off disk, not the graph.
+    _SCRATCH_ID_RE = re.compile(r"^sp_[A-Za-z0-9]{4,32}$")
+
+    def _scratch_dir(self, project_root):
+        return os.path.join(project_root, "workflow", "scratch")
+
+    def _scratch_path(self, project_root, pad_id):
+        """Resolve <id> to its file, or None when the id is malformed. The
+        regex is the ONLY gate - it admits no dot, slash or separator, so a
+        traversal ("../../etc/passwd") can never reach os.path.join."""
+        if not isinstance(pad_id, str) or not self._SCRATCH_ID_RE.match(pad_id):
+            return None
+        return os.path.join(self._scratch_dir(project_root), pad_id + ".json")
+
+    def _scratch_read(self, path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                doc = json.load(f)
+            return doc if isinstance(doc, dict) else None
+        except Exception:
+            return None
+
+    def _scratch_write(self, path, doc):
+        """Atomic whole-doc replace (tmp + os.replace), so a reader never
+        sees a half-written pad and a crash mid-write can't truncate one."""
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(doc, f, indent=2)
+        os.replace(tmp, path)
+
+    # GET /__scratch - list every pad in the project (newest-touched first).
+    def _scratch_list(self, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e), "hint": "append ?project=$TH_PROJECT_ID to the URL"})
+        d = self._scratch_dir(project_root)
+        pads = []
+        try:
+            names = sorted(os.listdir(d))
+        except Exception:
+            names = []
+        for fn in names:
+            if not fn.endswith(".json") or fn.endswith(".tmp"):
+                continue
+            pad_id = fn[:-5]
+            if not self._SCRATCH_ID_RE.match(pad_id):
+                continue
+            doc = self._scratch_read(os.path.join(d, fn))
+            if doc is None:
+                continue
+            pads.append({
+                "id": pad_id,
+                "name": doc.get("name") or "Untitled",
+                "created": doc.get("created") or 0,
+                "updated": doc.get("updated") or 0,
+                "nodes": len(doc.get("nodes") or []),
+                "items": len(doc.get("wb") or []),
+            })
+        pads.sort(key=lambda p: p.get("updated") or 0, reverse=True)
+        return self._reply(200, {"pads": pads})
+
+    # GET /__scratch/<id> - one pad's full doc.
+    def _scratch_get(self, pad_id, qs):
+        try:
+            project_root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e), "hint": "append ?project=$TH_PROJECT_ID to the URL"})
+        path = self._scratch_path(project_root, pad_id)
+        if not path:
+            return self._reply(400, {"error": "bad scratchpad id"})
+        doc = self._scratch_read(path)
+        if doc is None:
+            return self._reply(404, {"error": "scratchpad not found", "id": pad_id})
+        doc.setdefault("id", pad_id)
+        doc.setdefault("name", "Untitled")
+        doc.setdefault("pan", {"x": 0, "y": 0})
+        doc.setdefault("zoom", 1)
+        doc.setdefault("nodes", [])
+        doc.setdefault("edges", [])
+        doc.setdefault("wb", [])
+        return self._reply(200, doc)
+
+    # POST /__scratch - lifecycle ops: {op: "create"|"rename"|"delete"}.
+    def _scratch_ops(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        body = self._read_json_body(max_bytes=64 * 1024) or {}
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        op = body.get("op") or "create"
+        now = int(time.time() * 1000)
+        if op == "create":
+            name = (body.get("name") or "").strip() or "Scratchpad"
+            pad_id = "sp_" + uuid.uuid4().hex[:12]
+            path = self._scratch_path(project_root, pad_id)
+            doc = {
+                "id": pad_id, "name": name[:120],
+                "created": now, "updated": now,
+                "pan": {"x": 0, "y": 0}, "zoom": 1,
+                "nodes": [], "edges": [], "wb": [],
+            }
+            # Seed from another pad when asked - "duplicate this scratchpad".
+            src_id = body.get("from")
+            if src_id:
+                src_path = self._scratch_path(project_root, src_id)
+                src = self._scratch_read(src_path) if src_path else None
+                if src:
+                    for k in ("nodes", "edges", "wb", "pan", "zoom"):
+                        if src.get(k) is not None:
+                            doc[k] = src[k]
+            self._scratch_write(path, doc)
+            return self._reply(200, {"ok": True, "pad": doc})
+        pad_id = body.get("id")
+        path = self._scratch_path(project_root, pad_id)
+        if not path:
+            return self._reply(400, {"error": "bad scratchpad id"})
+        if op == "rename":
+            doc = self._scratch_read(path)
+            if doc is None:
+                return self._reply(404, {"error": "scratchpad not found", "id": pad_id})
+            name = (body.get("name") or "").strip()
+            if not name:
+                return self._reply(400, {"error": "name required"})
+            doc["name"] = name[:120]
+            doc["updated"] = now
+            self._scratch_write(path, doc)
+            return self._reply(200, {"ok": True, "id": pad_id, "name": doc["name"]})
+        if op == "delete":
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                return self._reply(500, {"error": "delete failed", "detail": str(e)})
+            return self._reply(200, {"ok": True, "id": pad_id})
+        return self._reply(400, {"error": "unknown op", "op": op})
+
+    # POST /__scratch/<id> - whole-doc save (the canvas's debounced write).
+    def _scratch_save(self, pad_id, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        path = self._scratch_path(project_root, pad_id)
+        if not path:
+            return self._reply(400, {"error": "bad scratchpad id"})
+        body = self._read_json_body(max_bytes=MAX_BYTES) or {}
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        prev = self._scratch_read(path) or {}
+        doc = {
+            "id": pad_id,
+            "name": (body.get("name") or prev.get("name") or "Untitled")[:120],
+            "created": prev.get("created") or int(time.time() * 1000),
+            "updated": int(time.time() * 1000),
+            "pan": body.get("pan") if isinstance(body.get("pan"), dict) else {"x": 0, "y": 0},
+            "zoom": body.get("zoom") if isinstance(body.get("zoom"), (int, float)) else 1,
+            "nodes": body.get("nodes") if isinstance(body.get("nodes"), list) else [],
+            "edges": body.get("edges") if isinstance(body.get("edges"), list) else [],
+            "wb": body.get("wb") if isinstance(body.get("wb"), list) else [],
+        }
+        self._scratch_write(path, doc)
+        return self._reply(200, {"ok": True, "id": pad_id, "updated": doc["updated"]})
     # ── POST /__workflow/nodes/add - race-safe append ─────────────
     # Append nodes + edges to workflow.json WITHOUT a read-modify-write of
     # the whole graph from the caller. Unlike POST /__workflow (which
@@ -15948,6 +17940,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._workflow_nodes_add_body(project_root, body)
 
     def _workflow_nodes_add_body(self, project_root, body):
+        if "edges" in body:
+            return self._reply(400, {"error": "use addEdges, not edges"})
         add_nodes = body.get("addNodes") or []
         add_edges = body.get("addEdges") or []
         if not isinstance(add_nodes, list) or not isinstance(add_edges, list):
@@ -16096,7 +18090,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             resp = _openai_chat(api_key, messages, model=model)
         else:
             raise ValueError(f"unsupported provider: {provider}")
-        return (resp.get("text") if isinstance(resp, dict) else "") or ""
+        return (resp.get("text") if isinstance(resp, dict) else resp if isinstance(resp, str) else "") or ""
 
     # ── node-agent subprocess spawn helper ───────────────────────
     # Focused per-node `claude` spawn used by /__workflow/node/<id>/run when
@@ -16114,7 +18108,18 @@ class H(http.server.SimpleHTTPRequestHandler):
         # The build fan-out follows the user's selected AGENT runtime unless the
         # caller passes an explicit one, so codex/opencode drawers run their own
         # CLI (with GPT/model overrides) instead of always spawning Claude.
-        agent_id = (agent_id or _agent_default_runtime())
+        _node_context = _delegated_context(project_root, {"parent": getattr(self, "_parent_run_id", None)}, {})
+        agent_id = agent_id or _node_context.get("runtime") or _agent_default_runtime()
+        selected = (model or _subagent_override_model_for_node(node_id, title, prompt_text)
+                    or _orch_override_model_for_node(node_id, title))
+        inherited = _node_context.get("model")
+        if not _node_context.get("parent"):
+            selected = selected or _agent_default_model()
+        try:
+            profile = model_routing.resolve(selected or "inherit", agent_id, inherited, _compact_config(), role="worker")
+        except ValueError as error:
+            return None, (400, {"error": str(error)})
+        agent_id = profile["runtime"]
         defs = AGENT_DEFS.get(agent_id)
         if not defs:
             return None, (500, {"error": f"agent not registered: {agent_id!r}"})
@@ -16164,23 +18169,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         # agent-model (Settings) > the CLI's own default. All go through
         # _agent_model_spawn_args so alias mapping + CLI-default-sentinel handling
         # + opencode-skip are identical everywhere - nothing hardcodes a model.
-        try:
-            _want_prov = _provider_for_agent(agent_id)
-            # explicit caller model (the assistant node's model select) wins.
-            _omodel = (model
-                       or _subagent_override_model_for_node(node_id, title, prompt_text, want_provider=_want_prov)
-                       or _orch_override_model_for_node(node_id, title, want_provider=_want_prov))
-            _model_args = _agent_model_spawn_args(agent_id, defs, _omodel) if _omodel else []
-            if not _model_args:
-                _model_args = _agent_model_spawn_args(agent_id, defs, _agent_default_model())
-            spawn_args += _model_args
-        except Exception:
-            pass
+        _omodel = profile["model"]
+        spawn_args += _agent_model_spawn_args(agent_id, defs, _omodel, resolved=True)
         # Claude-only: --mcp-config + the hook-gate --settings (PreToolUse blocks
         # *.html writes until visual-orchestrator is dispatched). codex/opencode
         # manage MCP via their own config and have no --settings flag.
         if agent_id == "claude":
             spawn_args += _mcp_config_spawn_args()
+            spawn_args += _agents_plugin_spawn_args()
             _harness_settings = _ensure_harness_settings()
             if _harness_settings:
                 spawn_args += ["--settings", _harness_settings]
@@ -16211,6 +18207,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         # TRACKING (RunState, streamed transcript, Task-subagent visibility,
         # resume) - not the ~10-35K capabilities bloat. Used by the strategy
         # chain driver.
+        _node_context = _delegated_context(project_root, {"parent": getattr(self, "_parent_run_id", None)}, {})
+        _node_context["prototype"] = _node_context.get("prototype") or branch
         _node_tier = None
         if not bare:
             try:
@@ -16219,7 +18217,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # an orchestrator; the leaf tier is ~25K tokens slimmer.
                 _tier = "setup" if "orchestrator" in (node_id or "").lower() else "leaf"
                 _node_tier = _tier   # recorded on the RunState below for resume weight
-                sys_prompt += "\n\n" + capabilities_preamble(project_root=project_root, tier=_tier)
+                sys_prompt += "\n\n" + capabilities_preamble(project_root=project_root, tier=_tier,
+                    prototype=_node_context.get("prototype"), guards=_node_context.get("guards"))
             except Exception:
                 _node_tier = None
         sys_prompt += "\n\n" + system_prompt
@@ -16256,9 +18255,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         # transcript-marker fallback ("Begin the task for node `"), but the
         # env stamp is the deterministic primary signal.
         env["TH_SPAWN_KIND"] = "node-agent"
+        _apply_guard_env(env, _node_context.get("guards"))
         env["TH_NODE_ID"] = node_id or ""
         try:
-            proc = subprocess.Popen(
+            proc = _spawn_runtime_process(agent_id,
                 [bin_path, *spawn_args],
                 cwd=project_root,
                 stdin=subprocess.PIPE if defs["prompt_via_stdin"] else None,
@@ -16276,7 +18276,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                          project_id=project_id, project_root=project_root)
         state.bin_path = bin_path
         state.permission_mode = permission_mode
-        state.tier = _node_tier   # leaf (drawer) or setup (orchestrator node)
+        state.tier = _node_tier
+        state.guards = _node_context.get("guards")
+        state.prototype = _node_context.get("prototype")
+        state.model = _omodel
+        state.execution_profile = profile
         state.modifying = True
         # Tag for the auto-completion hook in _drain_stdout - when this
         # subprocess exits, the daemon flips the workflow node to done/error.
@@ -16306,6 +18310,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "kind": "node-agent",
             "nodeId": node_id,
             "tier": _node_tier,
+            "prototype": state.prototype, "guards": state.guards, "model": state.model,
             # remaining build-chain at spawn: persisted so a daemon restart
             # mid-chain is at least VISIBLE after rehydrate (the in-memory
             # chain_rest dies with the process table).
@@ -16314,6 +18319,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         })
         with RUNS_LOCK:
             RUNS[run_id] = state
+        _notify_bridge_parent(state, "running")
         if defs["prompt_via_stdin"]:
             try:
                 proc.stdin.write(_claude_user_frame(prompt_text))
@@ -17900,6 +19906,10 @@ class H(http.server.SimpleHTTPRequestHandler):
           run_error = body.get("runError") or ""
           add_nodes = body.get("addNodes") or []
           add_edges = body.get("addEdges") or []
+          if "edges" in body:
+            return self._reply(400, {"error": "use addEdges, not edges"})
+          if not isinstance(add_nodes, list) or not isinstance(add_edges, list):
+            return self._reply(400, {"error": "addNodes and addEdges must be arrays"})
           caller_session_id = self.headers.get("X-Claude-Session-Id") or body.get("callerSessionId") or ""
 
           if not isinstance(posted_outputs, dict):
@@ -17932,6 +19942,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             contract = kind_contract(node.get("kind"), node_id)
             if not contract:
               return self._reply(400, {"error": f"unknown kind {node.get('kind')!r}", "nodeId": node_id})
+            if (add_nodes or add_edges) and not contract.get("extendsGraph"):
+              return self._reply(400, {"error": "this kind cannot extend the graph; use /__workflow/nodes/add"})
+            duplicates = [n.get("id") for n in add_nodes if isinstance(n, dict) and n.get("id") in nodes_by_id]
+            if duplicates:
+              return self._reply(400, {"error": "addNodes cannot update existing nodes; use node update", "ids": duplicates})
 
             # Build a probe-node mirroring the proposed final state for
             # validation. Don't mutate workflow.json yet.
@@ -20732,7 +22747,157 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _compact_config_get(self):
         return self._reply(200, _compact_config())
 
+    def _models_refresh(self):
+        body = self._read_json_body() or {}
+        runtime = body.get("runtime")
+        if runtime not in model_routing.RUNTIMES:
+            return self._reply(400, {"error": "choose a runtime"})
+        binary = detect_agent_bin(runtime)
+        if not binary:
+            return self._reply(400, {"error": runtime + " is not installed"})
+        try:
+            rows = []
+            if runtime == "codex":
+                driver = runtime_drivers.CodexDriver(binary, [], INSTALL_ROOT,
+                    dict(_guest_cli_env(runtime) or os.environ), discovery=True)
+                try:
+                    cursor = None
+                    while True:
+                        result = driver.request("model/list", {"limit": 100, **({"cursor": cursor} if cursor else {})})
+                        for item in result.get("data", []):
+                            rows.append({"id": "codex:" + item["model"], "model": item["model"], "runtime": "codex",
+                                "label": item.get("displayName") or item["model"], "modalities": item.get("inputModalities", []),
+                                "efforts": [e["reasoningEffort"] for e in item.get("supportedReasoningEfforts", [])]})
+                        cursor = result.get("nextCursor")
+                        if not cursor or len(rows) >= 500:
+                            break
+                finally:
+                    driver.terminate()
+                    driver.wait(timeout=5)
+                source = "authenticated runtime model/list"
+            elif runtime == "opencode":
+                result = subprocess.run([binary, "models"], capture_output=True, text=True,
+                    env=_guest_cli_env(runtime), stdin=subprocess.DEVNULL, timeout=30)
+                if result.returncode:
+                    raise RuntimeError("OpenCode model listing failed")
+                rows = [{"id": "opencode:" + line, "model": line, "runtime": "opencode", "label": line}
+                        for line in result.stdout.splitlines() if "/" in line and model_routing.valid_model(line)][:500]
+                source = "runtime catalog; account access unverified"
+            else:
+                return self._reply(200, {"runtime": runtime, "available": False,
+                    "message": "This CLI has no verified standalone model-list command. Register exact IDs manually."})
+            packet = {"runtime": runtime, "version": _agent_version(binary), "source": source,
+                      "checkedAt": time.time(), "models": rows}
+            cached = _persist_json_load(MODEL_DISCOVERY_PATH)
+            cached[runtime] = packet
+            _persist_json_save(MODEL_DISCOVERY_PATH, cached)
+            return self._reply(200, packet)
+        except Exception as error:
+            return self._reply(502, {"error": str(error)[:500], "cachedModelsRetained": True})
+
+    def _context_writer(self, route, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+            body = self._read_json_body(max_bytes=4 * 1024 * 1024)
+            if not isinstance(body, dict):
+                raise ValueError("body must be an object")
+            if route.endswith("/publish"):
+                with open(os.path.join(EDITOR_DIR, "art-direction-defaults.json")) as stream:
+                    defaults = json.load(stream)
+                with _workflow_lock(os.path.basename(root.rstrip("/"))):
+                    status, result = contract_writer.publish(root, body, defaults)
+                return self._reply(status, result)
+            name = body.get("orchestrator")
+            if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9-]+-orchestrator", name):
+                raise ValueError("orchestrator must name the originating orchestrator")
+            if not os.path.isfile(os.path.join(INSTALL_ROOT, ".claude", "agents", name + ".md")):
+                raise ValueError("unknown orchestrator")
+            parent_id = body.get("parent") or _qs_get(qs, "parent")
+            with RUNS_LOCK:
+                parent = RUNS.get(parent_id) if parent_id else None
+            if parent and os.path.realpath(parent.project_root) != os.path.realpath(root):
+                raise ValueError("writer parent belongs to another project")
+            runtime = getattr(parent, "agent_id", None) or _agent_default_runtime()
+            cfg = _compact_config()
+            setting = cfg["contractWriterOverrides"].get(name, cfg["contractWriterModel"])
+            own_run = getattr(parent, "kind", None) in ("planner:" + name, "planner:woven:" + name)
+            inherited = ((getattr(parent, "model", None) if own_run else None)
+                         or _subagent_override_model_for_node(name, name, want_provider=_provider_for_agent(runtime))
+                         or _orch_override_model_for_node(name, name, want_provider=_provider_for_agent(runtime))
+                         or getattr(parent, "model", None)
+                         or _agent_default_model())
+            if parent and (own_run or setting == "inherit"):
+                inherited = parent.model
+            selection = inherited if setting == "inherit" and parent is None else setting
+            profile = model_routing.resolve(selection or "inherit", runtime, inherited, cfg, role="writer")
+            profile["requestedModel"] = setting
+            def complete(system, prompt, **kwargs):
+                kwargs.pop("model", None)
+                return _tracked_helper_complete(parent, profile, system, prompt, **kwargs)
+            result = contract_writer.prepare(root, body, profile["model"] or profile["runtime"] + "-default", complete, profile=profile)
+            return self._reply(200, result)
+        except (ValueError, TypeError, KeyError, OSError) as e:
+            return self._reply(400, {"error": str(e)})
+        except (RuntimeError, subprocess.TimeoutExpired) as e:
+            return self._reply(502, {"error": "writer failed; decisions retained: " + str(e)})
+
+    def _context_artifact(self, route, qs):
+        """Project-scoped reuse and lossless mechanical contract assembly."""
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+            body = self._read_json_body(max_bytes=4 * 1024 * 1024)
+            if not isinstance(body, dict):
+                raise ValueError("body must be an object")
+            if route == "/__context/reference":
+                if not _compact_config()["referenceReuse"]:
+                    return self._reply(200, {"hit": False, "enabled": False})
+                source, revision = body.get("source"), body.get("revision")
+                if body.get("inputPath"):
+                    path = context_artifacts.project_path(root, body["inputPath"])
+                    source = "file:" + body["inputPath"]
+                    revision = hashlib.sha256(path.read_bytes()).hexdigest()
+                key = context_artifacts.reference_key(source, revision, body.get("request"))
+                action = body.get("action", "get")
+                if action == "put":
+                    context_artifacts.reference_put(root, key, body.get("value"))
+                    return self._reply(200, {"ok": True, "key": key})
+                if action != "get":
+                    raise ValueError("action must be get or put")
+                value = context_artifacts.reference_get(root, key)
+                return self._reply(200, {"hit": value is not None, "key": key, "value": value})
+
+            defaults_path = os.path.join(EDITOR_DIR, "art-direction-defaults.json")
+            with open(defaults_path, encoding="utf-8") as stream:
+                defaults = json.load(stream)
+            draft = body.get("draft")
+            contract = context_artifacts.assemble_contract(draft, defaults)
+            # The caller must already have the user's plate approval. Assembly
+            # performs no creative inference and cannot supply a missing plate.
+            for relative in [contract["platePath"]] + [r.get("refPath") for r in contract["itemReferences"]]:
+                if not context_artifacts.project_path(root, relative).is_file():
+                    raise ValueError("missing plate or reference: " + str(relative))
+            target = context_artifacts.project_path(root, "workflow/art-direction-contract.json")
+            with _workflow_lock(os.path.basename(root.rstrip("/"))):
+                existing = json.loads(target.read_text()) if target.is_file() else None
+                current_hash = context_artifacts.digest(existing) if existing is not None else None
+                next_hash = context_artifacts.digest(contract)
+                if current_hash != next_hash:
+                    if current_hash != body.get("previousHash"):
+                        return self._reply(409, {"error": "contract changed; read it before revising", "currentHash": current_hash})
+                    context_artifacts.atomic_json(target, contract)
+            return self._reply(200, {"ok": True, "contractPath": "workflow/art-direction-contract.json",
+                                     "sha256": next_hash, "fidelity": "all supplied values preserved",
+                                     "bytes": target.stat().st_size})
+        except (ValueError, TypeError, KeyError) as e:
+            return self._reply(400, {"error": str(e)})
+        except OSError as e:
+            return self._reply(400, {"error": str(e)})
+
     def _compact_config_set(self):
+        with COMPACT_CONFIG_LOCK:
+            return H._compact_config_set_locked(self)
+
+    def _compact_config_set_locked(self):
         try:
             body = self._read_json_body()
         except ValueError as e:
@@ -20740,8 +22905,55 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not isinstance(body, dict):
             return self._reply(400, {"error": "body must be a JSON object"})
         cfg = _compact_config()
+        try:
+            if "runtimeDrivers" in body:
+                if not isinstance(body["runtimeDrivers"], dict) or any(
+                    v not in {"codex": ("exec", "app-server"), "opencode": ("run", "http")}.get(k, ())
+                    for k, v in body["runtimeDrivers"].items()):
+                    raise ValueError("invalid runtime driver")
+                cfg["runtimeDrivers"] = {**cfg.get("runtimeDrivers", {}), **body["runtimeDrivers"]}
+            if "helperConcurrency" in body:
+                values = body["helperConcurrency"]
+                if not isinstance(values, dict) or any(k not in model_routing.RUNTIMES or type(v) is not int or not 1 <= v <= 16 for k, v in values.items()):
+                    raise ValueError("helper concurrency must be between 1 and 16 per runtime")
+                cfg["helperConcurrency"] = {**cfg.get("helperConcurrency", {}), **values}
+            if "economyModels" in body:
+                cfg["economyModels"] = {**cfg.get("economyModels", model_routing.DEFAULTS),
+                    **model_routing.validate_economy(body["economyModels"])}
+            if "modelCatalog" in body:
+                cfg["modelCatalog"] = model_routing.validate_catalog(body["modelCatalog"])
+        except ValueError as error:
+            return self._reply(400, {"error": str(error)})
+        if "contractWriterModel" in body:
+            if not contract_writer.valid_model(body["contractWriterModel"]):
+                return self._reply(400, {"error": "invalid contract writer model"})
+            cfg["contractWriterModel"] = body["contractWriterModel"]
+        if "contractWriterOverrides" in body:
+            patch = body["contractWriterOverrides"]
+            if not isinstance(patch, dict) or any(
+                not re.fullmatch(r"[a-z0-9-]+-orchestrator", key)
+                or (value is not None and not contract_writer.valid_model(value))
+                for key, value in patch.items()):
+                return self._reply(400, {"error": "invalid orchestrator writer override"})
+            cfg["contractWriterOverrides"] = dict(cfg["contractWriterOverrides"])
+            for key, value in patch.items():
+                if value is None:
+                    cfg["contractWriterOverrides"].pop(key, None)
+                else:
+                    cfg["contractWriterOverrides"][key] = value
         if isinstance(body.get("autoCompact"), bool):
             cfg["autoCompact"] = body["autoCompact"]
+        if isinstance(body.get("autoContinue"), bool):
+            cfg["autoContinue"] = body["autoContinue"]
+        if "summaryModel" in body:
+            if not model_routing.valid_model(body["summaryModel"]):
+                return self._reply(400, {"error": "invalid summary model"})
+            cfg["summaryModel"] = body["summaryModel"]
+        for key in ("referenceReuse", "compactQa", "jevJudge"):
+            if key in body:
+                if not isinstance(body[key], bool):
+                    return self._reply(400, {"error": key + " must be a boolean"})
+                cfg[key] = body[key]
         thr = body.get("thresholdTokens")
         if isinstance(thr, (int, float)):
             thr = int(thr)
@@ -20778,6 +22990,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         codex_avail  = detect_agent_bin("codex")  is not None
         opencode_avail = detect_agent_bin("opencode") is not None
         return self._reply(200, {
+            "modelCatalog": _compact_config().get("modelCatalog", []) + [m for packet in _persist_json_load(MODEL_DISCOVERY_PATH).values()
+                if isinstance(packet, dict) for m in packet.get("models", [])],
             "providers": masked,
             "claude_cli_available": claude_avail,
             "codex_cli_available":  codex_avail,
@@ -20788,7 +23002,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             # ONE place. The client falls back to ["claude"] when this key
             # is absent (older daemon).
             "steerable_agents": sorted(
-                aid for aid, d in AGENT_DEFS.items() if d.get("steerable")
+                aid for aid, d in AGENT_DEFS.items() if d.get("steerable") or
+                (aid == "codex" and _compact_config().get("runtimeDrivers", {}).get("codex") == "app-server")
             ),
         })
 
@@ -21014,6 +23229,20 @@ class H(http.server.SimpleHTTPRequestHandler):
                 except urllib.error.HTTPError as e:
                     ok = e.code not in (401, 403)
                     if not ok: detail = {"status": e.code, "hint": "exa rejected the key"}
+            elif provider == "typesafe":
+                # Cheapest valid call: ONE noul over a two-word state. Jev
+                # prices input only ($0.042/Mtok) and output is free, so this
+                # costs a rounding error. 200 with an answers object → the key
+                # works; 401/403 → it does not.
+                try:
+                    answers = jev.ask("The sky is blue.",
+                                      {"t": {"type": "noul",
+                                             "instructions": "This statement mentions the sky."}},
+                                      api_key=api_key, timeout=20, max_retries=0)
+                    ok = isinstance(answers, dict) and bool(answers)
+                except jev.JevError as e:
+                    ok = False
+                    detail = {"hint": str(e)[:200]}
             elif provider == "worldlabs":
                 # Cheapest valid call: GET remaining API credits. 200 → key works,
                 # 401/403 → bad key. Never spends credits (no world generated).
@@ -21082,6 +23311,66 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(502, {"ok": False, "error": f"{type(e).__name__}: {e}"})
         return self._reply(200, {"ok": True, "results": _exa_normalize_results(payload),
                                  "raw": payload if isinstance(payload, dict) else None})
+
+    def _jev_run(self, qs):
+        """POST /__jev  Body: { state, questions, model?, kind? }.
+        Proxies TypeSafe System One (Jev) server-side so the key never reaches
+        the browser and every runtime (claude / codex / opencode) reaches the
+        judge with one curl instead of an SDK. Returns
+        { ok, answers, thresholds } - `thresholds` is the calibrated
+        {low, high, noul} band for `kind` so the caller routes with the same
+        numbers every other consumer uses instead of inventing its own.
+
+        FAIL-SOFT CONTRACT. Every caller of this endpoint has a non-Jev path it
+        must take when this replies non-200. A 503 means "not wired up, use
+        your old judgment", never "the build failed". Jev only ever ADDS
+        findings (invariant I3 in docs/features/jev-integration.md); a caller
+        that DROPS a deterministic finding because this endpoint answered is
+        wrong even when Jev is right."""
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > MAX_BYTES:
+            return self._reply(400, {"error": "payload missing or too large"})
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except Exception as e:
+            return self._reply(400, {"error": "invalid JSON body", "detail": str(e)})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "body must be an object"})
+        state = body.get("state")
+        questions = body.get("questions")
+        if state is None or not isinstance(questions, dict) or not questions:
+            return self._reply(400, {"error": "state and a non-empty questions object are required"})
+        kind = body.get("kind") if isinstance(body.get("kind"), str) else "default"
+        # The global switch is enforced HERE, not only in the preamble, because
+        # the callers that need it most (a Task subagent running requirement QA,
+        # ds_lint under the ds-guardian) never see a preamble. One switch, one
+        # place, every consumer.
+        if not _compact_config().get("jevJudge"):
+            return self._reply(503, {"ok": False, "available": False,
+                                     "error": "typed judgment is turned off",
+                                     "hint": "Settings -> Context and cost -> Typed judgment. "
+                                             "Run the check the way you would without it."})
+        api_key = _resolve_provider_key("typesafe")
+        if not api_key:
+            # 503, not 502: nothing is broken, the judge is simply not wired up.
+            return self._reply(503, {"ok": False, "available": False,
+                                     "error": "no typesafe api key configured",
+                                     "hint": "Settings -> Model Config -> API keys -> TypeSafe (Jev). "
+                                             "Every check that uses it falls back without one."})
+        try:
+            answers = jev.ask(state, questions,
+                              model=body.get("model") or jev.DEFAULT_MODEL,
+                              api_key=api_key)
+        except ValueError as e:
+            # Question shape / context budget - a caller bug, not an outage.
+            return self._reply(400, {"ok": False, "available": True, "error": str(e)})
+        except jev.JevError as e:
+            return self._reply(502, {"ok": False, "available": True, "error": str(e)})
+        except Exception as e:
+            return self._reply(502, {"ok": False, "available": True,
+                                     "error": f"{type(e).__name__}: {e}"})
+        return self._reply(200, {"ok": True, "available": True, "answers": answers,
+                                 "thresholds": jev.thresholds(kind)})
 
     def _assistant_tester_run(self, qs):
         """POST /__assistant/tester  Body: { model, system, prompt, useBrowser? }.
@@ -21905,9 +24194,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         project_id = os.path.basename(project_root.rstrip("/"))
         body = self._read_json_body(max_bytes=4 * 1024 * 1024)
         planner_type = (body.get("type") or "").strip()
+        # Claude namespaces plugin-loaded agents as `woven:<name>`; codex and
+        # opencode dispatch here with the bare name. Accept either spelling so a
+        # spec copied from a claude thread still resolves.
+        if planner_type.startswith("woven:"):
+            planner_type = planner_type.split(":", 1)[1].strip()
         brief = (body.get("brief") or "").strip()
-        if not planner_type:
-            return self._reply(400, {"error": "type required"})
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", planner_type):
+            return self._reply(400, {"error": "valid planner type required"})
         if not brief:
             return self._reply(400, {"error": "brief required"})
         planner_path = os.path.join(INSTALL_ROOT, ".claude", "agents", f"{planner_type}.md")
@@ -21922,6 +24216,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             return self._reply(500, {"error": f"could not read planner: {e}"})
         planner_body = re.sub(r"^---\n.*?\n---\n", "", planner_md, count=1, flags=re.S).strip()
+        _planner_context = _delegated_context(project_root, body, qs)
         # Pick runtime + build spawn shape.
         claude_bin   = detect_agent_bin("claude")
         codex_bin    = detect_agent_bin("codex")
@@ -21939,32 +24234,36 @@ class H(http.server.SimpleHTTPRequestHandler):
         # spawn since it has no parent context to inherit.
         try:
             from kinds.capabilities import capabilities_preamble
-            caps_text = capabilities_preamble(project_root=project_root)
+            caps_text = capabilities_preamble(project_root=project_root,
+                tier=context_policy.planner_tier(planner_type),
+                prototype=_planner_context.get("prototype"), guards=_planner_context.get("guards"))
         except Exception:
             caps_text = ""
-        # Runtime: honor the user's selected AGENT when it can spawn here and
-        # is installed; else fall back to whichever IS installed so a build
-        # never dead-ends. This stops the old "always prefer claude" from
-        # overriding an explicit codex/opencode choice.
-        want = _agent_default_runtime()
+        # Resolve explicit overrides before selecting the binary. An absent
+        # selected runtime is an error, not permission to use another model.
+        want = _planner_context.get("runtime") or _agent_default_runtime()
+        selected = (body.get("model")
+                    or _subagent_override_model_for_node(planner_type, planner_type, brief)
+                    or _orch_override_model_for_node(planner_type, planner_type))
+        inherited = _planner_context.get("model")
+        if not _planner_context.get("parent"):
+            selected = selected or _agent_default_model()
+        try:
+            profile = model_routing.resolve(selected or "inherit", want, inherited, _compact_config(), role="planner")
+        except ValueError as error:
+            return self._reply(400, {"error": str(error)})
+        want = profile["runtime"]
         avail = {"claude": claude_bin, "codex": codex_bin, "opencode": opencode_bin}
-        chosen = want if avail.get(want) else next(
-            (a for a in ("claude", "codex", "opencode") if avail.get(a)), None)
+        chosen = want if avail.get(want) else None
         if chosen is None:
             return self._reply(502, {
-                "error": "no LLM runtime available - install Claude Code, Codex CLI, or opencode",
+                "error": "selected runtime is not installed: " + want,
                 "hint": "npm install -g @anthropic-ai/claude-code  OR  npm install -g @openai/codex  OR  npm install -g opencode-ai",
             })
         agent_id, bin_path, defs = chosen, avail[chosen], AGENT_DEFS[chosen]
-        # Per-orchestrator model override (keyed by planner_type) within the
-        # chosen runtime's provider; else the global agent model, but only when
-        # we DID NOT fall back to a different runtime (a fallback runtime's own
-        # default is safer than forcing a wrong-provider model id onto it).
-        _want_prov = _provider_for_agent(agent_id)
-        _omodel = _orch_override_model_for_node(planner_type, planner_type, want_provider=_want_prov)
-        if not _omodel and chosen == want:
-            _omodel = _agent_default_model()
-        _planner_model_args = _agent_model_spawn_args(agent_id, defs, _omodel) if _omodel else []
+        # Spawn from the resolved profile without looking up the catalog again.
+        _omodel = profile["model"]
+        _planner_model_args = _agent_model_spawn_args(agent_id, defs, _omodel, resolved=True)
         if agent_id == "claude":
             # Build the full system prompt: planner body PLUS capabilities
             # preamble PLUS question-form protocol. Order matters - the
@@ -21993,6 +24292,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "--append-system-prompt", sys_prompt,
             ]
             spawn_args += _mcp_config_spawn_args()
+            spawn_args += _agents_plugin_spawn_args()
             spawn_args += _planner_model_args
             stdin_pipe = subprocess.PIPE
             prompt_stdin = _claude_user_frame(brief)
@@ -22048,11 +24348,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         # delegated throwaway workers, not the main chat - exempt them from
         # the leaf-territory hard gate the same way node agents are.
         env["TH_SPAWN_KIND"] = "planner"
+        _apply_guard_env(env, _planner_context.get("guards"))
         argv = [bin_path, *spawn_args]
         if prompt_argv is not None:
             argv.append(prompt_argv)
         try:
-            proc = subprocess.Popen(
+            proc = _spawn_runtime_process(agent_id,
                 argv,
                 cwd=project_root,
                 stdin=stdin_pipe,
@@ -22070,10 +24371,19 @@ class H(http.server.SimpleHTTPRequestHandler):
                          project_id=project_id, project_root=project_root)
         state.bin_path = bin_path
         state.permission_mode = "bypassPermissions"
+        state.tier = context_policy.planner_tier(planner_type)
+        state.prototype = _planner_context.get("prototype")
+        state.guards = _planner_context.get("guards")
+        state.parent_run_id = _planner_context.get("parent")
+        state.qa_check = run_jobs.qa_check(planner_type, brief)
+        state.model = _omodel or None
+        state.execution_profile = profile
         with RUNS_LOCK:
             RUNS[run_id] = state
         state.append("status", {"label": "planner-dispatched",
-                                "type": planner_type, "runtime": agent_id})
+                                "type": planner_type, "runtime": agent_id,
+                                **context_policy.handoff_metadata(state)})
+        _notify_bridge_parent(state, "running")
         # Feed the prompt if the runtime takes stdin (Claude stream-json).
         if prompt_stdin is not None:
             try:
@@ -22141,28 +24451,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                         self.wfile.flush()
                     except Exception:
                         client_gone = True
-            # Synthesize the final output: concatenate every text_delta from
-            # the agent event stream. Tool calls / results are visible in
-            # the events themselves; the `output` field is the planner's
-            # final narrative reply.
-            chunks = []
-            with state.lock:
-                events_snapshot = list(state.events)
-            for ev in events_snapshot:
-                if ev["type"] != "agent":
-                    continue
-                d = ev.get("data") or {}
-                if d.get("type") == "text_delta":
-                    chunks.append(d.get("delta") or "")
-            output = "".join(chunks).strip()
-            payload = {
-                "runId": run_id,
-                "type": planner_type,
-                "runtime": agent_id,
-                "exitCode": state.exit_code,
-                "output": output,
-                "error": None if state.exit_code in (None, 0) else f"exit {state.exit_code}",
-            }
+            # Synthesize the final output: the planner's narrative reply (tool
+            # calls / results are visible in the events themselves).
+            payload = _planner_done_payload(state, run_id, planner_type, agent_id)
             state.append("planner_output", payload)
             if not client_gone:
                 _write_sse("planner-done", payload)
@@ -22208,9 +24499,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if ev.get("type") != "agent":
                     continue
                 d = ev.get("data") or {}
-                if d.get("type") == "text_delta":
+                if d.get("type") == "text_delta" and not d.get("sidechain"):
                     chunks.append(d.get("delta") or "")
-            output = "".join(chunks).strip()
+            output = _QA_CANCELLED_OUTPUT if state.qa_cancelled else "".join(chunks).strip()
         return self._reply(200, {
             "runId": run_id,
             "done": done,
@@ -22398,7 +24689,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._reply(400, {"error": "prompt or messages required for llm skill"})
                 messages = [{"role": "user", "content": prompt}]
         elif skill == "describe":
-            prompt = (body.get("prompt") or "Describe this image in vivid detail.").strip()
+            prompt = (body.get("prompt") or "Describe this image concisely: subject, composition, color, typography, and distinctive details. State uncertainty.").strip()
             # Accept either a file path or a pre-built data URI (e.g., inline SVG).
             raw_uri = body.get("input_data_uri")
             if isinstance(raw_uri, str) and raw_uri.startswith("data:"):
@@ -22441,6 +24732,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             if not write_root_abs and read_root_abs:
                 write_root_abs = read_root_abs
 
+        describe_cache_key = None
+        if skill == "describe" and _compact_config()["referenceReuse"]:
+            describe_cache_key = context_artifacts.digest({
+                "version": 1, "messages": messages, "provider": provider,
+                "model": model, "options": options})
+            if not body.get("refresh"):
+                cached = context_artifacts.reference_get(project_root, describe_cache_key)
+                if cached is not None:
+                    return self._reply(200, {**cached, "cacheHit": True})
         tool_log = []
         try:
             if agent_mode and skill == "llm":
@@ -22499,6 +24799,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(502, {"error": f"{provider} API error", "detail": detail})
         except Exception as e:
             return self._reply(500, {"error": f"{type(e).__name__}: {e}"})
+
+        if describe_cache_key and text and text.strip():
+            try:
+                context_artifacts.reference_put(project_root, describe_cache_key, {
+                    "ok": True, "text": text, "skill": skill,
+                    "provider": provider, "model": model, "agent": None})
+            except OSError:
+                pass  # Cache failure must not discard a successful extraction.
 
         # Apply writes after the final assistant reply.
         wrote = []
@@ -22961,6 +25269,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # Refuses paths outside the project root and any extension that isn't
     # .html / .htm. 4 MB cap matches typical prototype size headroom.
     def _html_save(self, qs):
+        import edit_store
         try:
             project_root = resolve_project_root(qs, require_explicit=True)
         except ValueError as e:
@@ -22978,26 +25287,56 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not (rel.endswith(".html") or rel.endswith(".htm")):
             return self._reply(400, {"error": "path must end in .html or .htm"})
         try:
-            abs_path = _safe_join(project_root, rel)
+            abs_path = edit_store.source_path(project_root, rel)
         except Exception as e:
             return self._reply(400, {"error": f"path resolution failed: {e}"})
         if not os.path.isfile(abs_path):
             return self._reply(404, {"error": f"file not found: {rel}"})
-        # Atomic write: stage next to target, then os.replace.
-        staging = abs_path + ".staging"
+        expected = body.get("expectedVersion")
+        if expected is not None and not isinstance(expected, str):
+            return self._reply(400, {"error": "expectedVersion must be a string"})
         try:
-            with _history_bracket(project_root, [rel],
-                                   kind="ui-edit", label=f"Edit HTML: {rel}",
-                                   source="editor"):
-                with open(staging, "w", encoding="utf-8") as f:
-                    f.write(html)
-                os.replace(staging, abs_path)
+            with edit_store.lock(abs_path):
+                if expected is not None and edit_store.read(abs_path)["version"] != expected:
+                    return self._reply(409, {"error": "The file changed outside this editing session. Your edits are still pending. Reload before saving again."})
+                with _history_bracket(project_root, [rel], kind="ui-edit",
+                                      label=f"Edit HTML: {rel}", source="editor"):
+                    result = edit_store.write(abs_path, html, expected)
+        except edit_store.Conflict as e:
+            return self._reply(409, {"error": str(e)})
         except OSError as e:
-            try: os.unlink(staging)
-            except Exception: pass
             return self._reply(500, {"error": f"write failed: {e}"})
-        h = hashlib.sha256(html.encode("utf-8", errors="replace")).hexdigest()[:16]
-        return self._reply(200, {"ok": True, "path": rel, "size": len(html.encode("utf-8")), "version": h})
+        return self._reply(200, {**result, "path": rel})
+
+    def _edit_components(self, qs, write=False):
+        import component_store
+        import edit_store
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+            if not write:
+                return self._reply(200, component_store.read(root))
+            body = self._read_json_body(max_bytes=2 * 1024 * 1024)
+            with edit_store.lock(os.path.join(root, "editor", "components.json")):
+                with _history_bracket(root, ["editor/components.json"], kind="ui-edit",
+                                      label="Update component library", source="editor"):
+                    value = component_store.put(root, body.get("definition"), body.get("expectedVersion"))
+            return self._reply(200, value)
+        except edit_store.Conflict as e:
+            return self._reply(409, {"error": str(e)})
+        except (ValueError, OSError) as e:
+            return self._reply(400, {"error": str(e)})
+
+    def _edit_source(self, qs):
+        import edit_store
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+            rel = (qs.get("path") or [""])[0]
+            if not rel.startswith("source/") or not rel.lower().endswith((".html", ".htm")):
+                return self._reply(400, {"error": "Select a source HTML file"})
+            path = edit_store.source_path(root, rel)
+            return self._reply(200, edit_store.read(path))
+        except (ValueError, OSError, UnicodeError) as e:
+            return self._reply(400, {"error": str(e)})
 
     # POST /__component_export?project=<id>
     # Body: JSON { path: "source/<branch>/components/<name>.html",
@@ -24667,6 +27006,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                                 "node.bakedPath)"),
             }
         rel = baked_path.lstrip("/")
+        absolute = os.path.realpath(os.path.join(project_root, rel))
+        if not absolute.startswith(os.path.realpath(project_root) + os.sep):
+            raise _QAResolveError(400, {"error": "baked path escapes project root"})
+        if not os.path.isfile(absolute):
+            raise _QAResolveError(404, {"error": "baked artifact is missing", "bakedPath": baked_path})
+        if node.get("runStatus") == "error":
+            raise _QAResolveError(409, {"error": "node has an unresolved error; bake again before QA",
+                                        "runError": node.get("runError")})
         url = "http://127.0.0.1:" + str(PORT) + "/" + urllib.parse.quote(rel)
         if project_id:
             url += "?project=" + urllib.parse.quote(project_id)
@@ -24796,6 +27143,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         cases_qs = (_qs_get(qs, "cases") or "").strip().lower()
         use_cases = bool(cases_path) and cases_qs not in ("0", "false", "no")
         out_dir = tempfile.mkdtemp(prefix="woven-qa-")
+        revision_root = os.path.dirname(abs_target) if abs_target else None
+        revision_before = review_evidence.source_revision(revision_root)
         # Run on the same interpreter that runs the daemon (system python).
         cmd = [sys.executable, qa_tool, "--url", url, "--out", out_dir,
                "--mode", mode]
@@ -24887,6 +27236,251 @@ class H(http.server.SimpleHTTPRequestHandler):
         report["mode"] = mode
         report["exitCode"] = proc.returncode
         report["outDir"] = out_dir
+        report = review_evidence.attach(report, judge, revision_before, review_evidence.source_revision(revision_root))
+        # Keep complete evidence on disk. Brief responses change no checks.
+        if _compact_config()["compactQa"] and _qs_get(qs, "detail") != "full":
+            try:
+                evidence_path = os.path.join(out_dir, "context-report.json")
+                context_artifacts.atomic_json(evidence_path, report)
+                packet = context_artifacts.qa_packet(report)
+                packet["evidence"] = {"path": evidence_path, "sha256": context_artifacts.digest(report)}
+                return self._reply(200, packet)
+            except (OSError, ValueError, TypeError):
+                pass  # A context optimization must not lose a completed QA result.
+        return self._reply(200, report)
+
+    # ── User stories + prototype story map ────────────────────────────────
+    # Two artefacts per project, both plain files on disk (editor/stories.py):
+    #   docs/user-stories.xlsx   the stories, authored in Excel, keyed by ID
+    #   docs/story-map.json      story ID -> where it lives in the prototype
+    # The story-map canvas node reads /__stories and re-runs /__stories/validate
+    # to surface the drift between the two.
+
+    def _stories_prototype(self, qs, project_root):
+        """Explicit ?prototype wins, then the slug the map was recorded
+        against, then the project default."""
+        slug = (qs.get("prototype") or qs.get("branch") or [""])[0].strip()
+        if slug and _PROTO_SLUG_OK.match(slug):
+            return slug
+        recorded = (_stories.load_map(project_root).get("prototype") or "").strip()
+        if recorded and _PROTO_SLUG_OK.match(recorded):
+            return recorded
+        return self._default_prototype_slug(project_root) or "main"
+
+    def _stories_page_list(self, project_root, prototype, cap=400):
+        """Every page a mapping could point at: *.html under source/<slug>/,
+        one level deep, dot-prefixed drafts and clones excluded."""
+        base = os.path.join(project_root, "source", prototype or "")
+        out = []
+        if not os.path.isdir(base):
+            return out
+        for entry in sorted(os.listdir(base)):
+            if entry.startswith("."):
+                continue
+            full = os.path.join(base, entry)
+            if os.path.isfile(full) and entry.lower().endswith(".html"):
+                out.append(entry)
+            elif os.path.isdir(full):
+                for sub in sorted(os.listdir(full)):
+                    if sub.startswith(".") or not sub.lower().endswith(".html"):
+                        continue
+                    if os.path.isfile(os.path.join(full, sub)):
+                        out.append(entry + "/" + sub)
+            if len(out) >= cap:
+                break
+        return out[:cap]
+
+    # GET /__stories?project=<id>[&prototype=<slug>]
+    def _stories_get(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        proto = self._stories_prototype(qs, project_root)
+        try:
+            payload = _stories.rows_for_display(project_root, proto)
+        except Exception as e:
+            return self._reply(500, {"error": "story map read failed: %s" % e})
+        payload["ok"] = True
+        payload["pages"] = self._stories_page_list(project_root, proto)
+        payload["fieldLabels"] = _stories.FIELD_LABELS
+        payload["findingKinds"] = _stories.FINDING_KINDS
+        return self._reply(200, payload)
+
+    # GET /__stories/download?project=<id> - hand back the .xlsx itself so the
+    # user can open it in Excel. Same file the agent and the node read.
+    def _stories_download(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        path = _stories.stories_path(project_root)
+        if not os.path.isfile(path):
+            return self._reply(404, {"error": "no %s in this project" % _stories.STORIES_REL})
+        with open(path, "rb") as f:
+            data = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type",
+                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.send_header("Content-Disposition", 'attachment; filename="user-stories.xlsx"')
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    # POST /__stories/upload?project=<id>  body: raw .xlsx bytes
+    # Writes to a temp file and PARSES it before replacing the live sheet, so
+    # a wrong-format drop cannot destroy the stories already in the project.
+    def _stories_upload(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > 25 * 1024 * 1024:
+            return self._reply(413, {"error": "xlsx file required; max 25MB", "bytes": length})
+        body = self.rfile.read(length)
+        if not body.startswith(b"PK"):
+            return self._reply(400, {
+                "error": "that is not an .xlsx file",
+                "hint": "legacy .xls and .csv are not read directly - save as .xlsx in Excel first"})
+        dest = _stories.stories_path(project_root)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        tmp = dest + ".upload.tmp"
+        with open(tmp, "wb") as f:
+            f.write(body)
+        try:
+            sheets = _xlsx_io.read_xlsx(tmp)
+            parsed = _stories.parse_sheet((sheets[0].get("rows") if sheets else []) or [],
+                                          sheets[0].get("name") if sheets else "")
+        except Exception as e:
+            os.remove(tmp)
+            return self._reply(400, {"error": "could not read that workbook: %s" % e})
+        if not sheets:
+            os.remove(tmp)
+            return self._reply(400, {"error": "that workbook has no sheets"})
+        os.replace(tmp, dest)
+        proto = self._stories_prototype(qs, project_root)
+        payload = _stories.rows_for_display(project_root, proto)
+        payload["ok"] = True
+        payload["imported"] = len(payload.get("rows") or [])
+        payload["pages"] = self._stories_page_list(project_root, proto)
+        return self._reply(200, payload)
+
+    # POST /__stories/template?project=<id>  body: { force?: bool }
+    def _stories_template(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body()
+        except ValueError:
+            body = {}
+        path = _stories.stories_path(project_root)
+        if os.path.isfile(path) and not body.get("force"):
+            return self._reply(409, {"error": "%s already exists" % _stories.STORIES_REL,
+                                     "hint": "pass force:true to overwrite it"})
+        _stories.write_template(project_root)
+        proto = self._stories_prototype(qs, project_root)
+        payload = _stories.rows_for_display(project_root, proto)
+        payload["ok"] = True
+        payload["pages"] = self._stories_page_list(project_root, proto)
+        return self._reply(200, payload)
+
+    # POST /__stories/map?project=<id>  body: { prototype?, rows: [...] }
+    # Full replace - the node sends the whole table, same contract as
+    # /__workflow. Re-stamps each row's storyHash so an edit made right after
+    # a story change does not immediately read back as stale.
+    def _stories_map_save(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            body = self._read_json_body(max_bytes=4 * 1024 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        rows = body.get("rows")
+        if not isinstance(rows, list):
+            return self._reply(400, {"error": "rows[] required"})
+        proto = (body.get("prototype") or "").strip() or self._stories_prototype(qs, project_root)
+        by_id = {str(s.get("id") or ""): s
+                 for s in (_stories.load_stories(project_root).get("stories") or [])}
+        stamped = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            r = dict(r)
+            if body.get("restamp") or not str(r.get("storyHash") or "").strip():
+                story = by_id.get(str(r.get("id") or ""))
+                if story:
+                    r["storyHash"] = story.get("hash") or ""
+            stamped.append(r)
+        _stories.save_map(project_root, {"prototype": proto, "rows": stamped})
+        payload = _stories.rows_for_display(project_root, proto)
+        payload["ok"] = True
+        payload["pages"] = self._stories_page_list(project_root, proto)
+        return self._reply(200, payload)
+
+    # POST /__stories/validate?project=<id>[&prototype=<slug>]
+    # The re-run: cross-check sheet against map against the built prototype and
+    # hand back every discrepancy, per story and in total.
+    def _stories_validate(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        proto = self._stories_prototype(qs, project_root)
+        try:
+            payload = _stories.rows_for_display(project_root, proto)
+        except Exception as e:
+            return self._reply(500, {"error": "validate failed: %s" % e})
+        payload["ok"] = True
+        payload["pages"] = self._stories_page_list(project_root, proto)
+        return self._reply(200, payload)
+
+    # POST /__ds/validate?project=<id>[&prototype=<slug>][&pages=a.html,b.html]
+    # The design-system node's re-run: editor/tools/qa/ds_lint.py over the built
+    # pages, reporting where the prototype forked away from the bound DS.
+    def _ds_validate(self, qs):
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        proto = (qs.get("prototype") or qs.get("branch") or [""])[0].strip() \
+            or (self._default_prototype_slug(project_root) or "")
+        script = os.path.join(EDITOR_DIR, "tools", "qa", "ds_lint.py")
+        if not os.path.isfile(script):
+            return self._reply(500, {"error": "ds_lint.py is missing from this install"})
+        cmd = [sys.executable, script, "--project-root", project_root, "--json"]
+        if proto:
+            cmd += ["--prototype", proto]
+        pages = (qs.get("pages") or [""])[0].strip()
+        if pages:
+            cmd += ["--pages", pages]
+        # Typed judgment on the ambiguous residue. Always passed when the global
+        # switch is on: ds_lint itself re-checks the switch and the key, so the
+        # flag is a silent no-op without them and the report is byte-identical
+        # to the one this endpoint returned before typed judgment existed.
+        if _compact_config().get("jevJudge"):
+            cmd.append("--jev")
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            return self._reply(200, {"ok": False, "status": "error",
+                                     "error": "ds lint timed out after 180s"})
+        try:
+            report = json.loads(proc.stdout or "{}")
+        except ValueError:
+            return self._reply(200, {"ok": False, "status": "error",
+                                     "error": "ds_lint.py produced no parseable report",
+                                     "stderr": (proc.stderr or "")[-2000:],
+                                     "exitCode": proc.returncode})
+        # exit 2 / status no-ds is "not applicable", not a failure: a project
+        # with no design system bound has nothing to drift from.
+        report["ok"] = report.get("status") in ("clean", "no-ds")
+        report["exitCode"] = proc.returncode
+        report["checkedAt"] = _dt.datetime.now().replace(microsecond=0).isoformat()
         return self._reply(200, report)
 
     # ── Git / GitHub backbone (host side) - see editor/git_ops.py ──────────
@@ -24961,6 +27555,34 @@ class H(http.server.SimpleHTTPRequestHandler):
             st["conflicts"] = _gitops.conflicted_files(root) if st.get("repo") else []
             # Local branches for the fork/switch/merge UI (cheap for-each-ref).
             st["branches"] = _gitops.branches(root)["branches"] if st.get("repo") else []
+            # Branches checked out in a LINKED worktree (a parallel project)
+            # can't be switched to here - stamp the holding project so the
+            # panel offers "open that project" instead of a doomed switch.
+            if st.get("repo"):
+                try:
+                    self_rp = os.path.realpath(root)
+                    wts = _gitops.list_worktrees(root)
+                    main_rp = os.path.realpath(wts[0]["path"]) if wts and wts[0].get("path") else ""
+                    for wt in wts:
+                        wpath = wt.get("path") or ""
+                        wbranch = wt.get("branch") or ""
+                        if not wpath or not wbranch or os.path.realpath(wpath) == self_rp:
+                            continue
+                        wpid = _worktree_project_id(wpath)
+                        for row in st["branches"]:
+                            if row.get("name") == wbranch:
+                                # A projects/ sibling is navigable; anything else
+                                # (an agent's scratch worktree, a hand-made one)
+                                # is only display - never a jump target. The MAIN
+                                # checkout is jumpable but never closable.
+                                if wpid:
+                                    row["worktreeProject"] = wpid
+                                else:
+                                    row["worktreeExternal"] = os.path.basename(wpath)
+                                if os.path.realpath(wpath) == main_rp:
+                                    row["worktreeMain"] = True
+                except Exception:
+                    pass
             # Local sync version (cheap). The remote comparison is NOT done here
             # (status is polled often, and a remote read is a network round-trip)
             # - a mismatch surfaces as a 409 when the user actually pulls/pushes.
@@ -24974,6 +27596,30 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(200, st)
         except Exception as e:
             return self._reply(500, {"error": str(e)})
+
+    # GET /__git/freshness?project=<id> → {branches:{name:{stale, remoteSha}}}
+    # ONE ls-remote round-trip against origin, compared to local tips. Lazy by
+    # design: the panel calls it when the branch dropdown OPENS, never from the
+    # status poll (status stays network-free). No remote → empty map.
+    def _git_freshness(self, qs):
+        try:
+            root = _resolve_git_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            if not _gitops.is_repo(root):
+                return self._reply(200, {"branches": {}})
+            st = _gitops.status(root)
+            if not st.get("remote"):
+                return self._reply(200, {"branches": {}})
+            tok = None
+            try:
+                tok = (_gitops.host_token() or "") or None
+            except Exception:
+                pass
+            return self._reply(200, _gitops.branch_freshness(root, token=tok))
+        except Exception as e:
+            return self._reply(502, {"error": str(e)})
 
     # ── GitHub account (host side) - sign in ONCE, reused across projects ──
     # GET /__github/status  → {configured, signedIn, login, avatar, expired}.
@@ -25345,7 +27991,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Serialise the mutating ops + record them as in-flight so the panel can
         # show progress after a tab reload and a second click is refused cleanly.
         mutating = op in ("commit", "publish", "pull", "restore", "discard-local", "discard-remote",
-                          "branch-create", "branch-switch", "branch-merge", "branch-delete")
+                          "branch-create", "branch-switch", "branch-merge", "branch-delete",
+                          "branch-worktree", "branch-worktree-remove")
         if mutating:
             now = time.time()
             with _GIT_INFLIGHT_LOCK:
@@ -25593,7 +28240,22 @@ class H(http.server.SimpleHTTPRequestHandler):
                     _gitops.revert_paths(root, meta_dirty)
                 if op == "branch-switch":
                     prev_branch = _gitops.current_branch(root)
-                    res = _gitops.switch_branch(root, body.get("name") or "")
+                    try:
+                        res = _gitops.switch_branch(root, body.get("name") or "")
+                    except RuntimeError as e:
+                        # One-branch-one-worktree: the branch is checked out in a
+                        # parallel project. Name that project so the panel can
+                        # offer "open it" instead of surfacing raw git output.
+                        m_wt = re.search(r"already used by worktree at '([^']+)'", str(e))
+                        if m_wt:
+                            wpid = _worktree_project_id(m_wt.group(1))
+                            return self._reply(409, {
+                                "error": ("branch '" + (body.get("name") or "")
+                                          + "' is open in the parallel project '"
+                                          + (wpid or os.path.basename(m_wt.group(1)))
+                                          + "' - open that project instead"),
+                                "worktreeProject": wpid})
+                        raise
                     # Comments are project-wide, not branch-scoped: carry the
                     # union across so switching never "replaces" them with the
                     # target branch's stale snapshot. With uncommitted share
@@ -25639,6 +28301,56 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if pid:
                     try: _broadcast_workflow_change(pid)
                     except Exception: pass
+                return self._reply(200, {"ok": True, **res})
+            if op == "branch-worktree":
+                # Open an EXISTING branch as a PARALLEL sibling project (a git
+                # worktree of the same repo). No switching, no dirty-tree guard
+                # needed - this tree is untouched; the branch gets its own
+                # folder under projects/ and shows up as a normal project.
+                pid = (_qs_get(qs, "project") or "").strip()
+                if _qs_get(qs, "gds"):
+                    return self._reply(400, {"error": "parallel checkouts are for projects, not design systems"})
+                if not PROJECTS_DIR or not pid:
+                    return self._reply(400, {"error": "parallel checkouts need workspace mode"})
+                name = (body.get("name") or "").strip()
+                if not name:
+                    return self._reply(400, {"error": "branch name required"})
+                cur = _gitops.current_branch(root)
+                if name == cur:
+                    return self._reply(400, {"error": "'" + name + "' is already this project's branch"})
+                for wt in _gitops.list_worktrees(root):
+                    if wt.get("branch") == name:
+                        wpid = _worktree_project_id(wt.get("path") or "")
+                        return self._reply(409, {
+                            "error": "'" + name + "' is already open in project '"
+                                     + (wpid or os.path.basename(wt.get("path") or "")) + "'",
+                            "worktreeProject": wpid})
+                base = re.sub(r"[^A-Za-z0-9._-]+", "-", pid + "-" + name).strip("-")[:60] or "worktree"
+                new_id = base
+                n = 2
+                while os.path.exists(_safe_join(PROJECTS_DIR, new_id)):
+                    new_id = base + "-" + str(n)
+                    n += 1
+                res = _gitops.worktree_add(root, name, _safe_join(PROJECTS_DIR, new_id))
+                return self._reply(200, {"ok": True, "branch": res.get("branch"),
+                                         "projectId": new_id})
+            if op == "branch-worktree-remove":
+                # Close a parallel checkout. The branch survives; only the
+                # side-by-side folder goes. A dirty checkout needs force (the
+                # panel asks the user before discarding that work).
+                name = (body.get("name") or "").strip()
+                if not name:
+                    return self._reply(400, {"error": "branch name required"})
+                try:
+                    res = _gitops.worktree_remove(root, name, force=bool(body.get("force")))
+                except RuntimeError as e:
+                    msg = str(e)
+                    if "modified or untracked files" in msg or "use --force" in msg:
+                        return self._reply(409, {
+                            "error": "the parallel project for '" + name
+                                     + "' has uncommitted changes",
+                            "needsForce": True})
+                    raise
                 return self._reply(200, {"ok": True, **res})
             if op == "branch-delete":
                 res = _gitops.delete_branch(root, body.get("name") or "",
@@ -28527,7 +31239,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # computed styles baked inline, so it is self-contained) + selection
     # text back to the editor over postMessage. See WorkflowBrowserNode +
     # the WorkflowSurface message bridge in app.js.
-    _WEB_PICK_OVERLAY = '<script>(function(){\nif(window.__thWebPick)return;window.__thWebPick=true;\nvar EDITOR=window.parent,pickOn=false,hover=null,sel=null,styleEl=null;\nfunction post(m){try{EDITOR&&EDITOR.postMessage(m,"*");}catch(e){}}\nfunction tag(el){return (el&&el.tagName||"").toLowerCase();}\nfunction abs(u){try{return new URL(u,document.baseURI).href;}catch(e){return u;}}\nfunction ensureStyle(){if(styleEl)return;styleEl=document.createElement("style");styleEl.setAttribute("data-th-web-pick","1");styleEl.textContent=".th-wp-hover{outline:2px solid #3b82f6 !important;outline-offset:-2px !important;}.th-wp-sel{outline:2px solid #ef4444 !important;outline-offset:-2px !important;box-shadow:0 0 0 3px rgba(239,68,68,0.25) !important;}body.th-wp-on,body.th-wp-on *{cursor:crosshair !important;}";(document.head||document.documentElement).appendChild(styleEl);}\nfunction cssPath(el){var parts=[],cur=el,depth=0;while(cur&&cur.nodeType===1&&cur.tagName&&depth<8){var t=cur.tagName.toLowerCase();if(t==="body"||t==="html")break;var part=t,parent=cur.parentElement;if(parent){var sibs=Array.prototype.filter.call(parent.children,function(c){return c.tagName===cur.tagName;});if(sibs.length>1)part+=":nth-of-type("+(sibs.indexOf(cur)+1)+")";}if(cur.id)part="#"+cur.id;parts.unshift(part);cur=cur.parentElement;depth++;}return parts.join(" > ");}\nvar SKIP=/^(inline-size|block-size|perspective-origin|transform-origin)$/;\nfunction bake(src){var clone=src.cloneNode(true);var lt=[src].concat(Array.prototype.slice.call(src.querySelectorAll("*")));var ct=[clone].concat(Array.prototype.slice.call(clone.querySelectorAll("*")));var n=Math.min(lt.length,ct.length);for(var i=0;i<n;i++){var live=lt[i],dst=ct[i];if(!dst||dst.nodeType!==1)continue;var tg=live.tagName;\ntry{if(tg==="IMG"){var sc=live.currentSrc||live.src||live.getAttribute("data-src")||"";if(sc)dst.setAttribute("src",abs(sc));if(dst.getAttribute("srcset"))dst.removeAttribute("srcset");dst.setAttribute("loading","eager");}}catch(e){}\ntry{if(tg==="SOURCE"){if(live.src)dst.setAttribute("src",abs(live.src));if(dst.getAttribute("srcset"))dst.removeAttribute("srcset");}}catch(e){}\ntry{if(tg==="VIDEO"){var po=live.getAttribute("poster");if(po)dst.setAttribute("poster",abs(po));}}catch(e){}\ntry{if(tg==="A"&&live.href)dst.setAttribute("href",live.href);}catch(e){}\nvar cs=null;try{cs=window.getComputedStyle(live);}catch(e){}if(cs){var css="";for(var k=0;k<cs.length;k++){var prop=cs[k];if(SKIP.test(prop))continue;var val=cs.getPropertyValue(prop);if(val)css+=prop+":"+val+";";}var ex=dst.getAttribute("style")||"";dst.setAttribute("style",css+ex);}\nif(dst.classList){dst.classList.remove("th-wp-hover");dst.classList.remove("th-wp-sel");}}return clone.outerHTML;}\nfunction select(el){if(!el)return;if(sel&&sel.classList)sel.classList.remove("th-wp-sel");if(hover&&hover.classList){hover.classList.remove("th-wp-hover");hover=null;}sel=el;if(el.classList)el.classList.add("th-wp-sel");post({type:"th-web-selected",tagName:tag(el)});}\nfunction onMove(e){if(!pickOn)return;var t=e.target;if(t===sel)return;if(hover&&hover!==t&&hover.classList)hover.classList.remove("th-wp-hover");if(t&&t!==sel&&t!==document.body&&t!==document.documentElement&&t.classList){t.classList.add("th-wp-hover");hover=t;}}\nfunction onClick(e){if(!pickOn)return;e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation();var t=e.target;if(!t||t===document.body||t===document.documentElement)return;select(t);try{window.focus();}catch(e2){}}\nfunction onDown(e){if(pickOn){e.stopPropagation();}}\nfunction onKey(e){if(!pickOn)return;var meta=e.metaKey||e.ctrlKey;\nif(e.key==="ArrowUp"){if(sel&&sel.parentElement&&sel.parentElement!==document.body&&sel.parentElement!==document.documentElement)select(sel.parentElement);e.preventDefault();e.stopPropagation();return;}\nif(e.key==="ArrowDown"){if(sel&&sel.firstElementChild)select(sel.firstElementChild);e.preventDefault();e.stopPropagation();return;}\nif(meta&&(e.key==="c"||e.key==="C")){if(sel){var h="";try{h=bake(sel);}catch(e3){h=sel.outerHTML||"";}var r2=null;try{r2=sel.getBoundingClientRect();}catch(e4){}post({type:"th-web-copied",html:h,tagName:tag(sel),path:cssPath(sel),w:r2?Math.round(r2.width):0,h:r2?Math.round(r2.height):0});}e.preventDefault();e.stopPropagation();return;}\nif(meta&&(e.key==="v"||e.key==="V")){post({type:"th-web-paste"});e.preventDefault();e.stopPropagation();return;}\nif(e.key==="Escape"){if(sel&&sel.classList)sel.classList.remove("th-wp-sel");sel=null;}}\ndocument.addEventListener("mousemove",onMove,true);\ndocument.addEventListener("click",onClick,true);\ndocument.addEventListener("mousedown",onDown,true);\ndocument.addEventListener("keydown",onKey,true);\nfunction onWheel(e){if(!(e.ctrlKey||e.metaKey))return;e.preventDefault();post({type:"th-web-wheel",deltaX:e.deltaX,deltaY:e.deltaY,clientX:e.clientX,clientY:e.clientY});}\ndocument.addEventListener("wheel",onWheel,{passive:false,capture:true});\nfunction setMode(on){pickOn=!!on;if(pickOn){ensureStyle();if(document.body)document.body.classList.add("th-wp-on");try{window.focus();}catch(e){}}else{if(document.body)document.body.classList.remove("th-wp-on");if(hover&&hover.classList){hover.classList.remove("th-wp-hover");hover=null;}if(sel&&sel.classList){sel.classList.remove("th-wp-sel");sel=null;}}}\nwindow.addEventListener("message",function(e){var d=e&&e.data;if(!d||typeof d!=="object")return;if(d.type==="th-pick-mode")setMode(d.on);else if(d.type==="th-get-selection"){var txt="";try{txt=String(window.getSelection()||"").trim();}catch(e3){}post({type:"th-web-selection",reqId:d.reqId,text:txt});}});\npost({type:"th-web-ready"});\n})();</script>'
+    _WEB_PICK_OVERLAY = '<script>(function(){\nif(window.__thWebPick)return;window.__thWebPick=true;\nvar EDITOR=window.parent,pickOn=false,hover=null,sel=null,styleEl=null;\nfunction post(m){try{EDITOR&&EDITOR.postMessage(m,"*");}catch(e){}}\nfunction tag(el){return (el&&el.tagName||"").toLowerCase();}\nfunction abs(u){try{return new URL(u,document.baseURI).href;}catch(e){return u;}}\nfunction ensureStyle(){if(styleEl)return;styleEl=document.createElement("style");styleEl.setAttribute("data-th-web-pick","1");styleEl.textContent=".th-wp-hover{outline:2px solid #3b82f6 !important;outline-offset:-2px !important;}.th-wp-sel{outline:2px solid #ef4444 !important;outline-offset:-2px !important;box-shadow:0 0 0 3px rgba(239,68,68,0.25) !important;}body.th-wp-on,body.th-wp-on *{cursor:crosshair !important;}";(document.head||document.documentElement).appendChild(styleEl);}\nfunction cssPath(el){var parts=[],cur=el,depth=0;while(cur&&cur.nodeType===1&&cur.tagName&&depth<8){var t=cur.tagName.toLowerCase();if(t==="body"||t==="html")break;var part=t,parent=cur.parentElement;if(parent){var sibs=Array.prototype.filter.call(parent.children,function(c){return c.tagName===cur.tagName;});if(sibs.length>1)part+=":nth-of-type("+(sibs.indexOf(cur)+1)+")";}if(cur.id)part="#"+cur.id;parts.unshift(part);cur=cur.parentElement;depth++;}return parts.join(" > ");}\nvar SKIP=/^(inline-size|block-size|perspective-origin|transform-origin)$/;\nfunction bake(src){var clone=src.cloneNode(true);var lt=[src].concat(Array.prototype.slice.call(src.querySelectorAll("*")));var ct=[clone].concat(Array.prototype.slice.call(clone.querySelectorAll("*")));var n=Math.min(lt.length,ct.length);for(var i=0;i<n;i++){var live=lt[i],dst=ct[i];if(!dst||dst.nodeType!==1)continue;var tg=live.tagName;\ntry{if(tg==="IMG"){var sc=live.currentSrc||live.src||live.getAttribute("data-src")||"";if(sc)dst.setAttribute("src",abs(sc));if(dst.getAttribute("srcset"))dst.removeAttribute("srcset");dst.setAttribute("loading","eager");}}catch(e){}\ntry{if(tg==="SOURCE"){if(live.src)dst.setAttribute("src",abs(live.src));if(dst.getAttribute("srcset"))dst.removeAttribute("srcset");}}catch(e){}\ntry{if(tg==="VIDEO"){var po=live.getAttribute("poster");if(po)dst.setAttribute("poster",abs(po));}}catch(e){}\ntry{if(tg==="A"&&live.href)dst.setAttribute("href",live.href);}catch(e){}\nvar cs=null;try{cs=window.getComputedStyle(live);}catch(e){}if(cs){var css="";for(var k=0;k<cs.length;k++){var prop=cs[k];if(SKIP.test(prop))continue;var val=cs.getPropertyValue(prop);if(val)css+=prop+":"+val+";";}var ex=dst.getAttribute("style")||"";dst.setAttribute("style",css+ex);}\nif(dst.classList){dst.classList.remove("th-wp-hover");dst.classList.remove("th-wp-sel");}}return clone.outerHTML;}\nfunction select(el){if(!el)return;if(sel&&sel.classList)sel.classList.remove("th-wp-sel");if(hover&&hover.classList){hover.classList.remove("th-wp-hover");hover=null;}sel=el;if(el.classList)el.classList.add("th-wp-sel");post({type:"th-web-selected",tagName:tag(el)});}\nfunction onMove(e){if(!pickOn)return;var t=e.target;if(t===sel)return;if(hover&&hover!==t&&hover.classList)hover.classList.remove("th-wp-hover");if(t&&t!==sel&&t!==document.body&&t!==document.documentElement&&t.classList){t.classList.add("th-wp-hover");hover=t;}}\nfunction onClick(e){if(!pickOn)return;e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation();var t=e.target;if(!t||t===document.body||t===document.documentElement)return;select(t);try{window.focus();}catch(e2){}}\nfunction onDown(e){if(pickOn){e.stopPropagation();}}\nfunction onKey(e){if(!pickOn)return;var meta=e.metaKey||e.ctrlKey;\nif(e.key==="ArrowUp"){if(sel&&sel.parentElement&&sel.parentElement!==document.body&&sel.parentElement!==document.documentElement)select(sel.parentElement);e.preventDefault();e.stopPropagation();return;}\nif(e.key==="ArrowDown"){if(sel&&sel.firstElementChild)select(sel.firstElementChild);e.preventDefault();e.stopPropagation();return;}\nif(meta&&(e.key==="c"||e.key==="C")){if(sel){var h="";try{h=bake(sel);}catch(e3){h=sel.outerHTML||"";}var r2=null;try{r2=sel.getBoundingClientRect();}catch(e4){}post({type:"th-web-copied",html:h,tagName:tag(sel),path:cssPath(sel),w:r2?Math.round(r2.width):0,h:r2?Math.round(r2.height):0});}e.preventDefault();e.stopPropagation();return;}\nif(meta&&(e.key==="v"||e.key==="V")){post({type:"th-web-paste"});e.preventDefault();e.stopPropagation();return;}\nif(e.key==="Escape"){if(sel&&sel.classList)sel.classList.remove("th-wp-sel");sel=null;}}\ndocument.addEventListener("mousemove",onMove,true);\ndocument.addEventListener("click",onClick,true);\ndocument.addEventListener("mousedown",onDown,true);\ndocument.addEventListener("keydown",onKey,true);\nfunction onWheel(e){if(!(e.ctrlKey||e.metaKey))return;e.preventDefault();post({type:"th-web-wheel",deltaX:e.deltaX,deltaY:e.deltaY,clientX:e.clientX,clientY:e.clientY});}\ndocument.addEventListener("wheel",onWheel,{passive:false,capture:true});\nfunction setMode(on){pickOn=!!on;if(pickOn){ensureStyle();if(document.body)document.body.classList.add("th-wp-on");try{window.focus();}catch(e){}}else{if(document.body)document.body.classList.remove("th-wp-on");if(hover&&hover.classList){hover.classList.remove("th-wp-hover");hover=null;}if(sel&&sel.classList){sel.classList.remove("th-wp-sel");sel=null;}}}\nwindow.addEventListener("message",function(e){var d=e&&e.data;if(!d||typeof d!=="object")return;if(d.type==="th-pick-mode")setMode(d.on);else if(d.type==="th-get-selection"){var txt="";try{txt=String(window.getSelection()||"").trim();}catch(e3){}post({type:"th-web-selection",reqId:d.reqId,text:txt});}else if(d.type==="th-ramble-pointer"){var tp=null;try{tp=document.elementFromPoint(d.x,d.y);}catch(e9){}if(tp){if(d.kind==="click"){["pointerdown","mousedown","pointerup","mouseup","click"].forEach(function(nm){try{tp.dispatchEvent(new MouseEvent(nm,{bubbles:true,cancelable:true,clientX:d.x,clientY:d.y}));}catch(e10){}});}else{try{tp.dispatchEvent(new MouseEvent("mousemove",{bubbles:true,clientX:d.x,clientY:d.y}));}catch(e11){}}var hr=null;try{hr=tp.getBoundingClientRect();}catch(e12){}post({type:"th-ramble-hover",reqId:d.reqId,rect:hr?{x:hr.left,y:hr.top,w:hr.width,h:hr.height}:null,tag:tag(tp)});}}else if(d.type==="th-ramble-clip"){var out=[];try{var els2=document.body.querySelectorAll("*");for(var i9=0;i9<els2.length;i9++){var el9=els2[i9],r9;try{r9=el9.getBoundingClientRect();}catch(e13){continue;}if(!r9.width||!r9.height)continue;var cx9=(r9.left+r9.right)/2,cy9=(r9.top+r9.bottom)/2;if(cx9>=d.x&&cx9<=d.x+d.w&&cy9>=d.y&&cy9<=d.y+d.h&&el9.children.length===0){var tx9=(el9.textContent||"").trim();if(tx9)out.push(tx9);}}}catch(e14){}post({type:"th-ramble-clip-result",reqId:d.reqId,text:out.join("\\n").slice(0,2000)});}});\ndocument.addEventListener("click",function(e){if(pickOn)return;var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(!a)return;var href=a.getAttribute("href")||"";if(!href||href.charAt(0)==="#"||/^(javascript|mailto|tel|data|blob):/i.test(href))return;e.preventDefault();e.stopPropagation();var absU="";try{absU=a.href?abs(a.href):abs(href);}catch(eN){absU=href;}var proj="";try{proj=new URLSearchParams(window.location.search).get("project")||"";}catch(eP){}var nxt=window.location.origin+"/__web_proxy?url="+encodeURIComponent(absU)+(proj?"&project="+encodeURIComponent(proj):"");try{window.location.replace(nxt);}catch(eR){window.location.href=nxt;}},true);\npost({type:"th-web-ready"});\n})();</script>'
 
     def _web_fetch(self, url, max_bytes=2_500_000, timeout=12):
         req = urllib.request.Request(url, headers={
@@ -30459,6 +33171,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             if os.path.isdir(c): dest = c; break
         if not dest:
             return self._reply(404, {"error": "no such project", "id": proj_id})
+        wt = _worktree_link_info(dest)
+        if wt:
+            return self._reply(409, {
+                "error": "'" + proj_id + "' is branch '" + (wt["branch"] or "?")
+                         + "' of '" + wt["worktreeOf"] + "' opened in parallel - its name "
+                         + "follows the branch; manage it from '" + wt["worktreeOf"] + "'",
+                "worktreeOf": wt["worktreeOf"]})
         ws_json = os.path.join(WORKSPACE_DIR, "workspace.json")
         try:
             cfg = {}
@@ -30497,6 +33216,16 @@ class H(http.server.SimpleHTTPRequestHandler):
             if os.path.isdir(c): dest = c; break
         if not dest:
             return self._reply(404, {"error": "no such project", "id": proj_id})
+        # A parallel checkout is closed from its MAIN project (the x on its
+        # branch pill runs `git worktree remove`); trashing the folder here
+        # would strand stale worktree metadata in the parent repo.
+        wt = _worktree_link_info(dest)
+        if wt:
+            return self._reply(409, {
+                "error": "'" + proj_id + "' is branch '" + (wt["branch"] or "?")
+                         + "' of '" + wt["worktreeOf"] + "' opened in parallel - close it "
+                         + "from '" + wt["worktreeOf"] + "' (the x on its branch pill)",
+                "worktreeOf": wt["worktreeOf"]})
         # Don't let the user delete the install dir out from under themselves.
         try:
             if os.path.samefile(dest, INSTALL_ROOT):
@@ -30763,6 +33492,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             if os.path.isdir(c): src = c; break
         if not src:
             return self._reply(404, {"error": "no such project", "id": src_id})
+        # Copying a parallel checkout would clone its `.git` POINTER FILE into a
+        # folder the parent repo knows nothing about - a corrupt half-project.
+        wt = _worktree_link_info(src)
+        if wt:
+            return self._reply(409, {
+                "error": "'" + src_id + "' is branch '" + (wt["branch"] or "?")
+                         + "' of '" + wt["worktreeOf"] + "' opened in parallel - duplicate "
+                         + "from '" + wt["worktreeOf"] + "' instead",
+                "worktreeOf": wt["worktreeOf"]})
 
         # Source label: prefer the workspace.json entry, else fall back to id.
         ws_json = os.path.join(WORKSPACE_DIR, "workspace.json")
@@ -31255,6 +33993,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         except ValueError:
             project_root = DEFAULT_PROJECT_ROOT
         project_id = (_qs_get(qs, "project") or "default").strip() or "default"
+        # runId -> renamed title. Overlaid on live AND historical rows so a
+        # rename survives the daemon restart that drops RUNS.
+        renames = _run_titles_load(_run_titles_path(project_root))
         live = []
         live_ids: set = set()
         with RUNS_LOCK:
@@ -31262,6 +34003,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         for s in states:
             with s.lock:
                 last_seq = s.events[-1]["seq"] if s.events else -1
+                gate_pending = bool(s.gate_pending)
             live_ids.add(s.run_id)
             live.append({
                 "runId": s.run_id,
@@ -31269,11 +34011,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "branch": s.branch,
                 "kind": s.kind,
                 "tier": getattr(s, "tier", None),
-                "title": s.title,
+                "prototype": getattr(s, "prototype", None),
+                "title": renames.get(s.run_id) or s.title,
                 "startedAt": s.started_at,
                 "updatedAt": getattr(s, "updated_at", None) or s.started_at,
                 "done": s.done,
                 "turnDone": s.turn_done,
+                "gatePending": gate_pending,
+                "jobs": list(s.jobs.values()), "pendingJobs": len(_pending_run_jobs(s)),
+                "executionProfile": s.execution_profile, "processRunning": s.process_running,
                 "turnsCompleted": s.turns_completed,
                 "exitCode": s.exit_code,
                 "stopReason": s.stop_reason,
@@ -31282,6 +34028,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "touchedPaths": list(s.touched_paths),
                 "project": s.project_id,
                 "historical": False,
+                "planRole": plan_split.thread_role(getattr(s, "guards", None),
+                                                   getattr(s, "split", None),
+                                                   getattr(s, "split_check", None)),
             })
         # Merge in historical runs that aren't in RUNS. Only runs from the
         # active project - the chat JSONLs live under the project root so this
@@ -31297,12 +34046,21 @@ class H(http.server.SimpleHTTPRequestHandler):
             # would prompt the user to send to a dead subprocess.
             meta["done"] = True
             meta["project"] = project_id
+            if renames.get(rid):
+                meta["title"] = renames[rid]
             live.append(meta)
         # Most-recently-ACTIVE first (last reply / last event), not
         # most-recently-created - an old thread you just came back to belongs
         # at the top. startedAt is the tiebreak for runs with no activity ts.
         live.sort(key=lambda r: (r.get("updatedAt") or r.get("startedAt") or 0,
                                  r.get("startedAt") or 0), reverse=True)
+        # A split item / plan check names the plan it came from.
+        titles = {r.get("runId"): r.get("title") for r in live}
+        for r in live:
+            role = r.get("planRole")
+            if role and role.get("parent"):
+                role = dict(role, parentTitle=titles.get(role["parent"]) or "")
+                r["planRole"] = role
         return self._reply(200, {"runs": live})
 
     # GET /__chat?branch=<slug>[&runId=<id>][&project=<id>]
@@ -31386,17 +34144,243 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not SLUG_OK.match(branch):
             return self._reply(400, {"error": "invalid branch slug", "slug": branch})
         run_filter = (_qs_get(qs, "runId") or "").strip()
-        all_rows = _chat_jsonl_read_branch(project_root, branch)
+        # Both branches read a SLICE of the transcript via the index rather
+        # than parsing all of it and throwing most away. On suss-cal's 339 MB
+        # chat.jsonl the old full read measured 2.98s and retained 562 MB of
+        # parsed dicts in _JSONL_ROWS_CACHE (which holds up to 64 files before
+        # clearing) - all to answer with at most 4000 rows / 15 MB.
+        path = _chat_jsonl_path(project_root, branch)
         if run_filter:
-            rows = [r for r in all_rows if r.get("runId") == run_filter]
+            rows, omitted = self._chat_tail_budget(_chat_rows_for_run(path, run_filter))
         else:
-            rows = all_rows
-        rows, omitted = self._chat_tail_budget(rows)
+            rows, omitted = _chat_rows_tail(
+                path, self._CHAT_TAIL_MAX_ROWS, self._CHAT_TAIL_MAX_BYTES)
         out = {"branch": branch, "events": rows}
         if omitted:
             out["truncated"] = True
             out["omittedRows"] = omitted
         return self._reply(200, out)
+
+    # GET /__run_dispatches?runId=<id>[&project=<id>][&prototype=<branch>]
+    #   Every Agent dispatch of ONE run, folded out of the DURABLE transcript
+    #   rather than the drawer's copy of it.
+    #
+    #   Why this exists: /__chat answers with at most the newest 4000 rows, so
+    #   a build that ran its orchestrators early and then streamed for another
+    #   10k events hydrates WITHOUT them. The composer's orchestrator chip
+    #   would then report "no orchestrator ran" on exactly the threads that
+    #   ran the most - a silent wrong answer, not a missing feature. This
+    #   endpoint reads the run's recorded byte span (same index the tail-seek
+    #   uses) and returns only the dispatch skeleton: a handful of small rows,
+    #   never tool output, so it stays cheap on a nine-figure transcript.
+    def _run_dispatches(self, qs):
+        run_id = (_qs_get(qs, "runId") or "").strip()
+        if not run_id:
+            return self._reply(400, {"error": "runId required"})
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        branch = _qs_prototype(qs).strip().lower()
+        if not SLUG_OK.match(branch):
+            return self._reply(400, {"error": "invalid branch slug", "slug": branch})
+        path = _chat_jsonl_path(project_root, branch)
+        try:
+            rows = _chat_rows_for_run(path, run_id)
+        except Exception as e:
+            return self._reply(500, {"error": "transcript read failed: %s" % e})
+        # One pass, mirroring extractRunSubagents in app.js: dispatches, their
+        # results, and the ordinal of each one's latest task_progress line
+        # (the only liveness signal a backgrounded agent leaves behind).
+        order = []
+        by_id = {}
+        jobs = {}
+        ticks = 0
+        for r in rows:
+            if not isinstance(r, dict) or r.get("type") != "agent":
+                continue
+            d = r.get("data")
+            if not isinstance(d, dict):
+                continue
+            run_jobs.reduce_job(jobs, d)
+            dtype = d.get("type")
+            if dtype == "tool_use" and d.get("name") in ("Agent", "Task", "task", "spawn_agent"):
+                tid = d.get("id")
+                if not tid:
+                    continue
+                inp = d.get("input") or {}
+                if tid not in by_id:
+                    order.append(tid)
+                by_id[tid] = {
+                    "id": tid,
+                    "type": inp.get("subagent_type") or "subagent",
+                    "label": inp.get("description") or "Subagent task",
+                    "background": bool(inp.get("run_in_background")),
+                    "actions": [],
+                    "lastTick": 0,
+                    "done": False,
+                    "error": False,
+                }
+            elif dtype == "tool_result" and d.get("toolUseId") in by_id:
+                e = by_id[d["toolUseId"]]
+                e["done"] = True
+                e["error"] = bool(d.get("isError") or d.get("is_error"))
+            elif d.get("subtype") == "task_progress":
+                tid = d.get("toolUseId") or (d.get("frame") or {}).get("tool_use_id")
+                desc = d.get("description") or (d.get("frame") or {}).get("description")
+                if not desc:
+                    continue
+                ticks += 1
+                e = by_id.get(tid)
+                if e is None:
+                    continue
+                e["lastTick"] = ticks
+                # Only the latest line is ever rendered; keeping the whole
+                # history here would put a build's entire narration on the wire.
+                e["actions"] = [desc]
+        out = []
+        for tid in order:
+            e = by_id[tid]
+            linked = [j for j in jobs.values() if j.get("toolUseId") == tid]
+            job = next(iter(run_jobs.pending({i: j for i, j in enumerate(linked)})), None)
+            job = job or next((j for j in linked if j.get("status") != "completed"), None) or next(iter(linked), None)
+            if job:
+                e["jobStatus"] = job.get("status")
+                e["done"] = job.get("status") in run_jobs.TERMINAL
+                e["error"] = job.get("status") in run_jobs.TERMINAL - {"completed"}
+                e["background"] = job.get("background", e["background"])
+            e["tickTotal"] = ticks
+            out.append(e)
+        return self._reply(200, {"runId": run_id, "dispatches": out})
+
+    # GET /__chat_search?q=<text>[&project=<id>][&toolresults=1][&toolcalls=0]
+    #   Full-text search across every run's transcript in this project, for
+    #   the canvas search palette's "Agent chats" tab. Answers newest-first,
+    #   grouped by run. See _chat_search_scan for why this never parses a
+    #   transcript it doesn't have to.
+    #
+    #   Tool OUTPUT is excluded unless `toolresults=1`. A tool result is a
+    #   file dump or a page of command output, so on any common word it wins
+    #   the newest-first race and buries the actual conversation; the palette
+    #   surfaces the switch and defaults it off. Tool CALLS are included
+    #   unless `toolcalls=0` - a call is one line, not a page, and "which
+    #   command touched styles.css" is a fair thing to search for - but the
+    #   palette can drop them too, for a query whose word is common in
+    #   commands and rare in the conversation.
+    _CHAT_SEARCH_MAX_HITS    = 300   # rows collected before we stop scanning
+    _CHAT_SEARCH_MAX_PER_RUN = 6     # matches surfaced per conversation
+    _CHAT_SEARCH_MAX_RUNS    = 40
+
+    def _chat_search(self, qs):
+        q = (_qs_get(qs, "q") or "").strip()
+        base = {"q": q, "runs": [], "totalMatches": 0, "truncated": False}
+        if len(q) < 2:
+            return self._reply(200, dict(base, tooShort=True))
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        # A query made entirely of characters that JSON escapes has no byte
+        # pattern to scan for; say so rather than sweeping every transcript.
+        token = _chat_search_token(q)
+        if len(token) < 2:
+            return self._reply(200, dict(base, unsearchable=True))
+        q_low = q.lower()
+        want_results = (_qs_get(qs, "toolresults") or "").strip() in ("1", "true", "yes")
+        want_calls = (_qs_get(qs, "toolcalls") or "").strip() not in ("0", "false", "no")
+        skip_roles = tuple(
+            r for r, keep in (("toolresult", want_results), ("tool", want_calls))
+            if not keep)
+        deadline = time.monotonic() + _CHAT_SEARCH_BUDGET
+        t0 = time.time()
+        groups, order = {}, []
+        total = scanned = 0
+        truncated = False
+        for path, _slug in _chat_jsonl_candidate_files(project_root):
+            if not os.path.isfile(path):
+                continue
+            try:
+                idx = _chat_index(path)
+                with idx.lock:
+                    metas = {rid: dict(m) for rid, m in idx.metas.items()}
+            except Exception:
+                metas = {}
+            hits, more, nbytes = _chat_search_scan(
+                path, token, q_low, self._CHAT_SEARCH_MAX_HITS - total, deadline,
+                skip_roles)
+            scanned += nbytes
+            truncated = truncated or more
+            for h in hits:
+                rid = h.get("runId")
+                # A deleted run's lines are purged from chat.jsonl, but a
+                # delete raced by an in-flight append can leave one behind.
+                if not rid or rid in _DELETED_RUN_IDS:
+                    continue
+                g = groups.get(rid)
+                if g is None:
+                    meta = metas.get(rid) or {}
+                    g = groups[rid] = {
+                        "runId":      rid,
+                        "title":      meta.get("title") or h.get("title") or "",
+                        "kind":       meta.get("kind") or h.get("kind") or "freeform",
+                        "agentId":    meta.get("agentId") or h.get("agentId") or "claude",
+                        "branch":     meta.get("branch") or "main",
+                        "tier":       meta.get("tier"),
+                        "startedAt":  meta.get("startedAt") or 0,
+                        "updatedAt":  meta.get("updatedAt") or h.get("ts") or 0,
+                        # Overwritten below for runs the daemon still holds.
+                        "done":       True,
+                        "turnDone":   True,
+                        "turnsCompleted": meta.get("turnsCompleted") or 0,
+                        "lastSeq":    meta.get("lastSeq", -1),
+                        "historical": True,
+                        "matchCount": 0,
+                        "matches":    [],
+                    }
+                    order.append(rid)
+                g["matchCount"] += 1
+                total += 1
+                if len(g["matches"]) < self._CHAT_SEARCH_MAX_PER_RUN:
+                    g["matches"].append({
+                        "seq":     h.get("seq"),
+                        "ts":      h.get("ts"),
+                        "role":    h.get("role"),
+                        "label":   h.get("label"),
+                        "snippet": h.get("snippet"),
+                    })
+            if total >= self._CHAT_SEARCH_MAX_HITS or time.monotonic() > deadline:
+                truncated = True
+                break
+        # `order` is hit order, and hits arrive newest-first, so the run the
+        # user was last talking in leads without a re-sort.
+        if len(order) > self._CHAT_SEARCH_MAX_RUNS:
+            truncated = True
+            order = order[:self._CHAT_SEARCH_MAX_RUNS]
+        # Rows the palette hands to the chat drawer must describe the run the
+        # same way /__runs does, or the drawer picks the wrong hydration path:
+        # `historical` decides one-shot /__chat vs live SSE, and `done` decides
+        # whether replying is allowed. Anything still in the registry wins.
+        with RUNS_LOCK:
+            states = {rid: RUNS[rid] for rid in order if rid in RUNS}
+        for rid, s in states.items():
+            with s.lock:
+                last_seq = s.events[-1]["seq"] if s.events else -1
+            groups[rid].update({
+                "done":           s.done,
+                "turnDone":       s.turn_done,
+                "turnsCompleted": s.turns_completed,
+                "exitCode":       s.exit_code,
+                "stopReason":     s.stop_reason,
+                "lastSeq":        last_seq,
+                "historical":     False,
+            })
+        return self._reply(200, {
+            "q": q, "runs": [groups[r] for r in order],
+            "totalMatches": total, "truncated": truncated,
+            "toolResults": want_results,
+            "scannedBytes": scanned,
+            "elapsedMs": int((time.time() - t0) * 1000),
+        })
 
     # GET /__doc?branch=<slug>&name=<NOTES.md|brand-spec.md>[&project=<id>]
     #   Phase 5a - bounded doc fetch for the toolbar Notes / Brand-spec
@@ -31888,11 +34872,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             "branch": state.branch,
             "kind": state.kind,
             "tier": getattr(state, "tier", None),
+            "prototype": getattr(state, "prototype", None),
             "title": state.title,
             "startedAt": state.started_at,
             "updatedAt": getattr(state, "updated_at", None) or state.started_at,
             "done": state.done,
             "turnDone": state.turn_done,
+            "gatePending": bool(getattr(state, "gate_pending", False)),
+            "jobs": list(state.jobs.values()), "pendingJobs": len(_pending_run_jobs(state)),
+            "executionProfile": state.execution_profile, "processRunning": state.process_running,
             "turnsCompleted": state.turns_completed,
             "exitCode": state.exit_code,
             "stopReason": state.stop_reason,
@@ -31902,6 +34890,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             # live context size of the CLI session (tokens), or null when
             # unknown (codex, or a freshly-compacted session pre-turn).
             "contextTokens": _run_context_tokens(state),
+            "planRole": plan_split.thread_role(getattr(state, "guards", None),
+                                               getattr(state, "split", None),
+                                               getattr(state, "split_check", None)),
         })
 
     def _read_json_body(self, max_bytes: int = 256 * 1024):
@@ -31948,7 +34939,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         # default. Before this, the system agent - the one the landing page's
         # "Add orchestrator" / "Add library entry" buttons spawn - ignored the
         # user's model pick entirely and always ran on the CLI default.
-        spawn_args += _agent_model_spawn_args("claude", defs, (body.get("model") or "").strip())
+        try:
+            profile = model_routing.resolve((body.get("model") or "").strip() or "inherit", "claude", config=_compact_config())
+            if profile["runtime"] != "claude":
+                raise ValueError("system threads currently require a Claude model")
+        except ValueError as error:
+            return self._reply(400, {"error": str(error)})
+        spawn_args += _agent_model_spawn_args("claude", defs, profile["model"], resolved=True)
         if permission_mode == "bypassPermissions":
             spawn_args += [
                 "--allow-dangerously-skip-permissions",
@@ -31963,6 +34960,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         #   capabilities_preamble() - the agent edits that layer; feeding it
         #     the project confinement prose would re-confine it
         spawn_args += _mcp_config_spawn_args()
+        spawn_args += _agents_plugin_spawn_args()
         sys_prompt = QUESTION_FORM_SYSTEM_PROMPT + SYSTEM_AGENT_PROMPT
         if _mcp_config_spawn_args():
             sys_prompt = sys_prompt + _mcp_routing_prompt()
@@ -31974,7 +34972,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         env = _build_child_env("claude", run_id,
                                project_root=root, project_id="__system")
         try:
-            proc = subprocess.Popen(
+            proc = _spawn_runtime_process("claude",
                 [bin_path, *spawn_args],
                 cwd=root,
                 stdin=subprocess.PIPE,
@@ -31994,6 +34992,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.scope = "system"
         state.section = section
         state.bin_path = bin_path
+        state.model = profile["model"]
+        state.execution_profile = profile
         state.permission_mode = permission_mode or None
         # No undo/redo history snapshot - it would inventory the whole
         # workspace repo, and System changes are git-reviewable anyway.
@@ -32040,22 +35040,27 @@ class H(http.server.SimpleHTTPRequestHandler):
         with RUNS_LOCK:
             states = [s for s in RUNS.values()
                       if getattr(s, "scope", None) == "system"]
+        sys_renames = _run_titles_load(_system_run_titles_path())
         for s in states:
             if section and (s.section or "orchestrators") != section:
                 continue
             with s.lock:
                 last_seq = s.events[-1]["seq"] if s.events else -1
+                gate_pending = bool(s.gate_pending)
             live_ids.add(s.run_id)
             live.append({
                 "runId": s.run_id,
                 "agentId": s.agent_id,
                 "branch": s.branch,
                 "kind": s.kind,
-                "title": s.title,
+                "title": sys_renames.get(s.run_id) or s.title,
                 "startedAt": s.started_at,
                 "updatedAt": getattr(s, "updated_at", None) or s.started_at,
                 "done": s.done,
                 "turnDone": s.turn_done,
+                "gatePending": gate_pending,
+                "jobs": list(s.jobs.values()), "pendingJobs": len(_pending_run_jobs(s)),
+                "executionProfile": s.execution_profile, "processRunning": s.process_running,
                 "turnsCompleted": s.turns_completed,
                 "exitCode": s.exit_code,
                 "stopReason": s.stop_reason,
@@ -32069,6 +35074,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             if rid in live_ids:
                 continue
             meta["done"] = True   # not in RUNS → process can't be alive
+            if sys_renames.get(rid):
+                meta["title"] = sys_renames[rid]
             live.append(meta)
         # Same ordering rule as /__runs: last ACTIVITY on top.
         live.sort(key=lambda r: (r.get("updatedAt") or r.get("startedAt") or 0,
@@ -32099,6 +35106,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Optional default-model override (Settings > Agent model). Blank = the
         # CLI's own configured default (no --model flag appended at spawn).
         agent_model = (body.get("model") or "").strip()
+        try:
+            profile = model_routing.resolve(agent_model or "inherit", agent_id, config=_compact_config())
+            agent_id, agent_model = profile["runtime"], profile["model"]
+        except ValueError as error:
+            return self._reply(400, {"error": str(error)})
         bin_path = detect_agent_bin(agent_id)
         if not bin_path:
             env_key = AGENT_BIN_ENV.get(agent_id, "")
@@ -32115,6 +35127,25 @@ class H(http.server.SimpleHTTPRequestHandler):
         # project's DEFAULT prototype (the slug editor/data.js's sourceRoot
         # points at - "prototype" for new projects, "main" for legacy ones)
         # so the agent always gets a usable scope.
+        # DELEGATED spawn (today: the plan-mode fan-out, which opens one real
+        # thread per plan point). A `parent` run id means this thread inherits
+        # the thread it came from - and it has to happen HERE, before branch
+        # and tier are resolved below, because an unspecified freeform run
+        # defaults to the NORMAL tier and the project's DEFAULT prototype. A
+        # split off a thread scoped to another prototype would otherwise open
+        # its children pointed at the wrong source tree. Each field inherits
+        # only when the caller did not ask for something specific.
+        _parent_inherit = None
+        if body.get("parent"):
+            with RUNS_LOCK:
+                _cand = RUNS.get(str(body.get("parent")))
+            if _cand is not None and os.path.realpath(
+                    getattr(_cand, "project_root", "") or "") == os.path.realpath(project_root):
+                _parent_inherit = _cand
+                if not body.get("tier"):
+                    body["tier"] = _normalize_chat_tier(getattr(_cand, "tier", None))
+                if not body.get("branch") and getattr(_cand, "prototype", None):
+                    body["branch"] = _cand.prototype
         _default_branch = self._default_prototype_slug(project_root) or "main"
         _raw_branch = (body.get("branch") or _default_branch).strip()
         if re.match(r"^[A-Za-z0-9_.-]{1,80}(?:/[A-Za-z0-9_.-]{1,80})?$", _raw_branch):
@@ -32126,6 +35157,31 @@ class H(http.server.SimpleHTTPRequestHandler):
         if kind == "freeform" and not user_prompt:
             return self._reply(400, {"error": "freeform run requires a prompt"})
         title = (body.get("title") or _default_run_title(kind, body)).strip()
+        # Plan-mode split group (see plan_split.py). Only honoured on a
+        # delegated spawn, so `parent` is always a real run in this project.
+        # The thread is told who its siblings are and what each one owns, in
+        # its own brief, because they all edit this tree at the same moment.
+        _split = plan_split.normalize(body.get("split"), _parent_inherit.run_id) \
+            if _parent_inherit is not None else None
+        if _split:
+            _busy = _split_busy_group(_split["parent"], _split["id"])
+            if _busy is not None:
+                return self._reply(409, {"error": (
+                    f'the split opened earlier from this plan is still working ("{_busy.title}"). '
+                    "Opening another now puts two threads on the same work in the same files. "
+                    "Let it finish or stop it first"), "busyRunId": _busy.run_id})
+            if _split["index"] == 0:
+                # The approved plan, read off the planning thread NOW: by the
+                # time the check runs it may have moved on, or been stopped.
+                with _parent_inherit.lock:
+                    _split["snapshot"] = plan_split.plan_snapshot(list(_parent_inherit.events))
+        if _split and kind == "freeform" and user_prompt:
+            user_prompt = user_prompt + plan_split.sibling_block(_split)
+        # The plan-check thread _split_open_check opens for a settled group.
+        _split_check = None
+        if (_parent_inherit is not None and isinstance(body.get("_splitId"), str)
+                and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", body["_splitId"])):
+            _split_check = {"group": body["_splitId"], "parent": _parent_inherit.run_id}
 
         prompt_text = _compose_initial_prompt(kind, user_prompt)
         defs = AGENT_DEFS[agent_id]
@@ -32153,6 +35209,22 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Falls back to branch so a scoped handoff (which carries branch=slug)
         # still names the right prototype.
         _chat_proto = (body.get("prototype") or branch or "main").strip() or "main"
+        # Per-thread check toggles from the composer's "Checks" dropdown
+        # ({"visual", "dsGuard"}, both ON unless the user unticked them).
+        # They shape the preamble, so they are fixed at spawn time like the
+        # tier - and persisted on the spawn event so /resume rebuilds the
+        # SAME prompt instead of cache-busting the session.
+        # Per-thread checks. An explicit `guards` in the body wins. Failing
+        # that, a `parent` run id makes this a DELEGATED spawn (today: the
+        # plan-mode fan-out, which opens one real thread per plan point) and
+        # it inherits the parent thread's ACTUAL checks - visual / DS / req QA
+        # all ride down, because these threads are the ones doing the work the
+        # parent only planned. _delegated_guards forces plan mode OFF on the
+        # way: they were opened to BUILD an already-decided point, and a
+        # thread that stopped to re-plan it would never do the job.
+        _chat_guards = _normalize_chat_guards(body.get("guards"))
+        if _parent_inherit is not None and body.get("guards") is None:
+            _chat_guards = _delegated_guards(getattr(_parent_inherit, "guards", None))
         spawn_args = list(defs["args"])
         # Claude Code 2.1.163 split the bypass into TWO
         # flags. --dangerously-skip-permissions alone no longer skips
@@ -32184,11 +35256,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             # dispatched via the Task tool are unaffected.
             spawn_args += ["--disable-slash-commands"]
             spawn_args += _mcp_config_spawn_args()
+            spawn_args += _agents_plugin_spawn_args()
             # Hook gate: block *.html writes until visual-orchestrator dispatched.
             _harness_settings = _ensure_harness_settings()
             if _harness_settings:
                 spawn_args += ["--settings", _harness_settings]
-            spawn_args += _agent_model_spawn_args(agent_id, defs, agent_model)
+            spawn_args += _agent_model_spawn_args(agent_id, defs, agent_model, resolved=True)
         elif agent_id == "codex":
             # Codex's permission flags are version-specific
             # (--full-auto / --approval-mode full-auto / a config key).
@@ -32202,7 +35275,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # pixels (path-only) and the look-loop routes through
             # visual-verifier / __qa/run instead.
             spawn_args += _codex_mcp_spawn_args(visual_deny=True)
-            spawn_args += _agent_model_spawn_args(agent_id, defs, agent_model)
+            spawn_args += _agent_model_spawn_args(agent_id, defs, agent_model, resolved=True)
         # Append the question-form protocol so disabling AskUserQuestion
         # doesn't lose the "ask the user" capability - see
         # QUESTION_FORM_SYSTEM_PROMPT for the rationale. In workspace mode
@@ -32218,7 +35291,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         if agent_id == "claude":
             # Shared with /resume via _chat_system_prompt so a resumed chat
             # rebuilds this byte-identically (see that helper's docstring).
-            sys_prompt = _chat_system_prompt(project_root, branch, _chat_tier, _chat_proto)
+            sys_prompt = _chat_system_prompt(project_root, branch, _chat_tier, _chat_proto,
+                                             guards=_chat_guards)
             spawn_args += ["--append-system-prompt", sys_prompt]
         elif agent_id in ("codex", "opencode"):
             # Codex chats get the SAME capabilities preamble as Claude
@@ -32239,7 +35313,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             # --append-system-prompt equivalent. Shared with _run_resume_codex
             # via _codex_chat_preamble (a resume without it loses every rule).
             codex_preamble = _codex_chat_preamble(
-                agent_id, project_root, project_id, branch, _chat_tier, _chat_proto)
+                agent_id, project_root, project_id, branch, _chat_tier, _chat_proto,
+                guards=_chat_guards)
             prompt_text = (
                 "===== HARNESS PREAMBLE =====\n"
                 + codex_preamble
@@ -32275,9 +35350,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         env = _build_child_env(agent_id, run_id,
                                project_root=project_root, project_id=project_id,
                                main_thread=True)
+        # The visual gate is enforced twice: by the preamble (prose) and by
+        # the PreToolUse hook that denies main-thread screenshots / image
+        # Reads. Turning the check off has to release BOTH, or the agent is
+        # told it may look and then blocked from looking.
+        _apply_guard_env(env, _chat_guards)
 
         try:
-            proc = subprocess.Popen(
+            proc = _spawn_runtime_process(agent_id,
                 [bin_path, *spawn_args],
                 cwd=project_root,
                 stdin=subprocess.PIPE if defs["prompt_via_stdin"] else None,
@@ -32298,7 +35378,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.permission_mode = permission_mode or None
         state.tier = _chat_tier   # "setup" | "normal" | "scoped"
         state.prototype = _chat_proto   # scoped-preamble target; re-used on resume
+        state.guards = _chat_guards     # per-thread check toggles; re-used on resume
         state.model = agent_model or None   # Settings > Agent model; re-applied on resume
+        state.execution_profile = profile
+        state.split = _split            # plan-mode split group, or None
+        state.split_check = _split_check
         # ── History snapshot - BEFORE state ──────────────────────────────
         # The subprocess is running but hasn't received its prompt yet (we
         # write to stdin further down). It can't have produced any file
@@ -32336,7 +35420,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             # the SAME spawn: same preamble tier + scope, same model.
             "tier": _chat_tier,
             "prototype": _chat_proto,
+            "guards": _chat_guards,
             "model": agent_model or None,
+            # the split group survives a restart through this field alone
+            **({"split": _split} if _split else {}),
+            **({"splitCheck": _split_check} if _split_check else {}),
             "promptPreview": prompt_text[:240],
         })
         # For freeform chats, the prompt IS the user's first message - echo it
@@ -32371,7 +35459,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             "branch": branch,
             "kind": kind,
             "tier": _chat_tier,   # so the chat header can badge Setup vs scoped
+            "prototype": _chat_proto,   # target bar locks onto this once the thread exists
             "title": title,
+            # the header's Plan / Split / Plan check badge, from the first frame
+            "planRole": plan_split.thread_role(_chat_guards, _split, _split_check),
         })
 
     # GET /__stream?runId=<id>&after=<seq>  →  Server-Sent Events
@@ -32438,11 +35529,40 @@ class H(http.server.SimpleHTTPRequestHandler):
             last_seen = flush_from(after)
             if last_seen is None:
                 return
+            linger_until = None
             while True:
                 with state.lock:
                     have_more = state.events and state.events[-1]["seq"] > last_seen
                     is_done = state.done
+                if not is_done:
+                    linger_until = None          # live again: fresh window later
                 if is_done and not have_more:
+                    # Hold the tail open across a respawn the daemon is about
+                    # to do on its own, so its events reach this reader.
+                    if _run_respawn_expected(state):
+                        now = time.time()
+                        if linger_until is None:
+                            linger_until = now + _RESPAWN_LINGER_SECS
+                        if now < linger_until:
+                            waker.wait(timeout=1.0)
+                            waker.clear()
+                            # Flush HERE rather than falling through to the
+                            # 25 s wait below: that wait would start on a
+                            # just-cleared waker and sit on the respawn's
+                            # first events for up to 25 s.
+                            with state.lock:
+                                have_more = state.events and state.events[-1]["seq"] > last_seen
+                            if have_more:
+                                last_seen = flush_from(last_seen)
+                                if last_seen is None:
+                                    return
+                            else:
+                                try:
+                                    self.wfile.write(b": heartbeat\n\n")
+                                    self.wfile.flush()
+                                except Exception:
+                                    return
+                            continue
                     break
                 # 25 s heartbeat - beneath proxy idle thresholds.
                 waker.wait(timeout=25)
@@ -32535,19 +35655,34 @@ class H(http.server.SimpleHTTPRequestHandler):
             state = RUNS.get(run_id)
         if not state:
             return self._reply(404, {"error": "unknown runId", "runId": run_id})
-        if state.done:
+        if state.done and not _pending_run_jobs(state):
             return self._reply(200, {"ok": True, "alreadyDone": True})
         # tag intent BEFORE terminate(), so the drain-loop's finally
         # block sees the reason when it computes the finish record. Without
         # this the UI would render user-initiated stops as "failed" (because
         # SIGTERM = exit 143 ≠ 0).
         state.stop_reason = "user-stop"
+        if isinstance(state.proc, runtime_drivers.ProcessDriver) and state.process_running:
+            helper_jobs.cancel(state.run_id)
+            try:
+                state.proc.interrupt()
+            except Exception as error:
+                state.append("status", {"label": "interrupt-failed", "detail": str(error)[:400]})
+                _stop_run_family(state)
+            else:
+                with RUNS_LOCK:
+                    children = [s for s in RUNS.values() if s.parent_run_id == state.run_id and s.project_root == state.project_root]
+                for child in children:
+                    _stop_run_family(child)
+                state.append("status", {"label": "interrupted", "contextPreserved": True})
+                return self._reply(200, {"ok": True, "contextPreserved": True})
         # A non-live run (history-rehydrated ghost, proc=None) has no subprocess
         # to signal - its process died with the previous daemon. Don't call
         # .terminate() on None (that 500'd with a misleading "terminate failed"
         # AttributeError); just settle the record so the UI stops showing it as
         # mid-flight. See RunState.is_live.
-        if not state.is_live:
+        _stop_run_family(state)
+        if not state.process_running:
             state.finish(state.exit_code if state.exit_code is not None else 143)
             state.append("status", {"label": "interrupted"})
             return self._reply(200, {"ok": True, "wasGhost": True})
@@ -32600,10 +35735,18 @@ class H(http.server.SimpleHTTPRequestHandler):
         try:
             info = _compact_run(state, "manual")
         except Exception as e:
+            state._compact_inflight = False
             return self._reply(502, {"error": f"compact failed: {type(e).__name__}: {e}",
                                      "unchanged": True})
-        finally:
+        # A summary parked mid-turn stays in flight until the boundary applies
+        # it (the user can send a message while we summarise, and that starts a
+        # turn we must not kill under).
+        if not info.get("deferred"):
             state._compact_inflight = False
+        if info.get("deferred"):
+            return self._reply(200, dict(info, note=(
+                "the agent started another turn while the summary was being "
+                "written - it will be applied the moment that turn ends")))
         state.append("status", {
             "label": "compacted",
             "detail": ("history summarised - the next message starts a fresh "
@@ -32611,10 +35754,172 @@ class H(http.server.SimpleHTTPRequestHandler):
         })
         return self._reply(200, info)
 
+    # POST /__run/<id>/handoff[?project=<id>]   body {stop?: bool, reason?: str}
+    #   Summarise this thread so the CALLER can seed a BRAND NEW thread with it.
+    #   Sibling of /compact, and deliberately not the same move: compact keeps
+    #   one thread and swaps its history for a summary; handoff leaves this
+    #   thread intact (session id untouched, still resumable at full context)
+    #   and just hands its state out. The client uses it when something that is
+    #   fixed at SPAWN time has to change - today the per-thread checks, which
+    #   ride the system prompt and so cannot be edited in place.
+    #   stop=true first tears down a live turn, so the summary describes a
+    #   settled thread rather than one still writing files under it.
+    def _run_handoff(self, run_id, qs):
+        body = self._read_json_body() or {}
+        with RUNS_LOCK:
+            state = RUNS.get(run_id)
+        if not state:
+            try:
+                project_root = resolve_project_root(qs)
+                state = _rehydrate_run_from_jsonl(run_id, project_root)
+            except Exception:
+                state = None
+            if not state:
+                try:
+                    state = _rehydrate_system_run(run_id)
+                except Exception:
+                    state = None
+            if not state:
+                return self._reply(404, {"error": "unknown runId", "runId": run_id})
+        reason = (str(body.get("reason") or "handoff"))[:80]
+        stopped = False
+        if body.get("stop") and state.process_running:
+            state.stop_reason = "handoff"
+            try:
+                _kill_run_tree(state)
+                stopped = True
+            except Exception:
+                pass
+            state.append("status", {"label": "interrupted",
+                                    "detail": "stopped to hand this thread off"})
+        transcript, covered_through = _context_snapshot(state)
+        if not transcript:
+            return self._reply(409, {"error": "nothing to hand off - empty transcript",
+                                     "stopped": stopped})
+        digest = hashlib.sha256(transcript.encode()).hexdigest()
+        with state.lock:
+            cached = next((ev.get("data") for ev in reversed(state.events)
+                           if (ev.get("data") or {}).get("type") == "handoff_checkpoint"
+                           and (ev.get("data") or {}).get("digest") == digest), None)
+        try:
+            summary = cached["summary"] if cached else _compact_summarize(transcript, state)
+            if not cached:
+                state.append("agent", {"type": "handoff_checkpoint", "digest": digest,
+                                        "summary": summary, "coveredThrough": covered_through})
+            # Keep events that arrived during summarization, including queued user input.
+            with state.lock:
+                late = [ev for ev in state.events if ev.get("seq", -1) > covered_through]
+            updates = context_policy.transcript(late, detail_budget=None)
+            if updates:
+                summary += "\n\n[UPDATES AFTER SNAPSHOT]\n" + updates
+        except Exception as e:
+            return self._reply(502, {
+                "error": "handoff summary failed: %s: %s" % (type(e).__name__, e),
+                "stopped": stopped,
+                "hint": "this thread is unchanged - reply here to carry on in it",
+            })
+        state.append("status", {
+            "label": "handed-off",
+            "detail": ("summarised into a new thread (%s) - this one stays "
+                       "reopenable with its full history" % reason),
+        })
+        return self._reply(200, {"ok": True, "summary": summary,
+                                 "summaryChars": len(summary),
+                                 "reason": reason, "stopped": stopped,
+                                 "title": state.title,
+                                 "coveredThrough": covered_through,
+                                 "context": context_policy.handoff_metadata(state)})
+
+    # POST /__run/<id>/rename   body: { title }
+    #   Give a thread a name the user picked. The transcript is NOT rewritten -
+    #   the title is stamped on every one of the run's chat.jsonl lines and
+    #   those files run to hundreds of megabytes. The new name goes in a
+    #   runId -> title sidecar that every run-row reader overlays instead.
+    #   An empty/blank title clears the rename and the original title returns.
+    def _run_rename(self, run_id, qs):
+        body = self._read_json_body(max_bytes=64 * 1024)
+        title = (body.get("title") or "").strip()
+        if len(title) > 200:
+            title = title[:200]
+        with RUNS_LOCK:
+            state = RUNS.get(run_id)
+        is_system = state is not None and getattr(state, "scope", None) == "system"
+        if is_system:
+            path = _system_run_titles_path()
+        else:
+            try:
+                project_root = resolve_project_root(qs)
+            except ValueError:
+                project_root = DEFAULT_PROJECT_ROOT
+            path = _run_titles_path(project_root)
+        _run_titles_set(path, run_id, title)
+        # A live thread keeps its title in memory too, so the drawer header and
+        # /__run/<id> agree with the list without waiting for a restart.
+        if state is not None and title:
+            state.title = title
+        return self._reply(200, {"ok": True, "runId": run_id, "title": title})
+
+    # POST /__runs/delete   body: { runIds: [...] }
+    #   Bulk sibling of /__run/<id>/delete. Same semantics per run, but the
+    #   chat JSONL is rewritten ONCE for the whole batch instead of once per
+    #   run - a marathon project's history is far too big to rewrite N times
+    #   for an N-row selection.
+    def _runs_delete_bulk(self, qs):
+        body = self._read_json_body(max_bytes=256 * 1024)
+        raw = body.get("runIds")
+        if not isinstance(raw, list):
+            return self._reply(400, {"error": "missing runIds[]"})
+        run_ids = [r for r in ({str(x) for x in raw if x}) if _RUN_ID_OK.match(r)]
+        if not run_ids:
+            return self._reply(400, {"error": "no valid runIds"})
+        with RUNS_LOCK:
+            states = {r: RUNS.get(r) for r in run_ids}
+        # Mark deleted BEFORE terminating - see _run_delete for why.
+        for r in run_ids:
+            _DELETED_RUN_IDS.add(r)
+        system_ids, project_ids = set(), set()
+        for r, state in states.items():
+            if state is None:
+                continue
+            (system_ids if getattr(state, "scope", None) == "system" else project_ids).add(r)
+            try:
+                state.msg_queue = []
+                _queue_persist(state)
+            except Exception:
+                pass
+            if state.process_running or _pending_run_jobs(state):
+                try:
+                    state.stop_reason = "user-stop"
+                    _stop_run_family(state)
+                except Exception:
+                    pass
+        ghosts = {r for r, state in states.items() if state is None}
+        try:
+            project_root = resolve_project_root(qs)
+        except ValueError:
+            project_root = DEFAULT_PROJECT_ROOT
+        purged = 0
+        proj_targets = project_ids | ghosts
+        if proj_targets:
+            purged += _chat_jsonl_purge_run(_chat_jsonl_path(project_root, "main"),
+                                            proj_targets)
+            _run_titles_forget(_run_titles_path(project_root), proj_targets)
+        # A ghost might be a system thread; sweep the section files for those.
+        sys_targets = system_ids | ghosts
+        if sys_targets:
+            for pth, _sec in _system_chat_candidate_files():
+                purged += _chat_jsonl_purge_run(pth, sys_targets)
+            _run_titles_forget(_system_run_titles_path(), sys_targets)
+        with RUNS_LOCK:
+            for r in run_ids:
+                RUNS.pop(r, None)
+        return self._reply(200, {"ok": True, "runIds": run_ids,
+                                 "deleted": len(run_ids), "purged": purged})
+
     # POST /__run/<id>/delete
     #   Remove a run entirely: stop it if still live (stop-then-delete), drop it
     #   from the in-memory registry, and purge its lines from the persisted chat
-    #   JSONL (moving them to a recoverable .chat-trash.jsonl). Handles project
+    #   JSONL - the lines are gone, not trashed. Handles project
     #   runs and system-thread runs, plus history-only ghosts no longer in RUNS.
     def _run_delete(self, run_id, qs):
         with RUNS_LOCK:
@@ -32623,11 +35928,18 @@ class H(http.server.SimpleHTTPRequestHandler):
         # the trailing __finish line) is suppressed by _chat_jsonl_append and
         # can't resurrect the run as a historical ghost.
         _DELETED_RUN_IDS.add(run_id)
+        # A deleted thread owes nobody its pending follow-ups.
+        if state is not None:
+            try:
+                state.msg_queue = []
+                _queue_persist(state)
+            except Exception:
+                pass
         # Stop a live subprocess first.
-        if state is not None and getattr(state, "is_live", False):
+        if state is not None and (state.process_running or _pending_run_jobs(state)):
             try:
                 state.stop_reason = "user-stop"
-                _kill_run_tree(state)
+                _stop_run_family(state)
             except Exception:
                 pass
         # Figure out which JSONL(s) hold this run's history and purge it there.
@@ -32650,6 +35962,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         purged = 0
         for p in paths:
             purged += _chat_jsonl_purge_run(p, run_id)
+            # The rename sidecar lives beside the transcript it annotates -
+            # drop this run's entry so it can't outlive the history.
+            _run_titles_forget(os.path.join(os.path.dirname(p), "run-titles.json"),
+                               run_id)
         # Drop from the live registry last so a concurrent _runs_list can't
         # re-merge in-memory state after we've purged the on-disk history.
         with RUNS_LOCK:
@@ -32714,22 +36030,137 @@ class H(http.server.SimpleHTTPRequestHandler):
         # as "process gone" and auto-retries via /resume (it matches on "not
         # running"); needsResume is the explicit signal for any future caller.
         # See RunState.is_live and app.js dispatch().
-        if not state.is_live:
+        # A thread _idle_watch_loop is parking right now: its process is on
+        # the way out, so stdin would go into a dying CLI. Let it exit, then
+        # send the client to /resume like any other exited run.
+        if state.stop_reason == "parked":
+            try:
+                state.proc.wait(timeout=8)
+            except Exception:
+                pass
+        if not state.is_live or state.stop_reason == "parked":
             return self._reply(409, {
                 "error": "agent process is not running - resume to continue",
                 "needsResume": True,
             })
-        try:
-            state.proc.stdin.write(_claude_user_frame(text))
-            state.proc.stdin.flush()
-        except Exception as e:
-            return self._reply(500, {"error": f"stdin write failed: {e}"})
-        # Flip turn back to in-flight so the chip + Runs row reflect "agent
-        # is processing the reply" instead of "done, waiting on you."
-        state.turn_done = False
+        # Under _PARK_LOCK so the idle loop cannot park between our checks
+        # and the write: it re-checks turn_done under the same lock.
+        with _PARK_LOCK:
+            if state.stop_reason == "parked":
+                return self._reply(409, {
+                    "error": "agent process is not running - resume to continue",
+                    "needsResume": True,
+                })
+            cancelled = _cancel_qa_checks(state)
+            try:
+                state.proc.stdin.write(_claude_user_frame(
+                    _qa_cancel_note(cancelled) + text if cancelled else text))
+                state.proc.stdin.flush()
+            except Exception as e:
+                return self._reply(500, {"error": f"stdin write failed: {e}"})
+            # Flip turn back to in-flight so the chip + Runs row reflect "agent
+            # is processing the reply" instead of "done, waiting on you."
+            state.turn_done = False
+            state.stop_reason = None
         # Echo into the event log so the UI shows the message in-thread.
         state.append("user_message", {"text": text})
         return self._reply(200, {"ok": True})
+
+    # ── message queue ─────────────────────────────────────────────────
+    # GET  /__run/<id>/queue                  -> { queue: [...] }
+    # POST /__run/<id>/enqueue { text, send?, meta? }
+    # POST /__run/<id>/queue   { op: remove|move|clear, id?, dir? }
+    #
+    # The browser used to hold this queue and drain it from the chat
+    # composer's own effect, so it only moved while that drawer was mounted.
+    # The daemon owns it now (see _queue_drain_maybe): follow-ups land at the
+    # next turn boundary whether or not anything is watching.
+    def _run_queue_state(self, run_id):
+        with RUNS_LOCK:
+            state = RUNS.get(run_id)
+        return state
+
+    def _run_queue_get(self, run_id):
+        state = self._run_queue_state(run_id)
+        if not state:
+            return self._reply(404, {"error": "unknown runId", "runId": run_id})
+        return self._reply(200, {"queue": list(getattr(state, "msg_queue", None) or [])})
+
+    def _run_enqueue(self, run_id):
+        body = self._read_json_body(max_bytes=4 * 1024 * 1024)
+        text = (body.get("text") or "").strip()
+        # `send` is the composed form (attachment preambles folded in) that
+        # actually reaches the agent; `text` stays raw so the queue chip shows
+        # what the user typed and can put it back in the composer to edit.
+        send = (body.get("send") or "").strip() or text
+        if not text and not send:
+            return self._reply(400, {"error": "empty text"})
+        state = self._run_queue_state(run_id)
+        if not state:
+            return self._reply(404, {"error": "unknown runId", "runId": run_id})
+        entry = {
+            "id": uuid.uuid4().hex[:12],
+            "text": text or send,
+            "send": send,
+            "meta": body.get("meta") if isinstance(body.get("meta"), dict) else {},
+            "at": time.time(),
+        }
+        with _QUEUE_LOCK:
+            q = list(getattr(state, "msg_queue", None) or [])
+            q.append(entry)
+            state.msg_queue = q
+        _queue_persist(state)
+        # A run that cannot be steered (codex exec, opencode) would hold this
+        # message behind a running QA check until it finished grading the
+        # state the user is moving away from. Stop the check now; its
+        # planner-done tells the agent to end the turn, and the queue below
+        # delivers. Steerable runs cancel at delivery (_run_user_message).
+        if not _run_steerable(state):
+            try:
+                _cancel_qa_checks(state)
+            except Exception as e:
+                print(f"[qa-cancel] enqueue run={run_id}: {e}", flush=True)
+        # Idle right now? Then there is nothing to wait for - hand it over.
+        # Enqueue-then-drain (rather than "send directly when idle") keeps ONE
+        # ordering path, so a message can never overtake one already queued.
+        try:
+            _queue_drain_maybe(state, mode="stdin")
+            _queue_drain_maybe(state, mode="resume")
+        except Exception:
+            pass
+        return self._reply(200, {"ok": True, "entry": entry,
+                                 "queue": list(getattr(state, "msg_queue", None) or [])})
+
+    def _run_queue_op(self, run_id):
+        body = self._read_json_body()
+        op = (body.get("op") or "").strip()
+        state = self._run_queue_state(run_id)
+        if not state:
+            return self._reply(404, {"error": "unknown runId", "runId": run_id})
+        eid = body.get("id")
+        with _QUEUE_LOCK:
+            q = list(getattr(state, "msg_queue", None) or [])
+            if op == "clear":
+                q = []
+            elif op == "remove":
+                q = [e for e in q if e.get("id") != eid]
+            elif op == "move":
+                i = next((n for n, e in enumerate(q) if e.get("id") == eid), -1)
+                if i >= 0:
+                    j = i + (1 if str(body.get("dir")) == "down" else -1)
+                    if 0 <= j < len(q):
+                        q[i], q[j] = q[j], q[i]
+            elif op == "order":
+                # Full reorder from a drag: accept an id list, keep only ids we
+                # already hold so a stale client cannot inject or resurrect one.
+                want = [str(x) for x in (body.get("ids") or [])]
+                by_id = {e.get("id"): e for e in q}
+                q = [by_id[i] for i in want if i in by_id] + [e for e in q if e.get("id") not in want]
+            else:
+                return self._reply(400, {"error": f"unknown op: {op or '(none)'}"})
+            state.msg_queue = q
+        _queue_persist(state)
+        return self._reply(200, {"ok": True, "queue": list(getattr(state, "msg_queue", None) or [])})
 
     # POST /__run/<id>/resume  body: { text }
     # Spawns a NEW Claude process with --resume <sessionId> and pipes the
@@ -32759,6 +36190,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         spawn still omits --no-session-persistence so the thread is at least
         inspectable/recoverable from the session store."""
         planner_type = str(getattr(state, "kind", "") or "").split(":", 1)[1].strip()
+        # Same `woven:` tolerance as _dispatch_planner - see the note there.
+        if planner_type.startswith("woven:"):
+            planner_type = planner_type.split(":", 1)[1].strip()
         bin_path = state.bin_path or detect_agent_bin("claude")
         if not bin_path:
             return self._reply(500, {"error": "claude binary not found"})
@@ -32772,7 +36206,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         planner_body = re.sub(r"^---\n.*?\n---\n", "", planner_md, count=1, flags=re.S).strip()
         try:
             from kinds.capabilities import capabilities_preamble
-            caps_text = capabilities_preamble(project_root=state.project_root)
+            caps_text = capabilities_preamble(project_root=state.project_root,
+                tier=state.tier or context_policy.planner_tier(planner_type),
+                prototype=state.prototype, guards=state.guards)
         except Exception:
             caps_text = ""
         sys_prompt_parts = [planner_body]
@@ -32785,11 +36221,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             sys_prompt_parts.append(_mcp_routing_prompt())
         sys_prompt = "\n\n".join(p.strip() for p in sys_prompt_parts if p and p.strip())
         # Same model resolution as the original planner spawn.
-        _omodel = _orch_override_model_for_node(planner_type, planner_type,
-                                                want_provider=_provider_for_agent("claude"))
+        _omodel = (state.model
+                   or _subagent_override_model_for_node(planner_type, planner_type, planner_body, want_provider="anthropic")
+                   or _orch_override_model_for_node(planner_type, planner_type, want_provider="anthropic"))
         if not _omodel:
             _omodel = _agent_default_model()
-        _model_args = _agent_model_spawn_args("claude", AGENT_DEFS["claude"], _omodel) if _omodel else []
+        if state.execution_profile:
+            _omodel = state.model
+        _model_args = _agent_model_spawn_args("claude", AGENT_DEFS["claude"], _omodel, resolved=bool(state.execution_profile))
         spawn_args = [
             "--print",
             "--output-format", "stream-json",
@@ -32804,6 +36243,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "--append-system-prompt", sys_prompt,
         ]
         spawn_args += _mcp_config_spawn_args()
+        spawn_args += _agents_plugin_spawn_args()
         spawn_args += _model_args
         transcript = _transcript_from_run_events(state)
         if transcript:
@@ -32858,7 +36298,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                          name=f"run-{run_id}-stderr-resumed").start()
         return self._reply(200, {"ok": True, "agentId": "claude", "plannerFallback": True})
 
-    def _run_resume_codex(self, state, run_id, text):
+    def _run_resume_codex(self, state, run_id, text, auto: str = ""):
         """Resume for the argv-prompt single-shot agents (codex AND opencode).
 
         Two paths:
@@ -32889,9 +36329,35 @@ class H(http.server.SimpleHTTPRequestHandler):
         bin_path = state.bin_path or detect_agent_bin(state.agent_id)
         if not bin_path:
             return self._reply(500, {"error": f"{state.agent_id} binary not on PATH"})
+        _main_thread = not (state.kind == "node-agent" or (state.kind or "").startswith("planner:"))
         env = _build_child_env(state.agent_id, run_id,
                                project_root=state.project_root, project_id=state.project_id,
-                               main_thread=True)
+                               main_thread=_main_thread)
+        _apply_guard_env(env, _normalize_chat_guards(getattr(state, "guards", None)))
+        if not _main_thread:
+            env["TH_SPAWN_KIND"] = "node-agent" if state.kind == "node-agent" else "planner"
+        frozen_mode = (state.execution_profile or {}).get("driver")
+        if frozen_mode:
+            env["WOVEN_" + state.agent_id.upper() + "_DRIVER"] = frozen_mode
+        # BEFORE the spawn: these runtimes take the prompt in argv and start
+        # editing as soon as they are up, unlike claude's stdin frame.
+        _history_open_for_respawn(state)
+        if frozen_mode in ("app-server", "http"):
+            spawn_args = list(defs["args"]) + _agent_model_spawn_args(state.agent_id, defs, state.model, resolved=bool(state.execution_profile))
+            if state.agent_id == "codex":
+                spawn_args += _codex_mcp_spawn_args(visual_deny=_main_thread)
+            prompt = text if state.session_id else _transcript_from_run_events(state) + "\n\nUSER: " + text
+            try:
+                proc = _spawn_runtime_process(state.agent_id, [bin_path, *spawn_args, prompt],
+                    resume_id=state.session_id, driver_mode=frozen_mode, cwd=state.project_root, env=env)
+            except Exception as error:
+                return self._reply(502, {"error": str(error)[:500]})
+            state.proc, state.done, state.exit_code, state.turn_done, state.stop_reason = proc, False, None, False, None
+            state.append("status", {"label": "resumed", "runtimeMode": frozen_mode, "resume": "session" if state.session_id else "handoff"})
+            state.append("user_message", {"text": text})
+            threading.Thread(target=_drain_stdout, args=(state,), daemon=True).start()
+            threading.Thread(target=_drain_stderr, args=(state,), daemon=True).start()
+            return self._reply(200, {"ok": True, "runId": run_id, "sessionId": state.session_id})
         resume_sid = None
         if (state.agent_id == "codex"
                 and os.environ.get("WOVEN_CODEX_EXEC_RESUME", "").lower() not in ("0", "off", "false")
@@ -32910,11 +36376,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             # `codex exec resume [OPTIONS] [SESSION_ID] [PROMPT]`.
             spawn_args = (["exec", "resume",
                            "-c", 'sandbox_mode="danger-full-access"']
-                          + _codex_mcp_spawn_args(visual_deny=True)
-                          + _agent_model_spawn_args(state.agent_id, defs, getattr(state, "model", None))
+                          + _codex_mcp_spawn_args(visual_deny=_main_thread)
+                          + _agent_model_spawn_args(state.agent_id, defs, state.model, resolved=bool(state.execution_profile))
                           + [resume_sid, text])
             try:
-                proc = subprocess.Popen(
+                proc = _spawn_runtime_process(state.agent_id,
                     [bin_path, *spawn_args],
                     cwd=state.project_root,
                     stdin=subprocess.DEVNULL,
@@ -32930,9 +36396,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             state.done = False
             state.exit_code = None
             state.turn_done = False
+            # The other resume paths clear it too. Left set, a resume after
+            # Stop kept "user-stop": queued follow-ups never sent and the
+            # resumed turn was reported as stopped.
+            state.stop_reason = None
             state.append("status", {"label": "resumed", "agentId": "codex",
                                     "resume": "session"})
-            state.append("user_message", {"text": text})
+            state.append("user_message", dict({"text": text},
+                                              **({"auto": auto} if auto else {})))
             threading.Thread(target=_drain_stdout, args=(state,), daemon=True,
                              name=f"run-{run_id}-stdout-resumed").start()
             threading.Thread(target=_drain_stderr, args=(state,), daemon=True,
@@ -32948,7 +36419,18 @@ class H(http.server.SimpleHTTPRequestHandler):
             state.agent_id, state.project_root, state.project_id,
             state.branch,
             _normalize_chat_tier(getattr(state, "tier", None)),
-            (getattr(state, "prototype", None) or state.branch or "main"))
+            (getattr(state, "prototype", None) or state.branch or "main"),
+            guards=_normalize_chat_guards(getattr(state, "guards", None)))
+        if (state.kind or "").startswith("planner:"):
+            planner_type = state.kind.split(":", 1)[1].removeprefix("woven:")
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", planner_type):
+                return self._reply(400, {"error": "invalid planner type"})
+            try:
+                with open(os.path.join(INSTALL_ROOT, ".claude", "agents", planner_type + ".md"), encoding="utf-8") as f:
+                    spec = re.sub(r"^---\n.*?\n---\n", "", f.read(), count=1, flags=re.S).strip()
+                preamble = spec + "\n\n" + preamble
+            except OSError as e:
+                return self._reply(500, {"error": "could not restore planner spec: " + str(e)})
         # Compose the resume prompt. Frame it explicitly so codex knows the
         # prior conversation is context, not instructions to repeat.
         if transcript:
@@ -32979,13 +36461,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         # OPENCODE_CONFIG below): the original spawn carried them, and without
         # them every resumed codex chat silently lost its MCP servers.
         # visual_deny/main_thread: a resume IS the long-lived chat thread.
-        _resume_mcp = _codex_mcp_spawn_args(visual_deny=True) if state.agent_id == "codex" else []
+        _resume_mcp = _codex_mcp_spawn_args(visual_deny=_main_thread) if state.agent_id == "codex" else []
         spawn_args = (list(defs["args"])
                       + _resume_mcp
-                      + _agent_model_spawn_args(state.agent_id, defs, getattr(state, "model", None))
+                      + _agent_model_spawn_args(state.agent_id, defs, state.model, resolved=bool(state.execution_profile))
                       + [new_prompt])
         try:
-            proc = subprocess.Popen(
+            proc = _spawn_runtime_process(state.agent_id,
                 [bin_path, *spawn_args],
                 cwd=state.project_root,
                 stdin=subprocess.DEVNULL,
@@ -33002,8 +36484,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.done = False
         state.exit_code = None
         state.turn_done = False
+        state.stop_reason = None
         state.append("status", {"label": "resumed", "agentId": state.agent_id})
-        state.append("user_message", {"text": text})
+        state.append("user_message", dict({"text": text},
+                                          **({"auto": auto} if auto else {})))
         threading.Thread(target=_drain_stdout, args=(state,), daemon=True,
                          name=f"run-{run_id}-stdout-resumed").start()
         threading.Thread(target=_drain_stderr, args=(state,), daemon=True,
@@ -33014,6 +36498,11 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _run_resume(self, run_id):
         body = self._read_json_body(max_bytes=4 * 1024 * 1024)
         text = (body.get("text") or "").strip()
+        # Set when the DAEMON is speaking for the user (today: the
+        # auto-continue after a compact). Stamped on the echoed message so the
+        # chat can label it and so the auto-continue can see its own last turn
+        # and refuse to fire twice in a row.
+        auto = str(body.get("auto") or "").strip()[:40]
         if not text:
             return self._reply(400, {"error": "empty text"})
         with RUNS_LOCK:
@@ -33073,6 +36562,23 @@ class H(http.server.SimpleHTTPRequestHandler):
                          "wait for it to complete or press Stop, then send again",
                 "busy": True,
             })
+        # The old process has exited, but its drain may still be in its
+        # finally-block (end event, finish(), undo commit, hooks). Respawning
+        # under it lets that block finish() the NEW process. A parked thread
+        # hits this every time its next message arrives right after the park.
+        # If the drain is wedged (a grandchild holding stdout), take the old
+        # group down and carry on after a bounded wait rather than refuse.
+        _settled = getattr(state, "exit_settled", None)
+        if _settled is not None and not _settled.wait(timeout=15):
+            _kill_run_tree(state)
+            if not _settled.wait(timeout=5):
+                print(f"[resume] {run_id}: previous drain still open after 20s; "
+                      "resuming anyway", flush=True)
+        # Last line of defence for compaction: never resume a session a
+        # compact retired, whatever restored the id. Clearing it here routes
+        # every runtime to its compact-aware seed path instead.
+        if state.session_id and _session_retired_by_compact(state):
+            state.session_id = None
         # Codex/opencode resume. Neither has Claude's stream-json
         # --resume <session-id> protocol; each `codex exec` / `opencode run`
         # is a fresh session. We fake resume by reconstructing the prior
@@ -33080,7 +36586,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # then spawning a fresh run with that combined prompt. Same run_id,
         # same event log - new process underneath.
         if state.agent_id in ("codex", "opencode"):
-            return self._run_resume_codex(state, run_id, text)
+            return self._run_resume_codex(state, run_id, text, auto=auto)
         if state.agent_id != "claude":
             return self._reply(400, {"error": f"resume not yet supported for agent {state.agent_id!r}"})
         # Planner runs spawn with --no-session-persistence, so their session
@@ -33149,6 +36655,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             sys_prompt = QUESTION_FORM_SYSTEM_PROMPT + SYSTEM_AGENT_PROMPT
             if _mcp_config_spawn_args():
                 spawn_args += _mcp_config_spawn_args()
+                spawn_args += _agents_plugin_spawn_args()
                 sys_prompt = sys_prompt + _mcp_routing_prompt()
             spawn_args += ["--append-system-prompt", sys_prompt]
         else:
@@ -33162,6 +36669,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             # a resumed chat's MCP tool calls all fail and it burns turns
             # working around them.
             spawn_args += _mcp_config_spawn_args()
+            spawn_args += _agents_plugin_spawn_args()
             # Rebuild the SAME system prompt as the original spawn (same tier,
             # same prototype scope, same DS note). Sending a different
             # --append-system-prompt on --resume cache-busts the entire
@@ -33171,14 +36679,16 @@ class H(http.server.SimpleHTTPRequestHandler):
             # restored by _rehydrate_run_from_jsonl after a daemon restart.
             _tier = _normalize_chat_tier(getattr(state, "tier", None))
             _proto = (getattr(state, "prototype", None) or state.branch or "main")
-            sys_prompt = _chat_system_prompt(state.project_root, state.branch, _tier, _proto)
+            _guards = _normalize_chat_guards(getattr(state, "guards", None))
+            sys_prompt = _chat_system_prompt(state.project_root, state.branch, _tier, _proto,
+                                             guards=_guards)
             spawn_args += ["--append-system-prompt", sys_prompt]
         if state.session_id:
             spawn_args += ["--resume", state.session_id]
         # (compacted run: no --resume - fresh session, seeded below)
         # Re-apply the chosen default model so a resume keeps (or, if the setting
         # changed, switches to) it rather than falling back to the CLI default.
-        spawn_args += _agent_model_spawn_args(state.agent_id, defs, getattr(state, "model", None))
+        spawn_args += _agent_model_spawn_args(state.agent_id, defs, state.model, resolved=bool(state.execution_profile))
         # The agent's workspace is the PROJECT only - INSTALL_ROOT is NOT
         # added to --add-dir on resume either, mirroring the policy applied
         # on the initial spawn (see _run_create's _spawn_node_agent path).
@@ -33188,6 +36698,9 @@ class H(http.server.SimpleHTTPRequestHandler):
 
         env = _build_child_env(state.agent_id, run_id,
                                project_root=state.project_root, project_id=state.project_id)
+        # Same-guards-as-spawn: the hook must not re-arm on a resumed thread
+        # whose preamble says the visual check is off.
+        _apply_guard_env(env, _normalize_chat_guards(getattr(state, "guards", None)))
         # A resumed node-agent run keeps its leaf identity: re-stamp the
         # leaf-delegation discriminator so the territory hard-gate in
         # require-orchestrator.sh still recognises it after resume (the
@@ -33208,7 +36721,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             pass
 
         try:
-            proc = subprocess.Popen(
+            proc = _spawn_runtime_process(state.agent_id,
                 [bin_path, *spawn_args],
                 cwd=state.project_root,
                 stdin=subprocess.PIPE,
@@ -33227,12 +36740,18 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.done = False
         state.exit_code = None
         state.turn_done = False
+        state._resume_probe = bool(state.session_id)
+        # Same placement as _run_create: after Popen, before the prompt goes
+        # in over stdin, so nothing can have been edited yet.
+        _history_open_for_respawn(state)
         state.append("status", {
             "label": "resumed",
             "sessionId": state.session_id,
             **({"compactResume": True} if _compact_seed else {}),
         })
-        state.append("user_message", {"text": text})
+        state.stop_reason = None
+        state.append("user_message", dict({"text": text},
+                                          **({"auto": auto} if auto else {})))
 
         try:
             proc.stdin.write(_claude_user_frame(_compact_seed or text))
@@ -33257,12 +36776,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": str(e)})
         with HISTORY_LOCK:
             idx = _history_load_index(project_root)
-        run_active = False
-        try:
-            with RUNS_LOCK:
-                run_active = any(not s.done for s in RUNS.values())
-        except Exception:
-            run_active = False
+        run_active = bool(_history_blocking_runs(project_root))
         return self._reply(200, {
             "entries": idx["entries"],
             "cursor":  idx["cursor"],
@@ -33288,13 +36802,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # a single idle chat permanently block undo. Scope to the active
         # project so another project's run doesn't block this one.
         try:
-            this_project = os.path.basename(project_root.rstrip("/"))
-            with RUNS_LOCK:
-                active_runs = [
-                    s for s in RUNS.values()
-                    if (getattr(s, "project_id", None) in (None, this_project))
-                    and not s.done and not getattr(s, "turn_done", False)
-                ]
+            active_runs = _history_blocking_runs(project_root)
             if active_runs:
                 return self._reply(409, {
                     "error": "a run is mid-turn; undo/redo locked until it finishes its turn",
@@ -33397,7 +36905,7 @@ class ReusableThreadingTCP(socketserver.ThreadingTCPServer):
 # blocks on STALL_WAKE (which RunState.__init__ sets), so an idle daemon pays
 # nothing for it - no timer, no wakeup, no empty-registry scan.
 STALL_POLL_S = 300      # look every 5 min
-STALL_AFTER_S = 900     # no new events for 15 min = stalled
+STALL_AFTER_S = 900     # no new events for 15 min warrants investigation
 
 
 def _stall_find_parent(child):
@@ -33415,7 +36923,8 @@ def _stall_find_parent(child):
     if rid:
         for s in states:
             if s.run_id == rid:
-                return s if s.is_live and not s.done else None
+                same_project = os.path.realpath(s.project_root) == os.path.realpath(child.project_root)
+                return s if same_project and s.is_live and not s.done else None
         return None
     if not child.workflow_node_id:
         return None     # only a dispatched NODE has a parent worth guessing
@@ -33426,13 +36935,10 @@ def _stall_find_parent(child):
 
 
 def _stall_tell_parent(child, mins) -> None:
-    """Tell the dispatching run that its child has gone silent. This is the
-    whole point of the watchdog: the child is beyond help (its stream is
-    dead), but the parent is alive, polling, and CAN act - stop the node and
-    re-dispatch, or move on without it. Left to itself it polls forever.
+    """Ask the dispatching run to investigate silence, without assuming failure.
 
-    Written straight to the parent's stdin, the same channel /user-message
-    uses, so it lands mid-turn without waiting for the poll loop to exit."""
+    Written to the parent's stdin so it lands during a polling turn.
+    """
     parent = None
     try:
         parent = _stall_find_parent(child)
@@ -33443,11 +36949,11 @@ def _stall_tell_parent(child, mins) -> None:
     node = child.workflow_node_id or child.run_id
     text = (
         f"[watchdog] The node you dispatched, `{node}` (run {child.run_id}), "
-        f"has produced no output for {mins} minutes. Its process is alive and "
-        f"its status is still \"running\", so polling will never resolve - the "
-        f"agent's stream is silent, not busy. Stop polling it. Either stop and "
-        f"re-dispatch that node, or continue without it and say plainly in "
-        f"chat that you did."
+        f"has produced no new events for {mins} minutes. Its process is alive. "
+        f"Check its pending jobs, child runs, and saved outputs before deciding "
+        f"whether it is stuck. Quiet output alone does not prove failure. Do not "
+        f"stop an active worker or skip required QA based only on this warning. "
+        f"If work has finished, continue the already-approved next step."
     )
     try:
         parent.proc.stdin.write(_claude_user_frame(text))
@@ -33466,6 +36972,55 @@ def _stall_tell_parent(child, mins) -> None:
     print(f"[stall] told parent {parent.run_id} about {node}", flush=True)
 
 
+def _stall_watch_candidates(states):
+    """Watch workers, not coordinators that are waiting on live child runs.
+
+    Child progress is not copied into the parent's event stream. Monitoring
+    both made a quiet QA coordinator look stalled while its worker was busy.
+    Each child is monitored in its own right, including nested coordinators.
+    """
+    live = [s for s in states if not s.done and s.process_running]
+    coordinators = {(os.path.realpath(s.project_root), s.parent_run_id)
+                    for s in live if s.parent_run_id}
+    return [s for s in live
+            if (os.path.realpath(s.project_root), s.run_id) not in coordinators
+            and (not s.turn_done or _pending_run_jobs(s))]
+
+
+def _stall_watch_round(states, seen, now):
+    alive = set()
+    for s in _stall_watch_candidates(states):
+        alive.add(s.run_id)
+        with s.lock:
+            seq = s.events[-1]["seq"] if s.events else -1
+        row = seen.get(s.run_id)
+        if row is None or row[0] != seq:
+            seen[s.run_id] = [seq, now, False]
+            continue
+        idle = now - row[1]
+        if row[2] or idle < STALL_AFTER_S:
+            continue
+        mins = int(idle // 60)
+        where = s.workflow_node_id or s.kind or "run"
+        print(f"[stall] {s.run_id} ({where}) - no new events for "
+              f"{mins} min: {s.title}", flush=True)
+        try:
+            s.append("status", {
+                "label": "stalled",
+                "promptPreview": f"no new events for {mins} min; check pending work",
+            })
+        except Exception:
+            pass
+        _stall_tell_parent(s, mins)
+        # Our warning must not count as progress and trigger repeat warnings.
+        with s.lock:
+            seq = s.events[-1]["seq"] if s.events else seq
+        seen[s.run_id] = [seq, now, True]
+    for rid in list(seen):
+        if rid not in alive:
+            seen.pop(rid, None)
+
+
 def _stall_watch_loop() -> None:
     # runId -> [lastSeq, unchanged_since, warned]
     seen = {}
@@ -33478,7 +37033,9 @@ def _stall_watch_loop() -> None:
         try:
             with RUNS_LOCK:
                 states = list(RUNS.values())
-            busy = any(not s.done and not s.turn_done and s.is_live
+            # Keep the loop awake while a coordinator has pending work, even
+            # if its child is temporarily waiting for a user decision.
+            busy = any(not s.done and s.process_running and (not s.turn_done or _pending_run_jobs(s))
                        for s in states)
         except Exception:
             busy = True     # can't tell - stay awake rather than go deaf
@@ -33491,49 +37048,165 @@ def _stall_watch_loop() -> None:
             now = time.time()
             with RUNS_LOCK:
                 states = list(RUNS.values())
-            alive = set()
-            for s in states:
-                # turn_done means it finished its turn and is waiting on the
-                # USER - that's idle by design, not a stall.
-                if s.done or s.turn_done or not s.is_live:
-                    continue
-                alive.add(s.run_id)
-                with s.lock:
-                    seq = s.events[-1]["seq"] if s.events else -1
-                row = seen.get(s.run_id)
-                if row is None or row[0] != seq:
-                    seen[s.run_id] = [seq, now, False]   # moving = healthy
-                    continue
-                idle = now - row[1]
-                if row[2] or idle < STALL_AFTER_S:
-                    continue
-                mins = int(idle // 60)
-                where = s.workflow_node_id or s.kind or "run"
-                print(f"[stall] {s.run_id} ({where}) - no new events for "
-                      f"{mins} min: {s.title}", flush=True)
-                # Renders as a plain chat row ("stalled - no new events for
-                # 15 min") in the run's own transcript, and lands in
-                # chat.jsonl so it survives a daemon restart.
-                try:
-                    s.append("status", {
-                        "label": "stalled",
-                        "promptPreview": f"no new events for {mins} min",
-                    })
-                except Exception:
-                    pass
-                _stall_tell_parent(s, mins)
-                # Re-read the seq AFTER our own append, or the warning we just
-                # wrote would read as fresh activity next round and we'd warn
-                # again every 15 min. One line per silent stretch; real work
-                # moving the seq resets the row and re-arms the check.
-                with s.lock:
-                    seq = s.events[-1]["seq"] if s.events else seq
-                seen[s.run_id] = [seq, now, True]
-            for rid in list(seen):
-                if rid not in alive:
-                    seen.pop(rid, None)
+            _stall_watch_round(states, seen, now)
         except Exception as e:
             print(f"[stall] watchdog round failed: {e}", flush=True)
+
+
+# ── idle park + prompt-cache keep-alive ─────────────────────────────────────
+# A chat's `claude` process stays up after its turn, waiting on stdin for the
+# next message - and with it its MCP servers and their headless browsers.
+# Nothing ever closed an idle one: a week of suss-cal threads ended with 57 of
+# those trees alive (dozens of GB) and the daemon out of file descriptors.
+# The process is not what remembers the conversation. The session is on disk
+# and /resume reattaches to it with a byte-identical system prompt, so an
+# idle thread is PARKED: its process tree goes, and the next message resumes
+# it exactly the way the composer already continues a stopped thread.
+#
+# The prompt cache is upstream and keyed by the request prefix, not by the
+# process, and it expires an hour after its last read whether or not the
+# process is alive. While a thread rests, the evict proxy re-sends its last
+# request with max_tokens 0 every KEEPALIVE_EVERY_S - billed as a cache read,
+# it restarts the hour - for up to KEEPALIVE_WINDOW_S after the thread's last
+# real request. Resuming inside that window costs what a live process would.
+def _idle_env_s(name: str, default: int) -> int:
+    try:
+        return max(0, int(os.environ.get(name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+PARK_AFTER_S = _idle_env_s("WOVEN_PARK_AFTER_S", 900)                 # 0 = never park
+KEEPALIVE_WINDOW_S = _idle_env_s("WOVEN_CACHE_KEEPALIVE_S", 4 * 3600)  # 0 = no keep-alive
+KEEPALIVE_EVERY_S = 50 * 60     # the CLI writes 1-hour entries; re-read before they lapse
+IDLE_POLL_S = 60
+# Parking and an incoming /user-message must not interleave: one decides the
+# turn is over while the other is writing the next one into stdin.
+_PARK_LOCK = threading.Lock()
+
+
+def _idle_resumable(s) -> bool:
+    """Threads that continue through `claude --resume <session>` with the
+    same system prompt as their first spawn. Node runs settle themselves
+    (_settle_run_jobs), planners keep no session on disk, and a codex /
+    opencode "resume" replays the transcript as text - none of those may be
+    parked or kept warm."""
+    return (getattr(s, "agent_id", None) == "claude"
+            and not isinstance(getattr(s, "proc", None), runtime_drivers.ProcessDriver)
+            and not getattr(s, "workflow_node_id", None)
+            and not getattr(s, "parent_run_id", None)
+            and getattr(s, "kind", None) != "node-agent"
+            and not str(getattr(s, "kind", "") or "").startswith("planner:")
+            and bool(getattr(s, "session_id", None)))
+
+
+def _parkable(s, now: float) -> bool:
+    """Idle at a turn boundary with nothing owed to anyone - the state a Stop
+    followed by a reply already handles, minus the Stop."""
+    if not _idle_resumable(s) or s.done or not s.turn_done or s.stop_reason:
+        return False
+    if not s.is_live or getattr(s, "msg_queue", None) or getattr(s, "_queue_draining", False):
+        return False
+    if getattr(s, "_compact_inflight", False) or getattr(s, "_compact_pending", None):
+        return False
+    if _pending_run_jobs(s):
+        return False
+    return now - (getattr(s, "updated_at", None) or s.started_at) >= PARK_AFTER_S
+
+
+def _park_run(s, now: float) -> bool:
+    with _PARK_LOCK:
+        if not _parkable(s, now):
+            return False
+        s.stop_reason = "parked"
+    mins = int((now - (getattr(s, "updated_at", None) or s.started_at)) // 60)
+    print(f"[park] {s.run_id} idle {mins} min - released its process tree: {s.title}",
+          flush=True)
+    _kill_run_tree(s)
+    return True
+
+
+def _run_writes_1h_cache(s) -> bool:
+    """Whether the run's latest cache write was a 1-hour entry. A 5-minute
+    entry is long gone by KEEPALIVE_EVERY_S, so pinging it would pay for a
+    fresh write each time instead of a read."""
+    with s.lock:
+        tail = s.events[-2000:]
+    for ev in reversed(tail):
+        d = ev.get("data")
+        if ev.get("type") != "agent" or not isinstance(d, dict):
+            continue
+        if d.get("type") != "usage" or d.get("sidechain"):
+            continue
+        cc = (d.get("usage") or {}).get("cache_creation") or {}
+        if cc.get("ephemeral_1h_input_tokens"):
+            return True
+        if cc.get("ephemeral_5m_input_tokens"):
+            return False
+    return False
+
+
+def _keepalive_maybe(s, now: float, proxy) -> None:
+    resting = (s.stop_reason == "parked"
+               or (not s.done and s.turn_done and not s.stop_reason))
+    if not resting or not _idle_resumable(s) or getattr(s, "msg_queue", None):
+        return
+    st = proxy.keepalive_status(s.run_id)
+    if not st:
+        return
+    if now - st["realAt"] >= KEEPALIVE_WINDOW_S:
+        proxy.keepalive_forget(s.run_id)
+        return
+    if now - st["touchedAt"] < KEEPALIVE_EVERY_S:
+        return
+    if not _run_writes_1h_cache(s):
+        proxy.keepalive_forget(s.run_id)
+        return
+    res = proxy.keepalive(s.run_id)
+    if not res:
+        return
+    usage = res.get("usage") or {}
+    read = usage.get("cache_read_input_tokens") or 0
+    wrote = usage.get("cache_creation_input_tokens") or 0
+    print(f"[keepalive] {s.run_id} status={res.get('status')} read={read} write={wrote}"
+          + ("" if res.get("ok") else f" - {res.get('reason')}"), flush=True)
+    # A ping that WROTE the prefix missed: the entry had already lapsed, or
+    # the replay isn't byte-identical to what the CLI sends. Either way more
+    # pings would pay a write each time, so stop for this run.
+    if res.get("ok") and wrote > read:
+        proxy.keepalive_forget(s.run_id)
+
+
+def _idle_watch_round(states, now: float) -> None:
+    if PARK_AFTER_S:
+        for s in states:
+            try:
+                _park_run(s, now)
+            except Exception as e:
+                print(f"[park] {getattr(s, 'run_id', '?')} failed: {e}", flush=True)
+    if not KEEPALIVE_WINDOW_S or not _EVICT_BASE_URL:
+        return
+    import anthropic_evict_proxy as proxy
+    for s in states:
+        try:
+            _keepalive_maybe(s, now, proxy)
+        except Exception as e:
+            print(f"[keepalive] {getattr(s, 'run_id', '?')} failed: {e}", flush=True)
+    known = {s.run_id for s in states}
+    for rid in proxy.keepalive_runs():
+        if rid not in known:            # thread deleted
+            proxy.keepalive_forget(rid)
+
+
+def _idle_watch_loop() -> None:
+    while True:
+        time.sleep(IDLE_POLL_S)
+        try:
+            with RUNS_LOCK:
+                states = list(RUNS.values())
+            _idle_watch_round(states, time.time())
+        except Exception as e:
+            print(f"[park] idle round failed: {e}", flush=True)
 
 
 if __name__ == "__main__":
@@ -33606,7 +37279,7 @@ if __name__ == "__main__":
         _print_url_banner(f"http://localhost:{PORT}/")
     print(
         "  endpoints: /__save  /__layout  /__workflow\n"
-        "             /__agents  /__run  /__runs  /__stream\n"
+        "             /__agents  /__run  /__runs  /__runs/delete  /__run/<id>/rename  /__stream\n"
         "             /__workspace  /__projects  /__projects/new  /__projects/rename  /__projects/delete  /__projects/duplicate",
         flush=True,
     )
@@ -33718,6 +37391,9 @@ if __name__ == "__main__":
     # runs, not shares, and must come up even when share mode is disabled.
     threading.Thread(target=_stall_watch_loop, daemon=True,
                      name="stall-watch").start()
+    # Idle threads: release their process trees, keep their prompt cache warm.
+    threading.Thread(target=_idle_watch_loop, daemon=True,
+                     name="idle-watch").start()
     # auto-replace any stale serve.py holding our port. Without this,
     # the user gets EADDRINUSE every time the previous daemon wasn't cleaned
     # up (common during development: editor reloads, separate launchers, my

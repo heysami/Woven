@@ -67,6 +67,17 @@ def get_section(name):
             "valid sections: " + ", ".join(_SECTIONS) + "\n"
             "fetch one with GET /__logic_guide?section=<name>&project=<id>"
         )
+    if key == "catalogue":
+        from kinds.registry import LOGIC_NODE_DEFS
+        lines = ["## Logic kind catalogue (generated from the shared registry)", ""]
+        for kind, spec in LOGIC_NODE_DEFS.items():
+            controls = ", ".join(spec["controls"])
+            inputs = " ".join(name + "(" + port.get("dtype", "/".join(port.get("tags", []))) + ")" for name, port in spec["accepts"].items())
+            outputs = " ".join(name + "(" + port.get("dtype", "/".join(port.get("tags", []))) + ")" for name, port in spec["provides"].items())
+            lines.append(f"- `{kind}` [{controls}] - (i) {inputs or 'none'} - (o) {outputs or 'none'}. {spec['desc']}")
+        lines += ["", "Vector modes: make x/y -> v; break v -> x/y; distance a/b -> d; add a/b -> v; scale v/t -> v; lerp a/b/t -> v.",
+                  "op-tostring supports {v}, {a}, {x}, and {y}. See dataflow for per-node input controls, ownership, delay, and bounded sampling semantics."]
+        return "\n".join(lines)
     text = _load(key)
     if not text:
         return "section '" + key + "' is currently unavailable (file missing)."

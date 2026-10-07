@@ -26,7 +26,8 @@
     "lenses": []
   },
   "skills": [
-    "generate-image"
+    "generate-image",
+    "video-gen"
   ],
   "nodeKinds": {
     "asset": [

@@ -29,6 +29,7 @@
    =========================================================================== */
 
 import { LogicPermission } from './logicpermission.js';
+import { createAudioInputs } from './logicaudioinput.js';
 
 function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 function num(v, f) { const n = Number(v); return Number.isFinite(n) ? n : f; }
@@ -60,6 +61,7 @@ export const LogicInputs = {
     // ── pointer state ────────────────────────────────────────────────────────
     const pointer = {
       x: 0, y: 0, isDown: false, clicked: false,
+      buttons: 0, clickedButtons: 0,
       downX: 0, downY: 0, upX: 0, upY: 0, hover: false,
     };
     const buttonFilter = opts.button || (opts.pointerButton) || 'any';  // any|left|right|middle
@@ -77,11 +79,15 @@ export const LogicInputs = {
       if (!buttonMatch(e)) return;
       pointer.x = normX(e.clientX); pointer.y = normY(e.clientY);
       pointer.isDown = true; pointer.clicked = true;
+      const bit = [1, 4, 2][e.button] || 0;
+      pointer.buttons = e.buttons == null ? pointer.buttons | bit : e.buttons;
+      pointer.clickedButtons |= bit;
       pointer.downX = pointer.x; pointer.downY = pointer.y;
     };
     const onPointerUp = (e) => {
       if (e.pointerType && e.pointerType !== 'mouse' && e.pointerType !== 'pen') return;
-      pointer.isDown = false;
+      pointer.buttons = e.buttons == null ? pointer.buttons & ~([1, 4, 2][e.button] || 0) : e.buttons;
+      pointer.isDown = pointer.buttons !== 0;
       pointer.upX = normX(e.clientX); pointer.upY = normY(e.clientY);
     };
     const onPointerEnter = () => { pointer.hover = true; };
@@ -139,6 +145,7 @@ export const LogicInputs = {
 
     // ── keyboard state ───────────────────────────────────────────────────────
     const keysDown = new Set();
+    const pressedKeys = new Set(), repeatKeys = new Set();
     const keyboard = { key: '', isDown: false, lastKey: '', axisX: 0, axisY: 0 };
     const recomputeAxes = () => {
       let ax = 0, ay = 0;
@@ -152,6 +159,7 @@ export const LogicInputs = {
     const onKeyDown = (e) => {
       if (e.repeat && opts.keyboardRepeat === false) return;
       keysDown.add(e.key);
+      (e.repeat ? repeatKeys : pressedKeys).add(e.key);
       keyboard.key = e.key; keyboard.lastKey = e.key; keyboard.isDown = true;
       recomputeAxes();
     };
@@ -161,14 +169,20 @@ export const LogicInputs = {
       if (keysDown.size) keyboard.key = Array.from(keysDown)[keysDown.size - 1];
       recomputeAxes();
     };
+    const onBlur = () => {
+      keysDown.clear(); pressedKeys.clear(); repeatKeys.clear(); keyboard.isDown = false; recomputeAxes();
+      pointer.buttons = 0; pointer.isDown = false; pointer.clicked = false; pointer.clickedButtons = 0;
+      touchPts.clear(); recomputeTouch();
+    };
 
     // ── scroll state ─────────────────────────────────────────────────────────
     const scroll = { deltaX: 0, deltaY: 0, accumX: 0, accumY: 0, velocity: 0 };
     let lastWheel = 0;
     const onWheel = (e) => {
       const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-      const dx = e.deltaX, dy = e.deltaY;
-      scroll.deltaX = dx; scroll.deltaY = dy;
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? rect.height : 1;
+      const dx = e.deltaX * unit, dy = e.deltaY * unit;
+      scroll.deltaX += dx; scroll.deltaY += dy;
       scroll.accumX += dx; scroll.accumY += dy;
       const span = Math.max(1, now - lastWheel); lastWheel = now;
       scroll.velocity = dy / span;
@@ -176,7 +190,7 @@ export const LogicInputs = {
 
     // ── gyro state (lazy, permission-gated) ──────────────────────────────────
     const gyro = { alpha: 0, beta: 0, gamma: 0, tilt: { x: 0, y: 0 }, ready: false };
-    const gyroSmoothing = clamp(num(opts.gyroSmoothing, 0.2), 0, 1);
+    const gyroSmoothing = clamp(num(opts.gyroSmoothing, 0), 0, 1);
     let gyroListening = false;
     const onOrientation = (e) => {
       const k = gyroSmoothing;
@@ -209,63 +223,7 @@ export const LogicInputs = {
       else if (status === 0xb0) { midi.cc = d[1]; midi.ccValue = (d[2] || 0) / 127; }
     };
 
-    // ── audio state (lazy, permission-gated) ─────────────────────────────────
-    const audio = { level: 0, pitch: 0, band: 0, raw: 0, beat: false };
-    const audioCfg = {
-      band: opts.audioBand || 'full',        // bass | mid | treble | full
-      fftSize: Math.max(32, Math.floor(num(opts.audioFftSize, 2048))),
-      smoothing: clamp(num(opts.audioSmoothing, 0.8), 0, 1),
-    };
-    let audioCtx = null, analyser = null, micStream = null, freqBuf = null, timeBuf = null;
-    let beatPrevLevel = 0, pitchFrame = 0;
-    const sampleAudio = () => {
-      if (!analyser) return;
-      analyser.getByteFrequencyData(freqBuf);
-      analyser.getByteTimeDomainData(timeBuf);
-      // RMS loudness 0..1 from the time-domain waveform.
-      let sum = 0;
-      for (let i = 0; i < timeBuf.length; i++) { const v = (timeBuf[i] - 128) / 128; sum += v * v; }
-      const level = Math.sqrt(sum / timeBuf.length);
-      audio.raw = level;
-      audio.level = clamp(level * 1.8, 0, 1);  // gentle gain so quiet rooms still read
-      // Band energy (averaged frequency bins for the selected band).
-      const N = freqBuf.length;
-      let lo = 0, hi = N;
-      if (audioCfg.band === 'bass') { lo = 0; hi = Math.floor(N * 0.08); }
-      else if (audioCfg.band === 'mid') { lo = Math.floor(N * 0.08); hi = Math.floor(N * 0.4); }
-      else if (audioCfg.band === 'treble') { lo = Math.floor(N * 0.4); hi = N; }
-      let bsum = 0, bcount = 0;
-      for (let i = lo; i < hi; i++) { bsum += freqBuf[i]; bcount++; }
-      audio.band = bcount ? clamp((bsum / bcount) / 255, 0, 1) : 0;
-      // Full spectrum (64 bins) + 16 log-spaced band energies, normalized 0..1,
-      // exposed as channels. Buffers are reused across frames (no per-frame alloc).
-      const SB = 64, LB = 16;
-      if (!audio.spectrum) audio.spectrum = new Float32Array(SB);
-      for (let k = 0; k < SB; k++) {
-        const a0 = Math.floor(k * N / SB), a1 = Math.max(a0 + 1, Math.floor((k + 1) * N / SB));
-        let s = 0; for (let i = a0; i < a1; i++) s += freqBuf[i];
-        audio.spectrum[k] = (s / (a1 - a0)) / 255;
-      }
-      if (!audio.bands) audio.bands = new Float32Array(LB);
-      for (let k = 0; k < LB; k++) {
-        const f0 = Math.floor(N * Math.pow(k / LB, 2)), f1 = Math.max(f0 + 1, Math.floor(N * Math.pow((k + 1) / LB, 2)));
-        let s = 0; for (let i = f0; i < f1; i++) s += freqBuf[i];
-        audio.bands[k] = (s / (f1 - f0)) / 255;
-      }
-      // Autocorrelation pitch estimate (Hz) from the time-domain buffer. The
-      // ACF is by far the most expensive extraction here, and the consumer
-      // contract forces a read every frame (logicgraph's input-audio evaluator
-      // resolves ALL out-ports each tick, pitch included, so a lazy getter
-      // would be forced anyway) - so recompute only every AC_EVERY frames;
-      // voice pitch moves slowly relative to the frame rate and the last
-      // value holds in between.
-      if ((pitchFrame++ % AC_EVERY) === 0) {
-        audio.pitch = audioCtx ? autoCorrelate(timeBuf, audioCtx.sampleRate) : 0;
-      }
-      // Beat = a sharp rise in level above the running floor.
-      audio.beat = (audio.level - beatPrevLevel) > 0.12 && audio.level > 0.15;
-      beatPrevLevel = beatPrevLevel * 0.86 + audio.level * 0.14;
-    };
+    const audioCapture = createAudioInputs(opts.audioNodes || [{id:'__default',params:{source:'mic',band:opts.audioBand,fftSize:opts.audioFftSize,smoothing:opts.audioSmoothing}}]);
 
     // ── attach the gesture-free listeners now ────────────────────────────────
     const passive = { passive: true };
@@ -282,6 +240,9 @@ export const LogicInputs = {
     try { if (surface.tabIndex < 0) surface.tabIndex = 0; } catch (e) {}
     surface.addEventListener('keydown', onKeyDown);
     surface.addEventListener('keyup', onKeyUp);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('pointercancel', onPointerUp, passive);
     surface.addEventListener('wheel', onWheel, passive);
     window.addEventListener('resize', recomputeRect, passive);
     window.addEventListener('scroll', recomputeRect, passive);
@@ -297,7 +258,8 @@ export const LogicInputs = {
       const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
       const dt = Math.max(0, (now - lastTime) / 1000);
       lastTime = now;
-      if (analyser) sampleAudio();
+      const audioNodes=audioCapture.sample();
+      const audio=audioNodes.__default||Object.values(audioNodes)[0]||{};
       // Poll the first connected gamepad (no permission needed).
       const pads = (typeof navigator !== 'undefined' && navigator.getGamepads) ? navigator.getGamepads() : null;
       const gp = pads && (pads[0] || pads[1] || pads[2] || pads[3]);
@@ -305,10 +267,12 @@ export const LogicInputs = {
         gamepad.connected = true;
         gamepad.x = num(ax[0], 0); gamepad.y = num(ax[1], 0); gamepad.rx = num(ax[2], 0); gamepad.ry = num(ax[3], 0);
         gamepad.a = !!(bt[0] && bt[0].pressed); gamepad.b = !!(bt[1] && bt[1].pressed);
-      } else { gamepad.connected = false; }
+      } else { Object.assign(gamepad, {x:0,y:0,rx:0,ry:0,a:false,b:false,connected:false}); }
       const snap = {
+        surface: {width: rect.width, height: rect.height},
         pointer: {
           x: pointer.x, y: pointer.y, isDown: pointer.isDown, clicked: pointer.clicked,
+          buttons: pointer.buttons, clickedButtons: pointer.clickedButtons,
           downX: pointer.downX, downY: pointer.downY, upX: pointer.upX, upY: pointer.upY,
           hover: pointer.hover,
         },
@@ -320,6 +284,7 @@ export const LogicInputs = {
         },
         keyboard: {
           key: keyboard.key, lastKey: keyboard.lastKey, isDown: keyboard.isDown,
+          keys: Array.from(keysDown), pressedKeys: Array.from(pressedKeys), repeatKeys: Array.from(repeatKeys),
           axisX: keyboard.axisX, axisY: keyboard.axisY,
         },
         scroll: {
@@ -330,12 +295,14 @@ export const LogicInputs = {
         gamepad: { x: gamepad.x, y: gamepad.y, rx: gamepad.rx, ry: gamepad.ry, a: gamepad.a, b: gamepad.b, connected: gamepad.connected },
         accel: { x: accel.x, y: accel.y, z: accel.z, ready: accel.ready },
         midi: { note: midi.note, velocity: midi.velocity, cc: midi.cc, ccValue: midi.ccValue, gate: midi.gate, ready: midi.ready },
+        audioNodes,
         audio: { level: audio.level, pitch: audio.pitch, band: audio.band, raw: audio.raw, beat: audio.beat, spectrum: audio.spectrum, bands: audio.bands },
         dt: dt, time: (now - startTime) / 1000,
       };
       // Per-frame edge flags reset AFTER the snapshot is read (engine reads the raw
       // isDown and edge-detects itself; these are convenience raw pulses).
       pointer.clicked = false;
+      pointer.clickedButtons = 0; pressedKeys.clear(); repeatKeys.clear();
       touch.tap = false;
       scroll.deltaX = 0; scroll.deltaY = 0;
       return snap;
@@ -343,7 +310,7 @@ export const LogicInputs = {
 
     const requestSensor = (kind) => {
       if (kind === 'gyro') return requestGyro();
-      if (kind === 'audio' || kind === 'mic') return requestAudio();
+      if (kind === 'audio' || kind === 'mic') return audioCapture.request();
       if (kind === 'accel' || kind === 'motion') return requestAccel();
       if (kind === 'midi') return requestMidi();
       return Promise.resolve(false);
@@ -373,33 +340,6 @@ export const LogicInputs = {
       }, () => DeviceOrientationEvent.requestPermission()).then((res) => {
         if (res === 'granted') { start(); return true; }
         return false;
-      }).catch(() => false);
-    }
-
-    function requestAudio() {
-      if (analyser) return Promise.resolve(true);
-      return LogicPermission.requestGesture({
-        title: 'Use the microphone',
-        body: 'This piece reacts to sound. Your browser will ask for mic access next.',
-        allowLabel: 'Enable microphone',
-      }, () => {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('no getUserMedia');
-        return navigator.mediaDevices.getUserMedia({ audio: true });
-      }).then((stream) => {
-        if (!stream || stream === true) return false;
-        try {
-          micStream = stream;
-          const AC = window.AudioContext || window.webkitAudioContext;
-          audioCtx = new AC();
-          analyser = audioCtx.createAnalyser();
-          analyser.fftSize = audioCfg.fftSize;
-          analyser.smoothingTimeConstant = audioCfg.smoothing;
-          freqBuf = new Uint8Array(analyser.frequencyBinCount);
-          timeBuf = new Uint8Array(analyser.fftSize);
-          const src = audioCtx.createMediaStreamSource(stream);
-          src.connect(analyser);
-          return true;
-        } catch (e) { return false; }
       }).catch(() => false);
     }
 
@@ -441,66 +381,18 @@ export const LogicInputs = {
       window.removeEventListener('pointercancel', onTouchPointerUp, passive);
       surface.removeEventListener('keydown', onKeyDown);
       surface.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('pointercancel', onPointerUp, passive);
       surface.removeEventListener('wheel', onWheel, passive);
       window.removeEventListener('resize', recomputeRect, passive);
       window.removeEventListener('scroll', recomputeRect, passive);
       if (gyroListening) { window.removeEventListener('deviceorientation', onOrientation, true); gyroListening = false; }
       if (accelListening) { window.removeEventListener('devicemotion', onMotion, true); accelListening = false; }
-      if (midiAccess) { try { midiAccess.inputs.forEach((inp) => { inp.onmidimessage = null; }); } catch (e) {} midiAccess = null; }
-      if (micStream) { try { micStream.getTracks().forEach((t) => t.stop()); } catch (e) {} micStream = null; }
-      if (audioCtx) { try { audioCtx.close(); } catch (e) {} audioCtx = null; }
-      analyser = null; freqBuf = null; timeBuf = null;
+      if (midiAccess) { try { midiAccess.onstatechange = null; midiAccess.inputs.forEach((inp) => { inp.onmidimessage = null; }); } catch (e) {} midiAccess = null; }
+      audioCapture.dispose();
     };
 
     return { sample, requestSensor, dispose };
   },
 };
-
-// Autocorrelation pitch detector (Hz) over a Uint8 time-domain buffer.
-// Returns 0 when no confident pitch is found. Standard ACF approach.
-// Scratch buffers are module-level and reused across calls (this runs inside
-// the per-frame sample path, so per-call allocation is pure GC churn; JS is
-// single-threaded and the buffers are only live during the call, so sharing
-// them across attach() instances is safe). The ACF window is capped at
-// AC_WINDOW samples - a 512-sample max lag at typical 44.1/48kHz rates still
-// reaches below voice pitch, and it bounds the O(n^2) multiply-add cost.
-// AC_EVERY is the recompute stride sampleAudio uses (see the pitch note there).
-const AC_WINDOW = 512;
-const AC_EVERY = 3;
-let acSignal = null;                          // Float32Array(fftSize), lazily sized
-const acCorr = new Float32Array(AC_WINDOW);   // ACF accumulator, fixed cap
-function autoCorrelate(buf, sampleRate) {
-  const SIZE = buf.length;
-  if (!acSignal || acSignal.length !== SIZE) acSignal = new Float32Array(SIZE);
-  const f = acSignal;
-  let rms = 0;
-  for (let i = 0; i < SIZE; i++) { f[i] = (buf[i] - 128) / 128; rms += f[i] * f[i]; }
-  rms = Math.sqrt(rms / SIZE);
-  if (rms < 0.01) return 0;  // too quiet to estimate
-
-  let r1 = 0, r2 = SIZE - 1; const thres = 0.2;
-  for (let i = 0; i < SIZE / 2; i++) { if (Math.abs(f[i]) < thres) { r1 = i; break; } }
-  for (let i = 1; i < SIZE / 2; i++) { if (Math.abs(f[SIZE - i]) < thres) { r2 = SIZE - i; break; } }
-  const n = Math.min(r2 - r1, AC_WINDOW);
-  if (n < 2) return 0;
-
-  // ACF over the trimmed window, indexed in place (no slice; the lag in
-  // samples is what sets the period, so sampleRate / T0 below is unchanged).
-  const c = acCorr;
-  for (let lag = 0; lag < n; lag++) {
-    let s = 0;
-    for (let i = 0; i < n - lag; i++) s += f[r1 + i] * f[r1 + i + lag];
-    c[lag] = s;
-  }
-  let d = 0; while (d < n - 1 && c[d] > c[d + 1]) d++;
-  let maxVal = -1, maxPos = -1;
-  for (let i = d; i < n; i++) { if (c[i] > maxVal) { maxVal = c[i]; maxPos = i; } }
-  if (maxPos <= 0) return 0;
-  // Parabolic interpolation around the peak for sub-sample accuracy. c is a
-  // fixed-size scratch, so entries at n and beyond are stale - guard the +1.
-  let T0 = maxPos;
-  const x1 = c[maxPos - 1] || 0, x2 = c[maxPos], x3 = (maxPos + 1 < n ? c[maxPos + 1] : 0);
-  const a = (x1 + x3 - 2 * x2) / 2, b = (x3 - x1) / 2;
-  if (a) T0 = maxPos - b / (2 * a);
-  return T0 > 0 ? sampleRate / T0 : 0;
-}

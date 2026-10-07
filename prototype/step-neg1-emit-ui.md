@@ -14,11 +14,43 @@ The Woven chat ships a dedicated rich primitive for this Step - `<direction-opti
 ## Turn shape - what the agent does in order
 
 0. **Research any named real-world reference FIRST.** If the brief (or a steer reply) names a real game / film / brand / product / place as the look reference, WebSearch/WebFetch how the real thing ACTUALLY presents (dimensionality, camera, materials, layout register, palette, era) before composing options or characterizing it anywhere. Training-data recall about a named reference is banned as the sole source - it is routinely outdated or plain wrong, and a wrong rider written into an option label or ledger detail becomes the committed vision downstream. This applies to the steer menus you offer too: never offer a choice set built from recall (e.g. one that omits the reference's real presentation). Do the research silently as normal grounding work - no meta commentary about rules or traps.
-1. **Compose the three direction picks** (shell / style / aesthetic / palette / type-family / candidate brief strings / why / trade-off / register / raster-risk flag).
+1. **Compose the three direction picks** (shell / style / aesthetic / palette / type-family / candidate brief strings / why / trade-off / register / raster-risk flag). If typed judgment is available (the block naming `POST $TH_DAEMON_URL/__jev` is in your preamble), rank the axes with it FIRST - see *Ranking the axes with typed judgment* below. It changes what you consider, never what you emit: the message shape, the three options and the recolour pipeline are identical either way.
 2. **Pick a per-turn unique slug** for the preview files: `TURN_SLUG="$(date +%s)-$(openssl rand -hex 2)"`. The slug protects chat history - without it, a re-ask overwrites prior PNGs and old messages silently swap their preview image.
 3. **Recolour the library image per option** (see *Recoloring the library image* section below) → `.prototype-options/<TURN_SLUG>/option-<N>.png`. **One PNG per option.** No preview HTML, no font CSS - the chat owns rendering.
 4. **Emit ONE chat message** in the shape below, containing markdown text + a single `<direction-options>` block, with every `<image src="..."/>` carrying the slug.
 5. **STOP** the turn. No detail-file reads for the picked option, no genre commit, no `<artifact>`, no TodoWrite. Wait for the user's reply.
+
+## Ranking the axes with typed judgment (only when the Jev block is in your preamble)
+
+Skip this whole section when the block is absent, when the call fails, or when the brief already STATES its direction. Everything below is a narrowing aid; the turn shape does not change.
+
+**What it buys.** Composing from recall means weighing the rosters you happen to be holding. One request weighs all 130 aesthetics and returns a ranked distribution per axis, so you can see that the brief implies a shell strongly and an aesthetic not at all - which is the signal to SPREAD the three options across the aesthetic axis instead of shipping three variations of one.
+
+**The call.** ONE request, five questions, ~50k tokens, about $0.002. Read the criteria maps out of `docs/research/direction-axes.jev.json` (generated from PROTOTYPE.md's own rosters - never retype them, and never invent an id that is not in there):
+
+```bash
+curl -sS -X POST "$TH_DAEMON_URL/__jev" -H 'Content-Type: application/json' -d '{
+  "kind": "direction_axis",
+  "state": "<the brief verbatim, plus the bound design system if there is one>",
+  "questions": {
+    "needs_direction": {"type": "noul",
+      "instructions": "This request leaves the visual direction unspecified."},
+    "recipe":    {"type": "choice", "criteria": <axes.recipe.criteria>},
+    "shell":     {"type": "choice", "criteria": <axes.shell.criteria>},
+    "style":     {"type": "choice", "criteria": <axes.style.criteria>},
+    "aesthetic": {"type": "choice", "criteria": <axes.aesthetic.criteria>}
+  }
+}'
+```
+
+**Reading the answer.**
+- `needs_direction` below the returned `thresholds.noul`: the brief already states its direction. Do not spend the axes; compose as you always would.
+- `recipe` wins at or above `thresholds.high` and is not `none`: short-circuit. Read that recipe file and take all three axis picks from it - that is what the recipes index is for.
+- Otherwise compose the three options from the top of each axis. Each Choice returns the FULL `probabilities` map, so you get a ranked axis rather than a single pick.
+- **Low confidence on an axis is the useful answer, not a failure.** A flat distribution means the brief does not imply that axis. Spread your three options ACROSS it - three different aesthetics over one shell, say - instead of shipping three shades of the same idea. An axis whose distribution is flat AND whose top option is `none` is telling you the brief wants no aesthetic layer at all; believe it.
+- Confidence below `thresholds.low` on every axis: ignore the whole result and compose from the rosters as usual.
+
+**What it does NOT do.** Jev ranks on roster PROSE. It has never seen the `design-library/*-ui.png` previews the user actually chooses from, it cannot judge palette, and it cannot judge whether two colours sit well together. You still compose the option cards, still pick the palettes, still run the recolour pipeline, and the user still decides. Never put a probability in the emitted message - the user is picking a direction, not auditing a judge.
 
 ## Emit exactly this message shape
 

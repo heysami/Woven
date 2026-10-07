@@ -1,5 +1,7 @@
 # Orchestrator system - registry, discovery, disable
 
+All orchestrators use the shared [contract and brief writer](../../docs/agents/contract-writer.md) when producing downstream prose. Creative decisions and review stay with the orchestrator; writing has its own global model and per-orchestrator override.
+
 The orchestrator registry surfaces every top-level orchestrator agent the app
 ships and lets the user disable any of them per project (or workspace-wide
 from the landing page).
@@ -264,6 +266,8 @@ notForUseWhen: Brief is sincere, sentimental, family-friendly, or wholesome.
 ```
 
 To **add a new entry**: create a new `design-library/<prefix>-<entryId>.md` (copy any existing file as a template), then re-run `python3 scripts/build-library-indexes.py` to refresh the index. To **edit an entry**: open its file directly, change what you need, re-run the script.
+
+The same script also regenerates `docs/research/direction-axes.jev.json` by scraping the four rosters in `PROTOTYPE.md`, so **a roster edit needs the same re-run as a library edit**. Prove it landed with `python3 -m unittest editor.tests.test_jev_parity.P1VocabularyParity`: that test asserts the roster and the generated axes state the same ids in both directions, so a stale file fails loudly instead of quietly changing what the direction picker is allowed to offer.
 
 These files are ALSO the runtime read for the drawer (~1-5KB per dispatch) AND the Design library tab's browseable card (image-sample slot supported via `<!-- image: ... -->` markers).
 

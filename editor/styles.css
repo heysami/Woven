@@ -3422,6 +3422,20 @@ select.sysadd-input {
   opacity: 0;
   pointer-events: none;
 }
+/* Marker on a card that is a PARALLEL CHECKOUT (git worktree) of another
+   project: "branch-name of parent-project". */
+.landing-card-worktree {
+  display: inline-flex; align-items: center; gap: 5px;
+  justify-self: start; width: fit-content;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--accent, #6aa6ff);
+  background: color-mix(in srgb, var(--accent, #6aa6ff) 9%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent, #6aa6ff) 35%, var(--border));
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-top: 2px;
+}
 .landing-card-id {
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -3949,7 +3963,9 @@ select.sysadd-input {
 /* Hover-reveal, but stay visible while the menu is open OR the prototype carries
    persistent state (is thumbnail / starred) so that state reads at scan distance. */
 .workflow-library-item-generated .workflow-library-menu-btn,
-.workflow-library-card-generated .workflow-library-menu-btn {
+.workflow-library-card-generated .workflow-library-menu-btn,
+.workflow-library-item-deletable .workflow-library-menu-btn,
+.workflow-library-card-deletable .workflow-library-menu-btn {
   opacity: 0;
   transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
@@ -3957,6 +3973,10 @@ select.sysadd-input {
 .workflow-library-item-generated:focus-within .workflow-library-menu-btn,
 .workflow-library-card-generated:hover .workflow-library-menu-btn,
 .workflow-library-card-generated:focus-within .workflow-library-menu-btn,
+.workflow-library-item-deletable:hover .workflow-library-menu-btn,
+.workflow-library-item-deletable:focus-within .workflow-library-menu-btn,
+.workflow-library-card-deletable:hover .workflow-library-menu-btn,
+.workflow-library-card-deletable:focus-within .workflow-library-menu-btn,
 .workflow-library-menu-btn.is-open,
 .workflow-library-menu-btn.has-state { opacity: 1; }
 
@@ -5623,10 +5643,93 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 
 /* Branches (fork / switch / merge) - real git branches, not Woven prototypes. */
 .th-git-branches { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-.th-git-branch-cur { display: flex; align-items: center; gap: 6px; }
 .th-git-branch-name { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.th-git-branch-body { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
-.th-git-branch-list { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; }
+/* Branch bar: a segmented-control TRACK. The pill for THIS project is raised
+   (white in light mode) so "which one am I in" reads at a glance; parallel
+   siblings are flat pills in a scrollable strip; the + stays pinned. */
+.th-git-branchbar {
+  display: flex; align-items: center; gap: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+}
+.th-git-branchpill {
+  flex: 1 1 auto; min-width: 104px;
+  display: flex; align-items: center; gap: 6px;
+  font: inherit; text-align: left; cursor: pointer;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.10);
+}
+.th-git-branchpill:hover, .th-git-branchpill.is-open { border-color: color-mix(in oklab, var(--accent, #6aa6ff) 40%, var(--border)); }
+/* Sibling strip: scrolls ONLY when the pills overflow (overflow-x: auto), so
+   nothing changes visually while everything still fits. */
+.th-git-branchtrack {
+  flex: 0 1 auto; min-width: 0;
+  display: flex; align-items: center; gap: 4px;
+  overflow-x: auto;
+  border-radius: 999px;
+  scrollbar-width: thin;
+}
+.th-git-branchtrack::-webkit-scrollbar { height: 3px; }
+.th-git-branchtrack::-webkit-scrollbar-track { background: transparent; }
+.th-git-branchtrack::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+/* Sibling pills: one per branch open in PARALLEL (another project). Flat on
+   the track (vs the raised current pill), floor width + ellipsis so a long
+   name never crushes its neighbours. Click jumps to it; the x closes that
+   parallel project (branch survives). */
+.th-git-branchpill.is-sibling {
+  flex: 0 0 auto; min-width: 84px; max-width: 150px;
+  cursor: pointer; color: var(--text-muted);
+  background: transparent; border-color: transparent; box-shadow: none;
+}
+.th-git-branchpill.is-sibling .th-git-branch-name { font-weight: 500; color: inherit; }
+.th-git-branchpill.is-sibling:hover { color: var(--text); background: var(--surface-3, var(--surface-2)); border-color: var(--border); }
+.th-git-branchpill-go { flex: 0 0 auto; font-size: 11px; color: var(--text-faint, var(--text-muted)); }
+.th-git-branchpill.is-sibling:hover .th-git-branchpill-go { color: var(--accent, #6aa6ff); }
+.th-git-branchpill-x { flex: 0 0 auto; display: none; align-items: center; margin: -2px -4px -2px 0; padding: 2px; border-radius: 50%; color: var(--text-muted); }
+.th-git-branchpill.is-sibling:hover .th-git-branchpill-x { display: inline-flex; }
+.th-git-branchpill-x:hover { color: var(--danger, #dc2626); background: var(--surface-2); }
+.th-git-branchpill-swap { margin-left: auto; display: inline-flex; color: var(--text-muted); }
+.th-git-branchpill:hover .th-git-branchpill-swap, .th-git-branchpill.is-open .th-git-branchpill-swap { color: var(--text); }
+.th-git-wtadd {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+}
+.th-git-wtadd:hover, .th-git-wtadd.is-open { color: var(--text); background: var(--surface-3, var(--surface-2)); border-color: color-mix(in oklab, var(--accent, #6aa6ff) 35%, var(--border)); }
+/* Overlay dropdown (portaled to body, share-menu idiom). */
+.th-git-branchmenu {
+  position: fixed;
+  z-index: 1400;
+  width: 320px;
+  max-height: min(60vh, 480px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.08);
+  padding: 10px;
+  font-size: 12.5px;
+}
+.th-git-branchmenu-head { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.th-git-fresh-loading { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; color: var(--text-faint, var(--text-muted)); }
+.th-git-branchmenu-hint { font-size: 11.5px; line-height: 1.45; color: var(--text-muted); }
+.th-git-branch-upd { margin-left: auto; flex: 0 0 auto; font-size: 10px; color: var(--text-faint, var(--text-muted)); }
+.th-git-pill.is-stale { color: #d97706; border-color: color-mix(in oklab, #d97706 45%, var(--border)); background: color-mix(in srgb, #d97706 10%, transparent); }
+.th-git-pill.is-worktree { color: var(--accent, #6aa6ff); border-color: color-mix(in oklab, var(--accent, #6aa6ff) 40%, var(--border)); }
+.th-git-branch-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .th-git-branch-item { display: flex; align-items: center; gap: 4px; padding: 2px; border-radius: 6px; }
 .th-git-branch-item.is-current { background: var(--surface-2); }
 .th-git-branch-pick { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0; background: none; border: none; padding: 4px 6px; font: inherit; cursor: pointer; border-radius: 6px; text-align: left; }
@@ -6061,11 +6164,20 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
   margin: 0;
   overflow: hidden;
 }
-/* Body-portal'd canvas chrome (stage pill, pick toast) anchors against
-   .workflow-canvas-wrap rects, which stay valid under visibility:hidden -
-   hide them while the prototype viewer is up so they can't float over it. */
+/* Body-portal'd canvas chrome anchors against .workflow-canvas-wrap rects,
+   which stay valid under visibility:hidden - hide it while the prototype
+   viewer is up so it can't float over the preview.
+   #wf-chrome-layer is the chokepoint for everything node-anchored (top-action
+   strips, select badges, asset action bars + control/inputs panels, the ⊕
+   connector-spawn buttons, the group align / convert / marker bars): one rule
+   instead of a per-bar allowlist. WorkflowSurface hides the same layer from
+   JS on the mainView flip; this is the belt for that brace. The rest are the
+   full-viewport overlays that deliberately do NOT live in the layer. */
+body:has(.workflow-body[data-view="proto"]) #wf-chrome-layer,
 body:has(.workflow-body[data-view="proto"]) .workflow-node-stage-pill,
-body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
+body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast,
+body:has(.workflow-body[data-view="proto"]) .workflow-bulk-bar,
+body:has(.workflow-body[data-view="proto"]) .canvas-ctxmenu {
   display: none !important;
 }
 
@@ -6298,6 +6410,32 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   z-index: 30;
   padding: 6px 0 8px;
 }
+.workflow-proto-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 10px 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+}
+.workflow-proto-picker-search:focus-within {
+  border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 45%, var(--border));
+}
+.workflow-proto-picker-search-glyph { display: inline-flex; flex: 0 0 auto; color: var(--text-faint); }
+.workflow-proto-picker-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+}
+.workflow-proto-picker-search input::placeholder { color: var(--text-faint); }
+.workflow-proto-picker-search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 .workflow-proto-picker-head {
   padding: 8px 14px 6px;
   font-size: 11px;
@@ -6590,6 +6728,7 @@ body:has(.workflow-body[data-view="proto"]) .workflow-pick-toast {
   flex: 0 0 auto;
 }
 .pv-panel-filter:focus { border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 45%, var(--border)); }
+.pv-panel-filter::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 .pv-panel-kindbar {
   display: flex;
   flex-wrap: wrap;
@@ -8477,6 +8616,10 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   border-style: solid;
   border-color: oklch(62% 0.13 174);
 }
+.workflow-sections-item-swatch[data-table="true"] {
+  border-style: solid;
+  border-color: oklch(58% 0.16 300);
+}
 
 /* v3.4.27 - Sub-tabs under Outputs (Prototypes & components / Visual assets).
    Compacter than the top-level tabs so the hierarchy reads as parent/child:
@@ -8512,9 +8655,62 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 /* List/grid toggle for the Outputs tab. Two radio buttons styled as a
    compact segmented control. */
 /* v3.13 - Outputs view toggle moved into the head row, top-right, icon-only. */
-.workflow-library-head { justify-content: space-between; }
+.workflow-library-head { justify-content: space-between; flex-wrap: wrap; row-gap: 6px; }
 .workflow-library-head .workflow-library-viewtoggle { padding: 0; border-bottom: 0; gap: 2px; }
 .workflow-library-head .workflow-library-viewtoggle-btn { flex: none; padding: 4px 7px; }
+
+/* Search box in the library head - narrows the Prototypes / DS pages / HTML
+   pages / Visual assets sections. Sits left of the view toggle and takes the
+   free width. The head is uppercase mono for its title role, so every
+   inherited type property is reset on the field itself. */
+.workflow-library-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* Wide enough to read a query in - below that the head wraps and the search
+     takes a full row of its own rather than collapsing to a sliver. */
+  flex: 1 1 130px;
+  min-width: 130px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+}
+.workflow-library-search:focus-within {
+  border-color: color-mix(in oklab, var(--accent, oklch(72% 0.16 50)) 45%, var(--border));
+}
+.workflow-library-search-glyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+.workflow-library-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.workflow-library-search-input::placeholder { color: var(--text-faint); }
+.workflow-library-search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.workflow-library-search-clear {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.workflow-library-search-clear:hover { color: var(--text); }
 
 .workflow-library-viewtoggle {
   display: flex;
@@ -8693,6 +8889,19 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
      nodes cleanly paint above the section + its ports. */
   isolation: isolate;
 }
+/* Section edge = grab handle. The body stays pointer-events:none (click and
+   marquee pass through), but the border strip is live, so a section can be
+   selected without hunting for its title bar. Thickness comes inline,
+   counter-scaled by zoom, so it stays a constant ~10 screen px. */
+.workflow-node-section-edge {
+  position: absolute;
+  pointer-events: auto;
+  cursor: move;
+}
+.workflow-node-section-edge-top    { left: 0; right: 0; top: 0; }
+.workflow-node-section-edge-bottom { left: 0; right: 0; bottom: 0; }
+.workflow-node-section-edge-left   { top: 0; bottom: 0; left: 0; }
+.workflow-node-section-edge-right  { top: 0; bottom: 0; right: 0; }
 .workflow-node-section[data-selected="true"] {
   outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent);
   outline-offset: -2px;
@@ -8857,6 +9066,40 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   opacity: 1;
   color: var(--success, #16A34A);
 }
+/* Lock chip - same chrome as tidy, holds the inline Lock icon. While the
+   frame is locked it is the ONLY control left on the bar and stays fully
+   opaque (hover-reveal would hide the one way back out of the lock). */
+.workflow-node-section-lock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.workflow-node-section-lock svg { width: 13px; height: 13px; }
+.workflow-node-section-lock.is-on {
+  opacity: 1;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+/* A locked frame keeps its outline but stops advertising drag affordances:
+   the bar is not a handle any more, and nothing inside it is grabbable. The
+   dashed border is the tell - on a big section the title-bar lock chip is
+   often scrolled off screen, and without a mark on the frame itself "why
+   won't this select" has no visible answer. */
+.workflow-node-section[data-locked="true"] { cursor: default; border-style: dashed; }
+.workflow-node-section[data-locked="true"] > .workflow-node-section-bar,
+.workflow-node-table[data-locked="true"] > .workflow-node-section-bar { cursor: default; }
+.workflow-node-section[data-locked="true"] > .workflow-node-section-bar
+  .workflow-node-section-lock,
+.workflow-node-table[data-locked="true"] > .workflow-node-section-bar
+  .workflow-node-section-lock { opacity: 1; }
+/* Locked whiteboard items are pointer-inert in whiteboard mode too, so the
+   layer's delegated handlers (double-click to edit) can never reach them.
+   Selection routing is geometric and already skips them; right-click is the
+   deliberate exception and runs off geometry, not the DOM. */
+.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer
+  .workflow-wb-item[data-locked="true"],
+.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer
+  .workflow-wb-item[data-locked="true"] * { pointer-events: none; }
 /* ── custom-app node (packaged section → reusable mini-app) ───────────────── */
 .workflow-node-customapp {
   position: absolute;
@@ -9378,6 +9621,10 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
      cell tints (mixed lighter still). */
   --wb-ink:    oklch(34% 0.022 264);
   --wb-gray:   oklch(72% 0.013 264);
+  /* Paint white, not surface white: it stays literal in dark mode like the
+     hues do (ink/gray flip because they're the READING colours). Wanted for
+     text over a dark image, knocked-out labels, and plain white stickies. */
+  --wb-white:  oklch(100% 0 0);
   --wb-blue:   oklch(64% 0.146 242);
   --wb-green:  oklch(68% 0.142 158);
   --wb-yellow: oklch(85% 0.135 92);
@@ -9404,8 +9651,140 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
 .workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer * {
   pointer-events: auto;
 }
+/* ── Canvas layers panel ──────────────────────────────────────────────────
+   Right-edge panel, clear of the icon rail. Same vocabulary as the vector
+   editor's layers section so the two read as one idea. */
+/* The LIST sits in the left column, alongside the other browsers (nodes,
+   library, prototypes) - it is a place you browse, not a property sheet. It
+   fills the column rather than floating. */
+.workflow-layers-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+/* The OPTIONS are properties of what you picked, so they sit on the right,
+   where node settings already live. Only rendered when something is
+   selected, and sized to its content rather than the full column height. */
+.workflow-layeropts-panel {
+  position: fixed;
+  top: 56px;
+  right: 52px;
+  width: 232px;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.12);
+  overflow: hidden;
+}
+.workflow-layeropts-body {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.workflow-layeropts-name {
+  font: 12px var(--font-sans);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workflow-layers-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 8px 8px 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font: 600 11px var(--font-mono);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.workflow-layers-actions { display: flex; align-items: center; gap: 4px; }
+.workflow-layers-close {
+  width: 20px; height: 20px; border: 0; background: transparent;
+  color: var(--text-faint); font-size: 15px; line-height: 1; cursor: pointer;
+  border-radius: 4px;
+}
+.workflow-layers-close:hover { background: var(--surface-2); color: var(--text); }
+.workflow-layers-list { flex: 1; overflow: auto; padding: 4px; }
+.workflow-layers-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; border-radius: 5px; cursor: default;
+  font: 12px var(--font-sans); color: var(--text);
+  white-space: nowrap;
+}
+.workflow-layers-row:hover { background: var(--surface-2); }
+.workflow-layers-row.is-active {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--text);
+}
+.workflow-layers-row.is-member { padding-left: 20px; }
+.workflow-layers-icon { width: 13px; text-align: center; color: var(--text-faint); flex: 0 0 auto; }
+.workflow-layers-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.workflow-layers-lock { display: inline-flex; color: var(--accent); flex: 0 0 auto; }
+.workflow-layers-count { color: var(--text-faint); font: 10px var(--font-mono); flex: 0 0 auto; }
+.workflow-layers-twist {
+  width: 14px; border: 0; background: transparent; padding: 0;
+  color: var(--text-faint); cursor: pointer; font-size: 10px; flex: 0 0 auto;
+}
+.workflow-layers-grouphead { font-weight: 600; }
+.workflow-layers-rename {
+  flex: 1; min-width: 0; border: 1px solid var(--accent); border-radius: 4px;
+  background: var(--surface); color: var(--text);
+  font: 12px var(--font-sans); padding: 1px 4px;
+}
+.workflow-layers-foot {
+  border-top: 1px solid var(--border);
+  padding: 8px; display: flex; flex-direction: column; gap: 6px;
+}
+.workflow-layers-sublabel {
+  font: 600 10px var(--font-mono); text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted);
+}
+.workflow-layers-constraint { display: flex; flex-direction: column; gap: 3px; }
+.workflow-layers-constraint-label { font: 10px var(--font-sans); color: var(--text-faint); }
+.workflow-layers-hint { font: 11px/1.5 var(--font-sans); color: var(--text-faint); }
+
+/* ── Group frame ──────────────────────────────────────────────────────────
+   One dashed box round a whole selected group plus its eight resize handles.
+   A direct child of .workflow-canvas (world coords, like nodes) because a
+   group spans BOTH families and the whiteboard layer is pointer-inert in
+   build mode - the handles must work in either. z sits above every node but
+   below the whiteboard overlay, so item handles still win when both show. */
+.workflow-group-frame {
+  position: absolute;
+  z-index: 99000;
+  pointer-events: none;
+  border: 1px dashed var(--accent);
+  border-radius: 2px;
+}
+.workflow-group-handle {
+  position: absolute;
+  pointer-events: auto;
+  background: var(--surface);
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+.workflow-group-handle-nw, .workflow-group-handle-se { cursor: nwse-resize; }
+.workflow-group-handle-ne, .workflow-group-handle-sw { cursor: nesw-resize; }
+.workflow-group-handle-n,  .workflow-group-handle-s  { cursor: ns-resize; }
+.workflow-group-handle-e,  .workflow-group-handle-w  { cursor: ew-resize; }
+
+/* Overlays the user draws THROUGH, never at. Descendants are listed too: the
+   `.workflow-wb-layer *` rule above turns every child back to `auto`, so a
+   parent-only `none` would still leave the shapes inside grabbing the press
+   that was meant for the canvas - which for the arrow-snap dots means the
+   click that should start the arrow lands on its own preview. */
 .workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer .workflow-wb-ghost,
-.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer .workflow-wb-livestroke {
+.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer .workflow-wb-ghost *,
+.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer .workflow-wb-livestroke,
+.workflow-canvas-wrap[data-wb-mode="whiteboard"] .workflow-wb-layer .workflow-wb-livestroke *,
+.workflow-wb-layer .workflow-wb-arrowsnap,
+.workflow-wb-layer .workflow-wb-arrowsnap * {
   pointer-events: none;
 }
 /* In build mode the wb layer is click-through, but the ONE item being
@@ -9458,10 +9837,13 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
     linear-gradient(to top right, transparent 44%, var(--danger) 46%, var(--danger) 54%, transparent 56%),
     var(--surface) !important;
 }
-.workflow-wb-swatch-white {
-  background: #fff !important;
-  border-color: oklch(0% 0 0 / 0.22);
-}
+/* A white swatch needs a stronger rim than the rest or it reads as a hole in
+   the row. Two classes so it beats `.workflow-wb-swatch`'s `border` shorthand,
+   which is declared LATER in this file and would otherwise reset the colour.
+   The background comes from the --wb-white token inline; this is the fallback
+   for any use that doesn't set one. */
+.workflow-wb-swatch-white { background: #fff; }
+.workflow-wb-swatch.workflow-wb-swatch-white { border-color: oklch(0% 0 0 / 0.28); }
 .workflow-wb-sticky {
   background: color-mix(in oklab, var(--wb-c, var(--wb-yellow)) 34%, oklch(99% 0.004 95));
   box-shadow: 0 1px 2px oklch(0% 0 0 / 0.08), 0 4px 12px oklch(0% 0 0 / 0.07);
@@ -9470,6 +9852,10 @@ body[data-pick-op-pending="true"] iframe[data-asset-id] {
   box-sizing: border-box;
   font-size: 14px;
   overflow: hidden;
+  /* Flex so the item's `vAlign` (inline align-items) has an axis to work on.
+     Default stays flex-start = the top placement stickies always had. */
+  display: flex;
+  align-items: flex-start;
 }
 .workflow-wb-sticky .workflow-wb-textbody { font-size: 14px; }
 .workflow-wb-image img {
@@ -10751,25 +11137,11 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   overflow: hidden;
   min-height: 0;
 }
-/* At rest, prompt + formatted-text read as centered cards (content centred both
-   axes); editing layout returns the moment the node is hovered or selected. */
-body:not([data-wf-no-simplify]) .workflow-node-prompt[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-node-prompt-render {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
-body:not([data-wf-no-simplify]) .workflow-node-prompt[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-node-prompt-text {
-  text-align: center;
-}
-body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:hover):not([data-selected="true"]) .workflow-fmttext-editor {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
+/* Bare mode collapses the CHROME and nothing else. It used to also re-centre
+   prompt + formatted-text content at rest, which overrode the alignment the
+   text actually has: a prompt reads left, and formatted text follows whatever
+   its typobar set per block. Text keeps its own alignment in every state now,
+   so a node does not reflow its copy under the cursor on hover. */
 
 /* ─── Canvas-frames body-drag overlay ─────────────────────────────────
    When the frames node is NOT selected, this layer floats above the
@@ -10788,6 +11160,98 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 }
 .workflow-node-frames-bodydrag:active {
   cursor: grabbing;
+}
+
+/* ── Draft mode on a canvas-frames node ──────────────────────────────────
+   While a page is drafted, the embed iframe goes pointer-events: auto so the
+   drafted page is clickable. These four bands are that page's COMPLEMENT: they
+   restore the inert-embed behaviour everywhere else and keep body-drag working,
+   so exactly one rectangle in the node is live. Positioned in body-local px by
+   the node (see WorkflowFramesNode's shield block). */
+.workflow-node-frames-shield {
+  position: absolute;
+  z-index: 2;
+  cursor: grab;
+  background: transparent;
+}
+.workflow-node-frames-shield:active { cursor: grabbing; }
+
+/* Per-page draft affordance. The box is a zero-ink overlay on one frame's body
+   (it exists to anchor the bar and to ring a drafted page); the bar is the only
+   part that takes pointer events. */
+.wf-frame-draft-box {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: 2px;
+}
+.wf-frame-draft-box[data-drafting="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* A screen carrying durable notes but NOT drafted. Quieter than the draft ring:
+   it marks "there is something to read here", not "this is the live surface". */
+.wf-frame-draft-box[data-noted="true"] {
+  outline: 1px dashed var(--accent);
+  outline-offset: 2px;
+}
+.wf-frame-draft-bar {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 6px;
+  transform-origin: 100% 100%;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.wf-frame-draft-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.wf-frame-draft-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 1px 3px oklch(0% 0 0 / 0.12);
+  transition: background 0.12s, color 0.12s;
+}
+.wf-frame-draft-btn:hover { background: var(--surface-2); }
+.wf-frame-draft-btn.is-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.wf-frame-draft-btn.is-primary:hover { background: var(--accent-strong); }
+.wf-frame-draft-btn svg { flex: 0 0 auto; }
+
+/* A drafted frame inside the embed. Ringed so it is obvious which page is the
+   editable clone and which are still the read-only real thing. */
+.frame[data-draft="true"] > .frame-body {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* v3.5 - Canvas-frames node renders as a SECTION on the workflow canvas:
@@ -11478,6 +11942,17 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 .workflow-node-asset-iframe-scale > .workflow-node-asset-iframe {
   position: absolute;
   top: 0; left: 0;
+  /* The scaled iframe also carries .workflow-node-asset-thumb, whose
+     `max-width/max-height: 100%` would CLAMP the inline device-class viewport
+     (1440x900 / 390x844 / 1280x800) down to the wrap box before the transform
+     runs - and a max-* declaration beats an inline `width`, so the inline
+     style could not win. The card then scaled an already-card-sized iframe by
+     the fit factor a SECOND time (640x400 box -> 284x178 painted at 0.44),
+     leaving --surface-2 grey along the right and bottom edges. Opting the
+     scale branch out of the clamp is what makes `cover` actually cover. The
+     "fill" branch keeps the clamp - there the iframe IS the card box. */
+  max-width: none;
+  max-height: none;
 }
 /* Inline-SVG thumb: container holds an injected <svg> element via
    dangerouslySetInnerHTML. Force the child svg to scale-to-fit because
@@ -11953,7 +12428,11 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 .th-portal-tip::before {
   content: "";
   position: absolute;
-  left: 50%;
+  /* --tip-arrow-shift is set by HoverTip when it had to clamp a centered
+     bubble away from a viewport edge: the arrow slides back by the same
+     amount so it keeps pointing at the anchor. Clamped so a heavily shifted
+     bubble cannot push the arrow out past its own rounded corners. */
+  left: clamp(9px, calc(50% + var(--tip-arrow-shift, 0px)), calc(100% - 9px));
   transform: translateX(-50%) rotate(45deg);
   width: 6px; height: 6px;
   background: inherit;
@@ -13765,6 +14244,24 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   white-space: nowrap;
 }
 .chat-target-more { opacity: 0.8; }
+/* A live thread's target is FIXED at spawn (the <chat-target> scope rides the
+   first prompt only), so the bar shows the run's committed target, not the
+   live selection / preview. It reads as inert by going low-contrast - flat
+   background, faded border, the tag drained to grey - while the NAME keeps
+   full text colour, because the one thing you still need off this chip is
+   which prototype the thread is on. No lock glyph: a lock is an icon, and an
+   icon invites a click. Retargeting means starting a new chat. */
+.chat-target-locked .chat-target-label { opacity: 0.5; }
+.chat-target-locked .chat-target-chip {
+  border-color: color-mix(in oklab, var(--border) 55%, transparent);
+  background: transparent;
+}
+.chat-target-locked .chat-target-chip-tag {
+  background: color-mix(in oklab, var(--text-muted) 20%, transparent);
+  color: var(--text-muted);
+}
+.chat-target-locked .chat-target-chip-name { color: var(--text); }
+
 /* Preview-inferred target: a "previewing" tag + a compact affordance to fall
    back to whole-project when the inferred prototype is wrong. */
 .chat-target-preview .chat-target-chip-tag { background: var(--accent, #1f9d57); }
@@ -14025,6 +14522,189 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 
 .chat-slash-menu-empty { padding: 18px; display: block; }
 .chat-slash-empty { font-size: 12px; color: var(--text-faint); text-align: center; }
+
+/* ── Namespaced picker rows ───────────────────────────────────────────────
+   Level 1 of the menu lists NAMESPACES (`/orchestrator/`, `@file/`), level 2
+   their entries. A namespace row carries its label next to the token so the
+   tree is readable before anything is loaded. */
+.chat-slash-item-ns {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text);
+}
+.chat-slash-item-token { font-weight: 700; }
+.chat-slash-item-sub {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-slash-item-loading {
+  display: block;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-faint);
+}
+/* Breadcrumb in the header once a namespace is committed. */
+.chat-slash-crumb {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-right: 6px;
+  text-transform: none;
+}
+/* Anchor colours for the `@` (resource) kinds, matching the `/` families. */
+.chat-slash-item-kind-file       { color: oklch(42% 0.13 250); }
+/* The DS vocabulary is four deep - section (what you read), variant (one
+   rendered permutation), class (one lever of the API), token (what you write
+   in CSS) - so each level gets its own anchor colour inside the shared
+   design-system hue family. Variant sits next to class on the hue wheel and
+   carries more chroma, since it is the level you reach for most. */
+.chat-slash-item-kind-ds-variant { color: oklch(42% 0.17 300); }
+.chat-slash-item-kind-ds-class   { color: oklch(45% 0.13 300); }
+.chat-slash-item-kind-ds-token   { color: oklch(45% 0.12 250); }
+.chat-slash-item-kind-ds         { color: oklch(42% 0.15 330); }
+.chat-slash-item-kind-ds-section { color: oklch(45% 0.11 330); }
+.chat-slash-item-kind-ds-file    { color: oklch(45% 0.09 330); }
+.chat-slash-detail-badge-file       { background: oklch(94% 0.04 250); color: oklch(40% 0.13 250); }
+.chat-slash-detail-badge-ds         { background: oklch(94% 0.05 330); color: oklch(40% 0.15 330); }
+.chat-slash-detail-badge-ds-variant { background: oklch(94% 0.05 300); color: oklch(40% 0.16 300); }
+.chat-slash-detail-badge-ds-section { background: oklch(95% 0.03 330); color: oklch(42% 0.12 330); }
+.chat-slash-detail-badge-ds-file    { background: oklch(95% 0.02 330); color: oklch(44% 0.10 330); }
+.chat-slash-detail-badge-ns         { background: var(--surface-2); color: var(--text-muted); }
+.chat-slash-detail-glyph-ns { color: var(--text-muted); }
+
+/* ── Preview frame ────────────────────────────────────────────────────────
+   One box for both preview kinds so the card never reflows between a still
+   and a live page: the skeleton sits on top until the thing behind it has
+   actually loaded. Live pages render at desktop width and are scaled down,
+   which is why the iframe is inert (pointer-events: none) - it is a picture
+   of the page, not a place to click. */
+.chat-slash-detail-frame {
+  position: relative;
+  width: 100%;
+  height: 132px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+/* Token preview plate: the colour itself when the value is a colour, the raw
+   value as text either way - a length or an easing curve has no swatch. */
+.chat-slash-detail-frame[data-kind="swatch"] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+}
+.chat-slash-swatch {
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  flex: none;
+}
+.chat-slash-swatch-value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Desktop-sized offscreen page, scaled + translated into the plate by
+   PickerPreview's fitTarget so the picked COMPONENT is framed rather than the
+   page it sits on. The scale here is only the pre-fit default; the skeleton
+   covers the frame until the real transform lands. Size must stay in step
+   with PICKER_PAGE_W / PICKER_PAGE_H in app.js. */
+.chat-slash-detail-iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1280px;
+  height: 900px;
+  border: 0;
+  background: #fff;
+  transform: scale(0.23);
+  transform-origin: top left;
+  pointer-events: none;
+}
+.chat-slash-detail-frame .chat-slash-detail-img {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+.chat-slash-detail-frame[data-state="error"] .chat-slash-detail-img { display: none; }
+.chat-slash-detail-skel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  background:
+    linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.55) 42%, transparent 64%),
+    var(--surface-2);
+  background-size: 220% 100%, auto;
+  animation: chat-slash-skel 1.15s linear infinite;
+}
+@keyframes chat-slash-skel {
+  from { background-position: 140% 0, 0 0; }
+  to   { background-position: -60% 0, 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-slash-detail-skel { animation: none; }
+}
+/* What picking this row will actually do - leaf text in, path attached. */
+.chat-slash-detail-ref {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-slash-detail-ref b { color: var(--text-muted); font-weight: 700; }
+/* Project-resource chip - a picked page / component, not an OS-picked file. */
+.chat-composer-projref { border-color: var(--accent-soft); }
+
+/* Dark theme: the row colours above are tuned for a white sheet - at 42%
+   lightness they go muddy on the near-black surface. Same hues, lifted. */
+:root[data-theme="dark"] .chat-slash-item-kind-cc           { color: oklch(80% 0.10 200); }
+:root[data-theme="dark"] .chat-slash-item-kind-media        { color: oklch(80% 0.11 295); }
+:root[data-theme="dark"] .chat-slash-item-kind-orchestrator { color: oklch(80% 0.13 140); }
+:root[data-theme="dark"] .chat-slash-item-kind-library      { color: oklch(82% 0.12 75); }
+:root[data-theme="dark"] .chat-slash-item-kind-file         { color: oklch(80% 0.10 250); }
+:root[data-theme="dark"] .chat-slash-item-kind-ds-variant { color: oklch(82% 0.13 300); }
+:root[data-theme="dark"] .chat-slash-item-kind-ds-class { color: oklch(80% 0.10 300); }
+:root[data-theme="dark"] .chat-slash-item-kind-ds-token { color: oklch(80% 0.09 250); }
+:root[data-theme="dark"] .chat-slash-item-kind-ds,
+:root[data-theme="dark"] .chat-slash-item-kind-ds-section,
+:root[data-theme="dark"] .chat-slash-item-kind-ds-file      { color: oklch(80% 0.11 330); }
+:root[data-theme="dark"] .chat-slash-detail-badge-cc           { background: oklch(30% 0.05 200); color: oklch(86% 0.08 200); }
+:root[data-theme="dark"] .chat-slash-detail-badge-media        { background: oklch(30% 0.05 295); color: oklch(86% 0.08 295); }
+:root[data-theme="dark"] .chat-slash-detail-badge-orchestrator { background: oklch(30% 0.06 140); color: oklch(86% 0.09 140); }
+:root[data-theme="dark"] .chat-slash-detail-badge-library      { background: oklch(30% 0.06 75);  color: oklch(88% 0.09 75); }
+:root[data-theme="dark"] .chat-slash-detail-badge-file         { background: oklch(30% 0.05 250); color: oklch(86% 0.08 250); }
+:root[data-theme="dark"] .chat-slash-detail-badge-ds-variant { background: oklch(30% 0.07 300); color: oklch(88% 0.11 300); }
+:root[data-theme="dark"] .chat-slash-detail-badge-ds,
+:root[data-theme="dark"] .chat-slash-detail-badge-ds-section,
+:root[data-theme="dark"] .chat-slash-detail-badge-ds-file      { background: oklch(30% 0.06 330); color: oklch(86% 0.09 330); }
+:root[data-theme="dark"] .chat-slash-detail-skel {
+  background:
+    linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.08) 42%, transparent 64%),
+    var(--surface-2);
+}
 
 /* Phase 4c - Agent chat dialog. Wider modal, scroll body, sticky compose. */
 .workflow-agent-modal {
@@ -15366,6 +16046,66 @@ a.ds-badge:hover, button.ds-badge:hover {
   overflow-y: auto;
   min-height: 0;
 }
+/* DESIGN.md preamble budget - what this DS costs on every scoped agent turn.
+   Advisory only (the catalog always embeds whole); the bar turns amber past
+   the guide so a catalog outgrowing its readable size is visible, instead of
+   being silently dropped the way the old hard cap did it. */
+.workflow-node-ds-budget {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2, var(--surface));
+}
+.workflow-node-ds-budget[data-over="true"] {
+  border-color: color-mix(in oklab, var(--warn, #b7791f) 45%, var(--border));
+  background: color-mix(in oklab, var(--warn, #b7791f) 7%, var(--surface));
+}
+.workflow-node-ds-budget-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.workflow-node-ds-budget-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase; font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.workflow-node-ds-budget-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.workflow-node-ds-budget[data-over="true"] .workflow-node-ds-budget-num {
+  color: var(--warn, #b7791f);
+  font-weight: 600;
+}
+.workflow-node-ds-budget-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+.workflow-node-ds-budget-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.workflow-node-ds-budget[data-over="true"] .workflow-node-ds-budget-bar > span {
+  background: var(--warn, #b7791f);
+}
+.workflow-node-ds-budget-note {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
 /* "Use template design system" - skip the agent, bake the bundled template DS
    straight into this node via the same customizer the new-project flow uses. */
 .workflow-node-ds-template-btn {
@@ -15613,6 +16353,381 @@ a.ds-badge:hover, button.ds-badge:hover {
 @keyframes workflow-node-ds-spin {
   to { transform: rotate(360deg); }
 }
+
+/* DS drift report - the Validate action's read-only findings list. Sits under
+   the action row inside the DS node body, dismissable, never edits a page. */
+.workflow-node-ds-action-validate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* The build button's spinner is white-on-accent; on the outline actions it has
+   to ride the button's own text colour or it disappears. */
+.workflow-node-ds-action-validate .workflow-node-ds-spinner {
+  border-color: color-mix(in oklab, currentColor 35%, transparent);
+  border-top-color: currentColor;
+}
+.workflow-node-ds-lint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-2, var(--surface));
+  max-height: 220px;
+  overflow-y: auto;
+}
+.workflow-node-ds-lint[data-tone="ok"] {
+  border-color: color-mix(in oklab, oklch(58% 0.15 174) 40%, var(--border));
+}
+.workflow-node-ds-lint[data-tone="warn"] {
+  border-color: color-mix(in oklab, oklch(72% 0.16 78) 45%, var(--border));
+}
+.workflow-node-ds-lint[data-tone="bad"] {
+  border-color: color-mix(in oklab, oklch(58% 0.19 25) 45%, var(--border));
+}
+.workflow-node-ds-lint-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text);
+  padding-bottom: 4px;
+}
+.workflow-node-ds-lint-meta,
+.workflow-node-ds-lint-note {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.workflow-node-ds-lint-note {
+  padding: 3px 0;
+  line-height: 1.4;
+}
+.workflow-node-ds-lint-close {
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.workflow-node-ds-lint-close:hover { color: var(--text); }
+.workflow-node-ds-lint-row {
+  display: grid;
+  grid-template-columns: 108px 92px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0 4px 7px;
+  border-left: 2px solid transparent;
+  font-size: 10px;
+  line-height: 1.45;
+  border-top: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+}
+.workflow-node-ds-lint-row[data-sev="error"] {
+  border-left-color: oklch(58% 0.19 25);
+}
+.workflow-node-ds-lint-row[data-sev="warn"] {
+  border-left-color: oklch(72% 0.16 78);
+}
+.workflow-node-ds-lint-row[data-sev="info"] {
+  border-left-color: color-mix(in oklab, var(--text-faint) 60%, transparent);
+}
+.workflow-node-ds-lint-rule {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-node-ds-lint-where {
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-node-ds-lint-detail { color: var(--text); }
+
+/* User story map node. A table of the project's user stories joined to where
+   each one lives in the prototype. Story columns are read-only (the .xlsx owns
+   them); location columns are inputs. Rows carrying findings get a severity
+   stripe on the left edge. */
+.workflow-node-sm {
+  display: grid;
+  grid-template-rows: 32px 1fr;
+}
+.workflow-node-sm-bar {
+  background: transparent;
+  gap: 8px;
+}
+.workflow-node-sm-glyph {
+  font-size: 13px;
+  color: var(--accent);
+  width: 14px;
+  text-align: center;
+}
+.workflow-node-sm-title {
+  font: 500 11px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.workflow-node-sm-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 9px;
+  font: 600 10px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.workflow-node-sm-badge[data-tone="ok"] {
+  background: color-mix(in oklab, oklch(58% 0.15 174) 14%, var(--surface));
+  border-color: color-mix(in oklab, oklch(58% 0.15 174) 40%, var(--border));
+  color: oklch(38% 0.12 174);
+}
+.workflow-node-sm-badge[data-tone="warn"] {
+  background: color-mix(in oklab, oklch(72% 0.16 78) 16%, var(--surface));
+  border-color: color-mix(in oklab, oklch(72% 0.16 78) 45%, var(--border));
+  color: oklch(42% 0.13 78);
+}
+.workflow-node-sm-badge[data-tone="bad"] {
+  background: color-mix(in oklab, oklch(58% 0.19 25) 14%, var(--surface));
+  border-color: color-mix(in oklab, oklch(58% 0.19 25) 45%, var(--border));
+  color: oklch(45% 0.17 25);
+}
+.workflow-node-sm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 22px;      /* bottom padding clears the corner-resize handle */
+  background: var(--surface);
+  min-height: 0;
+}
+.workflow-node-sm-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.workflow-node-sm-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.08s, border-color 0.08s, color 0.08s;
+}
+.workflow-node-sm-action:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.workflow-node-sm-action[disabled],
+.workflow-node-sm-action[data-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.workflow-node-sm-action-check {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg, white);
+}
+.workflow-node-sm-action-check:hover {
+  background: color-mix(in oklab, var(--accent) 80%, black 10%);
+  color: var(--accent-fg, white);
+}
+.workflow-node-sm-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid color-mix(in oklab, white 60%, transparent);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: workflow-node-ds-spin 0.7s linear infinite;
+}
+.workflow-node-sm-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.workflow-node-sm-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.workflow-node-sm-stat { white-space: nowrap; }
+.workflow-node-sm-stat b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.workflow-node-sm-stat-when { margin-left: auto; }
+.workflow-node-sm-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 7px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: help;
+}
+/* The high-severity finding kinds - a mapping that points at something that is
+   not there any more, or a sheet whose IDs cannot be trusted. */
+.workflow-node-sm-chip[data-kind="missing-page"],
+.workflow-node-sm-chip[data-kind="missing-element"],
+.workflow-node-sm-chip[data-kind="orphan-mapping"],
+.workflow-node-sm-chip[data-kind="duplicate-id"],
+.workflow-node-sm-chip[data-kind="blank-id"] {
+  background: color-mix(in oklab, oklch(58% 0.19 25) 12%, var(--surface));
+  border-color: color-mix(in oklab, oklch(58% 0.19 25) 40%, var(--border));
+  color: oklch(45% 0.17 25);
+}
+.workflow-node-sm-chip[data-kind="unmapped"],
+.workflow-node-sm-chip[data-kind="stale"],
+.workflow-node-sm-chip[data-kind="no-id-column"] {
+  background: color-mix(in oklab, oklch(72% 0.16 78) 14%, var(--surface));
+  border-color: color-mix(in oklab, oklch(72% 0.16 78) 42%, var(--border));
+  color: oklch(42% 0.13 78);
+}
+.workflow-node-sm-err {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in oklab, oklch(58% 0.19 25) 45%, var(--border));
+  background: color-mix(in oklab, oklch(58% 0.19 25) 10%, var(--surface));
+  color: oklch(45% 0.17 25);
+}
+.workflow-node-sm-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 18px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  text-align: center;
+}
+.workflow-node-sm-empty b { color: var(--text-muted); font-weight: 600; }
+.workflow-node-sm-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg, var(--surface));
+}
+.workflow-node-sm-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 11px;
+  table-layout: fixed;
+}
+.workflow-node-sm-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font: 600 10px var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  background: var(--surface);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.workflow-node-sm-table td {
+  padding: 0 4px;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  vertical-align: middle;
+  overflow: hidden;
+}
+.workflow-node-sm-table td[data-mono="true"] { font-family: var(--font-mono); }
+/* The severity stripe rides the first cell so it survives the sticky header
+   and the horizontal scroll of a wide table. */
+.workflow-node-sm-table tbody tr td:first-child {
+  border-left: 2px solid transparent;
+  padding-left: 6px;
+}
+.workflow-node-sm-table tbody tr[data-sev="high"] td:first-child {
+  border-left-color: oklch(58% 0.19 25);
+}
+.workflow-node-sm-table tbody tr[data-sev="medium"] td:first-child {
+  border-left-color: oklch(72% 0.16 78);
+}
+.workflow-node-sm-table tbody tr[data-sev="low"] td:first-child {
+  border-left-color: color-mix(in oklab, var(--text-faint) 55%, transparent);
+}
+.workflow-node-sm-table tbody tr:hover td {
+  background: color-mix(in oklab, var(--accent) 5%, transparent);
+}
+/* A map row whose story ID is gone from the sheet: shown so it can be cleared,
+   dimmed so it does not read as a real story. */
+.workflow-node-sm-table tbody tr[data-orphan="true"] .workflow-node-sm-cell {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.workflow-node-sm-cell {
+  display: block;
+  padding: 5px 4px;
+  color: var(--text);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-node-sm-input {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  padding: 4px 4px;
+  border-radius: 3px;
+}
+.workflow-node-sm-input::placeholder { color: var(--text-faint); opacity: 0.7; }
+.workflow-node-sm-input:hover { border-color: var(--border); }
+.workflow-node-sm-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
 
 /* Phase 8 - Iterator nodes (Repeater / Remix / Blend / Refiner). */
 .workflow-node-iter { display: grid; grid-template-rows: 32px 1fr; }
@@ -18303,6 +19418,7 @@ a.ds-badge:hover, button.ds-badge:hover {
   gap: 4px;
   padding: 8px 18px 0;
   border-bottom: 1px solid var(--border);
+  overflow-x: auto;
 }
 .workflow-settings-tab {
   appearance: none;
@@ -18316,6 +19432,8 @@ a.ds-badge:hover, button.ds-badge:hover {
   cursor: pointer;
   position: relative;
   top: 1px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .workflow-settings-tab:hover { color: var(--text); background: var(--accent-soft); }
 .workflow-settings-tab[data-active="true"] {
@@ -18407,6 +19525,65 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text);
   background: var(--surface-2);
 }
+/* Settings > Preferences > Whiteboard tool defaults. One collapsed row per
+   drawing tool; the expanded body reuses the canvas tools panel's swatch /
+   segmented rows verbatim, so a control looks the same in both places. */
+.workflow-wb-defaults-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.workflow-wb-defaults-tool + .workflow-wb-defaults-tool { border-top: 1px solid var(--border); }
+.workflow-wb-defaults-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--text);
+  text-align: left;
+  font-size: 13px;
+}
+.workflow-wb-defaults-head:hover { background: var(--surface-2); }
+.workflow-wb-defaults-glyph {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+.workflow-wb-defaults-name { flex: 1 1 auto; }
+.workflow-wb-defaults-chip {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  flex: 0 0 auto;
+}
+.workflow-wb-defaults-state {
+  font-size: 11px;
+  color: var(--text-faint);
+  min-width: 46px;
+  text-align: right;
+}
+.workflow-wb-defaults-caret { color: var(--text-faint); font-size: 10px; }
+.workflow-wb-defaults-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 16px;
+  padding: 2px 10px 12px;
+}
+.workflow-wb-defaults-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.workflow-wb-defaults-field .workflow-wb-tools-sublabel { margin: 0; }
+.workflow-wb-defaults-body .workflow-canvasbg-reset { align-self: center; }
+
 .workflow-settings-section-head {
   display: flex;
   align-items: center;
@@ -22956,18 +24133,6 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--accent-text);
 }
 .perm-trigger-label { letter-spacing: -0.005em; }
-/* Subtle hairline between the permission picker and the chat-view picker,
-   drawn in the centre of the footer's flex gap. */
-.chat-footer > .view-picker::before {
-  content: "";
-  position: absolute;
-  left: -5px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 1px;
-  height: 16px;
-  background: var(--border);
-}
 .perm-chev { font-size: 9px; color: var(--text-faint); margin-left: 2px; }
 
 .perm-mark {
@@ -23003,13 +24168,6 @@ a.ds-badge:hover, button.ds-badge:hover {
   bottom: calc(100% + 6px);
   left: 0;
   right: auto;
-}
-/* v3.12 - the Steps (view-mode) picker sits at the far right of the composer
-   toolbar, so its 340px menu opening from left:0 overflowed the drawer's right
-   edge and got cropped. Anchor it to the right edge instead so it grows inward. */
-.chat-composer-toolbar .view-picker[data-up="true"] .perm-menu {
-  left: auto;
-  right: 0;
 }
 .perm-menu-head {
   font-size: 10.5px;
@@ -23047,6 +24205,326 @@ a.ds-badge:hover, button.ds-badge:hover {
   font-size: 11px;
   color: var(--text-faint);
   line-height: 1.4;
+}
+
+/* Agent-checks picker - same shell as the permission / view pickers, but its
+   rows are independent checkboxes (visual verification, DS guard) rather than
+   a single-choice list, so the tick carries the state instead of a row fill.
+   The trigger goes amber when any gate is off: a dropped check is a thing the
+   user should notice from the closed state, not only on open. */
+.chat-composer-toolbar .guards-picker { position: relative; }
+.guards-picker .perm-trigger[data-off="true"] { color: var(--warning); }
+.guards-picker .perm-trigger[data-off="true"]:hover { border-color: var(--warning); }
+/* Pending = the checks were changed under a RUNNING thread, which cannot take
+   them. The chip carries a "*" and an accent ring so the staged state is
+   visible from the closed control; the note above the composer says what the
+   next Send will do with it. */
+.guards-picker .perm-trigger[data-pending="true"] {
+  color: var(--accent-text);
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+/* Locked = a thread is already running, so its checks are baked into the
+   system prompt it was spawned with and there is nothing to change. The chip
+   stays legible (it still REPORTS what this thread runs with) but reads as
+   inert: no hover affordance, no chevron, faded. */
+.guards-picker .perm-trigger:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.guards-picker .perm-trigger:disabled:hover {
+  border-color: transparent;
+  background: transparent;
+}
+/* Inert = Plan first is armed, so the checks have nothing to grade on the turn
+   about to be sent and the chip is not selectable. Distinct from :disabled's
+   flat 0.55 fade, which means "this thread's checks can never change again":
+   inert is a TEMPORARY state the user can leave by turning Plan first off, so
+   it stays more legible than locked and keeps a not-allowed cursor to say the
+   click was refused rather than missed. */
+.guards-picker[data-inert="true"] .perm-trigger:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.guard-check {
+  width: 15px; height: 15px;
+  margin-top: 1px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--accent-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, border-color 0.12s;
+}
+.guard-check[data-on="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.guard-check svg { width: 11px; height: 11px; }
+/* One icon per check that is ON. The row replaces the old "2/3" count: a
+   count told you how many but never which, so the chip was unreadable
+   without opening it. Each icon owns a HoverTip naming its check. */
+.guards-trigger-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.guards-trigger-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: color 0.12s;
+}
+.guards-trigger-icon svg { width: 14px; height: 14px; }
+.perm-trigger:hover .guards-trigger-icon,
+.perm-trigger[data-open="true"] .guards-trigger-icon { color: inherit; }
+/* Staged-under-a-running-thread marker, previously a "*" glued to the label. */
+.guards-trigger-pending {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent-text);
+}
+/* Same icon repeated on the menu row, so the closed chip is decodable: the
+   user learns which glyph means which check by seeing them together. */
+.guard-row-icon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: -2px;
+  margin-right: 6px;
+  color: var(--text-muted);
+}
+.guard-row-icon svg { width: 13px; height: 13px; }
+.perm-item[aria-checked="true"] .guard-row-icon { color: var(--accent-text); }
+
+/* Orchestrator chip - only rendered when the thread actually ran a family,
+   so it never becomes another always-there control. Icon + a status dot that
+   is the whole closed-state message: green and breathing = work in flight,
+   grey = every family has landed. */
+.chat-composer-toolbar .orch-chip { margin-left: 2px; }
+.orch-trigger { gap: 4px; padding: 0 7px; }
+.orch-trigger-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  transition: color 0.12s;
+}
+.orch-trigger-icon svg { width: 15px; height: 15px; }
+.orch-trigger:hover .orch-trigger-icon,
+.orch-trigger[data-open="true"] .orch-trigger-icon { color: inherit; }
+.orch-trigger[data-live="true"] .orch-trigger-icon { color: var(--text); }
+.orch-trigger-dot,
+.orch-row-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--text-faint);
+}
+.orch-trigger-dot[data-live="true"],
+.orch-row-dot[data-live="true"] {
+  background: var(--success);
+  animation: orch-live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes orch-live-pulse {
+  0%, 100% { opacity: 1;   box-shadow: 0 0 0 0 color-mix(in oklab, var(--success) 55%, transparent); }
+  50%      { opacity: 0.7; box-shadow: 0 0 0 3px color-mix(in oklab, var(--success) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orch-trigger-dot[data-live="true"],
+  .orch-row-dot[data-live="true"] { animation: none; }
+}
+
+/* The sheet. An overlay pinned above the composer, NOT a modal: no backdrop,
+   outside-click and Escape both close it, and it is height-capped so a build
+   with six families scrolls inside itself rather than covering the chat. */
+/* Portaled to <body> and fixed-positioned by the component (the chat drawer
+   is an overflow-clipped column - an in-flow menu loses its right half). */
+.orch-menu {
+  padding: 6px 6px 4px;
+  max-width: calc(100vw - 16px);
+  z-index: 60;
+}
+.orch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: min(46vh, 340px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* macOS draws an OVERLAY scrollbar - it reserves no width and paints on top
+     of the row, which lands squarely on the Working / Done label. */
+  padding-right: 8px;
+}
+.orch-row {
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+.orch-row[data-live="true"] {
+  border-color: color-mix(in oklab, var(--success) 30%, transparent);
+  background: color-mix(in oklab, var(--success) 7%, transparent);
+}
+.orch-row-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+}
+/* Same treatment as the landing card's art: the illustrations are 160x120
+   line drawings, so `contain` + padding, never `cover` - cropping one to a
+   square lands on empty canvas and reads as a failed image. */
+.orch-row-art {
+  width: 44px; height: 33px;
+  border-radius: 6px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.orch-row-art-ph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+}
+.orch-row-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.orch-row-name { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.orch-row-tagline {
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.orch-row-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.orch-row-state[data-live="true"] { color: var(--success); }
+/* Only the subagents still working are listed - a finished one is already
+   reported by the family's Done state and the n/m count below. */
+.orch-row-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 7px 0 0 53px;
+  padding-left: 9px;
+  border-left: 1px solid var(--border);
+}
+.orch-agent {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.orch-agent-type {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.orch-agent-task {
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.orch-row-foot {
+  margin: 6px 0 0 53px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+/* Composer "+" - one trigger for the three attach paths, which used to be
+   three undifferentiated icons in a row. */
+.composer-add { margin-left: 2px; }
+.composer-add-trigger[data-open="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.composer-add-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+.composer-add-icon svg { width: 15px; height: 15px; }
+.perm-item:hover .composer-add-icon { color: var(--text); }
+.composer-add .perm-item[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+/* Steps toggle - icon only, two states, tooltip carries the sentence. Sits at
+   the far right of the composer toolbar where the Steps dropdown used to. */
+.chat-composer-icon-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  width: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.chat-composer-icon-toggle:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+.chat-composer-icon-toggle-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-composer-icon-toggle-mark svg { width: 15px; height: 15px; }
+/* On = finished steps stay visible. The lit state has to be unmistakable at
+   15px, so it takes the accent fill rather than a colour shift alone. */
+.chat-composer-icon-toggle-mark[data-on="true"] {
+  color: var(--accent-text);
+}
+.chat-composer-icon-toggle:has(.chat-composer-icon-toggle-mark[data-on="true"]) {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+/* Plan mode sits next to the checks chip and stages onto the SPAWN the same
+   way they do, so it needs their staged-change marker too: a dashed ring says
+   "armed, but it cannot reach the thread you are looking at - the next Send
+   opens a successor with it". Matches .guards-picker [data-pending] in intent;
+   dashed rather than solid so an armed-and-staged toggle is still told apart
+   from an armed-and-live one at 28px. */
+.chat-plan-toggle-pending {
+  border-style: dashed;
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent) !important;
+}
+
+/* Permission mode in Settings > Preferences: the segmented option carries the
+   same coloured dot the chat header chip uses, so the two read as one thing. */
+.onboarding-sendkey-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* Compact read-only mode chip in the chat drawer header */
@@ -23490,6 +24968,46 @@ a.ds-badge:hover, button.ds-badge:hover {
   text-align: center;
   font-style: italic;
 }
+/* New chat + the Select toggle share one row. Select lives here rather than in
+   a bar of its own: the list keeps ONE control surface at the top, and a rare
+   cleanup action does not get to push the rows down permanently. */
+.runs-list-head {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.runs-list-head .runs-new-chat { flex: 1 1 auto; margin-bottom: 0; }
+/* Icon-only, and square: the word "Select" sat at a third weight next to a
+   dashed accent button and a warning strip, and read as clutter. */
+.runs-select-toggle {
+  /* Explicit square, NOT aspect-ratio: the head is a stretch flex row, so the
+     button's main size resolves from its content BEFORE stretch applies the
+     42px cross size, and the ratio has nothing definite to work from - it
+     collapses to an 18px sliver. 42px is New chat's padding-derived height;
+     the two are locked by hand, so move them together. */
+  flex: 0 0 42px;
+  height: 42px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+/* 16px, not the Icon set's default 14: the ticks are the whole message and
+   they smudge to grey at 14px on a 1x display. */
+.runs-select-toggle svg { display: block; width: 16px; height: 16px; }
+.runs-select-toggle:hover { background: var(--surface-2); color: var(--text); }
+.runs-select-toggle[data-on="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
 .runs-new-chat {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -23530,25 +25048,144 @@ a.ds-badge:hover, button.ds-badge:hover {
   letter-spacing: 0.02em;
 }
 .runs-row-wrap {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 2px;
 }
 .runs-row-wrap .runs-row { flex: 1 1 auto; min-width: 0; }
 .runs-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  /* Square. A run row is a full-bleed list line, not a card - rounding it made
+     each row read as its own floating object and fought the flush hairlines of
+     the panel it sits in. Flex rather than grid so the trailing meta can drop
+     out on hover without leaving empty tracks + gaps behind. */
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   text-align: left;
   font: inherit;
   color: var(--text);
   cursor: pointer;
 }
-.runs-row:hover { background: var(--surface-2); }
-.runs-row-del {
+/* On the WRAP, so the row stays lit while the cursor is over the overlaid
+   rename / delete buttons (siblings of the row, not children). */
+.runs-row-wrap:hover .runs-row { background: var(--surface-2); }
+/* The thread you are LOOKING AT. A filled background rather than an edge mark,
+   so "where am I" is answered by the shape of the whole row and can never be
+   confused with the unread dot on the trailing edge. Wins over :hover, which
+   would otherwise make the open row indistinguishable from whatever the cursor
+   is passing over. */
+.runs-row[data-open="true"],
+.runs-row-wrap:hover .runs-row[data-open="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.runs-row[data-open="true"] .runs-row-title {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+/* Unread marker. The list is ordered by CREATION time so rows hold still,
+   which means a thread no longer advertises new activity by jumping to the
+   top - this dot is what says "something happened in here" instead. It sits on
+   the TRAILING edge because the leading edge already carries the status dot,
+   and it keeps its grid cell whether or not it is showing, so a row going
+   read/unread never reflows the title. */
+.runs-row-new {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: transparent;
+  flex-shrink: 0;
+}
+.runs-row[data-unread="true"] .runs-row-new {
+  background: var(--warning);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--warning) 25%, transparent);
+}
+.runs-row[data-unread="true"] .runs-row-title {
+  font-weight: 650;
+}
+/* Unread strip - the "there is more, and it is off screen" affordance. Two
+   sticky chips inside the scroll box: the top one names the unread total and
+   carries Mark all read (pointing UP once unread rows have scrolled off the
+   top), the bottom one appears only while unread rows sit below the fold.
+   Sticky rather than floating so the list keeps ONE control surface and the
+   rows never sit under a permanent overlay. */
+.runs-unread-bar {
+  position: sticky;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 2px 0;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--warning) 12%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--warning) 35%, transparent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+.runs-unread-bar[data-side="top"]    { top: 0; }
+.runs-unread-bar[data-side="bottom"] { bottom: 0; justify-content: center; }
+.runs-unread-jump,
+.runs-unread-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+  border-radius: var(--radius-sm);
+}
+.runs-unread-jump { cursor: pointer; }
+.runs-unread-jump:hover { background: color-mix(in oklab, var(--warning) 18%, transparent); }
+.runs-unread-jump svg,
+.runs-unread-count svg { display: block; flex-shrink: 0; }
+.runs-unread-chev { display: inline-flex; opacity: 0.75; }
+.runs-unread-chev.is-up { transform: rotate(180deg); }
+.runs-unread-all {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.runs-unread-all:hover { background: var(--surface-2); color: var(--text); }
+/* Rename / delete. Absolutely placed over the row's trailing edge so they
+   never claim width at rest; on hover (or keyboard focus) the trailing meta
+   hides and the row reserves padding so the title truncates short of them. */
+.runs-row-acts {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+.runs-row-wrap:hover .runs-row-acts,
+.runs-row-wrap:has(.runs-row-act:focus-visible) .runs-row-acts {
+  opacity: 1;
+  pointer-events: auto;
+}
+.runs-row-wrap:is(:hover, :has(.runs-row-act:focus-visible)):has(> .runs-row-acts) .runs-row {
+  padding-right: 66px;
+}
+.runs-row-wrap:is(:hover, :has(.runs-row-act:focus-visible)):has(> .runs-row-acts) :is(.plan-role, .runs-row-age, .runs-row-new) {
+  display: none;
+}
+.runs-row-act {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -23561,30 +25198,113 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text-faint);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity .12s ease, color .12s ease, background .12s ease;
+  transition: color .12s ease, background .12s ease;
 }
-.runs-row-wrap:hover .runs-row-del,
-.runs-row-wrap:focus-within .runs-row-del { opacity: 1; }
-.runs-row-del:hover { color: var(--danger); background: var(--surface-2); }
-.runs-row-del svg { display: block; }
+.runs-row-act:hover { color: var(--text); background: var(--surface-3); }
+.runs-row-del:hover { color: var(--danger); background: var(--surface-3); }
+.runs-row-act svg { display: block; }
+/* The shared status-dot vocabulary. Used by the runs list AND by the plan /
+   task / agent lists, which still want the full live-waiting-done-fail
+   palette - do not delete a status here without checking every caller.
+   `none` is the runs list's addition: an explicitly BLANK dot that still
+   occupies its grid cell, so titles stay on one vertical line whether or not
+   a neighbour is live. See LeftChatRunsList for why finished / stopped /
+   failed threads render `none` rather than a colour. */
 .runs-row-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
   background: var(--text-faint);
+  flex-shrink: 0;
 }
+.runs-row-dot[data-status="none"] { background: transparent; box-shadow: none; }
 .runs-row-dot[data-status="live"] {
   background: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 25%, transparent);
   animation: chat-pulse 1.4s ease-in-out infinite;
 }
+/* "Waiting on a pick from you." `attention` is the runs list's name for it;
+   `waiting` is the same mark under the plan/task lists' older vocabulary. */
+.runs-row-dot[data-status="attention"],
 .runs-row-dot[data-status="waiting"] {
   background: var(--warning);
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--warning) 25%, transparent);
 }
 .runs-row-dot[data-status="done"] { background: var(--success); }
 .runs-row-dot[data-status="fail"] { background: var(--danger); }
+/* A gated row already wears the yellow dot on the LEADING edge - the trailing
+   new-activity dot would make it two yellow marks on one line. */
+.runs-row[data-gate="true"] .runs-row-new {
+  background: transparent;
+  box-shadow: none;
+}
+/* Selection mode reuses the dot's grid cell for the checkbox, so turning it on
+   and off never reflows the titles. */
+.runs-row-check {
+  width: 13px; height: 13px;
+  border-radius: 3px;
+  border: 1px solid var(--border-strong, var(--border));
+  background: var(--surface);
+  color: var(--surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.runs-row-check[data-on="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.runs-row-check svg { display: block; width: 10px; height: 10px; stroke-width: 2.5; }
+/* Selection actions - the sticky strip the unread bar would otherwise occupy.
+   Only one of the two is ever mounted. */
+.runs-select-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 2px 0;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+.runs-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-text);
+  cursor: pointer;
+}
+.runs-select-all input { margin: 0; accent-color: var(--accent); cursor: pointer; }
+.runs-select-del {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--danger);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.runs-select-del:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger) 14%, transparent);
+}
+.runs-select-del:disabled { color: var(--text-faint); cursor: default; }
+.runs-select-del svg { display: block; }
+.runs-row-wrap[data-picked="true"] .runs-row { background: var(--accent-soft); }
 .runs-row-title {
+  flex: 1 1 auto;
   font-size: 12.5px;
   font-weight: 500;
   color: var(--text);
@@ -23957,9 +25677,6 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   background: color-mix(in oklab, var(--accent) 6%, var(--surface-2));
   border-color: color-mix(in oklab, var(--accent) 35%, var(--border));
 }
-.chat-composer-upload-btn {
-  /* Same chrome as the attach button, just a different glyph. */
-}
 /* While the agent is mid-turn the user can still type - only the Send
    button is gated. A subtle tinted background shows the composer is in
    "queue mode" without taking the keyboard away. */
@@ -23992,6 +25709,42 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   outline: none;
 }
 .chat-composer-input:focus { outline: none; }
+/* Inline picker chips. The composer stays a real <textarea> - the pill is
+   painted by a mirror layer sitting UNDER it with identical metrics, and the
+   textarea's own glyphs go transparent while any chip is live (the caret
+   keeps its colour explicitly, or it would vanish with the text). The pill's
+   horizontal padding is cancelled by an equal negative margin, so a chip
+   never shifts where the mirrored text sits relative to the real one. */
+.chat-composer-input[data-chipped="true"] {
+  color: transparent;
+  caret-color: var(--text);
+}
+.chat-composer-mirror {
+  position: absolute;
+  inset: 0;
+  padding: 9px 44px 9px 12px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: var(--radius-lg);
+}
+.chat-composer[data-busy="true"] .chat-composer-mirror { padding-right: 78px; }
+.composer-chip {
+  padding: 1px 3px;
+  margin: 0 -3px;
+  border-radius: 4px;
+  /* Colour comes from the shared .chat-slash-item-kind-* rules the picker
+     menu uses, so a chip reads as the same thing the user just picked. */
+  background: color-mix(in oklab, currentColor 13%, transparent);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
 .chat-composer-input::placeholder {
   color: var(--text-faint);
   /* Keep the hint on a single line (clip with ellipsis if it overflows)
@@ -24140,6 +25893,9 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.chat-meta-row {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+}
 .chat-meta {
   font-family: var(--font-mono);
   font-size: 10.5px;
@@ -24270,6 +26026,37 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   color: var(--text);
   font-size: 12.5px;
 }
+/* The message the canvas search palette jumped to. A soft, decaying wash so
+   the eye lands on it without the row looking permanently flagged. */
+.chat-row-hit {
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 6px color-mix(in oklab, var(--success) 16%, transparent);
+  background: color-mix(in oklab, var(--success) 16%, transparent);
+  animation: chat-row-hit-fade 2.6s ease-out forwards;
+}
+@keyframes chat-row-hit-fade {
+  0%, 55% { opacity: 1; }
+  100% { box-shadow: 0 0 0 6px transparent; background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-row-hit { animation: none; }
+}
+/* Search jumped to a message older than the tail the editor loads. */
+.chat-focus-miss {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 10px; margin-bottom: 4px;
+  border: 1px dashed var(--border); border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-muted); font-size: 11.5px; line-height: 1.45;
+}
+.chat-focus-miss strong { color: var(--text); font-weight: 600; }
+.chat-focus-miss button {
+  flex: 0 0 auto; margin-left: auto; display: flex;
+  border: 0; background: transparent; cursor: pointer;
+  color: var(--text-faint); padding: 2px; border-radius: 5px;
+}
+.chat-focus-miss button:hover { background: var(--surface); color: var(--text); }
+.chat-focus-miss svg { width: 13px; height: 13px; }
 .chat-row-tag {
   display: inline-block;
   font-family: var(--font-mono);
@@ -25450,6 +27237,14 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 }
 /* Brief pulse when the panel is opened pointed at a specific line
    (double-click-on-data-text), so the eye lands on the revealed source. */
+/* The step-aside offset (see WorkflowCodePanel's `offsetX`) animates so the
+   panel visibly slides out from under the inspector rather than teleporting.
+   Only `transform` transitions - `left` must stay instant so the panel does
+   not lag behind its node during a drag. */
+.workflow-code-panel { transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .workflow-code-panel { transition: none; }
+}
 .workflow-code-panel.is-focusing {
   animation: workflow-code-panel-focus 0.9s ease-out;
 }
@@ -25654,6 +27449,28 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   box-sizing: border-box;
 }
 .workflow-code-panel-editor:focus { outline: 0; }
+/* Located-line highlight. Painted over the textarea (the body is the
+   positioned ancestor) instead of using a text selection, so picking an
+   element in selection mode can reveal its source line without pulling
+   keyboard focus away from the picked element. JS owns top/height/display -
+   see syncHitBand. */
+.workflow-code-panel-hit {
+  position: absolute;
+  display: none;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-left: 2px solid var(--accent);
+  animation: workflow-code-panel-hit-in 0.5s ease-out;
+}
+@keyframes workflow-code-panel-hit-in {
+  0%   { background: color-mix(in srgb, var(--accent) 42%, transparent); }
+  100% { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workflow-code-panel-hit { animation: none; }
+}
 .workflow-code-panel-dirty {
   display: inline-block;
   margin-left: 6px;
@@ -25779,6 +27596,234 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   cursor: default;
   opacity: 0.45;
 }
+
+/* Source / CSS mode switch in the code panel bar. A segmented pair rather
+   than two loose buttons: the two are alternatives, not actions. */
+.workflow-code-panel-modes {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.workflow-code-panel-mode {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 3px 9px;
+  font: 11px/1.2 var(--font-sans);
+  color: var(--text-faint);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.workflow-code-panel-mode + .workflow-code-panel-mode { border-left: 1px solid var(--border); }
+.workflow-code-panel-mode:hover { color: var(--text); background: var(--surface); }
+.workflow-code-panel-mode.is-active {
+  color: var(--surface);
+  background: var(--accent);
+}
+
+/* ── Live CSS view ────────────────────────────────────────────────────
+   Reads as an inspector pane, not as a document: dense mono rows, one
+   scroll surface, the toolbar pinned. */
+.wf-css-view {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+}
+.wf-css-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  flex: 0 0 auto;
+}
+.wf-css-scope { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.wf-css-scope-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 3px 8px;
+  font: 10.5px/1.2 var(--font-sans);
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.wf-css-scope-btn + .wf-css-scope-btn { border-left: 1px solid var(--border); }
+.wf-css-scope-btn:hover { color: var(--text); background: var(--surface); }
+.wf-css-scope-btn.is-active { color: var(--surface); background: var(--accent); }
+.wf-css-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 7px;
+  font: 11px/1.3 var(--font-mono);
+  color: var(--text);
+}
+.wf-css-search:focus { outline: 0; border-color: var(--accent); }
+.wf-css-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 10.5px/1.2 var(--font-sans);
+  color: var(--text-faint);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wf-css-check input { margin: 0; accent-color: var(--accent); }
+.wf-css-icon {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 2px 4px;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-radius: 4px;
+  display: inline-flex;
+}
+.wf-css-icon:hover { color: var(--text); background: var(--surface); }
+.wf-css-scrollv {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 8px 14px;
+}
+.wf-css-elhead {
+  position: sticky;
+  top: -6px;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0 6px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+.wf-css-ellabel {
+  font: 11.5px/1.2 var(--font-mono);
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-css-elnote { font: 10.5px/1.2 var(--font-sans); color: var(--text-faint); white-space: nowrap; margin-left: auto; }
+.wf-css-sheet { margin: 0 0 10px; }
+.wf-css-sheet-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--border);
+  margin-bottom: 4px;
+}
+.wf-css-sheet-name { font: 11px/1.2 var(--font-mono); color: var(--text); }
+.wf-css-sheet-sub {
+  font: 10px/1.2 var(--font-sans);
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-css-sheet-count { margin-left: auto; font: 10px/1.2 var(--font-mono); color: var(--text-faint); }
+.wf-css-rule {
+  border-left: 2px solid var(--border);
+  padding: 2px 0 4px 7px;
+  margin: 0 0 5px;
+}
+.wf-css-rule.is-unused { opacity: 0.5; }
+.wf-css-rule.is-conditional { border-left-color: var(--accent-soft); }
+.wf-css-rule-head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.wf-css-sel {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font: 11px/1.35 var(--font-mono);
+  color: var(--text);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.wf-css-sel:hover { color: var(--accent); text-decoration: underline; }
+.wf-css-hits {
+  font: 9.5px/1.4 var(--font-mono);
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+.wf-css-hits.is-zero { color: var(--danger); border-color: var(--danger); }
+.wf-css-flag {
+  font: 9.5px/1.4 var(--font-sans);
+  color: var(--accent);
+  border: 1px solid var(--accent-soft);
+  background: var(--accent-soft);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.wf-css-from {
+  margin-left: auto;
+  font: 9.5px/1.4 var(--font-mono);
+  color: var(--text-faint);
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-css-decls { padding: 1px 0 0 8px; }
+.wf-css-decl { font: 11px/1.45 var(--font-mono); color: var(--text-muted); overflow-wrap: anywhere; }
+.wf-css-decl.is-overridden { text-decoration: line-through; opacity: 0.5; }
+.wf-css-prop { color: var(--accent); }
+.wf-css-val { color: var(--text); }
+.wf-css-imp { color: var(--danger); }
+.wf-css-conds { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 2px; }
+.wf-css-cond {
+  font: 9.5px/1.4 var(--font-mono);
+  color: var(--text-faint);
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.wf-css-cond.is-off { opacity: 0.5; text-decoration: line-through; }
+.wf-css-at {
+  margin: 2px 0 0 8px;
+  font: 10.5px/1.4 var(--font-mono);
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow: auto;
+}
+.wf-css-note { font: 10.5px/1.4 var(--font-sans); color: var(--text-faint); padding: 3px 0 3px 8px; }
+.wf-css-empty {
+  padding: 18px 14px;
+  text-align: center;
+  font: 11.5px/1.5 var(--font-sans);
+  color: var(--text-muted);
+}
+.wf-css-empty-sub { margin-top: 5px; font-size: 11px; color: var(--text-faint); }
+.wf-css-btn, .wf-css-more {
+  appearance: none;
+  margin-top: 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font: 11px/1.2 var(--font-sans);
+  color: var(--text);
+  cursor: pointer;
+}
+.wf-css-more { display: block; width: 100%; margin: 4px 0 0; }
+.wf-css-btn:hover, .wf-css-more:hover { border-color: var(--border-strong); background: var(--surface-2); }
 
 .zoom-overlay {
   position: fixed;
@@ -29456,6 +31501,30 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   padding: 6px 9px;
   border-radius: 4px;
 }
+/* Confirmation that the plan gate fanned out: N real threads opened, one per
+   point. Positive outcome, so it reads as a note rather than the amber
+   warning right above it. */
+.chat-decision-split-note {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+/* The fan-out is one click on an answered card, so a failure (usually: the
+   plan had not finished writing PLAN_SPLIT.json when the button was hit)
+   would otherwise be unrecoverable - the card is already answered and
+   disabled. This re-runs just the spawn, never the answer. */
+.chat-decision-split-retry {
+  font: inherit;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.chat-decision-split-retry:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-text); }
+.chat-decision-split-retry:disabled { opacity: 0.6; cursor: default; }
 .chat-decision-status {
   font-size: 11px;
   color: var(--text-muted);
@@ -31728,6 +33797,217 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   color: var(--accent-text);
 }
 .ut-screen-glyph svg { width: 16px; height: 16px; }
+
+/* ============================================================
+   Ramble mode - gesture-driven camera canvas
+   ============================================================ */
+.ramble-view {
+  position: fixed; inset: 0; z-index: 9500;
+  display: flex; flex-direction: column;
+  background: #0d0e12; color: var(--text);
+  font-family: var(--font-sans);
+}
+/* Full-bleed camera stage. The right rail / chat dock float over it (same as
+   panels over the workflow canvas) - no padding reservation on purpose. */
+.ramble-body {
+  position: relative; flex: 1 1 auto; overflow: hidden;
+  background: #000;
+}
+.ramble-video {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; background: #000;
+}
+.ramble-video[data-fliph="true"] { transform: scaleX(-1); }
+.ramble-video[data-flipv="true"] { transform: scaleY(-1); }
+.ramble-video[data-fliph="true"][data-flipv="true"] { transform: scale(-1, -1); }
+/* The vertical-flip toggle reuses the shuffle glyph rotated a quarter turn. */
+.ramble-flip-v svg { transform: rotate(90deg); }
+.ramble-scrim {
+  position: absolute; inset: 0; pointer-events: none;
+  background: rgba(0, 0, 0, 0.35);
+}
+/* The endless-canvas world layer; useEndlessCanvas writes its transform. */
+.ramble-world {
+  position: absolute; left: 0; top: 0; width: 0; height: 0;
+  overflow: visible; transform-origin: 0 0;
+}
+.ramble-overlay {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none;
+}
+.ramble-gate {
+  position: absolute; inset: 0; display: flex;
+  align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.ramble-gate-card {
+  pointer-events: auto;
+  max-width: 380px; padding: 22px 24px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+.ramble-gate-title { font-weight: 600; font-size: 14px; margin: 2px 0 0; }
+.ramble-gate-error { color: var(--danger, #e5484d); font-size: 12px; margin: 0; }
+.ramble-bar .th-icon-btn[data-active="true"] {
+  color: var(--accent-text, var(--accent));
+  background: var(--accent-soft);
+}
+.ramble-hud {
+  position: absolute; left: 12px; bottom: 12px; z-index: 5;
+  display: flex; flex-direction: column; gap: 4px;
+  min-width: 250px; max-width: 320px; padding: 10px 12px;
+  background: rgba(12, 13, 16, 0.82); color: #dfe3ea;
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 10px;
+  font-size: 11px; font-family: var(--font-mono, monospace);
+  backdrop-filter: blur(6px);
+}
+.ramble-hud-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ramble-hud-row span[data-on="true"] { color: #7ee2a0; }
+.ramble-hud-hand { opacity: 0.6; min-width: 40px; }
+.ramble-hud-slider { display: flex; align-items: center; gap: 6px; }
+.ramble-hud-slider span:first-child { min-width: 64px; opacity: 0.7; }
+.ramble-hud-slider input[type="range"] { flex: 1 1 auto; accent-color: var(--accent, #33a06f); }
+.ramble-vision-warn {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  padding: 6px 12px; border-radius: 8px; z-index: 5;
+  background: rgba(160, 60, 40, 0.85); color: #fff; font-size: 12px;
+  pointer-events: none;
+}
+/* The stage is always dark (camera feed + scrim), so ink/gray must read light
+   here regardless of editor theme - same values the dark theme uses. The
+   TOKENS stay semantic; the workflow canvas re-resolves them on save. */
+.ramble-view {
+  --wb-ink:  oklch(88% 0.012 264);
+  --wb-gray: oklch(60% 0.012 264);
+}
+.ramble-tool-chip {
+  position: absolute; top: 12px; right: 56px; z-index: 5;
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px; border-radius: 8px;
+  background: rgba(14, 16, 20, 0.8); color: #dfe3ea;
+  font-size: 12px; pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.ramble-tool-chip-tool { font-weight: 600; }
+.ramble-tool-chip-hint { opacity: 0.65; }
+.ramble-stt-pill {
+  position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%);
+  z-index: 6; display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; border-radius: 999px;
+  background: rgba(14, 16, 20, 0.92); color: #fff; font-size: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  pointer-events: none; max-width: 60%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ramble-stt-pill[data-err="true"] { color: #ffb4ab; }
+.ramble-stt-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #e5484d; flex: 0 0 auto;
+  animation: ramble-stt-pulse 1.1s ease-in-out infinite;
+}
+.ramble-stt-meter {
+  width: 64px; height: 6px; border-radius: 3px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden; flex: 0 0 auto;
+}
+.ramble-stt-meter-fill {
+  display: block; height: 100%;
+  background: #7ee2a0;
+  transition: width 100ms linear;
+}
+.ramble-stt-mic {
+  opacity: 0.55; font-size: 11px;
+  max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+@keyframes ramble-stt-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.45); opacity: 0.6; }
+}
+/* Ramble whiteboard items sit over a dark camera feed; give text-bearing items
+   the same soft plate the workflow canvas gives them via background so they
+   stay legible without inverting the semantic wb colors. */
+.ramble-world .workflow-wb-item { pointer-events: none; }
+.ramble-embed {
+  position: absolute;
+  background: rgba(16, 18, 22, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+}
+/* Fingertip interaction drives embeds (Phase 6); the mouse never does. */
+.ramble-embed iframe { pointer-events: none; }
+.ramble-embed-tag {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 3px 10px; font-size: 11px; color: #dfe3ea;
+  background: rgba(10, 12, 16, 0.75);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none;
+}
+.ramble-embed-error {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%;
+  color: #ffb4ab; font-size: 12px;
+}
+.ramble-embed .workflow-skeleton { width: 100%; height: 100%; }
+.ramble-insert-chip {
+  position: absolute; top: 44px; right: 56px; z-index: 5;
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 8px;
+  background: rgba(23, 48, 38, 0.88); color: #cdeeda;
+  font-size: 12px; pointer-events: none;
+  border: 1px solid rgba(126, 226, 160, 0.35);
+}
+.ramble-insert-chip-hint { opacity: 0.7; }
+.ramble-undo-chip {
+  position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%);
+  z-index: 6; display: flex; align-items: center; gap: 10px;
+  padding: 7px 12px; border-radius: 999px;
+  background: rgba(14, 16, 20, 0.92); color: #dfe3ea; font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+.ramble-undo-chip button {
+  appearance: none; border: 0; cursor: pointer;
+  padding: 3px 10px; border-radius: 999px;
+  background: var(--accent, #33a06f); color: #fff;
+  font-size: 12px; font-weight: 600;
+}
+.ramble-calib {
+  position: absolute; inset: 0; z-index: 8;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+.ramble-calib-card {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  min-width: 320px; max-width: 420px; padding: 26px 30px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 16px;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+.ramble-calib-step { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; }
+.ramble-calib-title { font-size: 20px; font-weight: 700; }
+.ramble-calib-body { font-size: 13px; opacity: 0.75; }
+.ramble-calib-count {
+  font-size: 34px; font-weight: 700; line-height: 1;
+  color: var(--accent, #33a06f); margin: 6px 0 2px;
+}
+.ramble-calib-hands { display: flex; gap: 12px; font-size: 12px; }
+.ramble-calib-hands span { opacity: 0.4; }
+.ramble-calib-hands span[data-on="true"] { opacity: 1; color: var(--accent, #33a06f); font-weight: 600; }
+.ramble-calib-cancel {
+  appearance: none; border: 1px solid var(--border); background: transparent;
+  color: var(--text); border-radius: 8px; padding: 5px 14px; margin-top: 8px;
+  cursor: pointer; font-size: 12px;
+}
+.ramble-calib-hint {
+  position: absolute; top: 46px; left: 50%; transform: translateX(-50%);
+  z-index: 6; appearance: none; cursor: pointer;
+  padding: 7px 14px; border-radius: 999px;
+  background: rgba(23, 48, 38, 0.92); color: #cdeeda;
+  border: 1px solid rgba(126, 226, 160, 0.4); font-size: 12px;
+}
 .ut-screen-titles { display: flex; flex-direction: column; gap: 1px; line-height: 1.1; }
 .ut-screen-title { font-size: 14px; font-weight: 600; }
 .ut-screen-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
@@ -32042,6 +34322,27 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 .wf-pal-tabs {
   display: flex; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--border);
 }
+/* Right-aligned scope switch for the Agent-chats tab (tool output on/off).
+   Rides in the tab row rather than claiming a band of its own - it belongs to
+   one tab, and the palette is already three bands tall. */
+.wf-pal-toggle {
+  margin-left: auto; display: flex; align-items: center; gap: 6px;
+  font: inherit; font-size: 11.5px; color: var(--text-faint);
+  padding: 4px 8px 4px 5px; border: 0; border-radius: 7px;
+  background: transparent; cursor: pointer;
+}
+.wf-pal-toggle:hover { background: var(--surface-2); color: var(--text-muted); }
+.wf-pal-toggle[data-on="true"] { color: var(--text-muted); }
+.wf-pal-toggle-box {
+  flex: 0 0 auto; width: 14px; height: 14px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); background: var(--surface);
+  color: transparent;
+}
+.wf-pal-toggle[data-on="true"] .wf-pal-toggle-box {
+  border-color: var(--success); background: var(--success); color: #fff;
+}
+.wf-pal-toggle-box svg { width: 11px; height: 11px; }
 .wf-pal-tab {
   font: inherit; font-size: 12px; font-weight: 600;
   padding: 5px 11px; border: 0; border-radius: 7px;
@@ -32072,13 +34373,59 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 .wf-pal-row[data-kind="nav"] .wf-pal-row-badge {
   background: color-mix(in oklab, var(--accent) 18%, var(--surface)); color: var(--accent);
 }
+/* Agent-chats tab: a conversation header row, then its matching messages
+   indented beneath it. The header carries the thread; the message rows carry
+   the snippet that matched. */
+.wf-pal-row[data-kind="run"] { margin-top: 6px; }
+.wf-pal-row[data-kind="run"] .wf-pal-row-label { font-weight: 600; }
+.wf-pal-row[data-kind="run"] .wf-pal-row-badge {
+  background: color-mix(in oklab, var(--accent) 18%, var(--surface)); color: var(--accent);
+}
+.wf-pal-row[data-kind="hit"] { padding-left: 26px; align-items: flex-start; }
+.wf-pal-row[data-kind="hit"] .wf-pal-row-badge { margin-top: 1px; }
+.wf-pal-row[data-kind="hit"] .wf-pal-row-label { font-size: 11px; color: var(--text-faint); }
+.wf-pal-row[data-kind="hit"] .wf-pal-row-meta { margin-top: 1px; }
+.wf-pal-row-main {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
 .wf-pal-row-label {
-  flex: 1 1 auto; min-width: 0; font-size: 13.5px; color: var(--text);
+  min-width: 0; font-size: 13.5px; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wf-pal-row-snippet {
+  min-width: 0; font-size: 12px; line-height: 1.4; color: var(--text-muted);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.wf-pal-mark {
+  background: color-mix(in oklab, var(--success) 30%, transparent);
+  color: inherit; border-radius: 3px; padding: 0 1px;
 }
 .wf-pal-row-meta {
   flex: 0 0 auto; font-size: 11px; color: var(--text-faint);
   max-width: 45%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Transcript search is a real round trip against files that reach hundreds of
+   megabytes, so it gets a visible loading state - in the search bar while
+   results are still on screen, and as a full row when there are none yet. */
+.wf-pal-loading {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  padding: 26px 16px; color: var(--text-faint); font-size: 13px;
+}
+.wf-pal-more {
+  padding: 8px 12px 4px; text-align: center;
+  font-size: 11px; color: var(--text-faint);
+}
+.wf-pal-spinner {
+  flex: 0 0 auto; width: 13px; height: 13px; border-radius: 50%;
+  border: 2px solid color-mix(in oklab, var(--text-faint) 35%, transparent);
+  border-top-color: var(--text-muted);
+  animation: wf-pal-spin 0.7s linear infinite;
+}
+@keyframes wf-pal-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .wf-pal-spinner { animation-duration: 2.4s; }
 }
 .wf-pal-foot {
   display: flex; gap: 14px; padding: 8px 12px; border-top: 1px solid var(--border);
@@ -32178,6 +34525,25 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   border-color: var(--border);
   background: var(--surface-2);
 }
+/* Plan flow marks: the planning thread (DocPencil, the plan toggle's own
+   icon), one split item (Fork + "2/3"), the plan check (CheckList). Icons
+   only, no pill. Plan takes the accent; the others stay muted. Amber is kept
+   for the runs list's attention + unread dots. Shared by the runs list rows
+   and the chat drawer header. */
+.plan-role {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-muted);
+}
+.plan-role svg { display: block; width: 13px; height: 13px; }
+.plan-role-plan { color: var(--accent-text); }
+.plan-role-n {
+  font-size: 10.5px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
 
 /* Warning strip above the composer when the open thread is a node-agent
    (pseudo-subagent) run: replies there re-open a one-shot builder context
@@ -32194,6 +34560,19 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   background: var(--warning-soft);
 }
 .chat-leaf-note strong { color: var(--text); font-weight: 600; }
+/* Staged-checks note - same plate as the leaf note, one inline "undo" that
+   drops the staging and puts the composer back on the current thread. */
+.chat-guards-note-undo {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.chat-guards-note-undo:hover { color: var(--text); }
 
 /* ────────── First-run guided tour (GuideTour in app.js) ──────────
    Four shutter strips dim everything except the spotlit hole (the hole is
@@ -32577,6 +34956,25 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 .chat-ctx-slider { width: 100%; accent-color: var(--success); margin: 0; }
 .chat-ctx-scale { display: flex; justify-content: space-between; color: var(--text-faint); font-size: 10px; font-family: var(--font-mono); }
 .chat-ctx-auto-settings { margin-top: 8px; }
+/* Guard-default rows in Settings > Preferences. Same checkbox affordance as the
+   auto-compact toggle, but each row carries a two-line body (label + why), so
+   the box aligns to the first line instead of centring against the block. */
+.settings-guard-row { align-items: flex-start; gap: 8px; margin-top: 10px; }
+.settings-guard-row input[type="checkbox"] { margin-top: 2px; }
+.settings-guard-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.settings-guard-label { font-size: 12.5px; font-weight: 500; }
+.settings-guard-tag {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 4px;
+  vertical-align: 1px;
+  font-weight: 400;
+}
+.settings-guard-hint { font-size: 11px; color: var(--text-faint); line-height: 1.45; }
 
 /* Compact divider row in the chat scroll-back. */
 .chat-compact-divider {
@@ -32591,4 +34989,330 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   font-family: var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+/* ── Scratchpads ───────────────────────────────────────────────────────────
+   The dock tile that lists throwaway canvases and hosts one when opened.
+   Rows follow the compact single-line list pattern the rest of the app uses:
+   name grows, meta + age stay right, actions reveal on hover. */
+.scratch-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--surface);
+}
+.scratch-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 34px 8px 10px;   /* right pad clears the tile's × button */
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.scratch-panel-title { font-size: 12px; font-weight: 600; color: var(--text); }
+.scratch-panel-note  { font-size: 11px; color: var(--text-3); margin-right: auto; }
+.scratch-new-btn, .scratch-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+.scratch-new-btn:hover, .scratch-attach-btn:hover:not(:disabled) { background: var(--surface-3); }
+.scratch-attach-btn:disabled { opacity: 0.6; cursor: default; }
+.scratch-new-btn svg, .scratch-attach-btn svg { width: 12px; height: 12px; }
+.scratch-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.scratch-back-btn:hover { background: var(--surface-3); color: var(--text); }
+.scratch-back-btn svg { width: 12px; height: 12px; }
+.scratch-name-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.scratch-name-input:hover  { border-color: var(--border); }
+.scratch-name-input:focus  { border-color: var(--accent, var(--border)); background: var(--surface-2); outline: none; }
+.scratch-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.scratch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  height: 32px;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  cursor: pointer;
+  color: var(--text);
+}
+.scratch-row:hover { background: var(--surface-2); }
+.scratch-row-icon { display: flex; color: var(--text-3); flex: 0 0 auto; }
+.scratch-row-icon svg { width: 13px; height: 13px; }
+.scratch-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scratch-row-meta,
+.scratch-row-age { font-size: 11px; color: var(--text-3); flex: 0 0 auto; }
+.scratch-row-actions { display: none; gap: 2px; flex: 0 0 auto; }
+.scratch-row:hover .scratch-row-actions { display: flex; }
+.scratch-row:hover .scratch-row-meta,
+.scratch-row:hover .scratch-row-age  { display: none; }
+.scratch-row-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.scratch-row-actions button:hover { background: var(--surface-3); color: var(--text); }
+.scratch-row-actions svg { width: 12px; height: 12px; }
+.scratch-empty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.scratch-empty-title { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.scratch-empty-desc  { max-width: 320px; line-height: 1.45; }
+.scratch-board-canvas { position: relative; flex: 1 1 auto; min-height: 0; }
+
+/* Embedded canvas surface. The workflow root is normally position:fixed and
+   owns the viewport; inside a dock tile it becomes an ordinary block that
+   fills its container, with the top bar row collapsed and the shell columns
+   (nav rail, library, right rail) zeroed - leaving the canvas column and,
+   in whiteboard mode, the tool strip. */
+.workflow-root[data-embedded="true"] {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  grid-template-rows: 1fr;
+}
+.workflow-root[data-embedded="true"] .workflow-body {
+  grid-template-columns: 0 var(--workflow-lib-width, 240px) 0 1fr 0;
+}
+.workflow-root[data-embedded="true"] .workflow-body[data-left-panel="none"],
+.workflow-root[data-embedded="true"] .workflow-body[data-left-panel="chat"] {
+  grid-template-columns: 0 0 0 1fr 0;
+}
+/* The tool strip is the one panel an embedded board keeps, and it must not
+   eat the tile: cap it well under the main canvas's 240px default. */
+.workflow-root[data-embedded="true"] .workflow-body[data-left-panel="whiteboard"] {
+  grid-template-columns: 0 46px 0 1fr 0;
+}
+/* The tool strip goes ICON-ONLY in a dock tile: same tools, same order, same
+   shortcuts - just without the labels and key chips, which would eat a third
+   of the board's width. The title, hint text, colour swatches and minimap all
+   belong to a full-width column and are dropped rather than squashed. */
+/* The nav rail and the library resize handle stay in the DOM - .workflow-body
+   auto-places its children, so removing one slides the canvas into the wrong
+   track (the same reason the collapsed-library rules use visibility, not
+   display:none). Zero them here instead. */
+.workflow-root[data-embedded="true"] .workflow-nav-rail,
+.workflow-root[data-embedded="true"] .workflow-resize-handle-lib {
+  visibility: hidden;
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+}
+.workflow-root[data-embedded="true"] .workflow-wb-tools { padding: 8px 6px; gap: 8px; }
+.workflow-root[data-embedded="true"] .workflow-wb-tool-btn {
+  justify-content: center;
+  gap: 0;
+  padding: 7px 0;
+}
+.workflow-root[data-embedded="true"] .workflow-wb-tool-label,
+.workflow-root[data-embedded="true"] .workflow-wb-tool-key,
+.workflow-root[data-embedded="true"] .workflow-wb-tools-title,
+.workflow-root[data-embedded="true"] .workflow-wb-tools-hint,
+.workflow-root[data-embedded="true"] .workflow-wb-tools-sublabel,
+.workflow-root[data-embedded="true"] .workflow-minimap { display: none; }
+.workflow-root[data-embedded="true"] .workflow-wb-swatches { gap: 4px; justify-content: center; }
+.workflow-root[data-embedded="true"] .workflow-wb-swatch { width: 14px; height: 14px; }
+
+/* Scratchpad chip in the chat composer - a board attached from the dock
+   tile. Distinguished from image / upload / file-ref chips by its accent
+   edge, because what it carries is a whole canvas, not one file. */
+.chat-composer-scratchpad {
+  border-color: var(--accent, var(--border));
+}
+.chat-composer-scratchpad .chat-composer-attachment-name {
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-2, var(--text-faint));
+}
+.chat-composer-scratchpad .chat-composer-attachment-icon svg { width: 12px; height: 12px; }
+/* Shared visual editing controls. */
+/* Shared property panel. Density is independent of canvas/prototype fonts. */
+.zoom-inspector-panel { width: 288px; padding: 0; right: 12px; border-radius: 10px; }
+.workflow-inspector-panel-body { padding: 0; }
+.workflow-inspector-panel-title { font-family: var(--font-sans); }
+.woven-inspector { font: 11px/1.45 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); background: var(--surface); text-align: left; letter-spacing: 0; }
+.woven-inspector *, .woven-inspector *::before, .woven-inspector *::after { box-sizing: border-box; }
+.woven-inspector button, .woven-inspector input, .woven-inspector select, .woven-inspector textarea { font: inherit; color: inherit; letter-spacing: 0; min-width: 0; }
+.woven-inspector button { cursor: pointer; }
+.woven-inspector button:disabled, .woven-inspector select:disabled { cursor: default; opacity: .45; }
+.woven-inspector input, .woven-inspector select, .woven-inspector textarea { background: var(--surface-2); border: 1px solid transparent; border-radius: 5px; padding: 4px 7px; width: 100%; height: 28px; }
+.woven-inspector input::placeholder, .woven-inspector textarea::placeholder { color: var(--text-muted); opacity: 1; }
+.woven-inspector :is(input, select, textarea):hover { border-color: var(--border-strong); }
+.woven-inspector :is(button, input, select, textarea, summary):focus-visible { outline: 2px solid var(--accent-text); outline-offset: -2px; }
+.woven-inspector strong { font-size: 11px; font-weight: 600; }
+.woven-inspector small { font-size: 10px; color: var(--text-muted); overflow-wrap: anywhere; }
+.woven-inspector svg { flex: 0 0 auto; }
+.woven-inspector .woven-icon-button { border: 0; background: transparent; border-radius: 5px; width: 28px; height: 28px; padding: 6px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; color: var(--text-muted); }
+.woven-inspector .woven-icon-button:hover { color: var(--text); background: var(--surface-3); }
+.woven-inspector .woven-icon-button[aria-pressed="true"] { color: var(--accent-text); background: var(--accent-soft); }
+.woven-inspector-header { height: 44px; padding: 0 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; }
+.woven-inspector-header > strong { font-size: 12px; }
+.woven-inspector-status { flex: 1; text-align: right; color: var(--text-faint); font-size: 10px; }
+.woven-inspector .woven-insert-trigger { display: flex; gap: 4px; align-items: center; height: 28px; padding: 4px 8px; border: 0; border-radius: 5px; background: var(--surface-2); }
+.woven-selection-heading { display: flex; align-items: center; gap: 8px; padding: 10px 12px 0; }
+.woven-selection-heading > strong { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.woven-selection-heading > svg { color: var(--accent-text); }
+.woven-selection-actions { display: flex; align-items: center; gap: 2px; padding: 2px 10px 8px; }
+.woven-selection-kind { margin-left: auto; padding-right: 4px; color: var(--text-faint); font-size: 10px; }
+.woven-inspector-section { border-top: 1px solid var(--border); padding: 12px; }
+.woven-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px; margin-bottom: 8px; }
+.woven-section-heading > .woven-variable-control { margin: -4px 0; }
+.woven-section-meta { font-size: 10px; color: var(--text-faint); }
+.woven-section-help { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border: 1px solid var(--border-strong); border-radius: 50%; font-size: 9px; color: var(--text-muted); cursor: help; }
+.woven-property-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.woven-property { min-width: 0; }
+.woven-property-label { display: flex; align-items: center; justify-content: space-between; height: 26px; color: var(--text-muted); font-size: 10px; }
+.woven-property-label .woven-icon-button { height: 22px; width: 22px; padding: 5px; }
+.woven-property-label .woven-icon-button svg { width: 12px; height: 12px; }
+.woven-property-label .woven-variable-control { position: static; }
+.woven-property { position: relative; }
+.woven-variable-control { position: relative; }
+.woven-variable-popover { position: absolute; right: 0; top: 26px; z-index: 30; width: 240px; max-width: 260px; display: grid; gap: 8px; padding: 10px; color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: var(--shadow); }
+.woven-property-grid > :first-child .woven-variable-popover { right: auto; left: 0; }
+.woven-variable-options { display: grid; gap: 2px; max-height: 180px; overflow: auto; }
+.woven-variable-options > button { display: grid; gap: 2px; text-align: left; overflow-wrap: anywhere; }
+.woven-variable-options span { font-weight: 500; }
+.woven-variable-popover button { background: var(--surface-2); border: 0; padding: 6px; border-radius: 4px; }
+.woven-variable-popover button:hover { background: var(--accent-soft); }
+.woven-layout-flow { display: flex; gap: 3px; align-items: center; margin: 0 0 12px; padding: 3px; background: var(--surface-2); border-radius: 6px; }
+.woven-layout-flow .woven-icon-button { flex: 1; height: 26px; }
+.woven-layout-flow .woven-icon-button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 12%, transparent); color: var(--text); }
+.woven-toolbar-separator { display: block; flex: 0 0 1px; align-self: stretch; margin: 4px 2px; background: var(--border); }
+.woven-alignment-toolbar { display: flex; justify-content: space-between; gap: 1px; margin: 0 -4px; }
+.woven-alignment-toolbar .woven-icon-button { width: 25px; padding: 4px; }
+.woven-dimension-value { display: flex; align-items: center; background: var(--surface-2); border-radius: 5px; height: 30px; padding: 0 8px; gap: 5px; }
+.woven-dimension-value > span:first-child { font-size: 10px; color: var(--text-muted); }
+.woven-dimension-value input { background: transparent; padding: 0 2px; flex: 1; font-variant-numeric: tabular-nums; }
+.woven-unit { color: var(--text-faint); font-size: 9px; }
+.woven-dimension select { background: transparent; font-size: 10px; padding: 3px; height: 25px; }
+.woven-auto-layout { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 16px; align-items: center; margin: 8px 0 4px; }
+.woven-alignment-matrix { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); height: 78px; padding: 4px; gap: 1px; background: var(--surface-2); border-radius: 6px; }
+.woven-alignment-matrix button { display: flex; justify-content: center; align-items: center; gap: 2px; border: 0; border-radius: 3px; padding: 4px; background: transparent; }
+.woven-alignment-matrix button span { width: 2px; height: 2px; background: var(--text-faint); border-radius: 1px; }
+.woven-alignment-matrix button span:not(:first-child) { display: none; }
+.woven-alignment-matrix button:hover, .woven-alignment-matrix button[aria-pressed="true"] { background: var(--accent-soft); }
+.woven-alignment-matrix button[aria-pressed="true"] span { display: block; height: 10px; background: var(--accent-text); }
+.woven-layout-spacing .woven-property-label { height: 20px; }
+.woven-layout-spacing > select { margin-top: 4px; font-size: 10px; }
+.woven-inspector details > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; min-height: 18px; }
+.woven-inspector details > summary::-webkit-details-marker { display: none; }
+.woven-inspector details > summary strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.woven-inspector details > summary > span { font-size: 10px; color: var(--text-faint); }
+.woven-inspector details[open] > summary .woven-disclosure-mark { transform: rotate(180deg); }
+.woven-inspector-more { margin-top: 10px; }
+.woven-inspector-more > summary strong { color: var(--text-muted); font-size: 10px; font-weight: 400; }
+.woven-section-content { display: grid; gap: 8px; padding-top: 10px; }
+.woven-edit-note { color: var(--text-muted); font-size: 10px; line-height: 1.5; margin: 0; }
+.woven-edit-tools > .woven-edit-note, .woven-inspector > .woven-edit-note { display: block; padding: 4px 12px; }
+.woven-property-color { display: flex; align-items: center; margin-top: 8px; gap: 4px; }
+.woven-property-color .zoom-inspector-color-row { flex: 1; min-width: 0; }
+.woven-inspector .zoom-inspector-color-swatch { width: 24px; height: 24px; border: 1px solid var(--border-strong); border-radius: 4px; }
+.woven-inspector .zoom-inspector-color-input { font: inherit; height: 28px; }
+.woven-inspector .zoom-inspector-color-pop { top: 32px; border-radius: 8px; }
+.woven-inspector .zoom-inspector-color-pop-head { text-transform: none; letter-spacing: 0; font: inherit; padding: 8px; }
+.woven-inspector .zoom-inspector-color-token { font: inherit; grid-template-columns: 14px minmax(0, 1fr); }
+.woven-inspector .zoom-inspector-color-token-value { grid-column: 2; }
+.woven-inspector .zoom-inspector-boxfield { gap: 4px; }
+.woven-inspector .zoom-inspector-box-toggle { width: 24px; height: 28px; border: 0; border-radius: 5px; }
+.woven-inspector .zoom-inspector-box-side { color: var(--text-muted); font-weight: 400; }
+.woven-inspector .zoom-inspector-box-input { padding: 4px; font: inherit; }
+.woven-inspector .zoom-inspector-input-narrow { max-width: none; }
+.woven-edit-drawer { display: grid; gap: 8px; padding: 12px; margin: 0 8px 10px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; }
+.woven-edit-drawer .woven-section-heading { margin-bottom: 0; }
+.woven-edit-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.woven-edit-actions button, .woven-section-content > button, .woven-edit-error button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 5px 8px; border: 1px solid var(--border); background: var(--surface-2); border-radius: 5px; min-height: 26px; }
+.woven-edit-actions button:hover, .woven-section-content > button:hover { background: var(--accent-soft); }
+.woven-labeled-row { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; align-items: center; color: var(--text-muted); }
+.woven-edit-component-list { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; max-height: 250px; overflow: auto; }
+.woven-edit-component-list button { display: flex; flex-direction: column; align-items: stretch; min-width: 0; text-align: left; padding: 0 0 6px; border: 1px solid var(--border); background: var(--surface); border-radius: 6px; overflow: hidden; }
+.woven-edit-component-list button:hover { border-color: var(--accent-text); }
+.woven-edit-component-list button > span, .woven-edit-component-list button > small { margin: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.woven-edit-component-preview { flex: 0 0 64px; width: 100%; height: 64px; border: 0; border-bottom: 1px solid var(--border); pointer-events: none; margin-bottom: 6px; background: var(--surface-2); }
+.woven-edit-error { font-size: 10px; line-height: 1.5; padding: 8px; margin: 6px 10px 10px; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 6px; overflow-wrap: anywhere; }
+.woven-edit-error button { margin-top: 6px; font-size: 10px; }
+
+/* Layers and properties flank the canvas in both editing surfaces. */
+.woven-layers-panel { position: fixed; left: 12px; top: 80px; width: 240px; max-height: calc(100vh - 120px); z-index: 7; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+.woven-layers-workflow { position: absolute; z-index: 6; max-height: none; border-radius: 8px 0 0 8px; }
+.woven-layers { font: 11px/1.45 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); display: flex; flex-direction: column; max-height: inherit; height: 100%; }
+.woven-layers * { box-sizing: border-box; }
+.woven-layers-header { display: flex; gap: 8px; align-items: center; min-height: 44px; padding: 0 12px; border-bottom: 1px solid var(--border); }
+.woven-layers-header strong { font-size: 12px; font-weight: 600; }
+.woven-layers-header span { margin-left: auto; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.woven-layer-search { padding: 8px; }
+.woven-layer-search input { width: 100%; height: 28px; border: 1px solid transparent; border-radius: 5px; padding: 4px 8px; font: inherit; background: var(--surface-2); color: var(--text); }
+.woven-layer-tree { flex: 1; min-height: 0; overflow: auto; padding: 0 4px 8px; }
+.woven-layer-row { display: flex; align-items: center; gap: 6px; height: 30px; padding-right: 8px; border-radius: 4px; cursor: pointer; white-space: nowrap; user-select: none; }
+.woven-layer-row:hover { background: var(--surface-2); }
+.woven-layer-row[aria-selected="true"] { background: var(--accent-soft); color: var(--accent-text); }
+.woven-layer-row > svg { flex: 0 0 14px; width: 14px; height: 14px; }
+.woven-layer-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.woven-layer-chevron { width: 14px; height: 24px; flex: 0 0 14px; background: transparent; border: 0; color: var(--text-muted); font: 14px/1 sans-serif; padding: 0; cursor: pointer; }
+.woven-layer-chevron:disabled { visibility: hidden; }
+.woven-layers :is(input, button, [role="treeitem"]):focus-visible { outline: 2px solid var(--accent-text); outline-offset: -2px; }
+.woven-layer-tree > small { display: block; padding: 12px; color: var(--text-muted); }
+.zoom-overlay[data-tool="select"] .zoom-iframe-host { left: 288px; right: 288px; top: 48px; }
+.zoom-overlay .woven-layers-panel { left: 48px; top: 48px; bottom: 48px; max-height: none; border-radius: 0; border-width: 1px 1px 0 0; box-shadow: none; }
+.zoom-overlay .zoom-inspector-panel { right: 0; top: 48px; bottom: 48px; max-height: none; border-radius: 0; border-width: 1px 0 0 1px; box-shadow: none; }
+.woven-empty-selection { padding: 12px; color: var(--text-muted); }
+@media (max-width: 900px) {
+  .zoom-overlay .woven-layers-panel { width: 190px; }
+  .zoom-overlay .zoom-inspector-panel { width: 264px; }
+  .zoom-overlay[data-tool="select"] .zoom-iframe-host { left: 238px; right: 264px; }
 }
