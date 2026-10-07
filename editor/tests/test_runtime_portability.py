@@ -235,6 +235,56 @@ class QaCancelTests(unittest.TestCase):
             self.assertEqual([c.args[0] for c in kill.call_args_list], [child])
             self.assertEqual(child.stop_reason, "user-stop")
             self.assertTrue(parent.jobs["c"]["waived"])
+            self.assertTrue(child.qa_cancelled)
+            self.assertFalse(other.qa_cancelled)
+
+    def _enqueue(self, parent, child, text="make it blue"):
+        handler = SimpleNamespace(_read_json_body=lambda max_bytes=0: {"text": text},
+                                  _reply=lambda code, body: (code, body))
+        handler._run_queue_state = lambda run_id: serve.H._run_queue_state(handler, run_id)
+        with patch.object(serve, "RUNS", {parent.run_id: parent, child.run_id: child}), \
+             patch.object(serve, "_kill_run_tree") as kill, patch.object(serve, "_queue_persist"), \
+             patch.object(serve, "_queue_drain_maybe"):
+            code, _ = serve.H._run_enqueue(handler, parent.run_id)
+        return code, kill
+
+    def _check_child(self, root, parent_id):
+        child = serve.RunState("c", Mock(poll=Mock(return_value=None)), "codex", "planner", "planner:visual-verifier", "test", project_root=root)
+        child.parent_run_id, child.qa_check = parent_id, "visual verification"
+        return child
+
+    def test_queued_reply_cancels_the_check_on_unsteerable_runtimes(self):
+        # codex exec and opencode run: no stdin, so the message waits in the queue.
+        for runtime in ("codex", "opencode"):
+            with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"):
+                parent = serve.RunState("p", Mock(stdin=None, poll=Mock(return_value=None)), runtime, "main", "freeform", "test", project_root=root)
+                child = self._check_child(root, "p")
+                code, kill = self._enqueue(parent, child)
+                self.assertEqual(code, 200)
+                self.assertEqual([c.args[0] for c in kill.call_args_list], [child], runtime)
+                self.assertTrue(child.qa_cancelled)
+                self.assertTrue(any(e["data"].get("label", "").startswith("QA cancelled") for e in parent.events))
+
+    def test_queued_reply_leaves_the_check_alone_on_steerable_runtimes(self):
+        # Claude queues only when the user did not steer; the steer path cancels.
+        with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"):
+            parent, _ = self._live_claude(root)
+            child = self._check_child(root, "p")
+            code, kill = self._enqueue(parent, child)
+            self.assertEqual(code, 200)
+            kill.assert_not_called()
+            self.assertFalse(child.qa_cancelled)
+
+    def test_cancelled_check_returns_a_notice_not_its_partial_verdict(self):
+        with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"):
+            child = self._check_child(root, "p")
+            child.append("agent", {"type": "text_delta", "delta": "Looks fine so far"})
+            self.assertEqual(serve._planner_done_payload(child, "c", "visual-verifier", "codex")["output"], "Looks fine so far")
+            child.qa_cancelled = True
+            payload = serve._planner_done_payload(child, "c", "visual-verifier", "codex")
+            self.assertTrue(payload["cancelled"])
+            self.assertTrue(payload["output"].startswith("CANCELLED, NO VERDICT"))
+            self.assertIsNone(payload["error"])
 
 
 class MCPTests(unittest.TestCase):

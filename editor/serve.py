@@ -11516,8 +11516,10 @@ class RunState:
                  # a way back up the tree to tell someone who can act.
                  "parent_run_id",
                  # the QA check a dispatched planner run is (see
-                 # _cancel_qa_checks); None for every other run.
-                 "qa_check",
+                 # _cancel_qa_checks); None for every other run. qa_cancelled:
+                 # it was stopped because the user replied, so its
+                 # planner-done says that instead of a partial verdict.
+                 "qa_check", "qa_cancelled",
                  # intentional-termination flag ("completed-orchestrator",
                  # "user-stop", or None for natural exit). Lets finish() report
                  # SIGTERM-after-success as exit 0 instead of "failed".
@@ -11711,6 +11713,7 @@ class RunState:
         # Which QA check a dispatched planner run IS (run_jobs.qa_check), so
         # a message to its parent can cancel it. None for everything else.
         self.qa_check = None
+        self.qa_cancelled = False
         # Wake the stall watchdog - it sleeps on this while the daemon is idle
         # rather than polling an empty registry forever.
         STALL_WAKE.set()
@@ -13216,7 +13219,9 @@ def _cancel_qa_checks(state) -> list:
       - claude: one `stop_task` control frame per task.
       - codex app-server: interrupt the child thread's turn.
       - planner children (codex / opencode reach visual-verifier through
-        /__dispatch_planner): stop the child run.
+        /__dispatch_planner): stop the child run. Its planner-done then
+        carries _QA_CANCELLED_OUTPUT, the only channel into a codex exec /
+        opencode turn, which cannot take the message itself until it ends.
     Each one is `waived`, so its stop never reads as a failed worker."""
     with state.lock:
         jobs = [dict(j) for j in state.jobs.values()
@@ -13253,6 +13258,7 @@ def _cancel_qa_checks(state) -> list:
     for child in children:
         state.append("agent", {"type": "job", "jobId": child.run_id, "source": "bridge",
                                "childRunId": child.run_id, "waived": True})
+        child.qa_cancelled = True
         _stop_run_family(child)
         stopped.append(child.qa_check)
     if stopped:
@@ -13272,6 +13278,52 @@ def _qa_cancel_note(checks) -> str:
     return (f"[Woven: your {what} cancelled because this message arrived while it was running. "
             "Act on this message first and do not re-run the cancelled check against the earlier "
             "state; this thread's checks apply again to the result once that work is done.]\n\n")
+
+
+# What a cancelled planner-dispatched check returns as its `output`. Worded
+# for both arrivals: a steered runtime already has the message in its turn,
+# a codex exec / opencode turn only gets it once the turn ends.
+_QA_CANCELLED_OUTPUT = (
+    "CANCELLED, NO VERDICT: the user sent a new message while this check was running, so "
+    "Woven stopped it. Do not re-run it now and do not report the work as verified. Turn to "
+    "the user's message: if it is already in front of you, act on it; otherwise end your turn "
+    "with one line saying the check was cancelled, and their message arrives next. This "
+    "thread's checks apply again once that work is done.")
+
+
+def _run_steerable(state) -> bool:
+    """Can a message reach this run mid-turn (claude stream-json, codex
+    app-server)? Same answer as the composer's runSteerable. The ones that
+    cannot (codex exec, opencode) cancel a running check at enqueue time."""
+    if isinstance(state.proc, runtime_drivers.ProcessDriver):
+        return bool(state.proc.steerable)
+    return bool(AGENT_DEFS.get(state.agent_id, {}).get("steerable"))
+
+
+def _planner_done_payload(state, run_id, planner_type, agent_id) -> dict:
+    """The final planner-done event: every top-level text_delta joined as the
+    planner's reply, or the cancel notice when the user's reply stopped it
+    (its partial narration is not a verdict and must not read as one)."""
+    with state.lock:
+        events_snapshot = list(state.events)
+    chunks = []
+    for ev in events_snapshot:
+        if ev["type"] != "agent":
+            continue
+        d = ev.get("data") or {}
+        if d.get("type") == "text_delta" and not d.get("sidechain"):
+            chunks.append(d.get("delta") or "")
+    payload = {
+        "runId": run_id,
+        "type": planner_type,
+        "runtime": agent_id,
+        "exitCode": state.exit_code,
+        "output": "".join(chunks).strip(),
+        "error": None if state.exit_code in (None, 0) else f"exit {state.exit_code}",
+    }
+    if state.qa_cancelled:
+        payload.update(output=_QA_CANCELLED_OUTPUT, cancelled=True, error=None)
+    return payload
 
 
 def _context_tokens_from_usage(u: dict):
@@ -24399,28 +24451,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                         self.wfile.flush()
                     except Exception:
                         client_gone = True
-            # Synthesize the final output: concatenate every text_delta from
-            # the agent event stream. Tool calls / results are visible in
-            # the events themselves; the `output` field is the planner's
-            # final narrative reply.
-            chunks = []
-            with state.lock:
-                events_snapshot = list(state.events)
-            for ev in events_snapshot:
-                if ev["type"] != "agent":
-                    continue
-                d = ev.get("data") or {}
-                if d.get("type") == "text_delta" and not d.get("sidechain"):
-                    chunks.append(d.get("delta") or "")
-            output = "".join(chunks).strip()
-            payload = {
-                "runId": run_id,
-                "type": planner_type,
-                "runtime": agent_id,
-                "exitCode": state.exit_code,
-                "output": output,
-                "error": None if state.exit_code in (None, 0) else f"exit {state.exit_code}",
-            }
+            # Synthesize the final output: the planner's narrative reply (tool
+            # calls / results are visible in the events themselves).
+            payload = _planner_done_payload(state, run_id, planner_type, agent_id)
             state.append("planner_output", payload)
             if not client_gone:
                 _write_sse("planner-done", payload)
@@ -24468,7 +24501,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 d = ev.get("data") or {}
                 if d.get("type") == "text_delta" and not d.get("sidechain"):
                     chunks.append(d.get("delta") or "")
-            output = "".join(chunks).strip()
+            output = _QA_CANCELLED_OUTPUT if state.qa_cancelled else "".join(chunks).strip()
         return self._reply(200, {
             "runId": run_id,
             "done": done,
@@ -36077,6 +36110,16 @@ class H(http.server.SimpleHTTPRequestHandler):
             q.append(entry)
             state.msg_queue = q
         _queue_persist(state)
+        # A run that cannot be steered (codex exec, opencode) would hold this
+        # message behind a running QA check until it finished grading the
+        # state the user is moving away from. Stop the check now; its
+        # planner-done tells the agent to end the turn, and the queue below
+        # delivers. Steerable runs cancel at delivery (_run_user_message).
+        if not _run_steerable(state):
+            try:
+                _cancel_qa_checks(state)
+            except Exception as e:
+                print(f"[qa-cancel] enqueue run={run_id}: {e}", flush=True)
         # Idle right now? Then there is nothing to wait for - hand it over.
         # Enqueue-then-drain (rather than "send directly when idle") keeps ONE
         # ordering path, so a message can never overtake one already queued.
