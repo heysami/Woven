@@ -1,0 +1,8 @@
+[
+  {
+    "title": "Two chips",
+    "slots": {
+      "default": "<ds-filter-chip label=\"Status\"></ds-filter-chip><ds-filter-chip label=\"Owner\"></ds-filter-chip>"
+    }
+  }
+]

@@ -1,0 +1,16 @@
+[
+  {
+    "title": "With actions",
+    "props": {
+      "title": "Orders"
+    },
+    "slots": {
+      "actions": "<ds-button variant=\"text\">Clear</ds-button>",
+      "default": "<p>Body</p>"
+    }
+  },
+  {
+    "title": "Empty",
+    "props": {}
+  }
+]

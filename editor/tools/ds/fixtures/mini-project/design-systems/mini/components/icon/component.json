@@ -1,0 +1,21 @@
+{
+  "name": "icon",
+  "title": "Icon",
+  "layer": "atom",
+  "oneLine": "Inline icon from the DS set.",
+  "rootClass": "icon",
+  "props": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "style": {
+      "type": "enum",
+      "values": [
+        "filled",
+        "outline"
+      ],
+      "default": "filled"
+    }
+  }
+}

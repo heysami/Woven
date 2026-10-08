@@ -1,0 +1,4 @@
+.filter-chip { display: inline-flex; gap: var(--space-1); align-items: center; padding: var(--space-1) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-surface); }
+.filter-chip.is-open { border-color: var(--color-primary); }
+.filter-chip--s { padding: 2px var(--space-2); }
+.filter-chip__count { color: var(--color-primary); }

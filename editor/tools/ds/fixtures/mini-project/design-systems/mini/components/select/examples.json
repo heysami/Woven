@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Default",
+    "props": {
+      "options": [
+        "One",
+        "Two"
+      ]
+    }
+  }
+]

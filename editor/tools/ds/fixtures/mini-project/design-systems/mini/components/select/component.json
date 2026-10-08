@@ -1,0 +1,22 @@
+{
+  "name": "select",
+  "title": "Select",
+  "layer": "atom",
+  "oneLine": "Native select, DS skin.",
+  "replaces": [
+    "select"
+  ],
+  "rootClass": "select",
+  "props": {
+    "options": {
+      "type": "list",
+      "required": true
+    },
+    "value": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    }
+  }
+}

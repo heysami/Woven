@@ -1,0 +1,2 @@
+.app__bar { display: flex; justify-content: space-between; padding: var(--space-3); border-bottom: 1px solid var(--color-border); }
+.app__main { padding: var(--space-3); }

@@ -1,0 +1,22 @@
+{
+  "name": "stack",
+  "title": "Stack",
+  "layer": "layout",
+  "oneLine": "Vertical rhythm container.",
+  "rootClass": "stack",
+  "props": {
+    "gap": {
+      "type": "enum",
+      "values": [
+        "s",
+        "m"
+      ],
+      "default": "m"
+    }
+  },
+  "slots": {
+    "default": {
+      "accepts": "any"
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "filter-chip",
+  "title": "Filter chip",
+  "layer": "atom",
+  "oneLine": "Table filter trigger.",
+  "notForUseWhen": "Form fields: use ds-select.",
+  "rootClass": "filter-chip",
+  "props": {
+    "label": {
+      "type": "string",
+      "required": true
+    },
+    "count": {
+      "type": "number"
+    },
+    "size": {
+      "type": "enum",
+      "values": [
+        "m",
+        "s"
+      ],
+      "default": "m"
+    }
+  },
+  "contains": [
+    "icon"
+  ],
+  "events": [
+    "ds:change"
+  ],
+  "states": [
+    "is-open"
+  ]
+}

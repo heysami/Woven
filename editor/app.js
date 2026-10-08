@@ -39763,6 +39763,15 @@ function pickSerializeClean(doc) {
     if (doc.doctype.systemId) dt += " \"" + doc.doctype.systemId + "\"";
     dt += ">";
   }
+  // Component design system pages (docs/features/component-ds-format.md):
+  // the live DOM holds EXPANDED block markup. Saving it raw would bake every
+  // block's internals into the file and the page would stop following the
+  // DS. The page's own runtime collapses each block back to its <ds-*> tag.
+  const pageDS = doc.defaultView && doc.defaultView.DS;
+  if (pageDS && pageDS.__runtime && typeof pageDS.serialize === "function") {
+    try { return dt + "\n" + pageDS.serialize(clone); }
+    catch (err) { console.warn("[pickSerializeClean] DS.serialize failed; saving expanded markup", err); }
+  }
   return dt + "\n" + clone.outerHTML;
 }
 

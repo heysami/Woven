@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Orders</title>
+<link rel="stylesheet" href="../../design-systems/mini/build/ds.css">
+<script src="../../design-systems/mini/build/ds-runtime.js"></script>
+<style>.orders-grid { margin-top: 8px; }</style>
+</head>
+<body>
+<ds-app title="Orders" id="shell">
+  <ds-button slot="actions" variant="outline" icon="edit" data-step="2">Edit</ds-button>
+  <ds-filter-bar>
+    <ds-filter-chip label="Status" count="2" id="chip-status"></ds-filter-chip>
+    <ds-filter-chip label="Owner" size="s"></ds-filter-chip>
+  </ds-filter-bar>
+  <ds-card title="Recent" class="orders-grid">
+    <ds-button slot="actions" variant="text">Clear</ds-button>
+    <p id="body-p">First &amp; second</p>
+    <ds-field label="Status" hint="Pick one"><ds-select options="Open,Closed" name="status"></ds-select></ds-field>
+  </ds-card>
+  <ds-custom reason="one-off timeline, no block yet"><div class="timeline">t</div></ds-custom>
+</ds-app>
+<script>
+  window.__midParse = { chips: document.querySelectorAll(".filter-chip").length, tags: document.getElementsByTagName("ds-filter-chip").length };
+</script>
+<div id="dyn"></div>
+<script>
+  document.getElementById("dyn").innerHTML = DS.html("card", { title: "Dynamic" }, { "default": DS.html("filter-chip", { label: "From JS" }) });
+  window.__afterHtml = document.querySelectorAll("#dyn .filter-chip").length;
+</script>
+</body>
+</html>

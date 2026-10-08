@@ -1,0 +1,13 @@
+{
+  "id": "mini",
+  "label": "Mini DS",
+  "kind": "component",
+  "componentFormat": 1,
+  "files": {
+    "bundle": "build/ds.css",
+    "runtime": "build/ds-runtime.js",
+    "catalog": "build/CATALOG.md",
+    "gallery": "build/gallery.html",
+    "designMd": "DESIGN.md"
+  }
+}

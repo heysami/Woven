@@ -1,0 +1,26 @@
+{
+  "name": "app",
+  "title": "App shell",
+  "layer": "shell",
+  "oneLine": "Page frame with a top bar.",
+  "rootClass": "app",
+  "props": {
+    "title": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "slots": {
+    "default": {
+      "accepts": "any"
+    },
+    "actions": {
+      "accepts": [
+        "button"
+      ]
+    }
+  },
+  "contains": [
+    "button"
+  ]
+}

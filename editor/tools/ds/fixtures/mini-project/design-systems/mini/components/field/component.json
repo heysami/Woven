@@ -1,0 +1,26 @@
+{
+  "name": "field",
+  "title": "Field",
+  "layer": "molecule",
+  "oneLine": "Label + control + hint.",
+  "rootClass": "field",
+  "props": {
+    "label": {
+      "type": "string",
+      "required": true
+    },
+    "hint": {
+      "type": "string"
+    }
+  },
+  "slots": {
+    "default": {
+      "accepts": [
+        "select"
+      ]
+    }
+  },
+  "contains": [
+    "select"
+  ]
+}

@@ -1,0 +1,16 @@
+[
+  {
+    "title": "Default",
+    "props": {
+      "label": "Status"
+    }
+  },
+  {
+    "title": "Small with count",
+    "props": {
+      "label": "Owner",
+      "count": 3,
+      "size": "s"
+    }
+  }
+]

@@ -1,0 +1,26 @@
+{
+  "name": "card",
+  "title": "Card",
+  "layer": "organism",
+  "oneLine": "Grouped content surface.",
+  "rootClass": "card",
+  "props": {
+    "title": {
+      "type": "string"
+    }
+  },
+  "slots": {
+    "default": {
+      "accepts": "any"
+    },
+    "actions": {
+      "accepts": [
+        "button"
+      ]
+    }
+  },
+  "contains": [
+    "button",
+    "stack"
+  ]
+}

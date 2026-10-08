@@ -957,10 +957,23 @@ def _resolve_ds_binding(project_root: Optional[str], prototype: Optional[str]) -
         ds_dir = os.path.join(ds_root, ds_id)
         if not os.path.isdir(ds_dir):
             return None
-        out = {"id": ds_id, "designMd": None, "stylesCss": None, "allCss": None}
+        out = {"id": ds_id, "designMd": None, "stylesCss": None, "allCss": None, "kind": "document",
+               "catalog": None, "bundle": None, "runtime": None}
         for key, fname in (("designMd", "DESIGN.md"), ("stylesCss", "styles.css"), ("allCss", "all.css")):
             if os.path.isfile(os.path.join(ds_dir, fname)):
                 out[key] = f"design-systems/{ds_id}/{fname}"
+        # Component design systems (meta.kind == "component", spec in
+        # docs/features/component-ds-format.md): pages PLACE blocks from the
+        # generated catalog instead of re-writing DS markup.
+        try:
+            with open(os.path.join(ds_dir, "meta.json"), "r", encoding="utf-8") as f:
+                if (json.load(f) or {}).get("kind") == "component":
+                    out["kind"] = "component"
+                    for key, fname in (("catalog", "build/CATALOG.md"), ("bundle", "build/ds.css"), ("runtime", "build/ds-runtime.js")):
+                        if os.path.isfile(os.path.join(ds_dir, fname)):
+                            out[key] = f"design-systems/{ds_id}/{fname}"
+        except (OSError, ValueError):
+            pass
         return out
     except Exception:
         return None
@@ -979,6 +992,8 @@ def _design_system_catalog(project_root=None, prototype=None):
     """Full catalog, no silent size cap. Caller gates this on DS QA."""
     ds = _resolve_ds_binding(project_root, prototype)
     ds_index = ""
+    if ds and ds.get("kind") == "component":
+        return _component_ds_catalog(ds, project_root)
     if ds and ds.get("designMd") and project_root:
         try:
             with open(os.path.join(project_root, ds["designMd"]), "r",
@@ -1001,6 +1016,35 @@ def _design_system_catalog(project_root=None, prototype=None):
     return ds_index
 
 
+def _component_ds_catalog(ds, project_root) -> str:
+    """Catalog embed for a COMPONENT design system: the generated one-line-per-
+    block CATALOG.md, never DESIGN.md / styles.css (agents place blocks, they
+    do not re-write DS markup, so they never need its CSS or gallery)."""
+    tools = "$TH_PROTOCOL_ROOT/editor/tools/ds"
+    if not ds.get("catalog") or not project_root:
+        return (
+            "\n\n## Committed design system `" + ds["id"] + "` is a COMPONENT design system, but it has no build yet\n\n"
+            "`design-systems/" + ds["id"] + "/build/CATALOG.md` is missing. Build it before touching any page: "
+            "`python3 " + tools + "/build_ds.py --ds-dir design-systems/" + ds["id"] + "`. Then Read the catalog it writes."
+        )
+    try:
+        with open(os.path.join(project_root, ds["catalog"]), "r", encoding="utf-8", errors="replace") as f:
+            cat = f.read().strip()
+    except OSError:
+        cat = ""
+    return (
+        "\n\n## Committed design system `" + ds["id"] + "` - COMPONENT catalog (embedded from `" + ds["catalog"] + "`)\n\n"
+        "This design system is a library of BLOCKS. You build pages by PLACING blocks from this catalog - `<ds-name prop=\"...\">` in HTML, "
+        "`DS.html(\"name\", {props}, {slot: html})` in JS - and NEVER by writing a block's markup or classes yourself. "
+        "Raw HTML is allowed only inside `<ds-custom reason=\"...\">` for something no block covers; say so to the user when you use it. "
+        "If a block lacks a variant or prop the page needs, extend the block in `design-systems/" + ds["id"] + "/components|patterns|shells/<name>/` "
+        "(spec: `$TH_PROTOCOL_ROOT/docs/features/component-ds-format.md`) and rebuild with `python3 " + tools + "/build_ds.py --ds-dir design-systems/" + ds["id"] + "` - never fork it in a page. "
+        "Do NOT read the DS's CSS, templates or gallery to copy markup; the catalog is the whole vocabulary.\n\n"
+        "<design-system-catalog>\n" + cat + "\n</design-system-catalog>\n\n"
+        "This catalog is a SNAPSHOT from thread start; if the DS is rebuilt during this thread, re-Read `" + ds["catalog"] + "`."
+    )
+
+
 def _scoped_iteration_stub(prototype: Optional[str] = None,
                            project_root: Optional[str] = None, embedded=False) -> str:
     scope = f"`source/{prototype}/`" if prototype else "the committed prototype's `source/<slug>/` subtree"
@@ -1013,7 +1057,13 @@ def _scoped_iteration_stub(prototype: Optional[str] = None,
     # DS token + component sheet it @imports. Name both, and require reading
     # them BEFORE authoring any style.
     ds = _resolve_ds_binding(project_root, prototype)
-    if ds:
+    if ds and ds.get("kind") == "component":
+        ds_line = (
+            f"- This prototype is BOUND to COMPONENT design system `{ds['id']}` (`design-systems/{ds['id']}/`). "
+            f"Pages are composed by placing its blocks (the catalog below) - `<ds-*>` tags in HTML, `DS.html()` in JS - with the DS's `build/ds.css` linked and `build/ds-runtime.js` loaded in `<head>`. "
+            f"Do NOT write DS classes, tokens or markup by hand and do NOT read the DS CSS to copy it; page CSS may only place page-own classes."
+        )
+    elif ds:
         _ds_srcs = ((None if embedded else ds.get("designMd")), ds.get("stylesCss"), ds.get("allCss"))
         ds_reads = ", ".join(f"`{p}`" for p in _ds_srcs if p)
         ds_line = (
@@ -1063,6 +1113,14 @@ def _ds_guard_stub(project_root: Optional[str] = None,
     if not ds:
         return ""
     slug = prototype or "<slug>"
+    if ds.get("kind") == "component":
+        return f"""
+
+### DS GUARD - component design system `{ds['id']}` (deterministic, no subagent)
+- Every page is checked by `ds_check` against the block schemas. On Claude Code a hook runs it automatically after each page Write/Edit and returns the errors to you in the same turn: fix them before moving on. On other runtimes run it yourself after each page edit: `python3 $TH_PROTOCOL_ROOT/editor/tools/ds/ds_check.py --page <page.html>` (exit 0 = clean).
+- It fails on: an unknown block / prop / enum value, a missing required prop, a child in a slot that does not accept it, a raw element a block replaces (e.g. a raw `<select>`), DS classes written by hand, page CSS that selects a DS class, inline styles on blocks, `<ds-custom>` without a reason, and a page that uses blocks without linking `build/ds.css` + `build/ds-runtime.js`.
+- Markup your page JS builds at runtime is checked by the runtime itself: hand-built blocks land in `window.DS.violations` and the console (`[ds] hand-built-block ...`). `/__qa/run` surfaces them; zero is the bar.
+- Report `ds-custom` uses to the user in one line each (what it is and why no block fits); they are the candidates for new blocks."""
     return f"""
 
 ### DS GUARD - mandatory drift gate (this project is bound to design system `{ds['id']}`)
@@ -3143,7 +3201,11 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     _g = normalize_guards(guards)
     from context_policy import WRITING_DISCIPLINE
     _preamble += WRITING_DISCIPLINE
-    _catalog = _design_system_catalog(project_root, prototype) if _g["dsGuard"] else ""
+    # A component DS's catalog is the page vocabulary itself (agents place
+    # blocks from it), so it rides even when the DS guard is toggled off.
+    _ds_bound = _resolve_ds_binding(project_root, prototype)
+    _catalog = _design_system_catalog(project_root, prototype) \
+        if (_g["dsGuard"] or (_ds_bound and _ds_bound.get("kind") == "component")) else ""
     _visual_block = VISUAL_DELEGATION_DISCIPLINE
     if not _g["visual"]:
         _preamble = _strip_sections_by_header(_preamble, [_VISUAL_GATE_HEADER])

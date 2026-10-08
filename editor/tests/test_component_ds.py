@@ -1,0 +1,287 @@
+"""Component design system tooling: editor/tools/ds/{ds_model,ds_page,ds_check,build_ds}.py.
+
+Runs against the fixture DS in editor/tools/ds/fixtures/mini-project and against
+broken temp copies of it. The browser side lives in test-component-ds-runtime.cjs.
+"""
+
+import contextlib
+import io
+import json
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+
+TOOLS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools", "ds")
+sys.path.insert(0, os.path.abspath(TOOLS))
+
+import build_ds  # noqa: E402
+import ds_check  # noqa: E402
+import ds_model  # noqa: E402
+
+PROJECT = os.path.join(os.path.abspath(TOOLS), "fixtures", "mini-project")
+DS_DIR = os.path.join(PROJECT, "design-systems", "mini")
+
+
+def codes(findings, level=None):
+    return sorted(set(f.code for f in findings if level is None or f.level == level))
+
+
+class FixtureBuilds(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ds, wrote = build_ds.build(DS_DIR)
+        assert wrote
+
+    def test_clean(self):
+        self.assertEqual([f.fmt() for f in self.ds.findings if f.level != "info"], [])
+
+    def test_outputs(self):
+        for f in ("ds.css", "ds-runtime.js", "manifest.json", "CATALOG.md", "gallery.html"):
+            self.assertTrue(os.path.isfile(os.path.join(DS_DIR, "build", f)), f)
+
+    def test_css_layers_in_order(self):
+        css = open(os.path.join(DS_DIR, "build", "ds.css")).read()
+        self.assertIn("@layer tokens, base, layout, atoms, molecules, organisms, patterns, shells, themes;", css)
+        order = [css.index("@layer " + l + " {") for l in ("tokens", "base", "layout", "atoms", "molecules", "organisms", "patterns", "shells", "themes")]
+        self.assertEqual(order, sorted(order))
+        # contains-order inside a layer: icon before button (button contains icon)
+        self.assertLess(css.index("components/icon/style.css"), css.index("components/button/style.css"))
+
+    def test_runtime_payload_is_script_safe(self):
+        js = open(os.path.join(DS_DIR, "build", "ds-runtime.js")).read()
+        self.assertIn("DS.__load(", js)
+        self.assertIn('DS.behavior("filter-chip"', js)
+        self.assertIn('DS.service("toast"', js)
+        self.assertTrue(js.rstrip().endswith("DS.__boot();"))
+        payload = js[js.index("DS.__load(") + len("DS.__load("):]
+        self.assertNotIn("</script", payload.lower())
+
+    def test_catalog_signatures(self):
+        cat = open(os.path.join(DS_DIR, "build", "CATALOG.md")).read()
+        self.assertIn("<ds-filter-chip label! count:number size:m|s=m>", cat)
+        self.assertIn("<ds-card title> slots: default(any), actions(button)", cat)
+        self.assertIn("Replaces <select>.", cat)
+        self.assertIn("`DS.toast` Toast messages.", cat)
+        self.assertIn("## Icons (2; styles: filled, outline; default filled)", cat)
+
+    def test_manifest(self):
+        man = json.load(open(os.path.join(DS_DIR, "build", "manifest.json")))
+        self.assertEqual(man["blocks"]["button"]["rootClass"], "btn")
+        self.assertEqual(man["blocks"]["filter-bar"]["kind"], "patterns")
+        self.assertIn("edit", man["icons"]["outline"])
+        self.assertNotIn("fill=", man["icons"]["filled"]["edit"]["b"], "icon colour comes from currentColor")
+
+
+class PageChecks(unittest.TestCase):
+    def test_good_page(self):
+        ds, fs = ds_check.run(pages=[os.path.join(PROJECT, "source", "main", "index.html")])
+        self.assertIsNotNone(ds)
+        self.assertEqual(codes(fs, "error"), [])
+        self.assertEqual(codes(fs, "info"), ["ds-custom"])
+
+    def test_bad_page(self):
+        ds, fs = ds_check.run(pages=[os.path.join(PROJECT, "source", "main", "bad.html")])
+        self.assertEqual(codes(fs, "error"), sorted([
+            "bad-enum", "bad-prop-type", "custom-without-reason", "hand-built-block", "inline-style-on-block",
+            "missing-required", "missing-runtime", "page-css-touches-ds", "raw-replaced-element",
+            "slot-not-allowed", "unknown-block", "unknown-prop"]))
+        self.assertEqual(codes(fs, "warn"), ["hand-built-in-js", "raw-replaced-in-js", "unknown-token"])
+
+    def test_resolution_from_page_link(self):
+        self.assertEqual(os.path.normpath(ds_check.resolve_ds_dir(os.path.join(PROJECT, "source", "main", "index.html"))), os.path.normpath(DS_DIR))
+
+    def test_cli_exit_codes(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(ds_check.main(["--page", os.path.join(PROJECT, "source", "main", "index.html")]), 0)
+            self.assertEqual(ds_check.main(["--page", os.path.join(PROJECT, "source", "main", "bad.html"), "--json"]), 1)
+
+    def test_document_ds_is_skipped(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(tmp, "design-systems", "doc"))
+            json.dump({"id": "doc"}, open(os.path.join(tmp, "design-systems", "doc", "meta.json"), "w"))
+            os.makedirs(os.path.join(tmp, "source", "main"))
+            page = os.path.join(tmp, "source", "main", "a.html")
+            open(page, "w").write("<p>hi</p>")
+            ds, reason = ds_check.run(pages=[page])
+            self.assertIsNone(ds)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(ds_check.main(["--page", page]), 2)
+        finally:
+            shutil.rmtree(tmp)
+
+
+class BrokenDS(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.ds_dir = os.path.join(self.tmp, "mini")
+        shutil.copytree(DS_DIR, self.ds_dir, ignore=shutil.ignore_patterns("build"))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def put(self, rel, text):
+        with open(os.path.join(self.ds_dir, rel), "w") as f:
+            f.write(text)
+
+    def edit_json(self, rel, fn):
+        p = os.path.join(self.ds_dir, rel)
+        d = json.load(open(p))
+        fn(d)
+        json.dump(d, open(p, "w"))
+
+    def found(self):
+        return codes(ds_model.load(self.ds_dir).findings, "error")
+
+    def test_template_errors(self):
+        self.put("components/stack/template.html", '<div class="stack">{{#if gap}}<ds-slot></ds-slot></div>')
+        self.assertIn("template-error", self.found())
+
+    def test_unknown_template_name(self):
+        self.put("components/stack/template.html", '<div class="stack stack--{{gapp}}"><ds-slot></ds-slot></div>')
+        self.assertIn("template-unknown-name", self.found())
+
+    def test_multi_root(self):
+        self.put("components/stack/template.html", '<div class="stack"><ds-slot></ds-slot></div><div></div>')
+        self.assertIn("template-not-single-root", self.found())
+
+    def test_schema(self):
+        self.edit_json("components/stack/component.json", lambda d: d.update({"colour": "red"}))
+        self.assertIn("schema-invalid", self.found())
+
+    def test_duplicate_root_class(self):
+        self.edit_json("components/select/component.json", lambda d: d.update({"rootClass": "btn"}))
+        self.assertIn("duplicate-root-class", self.found())
+
+    def test_tokens_and_literals(self):
+        self.put("components/stack/style.css", ".stack { gap: var(--space-9); color: #ff0000; }\n")
+        f = self.found()
+        self.assertIn("token-undefined", f)
+        self.assertIn("raw-value-in-block-css", f)
+
+    def test_slot_mismatch(self):
+        self.put("components/stack/template.html", '<div class="stack stack--{{gap}}"></div>')
+        self.assertIn("schema-invalid", self.found())
+
+    def test_behavior_name(self):
+        self.put("components/filter-chip/behavior.js", 'DS.behavior("chip", {});\n')
+        self.assertIn("behavior-name", self.found())
+
+    def test_template_hand_builds_other_block(self):
+        self.put("components/card/template.html", '<section class="card"><button class="btn">x</button><ds-stack><ds-slot></ds-slot></ds-stack><ds-slot name="actions"></ds-slot></section>')
+        self.assertIn("hand-built-block", self.found())
+
+    def test_template_may_use_raw_replaced_elements(self):
+        # filter-chip's root is a raw <button> while ds-button replaces <button>: allowed in DS code
+        self.assertNotIn("raw-replaced-element", self.found())
+
+    def test_css_outside_block_warns(self):
+        self.put("components/stack/style.css", ".stack--s { gap: var(--space-2); }\n.stack .btn { margin: 0; }\n")
+        fs = ds_model.load(self.ds_dir).findings
+        self.assertIn("css-outside-block", codes(fs, "warn"))
+
+    def test_strict_build_refuses(self):
+        self.put("components/stack/template.html", "<div>")
+        ds, wrote = build_ds.build(self.ds_dir, strict=True)
+        self.assertFalse(wrote)
+        self.assertFalse(os.path.exists(os.path.join(self.ds_dir, "build")))
+
+
+class WovenIntegration(unittest.TestCase):
+    """serve.py endpoints + hook registration, capabilities preamble branch."""
+
+    @classmethod
+    def setUpClass(cls):
+        build_ds.build(DS_DIR)
+        editor = os.path.join(os.path.abspath(TOOLS), "..", "..")
+        for p in (editor, os.path.join(editor, "kinds")):
+            if p not in sys.path:
+                sys.path.insert(0, os.path.abspath(p))
+        import serve
+        import capabilities
+        cls.serve, cls.cap = serve, capabilities
+
+    def test_design_system_endpoints(self):
+        h = self.serve.H.__new__(self.serve.H)
+        out = {}
+        h._reply = lambda code, body: out.update(code=code, body=body)
+        orig = self.serve.resolve_project_root
+        self.serve.resolve_project_root = lambda qs, **kw: PROJECT
+        try:
+            h._design_system_get({})
+            item = out["body"]["items"][0]
+            self.assertEqual((item["kind"], item["hasStyles"], item["hasGallery"]), ("component", True, True))
+            h._design_system_get({"id": ["mini"]})
+            self.assertEqual(out["code"], 200)
+            self.assertEqual(out["body"]["kind"], "component")
+            self.assertIn("@layer tokens", out["body"]["trio"]["stylesCss"])
+        finally:
+            self.serve.resolve_project_root = orig
+
+    def test_hook_registered(self):
+        tmp = tempfile.mkdtemp()
+        orig = self.serve.INSTALL_ROOT
+        try:
+            os.makedirs(os.path.join(tmp, ".claude", "hooks"))
+            for n in ("require-orchestrator.sh", "ds-check-on-write.py"):
+                open(os.path.join(tmp, ".claude", "hooks", n), "w").write("#")
+            self.serve.INSTALL_ROOT = tmp
+            path = self.serve._ensure_harness_settings()
+            post = json.load(open(path))["hooks"]["PostToolUse"]
+            self.assertEqual(post[0]["matcher"], "Write|Edit|MultiEdit")
+            self.assertTrue(post[0]["hooks"][0]["command"].endswith("ds-check-on-write.py"))
+        finally:
+            self.serve.INSTALL_ROOT = orig
+            shutil.rmtree(tmp)
+
+    def test_guard_toggle_reaches_hook(self):
+        self.assertEqual(self.serve._apply_guard_env({}, {"dsGuard": False}).get("TH_DS_GUARD"), "0")
+        self.assertNotIn("TH_DS_GUARD", self.serve._apply_guard_env({"TH_DS_GUARD": "0"}, {"dsGuard": True}))
+
+    def test_preamble_branch(self):
+        b = self.cap._resolve_ds_binding(PROJECT, "main")
+        self.assertEqual(b["kind"], "component")
+        self.assertEqual(b["catalog"], "design-systems/mini/build/CATALOG.md")
+        cat = self.cap._design_system_catalog(PROJECT, "main")
+        self.assertIn("<design-system-catalog>", cat)
+        self.assertIn("<ds-filter-chip label!", cat)
+        self.assertNotIn("styles.css", cat)
+        guard = self.cap._ds_guard_stub(PROJECT, "main")
+        self.assertIn("ds_check.py --page", guard)
+        self.assertNotIn("ds-guardian", guard)
+
+    def test_document_ds_unchanged(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            d = os.path.join(tmp, "design-systems", "doc")
+            os.makedirs(d)
+            open(os.path.join(d, "DESIGN.md"), "w").write("# Doc DS")
+            json.dump({"id": "doc"}, open(os.path.join(d, "meta.json"), "w"))
+            b = self.cap._resolve_ds_binding(tmp, None)
+            self.assertEqual(b["kind"], "document")
+            self.assertIn("<design-system-index>", self.cap._design_system_catalog(tmp, None))
+            self.assertIn("ds-guardian", self.cap._ds_guard_stub(tmp, None))
+        finally:
+            shutil.rmtree(tmp)
+
+
+class TemplateGrammar(unittest.TestCase):
+    def test_render_matches_runtime_rules(self):
+        nodes = ds_model.compile_template('<a class="x x--{{v}}">{{#if n == "2"}}two{{else}}other{{/if}}{{#each items as it}}[{{it.k}}{{@index}}]{{/each}}{{icon}}</a>')
+        out = ds_model.render_template(nodes, {"v": "a", "n": 2, "items": [{"k": "p"}, {"k": "q"}], "icon": "<b>"})
+        self.assertEqual(out, '<a class="x x--a">two[p0][q1]&lt;b&gt;</a>')
+
+    def test_icon_helper_needs_args(self):
+        nodes = ds_model.compile_template('{{icon name "outline"}}')
+        self.assertEqual(nodes[0]["t"], "icon")
+        self.assertEqual(ds_model.compile_template("{{icon}}")[0]["t"], "var")
+
+    def test_no_raw_output(self):
+        with self.assertRaises(ds_model.TemplateError):
+            ds_model.compile_template("{{{html}}}")
+
+
+if __name__ == "__main__":
+    unittest.main()

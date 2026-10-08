@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bad</title>
+<link rel="stylesheet" href="../../design-systems/mini/build/ds.css">
+<style>
+.btn { border-radius: 0; }
+.mine { color: var(--color-nope); }
+</style>
+</head>
+<body>
+<ds-filter-chip count="x" size="xl"></ds-filter-chip>
+<ds-buton>typo</ds-buton>
+<select><option>raw</option></select>
+<div class="btn btn--primary">fake button</div>
+<ds-field label="Status"><ds-button>not a select</ds-button></ds-field>
+<ds-button variant="text" style="color:red">Delete everything right now please</ds-button>
+<ds-stack gap="s" wobble="1"><p>x</p></ds-stack>
+<ds-custom><div>no reason</div></ds-custom>
+<script>
+  document.body.insertAdjacentHTML("beforeend", '<button class="filter-chip">js chip</button>' + DS.html("nope", {}));
+</script>
+</body>
+</html>

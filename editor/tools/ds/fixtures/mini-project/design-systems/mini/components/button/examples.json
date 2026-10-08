@@ -1,0 +1,25 @@
+[
+  {
+    "title": "Primary",
+    "props": {
+      "label": "Save"
+    }
+  },
+  {
+    "title": "Outline with icon",
+    "props": {
+      "variant": "outline",
+      "icon": "edit",
+      "label": "Edit"
+    }
+  },
+  {
+    "title": "Text",
+    "props": {
+      "variant": "text"
+    },
+    "slots": {
+      "default": "Clear"
+    }
+  }
+]

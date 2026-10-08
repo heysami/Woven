@@ -15074,6 +15074,12 @@ def _apply_guard_env(env: dict, guards: dict) -> dict:
             env["TH_VISUAL_DENY"] = "0"
         else:
             env.pop("TH_VISUAL_GUARD", None)
+        # Same for the DS check: .claude/hooks/ds-check-on-write.py stays
+        # silent on a thread whose "Checks" dropdown dropped the DS gate.
+        if guards and not guards.get("dsGuard", True):
+            env["TH_DS_GUARD"] = "0"
+        else:
+            env.pop("TH_DS_GUARD", None)
     except Exception:
         pass
     return env
@@ -15276,6 +15282,16 @@ def _ensure_harness_settings() -> "str | None":
             "matcher": "Bash",
             "hooks":   [{"type": "command", "command": shlex.quote(tree_hook)}],
         })
+    # Component design systems: after a page write, run ds_check on it and
+    # hand the errors back in the same turn; after a block source edit,
+    # rebuild the DS's build/ so every page picks the change up. Silent for
+    # document DSes and non-DS projects. Optional, same as the hooks above.
+    ds_hook = os.path.join(INSTALL_ROOT, ".claude", "hooks", "ds-check-on-write.py")
+    if os.path.isfile(ds_hook):
+        settings["hooks"]["PostToolUse"] = [{
+            "matcher": "Write|Edit|MultiEdit",
+            "hooks":   [{"type": "command", "command": shlex.quote(ds_hook)}],
+        }]
     # Short-circuit if the file already matches - avoid disk churn at every
     # spawn (a typical session triggers many spawns).
     try:
@@ -21093,8 +21109,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                         # orchestrators allowed). None = auto (agent decides).
                         "buildPolicy": _normalize_build_policy(meta.get("buildPolicy")),
                         "exists": True,
+                        # "document" (DESIGN.md + styles.css the agent reads) or
+                        # "component" (blocks the agent places; build/ holds the
+                        # generated bundle). docs/features/component-ds-format.md
+                        "kind": meta.get("kind") or "document",
                         "hasGallery": os.path.isfile(os.path.join(sub, "gallery.html")),
-                        "hasStyles":  os.path.isfile(os.path.join(sub, "styles.css")),
+                        "hasStyles":  os.path.isfile(os.path.join(sub, "styles.css"))
+                                      or (meta.get("kind") == "component" and os.path.isfile(os.path.join(sub, "build", "ds.css"))),
                         "hasDesignMd": os.path.isfile(os.path.join(sub, "DESIGN.md")),
                         "fonts": [f["family"] for f in all_fonts if f["ds"] == entry],
                     })
@@ -21106,18 +21127,23 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Not "built" until the full rendered trio is on disk. A bare directory
         # (e.g. only _build/ from an aborted/in-progress build) does not count
         # as a published design system.
+        # A COMPONENT DS has no hand-written styles.css: its stylesheet is the
+        # generated build/ds.css (build_ds.py also mirrors the gallery to the
+        # DS root, so gallery.html exists for both kinds).
+        meta         = self._design_system_read_meta(ds_dir) if os.path.isdir(ds_dir) else {}
+        styles_name  = "build/ds.css" if meta.get("kind") == "component" else "styles.css"
         built = os.path.isdir(ds_dir) and all(
             os.path.isfile(os.path.join(ds_dir, n))
-            for n in ("styles.css", "gallery.html", "DESIGN.md")
+            for n in (styles_name, "gallery.html", "DESIGN.md")
         )
         if not built:
             return self._reply(404, {"error": "design system not found", "id": ds_id})
-        styles_css   = self._design_system_read_file(ds_dir, "styles.css")
+        styles_css   = self._design_system_read_file(ds_dir, styles_name)
         gallery_html = self._design_system_read_file(ds_dir, "gallery.html")
         design_md    = self._design_system_read_file(ds_dir, "DESIGN.md")
-        meta         = self._design_system_read_meta(ds_dir)
         return self._reply(200, {
             "id": ds_id,
+            "kind": meta.get("kind") or "document",
             "version": meta.get("version") or "",
             "label":   meta.get("label") or "",
             "genre":   meta.get("genre") or "",

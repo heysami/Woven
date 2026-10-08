@@ -1,0 +1,14 @@
+[
+  {
+    "title": "Default",
+    "props": {
+      "title": "Orders"
+    },
+    "frame": {
+      "height": 240
+    },
+    "slots": {
+      "default": "<p>Content</p>"
+    }
+  }
+]

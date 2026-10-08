@@ -1,0 +1,44 @@
+{
+  "name": "button",
+  "title": "Button",
+  "layer": "atom",
+  "oneLine": "Action button.",
+  "notForUseWhen": "Navigation: use a link.",
+  "replaces": [
+    "button"
+  ],
+  "rootClass": "btn",
+  "props": {
+    "variant": {
+      "type": "enum",
+      "values": [
+        "primary",
+        "outline",
+        "text"
+      ],
+      "default": "primary"
+    },
+    "icon": {
+      "type": "string"
+    },
+    "disabled": {
+      "type": "boolean"
+    },
+    "label": {
+      "type": "string"
+    }
+  },
+  "slots": {
+    "default": {
+      "accepts": "text"
+    }
+  },
+  "contains": [
+    "icon"
+  ],
+  "copy": {
+    "label": {
+      "maxWords": 3
+    }
+  }
+}

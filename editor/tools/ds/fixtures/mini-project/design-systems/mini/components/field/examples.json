@@ -1,0 +1,12 @@
+[
+  {
+    "title": "Default",
+    "props": {
+      "label": "Status",
+      "hint": "Pick one"
+    },
+    "slots": {
+      "default": "<ds-select options=\"Open,Closed\"></ds-select>"
+    }
+  }
+]
