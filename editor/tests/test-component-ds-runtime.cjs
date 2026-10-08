@@ -109,6 +109,16 @@ const url = p => 'file://' + path.join(PROJECT, p);
   }));
   assert.ok(v.includes('hand-built-block'), 'hand-built .btn reported: ' + v);
   assert.ok(v.includes('raw-replaced-element'), 'raw <select> reported: ' + v);
+  // page content placed in a block's slot is still page content; a block's own
+  // template markup (the select inside ds-select, inside ds-field) is not
+  const slotted = await page.evaluate(() => new Promise(res => {
+    DS.violations.length = 0;
+    const host = document.getElementById('dyn');
+    host.insertAdjacentHTML('beforeend', '<ds-card title="S"><ds-field label="F"><select id="slotted-raw"><option>x</option></select></ds-field><ds-field label="G"><ds-select options="a,b" id="ok-select"></ds-select></ds-field></ds-card>');
+    setTimeout(() => res(DS.violations.map(x => x.code + ':' + (x.element && x.element.id))), 400);
+  }));
+  assert.ok(slotted.includes('raw-replaced-element:slotted-raw'), 'raw select slotted into a block is caught: ' + slotted);
+  assert.ok(!slotted.some(x => x.endsWith(':ok-select')), 'template-owned <select> is not flagged: ' + slotted);
 
   // 7. tags inserted after load expand via the observer
   const late = await page.evaluate(() => new Promise(res => {

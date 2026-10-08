@@ -29,7 +29,7 @@
   var seq = 0;                 // instance id counter (data-ds-i)
   var readyFns = [];
   var booted = false, ready = false;
-  var warned = typeof WeakSet === "function" ? new WeakSet() : null;
+  var warned = typeof WeakMap === "function" ? new WeakMap() : null;   // element -> {code: 1}
 
   var PASSTHROUGH = { id: 1, "class": 1, style: 1, hidden: 1, title: 1, role: 1, tabindex: 1, lang: 1, dir: 1 };
   var STATE_ATTRS = { "aria-expanded": 1, "aria-selected": 1, "aria-pressed": 1, "aria-checked": 1, "aria-hidden": 0 };
@@ -50,7 +50,11 @@
   function kebab(k) { return String(k).replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase(); }
   function isDsTag(el) { return el && el.nodeType === 1 && el.localName.indexOf("ds-") === 0 && el.localName !== "ds-slot"; }
   function report(code, msg, el) {
-    if (el && warned) { if (warned.has(el)) return; warned.add(el); }
+    if (el && warned) {
+      var seen = warned.get(el) || {};
+      if (seen[code]) return;
+      seen[code] = 1; warned.set(el, seen);
+    }
     DS.violations.push({ code: code, message: msg, element: el || null });
     try { console.warn("[ds] " + code + ": " + msg, el || ""); } catch (_) {}
   }
@@ -665,7 +669,7 @@
       if (b.rootClass) roots[b.rootClass] = name;
       (b.replaces || []).forEach(function (t) { replaced[t] = replaced[t] || name; });
     }
-    var inCustom = 0, insideBlock = [];
+    var inCustom = 0;
     var w = doc.createTreeWalker(doc.body, 1 | 128, null, false), n;
     while ((n = w.nextNode())) {
       if (n.nodeType === 8) {
@@ -675,17 +679,47 @@
       }
       if (n.hasAttribute("data-ds")) continue;
       if (n.closest("[data-ds-gallery-chrome]")) continue;
-      var cl = n.classList;
-      for (var i = 0; i < cl.length; i++) if (roots[cl[i]]) {
-        report("hand-built-block", "." + cl[i] + " written by hand; use <ds-" + roots[cl[i]] + "> or DS.html('" + roots[cl[i]] + "')" + (inCustom ? " (inside ds-custom)" : ""), n);
-        break;
-      }
-      var tg = n.localName;
-      if (!inCustom && replaced[tg] && !n.closest("[data-ds]") && !(tg === "input" && n.type === "hidden")) {
-        report("raw-replaced-element", "raw <" + tg + ">; use <ds-" + replaced[tg] + ">", n);
-      }
+      var tg = n.localName, cl = n.classList, hit = null;
+      for (var i = 0; i < cl.length; i++) if (roots[cl[i]]) { hit = cl[i]; break; }
+      var raw = !inCustom && replaced[tg] && !(tg === "input" && n.type === "hidden");
+      if (!hit && !raw) continue;
+      // Markup a block's own template produced is DS code (validated at
+      // build time). Only page content - outside every block, or placed into
+      // a block's slot - can be hand-built.
+      if (templateOwned(n)) continue;
+      if (hit) report("hand-built-block", "." + hit + " written by hand; use <ds-" + roots[hit] + "> or DS.html('" + roots[hit] + "')" + (inCustom ? " (inside ds-custom)" : ""), n);
+      if (raw) report("raw-replaced-element", "raw <" + tg + ">; use <ds-" + replaced[tg] + ">", n);
     }
     return DS.violations;
+  }
+  // True when `el` was rendered by a block TEMPLATE, false when it is page
+  // content (outside every block, or placed into a slot). Walk up the
+  // enclosing blocks: if el sits in a slot region of block B, its author is
+  // whoever wrote B's tag, so keep climbing; the first enclosing block whose
+  // slots do NOT hold el is the template that rendered it.
+  function blockAncestor(n) {
+    n = n.parentNode;
+    while (n && n.nodeType === 1 && !n.hasAttribute("data-ds")) n = n.parentNode;
+    return n && n.nodeType === 1 ? n : null;
+  }
+  function inSlotOf(el, root) {
+    var id = root.getAttribute("data-ds-i");
+    if (!id) return false;
+    var startRe = new RegExp("^ds-slot:[\\w-]+#" + id + "$"), endText = "/ds-slot#" + id;
+    for (var node = el; node && node !== root; node = node.parentNode) {
+      for (var sib = node.previousSibling; sib; sib = sib.previousSibling) {
+        if (sib.nodeType !== 8) continue;
+        if (sib.nodeValue === endText) break;
+        if (startRe.test(sib.nodeValue)) return true;
+      }
+    }
+    return false;
+  }
+  function templateOwned(el) {
+    for (var root = blockAncestor(el); root; root = blockAncestor(root)) {
+      if (!inSlotOf(el, root)) return true;
+    }
+    return false;
   }
 
   // ── boot ───────────────────────────────────────────────────────────────────

@@ -61,7 +61,7 @@ design-systems/<id>/
 | Shared thing | How |
 |---|---|
 | Look | blocks use token variables only; a theme or brand is a token override |
-| CSS order | `@layer tokens, base, atoms, molecules, organisms, patterns, shells, themes`, so order is explicit and never depends on file position |
+| CSS order | one generated stylesheet: tokens, foundations, blocks (contained blocks first), themes; specificity works as in any hand-written file |
 | Parent styling a child | the parent owns the rule and declares `contains: [...]` |
 | Blocks talking to each other | attributes plus events: `<ds-filter-chip for="apps">` filters `<ds-data-grid id="apps">`, and the grid emits `ds:sort`, `ds:page`, `ds:select` |
 | Shared functions | services: `DS.toast()`, `DS.overlay.open()`, `DS.icon()`, `DS.format.date()` |

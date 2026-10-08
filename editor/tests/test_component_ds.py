@@ -41,13 +41,16 @@ class FixtureBuilds(unittest.TestCase):
         for f in ("ds.css", "ds-runtime.js", "manifest.json", "CATALOG.md", "gallery.html"):
             self.assertTrue(os.path.isfile(os.path.join(DS_DIR, "build", f)), f)
 
-    def test_css_layers_in_order(self):
+    def test_css_order(self):
         css = open(os.path.join(DS_DIR, "build", "ds.css")).read()
-        self.assertIn("@layer tokens, base, layout, atoms, molecules, organisms, patterns, shells, themes;", css)
-        order = [css.index("@layer " + l + " {") for l in ("tokens", "base", "layout", "atoms", "molecules", "organisms", "patterns", "shells", "themes")]
-        self.assertEqual(order, sorted(order))
-        # contains-order inside a layer: icon before button (button contains icon)
+        self.assertNotIn("@layer", css, "one plain stylesheet: specificity + order like a hand-written file")
+        order = [css.index(m) for m in ("tokens/tokens.css", "foundations/base.css", "components/stack/style.css",
+                                        "components/button/style.css", "components/card/style.css", "shells/app/style.css", "themes/dark.css")]
+        self.assertEqual(order, sorted(order), "tokens, foundations, blocks by layer rank, themes")
+        # contains comes first: button (atom) contains icon (atom)
         self.assertLess(css.index("components/icon/style.css"), css.index("components/button/style.css"))
+        # a parent's context rule lands after the child it styles: card contains button
+        self.assertLess(css.index(".btn--primary {"), css.index(".card__actions .btn {"))
 
     def test_runtime_payload_is_script_safe(self):
         js = open(os.path.join(DS_DIR, "build", "ds-runtime.js")).read()
@@ -75,6 +78,23 @@ class FixtureBuilds(unittest.TestCase):
 
 
 class PageChecks(unittest.TestCase):
+    def test_class_roots_catch_hand_built_parts(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            proj = os.path.join(tmp, "p")
+            shutil.copytree(PROJECT, proj, ignore=shutil.ignore_patterns("build"))
+            d = os.path.join(proj, "design-systems", "mini", "components", "select", "component.json")
+            spec = json.load(open(d)); spec["classRoots"] = ["select-panel"]; json.dump(spec, open(d, "w"))
+            page = os.path.join(proj, "source", "main", "x.html")
+            open(page, "w").write('<link rel="stylesheet" href="../../design-systems/mini/build/ds.css">'
+                                  '<script src="../../design-systems/mini/build/ds-runtime.js"></script>'
+                                  '<div class="select-panel">hand</div>')
+            ds, fs = ds_check.run(pages=[page])
+            self.assertIn("hand-built-block", codes(fs, "error"))
+        finally:
+            shutil.rmtree(tmp)
+
+
     def test_good_page(self):
         ds, fs = ds_check.run(pages=[os.path.join(PROJECT, "source", "main", "index.html")])
         self.assertIsNotNone(ds)
@@ -170,7 +190,8 @@ class BrokenDS(unittest.TestCase):
         self.assertIn("behavior-name", self.found())
 
     def test_template_hand_builds_other_block(self):
-        self.put("components/card/template.html", '<section class="card"><button class="btn">x</button><ds-stack><ds-slot></ds-slot></ds-stack><ds-slot name="actions"></ds-slot></section>')
+        # card does not list filter-chip in `contains`, so it may not write its classes
+        self.put("components/card/template.html", '<section class="card"><span class="filter-chip">x</span><ds-stack><ds-slot></ds-slot></ds-stack><ds-slot name="actions"></ds-slot></section>')
         self.assertIn("hand-built-block", self.found())
 
     def test_template_may_use_raw_replaced_elements(self):
@@ -181,6 +202,30 @@ class BrokenDS(unittest.TestCase):
         self.put("components/stack/style.css", ".stack--s { gap: var(--space-2); }\n.stack .btn { margin: 0; }\n")
         fs = ds_model.load(self.ds_dir).findings
         self.assertIn("css-outside-block", codes(fs, "warn"))
+
+    def test_contains_allows_composition_in_templates(self):
+        # same-element composition (.card on a stat block's root) and part reuse
+        os.makedirs(os.path.join(self.ds_dir, "components", "stat"))
+        json.dump({"name": "stat", "layer": "molecule", "oneLine": "Number tile.", "rootClass": "stat",
+                   "props": {"value": {"type": "string"}}, "contains": ["card"]},
+                  open(os.path.join(self.ds_dir, "components", "stat", "component.json"), "w"))
+        self.put("components/stat/template.html", '<div class="card stat"><h3 class="card__title">{{value}}</h3></div>')
+        json.dump([{"title": "x", "props": {"value": "3"}}], open(os.path.join(self.ds_dir, "components", "stat", "examples.json"), "w"))
+        self.assertNotIn("hand-built-block", self.found())
+        self.edit_json("components/stat/component.json", lambda d: d.update({"contains": []}))
+        self.assertIn("hand-built-block", self.found())
+
+    def test_class_roots(self):
+        self.edit_json("components/select/component.json", lambda d: d.update({"classRoots": ["select-panel"]}))
+        ds = ds_model.load(self.ds_dir)
+        self.assertIs(ds.owner_of_class("select-panel__item"), ds.blocks["select"])
+        self.assertEqual(codes(ds.findings, "error"), [])
+        self.edit_json("components/card/component.json", lambda d: d.update({"classRoots": ["select-panel"]}))
+        self.assertIn("duplicate-root-class", self.found())
+
+    def test_knob_fallback_is_allowed(self):
+        self.put("components/stack/style.css", ".stack { display: grid; grid-template-columns: repeat(var(--stack-cols, 1), 1fr); }\n.stack--s { gap: var(--space-2); }\n.stack--m { gap: var(--space-3); }\n")
+        self.assertNotIn("token-undefined", self.found())
 
     def test_strict_build_refuses(self):
         self.put("components/stack/template.html", "<div>")
@@ -216,7 +261,7 @@ class WovenIntegration(unittest.TestCase):
             h._design_system_get({"id": ["mini"]})
             self.assertEqual(out["code"], 200)
             self.assertEqual(out["body"]["kind"], "component")
-            self.assertIn("@layer tokens", out["body"]["trio"]["stylesCss"])
+            self.assertIn("/* ==== blocks ==== */", out["body"]["trio"]["stylesCss"])
         finally:
             self.serve.resolve_project_root = orig
 

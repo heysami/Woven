@@ -18,12 +18,12 @@ import re
 from html.parser import HTMLParser
 
 FORMAT = 1
-LAYERS = ["tokens", "base", "layout", "atoms", "molecules", "organisms", "patterns", "shells", "themes"]
-LAYER_OF = {"layout": "layout", "atom": "atoms", "molecule": "molecules", "organism": "organisms",
-            "pattern": "patterns", "shell": "shells"}
+# Block `layer` groups the catalog and gallery and ranks CSS order; build/ds.css
+# itself is ONE plain stylesheet (no CSS @layer).
+LAYER_RANK = ["layout", "atom", "molecule", "organism", "pattern", "shell"]
 BLOCK_DIRS = {"components": ("layout", "atom", "molecule", "organism"), "patterns": ("pattern",), "shells": ("shell",)}
 PROP_TYPES = ("string", "number", "boolean", "enum", "list", "json")
-SPEC_FIELDS = {"name", "title", "layer", "oneLine", "useWhen", "notForUseWhen", "replaces", "rootClass", "props",
+SPEC_FIELDS = {"name", "title", "layer", "oneLine", "useWhen", "notForUseWhen", "replaces", "rootClass", "classRoots", "props",
                "slots", "contains", "events", "states", "copy", "a11y", "desc"}
 PROP_FIELDS = {"type", "values", "required", "default", "desc"}
 COPY_FIELDS = {"maxWords", "maxChars", "case"}
@@ -289,6 +289,9 @@ def selector_classes(css):
 
 CLASS_IN_SEL_RE = re.compile(r"\.(-?[A-Za-z_][\w-]*)")
 VAR_USE_RE = re.compile(r"var\(\s*(--[\w-]+)")
+# var(--x) with NO fallback: must be defined somewhere in the DS. var(--x, 4)
+# is a knob (a page or parent may set it; the fallback is the default).
+VAR_REQUIRED_RE = re.compile(r"var\(\s*(--[\w-]+)\s*\)")
 VAR_DEF_RE = re.compile(r"(?<![\w-])(--[\w-]+)\s*:")
 
 
@@ -331,14 +334,16 @@ class Block(object):
         self.template_classes = set()
 
     @property
-    def layer(self):
-        return LAYER_OF.get(self.spec.get("layer"), "atoms")
+    def class_roots(self):
+        roots = [self.root_class] if self.root_class else []
+        roots += [r for r in (self.spec.get("classRoots") or []) if isinstance(r, str)]
+        return roots
 
     def owns_class(self, c):
-        rc = self.root_class
-        if not rc:
-            return False
-        return c == rc or c.startswith(rc + "__") or c.startswith(rc + "--")
+        for rc in self.class_roots:
+            if c == rc or c.startswith(rc + "__") or c.startswith(rc + "--"):
+                return True
+        return False
 
 
 class DesignSystem(object):
@@ -447,7 +452,7 @@ def _validate_spec(ds, b, path):
                 acc = sp.get("accepts", "any")
                 if not (acc in ("any", "text") or isinstance(acc, list)):
                     ds.add("error", "schema-invalid", "slot '" + sn + "': accepts must be any|text|[blocks]", path)
-    for fld in ("replaces", "contains", "events", "states"):
+    for fld in ("replaces", "contains", "events", "states", "classRoots"):
         v = s.get(fld, [])
         if not isinstance(v, list):
             ds.add("error", "schema-invalid", fld + " must be a list", path)
@@ -510,7 +515,7 @@ def load(ds_dir):
             sp = os.path.join(d, "style.css")
             if os.path.isfile(sp):
                 b.style = sp
-                ds.css_files.append((b.layer, sp))
+                ds.css_files.append(("block", sp))
             bp = os.path.join(d, "behavior.js")
             if os.path.isfile(bp):
                 b.behavior = bp
@@ -556,14 +561,14 @@ def load(ds_dir):
             rc = first[0] if first else None
         b.root_class = rc if rc and "{{" not in rc else None
 
-    # root classes must be unique
+    # root classes (rootClass + classRoots) must be unique across blocks
     seen = {}
     for b in ds.blocks.values():
-        if b.root_class:
-            if b.root_class in seen:
-                ds.add("error", "duplicate-root-class", "'." + b.root_class + "' is the root class of both " + seen[b.root_class] + " and " + b.name,
+        for rc in b.class_roots:
+            if rc in seen and seen[rc] != b.name:
+                ds.add("error", "duplicate-root-class", "'." + rc + "' is a class root of both " + seen[rc] + " and " + b.name,
                        os.path.join(b.dir, "component.json"))
-            seen[b.root_class] = b.name
+            seen[rc] = b.name
 
     # icons
     for p in sorted(glob.glob(os.path.join(ds.dir, "icons", "*", "*.svg"))):
@@ -682,9 +687,9 @@ def _check_ds(ds):
             if b.style == p:
                 owner = b
         for i, line in enumerate(clean.split("\n")):
-            for v in VAR_USE_RE.findall(line):
+            for v in VAR_REQUIRED_RE.findall(line):
                 if v not in ds.tokens:
-                    ds.add("error", "token-undefined", v + " is used but never defined in the DS", p, i + 1)
+                    ds.add("error", "token-undefined", v + " is used without a fallback but never defined in the DS", p, i + 1)
             if layer not in ("tokens", "themes") and COLOR_LITERAL_RE.search(line):
                 ds.add("error", "raw-value-in-block-css", "colour literal outside tokens/themes: " + line.strip()[:80], p, i + 1)
         if owner:

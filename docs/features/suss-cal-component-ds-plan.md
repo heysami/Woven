@@ -70,7 +70,7 @@ design-systems/suss/        converted in place inside the copy (same id, page li
 | Shared thing | How |
 |---|---|
 | Look | Every `style.css` uses token variables only, from one `tokens.css`. A brand change is a token change. |
-| CSS order | `@layer tokens, base, atoms, molecules, organisms, patterns, shells`. This ends the "later rule overrides earlier rule" fights (for example `.badge` set to 26px, then 20px further down the file). |
+| CSS order | One generated stylesheet: tokens, foundations, blocks (contained blocks first), themes. Specificity works as in the legacy single file. |
 | Parent styling a child | The parent owns the rule. `.modal__actions .btn` lives in the modal's CSS, and modal's `component.json` declares `contains: [button]`. |
 | Blocks talking to each other | Through attributes and events. `<ds-filter-chip for="apps" field="status">` filters `<ds-data-grid id="apps">`. The grid emits `ds:sort`, `ds:page` and `ds:select`, and page JS listens to the same events. |
 | Common functions | Services: `DS.toast()`, `DS.overlay.open()`, `DS.format.date()`, `DS.icon()`. Each is written once and used by every block. |
@@ -91,7 +91,7 @@ Use the existing Duplicate action on the projects screen to create `suss-cal-lib
 - **Icons:** build the icon service on Fluent, with filled as the default and outline as an option. Map every Feather icon to its Fluent equivalent.
 
 ### 2. Split the CSS into blocks (no visual change)
-A tool sorts every rule in `styles.css` and `app-shell.css` into the block that owns it, based on the subject's class. Parent-context rules go to the parent. The output is bundled in layer order.
+A tool sorts every rule in `styles.css` and `app-shell.css` into the block that owns it, based on the subject's class. Parent-context rules go to the parent. The output is bundled in the generated CSS order (contained blocks first).
 
 Check: the gallery and all 62 pages must screenshot pixel-identical before and after. This is the riskiest step, so it runs alone, before anything else changes.
 

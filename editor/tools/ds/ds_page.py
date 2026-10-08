@@ -145,7 +145,10 @@ class _Checker(HTMLParser):
             ob = self.ds.owner_of_class(c)
             if not ob:
                 continue
-            if self.mode == "template" and owner is ob:
+            # A template may use its own classes, and classes of blocks it
+            # declares in `contains` (same-element composition such as
+            # .card.stat-card, or deliberate part reuse such as .acc__title).
+            if self.mode == "template" and owner and (ob is owner or ob.name in (owner.spec.get("contains") or [])):
                 continue
             self.add("warn" if inc else "error", "hand-built-block",
                      "." + c + " is part of ds-" + ob.name + "; place <ds-" + ob.name + "> instead of writing its markup")
