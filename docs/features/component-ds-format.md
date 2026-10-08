@@ -95,6 +95,7 @@ components/<name>/
 | `slots` | `accepts`: `"any"`, `"text"` (text and inline markup only), or a list of block names. No `slots` key means the block takes no children. |
 | `contains` | Blocks this block builds on: nested as `<ds-*>` tags, composed on the same element (`.card.stat-card`), or reusing their part classes (`.acc__title`). Its template may use the classes of every block listed here. Also orders the CSS (contained blocks first). |
 | `events` | Custom events the behavior dispatches (all prefixed `ds:`). |
+| `parts` | Optional `{name: description}`. Named inner elements a page may set attributes on (`input:id="amount"`). The template marks each one with `data-ds-part="name"`, exactly where it should land. |
 | `states` | Runtime state classes the behavior toggles. Never persisted. |
 | `copy` | Content rules per prop: `maxWords`, `maxChars`, `case` (`title`, `sentence`). |
 
@@ -106,11 +107,15 @@ Exactly **one root element**. The syntax is a small logic-less subset:
 
 | Syntax | Meaning |
 |---|---|
-| `{{prop}}` | HTML-escaped value. No raw-HTML form exists; markup goes through slots. |
-| `{{#if prop}}...{{else}}...{{/if}}` | Truthy: non-empty string or list, `true`, a non-zero number. |
-| `{{#if prop == "value"}}` | Equality with a string literal. `!=` also works. |
-| `{{#each list as item}}...{{item}} {{item.key}} {{@index}}...{{/each}}` | Loop over a `list` or `json` array. |
+| `{{prop}}` | HTML-escaped value. No raw-HTML form exists; markup goes through slots. `{{a.b}}` reads only an object's own keys (a string has no `.sub` or `.length`). |
+| `{{json prop}}` | The value as escaped JSON, for forwarding a `list` / `json` prop to a nested block: `<ds-table rows="{{json rows}}">`. |
+| `{{#if prop}}...{{else if other}}...{{else}}...{{/if}}` | Truthy: non-empty string or list, `true`, a non-zero number. An `{{else if}}` chain closes with one `{{/if}}`. |
+| `{{#if prop == "value"}}` / `{{#if item == prop}}` | Equality with a string literal or with another value. `!=` also works. |
+| `{{#each list as item}}...{{item}} {{item.key}} {{@index}} {{@first}} {{@last}}...{{/each}}` | Loop over a `list` or `json` array. |
+| `{{#if @slot.actions}}` / `{{#if @slot}}` | Whether the page gave that slot (or the default slot) any content. Use it to skip empty wrappers. |
 | `<ds-slot name="actions">fallback</ds-slot>` | Slot point. `<ds-slot></ds-slot>` is the default slot. Its content is the fallback when nothing is slotted. |
+| `<!--ds-slot name="rows"-->` | Slot point in TABLE context (inside `table`, `thead`, `tbody`, `tr`), where the HTML parser would move a `<ds-slot>` element out of the table. No fallback. |
+| `data-ds-part="input"` | Marks a named part (declared in `parts`) that pages may set attributes on. |
 | `{{icon name style}}` / `{{iconViewBox name style}}` | The inner SVG markup / viewBox of an icon from `icons/`. Arguments are prop names or `"literals"`; `style` is optional (default from `meta.defaultIconStyle`, else `filled`). A bare `{{icon}}` is just the prop named `icon`. |
 | `<ds-icon name="{{icon}}">` | Other blocks are used as tags. A template never hand-writes another block's markup. |
 
@@ -150,8 +155,10 @@ Raw HTML that is genuinely not in the DS:
 ### Attributes on a block tag
 
 - **Declared props** become template values. A block may declare a prop whose name is also a passthrough name (`title`, `style`, `role`, `hidden`, `tabindex`); on that block it is a prop. `id`, `class`, `slot`, `data-*` and `aria-*` are reserved and can never be props.
-- **Passthrough attributes** (`id`, `class`, `data-*`, `aria-*`, `hidden`, `title`, `role`, `tabindex`) are copied onto the root. `class` is appended, and it is for page placement only: page CSS must never restyle a DS class.
-- **`slot="name"`** on a child sends it to that slot.
+- **Passthrough attributes** (`id`, `class`, `data-*`, `aria-*`, inline `on*` handlers, `hidden`, `title`, `role`, `tabindex`) are copied onto the root. `class` is appended, and it is for page placement only: page CSS must never restyle a DS class.
+- **Part attributes** `part:attr` set an attribute on a named inner part: `<ds-input-affix input:id="amount" input:oninput="calc()">`. Allowed: the passthrough names (not `style`), plus `name`, `for`, `form`, `autocomplete`. In JS: `DS.html("input-affix", {"input:id": "amount"})`.
+- **`slot="name"`** on a child sends it to that slot. Table rows must be wrapped, because the HTML parser drops a `<tr>` outside a table: `<ds-table columns="A,B"><template slot="rows"><tr>...</tr></template></ds-table>`.
+- **Content for a slot the template does not render** for the current props (its point sits in a false `{{#if}}`) is dropped and reported as `slot-dropped`.
 - **Anything else** fails the check, and the runtime warns about it in the console.
 
 ### What the runtime produces
@@ -168,6 +175,7 @@ The tag is **replaced** by the template's root element. No wrapper element remai
 
 - `data-ds` names the block. `data-ds-props` holds the props that were set explicitly.
 - Slotted content sits between `<!--ds-slot:name-->` and `<!--/ds-slot-->` comments. Comments do not affect CSS selectors.
+- Props written in the page's markup are always kept in `data-ds-props`, so saving restores them. Props passed from JS (`DS.html`) over 2000 characters are left out (`$omitted`), because the page's JS supplies them on every load. Part attributes are kept under `$parts`.
 - `ds-custom` becomes `<!--ds-custom reason="..."-->...<!--/ds-custom-->` around its raw content.
 - Expansion is outer-first. Slotted nodes are moved, not cloned, so page JS references made before expansion survive.
 
@@ -221,6 +229,7 @@ Built-ins provided by the runtime itself: `DS.html`, `DS.expand`, `DS.serialize`
 4. `themes/*.css`
 
 - A rule where a parent styles a child (`.modal__actions .btn`) belongs in the **parent's** `style.css`, and the parent lists the child in `contains`. Because the parent comes later, it wins ties; a more specific child rule (`.btn--outline:hover`) still wins, as before.
+- `contains` may form a cycle (menu reuses `.ms-panel__hint` while multi-select contains menu). The CSS order then breaks the cycle at whichever block comes first by layer rank, then name. Prefer moving a genuinely shared class into the block both use.
 - `var(--x)` without a fallback must be defined somewhere in the DS. `var(--x, 4)` is a knob (a page or parent may set it) and needs no definition.
 - Avoid `!important` in blocks. Where one is unavoidable, specificity decides between `!important` rules, as in any stylesheet.
 - Pages never select a DS class (the checker enforces it); page CSS only places page-own classes.
@@ -251,6 +260,8 @@ The gallery renders every example. Each block needs at least one, and every enum
 | `page-css-touches-ds` (page `<style>` or linked local CSS selecting a DS class) | error | page |
 | `inline-style-on-block` | error | page |
 | `custom-without-reason` | error | page |
+| `unknown-part`, `bad-part-attr` (a `part:attr` the block does not declare or allow) | error | page, template |
+| `slot-dropped` (slot content the template did not render for these props) | warning | runtime only |
 | `ds-custom` present | info | page |
 | `copy-rule` | warn | page |
 | `schema-invalid`, `template-not-single-root`, `missing-example`, `duplicate-block-name`, `token-undefined`, `raw-value-in-block-css` | error | DS |

@@ -22,10 +22,12 @@ JS_RAW_TAG_RE = re.compile(r"<(select|button|table|textarea|input|dialog|details
 
 
 class _Frame(object):
-    __slots__ = ("tag", "block", "custom", "line")
+    __slots__ = ("tag", "block", "custom", "line", "proxy_slot")
 
-    def __init__(self, tag, block, custom, line):
-        self.tag, self.block, self.custom, self.line = tag, block, custom, line
+    def __init__(self, tag, block, custom, line, proxy_slot=None):
+        # proxy_slot: a <template slot="x"> inside a block; its children are
+        # that block's slot-x content (table rows only parse inside <template>)
+        self.tag, self.block, self.custom, self.line, self.proxy_slot = tag, block, custom, line, proxy_slot
 
 
 class _Checker(HTMLParser):
@@ -67,7 +69,8 @@ class _Checker(HTMLParser):
         if not parent:
             return
         slots = parent.spec.get("slots")
-        slot = "default" if is_text else attrs.get("slot", "default")
+        proxy = self.stack[-1].proxy_slot
+        slot = proxy or ("default" if is_text else attrs.get("slot", "default"))
         if not slots or slot not in slots:
             self.add("error", "no-slots" if not slots else "slot-not-allowed",
                      "ds-" + parent.name + (" takes no children" if not slots else " has no '" + slot + "' slot"))
@@ -91,6 +94,14 @@ class _Checker(HTMLParser):
     def _start(self, tag, attrs_list, push):
         attrs = dict((k, v if v is not None else "") for k, v in attrs_list)
         if self.raw_mode:
+            return
+        if tag == "template" and "slot" in attrs and self.parent_block() and not self.stack[-1].proxy_slot:
+            parent = self.parent_block()
+            slots = parent.spec.get("slots") or {}
+            if attrs["slot"] not in slots:
+                self.add("error", "slot-not-allowed", "ds-" + parent.name + " has no '" + attrs["slot"] + "' slot")
+            if push:
+                self.stack.append(_Frame(tag, parent, False, self.line(), proxy_slot=attrs["slot"]))
             return
         if tag == "ds-slot":
             if self.mode != "template":

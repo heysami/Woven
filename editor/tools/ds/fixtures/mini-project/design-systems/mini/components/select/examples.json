@@ -7,5 +7,15 @@
         "Two"
       ]
     }
+  },
+  {
+    "title": "With value",
+    "props": {
+      "options": [
+        "One",
+        "Two"
+      ],
+      "value": "Two"
+    }
   }
 ]

@@ -1,0 +1,9 @@
+[
+  {
+    "title": "Amount",
+    "props": {
+      "prefix": "$",
+      "placeholder": "0.00"
+    }
+  }
+]

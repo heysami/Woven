@@ -1,0 +1,20 @@
+{
+  "name": "panel",
+  "title": "Panel",
+  "layer": "pattern",
+  "oneLine": "Titled table panel.",
+  "rootClass": "panel",
+  "props": {
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "cols": {
+      "type": "list",
+      "required": true
+    }
+  },
+  "contains": [
+    "table"
+  ]
+}

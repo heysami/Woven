@@ -1,0 +1,14 @@
+[
+  {
+    "title": "Two columns",
+    "props": {
+      "columns": [
+        "Name",
+        "Status"
+      ]
+    },
+    "slots": {
+      "rows": "<tr><td>A</td><td>Open</td></tr>"
+    }
+  }
+]

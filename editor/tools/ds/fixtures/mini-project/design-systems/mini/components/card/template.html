@@ -1,4 +1,4 @@
 <section class="card">
-  {{#if title}}<header class="card__head"><h3 class="card__title">{{title}}</h3><div class="card__actions"><ds-slot name="actions"></ds-slot></div></header>{{/if}}
+  {{#if title}}<header class="card__head"><h3 class="card__title">{{title}}</h3>{{#if @slot.actions}}<div class="card__actions"><ds-slot name="actions"></ds-slot></div>{{/if}}</header>{{/if}}
   <ds-stack gap="s"><ds-slot>Nothing here yet.</ds-slot></ds-stack>
 </section>

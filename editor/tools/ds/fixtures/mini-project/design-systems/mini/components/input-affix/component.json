@@ -1,0 +1,18 @@
+{
+  "name": "input-affix",
+  "title": "Input affix",
+  "layer": "atom",
+  "oneLine": "Text input with a prefix.",
+  "rootClass": "affix",
+  "props": {
+    "prefix": {
+      "type": "string"
+    },
+    "placeholder": {
+      "type": "string"
+    }
+  },
+  "parts": {
+    "input": "the text input (id, name, on* handlers)"
+  }
+}

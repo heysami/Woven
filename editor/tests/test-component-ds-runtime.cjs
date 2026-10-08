@@ -159,6 +159,63 @@ const url = p => 'file://' + path.join(PROJECT, p);
   assert.ok(!saved.includes('data-ds') && !saved.includes('data-ds-boot'), 'no runtime residue in the saved file');
   assert.ok(saved.includes('<script src="../../design-systems/mini/build/ds-runtime.js"></script>'));
 
+  // 10. parts, on* handlers, table slots, @slot, comparisons, json forwarding
+  const f = await browser.newPage();
+  f.on('pageerror', e => errors.push(String(e)));
+  await f.goto(url('source/main/features.html'));
+  await f.waitForFunction(() => document.documentElement.classList.contains('ds-ready'));
+  const feat = await f.evaluate(() => {
+    const amount = document.getElementById('amount');
+    amount.value = '12'; amount.dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('go').click();
+    const t1 = document.getElementById('t1');
+    const ths = [...t1.querySelectorAll('th')];
+    const pan = document.getElementById('pan');
+    return {
+      part: [amount.className, amount.getAttribute('data-qa'), amount.closest('.affix') !== null, window.__typed],
+      clicked: window.__clicked,
+      rows: t1.querySelectorAll('tbody tr').length, cells: t1.querySelectorAll('tbody td').length,
+      last: ths.map(th => th.classList.contains('tbl__th--last')),
+      noProto: t1.querySelectorAll('small').length,
+      selected: document.getElementById('sel').value,
+      firstMark: [...document.getElementById('sel').options].map(o => o.hasAttribute('data-first')),
+      panel: [...pan.querySelectorAll('th')].map(th => th.textContent),
+      noActions: document.querySelector('#c-none .card__actions') === null,
+      violations: DS.violations.map(v => v.code),
+    };
+  });
+  assert.deepEqual(feat.part, ['affix__input', 'amt', true, '12'], 'part attrs + inline handler on the inner input');
+  assert.equal(feat.clicked, 1, 'on* passthrough on the block root');
+  assert.deepEqual([feat.rows, feat.cells], [2, 4], '<template slot> rows land in the comment slot point inside <tbody>');
+  assert.deepEqual(feat.last, [false, true], '@last');
+  assert.equal(feat.noProto, 0, 'a string cell never reads String.prototype.sub');
+  assert.equal(feat.selected, 'Closed', 'comparison between a loop item and a prop');
+  assert.deepEqual(feat.firstMark, [true, false], 'else-if chain with @first');
+  assert.deepEqual(feat.panel, ['Id', 'Total'], '{{json}} forwards a list prop to a nested block');
+  assert.ok(feat.noActions, '{{#if @slot.actions}} renders no empty wrapper');
+  assert.deepEqual(feat.violations, [], 'features page is clean');
+  const featSrc = await f.evaluate(() => DS.serialize(document.body));
+  for (const want of [
+    '<ds-input-affix prefix="$" placeholder="0.00" input:id="amount" input:data-qa="amt" input:oninput="window.__typed = this.value"></ds-input-affix>',
+    '<ds-button label="Go" id="go" onclick="window.__clicked = 1"></ds-button>',
+    '<template slot="rows"><tr><td>A</td><td>Open</td></tr><tr><td>B</td><td>Closed</td></tr></template>',
+  ]) assert.ok(featSrc.includes(want), 'serialize keeps: ' + want + '\n---\n' + featSrc);
+  const more = await f.evaluate(() => {
+    DS.violations.length = 0;
+    const host = document.createElement('div'); document.body.appendChild(host);
+    host.innerHTML = DS.html('card', {}, { actions: DS.html('button', { label: 'x' }) });   // no title: no header, actions dropped
+    const big = Array.from({ length: 400 }, (_, i) => 'Option ' + i);
+    host.insertAdjacentHTML('beforeend', '<ds-select id="big-tag" options="' + big.join(',') + '"></ds-select>');
+    DS.expand(host);
+    host.insertAdjacentHTML('beforeend', DS.html('select', { options: big, id: 'big-js' }));
+    const tagProps = JSON.parse(document.getElementById('big-tag').getAttribute('data-ds-props'));
+    const jsProps = JSON.parse(document.getElementById('big-js').getAttribute('data-ds-props'));
+    return { codes: DS.violations.map(v => v.code), tagKept: Array.isArray(tagProps.options) && tagProps.options.length, jsOmitted: jsProps.$omitted };
+  });
+  assert.ok(more.codes.includes('slot-dropped'), 'content for a slot the template did not render is reported: ' + more.codes);
+  assert.equal(more.tagKept, 400, 'big props written in page markup are kept for serialize');
+  assert.deepEqual(more.jsOmitted, ['options'], 'big props from JS are left out of data-ds-props');
+
   assert.deepEqual(errors, [], 'no page errors');
   await browser.close();
   console.log('test-component-ds-runtime: ok');

@@ -109,6 +109,30 @@ class PageChecks(unittest.TestCase):
             "slot-not-allowed", "unknown-block", "unknown-prop"]))
         self.assertEqual(codes(fs, "warn"), ["hand-built-in-js", "raw-replaced-in-js", "unknown-token"])
 
+    def test_features_page_clean(self):
+        ds, fs = ds_check.run(pages=[os.path.join(PROJECT, "source", "main", "features.html")])
+        self.assertEqual([f.fmt() for f in fs if f.level != "info"], [])
+
+    def test_part_and_template_slot_errors(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            page = os.path.join(PROJECT, "source", "main", "_tmp_parts.html")
+            open(page, "w").write('<link rel="stylesheet" href="../../design-systems/mini/build/ds.css">'
+                                  '<script src="../../design-systems/mini/build/ds-runtime.js"></script>'
+                                  '<ds-input-affix nope:id="x" input:style="color:red" input:onclick="go()"></ds-input-affix>'
+                                  '<ds-table columns="A"><template slot="body"><tr><td>x</td></tr></template></ds-table>'
+                                  '<ds-select options=\'["a", "b,c"]\'></ds-select><ds-select options="[broken"></ds-select>')
+            ds, fs = ds_check.run(pages=[page])
+            got = codes(fs, "error")
+            self.assertIn("unknown-part", got)
+            self.assertIn("slot-not-allowed", got)
+            self.assertIn("bad-prop-type", got)
+            self.assertIn("bad-part-attr", got, "inline style on a part is an error, like on a block")
+            self.assertEqual(sum(1 for f in fs if f.code == "bad-part-attr"), 1, "on* handlers are allowed on a part")
+        finally:
+            os.remove(page)
+            shutil.rmtree(tmp)
+
     def test_resolution_from_page_link(self):
         self.assertEqual(os.path.normpath(ds_check.resolve_ds_dir(os.path.join(PROJECT, "source", "main", "index.html"))), os.path.normpath(DS_DIR))
 
@@ -235,6 +259,18 @@ class BrokenDS(unittest.TestCase):
         fs = ds_model.load(self.ds_dir).findings
         self.assertNotIn("missing-example", codes(fs, "warn"))
 
+    def test_parts_declared_and_marked(self):
+        self.edit_json("components/input-affix/component.json", lambda d: d["parts"].update({"clear": "clear button"}))
+        self.assertIn("schema-invalid", self.found())
+
+    def test_slot_ref_must_exist(self):
+        self.put("components/stack/template.html", '<div class="stack stack--{{gap}}">{{#if @slot.nope}}x{{/if}}<ds-slot></ds-slot></div>')
+        self.assertIn("template-unknown-name", self.found())
+
+    def test_comment_slot_point_counts(self):
+        self.put("components/stack/template.html", '<div class="stack stack--{{gap}}"><!--ds-slot--></div>')
+        self.assertEqual(self.found(), [])
+
     def test_knob_fallback_is_allowed(self):
         self.put("components/stack/style.css", ".stack { display: grid; grid-template-columns: repeat(var(--stack-cols, 1), 1fr); }\n.stack--s { gap: var(--space-2); }\n.stack--m { gap: var(--space-3); }\n")
         self.assertNotIn("token-undefined", self.found())
@@ -329,6 +365,25 @@ class TemplateGrammar(unittest.TestCase):
         nodes = ds_model.compile_template('<a class="x x--{{v}}">{{#if n == "2"}}two{{else}}other{{/if}}{{#each items as it}}[{{it.k}}{{@index}}]{{/each}}{{icon}}</a>')
         out = ds_model.render_template(nodes, {"v": "a", "n": 2, "items": [{"k": "p"}, {"k": "q"}], "icon": "<b>"})
         self.assertEqual(out, '<a class="x x--a">two[p0][q1]&lt;b&gt;</a>')
+
+    def test_else_if_compare_json_first_last(self):
+        nodes = ds_model.compile_template(
+            '{{#each xs as x}}{{#if x == v}}[eq]{{else if @first}}[first]{{else if @last}}[last]{{else}}[mid]{{/if}}{{/each}}|{{json xs}}')
+        out = ds_model.render_template(nodes, {"xs": ["a", "b", "c", "d"], "v": "c"})
+        self.assertEqual(out, "[first][mid][eq][last]|[&quot;a&quot;,&quot;b&quot;,&quot;c&quot;,&quot;d&quot;]")
+
+    def test_slot_flags(self):
+        nodes = ds_model.compile_template('{{#if @slot.actions}}A{{/if}}{{#if @slot}}D{{/if}}')
+        self.assertEqual(ds_model.render_template(nodes, {}, ctx={"slots": {"actions": True}}), "A")
+        self.assertEqual(ds_model.render_template(nodes, {}, ctx={"slots": {"default": True}}), "D")
+
+    def test_strings_have_no_members(self):
+        nodes = ds_model.compile_template('{{#each cs as c}}{{#if c.sub}}S{{/if}}{{c}}{{/each}}')
+        self.assertEqual(ds_model.render_template(nodes, {"cs": ["x", {"sub": "y"}]}), "xS")
+
+    def test_double_else_rejected(self):
+        with self.assertRaises(ds_model.TemplateError):
+            ds_model.compile_template("{{#if a}}1{{else}}2{{else}}3{{/if}}")
 
     def test_icon_helper_needs_args(self):
         nodes = ds_model.compile_template('{{icon name "outline"}}')

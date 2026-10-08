@@ -128,6 +128,7 @@ def manifest(ds, version):
             "oneLine": s.get("oneLine", ""), "useWhen": s.get("useWhen", ""), "notForUseWhen": s.get("notForUseWhen", ""),
             "props": s.get("props", {}) or {}, "slots": s.get("slots"), "rootClass": b.root_class,
             "replaces": s.get("replaces", []) or [], "contains": s.get("contains", []) or [],
+            "parts": s.get("parts") if isinstance(s.get("parts"), dict) else {},
             "events": s.get("events", []) or [], "states": s.get("states", []) or [],
             "copy": s.get("copy", {}) or {}, "template": b.template.strip(),
             "examples": b.examples,
@@ -180,6 +181,8 @@ def _sig(b):
             acc = sp.get("accepts", "any") if isinstance(sp, dict) else "any"
             sl.append(sn + "(" + ("|".join(acc) if isinstance(acc, list) else acc) + ")")
         out += " slots: " + ", ".join(sl)
+    if b.get("parts"):
+        out += " parts: " + ", ".join(sorted(b["parts"]))
     return out
 
 
@@ -193,7 +196,7 @@ def build_catalog(ds, man, ds_rel_hint):
     L.append("1. Static markup: `<ds-name prop=\"value\">`. JS: `DS.html(\"name\", {props}, {slot: html})` returns final markup; never hand-write a block's classes.")
     L.append("2. Raw HTML only inside `<ds-custom reason=\"why no block fits\">`. Never style a DS class from a page; no inline styles on blocks.")
     L.append("3. In `<head>`: `<link rel=\"stylesheet\" href=\"" + ds_rel_hint + "/build/ds.css\">` and `<script src=\"" + ds_rel_hint + "/build/ds-runtime.js\"></script>`.")
-    L.append("4. Passthrough attributes on any block: id, class (placement only), data-*, aria-*, hidden, title, role, tabindex. `slot=\"name\"` puts a child in a named slot.")
+    L.append("4. Passthrough attributes on any block: id, class (placement only), data-*, aria-*, on* handlers, hidden, title, role, tabindex. `slot=\"name\"` puts a child in a named slot; table rows go in `<template slot=\"name\">`. Attributes for an inner part: `part:attr` (e.g. `input:id=\"amount\"`, `close:onclick=\"...\"`).")
     L.append("5. Blocks talk through attributes and `ds:*` events; page JS listens with addEventListener. Persistent state (which tab is active) is a prop, never a class.")
     L.append("")
     L.append("Signature: `prop!` required, `prop:a|b=a` enum with default, `:bool` `:number` `:list` (comma-separated) `:json`. `slots: name(accepts)`.")
@@ -303,9 +306,11 @@ def _source_tag(name, props, slots):
     for k, v in (props or {}).items():
         if v is True:
             attrs += " " + k
-        elif isinstance(v, (list, tuple)):
+        elif v is False:
+            attrs += " " + k + '="false"'
+        elif isinstance(v, (list, tuple)) and all(not isinstance(x, (dict, list)) and "," not in str(x) for x in v):
             attrs += " " + k + '="' + ",".join(str(x) for x in v) + '"'
-        elif isinstance(v, (dict,)):
+        elif isinstance(v, (dict, list, tuple)):
             attrs += " " + k + "='" + json.dumps(v) + "'"
         else:
             attrs += " " + k + '="' + str(v) + '"'

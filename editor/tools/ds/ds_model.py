@@ -23,7 +23,7 @@ FORMAT = 1
 LAYER_RANK = ["layout", "atom", "molecule", "organism", "pattern", "shell"]
 BLOCK_DIRS = {"components": ("layout", "atom", "molecule", "organism"), "patterns": ("pattern",), "shells": ("shell",)}
 PROP_TYPES = ("string", "number", "boolean", "enum", "list", "json")
-SPEC_FIELDS = {"name", "title", "layer", "oneLine", "useWhen", "notForUseWhen", "replaces", "rootClass", "classRoots", "props",
+SPEC_FIELDS = {"name", "title", "layer", "oneLine", "useWhen", "notForUseWhen", "replaces", "rootClass", "classRoots", "parts", "props",
                "slots", "contains", "events", "states", "copy", "a11y", "desc"}
 PROP_FIELDS = {"type", "values", "required", "default", "desc"}
 COPY_FIELDS = {"maxWords", "maxChars", "case"}
@@ -38,7 +38,8 @@ COLOR_LITERAL_RE = re.compile(r"#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla)\s*\(
 
 
 def is_passthrough(attr):
-    return attr in PASSTHROUGH or attr.startswith("data-") or attr.startswith("aria-")
+    return (attr in PASSTHROUGH or attr.startswith("data-") or attr.startswith("aria-")
+            or bool(re.match(r"^on[a-z]+$", attr)))
 
 
 class Finding(object):
@@ -61,7 +62,9 @@ class Finding(object):
 # ── template grammar ─────────────────────────────────────────────────────────
 TAG_RE = re.compile(r"\{\{\s*([#/]?)([^}]*?)\s*\}\}")
 ARG_RE = re.compile(r'"((?:[^"\\]|\\.)*)"|([A-Za-z_@][\w.\-]*)')
-COND_RE = re.compile(r'^(.+?)\s*(==|!=)\s*"((?:[^"\\]|\\.)*)"\s*$')
+COND_RE = re.compile(r'^(.+?)\s*(==|!=)\s*(?:"((?:[^"\\]|\\.)*)"|([A-Za-z_@][\w.\-]*))\s*$')
+SLOT_COMMENT_RE = re.compile(r'<!--\s*ds-slot(?:\s+name="([\w-]+)")?\s*-->')
+PART_EXTRA = {"name", "for", "form", "autocomplete"}
 EACH_RE = re.compile(r"^each\s+([\w.\-]+)\s+as\s+([A-Za-z_][\w\-]*)$")
 
 
@@ -69,12 +72,32 @@ class TemplateError(Exception):
     pass
 
 
+def _cond(c, name):
+    cm = COND_RE.match(c)
+    if cm:
+        cond = {"path": cm.group(1).strip(), "op": cm.group(2), "lit": cm.group(3), "rpath": cm.group(4)}
+    else:
+        cond = {"path": c.strip()}
+    if not cond["path"]:
+        raise TemplateError(name + ": empty {{#if}}")
+    return cond
+
+
 def compile_template(src, name="template"):
-    """Parse a template into nodes. Raises TemplateError on bad syntax."""
+    """Parse a template into nodes. Raises TemplateError on bad syntax.
+    Mirrors compile() in runtime/ds-runtime.src.js."""
     root = {"t": "root", "body": []}
     stack = [root]
     cur = root["body"]
     pos = 0
+
+    def body_of(node):
+        if node["t"] == "root":
+            return node["body"]
+        if node["t"] == "if":
+            return node["no"] if node["else"] else node["yes"]
+        return node["body"]
+
     for m in TAG_RE.finditer(src):
         if m.start() > pos:
             cur.append({"t": "text", "v": src[pos:m.start()]})
@@ -83,12 +106,7 @@ def compile_template(src, name="template"):
         head = body.split()[0] if body.split() else ""
         if sigil == "#":
             if head == "if":
-                c = body[2:].strip()
-                cm = COND_RE.match(c)
-                cond = {"path": cm.group(1).strip(), "op": cm.group(2), "lit": cm.group(3)} if cm else {"path": c}
-                if not cond["path"]:
-                    raise TemplateError(name + ": empty {{#if}}")
-                n = {"t": "if", "cond": cond, "yes": [], "no": [], "else": False}
+                n = {"t": "if", "cond": _cond(body[2:].strip(), name), "yes": [], "no": [], "else": False}
                 cur.append(n)
                 stack.append(n)
                 cur = n["yes"]
@@ -104,21 +122,25 @@ def compile_template(src, name="template"):
                 raise TemplateError(name + ": unknown block {{#" + head + "}}")
         elif sigil == "/":
             top = stack.pop() if len(stack) > 1 else None
+            while top and top.get("chained"):
+                top = stack.pop() if len(stack) > 1 else None
             if not top or top["t"] != head:
                 raise TemplateError(name + ": unbalanced {{/" + head + "}}")
-            parent = stack[-1]
-            if parent["t"] == "root":
-                cur = parent["body"]
-            elif parent["t"] == "if":
-                cur = parent["no"] if parent["else"] else parent["yes"]
-            else:
-                cur = parent["body"]
+            cur = body_of(stack[-1])
         elif head == "else":
             top = stack[-1]
-            if top["t"] != "if":
+            if top["t"] != "if" or top["else"]:
                 raise TemplateError(name + ": {{else}} outside if")
             top["else"] = True
             cur = top["no"]
+            rest = body[4:].strip()
+            if rest:
+                if rest.split()[0] != "if":
+                    raise TemplateError(name + ": bad {{" + body + "}}")
+                n = {"t": "if", "cond": _cond(rest[2:].strip(), name), "yes": [], "no": [], "else": False, "chained": True}
+                cur.append(n)
+                stack.append(n)
+                cur = n["yes"]
         elif head in ("icon", "iconViewBox") and len(body) > len(head):
             args = []
             for am in ARG_RE.finditer(body[len(head):]):
@@ -126,6 +148,8 @@ def compile_template(src, name="template"):
             if not args:
                 raise TemplateError(name + ": {{" + head + "}} needs an icon name")
             cur.append({"t": "icon" if head == "icon" else "iconbox", "args": args})
+        elif head == "json" and len(body) > 4:
+            cur.append({"t": "json", "path": body[4:].strip()})
         elif body.startswith("{") or body.endswith("}"):
             raise TemplateError(name + ": raw {{{...}}} output is not allowed; use a slot")
         else:
@@ -139,23 +163,33 @@ def compile_template(src, name="template"):
     return root["body"]
 
 
+SPECIAL_REFS = {"@index", "@first", "@last", "@slot"}
+
+
 def template_names(nodes, loop_vars=None, out=None):
-    """Collect (path, is_loop_scoped) references used by a compiled template."""
+    """Collect (path, is_loop_scoped) references used by a compiled template.
+    @slot.<name> refs come back as ("@slot.<name>", False) so the caller can
+    check the slot exists; other @ specials are skipped."""
     loop_vars = loop_vars or set()
     out = out if out is not None else []
 
     def ref(path):
-        if path == "@index":
+        if not path:
+            return
+        if path.startswith("@"):
+            if path.startswith("@slot.") or path not in SPECIAL_REFS:
+                out.append((path, False))
             return
         head = path.split(".")[0]
         out.append((head, head in loop_vars))
 
     for n in nodes:
         t = n["t"]
-        if t == "var":
+        if t in ("var", "json"):
             ref(n["path"])
         elif t == "if":
             ref(n["cond"]["path"])
+            ref(n["cond"].get("rpath"))
             template_names(n["yes"], loop_vars, out)
             template_names(n["no"], loop_vars, out)
         elif t == "each":
@@ -191,11 +225,22 @@ def _truthy(v):
     return True
 
 
-def _lookup(path, props, scope, index):
-    if path == "@index":
-        return index
+def _lookup(path, props, scope, index, ctx=None):
+    ctx = ctx or {}
+    if path.startswith("@"):
+        if path == "@index":
+            return index
+        if path == "@first":
+            return ctx.get("count") is not None and index == 0
+        if path == "@last":
+            return ctx.get("count") is not None and index == ctx["count"] - 1
+        if path == "@slot":
+            return bool(ctx.get("slots", {}).get("default"))
+        if path.startswith("@slot."):
+            return bool(ctx.get("slots", {}).get(path[6:]))
+        return None
     parts = path.split(".")
-    v = scope[parts[0]] if parts[0] in scope else props.get(parts[0])
+    v = scope[parts[0]] if parts[0] in scope else (props.get(parts[0]) if isinstance(props, dict) else None)
     for p in parts[1:]:
         if isinstance(v, dict):
             v = v.get(p)
@@ -204,28 +249,45 @@ def _lookup(path, props, scope, index):
     return v
 
 
-def render_template(nodes, props, icons=None, scope=None, index=0):
+def _str(v):
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    return str(v)
+
+
+def render_template(nodes, props, icons=None, scope=None, index=0, ctx=None):
+    """Mirror of run() in the JS runtime (used only to validate templates)."""
     scope = scope or {}
+    ctx = ctx or {}
     out = []
     for n in nodes:
         t = n["t"]
         if t == "text":
             out.append(n["v"])
         elif t == "var":
-            out.append(_esc(_lookup(n["path"], props, scope, index)))
+            out.append(_esc(_lookup(n["path"], props, scope, index, ctx)))
+        elif t == "json":
+            out.append(_esc(json.dumps(_lookup(n["path"], props, scope, index, ctx), separators=(",", ":"))))
         elif t == "if":
-            v = _lookup(n["cond"]["path"], props, scope, index)
-            op = n["cond"].get("op")
-            sv = "" if v is None else (("true" if v else "false") if isinstance(v, bool) else str(v))
-            ok = (sv == n["cond"]["lit"]) if op == "==" else (sv != n["cond"]["lit"]) if op == "!=" else _truthy(v)
-            out.append(render_template(n["yes"] if ok else n["no"], props, icons, scope, index))
+            c = n["cond"]
+            v = _lookup(c["path"], props, scope, index, ctx)
+            if c.get("op"):
+                rv = _lookup(c["rpath"], props, scope, index, ctx) if c.get("rpath") else c.get("lit")
+                ok = (_str(v) == _str(rv)) == (c["op"] == "==")
+            else:
+                ok = _truthy(v)
+            out.append(render_template(n["yes"] if ok else n["no"], props, icons, scope, index, ctx))
         elif t == "each":
-            lst = _lookup(n["path"], props, scope, index)
+            lst = _lookup(n["path"], props, scope, index, ctx)
             if isinstance(lst, list):
                 for i, item in enumerate(lst):
                     s2 = dict(scope)
                     s2[n["as"]] = item
-                    out.append(render_template(n["body"], props, icons, s2, i))
+                    c2 = dict(ctx)
+                    c2["count"] = len(lst)
+                    out.append(render_template(n["body"], props, icons, s2, i, c2))
         elif t in ("icon", "iconbox"):
             out.append('<path d="M0 0"/>' if t == "icon" else "0 0 24 24")
     return "".join(out)
@@ -454,6 +516,13 @@ def _validate_spec(ds, b, path):
                 acc = sp.get("accepts", "any")
                 if not (acc in ("any", "text") or isinstance(acc, list)):
                     ds.add("error", "schema-invalid", "slot '" + sn + "': accepts must be any|text|[blocks]", path)
+    parts = s.get("parts", {})
+    if not isinstance(parts, dict):
+        ds.add("error", "schema-invalid", "parts must be an object {name: description}", path)
+    else:
+        for pn in parts:
+            if not NAME_RE.match(pn):
+                ds.add("error", "schema-invalid", "part name '" + pn + "' must be lowercase kebab-case", path)
     for fld in ("replaces", "contains", "events", "states", "classRoots"):
         v = s.get(fld, [])
         if not isinstance(v, list):
@@ -548,7 +617,7 @@ def load(ds_dir):
             continue
         props = b.spec.get("props", {}) or {}
         for ref, scoped in template_names(b.compiled):
-            if not scoped and ref not in props:
+            if not scoped and not ref.startswith("@") and ref not in props:
                 ds.add("error", "template-unknown-name", "{{" + ref + "}} is not a prop of " + b.name,
                        os.path.join(b.dir, "template.html"))
         # Replace {{...}} with a sentinel so a templated class ("{{role}}",
@@ -630,7 +699,23 @@ def _check_ds(ds):
             for f in check_markup(ds, stripped, tpath, mode="template", owner=b):
                 ds.findings.append(f)
             used_slots = set(re.findall(r'<ds-slot(?:\s+name="([\w-]+)")?', b.template))
+            used_slots |= set(SLOT_COMMENT_RE.findall(b.template))
             used_slots = set(s or "default" for s in used_slots)
+            for ref, _ in template_names(b.compiled):
+                if ref.startswith("@slot."):
+                    if ref[6:] not in slots:
+                        ds.add("error", "template-unknown-name", "{{" + ref + "}}: " + b.name + " declares no '" + ref[6:] + "' slot", tpath)
+                elif ref == "@slot":
+                    if "default" not in slots:
+                        ds.add("error", "template-unknown-name", "{{@slot}}: " + b.name + " has no default slot", tpath)
+                elif ref.startswith("@"):
+                    ds.add("error", "template-unknown-name", "{{" + ref + "}} is not a template variable", tpath)
+            declared_parts = set((b.spec.get("parts") or {}).keys()) if isinstance(b.spec.get("parts"), dict) else set()
+            marked = re.findall(r'data-ds-part="([\w-]+)"', b.template)
+            for pn in set(marked) - declared_parts:
+                ds.add("error", "schema-invalid", "template marks data-ds-part=\"" + pn + "\" but component.json declares no such part", tpath)
+            for pn in declared_parts - set(marked):
+                ds.add("error", "schema-invalid", "part '" + pn + "' is declared but the template has no data-ds-part=\"" + pn + "\"", tpath)
             for sn in slots:
                 if sn not in used_slots:
                     ds.add("error", "schema-invalid", "slot '" + sn + "' is declared but the template has no <ds-slot name=\"" + sn + "\">", tpath)
@@ -660,7 +745,8 @@ def _check_ds(ds):
                 if k in full:
                     seen_enum[k].add(full[k])
             if b.compiled is not None:
-                html = render_template(b.compiled, full)
+                flags = dict((k, bool(str(v).strip())) for k, v in (ex.get("slots") or {}).items())
+                html = render_template(b.compiled, full, ctx={"slots": flags})
                 ol = outline(html)
                 if len(ol.top) != 1 or ol.text_at_top:
                     ds.add("error", "template-not-single-root", "example '" + str(ex.get("title", i + 1)) + "' renders " + str(len(ol.top)) + " top-level elements; a template needs exactly one root", tpath)
@@ -714,10 +800,18 @@ def validate_props(block, attrs, file, line, from_attr=True):
     """Validate a block's props given as attributes (strings) or JSON values."""
     out = []
     specs = block.spec.get("props", {}) or {}
+    parts = block.spec.get("parts") if isinstance(block.spec.get("parts"), dict) else {}
     for an, av in attrs.items():
         if an == "slot":
             continue
         spec = specs.get(an)
+        if spec is None and ":" in an:
+            part, _, pa = an.partition(":")
+            if part not in parts:
+                out.append(Finding("error", "unknown-part", "ds-" + block.name + " has no part '" + part + "'", file, line))
+            elif pa.startswith("data-ds") or pa == "style" or not (is_passthrough(pa) or pa in PART_EXTRA):
+                out.append(Finding("error", "bad-part-attr", "'" + pa + "' cannot be set on part '" + part + "' of ds-" + block.name, file, line))
+            continue
         if spec is None:
             if from_attr and is_passthrough(an):
                 if an == "style":
@@ -736,6 +830,12 @@ def validate_props(block, attrs, file, line, from_attr=True):
         elif t == "enum":
             if str(av) not in [str(x) for x in spec.get("values", [])]:
                 out.append(Finding("error", "bad-enum", an + "='" + str(av) + "' not in " + "|".join(spec.get("values", [])), file, line))
+        elif t == "list" and from_attr and str(av).strip().startswith("["):
+            try:
+                if not isinstance(json.loads(av), list):
+                    raise ValueError
+            except ValueError:
+                out.append(Finding("error", "bad-prop-type", an + " starts with [ but is not a JSON array", file, line))
         elif t == "json" and from_attr:
             try:
                 json.loads(av)

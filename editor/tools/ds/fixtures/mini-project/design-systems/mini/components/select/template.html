@@ -1,1 +1,1 @@
-<select class="select" name="{{name}}">{{#each options as o}}<option{{#if o == "x"}} data-x{{/if}}>{{o}}</option>{{/each}}</select>
+<select class="select" name="{{name}}">{{#each options as o}}<option{{#if o == value}} selected{{else if @first}} data-first{{/if}}>{{o}}</option>{{/each}}</select>

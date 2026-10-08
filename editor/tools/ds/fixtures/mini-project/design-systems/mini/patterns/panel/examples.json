@@ -1,0 +1,12 @@
+[
+  {
+    "title": "Default",
+    "props": {
+      "title": "Orders",
+      "cols": [
+        "Id",
+        "Total, incl. tax"
+      ]
+    }
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "name": "table",
+  "title": "Table",
+  "layer": "organism",
+  "oneLine": "Data table.",
+  "replaces": [
+    "table"
+  ],
+  "rootClass": "tbl",
+  "props": {
+    "columns": {
+      "type": "list",
+      "required": true
+    }
+  },
+  "slots": {
+    "rows": {
+      "accepts": "any"
+    }
+  }
+}

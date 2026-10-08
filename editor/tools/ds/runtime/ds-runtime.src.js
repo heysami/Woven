@@ -33,6 +33,13 @@
 
   var PASSTHROUGH = { id: 1, "class": 1, style: 1, hidden: 1, title: 1, role: 1, tabindex: 1, lang: 1, dir: 1 };
   var STATE_ATTRS = { "aria-expanded": 1, "aria-selected": 1, "aria-pressed": 1, "aria-checked": 1, "aria-hidden": 0 };
+  // extra attributes a page may set on a block's named PART (`input:name="x"`)
+  var PART_EXTRA = { name: 1, "for": 1, form: 1, autocomplete: 1 };
+  var TABLE_PARTS = { tr: 1, td: 1, th: 1, thead: 1, tbody: 1, tfoot: 1, caption: 1, colgroup: 1, col: 1 };
+  var fullProps = typeof WeakMap === "function" ? new WeakMap() : null;   // root -> {explicit, parts, keepAll}
+  function isPass(an) {
+    return !!(PASSTHROUGH[an] || an.indexOf("data-") === 0 || an.indexOf("aria-") === 0 || /^on[a-z]+$/.test(an));
+  }
   var NON_BUBBLING = { focus: 1, blur: 1, mouseenter: 1, mouseleave: 1, load: 1, error: 1, scroll: 1, toggle: 1 };
   var VOID = { area: 1, base: 1, br: 1, col: 1, embed: 1, hr: 1, img: 1, input: 1, link: 1, meta: 1, param: 1, source: 1, track: 1, wbr: 1 };
   var RAW_TEXT = { script: 1, style: 1 };
@@ -66,22 +73,23 @@
   }
 
   // ── template engine (logic-less subset, see spec) ─────────────────────────
-  // Nodes: {t:"text",v} {t:"var",path} {t:"if",cond,yes,no} {t:"each",path,as,body}
-  //        {t:"icon",args} {t:"iconbox",args}
+  // Nodes: {t:"text",v} {t:"var",path} {t:"json",path} {t:"if",cond,yes,no}
+  //        {t:"each",path,as,body} {t:"icon",args} {t:"iconbox",args}
   function parseArgs(s) {
     var out = [], re = /"((?:[^"\\]|\\.)*)"|([A-Za-z_@][\w.\-]*)/g, m;
     while ((m = re.exec(s))) out.push(m[1] != null ? { lit: m[1] } : { path: m[2] });
     return out;
   }
   function parseCond(s) {
-    var m = /^(.+?)\s*(==|!=)\s*"((?:[^"\\]|\\.)*)"\s*$/.exec(s);
-    if (m) return { path: m[1].trim(), op: m[2], lit: m[3] };
+    var m = /^(.+?)\s*(==|!=)\s*(?:"((?:[^"\\]|\\.)*)"|([A-Za-z_@][\w.\-]*))\s*$/.exec(s);
+    if (m) return { path: m[1].trim(), op: m[2], lit: m[3] != null ? m[3] : null, rpath: m[4] || null };
     return { path: s.trim() };
   }
   function compile(src, name) {
     var re = /\{\{\s*([#\/]?)([^}]*?)\s*\}\}/g, pos = 0, m;
-    var root = { body: [] }, stack = [root], cur = root.body;
+    var root = { t: "root", body: [] }, stack = [root], cur = root.body;
     function push(n) { cur.push(n); }
+    function bodyOf(node) { return node === root ? root.body : node.t === "if" ? (node._inElse ? node.no : node.yes) : node.body; }
     while ((m = re.exec(src))) {
       if (m.index > pos) push({ t: "text", v: src.slice(pos, m.index) });
       pos = re.lastIndex;
@@ -98,15 +106,23 @@
         } else throw new Error(name + ": unknown block {{#" + head + "}}");
       } else if (sigil === "/") {
         var top = stack.pop();
-        if (!top || top === root || (top.t !== head)) throw new Error(name + ": unbalanced {{/" + head + "}}");
-        var parent = stack[stack.length - 1];
-        cur = parent === root ? root.body : (parent.t === "if" ? (parent._inElse ? parent.no : parent.yes) : parent.body);
+        while (top && top._chained) top = stack.pop();      // {{else if}} chains close with one {{/if}}
+        if (!top || top === root || top.t !== head) throw new Error(name + ": unbalanced {{/" + head + "}}");
+        cur = bodyOf(stack[stack.length - 1]);
       } else if (head === "else") {
         var ifn = stack[stack.length - 1];
-        if (!ifn || ifn.t !== "if") throw new Error(name + ": {{else}} outside if");
+        if (!ifn || ifn.t !== "if" || ifn._inElse) throw new Error(name + ": {{else}} outside if");
         ifn._inElse = true; cur = ifn.no;
+        var rest = body.slice(4).trim();
+        if (rest) {
+          if (rest.split(/\s+/)[0] !== "if") throw new Error(name + ": bad {{" + body + "}}");
+          var n2 = { t: "if", cond: parseCond(rest.slice(2)), yes: [], no: [], _chained: true };
+          push(n2); stack.push(n2); cur = n2.yes;
+        }
       } else if ((head === "icon" || head === "iconViewBox") && body.length > head.length) {
         push({ t: head === "icon" ? "icon" : "iconbox", args: parseArgs(body.slice(head.length)) });
+      } else if (head === "json" && body.length > 4) {
+        push({ t: "json", path: body.slice(4).trim() });
       } else {
         push({ t: "var", path: body });
       }
@@ -115,12 +131,24 @@
     if (stack.length !== 1) throw new Error(name + ": unclosed block");
     return root.body;
   }
+  // Own keys of plain objects only: never String.prototype.sub / .link or
+  // array .length (the Python validator reads dict keys only).
+  function own(o, k) {
+    return o != null && typeof o === "object" && !Array.isArray(o) && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined;
+  }
   function lookup(path, ctx) {
-    if (path === "@index") return ctx.index;
+    if (path.charAt(0) === "@") {
+      if (path === "@index") return ctx.index;
+      if (path === "@first") return ctx.count != null && ctx.index === 0;
+      if (path === "@last") return ctx.count != null && ctx.index === ctx.count - 1;
+      if (path === "@slot") return !!(ctx.slots && ctx.slots["default"]);
+      if (path.indexOf("@slot.") === 0) return !!(ctx.slots && ctx.slots[path.slice(6)]);
+      return undefined;
+    }
     var parts = path.split("."), v;
-    if (ctx.scope && Object.prototype.hasOwnProperty.call(ctx.scope, parts[0])) v = ctx.scope[parts[0]];
-    else v = ctx.props[parts[0]];
-    for (var i = 1; i < parts.length && v != null; i++) v = v[parts[i]];
+    if (ctx.scope && parts[0] in ctx.scope) v = ctx.scope[parts[0]];
+    else v = own(ctx.props, parts[0]);
+    for (var i = 1; i < parts.length && v != null; i++) v = own(v, parts[i]);
     return v;
   }
   function argVal(a, ctx) { return a.lit != null ? a.lit : lookup(a.path, ctx); }
@@ -132,23 +160,26 @@
     if (!hit) { report("unknown-icon", "icon '" + name + "' (" + style + ") is not in the DS"); return null; }
     return hit;
   }
+  function str(v) { return v == null ? "" : String(v); }
   function run(nodes, ctx) {
     var out = "";
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
       if (n.t === "text") out += n.v;
       else if (n.t === "var") out += esc(lookup(n.path, ctx));
+      else if (n.t === "json") { var jv = lookup(n.path, ctx); out += esc(JSON.stringify(jv === undefined ? null : jv)); }
       else if (n.t === "if") {
         var v = lookup(n.cond.path, ctx), ok;
-        if (n.cond.op === "==") ok = String(v == null ? "" : v) === n.cond.lit;
-        else if (n.cond.op === "!=") ok = String(v == null ? "" : v) !== n.cond.lit;
-        else ok = truthy(v);
+        if (n.cond.op) {
+          var rv = n.cond.rpath ? lookup(n.cond.rpath, ctx) : n.cond.lit;
+          ok = (str(v) === str(rv)) === (n.cond.op === "==");
+        } else ok = truthy(v);
         out += run(ok ? n.yes : n.no, ctx);
       } else if (n.t === "each") {
         var list = lookup(n.path, ctx);
         if (Array.isArray(list)) for (var j = 0; j < list.length; j++) {
           var scope = Object.create(ctx.scope || null); scope[n.as] = list[j];
-          out += run(n.body, { props: ctx.props, scope: scope, index: j });
+          out += run(n.body, { props: ctx.props, scope: scope, index: j, count: list.length, slots: ctx.slots });
         }
       } else if (n.t === "icon" || n.t === "iconbox") {
         var nm = argVal(n.args[0] || {}, ctx), st = n.args[1] ? argVal(n.args[1], ctx) : null;
@@ -158,10 +189,10 @@
     }
     return out;
   }
-  function render(name, props) {
+  function render(name, props, slots) {
     var b = DS.blocks[name];
     if (!compiled[name]) compiled[name] = compile(b.template, name);
-    return run(compiled[name], { props: props, scope: null, index: 0 });
+    return run(compiled[name], { props: props, scope: null, index: 0, slots: slots || {} });
   }
 
   // ── props ──────────────────────────────────────────────────────────────────
@@ -174,7 +205,9 @@
     if (t === "number") { var n = typeof raw === "number" ? raw : parseFloat(raw); return isNaN(n) ? undefined : n; }
     if (t === "list") {
       if (Array.isArray(raw)) return raw;
-      return String(raw).split(",").map(function (s) { return s.trim(); }).filter(function (s) { return s !== ""; });
+      var sv = String(raw).trim();
+      if (sv.charAt(0) === "[") { try { var arr = JSON.parse(sv); if (Array.isArray(arr)) return arr; } catch (_) {} }
+      return sv.split(",").map(function (s) { return s.trim(); }).filter(function (s) { return s !== ""; });
     }
     if (t === "json") {
       if (!fromAttr || typeof raw !== "string") return raw;
@@ -190,22 +223,31 @@
   function withDefaults(block, explicit) {
     var props = {}, specs = block.props || {}, k;
     for (k in specs) if (specs[k] && specs[k].default !== undefined) props[k] = specs[k].default;
-    for (k in explicit) props[k] = explicit[k];
+    for (k in explicit) if (k.charAt(0) !== "$") props[k] = explicit[k];
     return props;
   }
+  // `part:attr` sets an attribute on the element the template marks
+  // data-ds-part="part" (the input inside an input affix, a modal's close).
+  function addPart(block, name, parts, key, value, el) {
+    var ci = key.indexOf(":"), part = key.slice(0, ci), pa = key.slice(ci + 1);
+    if (!block.parts || !Object.prototype.hasOwnProperty.call(block.parts, part)) { report("unknown-part", "ds-" + name + " has no part '" + part + "'", el); return; }
+    if (pa.indexOf("data-ds") === 0 || pa === "style" || !(isPass(pa) || PART_EXTRA[pa])) { report("bad-part-attr", "'" + pa + "' cannot be set on part '" + part + "' of ds-" + name, el); return; }
+    (parts[part] = parts[part] || {})[pa] = String(value);
+  }
   function readTag(el, block, name) {
-    var specs = block.props || {}, explicit = {}, pass = [];
+    var specs = block.props || {}, explicit = {}, pass = [], parts = {};
     for (var i = 0; i < el.attributes.length; i++) {
       var a = el.attributes[i], an = a.name;
       if (specs[an]) { var v = coerce(specs[an], a.value, true, an, el); if (v !== undefined) explicit[an] = v; }
       else if (an === "slot") continue;
-      else if (PASSTHROUGH[an] || an.indexOf("data-") === 0 || an.indexOf("aria-") === 0) {
+      else if (an.indexOf(":") > 0) addPart(block, name, parts, an, a.value, el);
+      else if (isPass(an)) {
         if (an.indexOf("data-ds") === 0) continue;
         if (an === "style") report("inline-style-on-block", "ds-" + name + " has an inline style; use props", el);
         pass.push([an, a.value]);
       } else report("unknown-prop", "ds-" + name + " has no prop '" + an + "'", el);
     }
-    return { explicit: explicit, pass: pass };
+    return { explicit: explicit, pass: pass, parts: parts };
   }
   function normalizeProps(block, name, props) {
     var specs = block.props || {}, out = {};
@@ -224,21 +266,26 @@
       report("missing-required", "ds-" + name + " needs '" + k + "'", el);
     }
   }
-  function propsAttr(explicit) {
+  // data-ds-props: the explicitly set props (+ $parts). Props written in the
+  // page's own markup are always kept (serialize must restore them); props
+  // passed from JS over 2000 chars are left out ($omitted), since page JS
+  // supplies them again on every load.
+  function propsAttr(explicit, parts, keepAll) {
     var keep = {}, omitted = [], any = false;
     for (var k in explicit) {
-      var s = JSON.stringify(explicit[k]);
-      if (s && s.length > 2000) { omitted.push(k); continue; }
+      if (k.charAt(0) === "$") continue;
+      if (!keepAll) { var s = JSON.stringify(explicit[k]); if (s && s.length > 2000) { omitted.push(k); continue; } }
       keep[k] = explicit[k]; any = true;
     }
     if (omitted.length) { keep.$omitted = omitted; any = true; }
+    if (parts) for (var pk in parts) { keep.$parts = parts; any = true; break; }
     return any ? JSON.stringify(keep) : null;
   }
 
   // ── expansion ──────────────────────────────────────────────────────────────
-  function templateRoot(name, props, ownerDoc) {
+  function templateRoot(name, props, ownerDoc, slots) {
     var t = ownerDoc.createElement("template");
-    t.innerHTML = render(name, props);
+    t.innerHTML = render(name, props, slots);
     var frag = ownerDoc.importNode(t.content, true);
     var root = null;
     for (var c = frag.firstChild; c; c = c.nextSibling) if (c.nodeType === 1) { root = c; break; }
@@ -249,7 +296,18 @@
     for (var c = el.firstChild; c; c = c.nextSibling) nodes.push(c);
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i], s = "default";
-      if (n.nodeType === 1 && n.hasAttribute("slot")) { s = n.getAttribute("slot"); n.removeAttribute("slot"); }
+      if (n.nodeType === 1 && n.hasAttribute("slot")) {
+        s = n.getAttribute("slot");
+        if (n.localName === "template") {
+          // <template slot="rows"><tr>...</tr></template>: table rows survive
+          // the HTML parser only inside a <template>
+          var frag = n.ownerDocument.importNode(n.content, true), bucket = (slots[s] = slots[s] || []);
+          while (frag.firstChild) bucket.push(frag.removeChild(frag.firstChild));
+          n.parentNode.removeChild(n);
+          continue;
+        }
+        n.removeAttribute("slot");
+      }
       (slots[s] = slots[s] || []).push(n);
     }
     return slots;
@@ -294,40 +352,69 @@
     parent.removeChild(el);
     return kids;
   }
+  // Slot points: <ds-slot name="x"> elements, and the comment form
+  // <!--ds-slot name="x"--> for table context (the HTML parser moves unknown
+  // elements out of table/tbody/tr, but leaves comments where they are).
+  function slotPoints(root) {
+    var pts = [], els = root.querySelectorAll("ds-slot"), i;
+    for (i = 0; i < els.length; i++) pts.push({ node: els[i], name: els[i].getAttribute("name") || "default", el: true });
+    var w = root.ownerDocument.createTreeWalker(root, 128, null, false), c;
+    while ((c = w.nextNode())) {
+      var m = /^\s*ds-slot(?:\s+name="([\w-]+)")?\s*$/.exec(c.nodeValue);
+      if (m) pts.push({ node: c, name: m[1] || "default", el: false });
+    }
+    return pts;
+  }
+  function applyParts(root, name, parts, el) {
+    for (var part in parts) {
+      var target = root.getAttribute("data-ds-part") === part ? root : root.querySelector("[data-ds-part=\"" + part + "\"]");
+      if (!target) { report("unknown-part", "ds-" + name + " rendered no part '" + part + "' for these props", el); continue; }
+      var attrs = parts[part];
+      for (var an in attrs) {
+        if (an === "class") attrs[an].split(/\s+/).forEach(function (c) { if (c) target.classList.add(c); });
+        else target.setAttribute(an, attrs[an]);
+      }
+    }
+  }
   // Expand ONE <ds-name> element. Returns the new root (or null when unknown).
   function expandElement(el, pending) {
     var name = el.localName.slice(3);
     var block = DS.blocks[name];
     if (!block) { report("unknown-block", "<" + el.localName + "> is not a block in this DS", el); el.setAttribute("data-ds-unknown", ""); return null; }
-    var tag = el.__dsPreset ? { explicit: el.__dsPreset, pass: [] } : readTag(el, block, name);
-    if (el.__dsPreset) for (var i = 0; i < el.attributes.length; i++) {
+    var fromTag = !el.__dsPreset;
+    var tag = fromTag ? readTag(el, block, name) : { explicit: el.__dsPreset, pass: [], parts: el.__dsParts || {} };
+    if (!fromTag) for (var i = 0; i < el.attributes.length; i++) {
       var pa = el.attributes[i]; if (pa.name !== "slot" && pa.name.indexOf("data-ds") !== 0) tag.pass.push([pa.name, pa.value]);
     }
+    var keepAll = fromTag || !!el.__dsKeepAll;
     var props = withDefaults(block, tag.explicit);
     checkRequired(block, name, props, el);
-    var slots = el.__dsSlots || collectSlots(el);
+    var slots = el.__dsSlots || collectSlots(el), flags = {};
+    for (var sk in slots) flags[sk] = !onlyWhitespace(slots[sk]);
     var root;
-    try { root = templateRoot(name, props, el.ownerDocument); }
+    try { root = templateRoot(name, props, el.ownerDocument, flags); }
     catch (err) { report("template-error", "ds-" + name + ": " + err.message, el); return null; }
     if (!root) { report("template-error", "ds-" + name + " rendered no element", el); return null; }
     var id = ++seq;
-    var points = root.querySelectorAll("ds-slot");
-    var used = {};
+    applyParts(root, name, tag.parts, el);     // before slots fill, so only this template's parts match
+    var points = slotPoints(root), used = {};
     for (var p = 0; p < points.length; p++) {
-      var pt = points[p], sn = pt.getAttribute("name") || "default", content = slots[sn];
-      used[sn] = 1;
+      var pt = points[p].node, sn = points[p].name, content = slots[sn];
       var parent = pt.parentNode;
-      if (content && !onlyWhitespace(content)) {
+      if (content && !onlyWhitespace(content) && !used[sn]) {
         checkSlot(block, name, sn, content, el);
         parent.insertBefore(el.ownerDocument.createComment("ds-slot:" + sn + "#" + id), pt);
         for (var q = 0; q < content.length; q++) parent.insertBefore(content[q], pt);
         parent.insertBefore(el.ownerDocument.createComment("/ds-slot#" + id), pt);
-      } else {
+      } else if (points[p].el) {
         while (pt.firstChild) parent.insertBefore(pt.firstChild, pt);   // fallback content
       }
+      used[sn] = 1;
       parent.removeChild(pt);
     }
-    for (var s in slots) if (!used[s] && !onlyWhitespace(slots[s])) checkSlot(block, name, s, slots[s], el);
+    for (var s in slots) if (!used[s] && !onlyWhitespace(slots[s])) {
+      if (checkSlot(block, name, s, slots[s], el)) report("slot-dropped", "ds-" + name + " renders no '" + s + "' slot for these props; that content was dropped", el);
+    }
     for (var k = 0; k < tag.pass.length; k++) {
       var an = tag.pass[k][0], av = tag.pass[k][1];
       if (an === "class") { av.split(/\s+/).forEach(function (c) { if (c) root.classList.add(c); }); }
@@ -335,8 +422,9 @@
     }
     root.setAttribute("data-ds", name);
     root.setAttribute("data-ds-i", String(id));
-    var pj = propsAttr(tag.explicit);
+    var pj = propsAttr(tag.explicit, tag.parts, keepAll);
     if (pj) root.setAttribute("data-ds-props", pj);
+    if (fullProps) fullProps.set(root, { explicit: tag.explicit, parts: tag.parts, keepAll: keepAll });
     el.parentNode.replaceChild(root, el);
     if (behaviors[name] && behaviors[name].init && pending) pending.push([name, root, props]);
     return root;
@@ -413,15 +501,16 @@
     if (!block) { report("unknown-block", "DS.html('" + name + "') is not a block in this DS"); return ""; }
     var host = doc.createElement("div");
     var el = doc.createElement("ds-" + name);
-    var p = props || {}, pass = {};
+    var p = props || {}, pass = {}, parts = {}, real = {};
     var specs = block.props || {};
     for (var k in p) {
-      if (specs[k] || specs[kebab(k)]) continue;
-      if (PASSTHROUGH[k] || k.indexOf("data-") === 0 || k.indexOf("aria-") === 0) { pass[k] = p[k]; }
+      if (specs[k] || specs[kebab(k)]) { real[k] = p[k]; continue; }
+      if (k.indexOf(":") > 0) { if (p[k] != null && p[k] !== false) addPart(block, name, parts, k, p[k] === true ? "" : p[k], null); continue; }
+      if (isPass(k)) { pass[k] = p[k]; continue; }
+      real[k] = p[k];       // normalizeProps reports it as unknown
     }
-    var real = {};
-    for (k in p) if (!pass.hasOwnProperty(k)) real[k] = p[k];
     el.__dsPreset = normalizeProps(block, name, real);
+    el.__dsParts = parts;
     for (k in pass) if (pass[k] != null && pass[k] !== false) el.setAttribute(k, pass[k] === true ? "" : String(pass[k]));
     var map = {};
     if (typeof slots === "string" || Array.isArray(slots)) slots = { "default": slots };
@@ -444,19 +533,24 @@
   function propAttrs(block, explicit) {
     var specs = block.props || {}, out = "";
     for (var k in explicit) {
-      if (k === "$omitted") continue;
+      if (k.charAt(0) === "$") continue;
       var v = explicit[k], t = (specs[k] && specs[k].type) || "string";
       if (t === "boolean") { if (v === true) out += " " + k; else out += attrString(k, "false"); }
-      else if (t === "list") out += attrString(k, Array.isArray(v) ? v.join(",") : String(v));
+      else if (t === "list") {
+        var simple = Array.isArray(v) && v.every(function (x) { return typeof x !== "object" && String(x).indexOf(",") < 0; });
+        out += attrString(k, Array.isArray(v) ? (simple ? v.join(",") : JSON.stringify(v)) : String(v));
+      }
       else if (t === "json") out += attrString(k, JSON.stringify(v));
       else out += attrString(k, String(v));
     }
+    var parts = explicit.$parts || {};
+    for (var part in parts) for (var pa in parts[part]) out += attrString(part + ":" + pa, parts[part][pa]);
     return out;
   }
-  function templateAttrs(name, props) {
+  function templateAttrs(name, props, slots) {
     var info = { attrs: {}, classes: {} };
     try {
-      var r = templateRoot(name, props, doc);
+      var r = templateRoot(name, props, doc, slots);
       if (r) {
         for (var i = 0; i < r.attributes.length; i++) info.attrs[r.attributes[i].name] = r.attributes[i].value;
         for (var j = 0; j < r.classList.length; j++) info.classes[r.classList[j]] = 1;
@@ -478,12 +572,24 @@
     }
     return regions;
   }
+  function recordOf(el) {
+    var rec = fullProps && fullProps.get(el), explicit = {};
+    if (rec) {
+      for (var k in rec.explicit) explicit[k] = rec.explicit[k];
+      if (rec.parts) for (var pk in rec.parts) { explicit.$parts = rec.parts; break; }
+      return { explicit: explicit, keepAll: rec.keepAll };
+    }
+    try { explicit = JSON.parse(el.getAttribute("data-ds-props") || "{}"); } catch (_) {}
+    return { explicit: explicit, keepAll: true };
+  }
   function serializeBlock(el, slotName) {
     var name = el.getAttribute("data-ds"), block = DS.blocks[name], id = el.getAttribute("data-ds-i");
     if (!block || !id) return serializeElement(el, slotName, true);
     var explicit = {};
     try { explicit = JSON.parse(el.getAttribute("data-ds-props") || "{}"); } catch (_) {}
-    var tinfo = templateAttrs(name, withDefaults(block, explicit));
+    var regions = ownMarkers(el, id), flags = {};
+    for (var f = 0; f < regions.length; f++) flags[regions[f].name] = !onlyWhitespace(regions[f].nodes);
+    var tinfo = templateAttrs(name, withDefaults(block, explicit), flags);
     var out = "<ds-" + name + propAttrs(block, explicit);
     for (var i = 0; i < el.attributes.length; i++) {
       var a = el.attributes[i], an = a.name;
@@ -499,14 +605,19 @@
         continue;
       }
       if (STATE_ATTRS[an]) continue;
-      if (!(PASSTHROUGH[an] || an.indexOf("data-") === 0 || an.indexOf("aria-") === 0)) continue;
+      if (!isPass(an)) continue;
       if (tinfo.attrs[an] === a.value) continue;
       out += attrString(an, a.value);
     }
     if (slotName && slotName !== "default") out += attrString("slot", slotName);
     out += ">";
-    var regions = ownMarkers(el, id);
-    for (var r = 0; r < regions.length; r++) out += serializeList(regions[r].nodes, regions[r].name);
+    for (var r = 0; r < regions.length; r++) {
+      var nodes = regions[r].nodes, tabular = false;
+      for (var t = 0; t < nodes.length; t++) if (nodes[t].nodeType === 1 && TABLE_PARTS[nodes[t].localName]) { tabular = true; break; }
+      // table rows only survive parsing inside <template slot="...">
+      if (tabular) out += "<template slot=\"" + regions[r].name + "\">" + serializeList(nodes, null) + "</template>";
+      else out += serializeList(nodes, regions[r].name);
+    }
     return out + "</ds-" + name + ">";
   }
   function serializeElement(el, slotName, plain) {
@@ -567,25 +678,28 @@
   function readProps(root) {
     var name = root && root.getAttribute("data-ds"), block = name && DS.blocks[name];
     if (!block) return null;
-    var explicit = {};
-    try { explicit = JSON.parse(root.getAttribute("data-ds-props") || "{}"); } catch (_) {}
-    delete explicit.$omitted;
-    return withDefaults(block, explicit);
+    return withDefaults(block, recordOf(root).explicit);
   }
   function update(root, next) {
     var name = root.getAttribute("data-ds"), block = DS.blocks[name], id = root.getAttribute("data-ds-i");
     if (!block) return root;
-    var explicit = {};
-    try { explicit = JSON.parse(root.getAttribute("data-ds-props") || "{}"); } catch (_) {}
-    delete explicit.$omitted;
-    var add = normalizeProps(block, name, next || {});
-    for (var k in add) explicit[k] = add[k];
+    var rec = recordOf(root), explicit = rec.explicit, parts = explicit.$parts || {};
+    delete explicit.$parts; delete explicit.$omitted;
+    var real = {}, k;
+    for (k in next || {}) {
+      if (k.indexOf(":") > 0) addPart(block, name, parts, k, next[k], root);
+      else real[k] = next[k];
+    }
+    var add = normalizeProps(block, name, real);
+    for (k in add) explicit[k] = add[k];
     var el = root.ownerDocument.createElement("ds-" + name);
     el.__dsPreset = explicit;
-    var slots = {}, regions = ownMarkers(root, id);
-    for (var r = 0; r < regions.length; r++) slots[regions[r].name] = regions[r].nodes;
+    el.__dsParts = parts;
+    el.__dsKeepAll = rec.keepAll;
+    var slots = {}, flags = {}, regions = ownMarkers(root, id);
+    for (var r = 0; r < regions.length; r++) { slots[regions[r].name] = regions[r].nodes; flags[regions[r].name] = !onlyWhitespace(regions[r].nodes); }
     el.__dsSlots = slots;
-    var tinfo = templateAttrs(name, withDefaults(block, explicit));
+    var tinfo = templateAttrs(name, withDefaults(block, explicit), flags);
     for (var i = 0; i < root.attributes.length; i++) {
       var a = root.attributes[i];
       if (a.name.indexOf("data-ds") === 0) continue;
@@ -594,7 +708,7 @@
         var extra = [];
         for (var j = 0; j < root.classList.length; j++) if (!tinfo.classes[root.classList[j]] && !isStateClass(root.classList[j])) extra.push(root.classList[j]);
         if (extra.length) el.setAttribute("class", extra.join(" "));
-      } else if ((PASSTHROUGH[a.name] || a.name.indexOf("data-") === 0 || a.name.indexOf("aria-") === 0) && tinfo.attrs[a.name] !== a.value) el.setAttribute(a.name, a.value);
+      } else if (isPass(a.name) && tinfo.attrs[a.name] !== a.value) el.setAttribute(a.name, a.value);
     }
     root.parentNode.replaceChild(el, root);
     var pending = [], out = expandElement(el, pending);
