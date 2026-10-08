@@ -223,6 +223,18 @@ class BrokenDS(unittest.TestCase):
         self.edit_json("components/card/component.json", lambda d: d.update({"classRoots": ["select-panel"]}))
         self.assertIn("duplicate-root-class", self.found())
 
+    def test_templated_first_class_is_no_root_class(self):
+        self.put("components/stack/template.html", '<div class="{{gap}} stack"><ds-slot></ds-slot></div>')
+        self.edit_json("components/stack/component.json", lambda d: d.pop("rootClass"))
+        ds = ds_model.load(self.ds_dir)
+        self.assertIsNone(ds.blocks["stack"].root_class)
+        self.assertIn("stack", ds.blocks["stack"].template_classes)
+
+    def test_big_enum_needs_no_full_coverage(self):
+        self.edit_json("components/icon/component.json", lambda d: d["props"]["style"].update({"values": ["filled", "outline"] + ["s" + str(i) for i in range(30)]}))
+        fs = ds_model.load(self.ds_dir).findings
+        self.assertNotIn("missing-example", codes(fs, "warn"))
+
     def test_knob_fallback_is_allowed(self):
         self.put("components/stack/style.css", ".stack { display: grid; grid-template-columns: repeat(var(--stack-cols, 1), 1fr); }\n.stack--s { gap: var(--space-2); }\n.stack--m { gap: var(--space-3); }\n")
         self.assertNotIn("token-undefined", self.found())

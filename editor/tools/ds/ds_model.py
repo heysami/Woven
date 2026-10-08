@@ -29,6 +29,8 @@ PROP_FIELDS = {"type", "values", "required", "default", "desc"}
 COPY_FIELDS = {"maxWords", "maxChars", "case"}
 EXAMPLE_FIELDS = {"title", "props", "slots", "frame", "desc", "attrs"}
 NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
+DYN = "dsdynamic0"                  # stands in for {{...}} when reading template structure
+ENUM_COVERAGE_MAX = 20              # bigger enums (icon names) are not expected in examples
 RESERVED = {"custom", "slot"}
 PASSTHROUGH = {"id", "class", "style", "hidden", "title", "role", "tabindex", "lang", "dir"}
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
@@ -549,17 +551,22 @@ def load(ds_dir):
             if not scoped and ref not in props:
                 ds.add("error", "template-unknown-name", "{{" + ref + "}} is not a prop of " + b.name,
                        os.path.join(b.dir, "template.html"))
-        stripped = TAG_RE.sub("x", b.template)
+        # Replace {{...}} with a sentinel so a templated class ("{{role}}",
+        # "btn--{{variant}}") is recognisable as dynamic, never mistaken for
+        # a literal class name.
+        stripped = TAG_RE.sub(DYN, b.template)
         ol = outline(stripped)
         for t in ol.tags:
             for c in (t[1].get("class") or "").split():
-                if c != "x" and "x" not in c.split("-"):
+                if DYN not in c:
                     b.template_classes.add(c)
         rc = b.spec.get("rootClass")
         if not rc and ol.tags:
+            # default root class = the first class on the template root; a
+            # templated first class means the block has no fixed root class
             first = (ol.tags[0][1].get("class") or "").split()
-            rc = first[0] if first else None
-        b.root_class = rc if rc and "{{" not in rc else None
+            rc = first[0] if first and DYN not in first[0] else None
+        b.root_class = rc if rc and "{{" not in rc and DYN not in rc else None
 
     # root classes (rootClass + classRoots) must be unique across blocks
     seen = {}
@@ -663,6 +670,8 @@ def _check_ds(ds):
                 for f in check_markup(ds, html, ep, mode="example"):
                     ds.findings.append(f)
         for k, vals in seen_enum.items():
+            if len(props[k].get("values", [])) > ENUM_COVERAGE_MAX:
+                continue
             missing = [v for v in props[k].get("values", []) if v not in vals]
             if missing:
                 ds.add("warn", "missing-example", "no example shows " + k + "=" + "|".join(missing), os.path.join(b.dir, "examples.json"))
