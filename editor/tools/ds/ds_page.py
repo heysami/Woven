@@ -22,18 +22,21 @@ JS_RAW_TAG_RE = re.compile(r"<(select|button|table|textarea|input|dialog|details
 
 
 class _Frame(object):
-    __slots__ = ("tag", "block", "custom", "line", "proxy_slot")
+    __slots__ = ("tag", "block", "custom", "line", "proxy_slot", "slot_ctx")
 
-    def __init__(self, tag, block, custom, line, proxy_slot=None):
+    def __init__(self, tag, block, custom, line, proxy_slot=None, slot_ctx=None):
         # proxy_slot: a <template slot="x"> inside a block; its children are
         # that block's slot-x content (table rows only parse inside <template>)
+        # slot_ctx: (block, slot name) of the nearest slot this element sits in
         self.tag, self.block, self.custom, self.line, self.proxy_slot = tag, block, custom, line, proxy_slot
+        self.slot_ctx = slot_ctx
 
 
 class _Checker(HTMLParser):
-    def __init__(self, ds, file, mode, owner, line_offset=0):
+    def __init__(self, ds, file, mode, owner, line_offset=0, root_ctx=None):
         HTMLParser.__init__(self, convert_charrefs=True)
         self.ds, self.file, self.mode, self.owner, self.off = ds, file, mode, owner, line_offset
+        self.root_ctx = root_ctx      # (block, slot) when checking content destined for a slot
         self.out = []
         self.stack = []
         self.replaced = {}
@@ -63,6 +66,18 @@ class _Checker(HTMLParser):
 
     def parent_block(self):
         return self.stack[-1].block if self.stack and self.stack[-1].block else None
+
+    def child_slot_ctx(self, attrs):
+        if not self.stack:
+            return self.root_ctx
+        top = self.stack[-1]
+        if top.proxy_slot:
+            return (top.block, top.proxy_slot)
+        if top.block:
+            return (top.block, attrs.get("slot", "default"))
+        if top.custom:
+            return None
+        return top.slot_ctx
 
     def check_slot_child(self, tag, attrs, is_text=False):
         parent = self.parent_block()
@@ -108,6 +123,12 @@ class _Checker(HTMLParser):
         if tag == "ds-slot":
             if self.mode != "template":
                 self.add("error", "unknown-block", "<ds-slot> is only valid inside a block template")
+            elif "slot" in attrs:
+                parent = self.parent_block()
+                if not parent:
+                    self.add("error", "slot-not-allowed", "<ds-slot slot=\"" + attrs["slot"] + "\"> forwards into a slot, so it must sit directly inside a block tag")
+                elif attrs["slot"] not in (parent.spec.get("slots") or {}):
+                    self.add("error", "slot-not-allowed", "ds-" + parent.name + " has no '" + attrs["slot"] + "' slot to forward into")
             if push:
                 self.stack.append(_Frame(tag, None, False, self.line()))
             return
@@ -134,7 +155,7 @@ class _Checker(HTMLParser):
                 if self.mode == "page":
                     self._copy_rules(block, attrs)
         else:
-            self._raw(tag, attrs)
+            self._raw(tag, attrs, self.child_slot_ctx(attrs))
             if tag in ("style", "script"):
                 if tag == "script" and attrs.get("src"):
                     self.script_srcs.append((attrs["src"], self.line()))
@@ -144,9 +165,9 @@ class _Checker(HTMLParser):
             if tag == "link" and "stylesheet" in (attrs.get("rel") or "").split():
                 self.links.append((attrs.get("href") or "", self.line()))
         if push:
-            self.stack.append(_Frame(tag, block, custom, self.line()))
+            self.stack.append(_Frame(tag, block, custom, self.line(), slot_ctx=self.child_slot_ctx(attrs)))
 
-    def _raw(self, tag, attrs):
+    def _raw(self, tag, attrs, slot_ctx=None):
         inc = self.in_custom()
         owner = self.owner
         # `replaces` governs PAGES: a block's own template is DS code and may use
@@ -163,6 +184,12 @@ class _Checker(HTMLParser):
             # .card.stat-card, or deliberate part reuse such as .acc__title).
             if self.mode == "template" and owner and (ob is owner or ob.name in (owner.spec.get("contains") or [])):
                 continue
+            # content placed in a slot declared "ownClasses": true may use the
+            # slot owner's own classes (hand-composed rows inside ds-table)
+            if slot_ctx and slot_ctx[0] is ob:
+                sp = (ob.spec.get("slots") or {}).get(slot_ctx[1])
+                if isinstance(sp, dict) and sp.get("ownClasses"):
+                    continue
             self.add("warn" if inc else "error", "hand-built-block",
                      "." + c + " is part of ds-" + ob.name + "; place <ds-" + ob.name + "> instead of writing its markup")
             break
@@ -216,8 +243,8 @@ class _Checker(HTMLParser):
             self.check_slot_child(None, {}, is_text=True)
 
 
-def check_markup(ds, html, file, mode="page", owner=None, line_offset=0):
-    c = _Checker(ds, file, mode, owner, line_offset)
+def check_markup(ds, html, file, mode="page", owner=None, line_offset=0, root_ctx=None):
+    c = _Checker(ds, file, mode, owner, line_offset, root_ctx)
     c.feed(html)
     c.close()
     return c.out if mode != "page" else c

@@ -52,6 +52,13 @@
   var PART_EXTRA = { name: 1, "for": 1, form: 1, autocomplete: 1 };
   var TABLE_PARTS = { tr: 1, td: 1, th: 1, thead: 1, tbody: 1, tfoot: 1, caption: 1, colgroup: 1, col: 1 };
   var fullProps = typeof WeakMap === "function" ? new WeakMap() : null;   // root -> {explicit, parts, keepAll}
+  // DS.html returns a STRING, so the element that reaches the page is a new
+  // copy and the WeakMap entry above (keyed by the detached root) misses.
+  // Big props left out of data-ds-props wait here by instance id until the
+  // live copy first asks for them (recordOf). Capped so markup that is never
+  // inserted cannot pile up.
+  var htmlProps = typeof Map === "function" ? new Map() : null;
+  var HTML_PROPS_MAX = 500;
   function isPass(an) {
     return !!(PASSTHROUGH[an] || an.indexOf("data-") === 0 || an.indexOf("aria-") === 0 || /^on[a-z]+$/.test(an));
   }
@@ -311,6 +318,11 @@
     for (var c = el.firstChild; c; c = c.nextSibling) nodes.push(c);
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i], s = "default";
+      if (n.__dsSlot) {                       // forwarded by an outer template: <ds-slot name="x" slot="y">
+        s = n.__dsSlot; n.__dsSlot = null;
+        (slots[s] = slots[s] || []).push(n);
+        continue;
+      }
       if (n.nodeType === 1 && n.hasAttribute("slot")) {
         s = n.getAttribute("slot");
         if (n.localName === "template") {
@@ -416,13 +428,20 @@
     for (var p = 0; p < points.length; p++) {
       var pt = points[p].node, sn = points[p].name, content = slots[sn];
       var parent = pt.parentNode;
+      // <ds-slot name="x" slot="y"> inside a nested block tag forwards this
+      // block's slot x into that block's slot y
+      var fwd = points[p].el ? pt.getAttribute("slot") : null, placed = [];
       if (content && !onlyWhitespace(content) && !used[sn]) {
         checkSlot(block, name, sn, content, el);
-        parent.insertBefore(el.ownerDocument.createComment("ds-slot:" + sn + "#" + id), pt);
-        for (var q = 0; q < content.length; q++) parent.insertBefore(content[q], pt);
-        parent.insertBefore(el.ownerDocument.createComment("/ds-slot#" + id), pt);
+        placed.push(el.ownerDocument.createComment("ds-slot:" + sn + "#" + id));
+        for (var q = 0; q < content.length; q++) placed.push(content[q]);
+        placed.push(el.ownerDocument.createComment("/ds-slot#" + id));
       } else if (points[p].el) {
-        while (pt.firstChild) parent.insertBefore(pt.firstChild, pt);   // fallback content
+        while (pt.firstChild) placed.push(pt.removeChild(pt.firstChild));   // fallback content
+      }
+      for (var pl = 0; pl < placed.length; pl++) {
+        if (fwd) placed[pl].__dsSlot = fwd;
+        parent.insertBefore(placed[pl], pt);
       }
       used[sn] = 1;
       parent.removeChild(pt);
@@ -439,8 +458,13 @@
     root.setAttribute("data-ds-i", String(id));
     var pj = propsAttr(tag.explicit, tag.parts, keepAll);
     if (pj) root.setAttribute("data-ds-props", pj);
-    if (fullProps) fullProps.set(root, { explicit: tag.explicit, parts: tag.parts, keepAll: keepAll });
+    var rec = { explicit: tag.explicit, parts: tag.parts, keepAll: keepAll };
+    if (fullProps) fullProps.set(root, rec);
     el.parentNode.replaceChild(root, el);
+    if (htmlProps && !root.isConnected && pj && pj.indexOf("\"$omitted\"") >= 0) {
+      htmlProps.set(String(id), rec);
+      if (htmlProps.size > HTML_PROPS_MAX) htmlProps["delete"](htmlProps.keys().next().value);
+    }
     if (behaviors[name] && behaviors[name].init && pending) pending.push([name, root, props]);
     return root;
   }
@@ -589,6 +613,11 @@
   }
   function recordOf(el) {
     var rec = fullProps && fullProps.get(el), explicit = {};
+    if (!rec && htmlProps) {
+      var hid = el.getAttribute("data-ds-i");
+      rec = hid && htmlProps.get(hid);
+      if (rec) { htmlProps["delete"](hid); if (fullProps) fullProps.set(el, rec); }
+    }
     if (rec) {
       for (var k in rec.explicit) explicit[k] = rec.explicit[k];
       if (rec.parts) for (var pk in rec.parts) { explicit.$parts = rec.parts; break; }
@@ -599,7 +628,7 @@
   }
   function serializeBlock(el, slotName) {
     var name = el.getAttribute("data-ds"), block = DS.blocks[name], id = el.getAttribute("data-ds-i");
-    if (!block || !id) return serializeElement(el, slotName, true);
+    if (!block || !id) return serializeElement(el, slotName, false);
     var explicit = {};
     try { explicit = JSON.parse(el.getAttribute("data-ds-props") || "{}"); } catch (_) {}
     var regions = ownMarkers(el, id), flags = {};
@@ -632,19 +661,28 @@
       var nodes = regions[r].nodes, tabular = false;
       for (var t = 0; t < nodes.length; t++) if (nodes[t].nodeType === 1 && TABLE_PARTS[nodes[t].localName]) { tabular = true; break; }
       // table rows only survive parsing inside <template slot="...">
-      if (tabular) out += "<template slot=\"" + regions[r].name + "\">" + serializeList(nodes, null) + "</template>";
-      else out += serializeList(nodes, regions[r].name);
+      if (tabular) out += "<template slot=\"" + regions[r].name + "\">" + serializeList(nodes, null, true) + "</template>";
+      else out += serializeList(nodes, regions[r].name, true);
     }
     return out + "</ds-" + name + ">";
   }
-  function serializeElement(el, slotName, plain) {
+  // inSlot: the element is content placed in a block's slot. A block's
+  // behavior may mark such content at runtime (a ticked row gets is-selected,
+  // aria-selected), so runtime state is dropped there. Content outside every
+  // block, and inside ds-custom, keeps every class and attribute as written.
+  function serializeElement(el, slotName, inSlot) {
     var tag = el.localName;
     var out = "<" + tag;
     for (var i = 0; i < el.attributes.length; i++) {
       var a = el.attributes[i];
       if (a.name === "data-ds-i" || a.name === "data-ds-unknown") continue;
+      if (inSlot && (a.name.indexOf("data-ds") === 0 || STATE_ATTRS[a.name])) continue;
       var sv = savedValue(a.name, a.value);
       if (sv === null) continue;
+      if (inSlot && a.name === "class") {
+        sv = sv.split(/\s+/).filter(function (c) { return c && !isStateClass(c); }).join(" ");
+        if (!sv) continue;
+      }
       out += attrString(a.name, sv);
     }
     if (slotName && slotName !== "default") out += attrString("slot", slotName);
@@ -652,20 +690,20 @@
     if (VOID[tag]) return out;
     if (RAW_TEXT[tag]) return out + el.textContent + "</" + tag + ">";
     if (tag === "template") return out + el.innerHTML + "</" + tag + ">";
-    return out + serializeList(Array.prototype.slice.call(el.childNodes), null) + "</" + tag + ">";
+    return out + serializeList(Array.prototype.slice.call(el.childNodes), null, inSlot) + "</" + tag + ">";
   }
-  function serializeList(nodes, slotName) {
+  function serializeList(nodes, slotName, inSlot) {
     var out = "";
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
-      if (n.nodeType === 1) out += n.hasAttribute("data-ds") && n.hasAttribute("data-ds-i") ? serializeBlock(n, slotName) : serializeElement(n, slotName);
+      if (n.nodeType === 1) out += n.hasAttribute("data-ds") && n.hasAttribute("data-ds-i") ? serializeBlock(n, slotName) : serializeElement(n, slotName, inSlot);
       else if (n.nodeType === 3) out += n.parentNode && RAW_TEXT[n.parentNode.localName] ? n.nodeValue : escText(n.nodeValue);
       else if (n.nodeType === 8) {
         var v = n.nodeValue, cm = /^ds-custom#(\d+) reason="([^"]*)"$/.exec(v);
         if (cm) {
           var inner = [], j = i + 1, endText = "/ds-custom#" + cm[1];
           while (j < nodes.length && !(nodes[j].nodeType === 8 && nodes[j].nodeValue === endText)) inner.push(nodes[j++]);
-          out += "<ds-custom" + attrString("reason", cm[2]) + (slotName && slotName !== "default" ? attrString("slot", slotName) : "") + ">" + serializeList(inner, null) + "</ds-custom>";
+          out += "<ds-custom" + attrString("reason", cm[2]) + (slotName && slotName !== "default" ? attrString("slot", slotName) : "") + ">" + serializeList(inner, null, false) + "</ds-custom>";
           i = j;
           continue;
         }
@@ -704,6 +742,12 @@
     if (!block) return root;
     var rec = recordOf(root), explicit = rec.explicit, parts = explicit.$parts || {};
     delete explicit.$parts; delete explicit.$omitted;
+    var slots = {}, flags = {}, regions = ownMarkers(root, id);
+    for (var r = 0; r < regions.length; r++) { slots[regions[r].name] = regions[r].nodes; flags[regions[r].name] = !onlyWhitespace(regions[r].nodes); }
+    // what the template produced for the CURRENT props: anything else on the
+    // root was added by the page (a root whose tag or class changes with a
+    // prop must not leak its old classes into the new render)
+    var tinfo = templateAttrs(name, withDefaults(block, explicit), flags);
     var real = {}, k;
     for (k in next || {}) {
       if (k.indexOf(":") > 0) addPart(block, name, parts, k, next[k], root);
@@ -715,10 +759,7 @@
     el.__dsPreset = explicit;
     el.__dsParts = parts;
     el.__dsKeepAll = rec.keepAll;
-    var slots = {}, flags = {}, regions = ownMarkers(root, id);
-    for (var r = 0; r < regions.length; r++) { slots[regions[r].name] = regions[r].nodes; flags[regions[r].name] = !onlyWhitespace(regions[r].nodes); }
     el.__dsSlots = slots;
-    var tinfo = templateAttrs(name, withDefaults(block, explicit), flags);
     for (var i = 0; i < root.attributes.length; i++) {
       var a = root.attributes[i];
       if (a.name.indexOf("data-ds") === 0) continue;
@@ -773,8 +814,8 @@
   }
   function emit(el, type, detail) {
     var ev;
-    try { ev = new CustomEvent(type, { bubbles: true, detail: detail }); }
-    catch (_) { ev = doc.createEvent("CustomEvent"); ev.initCustomEvent(type, true, false, detail); }
+    try { ev = new CustomEvent(type, { bubbles: true, cancelable: true, detail: detail }); }
+    catch (_) { ev = doc.createEvent("CustomEvent"); ev.initCustomEvent(type, true, true, detail); }
     el.dispatchEvent(ev);
     return ev;
   }

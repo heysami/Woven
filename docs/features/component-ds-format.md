@@ -92,7 +92,7 @@ components/<name>/
 | `rootClass` | The DS class on the template root. An element carrying it without `data-ds` is hand-built (runtime self-check). Defaults to the first class on the template root. A block owns its root class plus `root__*` and `root--*`. |
 | `classRoots` | Optional. Extra class roots the block owns when its markup spans several roots (multi-select: `["ms-trigger", "ms-panel"]`). Each one also owns `x__*` and `x--*`. Pages that hand-build them fail the check. Every class root is unique across the DS. |
 | `props` | Types: `string`, `number`, `boolean`, `enum` (needs `values`), `list` (comma-separated in HTML, array in JS), `json` (JSON in HTML, any value in JS). Optional `required`, `default`, `desc`. |
-| `slots` | `accepts`: `"any"`, `"text"` (text and inline markup only), or a list of block names. No `slots` key means the block takes no children. |
+| `slots` | `accepts`: `"any"`, `"text"` (text and inline markup only), or a list of block names. `ownClasses: true` lets content placed in that slot use this block's own classes (hand-composed rows in a table's `rows` slot using its cell classes). No `slots` key means the block takes no children. |
 | `contains` | Blocks this block builds on: nested as `<ds-*>` tags, composed on the same element (`.card.stat-card`), or reusing their part classes (`.acc__title`). Its template may use the classes of every block listed here. Also orders the CSS (contained blocks first). |
 | `events` | Custom events the behavior dispatches (all prefixed `ds:`). |
 | `parts` | Optional `{name: description}`. Named inner elements a page may set attributes on (`input:id="amount"`). The template marks each one with `data-ds-part="name"`, exactly where it should land. |
@@ -114,6 +114,7 @@ Exactly **one root element**. The syntax is a small logic-less subset:
 | `{{#each list as item}}...{{item}} {{item.key}} {{@index}} {{@first}} {{@last}}...{{/each}}` | Loop over a `list` or `json` array. |
 | `{{#if @slot.actions}}` / `{{#if @slot}}` | Whether the page gave that slot (or the default slot) any content. Use it to skip empty wrappers. |
 | `<ds-slot name="actions">fallback</ds-slot>` | Slot point. `<ds-slot></ds-slot>` is the default slot. Its content is the fallback when nothing is slotted. |
+| `<ds-slot name="actions" slot="actions">` | Inside a nested block tag: forwards this block's `actions` slot into the nested block's `actions` slot (a pattern passing its actions to the card it is built on). |
 | `<!--ds-slot name="rows"-->` | Slot point in TABLE context (inside `table`, `thead`, `tbody`, `tr`), where the HTML parser would move a `<ds-slot>` element out of the table. No fallback. |
 | `data-ds-part="input"` | Marks a named part (declared in `parts`) that pages may set attributes on. |
 | `{{icon name style}}` / `{{iconViewBox name style}}` | The inner SVG markup / viewBox of an icon from `icons/`. Arguments are prop names or `"literals"`; `style` is optional (default from `meta.defaultIconStyle`, else `filled`). A bare `{{icon}}` is just the prop named `icon`. |
@@ -175,7 +176,7 @@ The tag is **replaced** by the template's root element. No wrapper element remai
 
 - `data-ds` names the block. `data-ds-props` holds the props that were set explicitly.
 - Slotted content sits between `<!--ds-slot:name-->` and `<!--/ds-slot-->` comments. Comments do not affect CSS selectors.
-- Props written in the page's markup are always kept in `data-ds-props`, so saving restores them. Props passed from JS (`DS.html`) over 2000 characters are left out (`$omitted`), because the page's JS supplies them on every load. Part attributes are kept under `$parts`.
+- Props written in the page's markup are always kept in `data-ds-props`, so saving restores them. Props passed from JS (`DS.html`) over 2000 characters are left out (`$omitted`), because the page's JS supplies them on every load; the runtime holds them until the inserted copy first needs them, so `DS.props()` and behavior `init` still see them. Insert each `DS.html()` result once (call it again for a second copy). Part attributes are kept under `$parts`.
 - `ds-custom` becomes `<!--ds-custom reason="..."-->...<!--/ds-custom-->` around its raw content.
 - Expansion is outer-first. Slotted nodes are moved, not cloned, so page JS references made before expansion survive.
 
@@ -212,7 +213,9 @@ Runtime-only state is never saved back to the page source:
 
 So a behavior or service that marks an element at runtime uses one of those, never a plain `data-*` attribute (that would be saved as authored markup), and every id it generates starts with `ds-` (for example the error message a validation service links through `aria-describedby`). Pages never use `ds-` ids themselves (`reserved-id` warning). A page that wants a fixed current item uses a prop, not `aria-current`.
 
-Handler keys are `"<event>"`, which matches inside the block root, or `"<event> <selector>"`, which matches a descendant. `root` is the closest `[data-ds="<name>"]`. Blocks talk to each other through attributes (`for="grid-id"`) and `ds:*` events, never by reaching into another block's markup.
+Handler keys are `"<event>"`, which matches inside the block root, or `"<event> <selector>"`, which matches a descendant. `DS.emit(el, "ds:sort", detail)` dispatches a bubbling, cancelable event and returns it, so a behavior can check `.defaultPrevented` after page listeners ran.
+
+Content a page placed in a block's slot may be marked by that block's behavior (a ticked row): on save, state classes, the runtime aria state above and `data-ds-*` are dropped from slotted content too. Content outside every block, and inside `ds-custom`, is saved exactly as it is. `root` is the closest `[data-ds="<name>"]`. Blocks talk to each other through attributes (`for="grid-id"`) and `ds:*` events, never by reaching into another block's markup.
 
 ## services/<name>.js
 

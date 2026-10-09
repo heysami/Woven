@@ -15,7 +15,8 @@
   },
   "slots": {
     "rows": {
-      "accepts": "any"
+      "accepts": "any",
+      "ownClasses": true
     }
   }
 }

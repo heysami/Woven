@@ -10,10 +10,11 @@
 <ds-input-affix prefix="$" placeholder="0.00" input:id="amount" input:data-qa="amt" input:oninput="window.__typed = this.value"></ds-input-affix>
 <ds-button label="Go" id="go" onclick="window.__clicked = 1"></ds-button>
 <ds-table columns="Name,Status" id="t1">
-  <template slot="rows"><tr><td>A</td><td>Open</td></tr><tr><td>B</td><td>Closed</td></tr></template>
+  <template slot="rows"><tr><td class="tbl__cell">A</td><td class="tbl__cell">Open</td></tr><tr><td class="tbl__cell">B</td><td class="tbl__cell">Closed</td></tr></template>
 </ds-table>
 <ds-select options="Open,Closed" value="Closed" id="sel"></ds-select>
 <ds-panel title="Orders" cols="Id,Total" id="pan"></ds-panel>
 <ds-card title="No actions" id="c-none"><p>body</p></ds-card>
+<ds-section title="Forwarded" id="sec"><ds-button slot="actions" label="Add" id="sec-add"></ds-button><p id="sec-body">Body</p></ds-section>
 </body>
 </html>

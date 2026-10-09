@@ -134,6 +134,18 @@ class PageChecks(unittest.TestCase):
             os.remove(page)
             shutil.rmtree(tmp)
 
+    def test_own_classes_only_inside_the_slot(self):
+        page = os.path.join(PROJECT, "source", "main", "_tmp_own.html")
+        try:
+            open(page, "w").write('<link rel="stylesheet" href="../../design-systems/mini/build/ds.css">'
+                                  '<script src="../../design-systems/mini/build/ds-runtime.js"></script>'
+                                  '<ds-table columns="A"><template slot="rows"><tr><td class="tbl__cell">ok</td></tr></template></ds-table>'
+                                  '<div class="tbl__cell">outside</div>')
+            ds, fs = ds_check.run(pages=[page])
+            self.assertEqual(sum(1 for f in fs if f.code == "hand-built-block"), 1)
+        finally:
+            os.remove(page)
+
     def test_reserved_id_prefix(self):
         page = os.path.join(PROJECT, "source", "main", "_tmp_ids.html")
         try:
@@ -282,6 +294,19 @@ class BrokenDS(unittest.TestCase):
     def test_comment_slot_point_counts(self):
         self.put("components/stack/template.html", '<div class="stack stack--{{gap}}"><!--ds-slot--></div>')
         self.assertEqual(self.found(), [])
+
+    def test_else_if_inside_a_block_tag(self):
+        self.edit_json("components/stack/component.json", lambda d: d.update({"contains": ["button"]}))
+        self.put("components/stack/template.html", '<div class="stack stack--{{gap}}"><ds-button {{#if gap == "s"}}variant="text"{{else if gap == "m"}}variant="outline"{{/if}}></ds-button><ds-slot></ds-slot></div>')
+        self.assertEqual(self.found(), [])
+
+    def test_forwarding_needs_a_real_slot(self):
+        self.put("patterns/section/template.html", '<section class="sect"><ds-card title="{{title}}"><ds-slot name="actions" slot="nope"></ds-slot><ds-slot></ds-slot></ds-card></section>')
+        self.assertIn("slot-not-allowed", self.found())
+
+    def test_slot_spec_fields(self):
+        self.edit_json("components/stack/component.json", lambda d: d["slots"]["default"].update({"own": True}))
+        self.assertIn("schema-invalid", self.found())
 
     def test_knob_fallback_is_allowed(self):
         self.put("components/stack/style.css", ".stack { display: grid; grid-template-columns: repeat(var(--stack-cols, 1), 1fr); }\n.stack--s { gap: var(--space-2); }\n.stack--m { gap: var(--space-3); }\n")

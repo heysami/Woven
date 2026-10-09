@@ -513,6 +513,9 @@ def _validate_spec(ds, b, path):
                 if not isinstance(sp, dict):
                     ds.add("error", "schema-invalid", "slot '" + sn + "' must be an object", path)
                     continue
+                for k in sp:
+                    if k not in ("accepts", "ownClasses", "desc"):
+                        ds.add("error", "schema-invalid", "slot '" + sn + "': unknown field '" + k + "'", path)
                 acc = sp.get("accepts", "any")
                 if not (acc in ("any", "text") or isinstance(acc, list)):
                     ds.add("error", "schema-invalid", "slot '" + sn + "': accepts must be any|text|[blocks]", path)
@@ -695,10 +698,13 @@ def _check_ds(ds):
         if b.compiled is not None:
             # drop control tags, keep {{value}} tags so attribute checks know
             # the value is only known at render time
-            stripped = TAG_RE.sub(lambda m: "" if (m.group(1) or m.group(2).strip() == "else") else m.group(0), b.template)
+            stripped = TAG_RE.sub(lambda m: "" if (m.group(1) or m.group(2).strip().split()[:1] == ["else"]) else m.group(0), b.template)
             for f in check_markup(ds, stripped, tpath, mode="template", owner=b):
                 ds.findings.append(f)
-            used_slots = set(re.findall(r'<ds-slot(?:\s+name="([\w-]+)")?', b.template))
+            used_slots = set()
+            for tag_src in re.findall(r"<ds-slot\b[^>]*>", b.template):
+                nm = re.search(r'\sname="([\w-]+)"', tag_src)
+                used_slots.add(nm.group(1) if nm else "default")
             used_slots |= set(SLOT_COMMENT_RE.findall(b.template))
             used_slots = set(s or "default" for s in used_slots)
             for ref, _ in template_names(b.compiled):
@@ -753,7 +759,7 @@ def _check_ds(ds):
             for sn, html in (ex.get("slots") or {}).items():
                 if sn not in slots:
                     ds.add("error", "slot-not-allowed", "example " + str(i + 1) + " fills unknown slot '" + sn + "'", ep)
-                for f in check_markup(ds, html, ep, mode="example"):
+                for f in check_markup(ds, html, ep, mode="example", root_ctx=(b, sn)):
                     ds.findings.append(f)
         for k, vals in seen_enum.items():
             if len(props[k].get("values", [])) > ENUM_COVERAGE_MAX:

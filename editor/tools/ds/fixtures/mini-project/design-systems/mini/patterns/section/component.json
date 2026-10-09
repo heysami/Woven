@@ -1,0 +1,26 @@
+{
+  "name": "section",
+  "title": "Section",
+  "layer": "pattern",
+  "oneLine": "Card-backed page section.",
+  "rootClass": "sect",
+  "props": {
+    "title": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "slots": {
+    "default": {
+      "accepts": "any"
+    },
+    "actions": {
+      "accepts": [
+        "button"
+      ]
+    }
+  },
+  "contains": [
+    "card"
+  ]
+}

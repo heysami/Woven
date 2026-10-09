@@ -198,7 +198,7 @@ const url = p => 'file://' + path.join(PROJECT, p);
   for (const want of [
     '<ds-input-affix prefix="$" placeholder="0.00" input:id="amount" input:data-qa="amt" input:oninput="window.__typed = this.value"></ds-input-affix>',
     '<ds-button label="Go" id="go" onclick="window.__clicked = 1"></ds-button>',
-    '<template slot="rows"><tr><td>A</td><td>Open</td></tr><tr><td>B</td><td>Closed</td></tr></template>',
+    '<template slot="rows"><tr><td class="tbl__cell">A</td><td class="tbl__cell">Open</td></tr><tr><td class="tbl__cell">B</td><td class="tbl__cell">Closed</td></tr></template>',
   ]) assert.ok(featSrc.includes(want), 'serialize keeps: ' + want + '\n---\n' + featSrc);
   const more = await f.evaluate(() => {
     DS.violations.length = 0;
@@ -226,6 +226,33 @@ const url = p => 'file://' + path.join(PROJECT, p);
   });
   assert.ok(st.includes('<ds-button label="Go" id="go" onclick="window.__clicked = 1" aria-describedby="hint-1"></ds-button>'), 'state dropped, authored idref kept:\n' + st);
   assert.ok(st.includes('<p>body</p>'), 'a generated ds- id on slotted content is not saved');
+
+  // 12. pilot gaps round 3: DS.html big props, cancelable events, slot state
+  //     on save, forwarded slots, DS.update on a changing root class
+  const r3 = await f.evaluate(() => {
+    const host = document.createElement('div'); document.body.appendChild(host);
+    const big = Array.from({ length: 400 }, (_, i) => 'Opt ' + i);
+    host.innerHTML = DS.html('select', { options: big, id: 'bigsel' });
+    const bigProps = DS.props(document.getElementById('bigsel')).options.length;
+    let prevented;
+    const btn = document.getElementById('go');
+    btn.addEventListener('ds:sort', e => e.preventDefault(), { once: true });
+    prevented = DS.emit(btn, 'ds:sort', { by: 'name' }).defaultPrevented;
+    const row = document.querySelector('#t1 tbody tr');
+    row.classList.add('is-selected'); row.setAttribute('aria-selected', 'true'); row.setAttribute('data-ds-row', '1');
+    const sec = document.getElementById('sec');
+    const fwd = [!!sec.querySelector('.card__actions #sec-add'), !!sec.querySelector('.stack #sec-body')];
+    const b2 = DS.update(document.getElementById('go'), { variant: 'outline' });
+    return { bigProps, prevented, fwd, cls: b2.className, src: DS.serialize(document.body) };
+  });
+  assert.equal(r3.bigProps, 400, 'DS.props sees big props of DS.html markup after insertion');
+  assert.equal(r3.prevented, true, 'ds:* events are cancelable');
+  assert.deepEqual(r3.fwd, [true, true], '<ds-slot name="actions" slot="actions"> forwards into the nested card');
+  assert.equal(r3.cls, 'btn btn--outline', 'DS.update does not carry the old variant class over');
+  assert.ok(r3.src.includes('<template slot="rows"><tr><td class="tbl__cell">A</td>'), 'slotted row saved without runtime state:\n' + r3.src);
+  assert.ok(r3.src.includes('<ds-section title="Forwarded" id="sec"><ds-button label="Add" id="sec-add" slot="actions"></ds-button><p id="sec-body">Body</p></ds-section>'),
+    'forwarded slot content saves back on the outer block:\n' + r3.src);
+  assert.ok(r3.src.includes('<ds-button variant="outline" label="Go" id="go"') || r3.src.includes('<ds-button label="Go" variant="outline" id="go"'), 'updated prop saved');
 
   assert.deepEqual(errors, [], 'no page errors');
   await browser.close();

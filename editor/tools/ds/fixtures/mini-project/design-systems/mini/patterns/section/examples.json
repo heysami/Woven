@@ -1,0 +1,12 @@
+[
+  {
+    "title": "With action",
+    "props": {
+      "title": "Orders"
+    },
+    "slots": {
+      "actions": "<ds-button label=\"Add\"></ds-button>",
+      "default": "<p>Body</p>"
+    }
+  }
+]

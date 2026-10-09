@@ -1,3 +1,3 @@
 .tbl { border-collapse: collapse; width: 100%; }
 .tbl__th { text-align: left; padding: var(--space-2); border-bottom: 1px solid var(--color-border); }
-.tbl td { padding: var(--space-2); }
+.tbl__cell { padding: var(--space-2); }
