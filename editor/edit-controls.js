@@ -2,7 +2,7 @@
 function WovenInspectorIcon({ name }) {
   const paths = {
     plus: 'M8 3v10M3 8h10', close: 'm4 4 8 8M12 4l-8 8',
-    copy: 'M5 5h8v8H5zM3 10H2V2h8v1', paste: 'M5 3H3v11h10V3h-2M6 2h4v3H6zM5 8h6M5 11h4',
+    copy: 'M5 5h8v8H5zM3 10H2V2h8v1', cut: 'M6 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm8 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.4 10.6 12 2M10.6 10.6 4 2', paste: 'M5 3H3v11h10V3h-2M6 2h4v3H6zM5 8h6M5 11h4',
     duplicate: 'M6 6h8v8H6zM3 10H2V2h8v1M10 8v4M8 10h4',
     component: 'm8 1 3 3-3 3-3-3 3-3Zm-4 4 3 3-3 3-3-3 3-3Zm8 0 3 3-3 3-3-3 3-3Zm-4 4 3 3-3 3-3-3 3-3Z',
     variables: 'm8 2 6 6-6 6-6-6 6-6ZM5 8h6M8 5v6',
@@ -213,6 +213,7 @@ function WovenSelectionTools({ element, picked, onCommand, onStyle }) {
     </div>
     <div className="woven-selection-actions">
       <${WovenIconButton} icon="copy" label="Copy" onClick=${() => perform("copy")}/>
+      <${WovenIconButton} icon="cut" label="Cut" onClick=${() => perform("cut")}/>
       <${WovenIconButton} icon="paste" label="Paste" onClick=${() => perform("paste", { position })}/>
       <${WovenIconButton} icon="duplicate" label="Duplicate" onClick=${() => perform("duplicate")}/>
       <span className="woven-selection-kind">${current ? "Component instance" : element.tagName.toLowerCase()}</span>

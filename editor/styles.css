@@ -7278,6 +7278,13 @@ body:has(.workflow-body[data-view="proto"]) .canvas-ctxmenu {
 .workflow-node-stage-save:hover {
   filter: brightness(1.05);
 }
+.workflow-node-stage-agent {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.workflow-node-stage-agent:hover {
+  filter: brightness(0.97);
+}
 .workflow-node-stage-btn:active { transform: translateY(1px); }
 
 /* Top-of-node action chips (Show code · Zoom). Portaled to document.body
@@ -35307,12 +35314,13 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 .woven-layer-chevron:disabled { visibility: hidden; }
 .woven-layers :is(input, button, [role="treeitem"]):focus-visible { outline: 2px solid var(--accent-text); outline-offset: -2px; }
 .woven-layer-tree > small { display: block; padding: 12px; color: var(--text-muted); }
-.zoom-overlay[data-tool="select"] .zoom-iframe-host { left: 288px; right: 288px; top: 48px; }
+/* Interact shares Select's stage box so the frame holds still while the user flips between them. */
+.zoom-overlay:is([data-tool="select"], [data-tool="interact"]) .zoom-iframe-host { left: 288px; right: 288px; top: 48px; }
 .zoom-overlay .woven-layers-panel { left: 48px; top: 48px; bottom: 48px; max-height: none; border-radius: 0; border-width: 1px 1px 0 0; box-shadow: none; }
 .zoom-overlay .zoom-inspector-panel { right: 0; top: 48px; bottom: 48px; max-height: none; border-radius: 0; border-width: 1px 0 0 1px; box-shadow: none; }
 .woven-empty-selection { padding: 12px; color: var(--text-muted); }
 @media (max-width: 900px) {
   .zoom-overlay .woven-layers-panel { width: 190px; }
   .zoom-overlay .zoom-inspector-panel { width: 264px; }
-  .zoom-overlay[data-tool="select"] .zoom-iframe-host { left: 238px; right: 264px; }
+  .zoom-overlay:is([data-tool="select"], [data-tool="interact"]) .zoom-iframe-host { left: 238px; right: 264px; }
 }

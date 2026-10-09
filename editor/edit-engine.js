@@ -60,13 +60,15 @@
       return fallback.startsWith('source/') ? fallback : null;
     } catch { return null; }
   }
-  function isolate(frame, path, apiUrl) {
+  // `seed` (optional): serialized HTML of another live view of the same page,
+  // so the authoring copy starts from the state the user was looking at.
+  function isolate(frame, path, apiUrl, seed) {
     const doc = frame.contentDocument;
     if (!doc?.body || !path || doc.location.href === 'about:blank') return false;
     if (doc.querySelector('meta[name="woven-authoring"]')) { bind(doc, path, apiUrl); return false; }
     const state = bind(doc, path, apiUrl);
     if (!state.dirty) state.matchWarnings = doc.defaultView.__wovenEditConflicts || [];
-    const parsed = new doc.defaultView.DOMParser().parseFromString(state.dirty ? state.snapshot : serialize(doc), 'text/html');
+    const parsed = new doc.defaultView.DOMParser().parseFromString(state.dirty ? state.snapshot : (seed || serialize(doc)), 'text/html');
     parsed.querySelectorAll('script:not([type="application/json"]), meta[http-equiv="refresh"]').forEach(n => n.remove());
     parsed.querySelectorAll('*').forEach(n => {
       for (const a of Array.from(n.attributes)) if (/^on/i.test(a.name)) n.removeAttribute(a.name);

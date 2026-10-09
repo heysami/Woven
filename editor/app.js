@@ -39474,6 +39474,47 @@ function _resolvePatchOpCancellations(ops) {
   return out;
 }
 
+/* Brief for "Save + agent": the canvas select-mode save persists edits as a
+   `data-th-patch` replay block (see _injectInspectorPatch below). This asks an
+   agent to make them real source and retire the ops it implemented. */
+function inspectorEditsAgentPrompt(entries) {
+  const clip = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
+  const brief = op => {
+    if (!op || typeof op !== "object") return [];
+    if (op.type === "batch") return (op.ops || []).flatMap(brief);
+    const target = op.selector || op.anchor || (op.key ? "[data-th-rkey-el=" + op.key + "]" : "");
+    const detail = op.type === "style" ? JSON.stringify(op.styles || {})
+      : op.type === "text" ? JSON.stringify(clip(op.text, 120))
+      : op.type === "insert" ? (op.position || "after") + " " + clip(op.html, 160)
+      : op.type === "replace" ? clip(op.html, 160)
+      : op.type === "attribute" ? op.name + "=" + JSON.stringify(op.value)
+      : "";
+    return ["  - " + op.type + (target ? " `" + target + "`" : "") + (detail ? ": " + detail : "")];
+  };
+  const lines = [
+    "Implement the visual edits the user just saved from the canvas select mode, so they live in real source instead of a runtime patch.",
+    "",
+    "How they were saved: each file below now carries a `<script data-th-patch=\"1\">` block whose `OPS` array re-applies the edits after the page loads (style / text / insert / delete / reorder / replace / attribute ops, keyed by CSS selector). The user sees the result, but it is fragile: a regenerate, a re-render or a markup change orphans the ops.",
+    "",
+    "Edits saved this time:",
+  ];
+  for (const entry of entries) {
+    lines.push("", "`" + entry.path + "`");
+    for (const op of entry.ops) lines.push(...brief(op));
+  }
+  lines.push(
+    "",
+    "For each file:",
+    "  1. Read the full `OPS` array in its patch block. It can also hold ops from earlier saves; implement those too.",
+    "  2. Implement every op in the real source: markup in the HTML, styles in the page's stylesheet using the bound design system's tokens and classes (not inline styles where the page has a class for it), copy in data.js or the component that renders it when the text is data-driven. Drop Woven's `data-th-*` markers from any markup you carry over.",
+    "  3. Remove each op you implemented from `OPS`. Delete the whole `<script data-th-patch=\"1\">` block once `OPS` is empty. Leave an op in place only if it truly cannot be implemented, and say why.",
+    "  4. Verify the page still renders the edited state the user saw, now without the patch doing the work.",
+    "",
+    "Change nothing the ops do not cover.",
+  );
+  return lines.join("\n");
+}
+
 function _injectInspectorPatch(html, ops, priorOps) {
   if (!html) return html;
   // Always strip any prior patch block first - otherwise a save with no
@@ -41800,6 +41841,13 @@ function WorkflowNodeStagePill({ nodeId }) {
     e.stopPropagation();
     window.dispatchEvent(new CustomEvent("th:staged-inspector-revert"));
   };
+  // A draft has its own Apply (direct write + notes to the agent), so the
+  // agent hand-off is offered on real screens only.
+  const isDraft = nodeId.includes(":");
+  const onSaveAgentClick = (e) => {
+    e.stopPropagation();
+    window.dispatchEvent(new CustomEvent("th:staged-inspector-save-agent"));
+  };
   return createPortal(html`
     <div
       className="workflow-node-stage-pill"
@@ -41821,6 +41869,13 @@ function WorkflowNodeStagePill({ nodeId }) {
         onMouseDown=${(e) => e.stopPropagation()}
         title=${"Save " + pendingCount + " edit" + (pendingCount === 1 ? "" : "s") + " to disk"}
       >Save changes${pendingCount > 1 ? ` (${pendingCount})` : ""}</button>
+      ${!isDraft && html`<button
+        type="button"
+        className="workflow-node-stage-btn workflow-node-stage-agent"
+        onClick=${onSaveAgentClick}
+        onMouseDown=${(e) => e.stopPropagation()}
+        title="Save, then have an agent implement these edits in the real source (markup, DS styles, data) instead of the runtime patch"
+      >Save + agent</button>`}
     </div>
   `, wfChromeHost());
 }
@@ -45595,10 +45650,15 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   // tab auto-reloads any saved edits), clear canvas-anchored chrome, THEN
   // mount the overlay. One shared ZoomOverlay component serves both the
   // node 🔍 buttons and the viewer's per-tab Edit button.
-  const openZoomAt = useCallback((filePath, branch, nodeId) => {
+  const openZoomAt = useCallback((filePath, branch, nodeId, opts) => {
+    // Read the live view BEFORE the view switch re-renders anything.
+    const seed = zoomLiveSeedFor(filePath);
     setProtoViewerMounted(true);
     setMainView("proto");
-    try {
+    // The viewer's own Edit button already has the page open in its active
+    // tab (often navigated there from another path); opening a second tab
+    // would land the user on a fresh copy when edit mode closes.
+    if (!(opts && opts.keepTab)) try {
       // Stash + dispatch: if the viewer is already mounted its listener
       // handles the event (and clears the stash); on FIRST activation the
       // viewer doesn't exist yet when this fires, so it drains the stash
@@ -45613,7 +45673,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     setCtxMenu(null);
     setPickedElement(null);
     setCodePanelNodeId(null);
-    setZoomTarget({ filePath, branch, nodeId: nodeId || null });
+    setZoomTarget({ filePath, branch, nodeId: nodeId || null, seedHtml: seed && seed.html, pageQuery: seed ? seed.query : "" });
   }, []);
   const openZoomForPrototype = useCallback((node, livePath) => {
     // Prototype nodes load `source/<slug>/` (the index of the prototype). The
@@ -45641,7 +45701,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     const branch = (m && m[1]) || activePrototypeSlug();
     const protoNode = (data.nodes || []).find(n =>
       n.kind === "prototype" && nodePrototype(n) === branch);
-    openZoomAt(tab.path, branch, protoNode ? protoNode.id : null);
+    openZoomAt(tab.path, branch, protoNode ? protoNode.id : null, { keepTab: true });
   }, [openZoomAt, data.nodes]);
 
   // Canvas-frames: spawn a `frames` node on the workflow canvas showing
@@ -51141,13 +51201,27 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   useEffect(() => {
     const onSave = () => { commitInspectorEdits(); };
     const onRevert = () => { revertInspectorEdits(); };
+    // Save + agent: the save lands the edits as replay ops, then an agent
+    // implements those ops in real source and strips them from the patch.
+    // The ops are read BEFORE the save, which clears the pending map.
+    const onSaveAgent = async () => {
+      const entries = Array.from(pendingInspectorEdits.values())
+        .map(entry => ({ path: entry.path, ops: (entry.ops || []).filter(Boolean) }))
+        .filter(entry => entry.path && entry.ops.length);
+      if (!entries.length) return;
+      if (!(await commitInspectorEdits())) return;
+      try { await onStartChatWithPrompt(inspectorEditsAgentPrompt(entries)); }
+      catch (error) { flashPickOp("error", "Saved, but the agent could not start: " + (error.message || error)); }
+    };
     window.addEventListener("th:staged-inspector-save", onSave);
+    window.addEventListener("th:staged-inspector-save-agent", onSaveAgent);
     window.addEventListener("th:staged-inspector-revert", onRevert);
     return () => {
       window.removeEventListener("th:staged-inspector-save", onSave);
+      window.removeEventListener("th:staged-inspector-save-agent", onSaveAgent);
       window.removeEventListener("th:staged-inspector-revert", onRevert);
     };
-  }, [commitInspectorEdits, revertInspectorEdits]);
+  }, [commitInspectorEdits, revertInspectorEdits, pendingInspectorEdits, onStartChatWithPrompt, flashPickOp]);
 
   const applyingDraftsRef = useRef(new Set());
   /* ── Draft apply ────────────────────────────────────────────────────────
@@ -51892,6 +51966,16 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         }
         copyPickedElement();
         e.preventDefault(); e.stopPropagation();
+      } else if (cmd && !e.shiftKey && !e.altKey && (e.key === "x" || e.key === "X")) {
+        // Cut = copy + staged delete. Cmd+V on a new pick then lands it as
+        // a sibling, so cut/paste reads as a move. preventDefault also stops
+        // the native cut event, so selected wb items are not cut alongside.
+        if (!pickedElement) return;
+        e.preventDefault(); e.stopPropagation();
+        const cutTag = pickedElement.tagName || "element";
+        if (copyPickedElement()) deletePickedElement().then(n => {
+          if (n) flashPickOp("done", `Cut <${cutTag}> - pick a target, then ⌘V to paste it after`);
+        });
       } else if (cmd && (e.key === "v" || e.key === "V")) {
         const clip = WovenEdit.getClipboard() || nodeClipboardRef.current;
         if (clip && clip.type === "html-style") {
@@ -60828,13 +60912,15 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
             setZoomTarget(null);
             openCodePanelAt(nid, path, needle);
           }}
-          onSwitchTarget=${(filePath, branch) => {
+          seedHtml=${zoomTarget.seedHtml}
+          pageQuery=${zoomTarget.pageQuery}
+          onSwitchTarget=${(filePath, branch, seedHtml, pageQuery) => {
             // Drill-into-component keeps the viewer in sync: the new target
             // opens as a tab too, so closing the overlay lands on it.
             try {
               window.dispatchEvent(new CustomEvent("th:proto-open-tab", { detail: { path: filePath, label: null } }));
             } catch {}
-            setZoomTarget(t => ({ ...(t || {}), filePath, branch: branch || (t && t.branch) || activePrototypeSlug() }));
+            setZoomTarget(t => ({ ...(t || {}), filePath, branch: branch || (t && t.branch) || activePrototypeSlug(), seedHtml: seedHtml || null, pageQuery: pageQuery || "" }));
           }}
         />
       `}
@@ -64211,6 +64297,69 @@ function zoomMirrorFontLoaders(parentDoc, nestedDoc) {
   });
 }
 
+/* Snapshot of a LIVE view of a page (viewer tab, canvas node) to seed the
+   edit-mode authoring copy, so edit mode opens on the state the user was
+   looking at (active tab, open panel) instead of a fresh load. Canvas pixels
+   ride along as images because the authoring copy runs no scripts. */
+function zoomLiveSeed(doc) {
+  const parsed = new DOMParser().parseFromString(WovenEdit.serialize(doc), "text/html");
+  parsed.querySelectorAll('meta[name="woven-authoring"], style[data-woven-authoring-style]').forEach(n => n.remove());
+  parsed.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(n => { if (n.content === "script-src 'none'") n.remove(); });
+  const live = Array.from(doc.querySelectorAll("canvas"));
+  Array.from(parsed.querySelectorAll("canvas")).forEach((canvas, i) => {
+    try {
+      const img = parsed.createElement("img");
+      img.src = live[i].toDataURL(); img.width = live[i].width; img.height = live[i].height; img.alt = "Canvas preview";
+      canvas.replaceWith(img);
+    } catch {}
+  });
+  return "<!doctype html>\n" + parsed.documentElement.outerHTML;
+}
+// The page's own query + hash (e.g. ?app=<id>), minus Woven's project and
+// cache-buster params, so edit mode and Interact load the same record.
+function zoomPageQuery(win) {
+  try {
+    const params = new URLSearchParams(win.location.search);
+    for (const k of ["project", "_z", "_inspstage", "_editReload", "_t"]) params.delete(k);
+    const q = params.toString();
+    return (q ? "?" + q : "") + (win.location.hash || "");
+  } catch { return ""; }
+}
+function zoomLiveSeedFor(filePath) {
+  for (const frame of document.querySelectorAll("iframe")) {
+    try {
+      const doc = frame.contentDocument;
+      if (!doc?.body || doc.location.href === "about:blank") continue;
+      if (WovenEdit.sourcePath(frame) !== filePath) continue;
+      // Hidden viewer tab / culled node have no box; the canvas behind the
+      // preview keeps its box but is visibility:hidden.
+      const r = frame.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2 || getComputedStyle(frame).visibility === "hidden") continue;
+      return { html: zoomLiveSeed(doc), query: zoomPageQuery(doc.defaultView) };
+    } catch {}
+  }
+  return null;
+}
+/* Interact mode runs the real page. Links to other prototype pages stay in
+   the frame (Select then edits that page); anything else would strand the
+   editor on a page it cannot author, so it is blocked. Bubble phase on the
+   window, so client-side routers that preventDefault are left alone. */
+function zoomGuardInteractNav(doc, onBlocked) {
+  const win = doc.defaultView;
+  if (!win || win.__wovenInteractGuard) return;
+  win.__wovenInteractGuard = true;
+  win.addEventListener("click", e => {
+    if (e.defaultPrevented) return;
+    const a = e.target && e.target.closest && e.target.closest("a[href]");
+    const raw = a ? a.getAttribute("href") || "" : "";
+    if (!a || !raw || /^(#|javascript:)/i.test(raw)) return;
+    let url; try { url = new URL(a.href, doc.baseURI); } catch { return; }
+    e.preventDefault();
+    if (url.origin === win.location.origin && url.pathname.startsWith("/source/")) win.location.assign(url.href);
+    else onBlocked();
+  });
+}
+
 function zoomSerialize(doc) {
   if (!doc || !doc.documentElement) return "";
   const clone = doc.documentElement.cloneNode(true);
@@ -64880,6 +65029,22 @@ function executeSelectionCommand(element, action, value = {}) {
     try { if (typeof zoomExtractCss === "function") cssBundle = zoomExtractCss(el.ownerDocument, el, false); } catch {}
     WovenEdit.copy(el, { cssBundle }); return { element: el };
   }
+  if (action === "cut") {
+    // Copy, then a staged delete shaped like the canvas/zoom delete ops:
+    // selector + fingerprint captured BEFORE removal, creator markers so the
+    // merge cancels a pasted/duplicated element instead of fighting it.
+    if (!el.parentElement || /^(HTML|BODY)$/.test(el.tagName)) throw new Error("This element cannot be cut.");
+    executeSelectionCommand(el, "copy");
+    const op = { type: "delete", selector: elementPatchSelector(el) };
+    const fp = _elementDeleteFingerprint(el);
+    if (fp) op.fp = fp;
+    op.parent = elementPatchSelector(el.parentElement);
+    for (const [attr, key] of [["data-th-ins", "cancelIns"], ["data-th-clone-of", "cancelDup"], ["data-th-rep", "cancelRep"]]) {
+      const v = el.getAttribute(attr); if (v) op[key] = v;
+    }
+    el.remove();
+    return { element: null, op, removed: true };
+  }
   if (action === "mode") {
     const mode = value.mode || (value.attribute ? value : null);
     const attributes = value.attributes || [mode?.attribute].filter(Boolean);
@@ -65087,8 +65252,14 @@ function ZoomSlotPopover({ at, picked, onPick, onClose }) {
   `;
 }
 
-function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onRevealInCode, onSwitchTarget }) {
+function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onRevealInCode, onSwitchTarget, seedHtml, pageQuery }) {
   const [tool, setTool] = useState("select");
+  // Interact tool: the frame shows the LIVE page (scripts on) instead of the
+  // script-free authoring copy; leaving it re-isolates whatever state the
+  // user reached. seedRef is the opening view's state, used once.
+  const interactRef = useRef(false);
+  const finalizeRef = useRef(null);
+  const seedRef = useRef(seedHtml || null);
   const [ready, setReady] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [selectionRect, setSelectionRect] = useState(null);
@@ -65320,9 +65491,12 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   // project-relative ("source/<branch>/index.html" or "source/<branch>/components/foo.html");
   // apiUrl adds the project query when in workspace mode.
   const iframeSrc = useMemo(() => {
-    const base = apiUrl("/" + filePath);
-    return iframeNonce === 0 ? base : (base + (base.includes("?") ? "&" : "?") + "_z=" + iframeNonce);
-  }, [filePath, iframeNonce]);
+    let url = apiUrl("/" + filePath);
+    const [query, hash] = (pageQuery || "").split(/#(.*)/s);
+    if (query) url += (url.includes("?") ? "&" : "?") + query.replace(/^\?/, "");
+    if (iframeNonce !== 0) url += (url.includes("?") ? "&" : "?") + "_z=" + iframeNonce;
+    return hash ? url + "#" + hash : url;
+  }, [filePath, iframeNonce, pageQuery]);
 
   // Iframe load lifecycle. Wait for `complete` AND DOMContentLoaded so any
   // inline scripts in the prototype have finished initialising before we
@@ -65350,7 +65524,12 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       if (!href || href === "about:blank") return;   // wait for the real navigation
       const commit = () => {
         if (cancelled) return;
-        if (WovenEdit.isolate(f, filePath, apiUrl)) return;
+        if (interactRef.current) {
+          zoomGuardInteractNav(doc, () => showToast("Only prototype pages open here - that link leaves the prototype"));
+          return;
+        }
+        const seed = seedRef.current; seedRef.current = null;
+        if (WovenEdit.isolate(f, filePath, apiUrl, seed)) { setReady(false); docRef.current = null; return; }
         docRef.current = doc;
         WovenEdit.bind(doc, filePath, apiUrl);
         // Pause the saved patch script's MutationObserver while
@@ -65372,6 +65551,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       else doc.addEventListener("DOMContentLoaded", commit, { once: true });
     };
     f.addEventListener("load", tryFinalize);
+    finalizeRef.current = tryFinalize;
     // Best-effort: if we're already on the real doc when this effect mounts,
     // commit immediately. Otherwise rely on the load event.
     tryFinalize();
@@ -65445,9 +65625,9 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
         return;
       }
       if (isEditableTarget(e.target)) return;
-      if ((e.metaKey || e.ctrlKey) && ["c", "v", "d"].includes(e.key.toLowerCase()) && selectedId && tool === "select") {
+      if ((e.metaKey || e.ctrlKey) && ["c", "x", "v", "d"].includes(e.key.toLowerCase()) && selectedId && tool === "select") {
         e.preventDefault(); e.stopPropagation();
-        try { onSelectionCommand({ c: "copy", v: "paste", d: "duplicate" }[e.key.toLowerCase()]); }
+        try { onSelectionCommand({ c: "copy", x: "cut", v: "paste", d: "duplicate" }[e.key.toLowerCase()]); }
         catch (error) { showToast(error.message); }
         return;
       }
@@ -66008,6 +66188,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     const before = snapshotBefore();
     const result = performSelectionCommand(el, action, value);
     if (result.op) recordOp(action + " (unsaved)", before, result.op, el.ownerDocument);
+    if (result.removed) { setSelectedId(null); setPicked(null); setSelectionRect(null); }
     if (result.element) {
       zoomTagAll(result.element.ownerDocument);
       setSelectedId(result.element.getAttribute(ZOOM_ID_ATTR));
@@ -66703,8 +66884,43 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   }, [selectedId, recordOp, showToast]);
 
   // ─── Toolbar config (6 tools + close + footer actions) ────────────────
+  // Entering Interact swaps the frame to the live page; leaving it snapshots
+  // the live state into a fresh authoring copy (or, if the user followed a
+  // link, retargets edit mode at that page seeded with its live state).
+  const chooseTool = useCallback((next) => {
+    if (next === tool) return;
+    const f = iframeRef.current;
+    if (next === "interact") {
+      if (dirty) { showToast("Save or discard your changes first - Interact runs the saved page"); return; }
+      interactRef.current = true;
+      setReady(false); setSelectedId(null); setPicked(null); setSelectionRect(null); setHoverRect(null); setSlotPopoverAt(null);
+      docRef.current = null; activeEditDocRef.current = null;
+      setTool("interact");
+      if (f) f.removeAttribute("srcdoc");
+      showToast("Use the page, then pick Select to edit the state you reach");
+      return;
+    }
+    if (tool === "interact") {
+      interactRef.current = false;
+      setTool(next);
+      let doc = null, live = null;
+      try { doc = f && f.contentDocument; live = f && WovenEdit.sourcePath(f); } catch {}
+      if (doc && live && live !== filePath && onSwitchTarget) {
+        const m = live.match(/^source\/([^/]+)\//);
+        onSwitchTarget(live, (m && m[1]) || branch, zoomLiveSeed(doc), zoomPageQuery(doc.defaultView));
+        return;
+      }
+      if (finalizeRef.current) finalizeRef.current();
+      return;
+    }
+    setTool(next);
+  }, [tool, dirty, filePath, branch, onSwitchTarget, showToast]);
+  const chooseToolRef = useRef(chooseTool);
+  chooseToolRef.current = chooseTool;
+
   const TOOLS = [
     { id: "select",  glyph: html`<${Icon.Cursor}/>`,    title: "Select - pick an element, ⌫ delete, ⌘D duplicate (V)" },
+    { id: "interact", glyph: html`<${Icon.Play}/>`,     title: "Interact - use the live page (tabs, menus, links), then pick Select to edit the state you reached (I)" },
     { id: "text",    glyph: html`<${Icon.Text}/>`,      title: "Text - click an element to edit its text inline (T)" },
     { id: "comment", glyph: html`<${Icon.Comment}/>`,   title: "Comment - pin annotations to elements (C)" },
     { id: "sketch",  glyph: html`<${Icon.Pen}/>`,       title: "Sketch - free-draw on top of the prototype (S)" },
@@ -66717,8 +66933,8 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
       if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const k = (e.key || "").toLowerCase();
-      const map = { v: "select", t: "text", c: "comment", s: "sketch" };
-      if (map[k]) { e.preventDefault(); setTool(map[k]); }
+      const map = { v: "select", i: "interact", t: "text", c: "comment", s: "sketch" };
+      if (map[k]) { e.preventDefault(); chooseToolRef.current(map[k]); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -66753,7 +66969,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
           data-active=${tool === t.id ? "true" : "false"}
           data-tip-host="true"
           aria-label=${t.id}
-          onClick=${() => setTool(t.id)}
+          onClick=${() => chooseTool(t.id)}
         >
           <span className="zoom-tool-glyph">${t.glyph}</span>
           <span className="tab-tip tab-tip-right">${t.title}</span>
@@ -71159,10 +71375,12 @@ function WorkflowPickedInspectorDock({
     if (!el) throw new Error("Select an element in the current frame.");
     const result = performSelectionCommand(el, action, value);
     if (result.op) onStageInspectorEdit(ifr, doc, result.op);
+    // Cut removed the element: drop the pick, same as a canvas delete.
+    if (result.removed) { pickedDomRef.current = null; onClose && onClose(); return result; }
     if (result.element) navigateTo(result.element);
     setRefreshTick(n => n + 1);
     return result;
-  }, [pickedElement, node.id, onStageInspectorEdit, navigateTo]);
+  }, [pickedElement, node.id, onStageInspectorEdit, navigateTo, onClose]);
 
   // React-rendered banner stays suppressed: the downstream pipeline
   // handles React reconciliation, so the inspector must not warn that DOM
@@ -71183,6 +71401,7 @@ function WorkflowPickedInspectorDock({
 
   return html`<${React.Fragment}>
     <aside className=${"woven-layers-panel woven-layers-workflow" + (closing ? " is-closing" : "")} aria-label="Layers"
+      data-scroll-internally="true"
       style=${{ left: (frameLeft - 248) + "px", top: top + "px", width: "240px", height: height + "px" }}
       onMouseDown=${e => e.stopPropagation()} onClick=${e => e.stopPropagation()} onWheel=${e => e.stopPropagation()}>
       <${WovenLayersPanel} element=${pickedDomRef.current} onNavigate=${navigateTo}/>
