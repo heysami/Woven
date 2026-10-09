@@ -204,7 +204,13 @@ DS.behavior("filter-chip", {
 });
 ```
 
-Runtime-only state is never saved back to the page source: state classes (`is-*`, `has-*`, `js-*`), `aria-expanded|selected|pressed|checked`, and any `data-ds-*` attribute. A behavior that needs to mark an element at runtime uses one of those, never a plain `data-*` attribute (that would be saved as authored markup).
+Runtime-only state is never saved back to the page source:
+- state classes (`is-*`, `has-*`, `js-*`);
+- on a block root: `aria-expanded|selected|pressed|checked|invalid|current|busy`;
+- any `data-ds-*` attribute;
+- ids starting with `ds-`, and `ds-` tokens inside id references (`aria-describedby`, `aria-labelledby`, `aria-controls`, `aria-owns`, `aria-errormessage`, ...). Ids the page wrote are kept.
+
+So a behavior or service that marks an element at runtime uses one of those, never a plain `data-*` attribute (that would be saved as authored markup), and every id it generates starts with `ds-` (for example the error message a validation service links through `aria-describedby`). Pages never use `ds-` ids themselves (`reserved-id` warning). A page that wants a fixed current item uses a prop, not `aria-current`.
 
 Handler keys are `"<event>"`, which matches inside the block root, or `"<event> <selector>"`, which matches a descendant. `root` is the closest `[data-ds="<name>"]`. Blocks talk to each other through attributes (`for="grid-id"`) and `ds:*` events, never by reaching into another block's markup.
 
@@ -260,6 +266,7 @@ The gallery renders every example. Each block needs at least one, and every enum
 | `page-css-touches-ds` (page `<style>` or linked local CSS selecting a DS class) | error | page |
 | `inline-style-on-block` | error | page |
 | `custom-without-reason` | error | page |
+| `reserved-id` (a page id starting with `ds-`) | warn | page |
 | `unknown-part`, `bad-part-attr` (a `part:attr` the block does not declare or allow) | error | page, template |
 | `slot-dropped` (slot content the template did not render for these props) | warning | runtime only |
 | `ds-custom` present | info | page |

@@ -32,7 +32,22 @@
   var warned = typeof WeakMap === "function" ? new WeakMap() : null;   // element -> {code: 1}
 
   var PASSTHROUGH = { id: 1, "class": 1, style: 1, hidden: 1, title: 1, role: 1, tabindex: 1, lang: 1, dir: 1 };
-  var STATE_ATTRS = { "aria-expanded": 1, "aria-selected": 1, "aria-pressed": 1, "aria-checked": 1, "aria-hidden": 0 };
+  // Runtime state on a block root: never saved back to the page source.
+  var STATE_ATTRS = { "aria-expanded": 1, "aria-selected": 1, "aria-pressed": 1, "aria-checked": 1,
+                      "aria-invalid": 1, "aria-current": 1, "aria-busy": 1, "aria-hidden": 0 };
+  // ID-reference attributes: ids the runtime/services/behaviors generate use
+  // the reserved "ds-" prefix, and serialize drops exactly those tokens while
+  // keeping ids the page itself wrote.
+  var IDREF_ATTRS = { "aria-describedby": 1, "aria-labelledby": 1, "aria-controls": 1, "aria-owns": 1,
+                      "aria-errormessage": 1, "aria-activedescendant": 1, "aria-flowto": 1, "aria-details": 1 };
+  function savedValue(an, v) {
+    if (an === "id") return /^ds-/.test(v) ? null : v;
+    if (IDREF_ATTRS[an]) {
+      var keep = String(v).split(/\s+/).filter(function (t) { return t && !/^ds-/.test(t); });
+      return keep.length ? keep.join(" ") : null;
+    }
+    return v;
+  }
   // extra attributes a page may set on a block's named PART (`input:name="x"`)
   var PART_EXTRA = { name: 1, "for": 1, form: 1, autocomplete: 1 };
   var TABLE_PARTS = { tr: 1, td: 1, th: 1, thead: 1, tbody: 1, tfoot: 1, caption: 1, colgroup: 1, col: 1 };
@@ -607,7 +622,9 @@
       if (STATE_ATTRS[an]) continue;
       if (!isPass(an)) continue;
       if (tinfo.attrs[an] === a.value) continue;
-      out += attrString(an, a.value);
+      var sv = savedValue(an, a.value);
+      if (sv === null || tinfo.attrs[an] === sv) continue;
+      out += attrString(an, sv);
     }
     if (slotName && slotName !== "default") out += attrString("slot", slotName);
     out += ">";
@@ -626,7 +643,9 @@
     for (var i = 0; i < el.attributes.length; i++) {
       var a = el.attributes[i];
       if (a.name === "data-ds-i" || a.name === "data-ds-unknown") continue;
-      out += attrString(a.name, a.value);
+      var sv = savedValue(a.name, a.value);
+      if (sv === null) continue;
+      out += attrString(a.name, sv);
     }
     if (slotName && slotName !== "default") out += attrString("slot", slotName);
     out += ">";
@@ -708,7 +727,7 @@
         var extra = [];
         for (var j = 0; j < root.classList.length; j++) if (!tinfo.classes[root.classList[j]] && !isStateClass(root.classList[j])) extra.push(root.classList[j]);
         if (extra.length) el.setAttribute("class", extra.join(" "));
-      } else if (isPass(a.name) && tinfo.attrs[a.name] !== a.value) el.setAttribute(a.name, a.value);
+      } else if (isPass(a.name) && !STATE_ATTRS[a.name] && tinfo.attrs[a.name] !== a.value) el.setAttribute(a.name, a.value);
     }
     root.parentNode.replaceChild(el, root);
     var pending = [], out = expandElement(el, pending);

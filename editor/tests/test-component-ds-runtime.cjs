@@ -216,6 +216,17 @@ const url = p => 'file://' + path.join(PROJECT, p);
   assert.equal(more.tagKept, 400, 'big props written in page markup are kept for serialize');
   assert.deepEqual(more.jsOmitted, ['options'], 'big props from JS are left out of data-ds-props');
 
+  // 11. runtime state and generated id references are never saved
+  const st = await f.evaluate(() => {
+    const go = document.getElementById('go');
+    go.setAttribute('aria-invalid', 'true'); go.setAttribute('aria-current', 'page');
+    go.setAttribute('aria-describedby', 'hint-1 ds-err-7');
+    const p = document.querySelector('#c-none p'); p.id = 'ds-gen-3';
+    return DS.serialize(document.body);
+  });
+  assert.ok(st.includes('<ds-button label="Go" id="go" onclick="window.__clicked = 1" aria-describedby="hint-1"></ds-button>'), 'state dropped, authored idref kept:\n' + st);
+  assert.ok(st.includes('<p>body</p>'), 'a generated ds- id on slotted content is not saved');
+
   assert.deepEqual(errors, [], 'no page errors');
   await browser.close();
   console.log('test-component-ds-runtime: ok');

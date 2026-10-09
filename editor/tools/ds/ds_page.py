@@ -95,6 +95,8 @@ class _Checker(HTMLParser):
         attrs = dict((k, v if v is not None else "") for k, v in attrs_list)
         if self.raw_mode:
             return
+        if self.mode == "page" and (attrs.get("id") or "").startswith("ds-"):
+            self.add("warn", "reserved-id", "id '" + attrs["id"] + "' uses the ds- prefix, which is reserved for ids the runtime generates (they are not saved)")
         if tag == "template" and "slot" in attrs and self.parent_block() and not self.stack[-1].proxy_slot:
             parent = self.parent_block()
             slots = parent.spec.get("slots") or {}

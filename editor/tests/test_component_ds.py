@@ -124,6 +124,7 @@ class PageChecks(unittest.TestCase):
                                   '<ds-select options=\'["a", "b,c"]\'></ds-select><ds-select options="[broken"></ds-select>')
             ds, fs = ds_check.run(pages=[page])
             got = codes(fs, "error")
+            self.assertNotIn("reserved-id", codes(fs))
             self.assertIn("unknown-part", got)
             self.assertIn("slot-not-allowed", got)
             self.assertIn("bad-prop-type", got)
@@ -132,6 +133,17 @@ class PageChecks(unittest.TestCase):
         finally:
             os.remove(page)
             shutil.rmtree(tmp)
+
+    def test_reserved_id_prefix(self):
+        page = os.path.join(PROJECT, "source", "main", "_tmp_ids.html")
+        try:
+            open(page, "w").write('<link rel="stylesheet" href="../../design-systems/mini/build/ds.css">'
+                                  '<script src="../../design-systems/mini/build/ds-runtime.js"></script>'
+                                  '<ds-button label="x" id="ds-mine"></ds-button><p id="ds-p">x</p>')
+            ds, fs = ds_check.run(pages=[page])
+            self.assertEqual(sum(1 for f in fs if f.code == "reserved-id"), 2)
+        finally:
+            os.remove(page)
 
     def test_resolution_from_page_link(self):
         self.assertEqual(os.path.normpath(ds_check.resolve_ds_dir(os.path.join(PROJECT, "source", "main", "index.html"))), os.path.normpath(DS_DIR))
