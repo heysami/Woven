@@ -1,5 +1,7 @@
 # Jev integration - typed judgment for direction picking, requirement QA and DS conformance
 
+> **2026-10-13: Phase 1 (direction picking) is REMOVED.** Typed judgment is not used for art direction any more; see docs/features/typed-judgment-providers.md, "Art direction removed". `direction-axes.jev.json`, its generator and the `direction_axis` kind are gone; the sections below that describe them are history.
+
 Status: BUILT 2026-09-24 (phases 0, 1, 2, 3a, 3b, 3c, 4 harness, 5). Written
 2026-09-24. See "What shipped" at the bottom for the file map, the one place
 the build deviates from this plan, and what is still unverified.

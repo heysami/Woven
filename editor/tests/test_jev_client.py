@@ -107,16 +107,16 @@ class JevClient(unittest.TestCase):
 
     def test_confidence_routes_into_the_three_bands(self):
         answers, _rec = self._ask()
-        t = jev.thresholds("direction_axis")
+        t = {"low": 0.45, "high": 0.70}
         self.assertEqual(jev.band(jev.confidence(answers["shell"]), t["low"], t["high"]), "act")
         self.assertEqual(jev.band(jev.confidence(answers["polish"]), t["low"], t["high"]), "confirm")
         self.assertEqual(jev.band(0.1, t["low"], t["high"]), "escalate")
 
     def test_thresholds_scale_with_what_the_answer_can_do(self):
         """A DS role inference can promote a finding to a gating error; a
-        direction rank narrows a shortlist nobody is gated by."""
+        requirement item only writes a line into a report."""
         self.assertGreater(jev.thresholds("ds_role")["high"],
-                           jev.thresholds("direction_axis")["high"])
+                           jev.thresholds("requirement_item")["high"])
         self.assertEqual(jev.thresholds("no-such-kind"), jev.thresholds("default"))
 
     def test_a_pinned_call_never_routes_away_from_jev(self):

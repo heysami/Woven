@@ -90,7 +90,6 @@ import typed_judge  # noqa: E402
 DEFAULT_TARGETS = {
     "ds_role": 0.95,           # promotes an info finding to a gating error
     "requirement_item": 0.90,  # writes a line into a report a human reads
-    "direction_axis": 0.70,    # narrows a shortlist; a wrong rank costs nothing
 }
 # trustPass needs this precision on confident PASS verdicts, over at least this
 # many of them. Skipping a model call on a wrong PASS hides a real failure, so

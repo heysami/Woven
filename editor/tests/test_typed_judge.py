@@ -372,7 +372,7 @@ class P6AdapterRoundTrip(Isolated):
         via_openai = tj.judge("x", QUESTIONS, provider="openai")["answers"]
         self.opener(SYSTEMONE)
         via_systemone = tj.judge("x", QUESTIONS, provider="jev")["answers"]
-        th = tj.thresholds("direction_axis")
+        th = tj.thresholds("default")
         for qid in QUESTIONS:
             a, b = via_openai.get(qid), via_systemone.get(qid)
             self.assertEqual(tj.noul_value(a), tj.noul_value(b), qid)

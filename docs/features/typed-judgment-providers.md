@@ -92,7 +92,7 @@ Interface contract, fixed here so items 2 and 3 can build against it before item
 | New copy | Component | Dynamic value | Case | Type family |
 |---|---|---|---|---|
 | Use typed judgment for text checks | Typed judgment toggle label | - | Sentence | settings-guard-label |
-| Requirement QA, design-system conformance and direction picking. Off, or with no judge set up, each keeps the behaviour it has today. | Text toggle hint | - | Sentence | settings-guard-hint |
+| Requirement QA and design-system conformance. Off, or with no judge set up, each keeps the behaviour it has today. | Text toggle hint | - | Sentence | settings-guard-hint |
 | Use typed judgment for visual checks | Typed judgment toggle label | - | Sentence | settings-guard-label |
 | Frame judge, sprite facing and visual requirement items. Shadow records its answer next to the current judge and changes nothing. Flag adds a finding when it is confident something failed. | Visual toggle hint | - | Sentence | settings-guard-hint |
 | Judge | Provider select label | - | Sentence | workflow-default-provider-label |
@@ -161,6 +161,8 @@ Sources: [Cloudflare blog](https://blog.cloudflare.com/clef-decision-models/), [
 ]}
 ```
 
+**Art direction removed (2026-10-13).** Typed judgment is no longer used to pick or rank a visual direction: the thread-start ranking and judge-built direction card were tried and dropped (it reads a brief by association, e.g. "pokemon" -> three pixel-art options, and cannot judge palette or taste), and the September step -1 ranking, `direction-axes.jev.json`, its generator and the `direction_axis` threshold went with it. Direction picking is the agent's step -1 again.
+
 ## What shipped
 
 Every item is in the tree. Tests: `editor/tests/test_typed_judge.py` (routing, both wires, P4 per provider, P6, P7, limits, images, the key-row probe, thresholds, the shadow log, calibration, and the daemon routes through the real handlers), `editor/tests/test_jev_parity.py` (P1-P5, plus P8), `editor/tests/test_jev_client.py`, `editor/tests/test-jev-settings.cjs` (Playwright, both settings sections). An end-to-end run of the real `visual_qa.py` against a local fake judge showed Shadow and Flag leave the verdict and exit code untouched, with 4 key frames sent.
@@ -183,7 +185,6 @@ Every item is in the tree. Tests: `editor/tests/test_typed_judge.py` (routing, b
 | preamble | `typed_judgment_block`, `_typed_judgment_state` in `editor/kinds/capabilities.py` |
 | calibration | `--shadow`, per-provider bands, `--trust-pass` in `editor/tools/qa/jev_calibrate.py` |
 | Visual QA coverage | `ScreenCollector` + `explore_screens` in `visual_qa.py`: every distinct screen the QA reaches (the settled page, each test case's end state, criteria steps, and a click exploration of the page's steps, tabs and choices: fresh context per probe, at most 60 clicks / 12 screens), measured and shot on one settled, full-height layout; `screen_checks` asks every documented DS component and part instance (vs its gallery render, same variant and state), every element styled outside the DS, and every visible text (shown, readable, not covered), each once, 6 judge calls at a time |
-| Direction ranking at thread start | `editor/direction_ranking.py`: with text checks on and no direction yet (no `DECISION_prototype-direction.json`, no page built), `_run_create` asks the text judge once (needs-direction + recipe/shell/style/aesthetic over `direction-axes.jev.json`), shows the `judge_proposal` card under the first message (`JudgeProposal` in app.js) and appends the ranking to the agent's first message. A failure shows why. The step -1 snippet now passes each axis's question, without which the judge refused it |
 | Visual QA as a subagent | `.claude/agents/visual-qa.md` + `docs/agents/visual-qa.md`: dispatched with the visual-verifier and ds-guardian (visual gate in `capabilities.py`); runs `/__qa/run` on every page at once, LOOKS at each sure no and unsure, records the right answer (`POST /__qa/visual-report/label` -> report row + judge label file, i.e. calibration) and returns a `VISUAL-QA` verdict the main agent fixes from., exactly like the other two: nothing outside the agent's instructions chases it |
 | Visual QA report | `editor/visual_report.py` saves each run to `~/.test-harness/visual-qa/<id>/` (images exactly as sent); `GET /__qa/visual-report?id=` (JSON) and `/file`; the subagent's panel in Tasks & subagents renders it (`VisualQaReport` in `app.js`): counts for every answer, then only the sure no and unsure ones with their images |
 

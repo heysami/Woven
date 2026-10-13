@@ -21221,11 +21221,6 @@ function buildBlocks(events) {
       if (d.type === "tool_result") {
         continue; // already attached to its owning tool/agent_grid block
       }
-      if (d.type === "judge_proposal") {
-        closeAll();
-        blocks.push({ kind: "judge_proposal", data: d, key: `jp-${i}` });
-        continue;
-      }
       if (d.type === "status") {
         // Suppress the "starting · <model>" banner - it's noise. Only the
         // turn-final status frame (label === "done"/"error" with durationMs
@@ -24447,28 +24442,6 @@ function HandoffCard({ handoff, runId }) {
   </div>`;
 }
 
-/* JudgeProposal - the text judge's three direction proposals for this brief
-   (direction_ranking.py), as the SAME <direction-options> card the agent's
-   step -1 emits: palette chips, type samples in the real Google font,
-   library previews recoloured into each option's palette, and the same pick.
-   A failure says why instead of disappearing. */
-function JudgeProposal({ data, runId, answered, onAnswered, processEnded }) {
-  const d = data || {};
-  const seg = useMemo(() => {
-    if (!d.markup) return null;
-    try { return (parseQuestionForms(d.markup).segments || []).find(x => x.kind === "direction") || null; }
-    catch { return null; }
-  }, [d.markup]);
-  if (d.error || !seg) {
-    return html`<div className="chat-judge-proposal" data-error="true">
-      <div className="chat-judge-proposal-h">The judge's direction proposals</div>
-      <div className="chat-judge-proposal-note">Could not build them: ${d.error || "no proposals came back"}</div>
-    </div>`;
-  }
-  return html`<${DirectionOptionsCard} direction=${seg.direction} runId=${runId}
-    answered=${answered} onAnswered=${onAnswered} processEnded=${processEnded}/>`;
-}
-
 function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
   switch (block.kind) {
     case "text": {
@@ -24617,10 +24590,6 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
       const stReason = d.label === "error" ? (contextLimitReason(d.usage) || d.subtype) : null;
       return html`<div className="chat-row chat-status" data-error=${d.label === "error"}>${bits.join(" · ")}${stReason ? html` - ${stReason}` : ""}${d.promptPreview ? html` - ${d.promptPreview}` : ""}</div>`;
     }
-    case "judge_proposal":
-      return html`<${JudgeProposal} data=${block.data} runId=${runId}
-        answered=${answers && answers["decision:prototype-direction"]} onAnswered=${onAnswered}
-        processEnded=${processEnded}/>`;
     case "usage": {
       const u = block.data.usage || {};
       return html`<div className="chat-row chat-usage">in ${u.input_tokens||0} · out ${u.output_tokens||0}${u.cache_read_input_tokens ? ` · cache ${u.cache_read_input_tokens}` : ""}</div>`;
@@ -99540,7 +99509,7 @@ function WorkflowContextCostSection({ mediaConfig }) {
           the agent considers, and the agent still writes every report.
         </div>
         ${toggle("jevJudge", "Use typed judgment for text checks",
-          "Requirement QA, design-system conformance and direction picking. Off, or with no judge set up, each keeps the behaviour it has today.")}
+          "Requirement QA and design-system conformance. Off, or with no judge set up, each keeps the behaviour it has today.")}
         ${judgeSelect("text", "typedJudgeTextProvider", "typed-judge-text")}
         ${toggle("typedJudgeVisual", "Use typed judgment for visual checks",
           "Frame judge, sprite facing and visual requirement items. Shadow records its answer next to the current judge and changes nothing. Flag adds a finding when it is confident something failed.")}

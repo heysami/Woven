@@ -4,13 +4,12 @@ The four invariants in that plan are worthless as prose. These are them as
 tests. Everything runs on FIXTURES and a stubbed judge - no key, no network, no
 daemon - so CI exercises the Jev path on every commit.
 
-  P1 vocabulary parity (I1, I4) - the generated direction axes and the DS
-     contract can only say what their sources already say.
+  P1 vocabulary parity (I1, I4) - the DS contract can only say what its
+     sources already say. (Direction axes were removed with judge-based art
+     direction on 2026-10-13.)
   P2 superset invariant (I3) - jev-on findings are a superset of jev-off ones
      and no severity ever decreases, which is what keeps "turn it off" a safe
      operation rather than a behaviour change.
-  P3 decision-shape parity (I2) - the direction axes cover exactly the axes an
-     option card has to fill, so both paths emit the same SHAPE of decision.
   P4 degradation - no key, 401, exhausted 429, malformed body: every consumer
      returns the non-Jev result and none raises.
   P5 no preamble divergence - the toggles change exactly one block and nothing
@@ -41,7 +40,6 @@ import visual_qa                # noqa: E402
 import ds_lint                  # noqa: E402
 import kinds.capabilities as capabilities  # noqa: E402
 
-AXES_PATH = ROOT / "docs" / "research" / "direction-axes.jev.json"
 
 # Nothing in this suite may write into the user's real answer log or labels.
 _LOG_DIR = tempfile.mkdtemp(prefix="jev-parity-log-")
@@ -85,51 +83,6 @@ def roster_ids(axis):
 
 
 # ── P1 - vocabulary parity (I1, I4) ─────────────────────────────────────────
-
-class P1VocabularyParity(unittest.TestCase):
-    """If direction-axes.jev.json and PROTOTYPE.md disagree about what exists,
-    the Jev path is wrong even when Jev is right. This failing means someone
-    edited one source and did not re-run the generator."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.axes = json.loads(AXES_PATH.read_text(encoding="utf-8"))["axes"]
-
-    def test_every_roster_axis_is_generated(self):
-        self.assertEqual(set(self.axes), set(ROSTER_HEADINGS))
-
-    def test_id_sets_are_identical_in_both_directions(self):
-        for axis in ROSTER_HEADINGS:
-            criteria = set(self.axes[axis]["criteria"])
-            stated = roster_ids(axis)
-            # "none" is the generator's own addition on the optional axes: an
-            # answer, not a roster entry.
-            offered = criteria - {"none"}
-            self.assertEqual(offered - stated, set(),
-                             "%s: offered to the judge but not in PROTOTYPE.md" % axis)
-            self.assertEqual(stated - offered, set(),
-                             "%s: in PROTOTYPE.md but never offered to the judge" % axis)
-
-    def test_none_exists_exactly_on_the_optional_axes(self):
-        for axis in ("aesthetic", "recipe"):
-            self.assertIn("none", self.axes[axis]["criteria"])
-            self.assertTrue(self.axes[axis]["optional"])
-        for axis in ("shell", "style"):
-            self.assertNotIn("none", self.axes[axis]["criteria"])
-            self.assertFalse(self.axes[axis]["optional"])
-
-    def test_every_rubric_is_substantial(self):
-        """A thin rubric is the same failure as a thin library index: a dropped
-        field gets replaced by confident wrong inference."""
-        for axis, entry in self.axes.items():
-            for oid, rubric in entry["criteria"].items():
-                self.assertGreaterEqual(len(rubric), 20,
-                                        "%s/%s has a %d-char rubric" % (axis, oid, len(rubric)))
-
-    def test_every_axis_is_inside_the_choice_cap(self):
-        for axis, entry in self.axes.items():
-            self.assertLessEqual(len(entry["criteria"]), jev.MAX_CHOICE_OPTIONS, axis)
-
 
 class P1ContractParity(unittest.TestCase):
     """Every contract component must be a real DS class. The contract is derived
@@ -311,53 +264,6 @@ class P2SupersetInvariant(unittest.TestCase):
         promoted = {f["classes"][0] for f in on["findings"]
                     if f.get("matchedBy") == "jev"}
         self.assertNotIn("gutter", promoted)
-
-
-# ── P3 - decision-shape parity (I2) ─────────────────────────────────────────
-
-class P3DecisionShape(unittest.TestCase):
-    """Jev narrows what the agent CONSIDERS, never what it CONCLUDES. Both paths
-    must be able to fill the same option card: the picks may differ, the
-    structure may not."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.axes = json.loads(AXES_PATH.read_text(encoding="utf-8"))["axes"]
-        cls.emit = (ROOT / "prototype" / "step-neg1-emit-ui.md").read_text(encoding="utf-8")
-
-    def test_every_axis_the_option_card_states_is_rankable(self):
-        """The card's <axes> line commits shell, style and aesthetic. An axis the
-        card must fill but the judge cannot rank would make the Jev path emit a
-        differently-shaped decision."""
-        for axis in ("shell", "style", "aesthetic"):
-            self.assertIn(axis, self.axes)
-            self.assertTrue(self.axes[axis]["criteria"])
-        self.assertRegex(self.emit, r"<axes>Shell:.*Style:.*Aesthetic:")
-
-    def test_the_jev_branch_is_additive_in_the_step_file(self):
-        """It may add a ranking section; it may not replace the emit contract or
-        the three-option shape."""
-        self.assertIn("Ranking the axes with typed judgment", self.emit)
-        self.assertIn("## Emit exactly this message shape", self.emit)
-        for value in ('<opt value="1" recommended>', '<opt value="2">', '<opt value="3">'):
-            self.assertIn(value, self.emit)
-
-    def test_the_step_file_states_what_the_judge_cannot_see(self):
-        """It ranks on roster prose and has never seen the library previews the
-        user actually chooses from. A step file that omits this invites the
-        agent to treat a probability as a decision."""
-        section = self.emit.split("Ranking the axes with typed judgment", 1)[1]
-        section = section.split("## Emit exactly this message shape", 1)[0]
-        self.assertIn("-ui.png", section)
-        self.assertIn("prose", section.lower())
-
-    def test_a_recipe_short_circuit_is_still_a_composed_pick(self):
-        """Every recipe names all three axes, so short-circuiting on one cannot
-        produce an option card with an axis missing."""
-        for rid, rubric in self.axes["recipe"]["criteria"].items():
-            if rid == "none":
-                continue
-            self.assertIn("+", rubric, rid)
 
 
 # ── P4 - degradation ────────────────────────────────────────────────────────

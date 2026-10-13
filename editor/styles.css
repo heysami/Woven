@@ -5169,13 +5169,6 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-vqa-o-sure-yes { color: var(--success); }
 .th-vqa-counts { display: flex; gap: 12px; padding: 2px 8px 6px; }
 .th-judge-mark { color: var(--hot-text); font-weight: 700; }
-/* The judge's proposals when they could not be built (the card itself is
-   the standard .chat-direction-card). */
-.chat-judge-proposal { margin: 6px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2, var(--bg)); font-size: 12px; }
-.chat-judge-proposal-h { font-weight: 600; color: var(--text); margin-bottom: 4px; }
-.chat-judge-proposal-note { color: var(--text-muted); margin-top: 4px; }
-.chat-judge-proposal[data-error="true"] .chat-judge-proposal-note { color: var(--danger); }
-.chat-judge-proposal[data-error="true"] .chat-judge-proposal-note { color: var(--danger); }
 .th-vqa-ans { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); white-space: nowrap; padding-top: 1px; }
 .th-subagent-run {
   font-size: 11px;

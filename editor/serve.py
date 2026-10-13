@@ -55,7 +55,6 @@ import review_evidence
 import helper_jobs
 import typed_judge
 import visual_report
-import direction_ranking
 import plan_split
 import datetime as _dt
 import difflib
@@ -13311,16 +13310,6 @@ def _cancel_qa_checks(state) -> list:
         state.append("agent", {"type": "status",
                                "label": f"QA cancelled · {names} · you replied mid-check"})
     return stopped
-
-
-def _judge_card_worker(state, event, brief, project_root):
-    """Compose the judge's direction card and post it to the thread; a
-    failure is posted too, never dropped."""
-    try:
-        done = direction_ranking.card(event, brief, project_root)
-    except Exception as e:
-        done = dict(event, error="the direction card could not be built: %s" % e)
-    state.append("agent", dict({"type": "judge_proposal"}, **done))
 
 
 def _qa_cancel_note(checks) -> str:
@@ -35676,20 +35665,6 @@ class H(http.server.SimpleHTTPRequestHandler):
         # orchestrator spawns / the on-demand routing fetch, not as a freeform
         # default. Legacy "full" maps to setup; anything unrecognised -> normal.
         _chat_tier = _normalize_chat_tier(body.get("tier"))
-        # The design library ranked for this brief by the text judge, when
-        # typed judgment for text checks is on and the project has no
-        # direction yet: shown under the user's message (the judge answers in
-        # a second or two, long before the agent) and handed to the agent in
-        # its first message, so the ranking is never skipped. Setting off:
-        # nothing happens here.
-        _proposal = None
-        if kind == "freeform" and user_prompt and _chat_tier in ("normal", "setup", "scoped") and not _split_check:
-            try:
-                _proposal = direction_ranking.propose(project_root, user_prompt)
-            except Exception as _dr_err:
-                _proposal = {"event": {"error": str(_dr_err)[:240]}, "forAgent": ""}
-            if _proposal and _proposal.get("forAgent"):
-                prompt_text = prompt_text + "\n\n" + _proposal["forAgent"]
         # the prototype slug this chat is scoped to (the selected
         # prototype in the workflow target bar). Used ONLY to name the scoped
         # preamble's iterate-in-place stub; `branch` semantics are untouched.
@@ -35920,16 +35895,6 @@ class H(http.server.SimpleHTTPRequestHandler):
         # instruction; we keep those out of the chat log so it stays clean.
         if kind == "freeform" and user_prompt:
             state.append("user_message", {"text": user_prompt})
-        if _proposal and _proposal.get("event"):
-            if _proposal["event"].get("proposals"):
-                # The card (palette, fonts, recoloured previews) takes a couple
-                # of seconds: it lands as soon as it is ready.
-                threading.Thread(target=_judge_card_worker,
-                                 args=(state, _proposal["event"], direction_ranking.brief_of(user_prompt),
-                                       project_root),
-                                 daemon=True, name="judge-card-%s" % run_id).start()
-            else:
-                state.append("agent", dict({"type": "judge_proposal"}, **_proposal["event"]))
 
         with RUNS_LOCK:
             RUNS[run_id] = state
