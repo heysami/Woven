@@ -182,6 +182,8 @@ Every item is in the tree. Tests: `editor/tests/test_typed_judge.py` (routing, b
 | requirement QA visual items | Step 2b in `docs/agents/requirement-qa.md` |
 | preamble | `typed_judgment_block`, `_typed_judgment_state` in `editor/kinds/capabilities.py` |
 | calibration | `--shadow`, per-provider bands, `--trust-pass` in `editor/tools/qa/jev_calibrate.py` |
+| Visual QA report | each judge call recorded with its images as sent (`_sent_images` in `visual_qa.py`); `editor/visual_report.py` saves the run to `~/.test-harness/visual-qa/<id>/` (newest 60 kept) and renders `GET /__qa/visual-report?id=` (images at `/__qa/visual-report/file`); `/__qa/run` returns its link as `visualReport` |
+| Visual QA as a task | the turn-end run posts `visual_qa` events (`_visual_qa_task` in `serve.py`): one thread row and one Tasks & subagents entry per page, running then done, with the criteria, the steps, every answer and the report link (`visualQaAgent` in `app.js`). Text only: no image reaches a thread or an agent's context |
 
 ### Where the build differs from this plan, and why
 

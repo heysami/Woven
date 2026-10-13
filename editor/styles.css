@@ -26188,6 +26188,14 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   overflow: auto;
 }
 .chat-status { color: var(--text-muted); font-size: 11.5px; }
+/* Woven's own Visual QA row: opens its task; Report opens the screenshots. */
+.chat-vqa { display: flex; align-items: center; gap: 8px; }
+.chat-vqa-open { all: unset; cursor: pointer; color: inherit; }
+.chat-vqa-open:hover { color: var(--text); text-decoration: underline; }
+.chat-vqa-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chat-vqa-report { color: var(--accent); text-decoration: none; }
+.chat-vqa-report:hover { text-decoration: underline; }
+.chat-vqa[data-error="true"] .chat-vqa-open { color: var(--danger, #c0392b); }
 /* v3.11 - Collapsed activity row ("auto" chat view mode). One compact line
    stands in for a finished turn's tool/thinking blocks; clicking re-expands
    the original cards inline. Deliberately quieter than a tool card - it's

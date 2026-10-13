@@ -887,7 +887,7 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
             selectors.append(u["selector"])
         for c in (out["ds"] or {}).get("comps") or []:
             selectors.append(c["selector"])
-            ref_classes.append(".".join([c["cls"]] + list(c.get("variant") or [])))
+            ref_classes.append(_comp_key(c))
         selectors = sorted(set(selectors))
         path = os.path.join(out_dir, "typed_page.png")
         page.screenshot(path=path, full_page=True)
@@ -930,11 +930,20 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
                     pick = None
                 if not pick:
                     continue
+                shown, state = _ref_name(key)
+                if pick.get("stateMismatch"):
+                    out.setdefault("refNotes", {})[key] = (
+                        "the design-system gallery shows no .%s in the state %s (it shows: %s), so the "
+                        "comparison was not asked" % (shown, state or "default",
+                                                      ", ".join(pick.get("seen") or [])))
+                    continue
                 try:
                     p = os.path.join(out_dir, "ref_%s.png" % re.sub(r"[^\w-]", "_", key))
-                    g.locator(pick["selector"]).first.screenshot(path=p, timeout=5000)
-                    out["refs"][key] = {"label": "the design system's own .%s%s"
-                                        % (key, "" if pick["exact"] else " (base, no matching variant)"),
+                    _ref_shot(g, g.locator(pick["selector"]).first, p)
+                    out["refs"][key] = {"label": "the design system's own .%s%s%s%s"
+                                        % (shown, " (%s)" % state if state else "",
+                                           "" if pick["exact"] else " (base, no matching variant)",
+                                           " (set to %s for the comparison)" % state if pick.get("set") else ""),
                                         "path": p, "boxes": None, "exactVariant": pick["exact"]}
                 except Exception as exc:
                     log("gallery reference for %s unavailable (%s)" % (key, exc))
@@ -945,8 +954,47 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
     return out
 
 
-_GALLERY_PICK_JS = """(parts) => {
-  const base = parts[0], want = parts.slice(1).sort().join(' ');
+# An element's state as visible tokens: a native checkbox or radio (its own,
+# or the one a label / checkbox-like role wraps) is checked/unchecked; ARIA and is-* classes add selected,
+# pressed, expanded, open, disabled, active, current. A same_style comparison
+# is only fair between two elements in the same state.
+_STATE_JS = """
+  const BOX = 'input[type=checkbox],input[type=radio]';
+  const boxOf = el => (el.matches && el.matches(BOX)) ? el
+    : (el.matches && el.matches('label,[role=checkbox],[role=radio],[role=switch],[role=option]')
+       && el.querySelectorAll(BOX).length === 1 ? el.querySelector(BOX) : null);
+  const stateOf = el => {
+    const out = new Set();
+    const box = boxOf(el);
+    if (box) out.add(box.checked ? 'checked' : 'unchecked');
+    const ac = el.getAttribute('aria-checked');
+    if (!box && ac === 'true') out.add('checked');
+    if (!box && ac === 'false') out.add('unchecked');
+    if (el.getAttribute('aria-selected') === 'true') out.add('selected');
+    if (el.getAttribute('aria-pressed') === 'true') out.add('pressed');
+    if (el.getAttribute('aria-expanded') === 'true') out.add('expanded');
+    if (el.disabled || el.getAttribute('aria-disabled') === 'true') out.add('disabled');
+    if (el.open === true) out.add('open');
+    for (const c of el.classList) {
+      const m = /^(?:is-)?(active|selected|open|checked|disabled|current)$/.exec(c);
+      if (m) out.add(m[1]);
+    }
+    return [...out].sort();
+  };
+"""
+
+_GALLERY_PICK_JS = """(parts) => {""" + _STATE_JS + """
+  const base = parts[0];
+  const want = parts.slice(1).filter(p => p.indexOf('state-') !== 0).sort().join(' ');
+  const wantState = parts.filter(p => p.indexOf('state-') === 0).map(p => p.slice(6)).sort();
+  const sameState = el => stateOf(el).join(' ') === wantState.join(' ');
+  const CHECK = new Set(['checked', 'unchecked']);
+  // A native checkbox or radio that differs only in checked can be set to match.
+  const settable = el => {
+    if (!boxOf(el) || !wantState.some(t => CHECK.has(t))) return false;
+    const rest = a => a.filter(t => !CHECK.has(t)).join(' ');
+    return rest(stateOf(el)) === rest(wantState);
+  };
   const visible = el => {
     if (el.checkVisibility && !el.checkVisibility({opacityProperty: true, visibilityProperty: true}))
       return false;
@@ -965,10 +1013,18 @@ _GALLERY_PICK_JS = """(parts) => {
     return 'body > ' + out.join(' > ');
   };
   const all = [...document.querySelectorAll('.' + CSS.escape(base))].filter(visible);
+  if (!all.length) return null;
   const mods = el => [...el.classList].filter(c => c.indexOf(base + '--') === 0).sort().join(' ');
-  const exact = all.find(el => mods(el) === want);
-  const el = exact || all[0];
-  return el ? {selector: path(el), exact: !!exact} : null;
+  for (const variant of [true, false]) {
+    const pool = variant ? all.filter(el => mods(el) === want) : all;
+    let el = pool.find(sameState), set = false;
+    if (!el) {
+      el = pool.find(settable);
+      if (el) { boxOf(el).checked = wantState.indexOf('checked') >= 0; set = true; }
+    }
+    if (el) return {selector: path(el), exact: variant, set: set};
+  }
+  return {stateMismatch: true, seen: [...new Set(all.map(el => stateOf(el).join(' ') || 'default'))]};
 }"""
 
 
@@ -977,7 +1033,7 @@ _GALLERY_PICK_JS = """(parts) => {
 # that gives a visible element its own skin, plus inline-styled skin; and every
 # documented DS component visible on screen. A selector naming a DS class, an
 # element that IS a DS component, and anything not visible are skipped.
-_RENDERED_DS_JS = """(a) => {
+_RENDERED_DS_JS = """(a) => {""" + _STATE_JS + """
   const dsClasses = new Set(a.dsClasses || []);
   const roots = new Set(a.componentRoots || []);
   const SKIN = /^(background|border|box-shadow|outline|backdrop-filter)/;
@@ -1050,7 +1106,7 @@ _RENDERED_DS_JS = """(a) => {
   for (const c of a.components || []) {
     let el = null;
     try { el = [...document.querySelectorAll('.' + CSS.escape(c.cls))].find(visible); } catch (e) {}
-    if (el) comps.push({cls: c.cls, title: c.title, selector: path(el),
+    if (el) comps.push({cls: c.cls, title: c.title, selector: path(el), state: stateOf(el),
                         variant: [...el.classList].filter(x => dsClasses.has(x) && x.indexOf(c.cls + '--') === 0).sort()});
     if (comps.length >= (a.maxComp || 16)) break;
   }
@@ -1111,11 +1167,12 @@ def ds_visual_checks(found: Optional[Dict[str, Any]], plan: Optional[Dict[str, A
                     "selector": u["selector"], "context": names, "optional": True,
                     "source": "design system: %s (%d on screen)" % (u.get("source"), u.get("count") or 1)})
     for c in found.get("comps") or []:
-        key = ".".join([c["cls"]] + list(c.get("variant") or []))
+        key = _comp_key(c)
+        shown, state = _ref_name(key)
         raw.append({"id": "ds_cmp_%s" % re.sub(r"[^\w-]", "_", key), "shape": "same_style",
                     "x": "%s component" % c["title"], "at": "page", "compare": "ref:%s" % key,
                     "selector": c["selector"], "optional": True,
-                    "source": "design system: .%s" % key})
+                    "source": "design system: .%s%s" % (shown, " (%s)" % state if state else "")})
     checks, _rejected = parse_checks(raw)
     return checks
 
@@ -1141,6 +1198,38 @@ def typed_pass_for(context: Any, url: str, args: argparse.Namespace, settle_ms: 
     return typed_capture_pass(context, url, settle_ms, out_dir, getattr(args, "typed_steps_list", None) or [],
                               sorted({c["selector"] for c in checks if c.get("selector")}),
                               plan.get("gallery"), refs, plan or None)
+
+
+def _comp_key(c: Dict[str, Any]) -> str:
+    """One on-screen DS component as a reference key: class, its modifiers,
+    its state ("checkbox.state-unchecked"). The gallery example must match all."""
+    return ".".join([c["cls"]] + list(c.get("variant") or [])
+                    + ["state-" + st for st in c.get("state") or [] if re.match(r"^[\w-]+$", str(st))])
+
+
+def _ref_name(key: str) -> Tuple[str, str]:
+    """("checkbox.checkbox--lg", "unchecked") for "checkbox.checkbox--lg.state-unchecked"."""
+    parts = key.split(".")
+    return (".".join(p for p in parts if not p.startswith("state-")),
+            ", ".join(p[6:] for p in parts if p.startswith("state-")))
+
+
+def _ref_shot(page: Any, loc: Any, path: str) -> None:
+    """A gallery component framed like a page crop: its box plus _CROP_PAD on
+    every side, so the two images of a same_style check show the element at
+    the same scale with the same margin. Falls back to the bare element."""
+    try:
+        loc.scroll_into_view_if_needed(timeout=5000)
+        bb = loc.bounding_box()
+        if bb and bb["width"] > 0 and bb["height"] > 0:
+            x, y = max(0.0, bb["x"] - _CROP_PAD), max(0.0, bb["y"] - _CROP_PAD)
+            page.screenshot(path=path, clip={"x": x, "y": y,
+                                             "width": bb["x"] + bb["width"] + _CROP_PAD - x,
+                                             "height": bb["y"] + bb["height"] + _CROP_PAD - y})
+            return
+    except Exception:
+        pass
+    loc.screenshot(path=path, timeout=5000)
 
 
 _DOC_BOXES_JS = _BOXES_JS.replace("{x: r.x, y: r.y,", "{x: r.x + window.scrollX, y: r.y + window.scrollY,")
@@ -1221,6 +1310,58 @@ def _crop(path: str, box: Dict[str, float], viewport_w: int) -> Optional[bytes]:
     return buf.getvalue()
 
 
+def _one_colour_share(data: bytes) -> Optional[float]:
+    """Share of the image taken by its most common colour (1.0 = blank), on a
+    64x64 thumbnail. None without Pillow."""
+    if not _PIL_OK:
+        return None
+    import io
+    try:
+        img = Image.open(io.BytesIO(data)).convert("RGB").resize((64, 64))
+        colours = img.getcolors(64 * 64) or []
+        return round(max(n for n, _c in colours) / 4096.0, 3) if colours else None
+    except Exception:
+        return None
+
+
+def _sent_images(tj: Any, images: List[Any], sources: List[Dict[str, Any]], call_n: int,
+                 viewport_w: int) -> List[Dict[str, Any]]:
+    """Each image of one judge call as the judge receives it: load_image is
+    what judge() runs (a tall full-page shot may be downscaled there), so the
+    bytes saved here are the bytes sent. A crop is written next to its
+    capture; a frame sent unchanged is its capture file. Never raises."""
+    out: List[Dict[str, Any]] = []
+    for i, (img, src) in enumerate(zip(images, sources)):
+        rec: Dict[str, Any] = {"label": src.get("label"), "capture": src.get("capture"),
+                               "box": src.get("box"), "selector": src.get("selector"),
+                               "viewportW": viewport_w}
+        try:
+            uri = tj.load_image(img)
+            head, b64 = uri.split(",", 1)
+            data = base64.b64decode(b64)
+            kind = tj.sniff_image(data) or "png"
+            size = tj.image_size(data, kind) or (0, 0)
+            same = False
+            if isinstance(img, dict) and img.get("path"):
+                try:
+                    same = os.path.getsize(img["path"]) == len(data)
+                except OSError:
+                    same = False
+            if same:
+                path = img["path"]
+            else:
+                path = os.path.join(os.path.dirname(src.get("capture") or "."),
+                                    "sent_%02d_%d.%s" % (call_n, i + 1, "jpg" if kind == "jpeg" else kind))
+                with open(path, "wb") as f:
+                    f.write(data)
+            rec.update({"path": path, "width": size[0], "height": size[1], "bytes": len(data),
+                        "oneColour": _one_colour_share(data)})
+        except Exception as exc:
+            rec["error"] = str(exc)[:200]
+        out.append(rec)
+    return out
+
+
 def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
                       rejected: List[Dict[str, Any]], mode: str, viewport_w: int,
                       judge_fn: Any = None) -> Dict[str, Any]:
@@ -1230,6 +1371,13 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
     block: Dict[str, Any] = {"mode": mode, "kind": TYPED_KIND, "available": False,
                              "provider": None, "checks": [], "rejected": rejected,
                              "message": None}
+    tp = report.get("typedPass") or {}
+    if (tp.get("settled") or {}).get("path"):
+        block["pageShot"] = tp["settled"]["path"]
+    if isinstance(tp.get("ds"), dict):
+        # What the browser found on the rendered page, for the report.
+        block["dsFound"] = {"offSystem": list(tp["ds"].get("off") or [])[:64],
+                            "components": list(tp["ds"].get("comps") or [])[:64]}
     if not checks:
         block["message"] = "no checks to run" + (" (%d rejected)" % len(rejected) if rejected else "")
         return block
@@ -1251,12 +1399,15 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
         refs = ([c["compare"]] if c.get("compare") else []) + [c["at"]]
         caps = [_capture(report, r) for r in refs]
         if any(cap is None for cap in caps):
+            notes = (report.get("typedPass") or {}).get("refNotes") or {}
             row["status"] = "no-capture"
-            row["message"] = "no capture named %s in this run" % ", ".join(
-                r for r, cap in zip(refs, caps) if cap is None)
+            row["message"] = "; ".join(
+                notes.get(r[4:]) if r.startswith("ref:") and notes.get(r[4:]) else
+                "no capture named %s in this run" % r for r, cap in zip(refs, caps) if cap is None)
             order.append(("", row))
             continue
         images: List[Any] = []
+        sources: List[Dict[str, Any]] = []
         missing = None
         for ref, cap in zip(refs, caps):
             sel = c.get("selector")
@@ -1271,9 +1422,12 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
                     break
                 images.append(crop if crop is not None else {"path": cap["path"]})
                 row["images"].append(cap["label"] + (" cropped to " + sel if crop else " (full frame)"))
+                sources.append({"capture": cap["path"], "label": row["images"][-1],
+                                "box": box if crop is not None else None, "selector": sel})
             else:
                 images.append({"path": cap["path"]})
                 row["images"].append(cap["label"])
+                sources.append({"capture": cap["path"], "label": cap["label"], "box": None})
         if missing:
             row["status"] = "not-visible" if c.get("optional") else "element-missing"
             row["message"] = "%s is not visible on the page at %s" % (c["selector"], missing)
@@ -1282,7 +1436,7 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
         row["claim"] = c["question"]["instructions"]
         key = json.dumps([refs, c.get("selector") or "", c.get("context") or ""])
         g = groups.setdefault(key, {"images": images, "labels": row["images"], "rows": [],
-                                    "context": c.get("context") or ""})
+                                    "context": c.get("context") or "", "sources": sources})
         g["rows"].append(row)
         order.append((key, row))
     for key, g in groups.items():
@@ -1294,10 +1448,22 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
             state += " " + g["context"]
         for start in range(0, len(g["rows"]), 64):
             part = g["rows"][start:start + 64]
+            # The record of this call: the state text and every image exactly
+            # as the judge receives it, so the report shows what was asked about.
+            call: Dict[str, Any] = {"n": len(block.setdefault("calls", [])) + 1, "state": state,
+                                    "questions": [r["id"] for r in part],
+                                    "images": _sent_images(tj, g["images"], g["sources"],
+                                                           len(block["calls"]) + 1, viewport_w)}
+            block["calls"].append(call)
+            for r in part:
+                r["call"] = call["n"]
+            t0 = time.time()
             try:
                 res = judge_fn(state, {r["id"]: r["question"] for r in part}, tier="image",
                                images=g["images"], kind=TYPED_KIND)
             except Exception as exc:
+                call["ms"] = int((time.time() - t0) * 1000)
+                call["error"] = str(exc)[:300]
                 for r in part:
                     r["status"] = "unavailable"
                     r["message"] = str(exc)[:200]
@@ -1309,16 +1475,20 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
                     block["checks"] = [r for _k, r in order]
                     return block
                 continue
+            call["ms"] = int((time.time() - t0) * 1000)
+            call.update({"provider": res.get("provider"), "model": res.get("model"),
+                         "thresholds": res.get("thresholds")})
             block["available"] = True
             block["provider"] = res.get("provider")
             block["model"] = res.get("model")
             block["trustPass"] = bool(res["thresholds"].get("trustPass"))
             block["requests"] = int(block.get("requests") or 0) + 1
             for r in part:
-                v = vc.verdict(r["question"], res["answers"].get(r["id"]), res["thresholds"],
-                               r.get("expect"))
+                raw = res["answers"].get(r["id"])
+                v = vc.verdict(r["question"], raw, res["thresholds"], r.get("expect"))
                 r.update({"answer": v["answer"], "noul": v.get("noul"), "passed": v["passed"],
                           "confidence": v["confidence"], "band": v["band"],
+                          "probabilities": (raw.get("probabilities") if isinstance(raw, dict) else None),
                           "status": "answered" if v["answer"] is not None else "no-answer"})
     block["checks"] = [r for _k, r in order]
     answered = [r for r in block["checks"] if r["status"] == "answered"]

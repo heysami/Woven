@@ -1105,6 +1105,49 @@ class DaemonRoutes(Isolated):
                                 "visual checks: 1 sure yes, 1 sure no, 2 unsure (shadow)")
         self.assertIn("org_field: The image shows a text field. (judge said 0.03)", detail)
 
+    def test_each_page_run_is_a_task_in_the_thread_with_its_report(self):
+        """Woven's own Visual QA shows in the thread and the Tasks panel: one
+        entry per page, running then done, with the criteria asked, what the
+        daemon did, every answer, and the report page. Text only."""
+        import io
+        from unittest.mock import patch
+        import visual_report
+        tmp = tempfile.mkdtemp(prefix="vqa-task-")
+        shot = Path(tmp, "typed_page.png")
+        shot.write_bytes(tj.solid_png((255, 255, 255), size=64))
+        block = {"mode": "shadow", "provider": "clef", "pageShot": str(shot),
+                 "dsFound": {"offSystem": [], "components": [{"cls": "btn"}]},
+                 "calls": [{"n": 1, "state": "A screenshot of a web page.", "questions": ["org_field"],
+                            "ms": 900, "images": [{"label": "the page", "path": str(shot),
+                                                   "capture": str(shot), "box": None, "oneColour": 1.0}]}],
+                 "checks": [{"id": "org_field", "call": 1, "status": "answered", "passed": False,
+                             "band": "act", "noul": 0.03, "confidence": 0.94, "at": "page",
+                             "question": {"type": "noul", "instructions": "The image shows a text field."},
+                             "source": "screen criteria: visual-checks.json"}],
+                 "rejected": []}
+        root = os.path.join(tmp, "reports")
+        with patch.object(visual_report, "REPORTS_DIR", root):
+            rid = visual_report.save({"typedChecks": block, "verdict": "pass"}, tmp, project="p")
+            rep = {"verdict": "pass", "url": "http://x/a.html", "typedChecks": block,
+                   "visualReport": visual_report.page_url(rid)}
+            events = []
+            from types import SimpleNamespace
+            st = SimpleNamespace(project_root=self.project, _auto_qa_running=True,
+                                 append=lambda kind, data: events.append((kind, dict(data))))
+            with patch.object(self.serve.urllib.request, "urlopen",
+                              lambda url, timeout=0: io.BytesIO(json.dumps(rep).encode())):
+                self.serve._auto_visual_qa_worker(st, [("main", "a.html")], 1)
+        (k1, first), (k2, last) = events
+        self.assertEqual((k1, first["type"], first["status"]), ("agent", "visual_qa", "running"))
+        self.assertEqual((last["type"], last["status"], last["id"]), ("visual_qa", "completed", first["id"]))
+        self.assertEqual(last["report"], "/__qa/visual-report?id=" + rid)
+        self.assertIn("The image shows a text field.", last["prompt"])
+        self.assertTrue(last["result"].startswith("SURE NO  org_field"))
+        self.assertIn("Asked clef 1 question(s) in 1 call(s), 0.9 s", last["actions"])
+        self.assertTrue(any("100% one colour" in a for a in last["actions"]),
+                        "a blank screenshot is called out")
+        self.assertFalse(st._auto_qa_running)
+
     def test_judge_status_route(self):
         self.media({"typesafe": {"api_key": "ts"}})
         st = tj.status(resolve_key=self.serve._resolve_provider_key)

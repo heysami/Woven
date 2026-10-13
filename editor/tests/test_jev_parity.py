@@ -582,7 +582,7 @@ class OffSystemJudgment(unittest.TestCase):
         questions = [q for _s, qs in asked for q in qs.values()]
         self.assertEqual(len(questions), 40)
         for state, qs in asked:
-            self.assertIn("Card (.card)", state, "the vocabulary travels once per request, in state")
+            self.assertIn("Cards (.card)", state, "the vocabulary travels once per request, in state (gallery heading as label)")
             self.assertLessEqual(len(qs), ds_lint.JUDGE_MAX_QUESTIONS_PER_REQUEST)
             for q in qs.values():
                 self.assertEqual(set(q["criteria"]), {"ds-copy", "new-ui", "layout"})
@@ -1048,6 +1048,62 @@ class P8VisualChecks(unittest.TestCase):
         self.assertEqual(sources, ["<style> .promo", "inline style on <span>"],
                          "the JS-made .promo is found; DS rules and DS-class selectors are not")
         self.assertEqual([c["cls"] for c in found["comps"]], ["card"], "the closed modal is not on screen")
+
+    def test_the_gallery_example_matches_the_page_element_state(self):
+        """A checked gallery checkbox against an unchecked one on the page is a
+        state difference, not a style one (Clef said "not the same" at 0.98
+        on exactly that). The page element's state is recorded, the gallery
+        example is picked (or, for a native checkbox, set) to match, and a
+        state the gallery cannot show is not asked."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except Exception:
+            self.skipTest("Playwright not installed")
+        root = Path(self.tmp) / "state"
+        root.mkdir(exist_ok=True)
+        page_html = root / "page.html"
+        page_html.write_text('<input type="checkbox" class="checkbox" id="c">'
+                             '<span class="chip">plain chip</span>')
+        gallery = root / "gallery.html"
+        gallery.write_text('<input type="checkbox" class="checkbox" checked>'
+                           '<span class="chip is-active">active chip</span>')
+        plan = {"dsPath": "/nowhere/", "dsClasses": ["checkbox", "chip"], "componentRoots": [],
+                "components": [{"cls": "checkbox", "title": "Checkbox"}, {"cls": "chip", "title": "Chip"}]}
+        with sync_playwright() as pw:
+            browser, _label = visual_qa.launch_browser(pw)
+            page = browser.new_page()
+            page.goto(page_html.as_uri())
+            found = visual_qa.detect_rendered_ds(page, plan)
+            g = browser.new_page()
+            g.goto(gallery.as_uri())
+            box = g.evaluate(visual_qa._GALLERY_PICK_JS, ["checkbox", "state-unchecked"])
+            still = g.evaluate("document.querySelector('.checkbox').checked")
+            chip = g.evaluate(visual_qa._GALLERY_PICK_JS, ["chip"])
+            browser.close()
+        states = {c["cls"]: c["state"] for c in found["comps"]}
+        self.assertEqual(states, {"checkbox": ["unchecked"], "chip": []})
+        self.assertEqual([visual_qa._comp_key(c) for c in found["comps"]],
+                         ["checkbox.state-unchecked", "chip"])
+        self.assertTrue(box["set"] and box["exact"], "the gallery checkbox is unchecked to match")
+        self.assertFalse(still)
+        self.assertEqual(chip, {"stateMismatch": True, "seen": ["active"]})
+
+    def test_a_state_the_gallery_cannot_show_is_not_asked(self):
+        report = {"typedPass": {"settled": {"path": self.report["idleFrames"][0]["path"],
+                                            "boxes": {"#chip": {"x": 5, "y": 5, "width": 40, "height": 20}}},
+                                "refs": {}, "refNotes": {"chip": "the design-system gallery shows no .chip "
+                                                                 "in the state default (it shows: active), so the "
+                                                                 "comparison was not asked"}}}
+        checks = visual_qa.ds_visual_checks({"off": [], "comps": [{"cls": "chip", "title": "Chip",
+                                                                   "selector": "#chip", "state": []}]},
+                                            {"names": ""})
+        asked = []
+        block = visual_qa.run_visual_checks(report, checks, [], "shadow", 200,
+                                            lambda *a, **k: asked.append(a))
+        (row,) = block["checks"]
+        self.assertEqual(asked, [])
+        self.assertEqual(row["status"], "no-capture")
+        self.assertIn("gallery shows no .chip", row["message"])
 
     def test_a_missing_element_is_reported_without_a_model_call(self):
         calls = []

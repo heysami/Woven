@@ -13977,6 +13977,19 @@ function RightRailDock({ mode }) {
   </div>`;
 }
 
+/* visualQaAgent - one page's Visual QA run (the daemon's own check, see
+   _visual_qa_task in serve.py) in the shape a Tasks & subagents row carries.
+   `report` is the page with every question, answer and image as sent. */
+function visualQaAgent(v) {
+  const done = v.status === "completed" || v.status === "failed";
+  return {
+    id: v.id, type: "visual-qa", label: v.label || "Visual QA", prompt: v.prompt || "",
+    result: v.result || "", actions: v.actions || [], background: false,
+    jobStatus: done ? v.status : "running", lastTick: 0, tickTotal: 0,
+    done, error: v.status === "failed", report: v.report || null,
+  };
+}
+
 /* extractRunSubagents / extractRunTasks - pull the subagent dispatches and the
    harness Task list out of ONE run's transcript (events mapped from /__chat or
    the live SSE: { event, data }). Mirrors the live-strip logic in ChatDrawer,
@@ -13996,11 +14009,18 @@ function extractRunSubagents(events) {
   // signal there is.
   const tickById = new Map();
   const jobs = new Map();
+  // Woven's own Visual QA (the daemon's turn-end check, no Claude agent):
+  // one entry per page, its events merged by id as it goes from running to done.
+  const visualQa = new Map();
   let ticks = 0;
   for (const ev of events || []) {
     if (ev?.event !== "agent") continue;
     const d = ev?.data;
     if (!d) continue;
+    if (d.type === "visual_qa" && d.id) {
+      visualQa.set(d.id, { ...(visualQa.get(d.id) || {}), ...d });
+      continue;
+    }
     if (d.type === "job") {
       const key = d.jobId || d.toolUseId;
       const oldKey = d.toolUseId && jobs.has(d.toolUseId) ? d.toolUseId : key;
@@ -14064,6 +14084,7 @@ function extractRunSubagents(events) {
       error: job ? ["failed", "stopped", "killed", "cancelled"].includes(job.status) : !!(result && (result.isError || result.is_error)),
     });
   }
+  for (const v of visualQa.values()) out.push(visualQaAgent(v));
   for (const job of jobs.values()) {
     if (out.some(a => a.id === job.toolUseId)) continue;
     out.push({ id: job.jobId, type: job.profile?.role || job.taskType || "subagent",
@@ -15060,6 +15081,8 @@ function SubagentPanel({ agent, runId, runTitle }) {
       </div>
       <div className="th-rail-panel-body th-subagent-body">
         ${runTitle && html`<div className="th-subagent-run">from ${runTitle}</div>`}
+        ${a.report && html`<div className="th-subagent-run"><a href=${a.report} target="_blank" rel="noopener"
+          title="Every question with its answer and confidence, and each screenshot and crop exactly as sent to the judge">Open the report with the screenshots</a></div>`}
         ${a.prompt && html`
           <div className="th-tasks-agent-sec">
             <button className="th-tasks-agent-sec-h th-tasks-agent-sec-toggle" onClick=${() => setPromptOpen((v) => !v)} aria-expanded=${promptOpen}>
@@ -21069,6 +21092,13 @@ function buildBlocks(events) {
       if (d.type === "tool_result") {
         continue; // already attached to its owning tool/agent_grid block
       }
+      if (d.type === "visual_qa") {
+        const at = d.id ? blocks.findIndex(b => b.kind === "visual_qa" && b.data.id === d.id) : -1;
+        if (at >= 0) { blocks[at] = { ...blocks[at], data: { ...blocks[at].data, ...d } }; continue; }
+        closeAll();
+        blocks.push({ kind: "visual_qa", data: d, key: `vqa-${d.id || i}` });
+        continue;
+      }
       if (d.type === "status") {
         // Suppress the "starting · <model>" banner - it's noise. Only the
         // turn-final status frame (label === "done"/"error" with durationMs
@@ -24437,6 +24467,23 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
       // context overflow gets the actionable "start a new chat" line.
       const stReason = d.label === "error" ? (contextLimitReason(d.usage) || d.subtype) : null;
       return html`<div className="chat-row chat-status" data-error=${d.label === "error"}>${bits.join(" · ")}${stReason ? html` - ${stReason}` : ""}${d.promptPreview ? html` - ${d.promptPreview}` : ""}</div>`;
+    }
+    case "visual_qa": {
+      // Woven's own Visual QA for one page. The row opens its task (criteria,
+      // activity, every answer); Report opens the page with the images exactly
+      // as the judge got them. No image ever enters the thread.
+      const d = block.data;
+      const running = d.status !== "completed" && d.status !== "failed";
+      const open = () => {
+        try { window.dispatchEvent(new CustomEvent("th:open-subagent", { detail: { agent: visualQaAgent(d), runId } })); } catch {}
+      };
+      return html`<div className="chat-row chat-status chat-vqa" data-error=${d.status === "failed"} data-running=${running}>
+        ${running && html`<span className="chat-active-agent-spin" aria-hidden="true"/>`}
+        <button type="button" className="chat-vqa-open" onClick=${open}
+          title="Open this check: the criteria asked, what Woven did, and every answer with its confidence">${d.label || "Visual QA"}${running ? " · running" : ""}</button>
+        ${d.report && html`<a className="chat-vqa-report" href=${d.report} target="_blank" rel="noopener"
+          title="Every question with its answer and confidence, and each screenshot and crop exactly as sent to the judge">Report</a>`}
+      </div>`;
     }
     case "usage": {
       const u = block.data.usage || {};

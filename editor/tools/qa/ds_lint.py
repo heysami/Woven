@@ -974,13 +974,23 @@ def jev_criterion(comp):
     return text[:600]
 
 
+_LABEL_RE = re.compile(r"^[A-Z][A-Za-z0-9 /&+'-]{0,38}$")
+
+
 def _ds_names(contract):
     # type: (Dict[str, object]) -> str
+    """Every component as "Label (.class)". The label is the gallery heading
+    (`title`), else the contract `name` only when it reads as a label: `name`
+    is whatever precedes the first class on a DESIGN.md line, which is often
+    the middle of a sentence ("two-tone and not a mistake to correct")."""
     names = []
     for c in contract.get("components") or []:  # type: ignore[union-attr]
         if isinstance(c, dict) and c.get("role") in _ROLE_FAMILY:
-            label = str(c.get("name") or c["id"])
-            names.append("%s (.%s)" % (label, c["id"]) if label != c["id"] else ".%s" % c["id"])
+            label = str(c.get("title") or "").strip()
+            name = str(c.get("name") or "").strip()
+            if not label and _LABEL_RE.match(name) and len(name.split()) <= 4:
+                label = name
+            names.append("%s (.%s)" % (label, c["id"]) if label and label != c["id"] else ".%s" % c["id"])
     return ", ".join(names)
 
 

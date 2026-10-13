@@ -54,6 +54,7 @@ import runtime_drivers
 import review_evidence
 import helper_jobs
 import typed_judge
+import visual_report
 import plan_split
 import datetime as _dt
 import difflib
@@ -13438,21 +13439,98 @@ def _visual_qa_line(page, rep):
     return "Visual QA · %s · %s" % (page, " · ".join(bits)), ("\n".join(detail)[:1500] or None)
 
 
+def _visual_qa_task(rel, rep, ms):
+    """The thread's task entry for one page's Visual QA: what was checked
+    (prompt), what the daemon did (actions), every question and answer
+    (result) and the report page with the images as sent. Text only: the
+    images stay on the report page."""
+    label, detail = _visual_qa_line(rel, rep)
+    rid = str(rep.get("visualReport") or "").split("id=")[-1] if rep.get("visualReport") else ""
+    data = visual_report.load(rid) if rid else None
+    block = (data or {}).get("typedChecks") or rep.get("typedChecks") or {}
+    actions = ["Opened %s in a headless browser" % (rep.get("url") or rel)]
+    cs = rep.get("casesSummary") or {}
+    if cs:
+        actions.append("Ran %d/%d test cases" % (cs.get("pass", 0), cs.get("total", 0)))
+    actions.append("QA verdict: %s" % (rep.get("verdict") or "error"))
+    sizes = (data or {}).get("sizes") or {}
+    shot = block.get("pageShotFile")
+    if shot and sizes.get(shot):
+        actions.append("Took a full-page screenshot, %d x %d px" % tuple(sizes[shot]))
+    found = block.get("dsFound")
+    if found:
+        actions.append("Found %d design-system component(s) and %d element(s) styled outside it on "
+                       "the rendered page" % (len(found.get("components") or []),
+                                              len(found.get("offSystem") or [])))
+    calls = block.get("calls") or []
+    crops = sum(1 for c in calls for im in c.get("images") or [] if im.get("box"))
+    if crops:
+        actions.append("Cropped %d element(s) out of the screenshots" % crops)
+    if calls:
+        actions.append("Asked %s %d question(s) in %d call(s), %.1f s" % (
+            block.get("provider") or "the image judge", sum(len(c.get("questions") or []) for c in calls),
+            len(calls), sum(c.get("ms") or 0 for c in calls) / 1000.0))
+    for c in calls:
+        for i, im in enumerate(c.get("images") or []):
+            if (im.get("oneColour") or 0) >= visual_report.BLANK_SHARE:
+                actions.append("Warning: image %d of call %s is %d%% one colour (empty screenshot or crop?)"
+                               % (i + 1, c.get("n"), int(round(im["oneColour"] * 100))))
+    if block.get("checks") or block.get("rejected"):
+        actions.append("Visual checks: %s" % visual_report.summary_line(block))
+    elif block.get("message"):
+        actions.append("No visual checks asked: %s" % block["message"])
+    else:
+        actions.append("No visual checks asked: typed judgment for visual checks is off or this page "
+                       "has no criteria")
+    criteria = []
+    for r in block.get("checks") or []:
+        where = r.get("at") or ""
+        if r.get("compare"):
+            where = "%s vs %s" % (r["compare"], where)
+        if r.get("selector"):
+            where += " cropped to " + r["selector"]
+        criteria.append("- %s: %s\n    on %s · %s" % (r.get("id"), (r.get("question") or {}).get("instructions")
+                                                      or r.get("claim") or "", where,
+                                                      r.get("source") or "screen criteria"))
+    for rj in block.get("rejected") or []:
+        criteria.append("- refused %s: %s (%s)" % (rj.get("id") or rj.get("index"), rj.get("statement") or "",
+                                                   rj.get("reason")))
+    prompt = ("Woven ran this itself at the end of the turn (no Claude agent, no image in the thread): "
+              "it opens the page, runs its QA, screenshots it, crops each element a check names, and "
+              "asks the image judge every criterion about that screenshot or crop in one call.\n\n"
+              + ("Criteria asked:\n" + "\n".join(criteria) if criteria else "No criteria were asked."))
+    result = visual_report.text_table(data) if data else ""
+    ev = {"type": "visual_qa", "page": rel, "label": label, "status":
+          "failed" if rep.get("verdict") in (None, "error") else "completed",
+          "actions": actions, "prompt": prompt, "result": result or (detail or label), "durationMs": ms}
+    if rep.get("visualReport"):
+        ev["report"] = rep["visualReport"]
+    return ev
+
+
 def _auto_visual_qa_worker(state, pages, total):
     try:
         pid = os.path.basename(state.project_root.rstrip("/"))
         for proto, rel in pages:
             url = "http://127.0.0.1:%d/__qa/run?project=%s&page=%s&detail=full" % (
                 PORT, urllib.parse.quote(pid, safe=""), urllib.parse.quote(proto + "/" + rel, safe="/"))
+            vid = "vqa-%s" % uuid.uuid4().hex[:10]
+            state.append("agent", {"type": "visual_qa", "id": vid, "page": rel, "status": "running",
+                                   "label": "Visual QA · %s" % rel,
+                                   "actions": ["Opening %s in a headless browser" % rel]})
+            t0 = time.time()
             try:
                 with urllib.request.urlopen(url, timeout=700) as r:
                     rep = json.loads(r.read().decode("utf-8", "replace"))
             except Exception as exc:
                 rep = {"verdict": "error", "reasons": ["QA did not run: %s" % exc]}
-            label, detail = _visual_qa_line(rel, rep)
-            ev = {"type": "status", "label": label}
-            if detail:
-                ev["detail"] = detail
+            try:
+                ev = _visual_qa_task(rel, rep, int((time.time() - t0) * 1000))
+            except Exception as exc:
+                label, detail = _visual_qa_line(rel, rep)
+                ev = {"type": "visual_qa", "page": rel, "label": label, "status": "failed",
+                      "actions": ["Report could not be built: %s" % exc], "result": detail or label}
+            ev["id"] = vid
             state.append("agent", ev)
         if total > len(pages):
             state.append("agent", {"type": "status",
@@ -16480,6 +16558,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._qa_resolve(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__qa/run":
             return self._qa_run(urllib.parse.parse_qs(parsed.query))
+        # One run's typed visual checks: every question, answer and image sent.
+        if url_path == "/__qa/visual-report":
+            return self._qa_visual_report(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__qa/visual-report/file":
+            return self._qa_visual_report_file(urllib.parse.parse_qs(parsed.query))
         # User stories + prototype story map (editor/stories.py).
         if url_path == "/__stories":
             return self._stories_get(urllib.parse.parse_qs(parsed.query))
@@ -27669,7 +27752,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             for cand_dir in (os.path.dirname(abs_target), os.path.dirname(os.path.dirname(abs_target))):
                 cand = os.path.join(cand_dir, "visual-checks.json")
                 if os.path.isfile(cand):
-                    page_checks = _page_visual_checks(cand, abs_target)
+                    page_checks = [dict({"source": "screen criteria: visual-checks.json"}, **c)
+                                   for c in _page_visual_checks(cand, abs_target)]
                     page_steps = _page_visual_steps(cand, abs_target)
                     break
         if checks_raw:
@@ -27677,7 +27761,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 extra = json.loads(checks_raw)
             except ValueError as e:
                 return self._reply(400, {"error": "checks must be JSON: %s" % e})
-            page_checks += (extra.get("checks") if isinstance(extra, dict) else extra) or []
+            page_checks += [dict({"source": "asked in this QA call"}, **c) if isinstance(c, dict) else c
+                            for c in ((extra.get("checks") if isinstance(extra, dict) else extra) or [])]
         if page_checks:
             checks_path = os.path.join(out_dir, "checks.json")
             with open(checks_path, "w", encoding="utf-8") as f:
@@ -27781,6 +27866,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         report["exitCode"] = proc.returncode
         report["outDir"] = out_dir
         report = review_evidence.attach(report, judge, revision_before, review_evidence.source_revision(revision_root))
+        # Typed visual checks leave a report page (questions, answers, the
+        # images exactly as sent) outside the temp dir, linked from the reply.
+        try:
+            _vr = visual_report.save(report, out_dir, project=_qs_get(qs, "project") or None,
+                                     page=info.get("page") or info.get("node"))
+            if _vr:
+                report["visualReport"] = visual_report.page_url(_vr)
+        except Exception as _vr_err:
+            print("[qa] visual report not saved: %s" % _vr_err, flush=True)
         # Keep complete evidence on disk. Brief responses change no checks.
         if _compact_config()["compactQa"] and _qs_get(qs, "detail") != "full":
             try:
@@ -27792,6 +27886,38 @@ class H(http.server.SimpleHTTPRequestHandler):
             except (OSError, ValueError, TypeError):
                 pass  # A context optimization must not lose a completed QA result.
         return self._reply(200, report)
+
+    # GET /__qa/visual-report?id=<id> - the report page for one QA run.
+    def _qa_visual_report(self, qs):
+        rid = (_qs_get(qs, "id") or "").strip()
+        data = visual_report.load(rid)
+        if data is None:
+            return self._reply(404, {"error": "no visual QA report %s" % rid})
+        if (_qs_get(qs, "format") or "") == "json":
+            return self._reply(200, data)
+        body = visual_report.render(data, visual_report.file_url(rid)).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    # GET /__qa/visual-report/file?id=<id>&f=<name> - one saved image.
+    def _qa_visual_report_file(self, qs):
+        path = visual_report.file_path((_qs_get(qs, "id") or "").strip(), (_qs_get(qs, "f") or "").strip())
+        if not path:
+            return self._reply(404, {"error": "no such report image"})
+        with open(path, "rb") as f:
+            body = f.read()
+        ext = path.rsplit(".", 1)[-1].lower()
+        self.send_response(200)
+        self.send_header("Content-Type", {"jpg": "image/jpeg", "jpeg": "image/jpeg",
+                                          "webp": "image/webp"}.get(ext, "image/png"))
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "max-age=86400")
+        self.end_headers()
+        self.wfile.write(body)
 
     # ── User stories + prototype story map ────────────────────────────────
     # Two artefacts per project, both plain files on disk (editor/stories.py):
