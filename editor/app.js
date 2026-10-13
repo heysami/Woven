@@ -13996,11 +13996,15 @@ function extractRunSubagents(events) {
   // signal there is.
   const tickById = new Map();
   const jobs = new Map();
+  // Tool calls a subagent made itself (its shell commands): a background
+  // job started by one of those belongs to that subagent, not to the thread.
+  const subagentTool = new Set();
   let ticks = 0;
   for (const ev of events || []) {
     if (ev?.event !== "agent") continue;
     const d = ev?.data;
     if (!d) continue;
+    if (d.type === "tool_use" && d.sidechain && d.id) subagentTool.add(d.id);
     if (d.type === "job") {
       const key = d.jobId || d.toolUseId;
       const oldKey = d.toolUseId && jobs.has(d.toolUseId) ? d.toolUseId : key;
@@ -14076,6 +14080,7 @@ function extractRunSubagents(events) {
   }
   for (const job of jobs.values()) {
     if (out.some(a => a.id === job.toolUseId)) continue;
+    if (subagentTool.has(job.toolUseId)) continue;
     out.push({ id: job.jobId, type: job.profile?.role || job.taskType || "subagent",
       label: job.description || job.profile?.role || "Background job", prompt: "", result: "", actions: [],
       background: true, jobStatus: job.status, lastTick: 0, tickTotal: ticks,

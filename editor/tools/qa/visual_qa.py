@@ -876,7 +876,8 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
                        gallery_url: Optional[str] = None,
                        ref_classes: Optional[List[str]] = None,
                        ds_plan: Optional[Dict[str, Any]] = None,
-                       collector: Optional["ScreenCollector"] = None) -> Dict[str, Any]:
+                       collector: Optional["ScreenCollector"] = None,
+                       explore: bool = True) -> Dict[str, Any]:
     """The captures the typed checks are asked on, taken on a FRESH page after
     the main QA so nothing here can touch its verdict: the settled screen as a
     full-page screenshot, then each criteria step with a before/after (all with
@@ -918,7 +919,8 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
         log("typed capture pass failed (%s)" % exc)
     finally:
         page.close()
-    explore_screens(context, url, settle_ms, collector)
+    if explore:
+        explore_screens(context, url, settle_ms, collector)
     out["screens"] = collector.screens
     for sc in collector.screens:
         for c in (sc.get("found") or {}).get("comps") or []:
@@ -1703,8 +1705,9 @@ def typed_checks_on_page(context: Any, url: str, args: argparse.Namespace,
     the battery does not run (cases mode)."""
     checks, rejected = getattr(args, "parsed_checks", None) or load_checks(getattr(args, "checks", None))
     tp = typed_pass_for(context, url, args, settle_ms, out_dir, checks)
-    checks = checks + screen_checks(tp.get("screens") or [], getattr(args, "ds_plan", None),
-                                    refs=tp.get("refs") or {})
+    if _full_pass(args):
+        checks = checks + screen_checks(tp.get("screens") or [], getattr(args, "ds_plan", None),
+                                        refs=tp.get("refs") or {})
     report = {"idleFrames": [], "interactions": [], "typedPass": tp}
     vw = int((getattr(args, "viewport", None) or (1280, 720))[0])
     return run_visual_checks(report, checks, rejected, args.typed_judge, vw, judge_fn)
@@ -1717,7 +1720,14 @@ def typed_pass_for(context: Any, url: str, args: argparse.Namespace, settle_ms: 
     return typed_capture_pass(context, url, settle_ms, out_dir, getattr(args, "typed_steps_list", None) or [],
                               sorted({c["selector"] for c in checks if c.get("selector")}),
                               plan.get("gallery"), refs, plan or None,
-                              getattr(args, "screen_collector", None))
+                              getattr(args, "screen_collector", None),
+                              explore=_full_pass(args))
+
+
+def _full_pass(args: argparse.Namespace) -> bool:
+    """The full visual pass (every screen, every element) was asked for.
+    Programmatic callers that build args by hand get it by default."""
+    return bool(getattr(args, "typed_elements", True))
 
 
 def _comp_key(c: Dict[str, Any]) -> str:
@@ -3044,7 +3054,8 @@ def run_cases(args: argparse.Namespace) -> int:
         # captured once, then judged with the settled page below.
         if getattr(args, "typed_judge", None):
             prepare_typed(args)
-            args.screen_collector = ScreenCollector(out_dir, args.ds_plan)
+            if _full_pass(args):
+                args.screen_collector = ScreenCollector(out_dir, args.ds_plan)
         collector = getattr(args, "screen_collector", None)
         for i, case in enumerate(cases):
             entry = _run_one_case(context, url, case, base_ctx, settle_ms,
@@ -3369,7 +3380,7 @@ def run(args: argparse.Namespace) -> int:
             report["typedPass"] = typed_pass_for(context, url, args, settle_ms, out_dir,
                                                  args.parsed_checks[0])
             el_checks = screen_checks(report["typedPass"].get("screens") or [], args.ds_plan,
-                                      refs=report["typedPass"].get("refs") or {})
+                                      refs=report["typedPass"].get("refs") or {}) if _full_pass(args) else []
             if el_checks:
                 args.parsed_checks = (args.parsed_checks[0] + el_checks, args.parsed_checks[1])
 
@@ -3567,6 +3578,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "nothing; flag also adds a typed-judge finding per confident "
                         "failure. Never changes the verdict or the exit code. The "
                         "daemon passes this when typed judgment for visual checks is on.")
+    p.add_argument("--typed-elements", action="store_true",
+                   help="With --typed-judge: the full visual pass. Explore the page's "
+                        "screens and ask the judge about every element on them (texts, "
+                        "design-system components). Without it only the --checks run.")
     p.add_argument("--judge-model", default=None, metavar="MODEL",
                    help="Vision model id (default %s for the direct API; the "
                         "daemon picks its own default if omitted)."

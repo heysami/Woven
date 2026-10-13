@@ -27538,7 +27538,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         # linter's detection (ds_lint.visual_plan) plus the DS gallery to
         # compare components with. Pages only: a node is one piece, not a screen.
         ds_plan_path = None
-        if _tcfg.get("typedJudgeVisual") and abs_target and info.get("target") == "page":
+        # The full visual pass (explore every screen, ask the judge about every
+        # element) is minutes and many judge calls: only the visual-qa
+        # subagent asks for it, with &typed=1. Every other /__qa/run (a
+        # ds-guardian or verifier render check) stays the quick check it was.
+        want_typed = (_qs_get(qs, "typed") or "").strip().lower() in ("1", "true", "yes")
+        if _tcfg.get("typedJudgeVisual") and want_typed and abs_target and info.get("target") == "page":
             try:
                 _proj_root = resolve_project_root(qs)
                 _proto = os.path.relpath(abs_target, os.path.join(_proj_root, "source")).split(os.sep)[0]
@@ -27556,7 +27561,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                         json.dump(_plan, f)
             except Exception as _dsv_err:
                 print("[qa] design-system visual plan skipped: %s" % _dsv_err, flush=True)
-        if _tcfg.get("typedJudgeVisual") and (checks_path or ds_plan_path or page_steps):
+        if _tcfg.get("typedJudgeVisual") and (want_typed or checks_raw) and \
+                (checks_path or ds_plan_path or page_steps or want_typed):
+            if want_typed:
+                cmd += ["--typed-elements"]
             if checks_path:
                 cmd += ["--checks", checks_path]
             if ds_plan_path:

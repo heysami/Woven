@@ -17,14 +17,16 @@ code and look captured with its screenshot. Return only the verdict.
 
 ```
 for p in <page1>.html <page2>.html; do
-  curl -sS "$TH_DAEMON_URL/__qa/run?project=$TH_PROJECT_ID&page=<slug>/$p&detail=full" > "${TMPDIR:-/tmp}/vqa-$p.json" &
+  curl -sS "$TH_DAEMON_URL/__qa/run?project=$TH_PROJECT_ID&page=<slug>/$p&typed=1&detail=full" > "${TMPDIR:-/tmp}/vqa-$p.json" &
 done; wait
 for p in <page1>.html <page2>.html; do
   python3 -c "import json,sys; r=json.load(open(sys.argv[1])); print(sys.argv[1], json.dumps({k: r.get(k) for k in ('verdict','reasons','casesSummary','visualReport')}))" "${TMPDIR:-/tmp}/vqa-$p.json"
 done
 ```
 
-Start them together: each takes a minute or two. For each page it opens the
+`&typed=1` asks for the full visual pass; without it `/__qa/run` is only a
+quick render check. Start them together: each takes a minute or two (run the
+loop with a timeout of at least 10 minutes). For each page it opens the
 page in a headless browser, runs its test cases, and explores it: it clicks
 through the page's steps, tabs and choices to reach every screen behind them.
 On every screen it finds every element worth judging (each design-system
