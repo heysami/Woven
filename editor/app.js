@@ -24447,74 +24447,26 @@ function HandoffCard({ handoff, runId }) {
   </div>`;
 }
 
-/* JudgeProposal - the text judge's ranking of the design library for this
-   brief (direction_ranking.py), shown under the user's first message: it
-   answers in a second or two, long before the agent's direction options.
-   Top picks per axis; a failure says why instead of disappearing. */
-const JUDGE_AXIS_LABEL = { recipe: "Recipe", shell: "Shell", style: "Style", aesthetic: "Aesthetic" };
-function JudgeProposal({ data, runId, answered, onAnswered }) {
+/* JudgeProposal - the text judge's three direction proposals for this brief
+   (direction_ranking.py), as the SAME <direction-options> card the agent's
+   step -1 emits: palette chips, type samples in the real Google font,
+   library previews recoloured into each option's palette, and the same pick.
+   A failure says why instead of disappearing. */
+function JudgeProposal({ data, runId, answered, onAnswered, processEnded }) {
   const d = data || {};
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const picked = typeof answered === "string" ? answered : Array.isArray(answered) ? answered[0] : null;
-  // The judge's proposals ARE the direction options: a pick sends the same
-  // decision the direction card sends, with the library ids as its detail.
-  const choose = async (pr, n) => {
-    if (!runId || picked || busy) return;
-    setBusy(true); setErr("");
-    const value = `judge${n + 1}`;
-    const label = ["shell", "style", "aesthetic"].filter(a => pr.picks[a]).map(a => `${a} ${pr.picks[a].id}`).join(", ");
-    try {
-      await postRunReply(runId, `[decision:prototype-direction] ${value} - ${label}`);
-      if (onAnswered) onAnswered("decision:prototype-direction", value);
-      await fetch(apiUrl("/__decision/prototype-direction"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ values: [value], labels: [label], runId,
-          detail: Object.fromEntries(Object.entries(pr.picks).map(([a, t]) => [a, t.id]).concat([["source", "judge"]])) }),
-      });
-    } catch (e) {
-      setErr(e.message || String(e));
-    }
-    setBusy(false);
-  };
-  const providerName = { clef: "Cloudflare Clef", "clef-flash": "Cloudflare Clef Flash", "clef-local": "Local Clef",
-    jev: "TypeSafe Jev", openai: "OpenAI" }[d.provider] || d.provider || "the text judge";
-  if (d.error) {
+  const seg = useMemo(() => {
+    if (!d.markup) return null;
+    try { return (parseQuestionForms(d.markup).segments || []).find(x => x.kind === "direction") || null; }
+    catch { return null; }
+  }, [d.markup]);
+  if (d.error || !seg) {
     return html`<div className="chat-judge-proposal" data-error="true">
-      <div className="chat-judge-proposal-h">Judge's proposal from the library</div>
-      <div className="chat-judge-proposal-note">Could not rank the library: ${d.error}</div>
+      <div className="chat-judge-proposal-h">The judge's direction proposals</div>
+      <div className="chat-judge-proposal-note">Could not build them: ${d.error || "no proposals came back"}</div>
     </div>`;
   }
-  const high = (d.thresholds && d.thresholds.high) || 0.7;
-  const props = d.proposals || [];
-  const ranking = Object.entries(d.axes || {}).map(([k, ax]) => html`
-      <div className="chat-judge-axis" key=${k}>
-        <span className="chat-judge-axis-name">${JUDGE_AXIS_LABEL[k] || k}</span>
-        <span className="chat-judge-axis-picks">${(ax.top || []).slice(0, 3).map((t, i) => html`<span key=${t.id}
-            className=${"chat-judge-pick" + (i === 0 && t.p >= high ? " is-strong" : "")} title=${t.desc || t.id}>${i ? " · " : ""}${t.label} ${Number(t.p).toFixed(2)}</span>`)}</span>
-      </div>`);
-  return html`<div className="chat-judge-proposal">
-    <div className="chat-judge-proposal-h">Judge's ${props.length || ""} proposal${props.length === 1 ? "" : "s"} from the library
-      <span className="chat-judge-proposal-meta">${providerName} · ${((d.ms || 0) / 1000).toFixed(1)} s</span></div>
-    ${props.map((pr, n) => html`
-      <div className="chat-judge-option" key=${n} data-picked=${picked === `judge${n + 1}`}>
-        <span className="chat-judge-option-n">${n + 1}</span>
-        ${["shell", "style", "aesthetic"].filter(a => pr.picks && pr.picks[a]).map(a => {
-          const t = pr.picks[a];
-          return html`<figure className=${"chat-judge-part" + (a === pr.spread ? " is-spread" : "")} key=${a}>
-            ${t.preview ? html`<img src=${apiUrl("/" + t.preview)} alt=${`${JUDGE_AXIS_LABEL[a]}: ${t.label}`} loading="lazy"/>`
-                        : html`<div className="chat-judge-part-none">${t.label}</div>`}
-            <figcaption><span>${JUDGE_AXIS_LABEL[a]}</span> ${t.label}${a === pr.spread ? ` ${Number(t.p).toFixed(2)}` : ""}</figcaption>
-          </figure>`;
-        })}
-        <button type="button" className="chat-judge-use" disabled=${!!picked || busy || !runId}
-          onClick=${() => choose(pr, n)}>${picked === `judge${n + 1}` ? "Chosen" : "Use this"}</button>
-      </div>`)}
-    ${err && html`<div className="chat-judge-proposal-note" data-error="true">${err}</div>`}
-    ${!picked && props.length > 0 && html`<div className="chat-judge-proposal-note">Pick one, or describe your own direction in a reply.</div>`}
-    ${props.length > 0 ? html`<details className="chat-judge-ranking"><summary>Full ranking</summary>${ranking}</details>` : ranking}
-    ${d.needsDirection != null && html`<div className="chat-judge-proposal-note">The brief leaves the direction open: ${Number(d.needsDirection).toFixed(2)}${props.length ? ` · the three differ in ${props[0].spread}, the axis it leaves most open` : ""}</div>`}
-  </div>`;
+  return html`<${DirectionOptionsCard} direction=${seg.direction} runId=${runId}
+    answered=${answered} onAnswered=${onAnswered} processEnded=${processEnded}/>`;
 }
 
 function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
@@ -24667,7 +24619,8 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
     }
     case "judge_proposal":
       return html`<${JudgeProposal} data=${block.data} runId=${runId}
-        answered=${answers && answers["decision:prototype-direction"]} onAnswered=${onAnswered}/>`;
+        answered=${answers && answers["decision:prototype-direction"]} onAnswered=${onAnswered}
+        processEnded=${processEnded}/>`;
     case "usage": {
       const u = block.data.usage || {};
       return html`<div className="chat-row chat-usage">in ${u.input_tokens||0} · out ${u.output_tokens||0}${u.cache_read_input_tokens ? ` · cache ${u.cache_read_input_tokens}` : ""}</div>`;

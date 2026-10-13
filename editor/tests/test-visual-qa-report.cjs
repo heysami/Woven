@@ -71,18 +71,6 @@ const report = {
       ${constLine('VQA_ORDER')}
       ${slice('function visualQaOutcome(')}
       ${slice('function VisualQaReport(')}
-      ${app.slice(app.indexOf('const JUDGE_AXIS_LABEL'), app.indexOf('\n', app.indexOf('const JUDGE_AXIS_LABEL')) + 1)}
-      ${slice('function JudgeProposal(')}
-      window.replies = []; window.decisions = [];
-      async function postRunReply(runId, text) { window.replies.push(text); }
-      const _fetch = window.fetch;
-      window.fetch = (u, o) => { if (String(u).includes('/__decision/')) { window.decisions.push(JSON.parse(o.body)); return Promise.resolve({ ok: true, json: async () => ({}) }); } return _fetch(u, o); };
-      function Picker({ data }) {
-        const [ans, setAns] = useState(undefined);
-        return React.createElement(JudgeProposal, { data, runId: 'r1', answered: ans, onAnswered: (k, v) => setAns(v) });
-      }
-      window.renderProposal = (data) => { const d = document.createElement('div'); d.id = 'jp' + (data.error ? 'e' : '');
-        document.body.appendChild(d); ReactDOM.createRoot(d).render(React.createElement(Picker, { data })); };
       const _judgeCounts = new Map();
       ${slice('function JudgeMark(')}
       const Icon = { Bot: () => null, Refresh: () => null };
@@ -116,40 +104,6 @@ const report = {
     assert.deepEqual(srcs.map(s => decodeURIComponent(s.split('f=')[1])), ['sent_01_1.png', 'ref_btn.png', 'sent_02_2.png'],
       'the images of the listed calls, as sent; none of the sure-yes call');
     await page.waitForFunction(() => [...document.querySelectorAll('.th-vqa-imgs img')].every(i => i.complete && i.naturalWidth > 0));
-    // The text judge's ranking of the library, under the first message.
-    await page.evaluate(() => window.renderProposal({ provider: 'clef', ms: 1600, needsDirection: 0.66,
-      thresholds: { low: 0.45, high: 0.7 },
-      axes: { style: { top: [{ id: 'pixel-grid-bitmap', label: 'pixel grid bitmap', p: 0.8 }, { id: 'flat-design', label: 'flat design', p: 0.03 }] },
-              aesthetic: { top: [{ id: 'pixel-ps1', label: 'pixel ps1', p: 0.16 }] } },
-      proposals: [0, 1, 2].map(i => ({ spread: 'aesthetic', picks: {
-        shell: { id: 'canvas', label: 'canvas floating panels', p: 0.23 },
-        style: { id: 'pixel-grid-bitmap', label: 'pixel grid bitmap', p: 0.8, preview: 'design-library/style-pixel-bitmap-ui.png' },
-        aesthetic: { id: 'a' + i, label: ['pixel ps1', '8 bit generic', 'pixel modern cozy'][i], p: [0.16, 0.15, 0.14][i],
-                     preview: 'design-library/aesthetic-x-ui.png' } } })) }));
-    await page.evaluate(() => window.renderProposal({ error: 'no text judge is set up' }));
-    await page.waitForSelector('#jp .chat-judge-option');
-    const jp = await page.locator('#jp').innerText();
-    assert.match(jp, /Judge's 3 proposals from the library/);
-    assert.match(jp, /Cloudflare Clef · 1\.6 s/);
-    assert.equal(await page.locator('#jp .chat-judge-option').count(), 3);
-    assert.equal(await page.locator('#jp .chat-judge-option').first().locator('img').count(), 2,
-      'each part with a library preview shows it');
-    assert.match(await page.locator('#jp .chat-judge-option').nth(1).innerText(), /Aesthetic\s+8 bit generic 0\.15/);
-    assert.match(jp, /the three differ in aesthetic/);
-    await page.locator('#jp summary').click();
-    assert.equal(await page.locator('#jp .chat-judge-pick.is-strong').innerText(), 'pixel grid bitmap 0.80',
-      'in the full ranking, a pick over the high threshold stands out');
-    assert.match(await page.locator('#jpe').innerText(), /Could not rank the library: no text judge is set up/);
-    // A pick IS the direction decision: sent as the reply and saved with the library ids.
-    await page.locator('#jp .chat-judge-option').nth(1).getByRole('button', { name: 'Use this' }).click();
-    await page.waitForFunction(() => window.decisions.length === 1);
-    assert.deepEqual(await page.evaluate(() => window.replies),
-      ['[decision:prototype-direction] judge2 - shell canvas, style pixel-grid-bitmap, aesthetic a1']);
-    assert.deepEqual(await page.evaluate(() => window.decisions[0].detail),
-      { shell: 'canvas', style: 'pixel-grid-bitmap', aesthetic: 'a1', source: 'judge' });
-    assert.equal(await page.locator('#jp .chat-judge-option').nth(1).getByRole('button').innerText(), 'Chosen');
-    assert.equal(await page.locator('#jp .chat-judge-option').nth(0).getByRole('button').isDisabled(), true,
-      'one direction: the others close');
     // The Subagents list marks a subagent that has a Judge tab.
     await page.evaluate(() => { const d = document.createElement('div'); d.id = 'mark'; document.body.appendChild(d);
       ReactDOM.createRoot(d).render(React.createElement(JudgeMark, { ids: ['20261013-161310-ab12cd'] })); });

@@ -5169,33 +5169,12 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-vqa-o-sure-yes { color: var(--success); }
 .th-vqa-counts { display: flex; gap: 12px; padding: 2px 8px 6px; }
 .th-judge-mark { color: var(--hot-text); font-weight: 700; }
-/* The text judge's ranking of the design library, under the first message. */
+/* The judge's proposals when they could not be built (the card itself is
+   the standard .chat-direction-card). */
 .chat-judge-proposal { margin: 6px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2, var(--bg)); font-size: 12px; }
 .chat-judge-proposal-h { font-weight: 600; color: var(--text); margin-bottom: 4px; }
-.chat-judge-proposal-meta { font-weight: 400; color: var(--text-muted); margin-left: 6px; }
-.chat-judge-axis { display: grid; grid-template-columns: 72px 1fr; gap: 8px; padding: 2px 0; }
-.chat-judge-axis-name { color: var(--text-muted); }
-.chat-judge-pick { color: var(--text-muted); }
-.chat-judge-pick:first-child { color: var(--text); }
-.chat-judge-pick.is-strong { color: var(--hot-text); font-weight: 700; }
 .chat-judge-proposal-note { color: var(--text-muted); margin-top: 4px; }
-.chat-judge-option { display: grid; grid-template-columns: 16px repeat(3, minmax(0, 1fr)) auto; gap: 8px; align-items: start; padding: 6px 0; border-top: 1px solid var(--border); }
-.chat-judge-option[data-picked="true"] .chat-judge-option-n { color: var(--hot-text); }
-.chat-judge-use { font: inherit; font-size: 11.5px; padding: 3px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); cursor: pointer; align-self: center; white-space: nowrap; }
-.chat-judge-use:hover:not(:disabled) { border-color: var(--hot-text); color: var(--hot-text); }
-.chat-judge-use:disabled { cursor: default; opacity: .55; }
-.chat-judge-option[data-picked="true"] .chat-judge-use { opacity: 1; border-color: var(--hot-text); color: var(--hot-text); font-weight: 700; }
-.chat-judge-proposal-note[data-error="true"] { color: var(--danger); }
-.chat-judge-option:first-of-type { border-top: 0; }
-.chat-judge-option-n { font-weight: 700; color: var(--text-muted); padding-top: 2px; }
-.chat-judge-part { margin: 0; min-width: 0; }
-.chat-judge-part img, .chat-judge-part-none { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); }
-.chat-judge-part-none { display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 11px; }
-.chat-judge-part.is-spread img { border-color: var(--hot-text); }
-.chat-judge-part figcaption { font-size: 11px; color: var(--text); margin-top: 2px; overflow-wrap: anywhere; }
-.chat-judge-part figcaption span { color: var(--text-muted); margin-right: 3px; }
-.chat-judge-ranking { margin-top: 4px; }
-.chat-judge-ranking summary { cursor: pointer; color: var(--text-muted); }
+.chat-judge-proposal[data-error="true"] .chat-judge-proposal-note { color: var(--danger); }
 .chat-judge-proposal[data-error="true"] .chat-judge-proposal-note { color: var(--danger); }
 .th-vqa-ans { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); white-space: nowrap; padding-top: 1px; }
 .th-subagent-run {

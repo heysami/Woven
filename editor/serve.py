@@ -13313,6 +13313,16 @@ def _cancel_qa_checks(state) -> list:
     return stopped
 
 
+def _judge_card_worker(state, event, brief, project_root):
+    """Compose the judge's direction card and post it to the thread; a
+    failure is posted too, never dropped."""
+    try:
+        done = direction_ranking.card(event, brief, project_root)
+    except Exception as e:
+        done = dict(event, error="the direction card could not be built: %s" % e)
+    state.append("agent", dict({"type": "judge_proposal"}, **done))
+
+
 def _qa_cancel_note(checks) -> str:
     """Prefix for the user frame that follows a cancel, so the agent reads the
     interrupted check as the user's doing rather than re-running it at once
@@ -35911,7 +35921,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         if kind == "freeform" and user_prompt:
             state.append("user_message", {"text": user_prompt})
         if _proposal and _proposal.get("event"):
-            state.append("agent", dict({"type": "judge_proposal"}, **_proposal["event"]))
+            if _proposal["event"].get("proposals"):
+                # The card (palette, fonts, recoloured previews) takes a couple
+                # of seconds: it lands as soon as it is ready.
+                threading.Thread(target=_judge_card_worker,
+                                 args=(state, _proposal["event"], user_prompt, project_root),
+                                 daemon=True, name="judge-card-%s" % run_id).start()
+            else:
+                state.append("agent", dict({"type": "judge_proposal"}, **_proposal["event"]))
 
         with RUNS_LOCK:
             RUNS[run_id] = state

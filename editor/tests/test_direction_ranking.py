@@ -67,7 +67,8 @@ class Ranking(unittest.TestCase):
         self.assertIn("style (confidence 0.60): %s 0.80" % style["top"][0]["id"], out["forAgent"])
         self.assertEqual(len(ev["proposals"]), 3)
         self.assertIn("Do NOT compose direction options", out["forAgent"])
-        self.assertIn("[decision:prototype-direction] judgeN", out["forAgent"])
+        self.assertIn("[decision:prototype-direction] N - <title>", out["forAgent"])
+        self.assertIn(".prototype-options/%s/options.json" % ev["slug"], out["forAgent"])
         self.assertIn("lock THAT one directly", out["forAgent"])
         self.assertNotIn("run step -1 as usual", out["forAgent"])
 
@@ -106,6 +107,47 @@ class Ranking(unittest.TestCase):
                          "ids and file names differ: the roster line links them")
         self.assertEqual(pv.get("canvas-floating-panels"), "design-library/shell-canvas-floating-ui.png")
         self.assertGreater(len(pv), 100)
+
+    def test_the_card_is_the_standard_direction_options_block(self):
+        """Same card as the agent's step -1: label, axes, vibe, why, six
+        palette tokens, display and body fonts, recoloured previews."""
+        out = dr.propose(self.root, "I want to create a pixel art ludo game. Every turn you attack or move.",
+                         judge, AXES, enabled=True)
+        ev = out["event"]
+
+        def fonts(state, questions, **kw):
+            return {"answers": {"display": {"choice": "Press Start 2P"}, "body": {"choice": "Pixelify Sans"}},
+                    "provider": "clef", "model": "m", "thresholds": {}}
+        made = []
+
+        def recolor(src, dest, tokens):
+            made.append((os.path.basename(src), tokens))
+            Path(dest).write_bytes(b"png")
+            return True
+        done = dr.card(ev, "I want to create a pixel art ludo game. Every turn you attack or move.",
+                       self.root, judge=fonts, recolor=recolor)
+        m = done["markup"]
+        self.assertTrue(m.startswith('<direction-options id="prototype-direction"'))
+        self.assertEqual(m.count("<opt "), 3)
+        self.assertEqual(m.count('<opt value="1" recommended>'), 1)
+        self.assertEqual(m.count("<palette>"), 3)
+        self.assertIn('<display font="Press Start 2P">Pixel art ludo game</display>', m)
+        self.assertIn('<body font="Pixelify Sans">Every turn you attack or move.</body>', m)
+        self.assertEqual(m.count('<image axis="'), sum(len(o["picks"]) for o in done["options"]))
+        self.assertIn("auto-preview · judge-ranked", m)
+        self.assertTrue(made and all(len(t) == 6 for _src, t in made), "every preview recoloured into its six tokens")
+        saved = Path(self.root, ".prototype-options", ev["slug"], "options.json")
+        self.assertTrue(saved.is_file(), "the agent reads the option the user picked from here")
+        self.assertNotIn("Sample-image references", m, "the title is the entry's own heading")
+
+    def test_palette_tokens_read_and_stay_in_family(self):
+        dmg = ["#0f380f", "#306230", "#8bac0f", "#9bbc0f"]
+        bg, surface, fg, muted, border, accent = dr.palette_tokens(dmg, dmg + ["#ff004d", "#1c1c1c"])
+        self.assertEqual((bg, fg), ("#9bbc0f", "#0f380f"))
+        self.assertNotEqual(accent, "#ff004d", "an accent from another palette family is not used")
+        pale = ["#f8f8f8", "#e058b8", "#eba0d5", "#f4dbec"]
+        _bg, _s, fg2, _m, _b, _a = dr.palette_tokens(pale, pale + ["#181818"])
+        self.assertEqual(fg2, "#181818", "ink too close to its ground takes the entry's darkest")
 
     def test_a_failure_is_shown_never_missing(self):
         def down(*a, **k):
