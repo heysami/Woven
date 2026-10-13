@@ -1037,6 +1037,74 @@ class DaemonRoutes(Isolated):
         Path(path).write_text("{broken")
         self.assertEqual(self.serve._page_visual_checks(path, os.path.join(folder, "apply.html")), [])
 
+    # visual QA the daemon runs itself ------------------------------------------
+
+    def _proto(self):
+        import time as _t
+        base = Path(self.project, "source", "main")
+        old = _t.time() - 3600
+        files = {"a.html": "<html></html>",
+                 "b.html": "<html></html>",
+                 "c.html": '<script src="app.js?project=p"></script>',
+                 "d.html": '<link href="other.css">',
+                 "app.js": "x=1", "other.css": ".x{}", ".draft.html": "<html></html>"}
+        for name, body in files.items():
+            Path(base, name).write_text(body)
+            os.utime(Path(base, name), (old, old))
+        return base
+
+    def test_changed_pages_include_pages_linking_a_changed_script(self):
+        import time as _t
+        base = self._proto()
+        since = _t.time()
+        for name in ("b.html", "app.js", ".draft.html"):
+            Path(base, name).write_text("changed " + name)
+        got = self.serve._changed_pages(self.project, ["main"], since)
+        self.assertEqual(got, [("main", "b.html"), ("main", "c.html")])
+
+    def _run_state(self, guards, node=None):
+        from types import SimpleNamespace
+        return SimpleNamespace(project_root=self.project, prototype="main", guards=guards,
+                               workflow_node_id=node, qa_pending_since=None, _auto_qa_running=False,
+                               last_user_message_at=None, started_at=0)
+
+    def test_turn_end_runs_visual_qa_on_changed_pages_when_visual_is_on(self):
+        import time as _t
+        from unittest.mock import patch
+        base = self._proto()
+        started = []
+
+        class FakeThread:
+            def __init__(self, target, args, daemon):
+                started.append(args)
+            def start(self):
+                pass
+        st = self._run_state({"visual": True})
+        st.last_user_message_at = _t.time()
+        Path(base, "b.html").write_text("changed")
+        with patch.object(self.serve.threading, "Thread", FakeThread):
+            self.serve._auto_visual_qa_maybe(st)
+            self.assertEqual(started[0][1], [("main", "b.html")])
+            self.assertTrue(st._auto_qa_running)
+            started.clear()
+            self.serve._auto_visual_qa_maybe(st)          # still running: deferred, not dropped
+            self.assertEqual(started, [])
+            self.assertIsNotNone(st.qa_pending_since)
+            for off in (self._run_state({"visual": False}), self._run_state({"visual": True}, node="n1")):
+                off.last_user_message_at = _t.time() - 10
+                self.serve._auto_visual_qa_maybe(off)
+            self.assertEqual(started, [], "visual off, or a node run: nothing")
+
+    def test_the_thread_line_says_what_qa_found(self):
+        label, detail = self.serve._visual_qa_line("fa-monitoring.html", {
+            "verdict": "pass", "casesSummary": {"pass": 45, "total": 45},
+            "typedChecks": {"mode": "shadow", "summary": {"confidentPass": 1, "confidentFail": 1, "unsure": 2},
+                            "checks": [{"id": "org_field", "claim": "The image shows a text field.",
+                                        "passed": False, "band": "act", "answer": 0.03}]}})
+        self.assertEqual(label, "Visual QA · fa-monitoring.html · pass · 45/45 cases · "
+                                "visual checks: 1 sure yes, 1 sure no, 2 unsure (shadow)")
+        self.assertIn("org_field: The image shows a text field. (judge said 0.03)", detail)
+
     def test_judge_status_route(self):
         self.media({"typesafe": {"api_key": "ts"}})
         st = tj.status(resolve_key=self.serve._resolve_provider_key)

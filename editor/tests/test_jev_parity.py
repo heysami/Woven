@@ -943,8 +943,16 @@ class P8VisualChecks(unittest.TestCase):
             def click(self, sel, **kw):
                 clicked.append(sel)
             def evaluate(self, js, arg=None):
+                if js == visual_qa._RENDERED_DS_JS:
+                    return {"off": [{"selector": "#bar", "source": "<style> .sp-bar", "count": 1,
+                                     "skin": ["border"]}],
+                            "comps": [{"cls": "btn", "title": "Button", "selector": "#b1", "variant": []},
+                                      {"cls": "modal", "title": "Popup / Modal", "selector": "#m",
+                                       "variant": []}]}
+                if js == visual_qa._GALLERY_PICK_JS:
+                    return {"selector": "#gallery-" + arg[0], "exact": True}
                 box = {"x": 20, "y": 20, "width": 60, "height": 40}
-                return {s: (None if s == ".modal" else box) for s in arg}
+                return {s: (None if s == "#m" else box) for s in arg}
             def locator(self, sel):
                 page = self
 
@@ -968,13 +976,14 @@ class P8VisualChecks(unittest.TestCase):
         plan_file.write_text(json.dumps({
             "dsId": "suss", "names": "Button (.btn), Popup / Modal (.modal)",
             "gallery": "http://127.0.0.1:1/design-systems/suss/gallery.html",
-            "offSystem": [{"selector": ".sp-bar", "source": "<style> .sp-bar"}],
+            "dsPath": "/design-systems/suss/", "dsClasses": ["btn", "modal"],
+            "componentRoots": ["btn", "modal"],
             "components": [{"cls": "btn", "title": "Button"}, {"cls": "modal", "title": "Popup / Modal"}]}))
         args = SimpleNamespace(checks=str(checks_file), ds_visual=str(plan_file),
                                typed_steps=str(steps_file), typed_judge="flag", viewport=(200, 200))
         visual_qa.prepare_typed(args)
-        self.assertEqual([c["id"] for c in args.parsed_checks[0]],
-                         ["org_field", "ds_off_1", "ds_cmp_btn", "ds_cmp_modal"])
+        self.assertEqual([c["id"] for c in args.parsed_checks[0]], ["org_field"],
+                         "design-system checks come from the rendered page, not up front")
         asked = []
 
         def judge(state, questions, **kw):
@@ -989,11 +998,12 @@ class P8VisualChecks(unittest.TestCase):
         block = visual_qa.typed_checks_on_page(SimpleNamespace(new_page=Page), "file:///x", args, 0,
                                                self.tmp, judge)
         rows = {r["id"]: r for r in block["checks"]}
+        self.assertEqual(sorted(rows), ["ds_cmp_btn", "ds_cmp_modal", "ds_off_1", "org_field"])
         self.assertEqual(clicked, ["#sponsorYes"])
         self.assertEqual(rows["org_field"]["status"], "answered")
         self.assertEqual(rows["org_field"]["images"], ["after pick_yes cropped to #orgFollowUp"])
         self.assertEqual((rows["ds_off_1"]["answer"], rows["ds_off_1"]["passed"]), ("ds-copy", False))
-        self.assertEqual(rows["ds_cmp_btn"]["images"][0], "the design system's own btn")
+        self.assertEqual(rows["ds_cmp_btn"]["images"][0], "the design system's own .btn")
         self.assertEqual(rows["ds_cmp_modal"]["status"], "not-visible", "a hidden modal is skipped")
         off_state = [st for st, qs, _n in asked if "ds_off_1" in qs][0]
         self.assertIn("Button (.btn)", off_state, "the DS names travel with the off-system question")
@@ -1001,6 +1011,43 @@ class P8VisualChecks(unittest.TestCase):
         visual_qa._flag_and_log(report, block, "flag", args, lambda e: None)
         self.assertEqual([f["check"] for f in report.get("findings", [])], ["ds_off_1"],
                          "only the confident ds-copy is a finding; the hidden modal is not")
+
+    def test_design_system_elements_are_found_on_the_rendered_page(self):
+        """Most screens are drawn by JavaScript: the HTML file is a shell. The
+        design system's elements are found in the browser, after render."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except Exception:
+            self.skipTest("Playwright not installed")
+        root = Path(self.tmp) / "render"
+        (root / "design-systems" / "x").mkdir(parents=True)
+        (root / "design-systems" / "x" / "styles.css").write_text(
+            ".card{border:1px solid #ccc;border-radius:8px;padding:12px}"
+            ".modal{background:#fff;border:1px solid #000}")
+        (root / "app").mkdir()
+        page_html = root / "app" / "p.html"
+        page_html.write_text(
+            '<link rel="stylesheet" href="../design-systems/x/styles.css">'
+            "<style>.promo{background:#fee;border:2px solid #f00;border-radius:12px}"
+            ".card .title{border-bottom:1px solid #eee}</style>"
+            '<div id="root"></div><div class="card">ds card</div>'
+            '<div class="modal" style="display:none">closed</div>'
+            '<span style="border:1px solid #999;border-radius:99px;padding:2px 6px">tag</span>'
+            "<script>document.getElementById('root').innerHTML="
+            "'<div class=\"promo\">made by JS</div>'</script>")
+        plan = {"dsPath": "/design-systems/x/", "dsClasses": ["card", "modal", "title"],
+                "componentRoots": ["card", "modal"],
+                "components": [{"cls": "card", "title": "Card"}, {"cls": "modal", "title": "Modal"}]}
+        with sync_playwright() as pw:
+            browser, _label = visual_qa.launch_browser(pw)
+            page = browser.new_page()
+            page.goto(page_html.as_uri())
+            found = visual_qa.detect_rendered_ds(page, plan)
+            browser.close()
+        sources = sorted(u["source"] for u in found["off"])
+        self.assertEqual(sources, ["<style> .promo", "inline style on <span>"],
+                         "the JS-made .promo is found; DS rules and DS-class selectors are not")
+        self.assertEqual([c["cls"] for c in found["comps"]], ["card"], "the closed modal is not on screen")
 
     def test_a_missing_element_is_reported_without_a_model_call(self):
         calls = []

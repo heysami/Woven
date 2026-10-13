@@ -770,7 +770,7 @@ MAX_CHECKS = 64
 _CHECK_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _CAPTURE = re.compile(r"^(page|idle:(start|end|motion|\d+)|(before|after):.+)$")
 # A design-system reference rendered from the DS gallery (compare only).
-_REF = re.compile(r"^ref:[A-Za-z_][\w-]*$")
+_REF = re.compile(r"^ref:[A-Za-z_][\w.-]*$")
 _CROP_PAD = 8
 
 
@@ -857,6 +857,8 @@ def load_checks(path: Optional[str]) -> Tuple[List[Dict[str, Any]], List[Dict[st
 _BOXES_JS = """(sels) => Object.fromEntries(sels.map(s => {
   let el = null; try { el = document.querySelector(s); } catch (e) { return [s, null]; }
   if (!el) return [s, null];
+  if (el.checkVisibility && !el.checkVisibility({opacityProperty: true, visibilityProperty: true}))
+    return [s, null];
   const r = el.getBoundingClientRect();
   if (!r.width || !r.height) return [s, null];
   return [s, {x: r.x, y: r.y, width: r.width, height: r.height}];
@@ -866,17 +868,27 @@ _BOXES_JS = """(sels) => Object.fromEntries(sels.map(s => {
 def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
                        steps: List[Dict[str, Any]], selectors: List[str],
                        gallery_url: Optional[str] = None,
-                       ref_classes: Optional[List[str]] = None) -> Dict[str, Any]:
+                       ref_classes: Optional[List[str]] = None,
+                       ds_plan: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The captures the typed checks are asked on, taken on a FRESH page after
     the main QA so nothing here can touch its verdict: the settled screen as a
     full-page screenshot, then each criteria step with a before/after (all with
     every check's element box, in page coordinates), then one crop per
     design-system component from the DS gallery. Never raises."""
-    out: Dict[str, Any] = {"settled": None, "interactions": [], "refs": {}}
+    out: Dict[str, Any] = {"settled": None, "interactions": [], "refs": {}, "ds": None}
+    selectors = list(selectors)
+    ref_classes = list(ref_classes or [])
     page = context.new_page()
     try:
         page.goto(url, wait_until="load", timeout=30000)
         page.wait_for_timeout(settle_ms)
+        out["ds"] = detect_rendered_ds(page, ds_plan)
+        for u in (out["ds"] or {}).get("off") or []:
+            selectors.append(u["selector"])
+        for c in (out["ds"] or {}).get("comps") or []:
+            selectors.append(c["selector"])
+            ref_classes.append(".".join([c["cls"]] + list(c.get("variant") or [])))
+        selectors = sorted(set(selectors))
         path = os.path.join(out_dir, "typed_page.png")
         page.screenshot(path=path, full_page=True)
         out["settled"] = {"t": 0.0, "path": path, "diffFromPrev": None,
@@ -900,27 +912,162 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
         log("typed capture pass failed (%s)" % exc)
     finally:
         page.close()
+    ref_classes = sorted(set(ref_classes))
     if gallery_url and ref_classes:
         g = context.new_page()
         try:
             g.goto(gallery_url, wait_until="load", timeout=30000)
             g.wait_for_timeout(settle_ms)
-            for cls in ref_classes:
+            for key in ref_classes:
+                # The SAME variant in the gallery: an element whose cls--*
+                # modifiers are exactly the page element's (so a plain .btn is
+                # compared with a plain .btn, .btn.btn--outline with an outline
+                # one); else the first visible base. The label says which.
                 try:
-                    loc = g.locator("." + cls).first
-                    if not loc.count() or not loc.is_visible():
-                        continue
-                    p = os.path.join(out_dir, "ref_%s.png" % cls)
-                    loc.screenshot(path=p, timeout=5000)
-                    out["refs"][cls] = {"label": "the design system's own %s" % cls, "path": p,
-                                        "boxes": None}
+                    pick = g.evaluate(_GALLERY_PICK_JS, key.split("."))
                 except Exception as exc:
-                    log("gallery reference for .%s unavailable (%s)" % (cls, exc))
+                    log("gallery reference for %s unavailable (%s)" % (key, exc))
+                    pick = None
+                if not pick:
+                    continue
+                try:
+                    p = os.path.join(out_dir, "ref_%s.png" % re.sub(r"[^\w-]", "_", key))
+                    g.locator(pick["selector"]).first.screenshot(path=p, timeout=5000)
+                    out["refs"][key] = {"label": "the design system's own .%s%s"
+                                        % (key, "" if pick["exact"] else " (base, no matching variant)"),
+                                        "path": p, "boxes": None, "exactVariant": pick["exact"]}
+                except Exception as exc:
+                    log("gallery reference for %s unavailable (%s)" % (key, exc))
         except Exception as exc:
             log("design-system gallery unavailable (%s)" % exc)
         finally:
             g.close()
     return out
+
+
+_GALLERY_PICK_JS = """(parts) => {
+  const base = parts[0], want = parts.slice(1).sort().join(' ');
+  const visible = el => {
+    if (el.checkVisibility && !el.checkVisibility({opacityProperty: true, visibilityProperty: true}))
+      return false;
+    const r = el.getBoundingClientRect();
+    return r.width >= 4 && r.height >= 4;
+  };
+  const path = el => {
+    const out = [];
+    while (el && el.nodeType === 1 && el !== document.body) {
+      if (el.id) { out.unshift('#' + CSS.escape(el.id)); return out.join(' > '); }
+      let i = 1, s = el;
+      while ((s = s.previousElementSibling)) if (s.tagName === el.tagName) i++;
+      out.unshift(el.tagName.toLowerCase() + ':nth-of-type(' + i + ')');
+      el = el.parentElement;
+    }
+    return 'body > ' + out.join(' > ');
+  };
+  const all = [...document.querySelectorAll('.' + CSS.escape(base))].filter(visible);
+  const mods = el => [...el.classList].filter(c => c.indexOf(base + '--') === 0).sort().join(' ');
+  const exact = all.find(el => mods(el) === want);
+  const el = exact || all[0];
+  return el ? {selector: path(el), exact: !!exact} : null;
+}"""
+
+
+# Found on the RENDERED page, in the browser: every rule from a stylesheet that
+# is not the design system's (page <style>, prototype CSS, any selector shape)
+# that gives a visible element its own skin, plus inline-styled skin; and every
+# documented DS component visible on screen. A selector naming a DS class, an
+# element that IS a DS component, and anything not visible are skipped.
+_RENDERED_DS_JS = """(a) => {
+  const dsClasses = new Set(a.dsClasses || []);
+  const roots = new Set(a.componentRoots || []);
+  const SKIN = /^(background|border|box-shadow|outline|backdrop-filter)/;
+  const EMPTY = /^(none|transparent|0|0px|initial|inherit|unset|rgba\\(0, 0, 0, 0\\)|0px none.*)$/;
+  const visible = el => {
+    if (el.checkVisibility && !el.checkVisibility({opacityProperty: true, visibilityProperty: true}))
+      return false;
+    const r = el.getBoundingClientRect();
+    return r.width >= 8 && r.height >= 8;
+  };
+  const isRoot = el => el.classList && [...el.classList].some(c => roots.has(c));
+  const path = el => {
+    const parts = [];
+    while (el && el.nodeType === 1 && el !== document.body) {
+      if (el.id) { parts.unshift('#' + CSS.escape(el.id)); return parts.join(' > '); }
+      let i = 1, s = el;
+      while ((s = s.previousElementSibling)) if (s.tagName === el.tagName) i++;
+      parts.unshift(el.tagName.toLowerCase() + ':nth-of-type(' + i + ')');
+      el = el.parentElement;
+    }
+    return 'body > ' + parts.join(' > ');
+  };
+  const skinOf = st => {
+    const out = [];
+    for (let i = 0; i < st.length; i++) {
+      const p = st[i];
+      if (!SKIN.test(p)) continue;
+      const v = (st.getPropertyValue(p) || '').trim();
+      if (v && !EMPTY.test(v)) out.push(p);
+    }
+    return out;
+  };
+  const units = {};
+  const visit = (rules, sheet) => {
+    for (const rule of rules) {
+      if (!rule.selectorText) {
+        if (rule.cssRules) { try { visit(rule.cssRules, sheet); } catch (e) {} }
+        continue;
+      }
+      const skin = rule.style ? skinOf(rule.style) : [];
+      if (!skin.length) continue;
+      for (const raw of rule.selectorText.split(',')) {
+        const base = raw.trim().replace(/::?[\\w-]+(\\([^)]*\\))?/g, '').trim();
+        if (!base || /^(html|body|\\*|:root)$/i.test(base)) continue;
+        if ([...base.matchAll(/\\.([\\w-]+)/g)].some(m => dsClasses.has(m[1]))) continue;
+        let els = [];
+        try { els = [...document.querySelectorAll(base)]; } catch (e) { continue; }
+        const vis = els.filter(e => visible(e) && !isRoot(e));
+        if (!vis.length) continue;
+        const key = sheet + '|' + base;
+        if (!units[key]) units[key] = {selector: path(vis[0]), source: sheet + ' ' + base,
+                                       count: vis.length, skin: skin};
+      }
+    }
+  };
+  for (const sh of document.styleSheets) {
+    if (sh.href && sh.href.indexOf(a.dsPath) >= 0) continue;
+    let rules = null;
+    try { rules = sh.cssRules; } catch (e) { continue; }
+    visit(rules, sh.href ? sh.href.split('/').pop().split('?')[0] : '<style>');
+  }
+  for (const el of document.querySelectorAll('[style]')) {
+    const skin = skinOf(el.style);
+    if (!skin.length || !visible(el) || isRoot(el)) continue;
+    const p = path(el);
+    units['inline|' + p] = {selector: p, source: 'inline style on <' + el.tagName.toLowerCase() + '>',
+                            count: 1, skin: skin};
+  }
+  const comps = [];
+  for (const c of a.components || []) {
+    let el = null;
+    try { el = [...document.querySelectorAll('.' + CSS.escape(c.cls))].find(visible); } catch (e) {}
+    if (el) comps.push({cls: c.cls, title: c.title, selector: path(el),
+                        variant: [...el.classList].filter(x => dsClasses.has(x) && x.indexOf(c.cls + '--') === 0).sort()});
+    if (comps.length >= (a.maxComp || 16)) break;
+  }
+  return {off: Object.values(units).sort((x, y) => y.count - x.count).slice(0, a.maxOff || 12),
+          comps: comps};
+}"""
+
+
+def detect_rendered_ds(page: Any, plan: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The design system's elements on the rendered page, or None. Never raises."""
+    if not plan:
+        return None
+    try:
+        return page.evaluate(_RENDERED_DS_JS, plan)
+    except Exception as exc:
+        log("design-system detection on the rendered page failed (%s)" % exc)
+        return None
 
 
 def prepare_typed(args: argparse.Namespace) -> None:
@@ -944,31 +1091,31 @@ def prepare_typed(args: argparse.Namespace) -> None:
             data = data.get("steps") if isinstance(data, dict) else data
             data = [st for st in (data or []) if isinstance(st, dict)]
         setattr(args, key, data)
-    checks = checks + ds_visual_checks(args.ds_plan)
     args.parsed_checks = (checks[:MAX_CHECKS] if len(checks) > MAX_CHECKS else checks, rejected)
 
 
-def ds_visual_checks(plan: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """The design system's checks for a page, from ds_lint.visual_plan - built
-    by code, never written: each element styled outside the design system is
-    asked ds-copy / new-ui / layout on its crop (layout is what passes), and
-    each documented component on the page is compared with the same component
-    rendered in the DS gallery. Elements not visible on the screen are skipped,
-    never reported missing."""
-    if not plan:
+def ds_visual_checks(found: Optional[Dict[str, Any]], plan: Optional[Dict[str, Any]]
+                     ) -> List[Dict[str, Any]]:
+    """The design system's checks for a page, built by code from what the
+    browser found on the RENDERED page (detect_rendered_ds), never written:
+    each element styled outside the design system is asked ds-copy / new-ui /
+    layout on its crop (layout is what passes), and each documented component
+    on screen is compared with the same component rendered in the DS gallery."""
+    if not found or not plan:
         return []
     names = "The design system on this page provides these components: %s." % plan.get("names", "")
     raw: List[Dict[str, Any]] = []
-    for i, u in enumerate(plan.get("offSystem") or []):
+    for i, u in enumerate(found.get("off") or []):
         raw.append({"id": "ds_off_%d" % (i + 1), "shape": "which", "list": "ds_origin",
                     "x": "the element in the image", "expect": ["layout"], "at": "page",
                     "selector": u["selector"], "context": names, "optional": True,
-                    "source": "design system: %s" % u.get("source")})
-    for c in plan.get("components") or []:
-        raw.append({"id": "ds_cmp_%s" % re.sub(r"[^\w.-]", "_", c["cls"]), "shape": "same_style",
-                    "x": "%s component" % c["title"], "at": "page", "compare": "ref:%s" % c["cls"],
-                    "selector": "." + c["cls"], "optional": True,
-                    "source": "design system: .%s" % c["cls"]})
+                    "source": "design system: %s (%d on screen)" % (u.get("source"), u.get("count") or 1)})
+    for c in found.get("comps") or []:
+        key = ".".join([c["cls"]] + list(c.get("variant") or []))
+        raw.append({"id": "ds_cmp_%s" % re.sub(r"[^\w-]", "_", key), "shape": "same_style",
+                    "x": "%s component" % c["title"], "at": "page", "compare": "ref:%s" % key,
+                    "selector": c["selector"], "optional": True,
+                    "source": "design system: .%s" % key})
     checks, _rejected = parse_checks(raw)
     return checks
 
@@ -978,10 +1125,11 @@ def typed_checks_on_page(context: Any, url: str, args: argparse.Namespace,
     """Every typed check for a page asked on a typed capture pass. Used where
     the battery does not run (cases mode)."""
     checks, rejected = getattr(args, "parsed_checks", None) or load_checks(getattr(args, "checks", None))
-    if not checks and not rejected:
+    if not checks and not rejected and not getattr(args, "ds_plan", None):
         return {"mode": args.typed_judge, "checks": [], "rejected": [], "message": "no checks to run"}
-    report = {"idleFrames": [], "interactions": [],
-              "typedPass": typed_pass_for(context, url, args, settle_ms, out_dir, checks)}
+    tp = typed_pass_for(context, url, args, settle_ms, out_dir, checks)
+    checks = checks + ds_visual_checks(tp.get("ds"), getattr(args, "ds_plan", None))
+    report = {"idleFrames": [], "interactions": [], "typedPass": tp}
     vw = int((getattr(args, "viewport", None) or (1280, 720))[0])
     return run_visual_checks(report, checks, rejected, args.typed_judge, vw, judge_fn)
 
@@ -992,7 +1140,7 @@ def typed_pass_for(context: Any, url: str, args: argparse.Namespace, settle_ms: 
     refs = sorted({c["compare"][4:] for c in checks if str(c.get("compare") or "").startswith("ref:")})
     return typed_capture_pass(context, url, settle_ms, out_dir, getattr(args, "typed_steps_list", None) or [],
                               sorted({c["selector"] for c in checks if c.get("selector")}),
-                              plan.get("gallery"), refs)
+                              plan.get("gallery"), refs, plan or None)
 
 
 _DOC_BOXES_JS = _BOXES_JS.replace("{x: r.x, y: r.y,", "{x: r.x + window.scrollX, y: r.y + window.scrollY,")
@@ -2145,7 +2293,7 @@ def run_cases(args: argparse.Namespace) -> int:
         # verdict or the exit code.
         if getattr(args, "typed_judge", None):
             prepare_typed(args)
-        if getattr(args, "typed_judge", None) and args.parsed_checks[0]:
+        if getattr(args, "typed_judge", None) and (args.parsed_checks[0] or args.ds_plan):
             try:
                 report["typedChecks"] = typed_checks_on_page(context, url, args, settle_ms, out_dir)
                 _flag_and_log(report, report["typedChecks"], args.typed_judge, args, None)
@@ -2446,9 +2594,12 @@ def run(args: argparse.Namespace) -> int:
         # The typed checks' own captures, on a fresh page AFTER everything
         # the verdict reads: the settled screen full-page, the criteria steps,
         # the design-system gallery crops.
-        if getattr(args, "typed_judge", None) and args.parsed_checks[0]:
+        if getattr(args, "typed_judge", None) and (args.parsed_checks[0] or args.ds_plan):
             report["typedPass"] = typed_pass_for(context, url, args, settle_ms, out_dir,
                                                  args.parsed_checks[0])
+            ds_checks = ds_visual_checks(report["typedPass"].get("ds"), args.ds_plan)
+            if ds_checks:
+                args.parsed_checks = (args.parsed_checks[0] + ds_checks, args.parsed_checks[1])
 
         context.close()
         browser.close()
