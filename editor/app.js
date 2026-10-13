@@ -15101,8 +15101,11 @@ function VisualQaReport({ id }) {
               const esc = r.escalation;
               const dot = esc ? (esc.passed === false ? "fail" : esc.passed === true ? "done" : "none")
                 : o === "sure-no" ? "fail" : o === "sure-yes" ? "done" : o === "unsure" ? "waiting" : "none";
-              const ans = q.type === "choice" ? String(r.answer ?? "-")
+              const pair = r.shape === "pair";
+              const ans = typeof r.answer === "string" ? r.answer
+                : q.type === "choice" ? String(r.answer ?? "-")
                 : r.noul == null ? "-" : (r.passed ? "yes" : "no");
+              const scored = pair ? Object.entries(r.dims || {}).filter(([, v]) => v != null && v >= 0.5) : [];
               const probs = r.probabilities || {};
               const exp = new Set(r.expect || []);
               return html`
@@ -15110,7 +15113,11 @@ function VisualQaReport({ id }) {
                   <span className="runs-row-dot" data-status=${dot}/>
                   <span className=${"th-vqa-o th-vqa-o-" + o}>${o.replace("-", " ")}</span>
                   <span className="th-tasks-row-main">
-                    <span className="th-tasks-row-label">${q.instructions || r.claim || r.id}</span>
+                    <span className="th-tasks-row-label">${pair
+                      ? `${r.x || "Component"}: is B (on the page) visually the same as A (the design system's)?`
+                      : (q.instructions || r.claim || r.id)}</span>
+                    ${scored.length > 0 && html`<span className="th-plan-verdict">${scored.map(([d, v], i) =>
+                      html`<span key=${d}>${i ? " · " : ""}${d} ${Number(v).toFixed(2)}</span>`)}</span>`}
                     ${q.type === "choice" && html`<span className="th-plan-verdict">
                       ${Object.keys(q.criteria || {}).map((k, i) => html`<span key=${k}>${i ? " · " : ""}${exp.has(k) ? html`<b>${k}</b>` : k}${k in probs ? " " + Number(probs[k]).toFixed(2) : ""}</span>`)}
                     </span>`}

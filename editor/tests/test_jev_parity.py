@@ -950,9 +950,9 @@ class P8VisualChecks(unittest.TestCase):
                     return {"off": [{"selector": "#bar", "source": "<style> .sp-bar", "count": 1,
                                      "skin": ["border"], "box": box}],
                             "comps": [{"cls": "btn", "title": "Button", "selector": "#b1", "variant": [],
-                                       "box": box},
+                                       "box": box, "leaf": True},
                                       {"cls": "modal", "title": "Popup / Modal", "selector": "#m",
-                                       "variant": []}],
+                                       "variant": [], "leaf": True}],
                             "texts": [{"text": "Sponsored by an organisation?", "selector": "#q", "box": box}]}
                 if js == visual_qa._GALLERY_PICK_JS:
                     return {"selector": "#gallery-" + arg[0], "exact": True}
@@ -995,31 +995,35 @@ class P8VisualChecks(unittest.TestCase):
             asked.append((state, questions, len(kw["images"])))
             out = {}
             for qid, q in questions.items():
-                out[qid] = ({"choice": "ds-copy", "confidence": 0.97,
-                             "probabilities": {"ds-copy": 0.97, "layout": 0.03}}
-                            if q["type"] == "choice" else {"noul": 0.97})
+                # A pair: B's border is what differs; everything else is the same.
+                out[qid] = {"noul": 0.9 if qid.endswith("__border") or qid == "s0_btn" else
+                            0.1 if "__" in qid else 0.97}
             return {"answers": out, "provider": "clef", "model": "clef",
                     "thresholds": typed_judge.thresholds("frame_check", "clef")}
         block = visual_qa.typed_checks_on_page(SimpleNamespace(new_page=Page), "file:///x", args, 0,
                                                self.tmp, judge)
         rows = {r["id"]: r for r in block["checks"]}
-        self.assertEqual(sorted(rows), ["org_field", "s0_btn", "s0_modal", "s0_off_1", "s0_txt_1"],
+        self.assertEqual(sorted(rows), ["org_field", "s0_btn", "s0_modal", "s0_txt_1"],
                          "the step's screen repeats screen 0's elements, so they are asked once")
         self.assertEqual(clicked, ["#sponsorYes"])
         self.assertEqual(rows["org_field"]["status"], "answered")
         self.assertEqual(rows["org_field"]["images"], ["after pick_yes cropped to #orgFollowUp"])
-        self.assertEqual((rows["s0_off_1"]["answer"], rows["s0_off_1"]["passed"]), ("ds-copy", False))
-        self.assertEqual(rows["s0_btn"]["images"][0], "the design system's own .btn")
+        self.assertEqual((rows["s0_btn"]["answer"], rows["s0_btn"]["passed"], rows["s0_btn"]["band"]),
+                         ("differs in border", False, "act"), "the dimension that scored high is what is wrong")
+        btn_call = next(c for c in block["calls"] if c["questions"] == ["s0_btn"])
+        self.assertEqual(len(btn_call["images"]), 1, "A and B go to the judge as ONE image")
+        self.assertIn("A on the left is the design system's own Button component", btn_call["state"])
         self.assertEqual(rows["s0_btn"]["images"][1], "screen 1 (the page) cropped to #b1")
         self.assertEqual(rows["s0_modal"]["status"], "not-visible", "a hidden modal is skipped")
         self.assertEqual(rows["s0_txt_1"]["question"]["instructions"],
                          'The image shows the text "Sponsored by an organisation?", fully readable and not covered.')
-        off_state = [st for st, qs, _n in asked if "s0_off_1" in qs][0]
-        self.assertIn("Button (.btn)", off_state, "the DS names travel with the off-system question")
+        btn_qs = [qs for _st, qs, _n in asked if "s0_btn" in qs][0]
+        self.assertEqual(sorted(btn_qs), sorted(["s0_btn"] + ["s0_btn__" + d for d in visual_qa.PAIR_DIMS]),
+                         "one call: as a whole and per dimension")
         report = {"typedChecks": block}
         visual_qa._flag_and_log(report, block, "flag", args, lambda e: None)
-        self.assertEqual([f["check"] for f in report.get("findings", [])], ["s0_off_1"],
-                         "only the confident ds-copy is a finding; the hidden modal is not")
+        self.assertEqual([f["check"] for f in report.get("findings", [])], ["s0_btn"],
+                         "only the component that differs is a finding; the hidden modal is not")
 
     def test_design_system_elements_are_found_on_the_rendered_page(self):
         """Most screens are drawn by JavaScript: the HTML file is a shell. The
@@ -1114,7 +1118,8 @@ class P8VisualChecks(unittest.TestCase):
         kinds = {}
         for c in checks:
             kinds[c["shape"]] = kinds.get(c["shape"], 0) + 1
-        self.assertEqual(kinds, {"same_style": 6, "which": 5, "text": 6})
+        self.assertEqual(kinds, {"pair": 3, "text": 6},
+                         "each icon tile is compared; the card holding one is not (a container)")
         self.assertTrue(all(c.get("evidence", {}).get("code") for c in checks), "every question carries its element")
         self.assertTrue(all(c["at"] == "screen:0" and c["selector"] in first["boxes"] for c in checks))
 
@@ -1164,7 +1169,8 @@ class P8VisualChecks(unittest.TestCase):
                                                                  "in the state default (it shows: active), so the "
                                                                  "comparison was not asked"}}}
         checks = visual_qa.ds_visual_checks({"off": [], "comps": [{"cls": "chip", "title": "Chip",
-                                                                   "selector": "#chip", "state": []}]},
+                                                                   "selector": "#chip", "state": [],
+                                                                   "leaf": True}]},
                                             {"names": ""})
         asked = []
         block = visual_qa.run_visual_checks(report, checks, [], "shadow", 200,

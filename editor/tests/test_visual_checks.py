@@ -31,6 +31,22 @@ class Shapes(unittest.TestCase):
         self.assertEqual((q["type"], n), ("choice", 1))
         self.assertEqual(set(q["criteria"]), set(vc.LISTS["direction"]))
 
+    def test_a_pair_branches_on_its_style_scores(self):
+        sys.path.insert(0, str(EDITOR / "tools" / "qa"))
+        import visual_qa
+        def answers(**dims):
+            out = {"p": {"noul": 0.9}}
+            for d in visual_qa.PAIR_DIMS:
+                out["p__" + d] = {"noul": dims.get(d, 0.1)}
+            return out
+        v = visual_qa.pair_verdict(answers(border=0.85, shape=0.92), "p")
+        self.assertEqual((v["answer"], v["passed"], v["band"]), ("differs in border, shape", False, "act"))
+        v = visual_qa.pair_verdict(answers(words=0.97, icon=0.9), "p")
+        self.assertEqual((v["answer"], v["passed"], v["band"]), ("same style (its icon, words differ)", True, "act"),
+                         "content differs by design: the gallery shows sample content")
+        v = visual_qa.pair_verdict(answers(colour=0.6), "p")
+        self.assertEqual((v["answer"], v["passed"], v["band"]), ("unclear: colour", None, "escalate"))
+
     def test_vague_or_counting_values_are_refused(self):
         for bad in ({"shape": "shows", "x": "the effect working as expected"},
                     {"shape": "shows", "x": "how many cards"},

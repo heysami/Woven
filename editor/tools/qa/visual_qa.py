@@ -956,7 +956,7 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
                                            "" if pick["exact"] else " (base, no matching variant)",
                                            " (set to %s for the comparison)" % state if pick.get("set") else ""),
                                         "path": p, "boxes": None, "exactVariant": pick["exact"],
-                                        "style": pick.get("style")}
+                                        "style": pick.get("style"), "props": pick.get("props")}
                 except Exception as exc:
                     log("gallery reference for %s unavailable (%s)" % (key, exc))
         except Exception as exc:
@@ -1037,6 +1037,27 @@ _EVIDENCE_JS = """
   };
   const evidenceOf = (el, pathOf) => ({code: codeOf(el), style: styleOf(el), coveredBy: coverOf(el, pathOf),
                                        clipped: clippedOf(el)});
+  // The look as exact values, for measuring a component against the design
+  // system's own: colours, border, corners, shadow, font, spacing.
+  const propsOf = el => {
+    const st = getComputedStyle(el);
+    const side = s => (st['border' + s + 'Style'] === 'none' || st['border' + s + 'Width'] === '0px') ? 'none'
+      : st['border' + s + 'Width'] + ' ' + st['border' + s + 'Style'] + ' ' + st['border' + s + 'Color'];
+    const sides = ['Top', 'Right', 'Bottom', 'Left'].map(side);
+    const radii = [st.borderTopLeftRadius, st.borderTopRightRadius, st.borderBottomRightRadius, st.borderBottomLeftRadius];
+    return {
+      'fill': st.backgroundColor,
+      'background image': st.backgroundImage === 'none' ? 'none' : 'yes',
+      'text colour': st.color,
+      'border': sides.every(x => x === sides[0]) ? sides[0] : sides.join(' / '),
+      'corners': radii.every(x => x === radii[0]) ? radii[0] : radii.join(' '),
+      'shadow': st.boxShadow,
+      'font': (st.fontFamily || '').split(',')[0].replace(/["']/g, '').trim() + ' ' + st.fontWeight,
+      'font size': st.fontSize,
+      'letter case': st.textTransform,
+      'padding': st.padding,
+    };
+  };
 """
 
 _GALLERY_PICK_JS = """(parts) => {""" + _STATE_JS + _EVIDENCE_JS + """
@@ -1083,7 +1104,7 @@ _GALLERY_PICK_JS = """(parts) => {""" + _STATE_JS + _EVIDENCE_JS + """
       el = pool.find(settable);
       if (el) { boxOf(el).checked = wantState.indexOf('checked') >= 0; set = true; }
     }
-    if (el) return {selector: path(el), exact: variant, set: set, style: styleOf(el)};
+    if (el) return {selector: path(el), exact: variant, set: set, style: styleOf(el), props: propsOf(el)};
   }
   return {stateMismatch: true, seen: [...new Set(all.map(el => stateOf(el).join(' ') || 'default'))]};
 }"""
@@ -1151,8 +1172,12 @@ _RENDERED_DS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + """
         }
       }
       if (!base || !visible(el, 8)) continue;
-      comps.push({cls: base, title: title, selector: path(el), state: stateOf(el), box: box(el),
-                  ev: evidenceOf(el, path),
+      // A container (a card, a nav, a field) holds other DS components: its
+      // look depends on its content, so its parts are compared, not it.
+      const leaf = ![...el.querySelectorAll('[class]')].some(d => [...d.classList].some(c => titles[c]
+        || (c.indexOf('__') > 0 && c.indexOf('--') < 0 && dsClasses.has(c) && titles[c.slice(0, c.indexOf('__'))])));
+      comps.push({cls: base, title: title, selector: path(el), state: stateOf(el), box: box(el), leaf: leaf,
+                  ev: evidenceOf(el, path), props: propsOf(el),
                   variant: [...el.classList].filter(x => dsClasses.has(x) && x.indexOf(base + '--') === 0).sort()});
     }
   }
@@ -1497,15 +1522,94 @@ def prepare_typed(args: argparse.Namespace) -> None:
     args.parsed_checks = (checks[:MAX_CHECKS] if len(checks) > MAX_CHECKS else checks, rejected)
 
 
-# What "the same visual style" means for two crops of one component whose
-# content differs (another label, another size): without it the judge reads
-# different words as a different style and hedges.
-SAME_STYLE_CRITERIA = {
-    "true": ("Both show the same kind of component styled the same way: the same fill colour, border, "
-             "corner radius, font weight and spacing. Their words, numbers, icons, width and height may differ."),
-    "false": ("The styling differs: another fill colour, border, corner radius, shape or font weight, "
-              "or a visibly different design."),
+# A pair comparison (the design system's component A beside the page's B, in
+# one image) is ONE call: "B is visually different from A" plus a score per
+# dimension, and the branch is decided from those scores. A style dimension
+# that scores high is what is wrong with B; the content dimensions (icon,
+# arrangement, words) differ by design, since the gallery shows sample
+# content. The cut-offs come from 16 judged pairs (2026-10-13), uncalibrated.
+PAIR_DIMS = {
+    "colour": "B's colours are visually different from A's.",
+    "border": "B's border is visually different from A's.",
+    "shape": "B's shape or corner rounding is visually different from A's.",
+    "font": "B's font is visually different from A's.",
+    "icon": "B's icon or picture is visually different from A's.",
+    "layout": "B's parts are arranged visually differently from A's.",
+    "words": "B's words are different from A's.",
 }
+PAIR_STYLE = ("colour", "border", "shape", "font")
+PAIR_HIT = 0.8
+PAIR_CLEAR = 0.5
+
+
+def pair_verdict(answers: Dict[str, Any], rid: str) -> Dict[str, Any]:
+    """The branch for one pair from its scores: a style dimension at or over
+    PAIR_HIT -> B differs there (sure no); every style dimension under
+    PAIR_CLEAR -> same style (sure yes), whatever the content does; anything
+    between -> unsure, naming the dimensions in question."""
+    tj = _typed_judge_module()
+    dims = {d: tj.noul_value(answers.get("%s__%s" % (rid, d))) for d in PAIR_DIMS}
+    overall = tj.noul_value(answers.get(rid))
+    base = {"noul": overall, "dims": {d: (round(v, 4) if v is not None else None) for d, v in dims.items()}}
+    style = {d: dims[d] for d in PAIR_STYLE}
+    if any(v is None for v in style.values()):
+        return dict(base, answer=None, passed=None, confidence=None, band="escalate")
+    hits = [d for d in PAIR_STYLE if style[d] >= PAIR_HIT]
+    if hits:
+        return dict(base, answer="differs in " + ", ".join(hits), passed=False,
+                    confidence=round(max(style[d] for d in hits), 4), band="act")
+    top = max(style.values())
+    if top < PAIR_CLEAR:
+        content = [d for d in ("icon", "layout", "words") if (dims[d] or 0) >= PAIR_HIT]
+        return dict(base, answer="same style" + (" (its %s differ)" % ", ".join(content) if content else ""),
+                    passed=True, confidence=round(1 - top, 4), band="act")
+    return dict(base, answer="unclear: " + ", ".join(d for d in PAIR_STYLE if style[d] >= PAIR_CLEAR),
+                passed=None, confidence=round(top, 4), band="escalate")
+
+
+def _label_font(size: int = 22) -> Any:
+    from PIL import ImageFont
+    for face in ("/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Helvetica.ttc",
+                 "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "DejaVuSans.ttf", "Arial.ttf"):
+        try:
+            return ImageFont.truetype(face, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+def _side_by_side(a: Any, b: Any) -> Optional[bytes]:
+    """A (the design system's own) on the left, B (the page's) on the right, in
+    one image at one height, each labelled. None without Pillow."""
+    if not _PIL_OK:
+        return None
+    import io
+    from PIL import ImageDraw
+
+    def load(x: Any) -> Any:
+        return Image.open(io.BytesIO(x) if isinstance(x, (bytes, bytearray)) else x["path"]).convert("RGB")
+    try:
+        A, B = load(a), load(b)
+    except Exception:
+        return None
+    h = max(80, min(220, max(A.height, B.height)))
+    A = A.resize((max(1, int(A.width * h / float(A.height))), h))
+    B = B.resize((max(1, int(B.width * h / float(B.height))), h))
+    if A.width + B.width + 60 > 1400:
+        f = 1340.0 / (A.width + B.width)
+        A = A.resize((max(1, int(A.width * f)), max(1, int(A.height * f))))
+        B = B.resize((max(1, int(B.width * f)), max(1, int(B.height * f))))
+        h = max(A.height, B.height)
+    canvas = Image.new("RGB", (A.width + B.width + 60, h + 40), (255, 255, 255))
+    draw = ImageDraw.Draw(canvas)
+    font = _label_font()
+    draw.text((20, 4), "A", fill=(0, 0, 0), font=font)
+    draw.text((A.width + 40, 4), "B", fill=(0, 0, 0), font=font)
+    canvas.paste(A, (20, 34))
+    canvas.paste(B, (A.width + 40, 34))
+    buf = io.BytesIO()
+    canvas.save(buf, "PNG")
+    return buf.getvalue()
 
 
 def _text_check(t: Dict[str, Any]) -> Dict[str, Any]:
@@ -1517,15 +1621,18 @@ def _text_check(t: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def screen_checks(screens: List[Dict[str, Any]], plan: Optional[Dict[str, Any]],
-                  limit: int = MAX_ELEMENT_CHECKS) -> List[Dict[str, Any]]:
-    """The checks every captured screen calls for, built by code from what the
-    browser found on it, never written:
-      - each design-system component or part instance is compared with the
-        same component rendered in the DS gallery (same variant and state);
-      - each element styled outside the design system is asked copy / new UI
-        / layout on its crop (layout is what passes);
-      - each visible text is asked to show on its element's crop, readable and
-        not covered.
+                  limit: int = MAX_ELEMENT_CHECKS,
+                  refs: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """The questions every captured screen calls for, built by code from what
+    the browser found on it, never written:
+      - each visible text: it shows on its element's crop, exactly as written,
+        readable and not covered;
+      - each SMALL design-system component or part (one with no DS component
+        inside it), like for like (the gallery shows the same variant and
+        state): a PAIR comparison, the gallery's (A) and the page's (B) side
+        by side in one image, scored as a whole and per dimension (see
+        PAIR_DIMS). A container is not compared: its look depends on its
+        content, and its parts are compared one by one.
     An element seen on an earlier screen (same element, same text) is asked
     once. Every check is optional: an element gone by the time of the crop is
     "not visible", never a failure."""
@@ -1540,29 +1647,25 @@ def screen_checks(screens: List[Dict[str, Any]], plan: Optional[Dict[str, Any]],
             out, i = "%s_%d" % (base, i), i + 1
         ids.add(out)
         return out
-    names = ("The design system on this page provides these components: %s."
-             % (plan or {}).get("names", "")) if plan else ""
     for sc in screens or []:
         at, n, found = "screen:%d" % sc["n"], sc["n"], sc.get("found") or {}
-        for i, c in enumerate(found.get("comps") or []):
+        for c in found.get("comps") or []:
             key = _comp_key(c)
-            if ("cmp", key, c["selector"]) in asked:
+            ref = (refs or {}).get(key)
+            if not c.get("leaf") or ("cmp", key, c["selector"]) in asked:
                 continue
+            if refs is not None and (not ref or not ref.get("exactVariant")):
+                continue  # no like-for-like example in the gallery
             asked.add(("cmp", key, c["selector"]))
             shown, state = _ref_name(key)
-            raw.append({"id": uid("s%d_%s" % (n, key)), "shape": "same_style",
-                        "x": "%s component" % c["title"], "at": at, "compare": "ref:%s" % key,
-                        "selector": c["selector"], "optional": True, "criteria": SAME_STYLE_CRITERIA,
-                        "evidence": c.get("ev"),
-                        "source": "design system: .%s%s" % (shown, " (%s)" % state if state else "")})
-        for i, u in enumerate(found.get("off") or []):
-            if ("off", u["selector"]) in asked or not plan:
-                continue
-            asked.add(("off", u["selector"]))
-            raw.append({"id": uid("s%d_off_%d" % (n, i + 1)), "shape": "which", "list": "ds_origin",
-                        "x": "the element in the image", "expect": ["layout"], "at": at,
-                        "selector": u["selector"], "context": names, "optional": True, "evidence": u.get("ev"),
-                        "source": "styled outside the design system: %s" % u.get("source")})
+            ev = dict(c.get("ev") or {})
+            if ref and ref.get("props") and c.get("props"):
+                ev["differences"] = {k: {"page": v, "designSystem": ref["props"].get(k)}
+                                     for k, v in c["props"].items() if ref["props"].get(k) not in (None, v)}
+            raw.append({"id": uid("s%d_%s" % (n, key)), "shape": "pair", "x": "%s component" % c["title"],
+                        "at": at, "compare": "ref:%s" % key, "selector": c["selector"], "optional": True,
+                        "source": "design system: .%s%s" % (shown, " (%s)" % state if state else ""),
+                        "evidence": ev})
         for i, t in enumerate(found.get("texts") or []):
             if ("txt", t["text"]) in asked:
                 continue
@@ -1588,7 +1691,8 @@ def typed_checks_on_page(context: Any, url: str, args: argparse.Namespace,
     the battery does not run (cases mode)."""
     checks, rejected = getattr(args, "parsed_checks", None) or load_checks(getattr(args, "checks", None))
     tp = typed_pass_for(context, url, args, settle_ms, out_dir, checks)
-    checks = checks + screen_checks(tp.get("screens") or [], getattr(args, "ds_plan", None))
+    checks = checks + screen_checks(tp.get("screens") or [], getattr(args, "ds_plan", None),
+                                    refs=tp.get("refs") or {})
     report = {"idleFrames": [], "interactions": [], "typedPass": tp}
     vw = int((getattr(args, "viewport", None) or (1280, 720))[0])
     return run_visual_checks(report, checks, rejected, args.typed_judge, vw, judge_fn)
@@ -1843,6 +1947,12 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
             row["message"] = "%s is not visible on the page at %s" % (c["selector"], missing)
             order.append(("", row))
             continue
+        if c.get("shape") == "pair" and len(images) == 2:
+            both = _side_by_side(images[0], images[1])
+            if both is not None:
+                images = [both]
+                sources = [{"capture": sources[1].get("capture"), "box": None,
+                            "label": "A: %s; B: %s" % (sources[0].get("label"), sources[1].get("label"))}]
         row["claim"] = c["question"]["instructions"]
         key = json.dumps([refs, c.get("selector") or "", c.get("context") or ""])
         g = groups.setdefault(key, {"images": images, "labels": row["images"], "rows": [],
@@ -1857,6 +1967,9 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
         state = ("A screenshot of a web page%s." % (
             "" if len(g["images"]) == 1 else
             ": image 1 is %s, image 2 is %s" % (labels[0], labels[1])))
+        if g["rows"] and g["rows"][0].get("shape") == "pair" and len(g["images"]) == 1:
+            state = ("One image with two UI components side by side: A on the left is the design system's "
+                     "own %s, B on the right is the one on the page." % g["rows"][0].get("x"))
         if g["context"]:
             state += " " + g["context"]
         for start in range(0, len(g["rows"]), 64):
@@ -1881,8 +1994,14 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
             return None, refused[0], 0
         t0 = time.time()
         try:
-            return (judge_fn(state, {r["id"]: r["question"] for r in part}, tier="image",
-                             images=g["images"], kind=TYPED_KIND), None, int((time.time() - t0) * 1000))
+            questions: Dict[str, Any] = {}
+            for r in part:
+                questions[r["id"]] = r["question"]
+                if r.get("shape") == "pair":
+                    for d, text in PAIR_DIMS.items():
+                        questions["%s__%s" % (r["id"], d)] = {"type": "noul", "instructions": text}
+            return (judge_fn(state, questions, tier="image", images=g["images"], kind=TYPED_KIND),
+                    None, int((time.time() - t0) * 1000))
         except Exception as exc:
             if getattr(exc, "status", None) in (402, 429) or "allocation" in str(exc) or "quota" in str(exc).lower():
                 refused.append(exc)
@@ -1914,6 +2033,12 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
         block["requests"] = int(block.get("requests") or 0) + 1
         for r in part:
             raw = res["answers"].get(r["id"])
+            if r.get("shape") == "pair":
+                v = pair_verdict(res["answers"], r["id"])
+                r.update({"answer": v["answer"], "noul": v["noul"], "dims": v["dims"], "passed": v["passed"],
+                          "confidence": v["confidence"], "band": v["band"], "probabilities": None,
+                          "status": "answered" if v["noul"] is not None else "no-answer"})
+                continue
             v = vc.verdict(r["question"], raw, res["thresholds"], r.get("expect"))
             r.update({"answer": v["answer"], "noul": v.get("noul"), "passed": v["passed"],
                       "confidence": v["confidence"], "band": v["band"],
@@ -1973,7 +2098,7 @@ def apply_frame_judges(report: Dict[str, Any], verdict: str, reasons: List[str],
     mode = getattr(args, "typed_judge", None)
     checks, rejected = (getattr(args, "parsed_checks", None) or ([], []))
     block = None
-    if mode and (checks or rejected):
+    if mode and (checks or rejected or (report.get("typedPass") or {}).get("screens")):
         block = (checks_fn or run_visual_checks)(report, checks, rejected, mode,
                                                  int((getattr(args, "viewport", None) or (1280, 720))[0]))
         report["typedChecks"] = block
@@ -3231,7 +3356,8 @@ def run(args: argparse.Namespace) -> int:
         if getattr(args, "typed_judge", None):
             report["typedPass"] = typed_pass_for(context, url, args, settle_ms, out_dir,
                                                  args.parsed_checks[0])
-            el_checks = screen_checks(report["typedPass"].get("screens") or [], args.ds_plan)
+            el_checks = screen_checks(report["typedPass"].get("screens") or [], args.ds_plan,
+                                      refs=report["typedPass"].get("refs") or {})
             if el_checks:
                 args.parsed_checks = (args.parsed_checks[0] + el_checks, args.parsed_checks[1])
 

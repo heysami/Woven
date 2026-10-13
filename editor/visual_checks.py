@@ -43,6 +43,11 @@ SHAPES = {
     "same_style": {"type": "noul", "images": 2,
                    "text": "Image 2 shows the same {x} as image 1, in the same visual style."},
     "which":      {"type": "choice", "images": 1, "text": "Which of these is true of {x}?"},
+    # A design-system component on the page (B) beside the design system's own
+    # (A), side by side in ONE image: scored as a whole here, and per
+    # dimension by the caller (visual_qa.PAIR_DIMS), which decides from them.
+    "pair":       {"type": "noul", "images": 2,
+                   "text": "B is visually different from A."},
     # Text read off the rendered page (never written by anyone): the crop of
     # the element that holds it shows that text, legible and not covered.
     "text":       {"type": "noul", "images": 1, "dom": True,

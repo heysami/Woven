@@ -57,6 +57,8 @@ for r in look:
     if q.get('type') == 'choice':
         print('  options:', r.get('probabilities'), '| expected:', r.get('expect'))
     print('  judge:', r.get('answer'), 'noul', r.get('noul'), 'confidence', r.get('confidence'), '|', r.get('source'))
+    if r.get('dims'): print('  scores:', r['dims'])
+    if ev.get('differences'): print('  measured differences:', ev['differences'])
     print('  code:', ev.get('code'))
     print('  look:', ev.get('style'))
     if ev.get('dsStyle'): print('  design system look:', ev['dsStyle'])
@@ -86,15 +88,15 @@ Grep the selector's id or class, or the CSS rule named in `source`):
 - a text question ("The image shows the text ... readable and not covered"):
   `covered by` names something on top of it, or `content clipped: yes`, or a
   colour too close to its background: a PROBLEM. None of those: FINE.
-- a design-system comparison ("the same ... in the same visual style"):
-  compare `look` with `design system look`: a different fill, border,
-  radius, shadow or font weight is a PROBLEM (a page rule restyles it, or it
-  is built by hand); the same look with other words, size or state is FINE.
-- `ds_origin` (copy / new UI / layout): from `code` and `source`, a
-  page-local rule that redraws something the design system already has is
-  `ds-copy` (a PROBLEM: use the DS class); a component the design system does
-  not have is `new-ui` (a PROBLEM to report); plain spacing or arrangement is
-  `layout` (FINE).
+- a design-system comparison (`B is visually different from A`: A is the
+  design system's own component, B the page's, side by side): `judge` names
+  the style dimension that differs (colour, border, shape, font) or says
+  `same style` / `unclear`, and `scores` gives every dimension. Check the
+  flagged dimension against `measured differences` (the page's and the
+  design system's exact values): a measured difference in that dimension is a
+  PROBLEM (name the page rule that causes it); no measured difference there
+  means FINE. Words, icon and arrangement differ by design: the gallery
+  shows sample content.
 
 For each PROBLEM write one line: what is wrong and where to fix it (file,
 rule or element).
