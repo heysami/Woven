@@ -192,15 +192,23 @@ class QaCancelTests(unittest.TestCase):
         proc = Mock(poll=Mock(return_value=None), stdin=io.BytesIO())
         return serve.RunState("p", proc, "claude", "main", "freeform", "test", project_root=root), proc
 
-    def test_reply_stops_a_running_check_before_the_message_lands(self):
+    def _running_check(self, root):
+        state, proc = self._live_claude(root)
+        state.append("agent", self._tool_use("woven:visual-verifier"))
+        state.append("agent", run_jobs.claude_job({"subtype": "task_started", "task_id": "task", "tool_use_id": "call"}))
+        return state, proc
+
+    def _reply(self, state, steer):
+        body = {"text": "make it blue", **({"steer": True} if steer else {})}
+        handler = SimpleNamespace(_read_json_body=lambda max_bytes=0: body,
+                                  _reply=lambda code, body: (code, body))
+        with patch.object(serve, "RUNS", {"p": state}):
+            return serve.H._run_user_message(handler, "p")[0]
+
+    def test_steer_stops_a_running_check_before_the_message_lands(self):
         with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"):
-            state, proc = self._live_claude(root)
-            state.append("agent", self._tool_use("woven:visual-verifier"))
-            state.append("agent", run_jobs.claude_job({"subtype": "task_started", "task_id": "task", "tool_use_id": "call"}))
-            handler = SimpleNamespace(_read_json_body=lambda max_bytes=0: {"text": "make it blue"},
-                                      _reply=lambda code, body: (code, body))
-            with patch.object(serve, "RUNS", {"p": state}):
-                self.assertEqual(serve.H._run_user_message(handler, "p")[0], 200)
+            state, proc = self._running_check(root)
+            self.assertEqual(self._reply(state, steer=True), 200)
             frames = [json.loads(line) for line in proc.stdin.getvalue().decode().splitlines()]
             self.assertEqual(frames[0]["request"], {"subtype": "stop_task", "task_id": "task"})
             sent = frames[1]["message"]["content"][0]["text"]
@@ -210,20 +218,43 @@ class QaCancelTests(unittest.TestCase):
             echo = [e["data"] for e in state.events if e["type"] == "user_message"]
             self.assertEqual(echo, [{"text": "make it blue"}])
 
-    def test_reply_without_a_running_check_is_untouched(self):
+    def test_plain_reply_leaves_a_running_check_alone(self):
+        # The incident: a background check outlived its turn, the run looked
+        # idle, and the user's QUEUED message was delivered and killed it.
+        with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"):
+            state, proc = self._running_check(root)
+            self.assertEqual(self._reply(state, steer=False), 200)
+            frames = [json.loads(line) for line in proc.stdin.getvalue().decode().splitlines()]
+            self.assertEqual([f["type"] for f in frames], ["user"])
+            self.assertEqual(frames[0]["message"]["content"][0]["text"], "make it blue")
+            self.assertNotIn("waived", state.jobs["task"])
+
+    def test_queue_delivery_leaves_a_running_check_alone(self):
+        with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"), \
+             patch.object(serve, "_queue_persist"):
+            state, proc = self._running_check(root)
+            state.turn_done = True
+            state.msg_queue = [{"id": "q1", "text": "make it blue", "send": "make it blue"}]
+            serve._queue_drain_maybe(state, mode="stdin")
+            for t in threading.enumerate():
+                if t.name == "queue-drain-p":
+                    t.join(5)
+            frames = [json.loads(line) for line in proc.stdin.getvalue().decode().splitlines()]
+            self.assertEqual([f["type"] for f in frames], ["user"])
+            self.assertNotIn("waived", state.jobs["task"])
+            self.assertFalse(state.msg_queue)
+
+    def test_steer_without_a_running_check_is_untouched(self):
         with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"):
             state, proc = self._live_claude(root)
             state.append("agent", self._tool_use("general-purpose", "Build the hero."))
             state.append("agent", run_jobs.claude_job({"subtype": "task_started", "task_id": "task", "tool_use_id": "call"}))
-            handler = SimpleNamespace(_read_json_body=lambda max_bytes=0: {"text": "make it blue"},
-                                      _reply=lambda code, body: (code, body))
-            with patch.object(serve, "RUNS", {"p": state}):
-                serve.H._run_user_message(handler, "p")
+            self._reply(state, steer=True)
             frames = [json.loads(line) for line in proc.stdin.getvalue().decode().splitlines()]
             self.assertEqual(len(frames), 1)
             self.assertEqual(frames[0]["message"]["content"][0]["text"], "make it blue")
 
-    def test_reply_stops_a_planner_dispatched_check(self):
+    def test_steer_stops_a_planner_dispatched_check(self):
         with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"):
             parent, _ = self._live_claude(root)
             child = serve.RunState("c", Mock(poll=Mock(return_value=None)), "codex", "planner", "planner:visual-verifier", "test", project_root=root)
@@ -253,27 +284,15 @@ class QaCancelTests(unittest.TestCase):
         child.parent_run_id, child.qa_check = parent_id, "visual verification"
         return child
 
-    def test_queued_reply_cancels_the_check_on_unsteerable_runtimes(self):
-        # codex exec and opencode run: no stdin, so the message waits in the queue.
-        for runtime in ("codex", "opencode"):
+    def test_queueing_never_cancels_a_check(self):
+        for runtime in ("claude", "codex", "opencode"):
             with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"):
                 parent = serve.RunState("p", Mock(stdin=None, poll=Mock(return_value=None)), runtime, "main", "freeform", "test", project_root=root)
                 child = self._check_child(root, "p")
                 code, kill = self._enqueue(parent, child)
                 self.assertEqual(code, 200)
-                self.assertEqual([c.args[0] for c in kill.call_args_list], [child], runtime)
-                self.assertTrue(child.qa_cancelled)
-                self.assertTrue(any(e["data"].get("label", "").startswith("QA cancelled") for e in parent.events))
-
-    def test_queued_reply_leaves_the_check_alone_on_steerable_runtimes(self):
-        # Claude queues only when the user did not steer; the steer path cancels.
-        with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"):
-            parent, _ = self._live_claude(root)
-            child = self._check_child(root, "p")
-            code, kill = self._enqueue(parent, child)
-            self.assertEqual(code, 200)
-            kill.assert_not_called()
-            self.assertFalse(child.qa_cancelled)
+                kill.assert_not_called()
+                self.assertFalse(child.qa_cancelled, runtime)
 
     def test_cancelled_check_returns_a_notice_not_its_partial_verdict(self):
         with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"):

@@ -10128,9 +10128,7 @@ def _queue_drain_maybe(state, mode: str = "stdin") -> None:
                     # queued and the parked run's drain delivers it via resume.
                     with _PARK_LOCK:
                         if getattr(state, "stop_reason", None) != "parked":
-                            cancelled = _cancel_qa_checks(state)
-                            state.proc.stdin.write(_claude_user_frame(
-                                _qa_cancel_note(cancelled) + text if cancelled else text))
+                            state.proc.stdin.write(_claude_user_frame(text))
                             state.proc.stdin.flush()
                             state.turn_done = False
                             ok = True
@@ -13231,10 +13229,13 @@ def _stop_run_family(state):
         _kill_run_tree(current)
 
 
-# A user message that reaches a run while one of its QA checks is running
-# cancels the check. The check grades the state the user is steering away
-# from: a foreground one holds the steer until it finishes, and either way it
-# hands the agent a stale verdict to act on. Probed on claude 2.1.260: a
+# A STEER (the queue card's bolt, `steer: true` on /user-message) that lands
+# while one of the run's QA checks is running cancels the check. It grades the
+# state the user is steering away from: a foreground one holds the steer until
+# it finishes, and either way it hands the agent a stale verdict. A plain
+# queued or typed reply never cancels: the user only queued, so the check
+# finishes (a background check can outlive the turn, so "the run looks idle"
+# is not a steer either). Probed on claude 2.1.260: a
 # `stop_task` control frame stops a FOREGROUND subagent too, its Agent call
 # returns "[Request interrupted by user for tool use]", and the message
 # written right after is read in the same beat.
@@ -13246,8 +13247,7 @@ def _cancel_qa_checks(state) -> list:
       - codex app-server: interrupt the child thread's turn.
       - planner children (codex / opencode reach visual-verifier through
         /__dispatch_planner): stop the child run. Its planner-done then
-        carries _QA_CANCELLED_OUTPUT, the only channel into a codex exec /
-        opencode turn, which cannot take the message itself until it ends.
+        carries _QA_CANCELLED_OUTPUT instead of a partial verdict.
     Each one is `waived`, so its stop never reads as a failed worker."""
     with state.lock:
         jobs = [dict(j) for j in state.jobs.values()
@@ -13307,23 +13307,14 @@ def _qa_cancel_note(checks) -> str:
 
 
 # What a cancelled planner-dispatched check returns as its `output`. Worded
-# for both arrivals: a steered runtime already has the message in its turn,
-# a codex exec / opencode turn only gets it once the turn ends.
+# for both arrivals: the steered message may already be in the turn, or it
+# may only arrive once the turn ends.
 _QA_CANCELLED_OUTPUT = (
     "CANCELLED, NO VERDICT: the user sent a new message while this check was running, so "
     "Woven stopped it. Do not re-run it now and do not report the work as verified. Turn to "
     "the user's message: if it is already in front of you, act on it; otherwise end your turn "
     "with one line saying the check was cancelled, and their message arrives next. This "
     "thread's checks apply again once that work is done.")
-
-
-def _run_steerable(state) -> bool:
-    """Can a message reach this run mid-turn (claude stream-json, codex
-    app-server)? Same answer as the composer's runSteerable. The ones that
-    cannot (codex exec, opencode) cancel a running check at enqueue time."""
-    if isinstance(state.proc, runtime_drivers.ProcessDriver):
-        return bool(state.proc.steerable)
-    return bool(AGENT_DEFS.get(state.agent_id, {}).get("steerable"))
 
 
 def _planner_done_payload(state, run_id, planner_type, agent_id) -> dict:
@@ -36313,7 +36304,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "error": "agent process is not running - resume to continue",
                     "needsResume": True,
                 })
-            cancelled = _cancel_qa_checks(state)
+            # Only the bolt's explicit steer redirects a running check. A typed
+            # reply, a queue delivery or a card answer leaves it to finish.
+            cancelled = _cancel_qa_checks(state) if body.get("steer") is True else []
             try:
                 state.proc.stdin.write(_claude_user_frame(
                     _qa_cancel_note(cancelled) + text if cancelled else text))
@@ -36372,16 +36365,6 @@ class H(http.server.SimpleHTTPRequestHandler):
             q.append(entry)
             state.msg_queue = q
         _queue_persist(state)
-        # A run that cannot be steered (codex exec, opencode) would hold this
-        # message behind a running QA check until it finished grading the
-        # state the user is moving away from. Stop the check now; its
-        # planner-done tells the agent to end the turn, and the queue below
-        # delivers. Steerable runs cancel at delivery (_run_user_message).
-        if not _run_steerable(state):
-            try:
-                _cancel_qa_checks(state)
-            except Exception as e:
-                print(f"[qa-cancel] enqueue run={run_id}: {e}", flush=True)
         # Idle right now? Then there is nothing to wait for - hand it over.
         # Enqueue-then-drain (rather than "send directly when idle") keeps ONE
         # ordering path, so a message can never overtake one already queued.

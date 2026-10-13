@@ -6,10 +6,10 @@ TERMINAL = frozenset(("completed", "failed", "stopped", "killed", "cancelled"))
 ACTIVE = frozenset(("pending", "running", "unknown"))
 
 # Subagents that grade work the thread already did: the chat checks
-# (capabilities.py visual / dsGuard / reqQa) and the lens judges. A user
-# message that reaches the run while one is in flight cancels it (serve.py
-# _cancel_qa_checks), because it is grading the state the user just steered
-# away from.
+# (capabilities.py visual / dsGuard / reqQa) and the lens judges. A steer
+# (the queue card's bolt) that lands while one is in flight cancels it
+# (serve.py _cancel_qa_checks): it grades the state the user steered away
+# from. A plain queued reply does not.
 QA_CHECK_AGENTS = {
     "visual-verifier": "visual verification",
     "ds-guardian": "DS guard",

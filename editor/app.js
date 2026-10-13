@@ -19737,7 +19737,10 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     }
   };
 
-  const dispatch = async (envelope) => {
+  // `steer` is set only by the queue card's bolt: the daemon treats it as the
+  // user redirecting the turn and stops a QA check that is still running.
+  // Every other send (typed reply, queue drain, card answer) leaves checks be.
+  const dispatch = async (envelope, { steer = false } = {}) => {
     if (!runId) return false;
     const body = composeWithAttachments(envelope.text, envelope.attachments, envelope.uploads, envelope.fileRefs || [], envelope.scratchpads || []);
     setBusy(true); setError(null);
@@ -19760,7 +19763,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       const postTo = (ep) => fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/${ep}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: body }),
+        body: JSON.stringify(steer ? { text: body, steer: true } : { text: body }),
       });
       // Converge, don't one-shot. While a stopped subprocess is mid
       // shutdown the daemon's two guards flip on DIFFERENT requests: /resume
@@ -19977,7 +19980,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       // Send first, drop second: on failure the entry simply stays queued in
       // its current position, which is a better recovery than removing it and
       // trying to push it back onto a queue the daemon owns.
-      const ok = await dispatchRef.current(env);
+      const ok = await dispatchRef.current(env, { steer: true });
       if (ok) await queueMutate(runId, { op: "remove", id });
     } finally {
       drainingRef.current = false;
