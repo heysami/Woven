@@ -892,6 +892,33 @@ def page_declared_checks(page: Any, existing: int = 0
     return checks, rejected
 
 
+def typed_checks_on_page(context: Any, url: str, args: argparse.Namespace,
+                         settle_ms: int, out_dir: str, judge_fn: Any = None) -> Dict[str, Any]:
+    """The page's declared checks plus any --checks about the settled page,
+    on one fresh capture. Used where the idle/interaction battery does not run
+    (cases mode)."""
+    explicit, rejected = load_checks(getattr(args, "checks", None))
+    page = context.new_page()
+    try:
+        page.goto(url, wait_until="load", timeout=30000)
+        page.wait_for_timeout(settle_ms)
+        declared, d_rejected = page_declared_checks(page, len(explicit))
+        checks = explicit + declared
+        rejected = rejected + d_rejected
+        selectors = sorted({c["selector"] for c in checks if c.get("selector")})
+        path = os.path.join(out_dir, "typed_page.png")
+        page.screenshot(path=path)
+        boxes = capture_boxes(page, selectors)
+    finally:
+        page.close()
+    frame: Dict[str, Any] = {"t": 0.0, "path": path, "diffFromPrev": None}
+    if boxes is not None:
+        frame["boxes"] = boxes
+    vw = int((getattr(args, "viewport", None) or (1280, 720))[0])
+    return run_visual_checks({"idleFrames": [frame], "interactions": []}, checks, rejected,
+                             args.typed_judge, vw, judge_fn)
+
+
 def capture_boxes(page: Any, selectors: List[str]) -> Optional[Dict[str, Any]]:
     """Where each check's element is at THIS capture, or None when no check
     needs a crop. Never raises: a failed probe means no crop, not no run."""
@@ -1991,6 +2018,18 @@ def run_cases(args: argparse.Namespace) -> int:
         if report["soak"]:
             log("soak: %s (%d injections)"
                 % (report["soak"]["verdict"], report["soak"]["injected"]))
+
+        # Typed visual checks run here too: cases mode replaces the battery,
+        # not the page's own declared checks. One fresh page, settled, one
+        # capture; only checks about that capture (`page` / `idle:start`) can
+        # be answered here. Records beside the cases and never touches their
+        # verdict or the exit code.
+        if getattr(args, "typed_judge", None):
+            try:
+                report["typedChecks"] = typed_checks_on_page(context, url, args, settle_ms, out_dir)
+                _flag_and_log(report, report["typedChecks"], args.typed_judge, args, None)
+            except Exception as exc:
+                report["typedChecks"] = {"message": "typed checks skipped: %s" % exc}
 
         context.close()
         browser.close()

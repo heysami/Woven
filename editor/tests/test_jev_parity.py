@@ -900,6 +900,33 @@ class P8VisualChecks(unittest.TestCase):
         self.assertTrue(all(c["declaredBy"] == "img alt" and c["at"] == "page" for c in checks))
         self.assertEqual(rejected, [])
 
+    def test_cases_mode_still_runs_the_pages_declared_checks(self):
+        """Cases mode replaces the battery, not the page's own image checks."""
+        from types import SimpleNamespace
+        png = typed_judge.solid_png((200, 30, 30), size=200)
+
+        class Page:
+            def goto(self, *a, **k): pass
+            def wait_for_timeout(self, ms): pass
+            def close(self): pass
+            def screenshot(self, path):
+                Path(path).write_bytes(png)
+            def evaluate(self, js, arg=None):
+                if arg is None:
+                    return [{"alt": "a red delivery van", "selector": "#hero"}]
+                return {"#hero": {"x": 10, "y": 10, "width": 50, "height": 40}}
+        asked = []
+
+        def judge(state, questions, **kw):
+            asked.append(kw["images"])
+            return {"answers": {"img_alt_1": {"noul": 0.97}}, "provider": "clef", "model": "clef",
+                    "thresholds": typed_judge.thresholds("frame_check", "clef")}
+        args = SimpleNamespace(checks=None, typed_judge="shadow", viewport=(200, 200))
+        block = visual_qa.typed_checks_on_page(SimpleNamespace(new_page=Page), "file:///x", args, 0,
+                                               self.tmp, judge)
+        self.assertEqual(block["summary"]["confidentPass"], 1)
+        self.assertIsInstance(asked[0][0], bytes, "cropped to the image, not the frame")
+
     def test_a_missing_element_is_reported_without_a_model_call(self):
         calls = []
         checks = [{"id": "menu_idle", "statement": "A dropdown menu is open.",
