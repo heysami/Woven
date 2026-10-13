@@ -21221,6 +21221,11 @@ function buildBlocks(events) {
       if (d.type === "tool_result") {
         continue; // already attached to its owning tool/agent_grid block
       }
+      if (d.type === "judge_proposal") {
+        closeAll();
+        blocks.push({ kind: "judge_proposal", data: d, key: `jp-${i}` });
+        continue;
+      }
       if (d.type === "status") {
         // Suppress the "starting · <model>" banner - it's noise. Only the
         // turn-final status frame (label === "done"/"error" with durationMs
@@ -24442,6 +24447,35 @@ function HandoffCard({ handoff, runId }) {
   </div>`;
 }
 
+/* JudgeProposal - the text judge's ranking of the design library for this
+   brief (direction_ranking.py), shown under the user's first message: it
+   answers in a second or two, long before the agent's direction options.
+   Top picks per axis; a failure says why instead of disappearing. */
+const JUDGE_AXIS_LABEL = { recipe: "Recipe", shell: "Shell", style: "Style", aesthetic: "Aesthetic" };
+function JudgeProposal({ data }) {
+  const d = data || {};
+  const providerName = { clef: "Cloudflare Clef", "clef-flash": "Cloudflare Clef Flash", "clef-local": "Local Clef",
+    jev: "TypeSafe Jev", openai: "OpenAI" }[d.provider] || d.provider || "the text judge";
+  if (d.error) {
+    return html`<div className="chat-judge-proposal" data-error="true">
+      <div className="chat-judge-proposal-h">Judge's proposal from the library</div>
+      <div className="chat-judge-proposal-note">Could not rank the library: ${d.error}</div>
+    </div>`;
+  }
+  const high = (d.thresholds && d.thresholds.high) || 0.7;
+  return html`<div className="chat-judge-proposal">
+    <div className="chat-judge-proposal-h">Judge's proposal from the library
+      <span className="chat-judge-proposal-meta">${providerName} · ${((d.ms || 0) / 1000).toFixed(1)} s</span></div>
+    ${Object.entries(d.axes || {}).map(([k, ax]) => html`
+      <div className="chat-judge-axis" key=${k}>
+        <span className="chat-judge-axis-name">${JUDGE_AXIS_LABEL[k] || k}</span>
+        <span className="chat-judge-axis-picks">${(ax.top || []).slice(0, 3).map((t, i) => html`<span key=${t.id}
+            className=${"chat-judge-pick" + (i === 0 && t.p >= high ? " is-strong" : "")} title=${t.desc || t.id}>${i ? " · " : ""}${t.label} ${Number(t.p).toFixed(2)}</span>`)}</span>
+      </div>`)}
+    ${d.needsDirection != null && html`<div className="chat-judge-proposal-note">The brief leaves the direction open: ${Number(d.needsDirection).toFixed(2)}</div>`}
+  </div>`;
+}
+
 function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
   switch (block.kind) {
     case "text": {
@@ -24590,6 +24624,8 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
       const stReason = d.label === "error" ? (contextLimitReason(d.usage) || d.subtype) : null;
       return html`<div className="chat-row chat-status" data-error=${d.label === "error"}>${bits.join(" · ")}${stReason ? html` - ${stReason}` : ""}${d.promptPreview ? html` - ${d.promptPreview}` : ""}</div>`;
     }
+    case "judge_proposal":
+      return html`<${JudgeProposal} data=${block.data}/>`;
     case "usage": {
       const u = block.data.usage || {};
       return html`<div className="chat-row chat-usage">in ${u.input_tokens||0} · out ${u.output_tokens||0}${u.cache_read_input_tokens ? ` · cache ${u.cache_read_input_tokens}` : ""}</div>`;

@@ -26,7 +26,9 @@ Skip this whole section when the block is absent, when the call fails, or when t
 
 **What it buys.** Composing from recall means weighing the rosters you happen to be holding. One request weighs all 130 aesthetics and returns a ranked distribution per axis, so you can see that the brief implies a shell strongly and an aesthetic not at all - which is the signal to SPREAD the three options across the aesthetic axis instead of shipping three variations of one.
 
-**The call.** ONE request, five questions, ~50k tokens, about $0.002. Read the criteria maps out of `docs/research/direction-axes.jev.json` (generated from PROTOTYPE.md's own rosters - never retype them, and never invent an id that is not in there):
+**Woven usually makes this call for you.** When typed judgment for text checks is on and the project has no direction yet, the daemon ranks the axes at thread start and puts the result at the end of the user's first message as a `[Woven: the typed judge ... ranked the design library ...]` block (the user sees the same ranking under their message). Read that block with the rules below and do not call `/__judge` for it again. Make the call yourself only when typed judgment is on and that block is absent.
+
+**The call.** ONE request, five questions, ~50k tokens, about $0.002. Read the criteria maps and each axis's `question` out of `docs/research/direction-axes.jev.json` (generated from PROTOTYPE.md's own rosters - never retype them, and never invent an id that is not in there). Every choice needs its `instructions`, or the judge refuses the request:
 
 ```bash
 curl -sS -X POST "$TH_DAEMON_URL/__judge" -H 'Content-Type: application/json' -d '{
@@ -35,10 +37,10 @@ curl -sS -X POST "$TH_DAEMON_URL/__judge" -H 'Content-Type: application/json' -d
   "questions": {
     "needs_direction": {"type": "noul",
       "instructions": "This request leaves the visual direction unspecified."},
-    "recipe":    {"type": "choice", "criteria": <axes.recipe.criteria>},
-    "shell":     {"type": "choice", "criteria": <axes.shell.criteria>},
-    "style":     {"type": "choice", "criteria": <axes.style.criteria>},
-    "aesthetic": {"type": "choice", "criteria": <axes.aesthetic.criteria>}
+    "recipe": {"type": "choice", "instructions": <axes.recipe.question>, "criteria": <axes.recipe.criteria>},
+    "shell": {"type": "choice", "instructions": <axes.shell.question>, "criteria": <axes.shell.criteria>},
+    "style": {"type": "choice", "instructions": <axes.style.question>, "criteria": <axes.style.criteria>},
+    "aesthetic": {"type": "choice", "instructions": <axes.aesthetic.question>, "criteria": <axes.aesthetic.criteria>}
   }
 }'
 ```

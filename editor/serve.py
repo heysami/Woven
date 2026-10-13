@@ -55,6 +55,7 @@ import review_evidence
 import helper_jobs
 import typed_judge
 import visual_report
+import direction_ranking
 import plan_split
 import datetime as _dt
 import difflib
@@ -35665,6 +35666,20 @@ class H(http.server.SimpleHTTPRequestHandler):
         # orchestrator spawns / the on-demand routing fetch, not as a freeform
         # default. Legacy "full" maps to setup; anything unrecognised -> normal.
         _chat_tier = _normalize_chat_tier(body.get("tier"))
+        # The design library ranked for this brief by the text judge, when
+        # typed judgment for text checks is on and the project has no
+        # direction yet: shown under the user's message (the judge answers in
+        # a second or two, long before the agent) and handed to the agent in
+        # its first message, so the ranking is never skipped. Setting off:
+        # nothing happens here.
+        _proposal = None
+        if kind == "freeform" and user_prompt and _chat_tier in ("normal", "setup") and not _split_check:
+            try:
+                _proposal = direction_ranking.propose(project_root, user_prompt)
+            except Exception as _dr_err:
+                _proposal = {"event": {"error": str(_dr_err)[:240]}, "forAgent": ""}
+            if _proposal and _proposal.get("forAgent"):
+                prompt_text = prompt_text + "\n\n" + _proposal["forAgent"]
         # the prototype slug this chat is scoped to (the selected
         # prototype in the workflow target bar). Used ONLY to name the scoped
         # preamble's iterate-in-place stub; `branch` semantics are untouched.
@@ -35895,6 +35910,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         # instruction; we keep those out of the chat log so it stays clean.
         if kind == "freeform" and user_prompt:
             state.append("user_message", {"text": user_prompt})
+        if _proposal:
+            state.append("agent", dict({"type": "judge_proposal"}, **_proposal["event"]))
 
         with RUNS_LOCK:
             RUNS[run_id] = state

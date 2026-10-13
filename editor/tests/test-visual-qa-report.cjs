@@ -71,6 +71,10 @@ const report = {
       ${constLine('VQA_ORDER')}
       ${slice('function visualQaOutcome(')}
       ${slice('function VisualQaReport(')}
+      ${app.slice(app.indexOf('const JUDGE_AXIS_LABEL'), app.indexOf('\n', app.indexOf('const JUDGE_AXIS_LABEL')) + 1)}
+      ${slice('function JudgeProposal(')}
+      window.renderProposal = (data) => { const d = document.createElement('div'); d.id = 'jp' + (data.error ? 'e' : '');
+        document.body.appendChild(d); ReactDOM.createRoot(d).render(React.createElement(JudgeProposal, { data })); };
       const _judgeCounts = new Map();
       ${slice('function JudgeMark(')}
       const Icon = { Bot: () => null, Refresh: () => null };
@@ -104,6 +108,20 @@ const report = {
     assert.deepEqual(srcs.map(s => decodeURIComponent(s.split('f=')[1])), ['sent_01_1.png', 'ref_btn.png', 'sent_02_2.png'],
       'the images of the listed calls, as sent; none of the sure-yes call');
     await page.waitForFunction(() => [...document.querySelectorAll('.th-vqa-imgs img')].every(i => i.complete && i.naturalWidth > 0));
+    // The text judge's ranking of the library, under the first message.
+    await page.evaluate(() => window.renderProposal({ provider: 'clef', ms: 1600, needsDirection: 0.66,
+      thresholds: { low: 0.45, high: 0.7 },
+      axes: { style: { top: [{ id: 'pixel-grid-bitmap', label: 'pixel grid bitmap', p: 0.8 }, { id: 'flat-design', label: 'flat design', p: 0.03 }] },
+              aesthetic: { top: [{ id: 'pixel-ps1', label: 'pixel ps1', p: 0.16 }] } } }));
+    await page.evaluate(() => window.renderProposal({ error: 'no text judge is set up' }));
+    await page.waitForSelector('#jp .chat-judge-axis');
+    const jp = await page.locator('#jp').innerText();
+    assert.match(jp, /Judge's proposal from the library/);
+    assert.match(jp, /Cloudflare Clef · 1\.6 s/);
+    assert.match(jp, /Style\s+pixel grid bitmap 0\.80 · flat design 0\.03/);
+    assert.equal(await page.locator('#jp .chat-judge-pick.is-strong').innerText(), 'pixel grid bitmap 0.80',
+      'a pick over the high threshold stands out');
+    assert.match(await page.locator('#jpe').innerText(), /Could not rank the library: no text judge is set up/);
     // The Subagents list marks a subagent that has a Judge tab.
     await page.evaluate(() => { const d = document.createElement('div'); d.id = 'mark'; document.body.appendChild(d);
       ReactDOM.createRoot(d).render(React.createElement(JudgeMark, { ids: ['20261013-161310-ab12cd'] })); });

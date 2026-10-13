@@ -5169,6 +5169,17 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-vqa-o-sure-yes { color: var(--success); }
 .th-vqa-counts { display: flex; gap: 12px; padding: 2px 8px 6px; }
 .th-judge-mark { color: var(--hot-text); font-weight: 700; }
+/* The text judge's ranking of the design library, under the first message. */
+.chat-judge-proposal { margin: 6px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2, var(--bg)); font-size: 12px; }
+.chat-judge-proposal-h { font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.chat-judge-proposal-meta { font-weight: 400; color: var(--text-muted); margin-left: 6px; }
+.chat-judge-axis { display: grid; grid-template-columns: 72px 1fr; gap: 8px; padding: 2px 0; }
+.chat-judge-axis-name { color: var(--text-muted); }
+.chat-judge-pick { color: var(--text-muted); }
+.chat-judge-pick:first-child { color: var(--text); }
+.chat-judge-pick.is-strong { color: var(--hot-text); font-weight: 700; }
+.chat-judge-proposal-note { color: var(--text-muted); margin-top: 4px; }
+.chat-judge-proposal[data-error="true"] .chat-judge-proposal-note { color: var(--danger); }
 .th-vqa-ans { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); white-space: nowrap; padding-top: 1px; }
 .th-subagent-run {
   font-size: 11px;
