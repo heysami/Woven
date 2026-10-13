@@ -1,0 +1,49 @@
+{
+  "_recorded": "A Cloudflare Workers AI REST reply for @cf/cloudflare/clef: the System One body nested under `result` (the generic Workers AI wrapper; the Clef model page itself shows no response). One noul each for the red and blue image probe live in tests, not here.",
+  "result": {
+    "model": "clef",
+    "answers": {
+      "states_a_direction": {
+        "type": "noul",
+        "noul": 0.08
+      },
+      "shell": {
+        "type": "choice",
+        "choice": "three-column-app",
+        "confidence": 0.86,
+        "probabilities": {
+          "three-column-app": 0.71,
+          "two-column-app": 0.18,
+          "centered-narrow-column": 0.07,
+          "bento-grid": 0.04
+        }
+      },
+      "polish": {
+        "type": "score",
+        "score": 2.37,
+        "confidence": 0.62,
+        "legend": {
+          "0": "absent",
+          "1": "thin",
+          "2": "adequate",
+          "3": "considered",
+          "4": "exceptional"
+        },
+        "probabilities": {
+          "0": 0.02,
+          "1": 0.11,
+          "2": 0.42,
+          "3": 0.38,
+          "4": 0.07
+        }
+      }
+    },
+    "usage": {
+      "input_tokens": 1840,
+      "output_tokens": 3
+    }
+  },
+  "success": true,
+  "errors": [],
+  "messages": []
+}

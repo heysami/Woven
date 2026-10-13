@@ -1,0 +1,77 @@
+{
+  "_recorded": "The SAME three answers as jev_systemone_response.json, in the OpenAI Decisions shape (developers.openai.com/api/reference/resources/decisions/methods/create): an answers ARRAY with `name` echoed, a noul is a `predicate` with `probability`, distributions are arrays, score levels carry their int `value`, and a refused question comes back as {type: refusal}. typed_judge.from_openai must turn this into reader outputs identical to the System One fixture (P6).",
+  "model": "gpt-6-luna",
+  "answers": [
+    {
+      "type": "predicate",
+      "name": "states_a_direction",
+      "probability": 0.08
+    },
+    {
+      "type": "choice",
+      "name": "shell",
+      "choice": "three-column-app",
+      "confidence": 0.86,
+      "probabilities": [
+        {
+          "value": "three-column-app",
+          "probability": 0.71
+        },
+        {
+          "value": "two-column-app",
+          "probability": 0.18
+        },
+        {
+          "value": "centered-narrow-column",
+          "probability": 0.07
+        },
+        {
+          "value": "bento-grid",
+          "probability": 0.04
+        }
+      ]
+    },
+    {
+      "type": "score",
+      "name": "polish",
+      "score": 2.37,
+      "confidence": 0.62,
+      "probabilities": [
+        {
+          "value": 0,
+          "label": "absent",
+          "probability": 0.02
+        },
+        {
+          "value": 1,
+          "label": "thin",
+          "probability": 0.11
+        },
+        {
+          "value": 2,
+          "label": "adequate",
+          "probability": 0.42
+        },
+        {
+          "value": 3,
+          "label": "considered",
+          "probability": 0.38
+        },
+        {
+          "value": 4,
+          "label": "exceptional",
+          "probability": 0.07
+        }
+      ]
+    },
+    {
+      "type": "refusal",
+      "name": "refused"
+    }
+  ],
+  "usage": {
+    "input_tokens": 1840,
+    "output_tokens": 0,
+    "total_tokens": 1840
+  }
+}

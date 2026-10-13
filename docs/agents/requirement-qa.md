@@ -56,12 +56,12 @@ LOGIC, not code style and not visuals.
 Probe once, before Step 3:
 
 ```bash
-curl -sS -o /dev/null -w '%{http_code}' -X POST "$TH_DAEMON_URL/__jev" \
+curl -sS -o /dev/null -w '%{http_code}' -X POST "$TH_DAEMON_URL/__judge" \
   -H 'Content-Type: application/json' \
   -d '{"kind":"requirement_item","state":"probe","questions":{"p":{"type":"noul","instructions":"This state is the word probe."}}}'
 ```
 
-Anything but `200` means the fast path is unavailable (no key, or the user turned it off). Go straight to Step 3 and read the build yourself, exactly as this spec has always said. Never report a check as done because the probe failed.
+Anything but `200` means the fast path is unavailable (no judge set up, or the user turned it off). Go straight to Step 3 and read the build yourself, exactly as this spec has always said. Never report a check as done because the probe failed.
 
 On `200`, run Step 3 as a FAN-OUT instead of as a sequential read. It is the same classification against the same checklist; the only difference is that a 40-item checklist gets 40 judgments instead of a skim, which is the whole point.
 
@@ -89,7 +89,29 @@ Where an item needs a BUCKET rather than a boolean, ask that one as a Choice ove
 - noul below `thresholds.noul` with `confidence` at or above `thresholds.high`: a finding. Classify it into Step 3's buckets and carry it into the report.
 - anything in between, or any missing confidence: escalate THAT ONE ITEM to your own read of the artefact. Do not re-ask it in different words.
 
-**Three things the fan-out does not change.** It only ever ADDS findings: never drop or soften one your own read already made because a noul came back high. It cannot generate, so every verdict line, every evidence location and every `fix:` string in Step 5 is still yours to write. And it never sees a pixel, so anything about how the thing LOOKS was never in this agent's scope and still is not.
+**Three things the fan-out does not change.** It only ever ADDS findings: never drop or soften one your own read already made because a noul came back high. It cannot generate, so every verdict line, every evidence location and every `fix:` string in Step 5 is still yours to write. And the text fan-out never sees a pixel: how the thing LOOKS stays out of this agent's scope, except for the one narrow case below.
+
+### Items about what is visibly SHOWN (image tier, optional)
+
+Some checklist items are about what the user sees on the rendered page rather than what the markup says: "the pricing page shows three plans side by side", "the empty state shows an illustration". Markup can satisfy those on paper and still render something else. When the user has typed judgment for visual checks on and a judge that reads images is set up, judge THOSE items on a render instead of on the source:
+
+1. Render the page once: `GET "$TH_DAEMON_URL/__qa/run?project=$TH_PROJECT_ID&page=<slug>&mode=render"`. The reply's `idleFrames[].path` are the PNG frames (they live in a `woven-qa-*` temp directory the daemon is allowed to read from).
+2. Ask, one noul per visible item, the item verbatim, up to 4 frames per request:
+
+```bash
+curl -sS -X POST "$TH_DAEMON_URL/__judge?project=$TH_PROJECT_ID" -H 'Content-Type: application/json' -d '{
+  "tier": "image", "kind": "visual_item",
+  "state": "A rendered page of the prototype.",
+  "images": [{"path": "<idleFrames[0].path>"}],
+  "questions": {"vis_3": {"type": "noul", "instructions": "<checklist item 3, verbatim>"}}
+}'
+```
+
+3. Route each answer on the returned `thresholds` exactly as for text items: confident pass is silent, confident fail is a finding, anything in between is judged the way it is judged today.
+
+**Never Read the PNG yourself.** Pass the path and let the daemon send the bytes. A frame in your context breaks the prompt cache, and the visual-delegation hook denies a main-thread image read anyway.
+
+A `503` with `reason` `no-image-judge` or `off` means: judge that item the way it is judged today, from the artefact, and leave anything only a render could settle out of scope as before. Never ask about geometry or colour (overlap, contrast, palette, spacing): those stay deterministic.
 
 ## Step 3 - classify every divergence
 

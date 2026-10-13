@@ -19647,6 +19647,14 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: var(--text);
 }
 .workflow-settings-key:focus { outline: none; border-color: var(--accent); }
+/* Typed-judge key rows: whether the judge reads images, from the Test's
+   red/blue probe. Plain text at the row's end, not a pill. */
+.workflow-settings-images {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.workflow-settings-images[data-state="reads"] { color: var(--accent-text); }
 .workflow-settings-msg {
   font-size: 12px;
   padding: 8px 10px;

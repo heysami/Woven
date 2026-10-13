@@ -161,6 +161,27 @@
       integrated: true,
       testable: true, // one noul over a two-word state; costs ~nothing
     },
+    // Typed judges that also read images (docs/features/typed-judgment-providers.md).
+    // `fields` are non-secret settings saved beside the key in media-config;
+    // `keyless` rows have no key at all and are set up by their fields.
+    cloudflare: {
+      id: "cloudflare",
+      label: "Cloudflare (Clef)",
+      hint: "Typed judgment that also reads images. Needs your account ID and a token allowed to use Workers AI.",
+      docsUrl: "https://dash.cloudflare.com/profile/api-tokens",
+      integrated: true,
+      testable: true, // one noul, then a red and a blue PNG to check it reads images
+      fields: [{ key: "account_id", label: "Account ID" }],
+    },
+    clef_local: {
+      id: "clef_local",
+      label: "Local Clef",
+      hint: "Clef running on this computer through Ollama. No key, nothing leaves the machine.",
+      integrated: true,
+      testable: true,
+      keyless: true,
+      fields: [{ key: "endpoint", label: "Endpoint", default: "http://localhost:11434/v1/systemone" }],
+    },
   };
 
   // v3.4.8 (July 2026) - Text + video rows refreshed:

@@ -710,6 +710,180 @@ def _finish_judge(judge: Dict[str, Any], res: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Typed frame judge (optional, --typed-judge shadow|flag). A typed judge that
+# reads images (Cloudflare Clef, OpenAI Decisions; editor/typed_judge.py picks)
+# gets up to four key frames as SEPARATE images and ONE noul, "The frames show
+# this effect: <expected>". It runs ALONGSIDE the LLM frame judge, never
+# instead of it:
+#   shadow - its answer is recorded in judge.typed and in the shadow log; the
+#            verdict, the reasons and the exit code are exactly what they would
+#            have been without it (P8 in editor/tests/test_jev_parity.py).
+#   flag   - additionally, a confident typed FAIL adds a `typed-judge` finding
+#            next to the LLM verdict. It never removes or softens an LLM finding
+#            and never changes the exit code (invariant I3).
+# The ONE exception: in flag mode, when tools/qa/jev_thresholds.json has
+# trustPass for (provider, frame_effect) - written only by jev_calibrate.py
+# from a labelled set - a confident typed PASS stands in for the LLM call.
+# Plan: docs/features/typed-judgment-providers.md.
+# ---------------------------------------------------------------------------
+
+TYPED_KIND = "frame_effect"
+TYPED_MAX_FRAMES = 4
+
+
+def _typed_judge_module() -> Any:
+    editor_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if editor_dir not in sys.path:
+        sys.path.insert(0, editor_dir)
+    import typed_judge  # type: ignore
+    return typed_judge
+
+
+def _typed_frames(report: Dict[str, Any]) -> List[Tuple[str, str]]:
+    """Idle start, the idle frame with the most motion, and the before/after
+    of the interaction that changed the most: at most four, in time order."""
+    picks: List[Tuple[str, str]] = []
+    idle = report.get("idleFrames") or []
+    if idle:
+        picks.append(("idle start t=%.2fs" % float(idle[0].get("t", 0.0)), idle[0]["path"]))
+        rest = [f for f in idle[1:] if f.get("path")]
+        if rest:
+            top = max(rest, key=lambda f: (f.get("diffFromPrev") or 0.0))
+            picks.append(("idle with most motion t=%.2fs" % float(top.get("t", 0.0)), top["path"]))
+    interactions = [ix for ix in (report.get("interactions") or [])
+                    if ix.get("beforePath") and ix.get("afterPath")]
+    if interactions:
+        key_ix = max(interactions, key=lambda ix: ix.get("diff") or 0.0)
+        step = key_ix.get("step", "interaction")
+        picks.append(("before %s" % step, key_ix["beforePath"]))
+        picks.append(("after %s" % step, key_ix["afterPath"]))
+    return picks[:TYPED_MAX_FRAMES]
+
+
+def run_typed_judge(report: Dict[str, Any], expected: str, mode: str,
+                    judge_fn: Any = None) -> Dict[str, Any]:
+    """Ask the image-tier typed judge. ALWAYS returns a dict with at least
+    {available, mode, message}; never raises."""
+    typed: Dict[str, Any] = {"available": False, "mode": mode, "kind": TYPED_KIND,
+                             "provider": None, "noul": None, "pass": None,
+                             "confidence": None, "band": None, "message": None}
+    frames = _typed_frames(report)
+    if not frames:
+        typed["message"] = "no frames to send"
+        return typed
+    try:
+        tj = _typed_judge_module()
+        judge_fn = judge_fn or tj.judge
+        state = ("Frames of an interactive piece, one image each, in this order: "
+                 + "; ".join("%d) %s" % (i + 1, label) for i, (label, _p) in enumerate(frames)))
+        res = judge_fn(state, {"effect": {"type": "noul",
+                                          "instructions": "The frames show this effect: " + expected}},
+                       tier="image", images=[{"path": p} for (_l, p) in frames], kind=TYPED_KIND)
+        verdict = tj.noul_verdict(res["answers"].get("effect"), res["thresholds"])
+    except Exception as exc:  # JudgeUnavailable, JudgeError, ValueError, import
+        typed["message"] = "typed judge unavailable: %s" % exc
+        typed["reason"] = getattr(exc, "reason", None)
+        return typed
+    typed.update(verdict)
+    typed.update({"available": verdict["noul"] is not None, "provider": res.get("provider"),
+                  "model": res.get("model"), "trustPass": bool(res["thresholds"].get("trustPass")),
+                  "frames": [label for (label, _p) in frames],
+                  "message": "typed judge ran via %s" % res.get("provider")})
+    return typed
+
+
+def _typed_confident(typed: Dict[str, Any], passed: bool) -> bool:
+    return bool(typed.get("available") and typed.get("pass") is passed
+                and typed.get("band") == "act")
+
+
+def apply_frame_judges(report: Dict[str, Any], verdict: str, reasons: List[str],
+                       out_dir: str, args: argparse.Namespace,
+                       llm_judge: Any = None, typed_judge_fn: Any = None,
+                       shadow_log: Any = None) -> str:
+    """The optional judges, in their precedence. Mutates report/reasons and
+    returns the verdict. The LLM frame judge only ESCALATES or CONFIRMS; it
+    never relaxes an error/static/no-reaction pixel verdict:
+      - judge unavailable  -> a pixel pass becomes inconclusive.
+      - judge ok:false     -> a pixel pass becomes "effect-wrong" (the wrong
+                              thing renders even if pixels moved); an existing
+                              error/static/no-reaction is the stronger signal.
+      - judge ok:true      -> CONFIRMS; verdict unchanged.
+      - judge inconclusive -> a pixel pass becomes inconclusive.
+    The typed judge (see run_typed_judge) never changes any of that."""
+    if not args.judge:
+        return verdict
+    llm_judge = llm_judge or run_judge
+    mode = getattr(args, "typed_judge", None)
+    typed = run_typed_judge(report, args.judge, mode, typed_judge_fn) if mode else None
+
+    if (typed and mode == "flag" and typed.get("trustPass") and _typed_confident(typed, True)):
+        judge = {"available": True, "ok": True, "expected": args.judge,
+                 "reasoning": "typed judge (%s) confident pass; trustPass is calibrated for %s"
+                              % (typed.get("provider"), TYPED_KIND),
+                 "observed": None, "model": typed.get("model"), "transport": "typed-judge",
+                 "skippedLlm": True,
+                 "message": "LLM frame judge skipped: calibrated typed pass"}
+    else:
+        judge = llm_judge(report, out_dir, args)
+    if typed is not None:
+        judge["typed"] = typed
+    report["judge"] = judge
+    if judge.get("available"):
+        if judge.get("ok") is False and verdict == "pass":
+            verdict = "effect-wrong"
+            reasons.append(
+                "frame-judge: expected effect NOT achieved (%s)"
+                % (judge.get("reasoning") or "no reasoning given"))
+        elif judge.get("ok") is True:
+            reasons.append("frame-judge confirmed the expected effect")
+        elif judge.get("ok") is None:
+            if verdict == "pass":
+                verdict = "inconclusive"
+            reasons.append("frame-judge inconclusive: %s"
+                           % (judge.get("message") or "no parseable verdict"))
+    else:
+        if verdict == "pass":
+            verdict = "inconclusive"
+        reasons.append("frame-judge unavailable: %s"
+                       % (judge.get("message") or "unknown reason"))
+    log(judge.get("message") or "frame-judge completed")
+
+    if typed and typed.get("available"):
+        # Calibration data: the typed answer next to the verdict it shadowed.
+        if not judge.get("skippedLlm"):
+            try:
+                (shadow_log or _typed_judge_module().shadow_log)({
+                    "provider": typed.get("provider"), "kind": TYPED_KIND,
+                    "noul": typed.get("noul"),
+                    "llmOk": judge.get("ok") if judge.get("available") else None,
+                    "project": getattr(args, "judge_project", None),
+                    "subject": (args.judge or "")[:160]})
+            except Exception:
+                pass
+        if mode == "flag" and _typed_confident(typed, False):
+            report.setdefault("findings", []).append({
+                "rule": "typed-judge", "severity": "warn", "kind": TYPED_KIND,
+                "provider": typed.get("provider"), "noul": typed.get("noul"),
+                "message": "typed judge (%s) is confident the frames do not show: %s"
+                           % (typed.get("provider"), args.judge)})
+        log(typed.get("message") or "typed judge completed")
+    return verdict
+
+
+def exit_code(verdict: str) -> int:
+    if verdict == "pass":
+        return 0
+    if verdict == "error":
+        return 2
+    if verdict == "effect-wrong":
+        return 4  # pixels moved but the wrong thing renders (frame-judge)
+    if verdict == "blank":
+        return 5  # render mode: loaded but painted nothing / unstyled wash
+    return 1  # static or no-reaction
+
+
+# ---------------------------------------------------------------------------
 # Test-case runner (--cases). Executes a piece's plan-time test-cases.json
 # end to end: hand-written cases (journeys / abuse / regression), the
 # auto-expanded intent x phase matrix, abuse templates, and a seeded soak.
@@ -1918,40 +2092,11 @@ def run(args: argparse.Namespace) -> int:
             reasons.append("interaction disabled (--no-interact); "
                            "verdict from idle only")
 
-    # ----- OPTIONAL LLM FRAME-JUDGE -----
-    # Precedence: the judge only ESCALATES or CONFIRMS; it never relaxes an
-    # error/static/no-reaction pixel verdict.
-    #   - judge unavailable        -> a pixel pass becomes inconclusive.
-    #   - judge ok:false           -> verdict becomes "effect-wrong" (the wrong
-    #                                 thing renders even if pixels moved), but
-    #                                 only when the pixel verdict was "pass"
-    #                                 (an existing error/static/no-reaction is a
-    #                                 stronger signal and is kept).
-    #   - judge ok:true            -> CONFIRMS; verdict unchanged (still pass).
-    #   - judge inconclusive       -> a pixel pass becomes inconclusive.
+    # ----- OPTIONAL FRAME JUDGES (LLM, plus the typed judge alongside) -----
+    # Precedence lives in apply_frame_judges: the LLM judge only escalates or
+    # confirms, and the typed judge never changes the verdict.
     report["renderVerdict"] = verdict
-    if args.judge:
-        judge = run_judge(report, out_dir, args)
-        report["judge"] = judge
-        if judge.get("available"):
-            if judge.get("ok") is False and verdict == "pass":
-                verdict = "effect-wrong"
-                reasons.append(
-                    "frame-judge: expected effect NOT achieved (%s)"
-                    % (judge.get("reasoning") or "no reasoning given"))
-            elif judge.get("ok") is True:
-                reasons.append("frame-judge confirmed the expected effect")
-            elif judge.get("ok") is None:
-                if verdict == "pass":
-                    verdict = "inconclusive"
-                reasons.append("frame-judge inconclusive: %s"
-                               % (judge.get("message") or "no parseable verdict"))
-        else:
-            if verdict == "pass":
-                verdict = "inconclusive"
-            reasons.append("frame-judge unavailable: %s"
-                           % (judge.get("message") or "unknown reason"))
-        log(judge.get("message") or "frame-judge completed")
+    verdict = apply_frame_judges(report, verdict, reasons, out_dir, args)
 
     report["verdict"] = verdict
     report["reasons"] = reasons
@@ -1964,16 +2109,7 @@ def run(args: argparse.Namespace) -> int:
 
     sys.stdout.write(json.dumps(report, indent=2) + "\n")
     sys.stdout.flush()
-
-    if verdict == "pass":
-        return 0
-    if verdict == "error":
-        return 2
-    if verdict == "effect-wrong":
-        return 4  # pixels moved but the wrong thing renders (frame-judge)
-    if verdict == "blank":
-        return 5  # render mode: loaded but painted nothing / unstyled wash
-    return 1  # static or no-reaction
+    return exit_code(verdict)
 
 
 def parse_viewport(s: str) -> Tuple[int, int]:
@@ -2041,6 +2177,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Provider for the daemon /__llm_run describe call "
                         "(default anthropic). Ignored by the direct-API "
                         "fallback, which is always Anthropic.")
+    p.add_argument("--typed-judge", default=None, choices=["shadow", "flag"],
+                   help="Also ask the image-tier typed judge (editor/typed_judge.py) "
+                        "with --judge's expected effect. shadow records its answer "
+                        "and changes nothing; flag also adds a typed-judge finding "
+                        "on a confident fail. Never changes the exit code. The "
+                        "daemon passes this when typed judgment for visual checks "
+                        "is on.")
     p.add_argument("--judge-model", default=None, metavar="MODEL",
                    help="Vision model id (default %s for the direct API; the "
                         "daemon picks its own default if omitted)."

@@ -58,7 +58,7 @@ That's it. ONE call per draft image, direct daemon endpoint, output writes strai
 
 ## Typed judgment on this turn - only to REACH a direction, never to draft one
 
-If the Jev block is in your preamble and this +draft request arrived with NO direction card behind it (the user jumped straight to "generate me a mockup"), rank the axes first exactly as `step-neg1-emit-ui.md` describes under *Ranking the axes with typed judgment*, then compose the draft prompt from the top of each axis. That is the only use for it here.
+If the typed-judgment block is in your preamble and this +draft request arrived with NO direction card behind it (the user jumped straight to "generate me a mockup"), rank the axes first exactly as `step-neg1-emit-ui.md` describes under *Ranking the axes with typed judgment*, then compose the draft prompt from the top of each axis. That is the only use for it here.
 
 When a direction card HAS already been emitted and the user picked an option, the axes are decided and there is nothing left to rank - do not spend a request re-confirming a choice the user just made.
 

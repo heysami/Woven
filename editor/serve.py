@@ -53,7 +53,7 @@ import mcp_routing
 import runtime_drivers
 import review_evidence
 import helper_jobs
-import jev
+import typed_judge
 import plan_split
 import datetime as _dt
 import difflib
@@ -973,6 +973,15 @@ COMPACT_DEFAULTS         = {"autoCompact": False, "thresholdTokens": 400_000,
                             # on = fan-out; reqQa on + this off = today's
                             # behaviour; no key = today's behaviour, silently.
                             "jevJudge": False,
+                            # The visual tier and the judge picks
+                            # (docs/features/typed-judgment-providers.md).
+                            # Validated by typed_judge.valid_setting in both
+                            # whitelists below, so the daemon never saves a
+                            # value typed_judge would refuse to act on.
+                            "typedJudgeVisual": False,
+                            "typedJudgeTextProvider": "auto",
+                            "typedJudgeImageProvider": "auto",
+                            "typedJudgeVisualMode": "shadow",
                             "contractWriterModel": "fast", "contractWriterOverrides": {},
                             "economyModels": dict(model_routing.DEFAULTS), "modelCatalog": [],
                             "runtimeDrivers": {"codex": "exec", "opencode": "run"},
@@ -1005,6 +1014,10 @@ def _compact_config() -> dict:
                 if re.fullmatch(r"[a-z0-9-]+-orchestrator", key) and contract_writer.valid_model(value)}
         for key in ("referenceReuse", "compactQa", "jevJudge"):
             if isinstance(saved.get(key), bool):
+                cfg[key] = saved[key]
+        for key in ("typedJudgeVisual", "typedJudgeTextProvider",
+                    "typedJudgeImageProvider", "typedJudgeVisualMode"):
+            if key in saved and typed_judge.valid_setting(key, saved[key]):
                 cfg[key] = saved[key]
         thr = saved.get("thresholdTokens")
         if isinstance(thr, (int, float)) and 50_000 <= int(thr) <= 2_000_000:
@@ -1180,6 +1193,12 @@ _PROVIDER_ENV_KEYS = {
     # path in docs/features/jev-integration.md. Cheap ($0.042/Mtok in, output
     # free) and fail-soft: no key means every consumer keeps its old judgment.
     "typesafe":    "TH_TYPESAFE_API_KEY",
+    # Cloudflare Workers AI - here for the Clef typed judges (clef / clef-flash),
+    # which also read images. The token is the key; the account ID that goes in
+    # the URL lives beside it in media-config (cloudflare.account_id) or env
+    # TH_CLOUDFLARE_ACCOUNT_ID. Local Clef needs no key and is not listed: its
+    # endpoint is media-config clef_local.endpoint (see _JUDGE_FIELDS).
+    "cloudflare":  "TH_CLOUDFLARE_API_KEY",
     # SAM 3D Objects (facebookresearch/sam-3d-objects) image→Gaussian-splat
     # service. Runs on an external CUDA GPU (Modal/RunPod/Replicate/own box) -
     # NOT in this daemon. Key is OPTIONAL (self-hosted endpoints may be
@@ -1187,6 +1206,13 @@ _PROVIDER_ENV_KEYS = {
     # or env TH_SAM3D_ENDPOINT. See services/sam3d-splat/.
     "sam3d":       "TH_SAM3D_API_KEY",
 }
+
+# Non-secret settings a typed-judge key row carries beside (or instead of) its
+# key, persisted in that provider's media-config entry and echoed back by
+# GET /__media_config under `fields`. Local Clef has no key at all: saving an
+# endpoint is what sets it up (typed_judge.credentials).
+_JUDGE_FIELDS = {"cloudflare": ("account_id",), "clef_local": ("endpoint",)}
+_CLEF_LOCAL_DEFAULT_ENDPOINT = "http://localhost:11434/v1/systemone"
 
 # Live Session - per-request guest API key. A guest editing through the gate
 # sends their OWN key as X-Th-Llm-Key; do_POST stamps it on this thread-local so
@@ -15854,8 +15880,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._llm_run(qs)
             if parsed.path == "/__exa/search":
                 return self._exa_search_run(qs)
+            if parsed.path == "/__judge":
+                return self._judge_run(qs)
             if parsed.path == "/__jev":
-                return self._jev_run(qs)
+                return self._judge_run(qs, alias_tier="text")
             if parsed.path == "/__assistant/tester":
                 return self._assistant_tester_run(qs)
             if parsed.path == "/__assistant/research":
@@ -16336,6 +16364,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                                      "discovery": _persist_json_load(MODEL_DISCOVERY_PATH)})
         if url_path == "/__compact_config":
             return self._compact_config_get()
+        if url_path == "/__judge/status":
+            return self._reply(200, typed_judge.status(resolve_key=_resolve_provider_key))
         if url_path == "/__export_config":
             return self._export_config_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__export_check_name":
@@ -18498,8 +18528,54 @@ class H(http.server.SimpleHTTPRequestHandler):
             img.save(buf, "PNG")
             return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
+        # Typed judgment for visual checks, BESIDE the describe gate above,
+        # which stays authoritative: this never raises and never rejects a
+        # sheet. One noul per image ("The subject faces <facing>"), up to 4
+        # images per request. Shadow records each answer next to the describe
+        # verdict it shadows (the calibration log); Flag also returns a
+        # `typed-judge` finding on a confident fail - including on frames 2-4,
+        # which the describe gate never looks at.
+        _tcfg = _compact_config()
+        typed_mode = _tcfg.get("typedJudgeVisualMode") if _tcfg.get("typedJudgeVisual") else None
+        typed_out = {"mode": typed_mode, "checks": [], "findings": []} if (typed_mode and facing) else None
+
+        def _typed_facing(stage, images, describe_verdicts):
+            if typed_out is None:
+                return
+            images = images[:4]
+            many = len(images) > 1
+            questions = {"cell_%d" % (i + 1): {"type": "noul", "instructions":
+                         ("In image %d, the subject faces %s." % (i + 1, facing)) if many
+                         else "The subject faces %s." % facing} for i in range(len(images))}
+            try:
+                res = typed_judge.judge("Images of one game sprite subject, in order.", questions,
+                                        tier="image", images=images, kind="sprite_facing",
+                                        resolve_key=_resolve_provider_key, image_roots=[project_root])
+            except Exception as tj_err:
+                typed_out["checks"].append({"stage": stage, "available": False,
+                                            "message": str(tj_err)[:200]})
+                return
+            for i in range(len(images)):
+                v = typed_judge.noul_verdict(res["answers"].get("cell_%d" % (i + 1)), res["thresholds"])
+                said = describe_verdicts[i] if i < len(describe_verdicts) else None
+                llm_ok = None if not said else not said.upper().startswith("FAIL")
+                row = dict(v, stage=stage, cell=i, provider=res["provider"], describeOk=llm_ok)
+                typed_out["checks"].append(row)
+                if v["noul"] is not None and llm_ok is not None:
+                    typed_judge.shadow_log({"provider": res["provider"], "kind": "sprite_facing",
+                                            "noul": v["noul"], "llmOk": llm_ok, "project": project_id,
+                                            "subject": "%s %s cell %d faces %s" % (node_id, stage, i, facing)})
+                if typed_mode == "flag" and v["pass"] is False and v["band"] == "act":
+                    typed_out["findings"].append({
+                        "rule": "typed-judge", "severity": "warn", "kind": "sprite_facing",
+                        "stage": stage, "cell": i, "provider": res["provider"], "noul": v["noul"],
+                        "message": "typed judge (%s) is confident %s does not face %s"
+                                   % (res["provider"], "the base plate" if stage == "plate"
+                                      else "frame %d" % (i + 1), facing)})
+
         if facing:
             verdict = _vision_judge(_judge_prompt(facing), input_path=src)
+            _typed_facing("plate", [{"path": src}], [verdict])
             if verdict and verdict.upper().startswith("FAIL"):
                 raise ValueError(
                     "facing gate: base plate %s does not match facing=%r (%s). The animated sheet was NOT "
@@ -18550,6 +18626,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         if facing:
             verdict = _vision_judge(_judge_prompt(facing),
                                     input_data_uri=_cell_data_uri(strip.crop((0, 0, CELL, CELL))))
+            _typed_facing("sheet", [_cell_data_uri(strip.crop((i * CELL, 0, (i + 1) * CELL, CELL)))
+                                    for i in range(min(n, 4))], [verdict])
             if verdict and verdict.upper().startswith("FAIL"):
                 raise ValueError(
                     "facing gate: the generated sheet's FIRST frame does not match facing=%r (%s). "
@@ -18603,8 +18681,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             "grid": {"cols": cols, "rows": rows, "offX": 0, "offY": 0, "gutX": 0, "gutY": 0},
             "sheetVer": int(time.time() * 1000),
         })
-        return {"sheet": sheet_rel, "atlas": canonical_rel, "frames": n,
-                "frameWidth": CELL, "frameHeight": CELL, "animation": anim}
+        out = {"sheet": sheet_rel, "atlas": canonical_rel, "frames": n,
+               "frameWidth": CELL, "frameHeight": CELL, "animation": anim}
+        if typed_out is not None:
+            out["typedJudge"] = typed_out
+            for f in typed_out["findings"]:
+                print("[animated-sprite] typed-judge finding: %s" % f["message"], flush=True)
+        return out
 
     def _workflow_node_run(self, qs, node_id):
         try:
@@ -22980,6 +23063,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if not isinstance(body[key], bool):
                     return self._reply(400, {"error": key + " must be a boolean"})
                 cfg[key] = body[key]
+        for key in ("typedJudgeVisual", "typedJudgeTextProvider",
+                    "typedJudgeImageProvider", "typedJudgeVisualMode"):
+            if key in body:
+                if not typed_judge.valid_setting(key, body[key]):
+                    return self._reply(400, {"error": "invalid " + key})
+                cfg[key] = body[key]
         thr = body.get("thresholdTokens")
         if isinstance(thr, (int, float)):
             thr = int(thr)
@@ -23006,6 +23095,30 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "last_test_ok": bool(settings.get("last_test_ok")),
                 "last_test_at": settings.get("last_test_at"),
             }
+        # Typed-judge rows: the extra fields, and whether the judge reads
+        # images ("reads" / "text" / "unchecked") for the row's test status.
+        # Local Clef is keyless, so it joins here with has_key = endpoint saved.
+        clef_local = cfg.get("clef_local") if isinstance(cfg.get("clef_local"), dict) else {}
+        endpoint = (clef_local.get("endpoint") or os.environ.get("TH_CLEF_LOCAL_ENDPOINT") or "").strip()
+        masked["clef_local"] = {
+            "has_key": bool(endpoint), "saved": bool(clef_local.get("endpoint")),
+            "from_env": bool(endpoint and not clef_local.get("endpoint")),
+            "last_test_ok": bool(clef_local.get("last_test_ok")),
+            "last_test_at": clef_local.get("last_test_at"),
+        }
+        judge_rows = typed_judge.providers()
+        for provider, entry in masked.items():
+            settings = cfg.get(provider, {}) if isinstance(cfg.get(provider), dict) else {}
+            fields = _JUDGE_FIELDS.get(provider, ())
+            if fields:
+                entry["fields"] = {f: settings.get(f) or None for f in fields}
+            rows = [r for r in judge_rows if r.get("config") == provider]
+            if rows:
+                verified = settings.get("imagesVerified")
+                entry["imagesVerified"] = verified if isinstance(verified, bool) else None
+                entry["judgeImages"] = ("text" if all(r.get("maxImages") == 0 for r in rows)
+                                        else "reads" if verified is True
+                                        else "text" if verified is False else "unchecked")
         # Surface CLI availability so the editor's "Auto" resolver
         # can decide between API and CLI fallback without making the user
         # guess. detect_agent_bin returns None when not on PATH.
@@ -23054,6 +23167,22 @@ class H(http.server.SimpleHTTPRequestHandler):
                         cfg[provider].pop("api_key", None)
                         cfg[provider].pop("last_test_ok", None)
                         cfg[provider].pop("last_test_at", None)
+                        cfg[provider].pop("imagesVerified", None)
+            for field in _JUDGE_FIELDS.get(provider, ()):
+                v = settings.get(field)
+                if not isinstance(v, str):
+                    continue
+                v = v.strip()
+                if v == (cfg[provider].get(field) or ""):
+                    continue
+                # A different account or endpoint is a different judge: what
+                # the last Test proved no longer applies.
+                for stale in ("last_test_ok", "last_test_at", "imagesVerified"):
+                    cfg[provider].pop(stale, None)
+                if v:
+                    cfg[provider][field] = v
+                else:
+                    cfg[provider].pop(field, None)
         _media_config_save(cfg)
         return self._reply(200, {"ok": True})
 
@@ -23188,13 +23317,24 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def _media_config_test(self, qs):
         provider = (_qs_get(qs, "provider") or "openai").strip()
-        if provider not in _PROVIDER_ENV_KEYS:
+        if provider not in _PROVIDER_ENV_KEYS and provider != "clef_local":
             return self._reply(400, {"error": f"unknown provider: {provider}"})
-        api_key = _resolve_provider_key(provider)
-        if not api_key:
+        # Local Clef has no key; everything else needs one before a Test.
+        api_key = None if provider == "clef_local" else _resolve_provider_key(provider)
+        if not api_key and provider != "clef_local":
             return self._reply(502, {"error": "no api key configured"})
         ok = False
         detail = None
+        judge_probe = None
+        save_endpoint = None
+        judge_ids = [r["id"] for r in typed_judge.providers() if r.get("config") == provider]
+
+        def _probe(pid, url=None):
+            # One text noul, then the red/blue image probe when judges.json
+            # says this judge can read images. Pinned to this row's own key.
+            return typed_judge.probe(pid, resolve_key=lambda c: api_key if c == provider else None,
+                                     url=url)
+
         try:
             if provider == "openai":
                 req = urllib.request.Request(
@@ -23204,6 +23344,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 with urllib.request.urlopen(req, timeout=20) as resp:
                     data = json.loads(resp.read())
                 ok = isinstance(data, dict) and "data" in data
+                # The key serves image generation and text too, so a Decisions
+                # failure never fails the key; it only fills the judge status.
+                if ok and judge_ids:
+                    judge_probe = _probe(judge_ids[0])
             elif provider == "anthropic":
                 # Cheapest valid call: 1-token completion against Haiku.
                 req = urllib.request.Request(
@@ -23255,20 +23399,30 @@ class H(http.server.SimpleHTTPRequestHandler):
                 except urllib.error.HTTPError as e:
                     ok = e.code not in (401, 403)
                     if not ok: detail = {"status": e.code, "hint": "exa rejected the key"}
-            elif provider == "typesafe":
-                # Cheapest valid call: ONE noul over a two-word state. Jev
-                # prices input only ($0.042/Mtok) and output is free, so this
-                # costs a rounding error. 200 with an answers object → the key
-                # works; 401/403 → it does not.
-                try:
-                    answers = jev.ask("The sky is blue.",
-                                      {"t": {"type": "noul",
-                                             "instructions": "This statement mentions the sky."}},
-                                      api_key=api_key, timeout=20, max_retries=0)
-                    ok = isinstance(answers, dict) and bool(answers)
-                except jev.JevError as e:
+            elif provider in ("typesafe", "cloudflare", "clef_local"):
+                # Typed judges. Cheapest valid call: ONE noul over a two-word
+                # state (input-priced, output free, so a rounding error). A
+                # judge whose judges.json row can read images also gets a solid
+                # red and a solid blue PNG with "The image is mostly red" and
+                # passes the image check only when it tells them apart. The
+                # answer lands in <provider>.imagesVerified, which the image
+                # tier's router reads.
+                url = None
+                if provider == "clef_local":
+                    saved = (_media_config_load().get("clef_local") or {})
+                    url = ((saved.get("endpoint") if isinstance(saved, dict) else None)
+                           or os.environ.get("TH_CLEF_LOCAL_ENDPOINT") or _CLEF_LOCAL_DEFAULT_ENDPOINT)
+                    save_endpoint = url
+                if provider == "cloudflare" and not typed_judge.credentials(
+                        typed_judge.provider("clef") or {}, resolve_key=lambda _c: api_key):
                     ok = False
-                    detail = {"hint": str(e)[:200]}
+                    detail = {"hint": "Add your Cloudflare account ID next to the token. "
+                                      "It goes in the Workers AI URL."}
+                elif judge_ids:
+                    judge_probe = _probe(judge_ids[0], url=url)
+                    ok = bool(judge_probe.get("text"))
+                    if not ok:
+                        detail = {"hint": str(judge_probe.get("detail") or "no answer")[:300]}
             elif provider == "worldlabs":
                 # Cheapest valid call: GET remaining API credits. 200 → key works,
                 # 401/403 → bad key. Never spends credits (no world generated).
@@ -23295,10 +23449,22 @@ class H(http.server.SimpleHTTPRequestHandler):
         if provider not in cfg or not isinstance(cfg[provider], dict): cfg[provider] = {}
         cfg[provider]["last_test_ok"] = bool(ok)
         cfg[provider]["last_test_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        images_verified = cfg[provider].get("imagesVerified")
+        if judge_probe and judge_probe.get("text") and judge_probe.get("images") is not None:
+            images_verified = bool(judge_probe["images"])
+            cfg[provider]["imagesVerified"] = images_verified
+        if ok and save_endpoint and not cfg[provider].get("endpoint"):
+            # A Local Clef that answered at the default endpoint is set up.
+            cfg[provider]["endpoint"] = save_endpoint
         _media_config_save(cfg)
+        judge_out = None
+        if judge_probe is not None:
+            judge_out = {"text": bool(judge_probe.get("text")), "images": judge_probe.get("images"),
+                         "detail": judge_probe.get("detail")}
         if not ok:
-            return self._reply(502, {"ok": False, "detail": detail})
-        return self._reply(200, {"ok": True})
+            return self._reply(502, {"ok": False, "detail": detail, "judge": judge_out})
+        return self._reply(200, {"ok": True, "judge": judge_out,
+                                 "imagesVerified": images_verified if isinstance(images_verified, bool) else None})
 
     def _exa_search_run(self, qs):
         """POST /__exa/search  Body: { query, numResults?, type?, category?,
@@ -23338,21 +23504,28 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, {"ok": True, "results": _exa_normalize_results(payload),
                                  "raw": payload if isinstance(payload, dict) else None})
 
-    def _jev_run(self, qs):
-        """POST /__jev  Body: { state, questions, model?, kind? }.
-        Proxies TypeSafe System One (Jev) server-side so the key never reaches
-        the browser and every runtime (claude / codex / opencode) reaches the
-        judge with one curl instead of an SDK. Returns
-        { ok, answers, thresholds } - `thresholds` is the calibrated
-        {low, high, noul} band for `kind` so the caller routes with the same
-        numbers every other consumer uses instead of inventing its own.
+    def _judge_run(self, qs, alias_tier=None):
+        """POST /__judge  Body: { state, questions, kind?, tier?, images?, provider?, model? }.
+        Typed judgment server-side, so keys never reach the browser and every
+        runtime (claude / codex / opencode) reaches a judge with one curl.
+        `tier` is "text" (default) or "image"; `images` is a list of {path}
+        (relative to the project, or a /__qa/run frame) or {node} (that node's
+        asset), and needs ?project=. The router (editor/typed_judge.py) picks
+        the user's judge for the tier, else the first one set up. Replies
+        { ok, answers, thresholds, provider, model, tier } with `answers` in
+        System One shape whatever answered; `thresholds` is the calibrated
+        {low, high, noul, trustPass} band for (provider, kind), so the caller
+        routes with the same numbers every other consumer uses.
 
-        FAIL-SOFT CONTRACT. Every caller of this endpoint has a non-Jev path it
-        must take when this replies non-200. A 503 means "not wired up, use
-        your old judgment", never "the build failed". Jev only ever ADDS
-        findings (invariant I3 in docs/features/jev-integration.md); a caller
-        that DROPS a deterministic finding because this endpoint answered is
-        wrong even when Jev is right."""
+        POST /__jev is this with tier=text, kept for the agents and tools
+        written against it.
+
+        FAIL-SOFT CONTRACT. Every caller has a path it takes when this replies
+        non-200. 503 {reason: off | no-key | no-image-judge} means "not set up,
+        do it the way you would without it", never "the build failed". Typed
+        judgment only ever ADDS findings (invariant I3 in
+        docs/features/jev-integration.md); a caller that DROPS a deterministic
+        finding because this endpoint answered is wrong even when it is right."""
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0 or length > MAX_BYTES:
             return self._reply(400, {"error": "payload missing or too large"})
@@ -23367,36 +23540,89 @@ class H(http.server.SimpleHTTPRequestHandler):
         if state is None or not isinstance(questions, dict) or not questions:
             return self._reply(400, {"error": "state and a non-empty questions object are required"})
         kind = body.get("kind") if isinstance(body.get("kind"), str) else "default"
-        # The global switch is enforced HERE, not only in the preamble, because
-        # the callers that need it most (a Task subagent running requirement QA,
-        # ds_lint under the ds-guardian) never see a preamble. One switch, one
-        # place, every consumer.
-        if not _compact_config().get("jevJudge"):
-            return self._reply(503, {"ok": False, "available": False,
-                                     "error": "typed judgment is turned off",
+        tier = alias_tier or body.get("tier") or "text"
+        if tier not in typed_judge.TIERS:
+            return self._reply(400, {"error": "tier must be text or image"})
+        images = body.get("images") or []
+        if not isinstance(images, list):
+            return self._reply(400, {"error": "images must be a list of {path} or {node}"})
+        if alias_tier and images:
+            return self._reply(400, {"error": "/__jev is text only; POST /__judge with tier=image"})
+        pinned = body.get("provider") or None
+        if pinned is not None and (not isinstance(pinned, str) or typed_judge.provider(pinned) is None):
+            return self._reply(400, {"error": "unknown judge: %s" % pinned,
+                                     "judges": [r["id"] for r in typed_judge.providers()]})
+        # The switches are enforced HERE, not only in the preamble, because the
+        # callers that need them most (a Task subagent running requirement QA,
+        # ds_lint under the ds-guardian, visual_qa) never see a preamble.
+        cfg = _compact_config()
+        if not cfg.get("jevJudge" if tier == "text" else "typedJudgeVisual"):
+            return self._reply(503, {"ok": False, "available": False, "reason": "off",
+                                     "error": "typed judgment for %s checks is turned off" % tier,
                                      "hint": "Settings -> Context and cost -> Typed judgment. "
                                              "Run the check the way you would without it."})
-        api_key = _resolve_provider_key("typesafe")
-        if not api_key:
-            # 503, not 502: nothing is broken, the judge is simply not wired up.
-            return self._reply(503, {"ok": False, "available": False,
-                                     "error": "no typesafe api key configured",
-                                     "hint": "Settings -> Model Config -> API keys -> TypeSafe (Jev). "
-                                             "Every check that uses it falls back without one."})
+        roots = None
+        resolved = []
+        if images:
+            try:
+                project_root = resolve_project_root(qs)
+            except ValueError as e:
+                return self._reply(400, {"error": "images need ?project=<id>: %s" % e})
+            roots = [project_root]
+            tmp = os.path.realpath(tempfile.gettempdir())
+            nodes_by_id = None
+            for item in images:
+                if not isinstance(item, dict) or not (item.get("path") or item.get("node")):
+                    return self._reply(400, {"error": "each image is {path} or {node}"})
+                if item.get("node"):
+                    if nodes_by_id is None:
+                        _wf, nodes_by_id, _p, _err = _load_workflow_nodes(project_root)
+                        nodes_by_id = nodes_by_id or {}
+                    node = nodes_by_id.get(item["node"])
+                    rel = next((node.get(f) for f in ("path", "sheet", "output")
+                                if isinstance(node, dict) and isinstance(node.get(f), str)
+                                and node.get(f)), None)
+                    if not rel:
+                        return self._reply(400, {"error": "node %s has no image asset" % item["node"]})
+                    resolved.append({"path": rel})
+                    continue
+                path = str(item["path"])
+                # A /__qa/run frame lives in a woven-qa-* temp dir the daemon
+                # made, outside the project; that one directory is allowed too.
+                if os.path.isabs(path):
+                    rel = os.path.relpath(os.path.realpath(path), tmp)
+                    first = rel.split(os.sep)[0]
+                    if not rel.startswith("..") and first.startswith("woven-qa-"):
+                        roots.append(os.path.join(tmp, first))
+                resolved.append({"path": path})
         try:
-            answers = jev.ask(state, questions,
-                              model=body.get("model") or jev.DEFAULT_MODEL,
-                              api_key=api_key)
+            result = typed_judge.judge(state, questions, tier=tier, images=resolved, kind=kind,
+                                       provider=pinned, resolve_key=_resolve_provider_key,
+                                       model=(body.get("model") or None) if pinned else None,
+                                       image_roots=roots)
+        except typed_judge.JudgeUnavailable as e:
+            hint = {
+                "no-image-judge": "No judge that reads images is set up. Add a Cloudflare or OpenAI "
+                                  "key under Model Config, API keys. Judge the item the way you "
+                                  "would without it.",
+            }.get(e.reason, "Settings -> Model Config -> API keys: TypeSafe (Jev), Cloudflare (Clef), "
+                            "Local Clef or OpenAI. Every check that uses it falls back without one.")
+            return self._reply(503, {"ok": False, "available": False, "reason": e.reason,
+                                     "error": str(e), "hint": hint})
         except ValueError as e:
-            # Question shape / context budget - a caller bug, not an outage.
+            # Question shape, a cap, an image - a caller bug, not an outage.
             return self._reply(400, {"ok": False, "available": True, "error": str(e)})
-        except jev.JevError as e:
-            return self._reply(502, {"ok": False, "available": True, "error": str(e)})
+        except typed_judge.JudgeError as e:
+            # A cap judges.json leaves unpublished is enforced by the service:
+            # its 4xx is still the caller's request, so it comes back as 400.
+            code = 400 if e.status in (400, 404, 413, 422) else 502
+            return self._reply(code, {"ok": False, "available": True, "error": str(e)})
         except Exception as e:
             return self._reply(502, {"ok": False, "available": True,
                                      "error": f"{type(e).__name__}: {e}"})
-        return self._reply(200, {"ok": True, "available": True, "answers": answers,
-                                 "thresholds": jev.thresholds(kind)})
+        return self._reply(200, {"ok": True, "available": True, "answers": result["answers"],
+                                 "thresholds": result["thresholds"], "provider": result["provider"],
+                                 "model": result["model"], "tier": result["tier"]})
 
     def _assistant_tester_run(self, qs):
         """POST /__assistant/tester  Body: { model, system, prompt, useBrowser? }.
@@ -27199,6 +27425,16 @@ class H(http.server.SimpleHTTPRequestHandler):
                     cmd += ["--judge-daemon", "http://127.0.0.1:%d" % PORT,
                             "--judge-project", _proj_qs,
                             "--judge-provider", _judge_provider]
+            # Typed judgment for visual checks: the image-tier typed judge runs
+            # ALONGSIDE the frame judge (shadow records, flag adds a finding on
+            # a confident fail). It never changes the verdict or the exit code;
+            # visual_qa.apply_frame_judges owns that. No image judge set up =
+            # judge.typed says so and nothing else differs.
+            _tcfg = _compact_config()
+            if _tcfg.get("typedJudgeVisual"):
+                cmd += ["--typed-judge", _tcfg.get("typedJudgeVisualMode") or "shadow"]
+                if "--judge-project" not in cmd and (_qs_get(qs, "project") or ""):
+                    cmd += ["--judge-project", _qs_get(qs, "project")]
         if nointeract and nointeract not in ("0", "false", "no"):
             cmd += ["--no-interact"]
         # Synthetic camera fixture for vision pieces (default both = hand+face).

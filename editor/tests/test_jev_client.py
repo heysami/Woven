@@ -119,6 +119,13 @@ class JevClient(unittest.TestCase):
                            jev.thresholds("direction_axis")["high"])
         self.assertEqual(jev.thresholds("no-such-kind"), jev.thresholds("default"))
 
+    def test_a_pinned_call_never_routes_away_from_jev(self):
+        """An explicit key means TypeSafe Jev, whatever the text router would
+        pick: the key test and the calibrate tool rely on it."""
+        _answers, rec = self._ask(model="jev-preview")
+        self.assertEqual(rec.requests[0].full_url, jev.API_URL)
+        self.assertEqual(json.loads(rec.requests[0].data.decode("utf-8"))["model"], "jev-preview")
+
     def test_a_winner_only_response_still_reads_as_a_ranking(self):
         self.assertEqual(jev.choice_ranked({"choice": "card", "confidence": 0.8}),
                          [("card", 0.8)])
@@ -164,10 +171,29 @@ class JevClient(unittest.TestCase):
 
     def test_enabled_and_available_are_separate_questions(self):
         """The setting alone is an intent, the key alone is a capability. Only
-        the pair makes the fast path real."""
-        self.assertIs(type(jev.enabled()), bool)
-        self.assertFalse(jev.available(""))
-        self.assertTrue(jev.available("sk-something"))
+        the pair makes the fast path real. Run against an empty config so a key
+        on the machine running the tests cannot answer for it."""
+        import os
+        import tempfile
+        import typed_judge
+        saved = (typed_judge.MEDIA_CONFIG_PATH, typed_judge.COMPACT_CONFIG_PATH)
+        env = {k: os.environ.pop(k) for k in list(typed_judge.ENV_KEYS.values())
+               + list(typed_judge.ENDPOINT_ENV.values()) if k in os.environ}
+        with tempfile.TemporaryDirectory() as tmp:
+            typed_judge.MEDIA_CONFIG_PATH = os.path.join(tmp, "media-config.json")
+            typed_judge.COMPACT_CONFIG_PATH = os.path.join(tmp, "compact-config.json")
+            try:
+                self.assertIs(type(jev.enabled()), bool)
+                self.assertFalse(jev.enabled())
+                self.assertFalse(jev.available(""))
+                self.assertTrue(jev.available("sk-something"))
+                with open(typed_judge.MEDIA_CONFIG_PATH, "w") as f:
+                    json.dump({"openai": {"api_key": "sk-test"}}, f)
+                # Any text judge counts now, not only TypeSafe.
+                self.assertTrue(jev.available())
+            finally:
+                typed_judge.MEDIA_CONFIG_PATH, typed_judge.COMPACT_CONFIG_PATH = saved
+                os.environ.update(env)
 
 
 if __name__ == "__main__":

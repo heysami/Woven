@@ -99234,12 +99234,29 @@ function OrchestratorWriterSettings({ orchestratorId, disabled }) {
     </div>`;
 }
 
-/* `mediaConfig` (from /__media_config) is passed in for ONE row: the typed-judgment
-   toggle below is inert without a TypeSafe key, and a switch that silently does
-   nothing is worse than no switch. The row says which state it is in. */
+/* Which typed judges are set up, from GET /__judge/status:
+   {text, image, auto: {text, image}, providers: [{id, name, keyed, tiers, ...}]}.
+   Re-read whenever a key row changes (`mediaConfig`) or a judge pick does, since
+   either moves what each tier resolves to. null until loaded or on an old daemon. */
+function useJudgeStatus(deps) {
+  const [status, setStatus] = useState(null);
+  useEffect(() => {
+    let dead = false;
+    fetch(apiUrl("/__judge/status"))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (!dead) setStatus(j); })
+      .catch(() => { if (!dead) setStatus(null); });
+    return () => { dead = true; };
+  }, deps);
+  return status;
+}
+
+/* `mediaConfig` (from /__media_config) is passed in for the typed-judgment rows:
+   a switch with no judge set up is inert, and a switch that silently does
+   nothing is worse than no switch. The status line says which judge answers. */
 function WorkflowContextCostSection({ mediaConfig }) {
   const { config, saving, error, save } = useContextCostConfig();
-  const jevKeyed = !!(mediaConfig?.providers?.typesafe?.has_key);
+  const judges = useJudgeStatus([mediaConfig, config?.typedJudgeTextProvider, config?.typedJudgeImageProvider]);
   const disabled = !config || saving;
   const thresholds = [...new Set([50000, 100000, 200000, 400000, 600000, 800000, 1000000, 2000000,
     config?.thresholdTokens || 400000])].sort((a, b) => a - b);
@@ -99252,6 +99269,24 @@ function WorkflowContextCostSection({ mediaConfig }) {
         <span className="settings-guard-hint">${hint}</span>
       </span>
     </label>`;
+  // One "Judge" select per tier: Auto (named by what it resolves to) first,
+  // then only the judges that are set up and can serve that tier.
+  const judgeSelect = (tier, key, id) => {
+    const auto = judges?.auto?.[tier];
+    const options = (judges?.providers || []).filter(p => p.keyed && (p.tiers || []).includes(tier));
+    const current = options.some(p => p.id === config?.[key]) ? config[key] : "auto";
+    return html`
+      <div className="workflow-default-provider-row">
+        <label className="workflow-default-provider-label" htmlFor=${id}>Judge</label>
+        <div className="workflow-default-provider-controls">
+          <select id=${id} className="workflow-default-provider-select" style=${{ gridColumn: "1 / -1" }}
+            disabled=${disabled} value=${current} onChange=${e => save({ [key]: e.target.value })}>
+            <option value="auto">Auto: ${auto ? auto.name : "none set up"}</option>
+            ${options.map(p => html`<option key=${p.id} value=${p.id}>${p.name}</option>`)}
+          </select>
+        </div>
+      </div>`;
+  };
   return html`
     <section aria-label="Context and cost">
       <${RuntimeModelSettings} config=${config} save=${save} disabled=${disabled}/>
@@ -99300,13 +99335,30 @@ function WorkflowContextCostSection({ mediaConfig }) {
           gets checked item by item rather than skimmed. It never decides on its own: it narrows what
           the agent considers, and the agent still writes every report.
         </div>
-        ${toggle("jevJudge", "Use typed judgment for checks that support it",
-          "Applies to requirement QA, design-system conformance and direction picking. Off, or with no key, each of those keeps exactly the behaviour it has today. It only ever adds findings, never removes one.")}
-        <div className="workflow-settings-section-group-sub">
-          ${jevKeyed
-            ? "TypeSafe key configured, so this takes effect on the next request."
-            : "No TypeSafe key yet. Add one under Model Config, API keys. Until then this switch changes nothing."}
+        ${toggle("jevJudge", "Use typed judgment for text checks",
+          "Requirement QA, design-system conformance and direction picking. Off, or with no judge set up, each keeps the behaviour it has today.")}
+        ${judgeSelect("text", "typedJudgeTextProvider", "typed-judge-text")}
+        ${toggle("typedJudgeVisual", "Use typed judgment for visual checks",
+          "Frame judge, sprite facing and visual requirement items. Shadow records its answer next to the current judge and changes nothing. Flag adds a finding when it is confident something failed.")}
+        ${judgeSelect("image", "typedJudgeImageProvider", "typed-judge-image")}
+        <div className="workflow-default-provider-row">
+          <label className="workflow-default-provider-label" htmlFor="typed-judge-mode">Mode</label>
+          <div className="workflow-default-provider-controls">
+            <select id="typed-judge-mode" className="workflow-default-provider-select" style=${{ gridColumn: "1 / -1" }}
+              disabled=${disabled} value=${config?.typedJudgeVisualMode || "shadow"}
+              onChange=${e => save({ typedJudgeVisualMode: e.target.value })}>
+              <option value="shadow">Shadow</option>
+              <option value="flag">Flag</option>
+            </select>
+          </div>
         </div>
+        ${judges && html`
+          <div role="status" className="workflow-settings-section-group-sub">
+            Text: ${judges.text ? judges.text.name : "none set up"}.${" "}
+            ${judges.image ? `Images: ${judges.image.name}.`
+              : "No judge that reads images is set up. Add a Cloudflare or OpenAI key under Model Config, API keys."}
+          </div>
+        `}
       </div>
       <div className="workflow-default-providers">
         <div className="workflow-settings-section-group-head">Automatic compaction</div>
@@ -100641,16 +100693,47 @@ function WorkflowLocalPackageRow({ pkg }) {
 
 /* One row of the Settings dialog. Save / Test / Clear are local to the
    component so multiple providers can have separate edit buffers without
-   stomping each other. */
+   stomping each other.
+   `provider.fields` are non-secret settings saved beside the key in that
+   provider's media-config entry (Cloudflare's account ID); a `keyless`
+   provider has no key at all and is set up by its fields (Local Clef's
+   endpoint). Typed judges also say whether they read images, from the
+   red/blue probe the Test runs (`status.judgeImages`). */
+const JUDGE_IMAGES_LABEL = { reads: "Reads images", text: "Text only", unchecked: "Not checked" };
 function WorkflowProviderSection({ provider, status, onChanged }) {
   const [keyInput, setKeyInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [testStatus, setTestStatus] = useState(null);
   const [testError, setTestError] = useState(null);
+  const fields = provider.fields || [];
+  const savedFields = status.fields || {};
+  const [fieldInputs, setFieldInputs] = useState({});
 
   const integrated = !!provider.integrated;
   const testable   = !!provider.testable;
+  const keyless    = !!provider.keyless;
   const hasKey     = !!status.has_key;
+  const fieldValue = f => fieldInputs[f.key] ?? savedFields[f.key] ?? "";
+  const saveField = async (f) => {
+    const value = (fieldInputs[f.key] ?? "").trim();
+    if (!(f.key in fieldInputs) || value === (savedFields[f.key] || "")) return;
+    setBusy(true); setTestStatus(null);
+    try {
+      const r = await fetch(apiUrl("/__media_config"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [provider.id]: { [f.key]: value } }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      await onChanged();
+      setFieldInputs(v => { const next = { ...v }; delete next[f.key]; return next; });
+    } catch (e) {
+      uiAlert(`Save failed: ${e.message || e}`);
+    } finally { setBusy(false); }
+  };
+  // Only typed judges carry it. OpenAI's key mostly serves generation, so its
+  // row stays quiet until a Test has actually checked the judge.
+  const imagesLabel = status.judgeImages && !(provider.id === "openai" && status.judgeImages === "unchecked")
+    ? JUDGE_IMAGES_LABEL[status.judgeImages] : null;
 
   const save = async () => {
     if (!keyInput) return;
@@ -100687,13 +100770,15 @@ function WorkflowProviderSection({ provider, status, onChanged }) {
     } finally { setBusy(false); }
   };
   const clear = async () => {
-    if (!await uiConfirm(`Remove the saved ${provider.label} API key?`)) return;
+    if (!await uiConfirm(keyless ? `Remove the saved ${provider.label} ${fields.map(f => f.label.toLowerCase()).join(" and ")}?`
+                                 : `Remove the saved ${provider.label} API key?`)) return;
     setBusy(true);
     try {
       await fetch(apiUrl("/__media_config"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [provider.id]: { api_key: "" } }),
+        body: JSON.stringify({ [provider.id]: keyless
+          ? Object.fromEntries(fields.map(f => [f.key, ""])) : { api_key: "" } }),
       });
       await onChanged();
       setTestStatus(null);
@@ -100707,7 +100792,12 @@ function WorkflowProviderSection({ provider, status, onChanged }) {
   const stateLabel = !integrated ? "soon"
                    : state === "ok" ? "✓ verified"
                    : state === "untested" ? "○ untested"
+                   : keyless ? "- not set up"
                    : "- no key";
+  const testButton = testable && html`
+    <button className="tbtn" disabled=${busy || (!hasKey && !keyless)} onClick=${test}>Test</button>`;
+  const imagesNote = imagesLabel && html`
+    <span className="workflow-settings-images" data-state=${status.judgeImages}>${imagesLabel}</span>`;
 
   return html`
     <div className=${"workflow-settings-section" + (integrated ? "" : " workflow-settings-section-pending")}>
@@ -100716,7 +100806,27 @@ function WorkflowProviderSection({ provider, status, onChanged }) {
         <span className="workflow-settings-skills">${provider.hint || ""}</span>
         <span className="workflow-settings-status" data-state=${state}>${stateLabel}</span>
       </div>
-      ${integrated && html`
+      ${integrated && fields.map((f, i) => html`
+        <div className="workflow-settings-row" key=${f.key}>
+          <input
+            type="text"
+            className="workflow-settings-key"
+            aria-label=${f.label}
+            placeholder=${f.default || f.label}
+            value=${fieldValue(f)}
+            onInput=${(e) => setFieldInputs(v => ({ ...v, [f.key]: e.target.value }))}
+            onBlur=${() => saveField(f)}
+            onKeyDown=${(e) => { if (e.key === "Enter") saveField(f); }}
+            disabled=${busy}
+          />
+          ${keyless && i === fields.length - 1 && html`
+            ${testButton}
+            <button className="tbtn" disabled=${busy || !hasKey} onClick=${clear}>Clear</button>
+            ${imagesNote}
+          `}
+        </div>
+      `)}
+      ${integrated && !keyless && html`
         <div className="workflow-settings-row">
           <input
             type="password"
@@ -100727,14 +100837,15 @@ function WorkflowProviderSection({ provider, status, onChanged }) {
             disabled=${busy}
           />
           <button className="tbtn tbtn-primary" disabled=${busy || !keyInput} onClick=${save}>Save</button>
-          ${testable && html`
-            <button className="tbtn" disabled=${busy || !hasKey} onClick=${test}>Test</button>
-          `}
+          ${testButton}
           <button className="tbtn" disabled=${busy || !hasKey} onClick=${clear}>Clear</button>
+          ${imagesNote}
         </div>
+      `}
+      ${integrated && html`
         ${testStatus === "ok" && html`
           <div className="workflow-settings-msg workflow-settings-msg-ok">
-            Key works.${status.last_test_at ? ` Last tested ${status.last_test_at}.` : ""}
+            ${keyless ? `${provider.label} answered.` : "Key works."}${status.last_test_at ? ` Last tested ${status.last_test_at}.` : ""}
           </div>
         `}
         ${testStatus === "fail" && html`
@@ -100742,7 +100853,7 @@ function WorkflowProviderSection({ provider, status, onChanged }) {
         `}
         ${provider.docsUrl && html`
           <div className="workflow-settings-hint">
-            Get a key at
+            Get a key at${" "}
             <a href=${provider.docsUrl} target="_blank" rel="noopener">${provider.docsUrl.replace(/^https?:\/\//, "")}</a>.
             Stored locally only. ${testable ? "Click Test to verify." : "First Run will validate the key."}
           </div>

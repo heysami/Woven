@@ -13,8 +13,11 @@ daemon - so CI exercises the Jev path on every commit.
      option card has to fill, so both paths emit the same SHAPE of decision.
   P4 degradation - no key, 401, exhausted 429, malformed body: every consumer
      returns the non-Jev result and none raises.
-  P5 no preamble divergence - the toggle changes exactly one block and nothing
+  P5 no preamble divergence - the toggles change exactly one block and nothing
      else, so the two paths cannot start building differently.
+  P8 shadow is inert - with typed judgment for visual checks in Shadow mode,
+     visual_qa's verdict, reasons, exit code and LLM verdict are exactly what
+     they are with it off (docs/features/typed-judgment-providers.md).
 """
 import json
 from pathlib import Path
@@ -30,7 +33,9 @@ sys.path.insert(0, str(EDITOR))
 sys.path.insert(0, str(EDITOR / "tools" / "qa"))
 
 import jev                      # noqa: E402
+import typed_judge              # noqa: E402
 import ds_contract              # noqa: E402
+import visual_qa                # noqa: E402
 import ds_lint                  # noqa: E402
 import kinds.capabilities as capabilities  # noqa: E402
 
@@ -462,40 +467,204 @@ class P4Degradation(unittest.TestCase):
 
 class P5PreambleParity(unittest.TestCase):
     """The preamble is what every agent reads. An accidental second copy of a
-    rule there, phrased for the Jev path, is how the two paths start building
-    differently."""
+    rule there, phrased for the typed path, is how the two paths start
+    building differently."""
 
     TIERS = ("setup", "scoped", "normal", "leaf")
+    STATES = ({"text": "TypeSafe Jev", "image": None},
+              {"text": None, "image": "Cloudflare Clef"},
+              {"text": "OpenAI Decisions", "image": "Cloudflare Clef"})
 
-    def test_the_toggle_changes_exactly_one_block(self):
+    def test_the_toggles_change_exactly_one_block(self):
         for tier in self.TIERS:
             off = capabilities.capabilities_preamble(tier=tier, jev=False)
-            on = capabilities.capabilities_preamble(tier=tier, jev=True)
-            self.assertEqual(on.replace(capabilities.JEV_FAST_PATH_STUB, "", 1), off,
-                             "tier %s diverges beyond the one block" % tier)
+            for state in self.STATES:
+                on = capabilities.capabilities_preamble(tier=tier, jev=state)
+                block = capabilities.typed_judgment_block(state)
+                self.assertEqual(on.replace(block, "", 1), off,
+                                 "tier %s diverges beyond the one block for %s" % (tier, state))
 
     def test_the_leaf_tier_never_carries_it(self):
         """A leaf builder picks no direction and runs no requirement QA."""
-        on = capabilities.capabilities_preamble(tier="leaf", jev=True)
-        self.assertNotIn(capabilities.JEV_FAST_PATH_STUB, on)
+        for state in self.STATES:
+            on = capabilities.capabilities_preamble(tier="leaf", jev=state)
+            self.assertNotIn("Typed judgment is available", on)
 
     def test_the_interactive_tiers_do_carry_it(self):
         for tier in ("setup", "scoped", "normal"):
             self.assertIn(capabilities.JEV_FAST_PATH_STUB,
-                          capabilities.capabilities_preamble(tier=tier, jev=True))
+                          capabilities.capabilities_preamble(tier=tier, jev=True)
+                          .replace(capabilities.typed_judgment_block(
+                              capabilities._typed_judgment_state() or {"text": "TypeSafe Jev", "image": None}),
+                              capabilities.JEV_FAST_PATH_STUB))
+            for state in self.STATES:
+                self.assertIn(capabilities.typed_judgment_block(state),
+                              capabilities.capabilities_preamble(tier=tier, jev=state))
 
     def test_the_block_states_the_limits_that_make_it_safe(self):
-        stub = capabilities.JEV_FAST_PATH_STUB
-        for rule in ("count", "colour", "image", "ADDS", "CONSIDER"):
-            self.assertIn(rule, stub, "the preamble block drops the %r rule" % rule)
+        for state in self.STATES:
+            stub = capabilities.typed_judgment_block(state)
+            for rule in ("count", "colour", "image", "ADDS", "CONSIDER", "/__judge"):
+                self.assertIn(rule, stub, "the preamble block drops the %r rule for %s" % (rule, state))
 
-    def test_the_block_is_absent_by_default_without_a_key(self):
-        real_enabled, real_available = jev.enabled, jev.available
-        jev.enabled, jev.available = (lambda: True), (lambda *a, **k: False)
-        try:
-            self.assertFalse(capabilities._jev_enabled())
-        finally:
-            jev.enabled, jev.available = real_enabled, real_available
+    def test_the_block_names_each_judge_and_says_what_it_covers(self):
+        both = capabilities.typed_judgment_block(self.STATES[2])
+        self.assertIn("text checks -> OpenAI Decisions; visual checks -> Cloudflare Clef", both)
+        self.assertIn("never Read the PNG yourself", both)
+        text_only = capabilities.typed_judgment_block(self.STATES[0])
+        self.assertIn("visual checks -> none", text_only)
+        self.assertIn("NO image input", text_only)
+        image_only = capabilities.typed_judgment_block(self.STATES[1])
+        self.assertIn("text checks -> none", image_only)
+        self.assertNotIn("NO image input", image_only)
+
+    def test_the_block_is_absent_without_a_judge(self):
+        """Both switches on, no key anywhere: no block, because a block naming
+        an endpoint that will 503 is worse than none."""
+        import os
+        saved = (typed_judge.MEDIA_CONFIG_PATH, typed_judge.COMPACT_CONFIG_PATH)
+        env = {k: os.environ.pop(k) for k in list(typed_judge.ENV_KEYS.values())
+               + list(typed_judge.ENDPOINT_ENV.values()) if k in os.environ}
+        with tempfile.TemporaryDirectory() as tmp:
+            typed_judge.MEDIA_CONFIG_PATH = os.path.join(tmp, "m.json")
+            typed_judge.COMPACT_CONFIG_PATH = os.path.join(tmp, "c.json")
+            Path(typed_judge.COMPACT_CONFIG_PATH).write_text(
+                json.dumps({"jevJudge": True, "typedJudgeVisual": True}))
+            try:
+                self.assertFalse(capabilities._jev_enabled())
+                Path(typed_judge.MEDIA_CONFIG_PATH).write_text(
+                    json.dumps({"cloudflare": {"api_key": "cf", "account_id": "a"}}))
+                self.assertEqual(capabilities._typed_judgment_state(),
+                                 {"text": "Cloudflare Clef Flash", "image": "Cloudflare Clef"})
+                Path(typed_judge.COMPACT_CONFIG_PATH).write_text(json.dumps({"jevJudge": False}))
+                self.assertIsNone(capabilities._typed_judgment_state())
+            finally:
+                typed_judge.MEDIA_CONFIG_PATH, typed_judge.COMPACT_CONFIG_PATH = saved
+                os.environ.update(env)
+
+
+# ── P8 - shadow is inert ────────────────────────────────────────────────────
+
+class P8ShadowIsInert(unittest.TestCase):
+    """Shadow mode records the typed answer and changes nothing: same verdict,
+    same reasons, same exit code, same LLM verdict, for every pixel verdict,
+    every recorded LLM reply and every typed answer. Flag may only ADD a
+    finding; it never changes the verdict or the exit code either."""
+
+    PIXEL = ("pass", "static", "no-reaction", "error", "blank")
+    # Recorded frame-judge replies, as run_judge returns them.
+    LLM = {
+        "confirms": {"available": True, "ok": True, "reasoning": "the ripple follows the cursor"},
+        "rejects": {"available": True, "ok": False, "reasoning": "no ripple, only a fade"},
+        "inconclusive": {"available": True, "ok": None, "message": "reply was not JSON"},
+        "unavailable": {"available": False, "ok": None, "message": "no LLM endpoint"},
+    }
+    # Typed answers: confident pass, confident fail, a coin flip, and a judge
+    # that is not set up.
+    TYPED = {"pass": 0.97, "fail": 0.03, "unsure": 0.52, "absent": None}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp(prefix="p8-")
+        frames = []
+        for i in range(4):
+            path = Path(cls.tmp) / ("f%d.png" % i)
+            path.write_bytes(typed_judge.solid_png((40 * i, 80, 120)))
+            frames.append(str(path))
+        cls.report = {"idleFrames": [{"t": 0.0, "path": frames[0]},
+                                     {"t": 0.7, "path": frames[1], "diffFromPrev": 0.2}],
+                      "interactions": [{"step": "click", "diff": 0.3,
+                                        "beforePath": frames[2], "afterPath": frames[3]}]}
+
+    def _args(self, mode):
+        from types import SimpleNamespace
+        return SimpleNamespace(judge="a ripple follows the cursor", typed_judge=mode,
+                               judge_project="p8")
+
+    def _typed(self, kind):
+        def fn(state, questions, **kw):
+            if self.TYPED[kind] is None:
+                raise typed_judge.JudgeUnavailable("no image judge", reason="no-image-judge")
+            self.assertEqual(kw["tier"], "image")
+            self.assertLessEqual(len(kw["images"]), 4)
+            return {"answers": {"effect": {"type": "noul", "noul": self.TYPED[kind]}},
+                    "provider": "clef", "model": "clef",
+                    "thresholds": typed_judge.thresholds("frame_effect", "clef")}
+        return fn
+
+    def _run(self, pixel, llm, typed, mode):
+        import copy
+        report = copy.deepcopy(self.report)
+        reasons = ["pixel reason"]
+        logged = []
+        verdict = visual_qa.apply_frame_judges(
+            report, pixel, reasons, self.tmp, self._args(mode),
+            llm_judge=lambda r, o, a: dict(self.LLM[llm]),
+            typed_judge_fn=self._typed(typed), shadow_log=logged.append)
+        return verdict, reasons, report, logged
+
+    def test_shadow_changes_nothing(self):
+        for pixel in self.PIXEL:
+            for llm in self.LLM:
+                for typed in self.TYPED:
+                    off = self._run(pixel, llm, typed, None)
+                    shadow = self._run(pixel, llm, typed, "shadow")
+                    case = (pixel, llm, typed)
+                    self.assertEqual(shadow[0], off[0], case)
+                    self.assertEqual(visual_qa.exit_code(shadow[0]), visual_qa.exit_code(off[0]), case)
+                    self.assertEqual(shadow[1], off[1], case)
+                    self.assertEqual(shadow[2]["judge"].get("ok"), off[2]["judge"].get("ok"), case)
+                    self.assertNotIn("findings", shadow[2], case)
+                    self.assertIn("typed", shadow[2]["judge"], case)
+
+    def test_flag_adds_a_finding_and_nothing_else(self):
+        for pixel in self.PIXEL:
+            for llm in self.LLM:
+                for typed in self.TYPED:
+                    off = self._run(pixel, llm, typed, None)
+                    flag = self._run(pixel, llm, typed, "flag")
+                    case = (pixel, llm, typed)
+                    self.assertEqual(flag[0], off[0], case)
+                    self.assertEqual(flag[1], off[1], case)
+                    findings = flag[2].get("findings") or []
+                    self.assertEqual(bool(findings), typed == "fail", case)
+                    for f in findings:
+                        self.assertEqual(f["rule"], "typed-judge")
+
+    def test_shadow_logs_the_pair_calibration_needs(self):
+        _v, _r, _report, logged = self._run("pass", "confirms", "fail", "shadow")
+        self.assertEqual(len(logged), 1)
+        self.assertEqual({k: logged[0][k] for k in ("provider", "kind", "noul", "llmOk", "project")},
+                         {"provider": "clef", "kind": "frame_effect", "noul": 0.03,
+                          "llmOk": True, "project": "p8"})
+        self.assertEqual(self._run("pass", "confirms", "absent", "shadow")[3], [])
+
+    def test_only_a_calibrated_trust_pass_in_flag_mode_skips_the_llm(self):
+        calls = []
+
+        def llm(r, o, a):
+            calls.append(1)
+            return dict(self.LLM["confirms"])
+
+        def trusted(state, questions, **kw):
+            th = dict(typed_judge.thresholds("frame_effect", "clef"), trustPass=True)
+            return {"answers": {"effect": {"type": "noul", "noul": 0.99}},
+                    "provider": "clef", "model": "clef", "thresholds": th}
+
+        for mode, expect_calls in (("shadow", 1), ("flag", 0)):
+            calls.clear()
+            report = {"idleFrames": self.report["idleFrames"]}
+            verdict = visual_qa.apply_frame_judges(report, "pass", [], self.tmp, self._args(mode),
+                                                   llm_judge=llm, typed_judge_fn=trusted,
+                                                   shadow_log=lambda e: None)
+            self.assertEqual(len(calls), expect_calls, mode)
+            self.assertEqual(verdict, "pass")
+        self.assertTrue(report["judge"]["skippedLlm"])
+
+    def test_the_typed_judge_gets_at_most_four_key_frames_in_time_order(self):
+        frames = visual_qa._typed_frames(self.report)
+        self.assertEqual([label.split(" t=")[0] for label, _p in frames],
+                         ["idle start", "idle with most motion", "before click", "after click"])
 
 
 if __name__ == "__main__":

@@ -513,10 +513,10 @@ is absent, the switch is off, or the call fails.
 
 | piece | where |
 |---|---|
-| client (`ask` / `noul_pass` / `choice_ranked` / `band` / `thresholds`) | `editor/jev.py` |
+| client (`ask` / `noul_pass` / `choice_ranked` / `band` / `thresholds`) | `editor/jev.py`, now a shim over the provider-aware `editor/typed_judge.py` (see `docs/features/typed-judgment-providers.md`) |
 | global switch | `jevJudge` in `COMPACT_DEFAULTS` (`editor/serve.py`), Settings -> Context and cost -> Typed judgment |
 | key | `typesafe` in `_PROVIDER_ENV_KEYS` + `PROVIDERS` in `editor/prompts/media-models.js` (key row + a one-noul key test) |
-| proxy | `POST /__jev` (`_jev_run` in `editor/serve.py`), in the `/__capabilities` endpoint roster |
+| proxy | `POST /__judge` (`_judge_run` in `editor/serve.py`); `POST /__jev` is the same handler fixed to tier text |
 | preamble block | `JEV_FAST_PATH_STUB` + `_jev_enabled()` in `editor/kinds/capabilities.py` |
 | thresholds | `editor/tools/qa/jev_thresholds.json`, read via `jev.thresholds(kind)` |
 | direction axes | `build_direction_axes()` in `scripts/build-library-indexes.py` -> `docs/research/direction-axes.jev.json` |
@@ -573,6 +573,29 @@ Two smaller readings worth recording:
 # Rejected: the image path
 
 Recorded so it does not get re-proposed.
+
+> **Amended 2026-10-13** (`docs/features/typed-judgment-providers.md`). Two of
+> the objections below no longer hold and one still does:
+>
+> - **The adapter objection is gone.** Cloudflare Clef and OpenAI Decisions
+>   answer the same typed questions and READ THE IMAGE THEMSELVES. There is no
+>   vision-model-describes-then-Jev-judges chain, so the two-stage error
+>   multiplication and the 1.73x token overhead do not apply. Jev itself is
+>   still text only; when it gains image input the change is one number in
+>   `editor/judges.json`.
+> - **The base-rate objection stands** and is answered by posture, not by
+>   accuracy: the visual tier ships as **Shadow** (records its answer next to
+>   the LLM frame judge, changes nothing), the user can move it to **Flag**
+>   (a confident typed FAIL adds a finding, never removes one, never changes
+>   an exit code), and only a **calibrated `trustPass`** for one (provider,
+>   kind) - written by `jev_calibrate.py` from a labelled set, never by the
+>   UI - lets a confident typed PASS stand in for the model call it shadows.
+>   Twenty alarms with nine real is the reason none of it blocks.
+> - **Still out:** geometry and colour (overlap, contrast, overflow, palette)
+>   stay deterministic, the lens trio is not pre-screened (rubric questions
+>   are the ~74% case below), and direction picking does not judge the
+>   `-ui.png` previews. The CSSOM render dump below is still the right tool for
+>   rendered pages and is still separate work.
 
 **Jev cannot take an image.** Stated twice in the docs: Models says "Text only.
 String, JSON object, or array of text values. No image, audio, or video
