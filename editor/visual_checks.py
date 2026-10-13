@@ -40,6 +40,8 @@ SHAPES = {
                    "text": "Image 2 shows the same {x} as image 1."},
     "changed":    {"type": "noul", "images": 2,
                    "text": "Image 2 shows {x} that image 1 does not."},
+    "same_style": {"type": "noul", "images": 2,
+                   "text": "Image 2 shows the same {x} as image 1, in the same visual style."},
     "which":      {"type": "choice", "images": 1, "text": "Which of these is true of {x}?"},
 }
 

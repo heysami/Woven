@@ -1025,6 +1025,13 @@ class DaemonRoutes(Isolated):
         self.assertEqual([c["id"] for c in got], ["brand", "q1"])
         self.assertEqual([c["id"] for c in self.serve._page_visual_checks(
             path, os.path.join(folder, "none.html"))], ["brand"])
+        Path(path).write_text(json.dumps({"pages": {"apply.html": {
+            "steps": [{"label": "pick_yes", "type": "click", "selector": "#yes"}],
+            "checks": [{"id": "f", "shape": "shows", "x": "a field", "at": "after:pick_yes"}]}}}))
+        apply = os.path.join(folder, "apply.html")
+        self.assertEqual([c["id"] for c in self.serve._page_visual_checks(path, apply)], ["f"])
+        self.assertEqual(self.serve._page_visual_steps(path, apply)[0]["selector"], "#yes")
+        self.assertEqual(self.serve._page_visual_steps(path, os.path.join(folder, "none.html")), [])
         Path(path).write_text(json.dumps([{"id": "a", "shape": "shows", "x": "x y", "at": "page"}]))
         self.assertEqual(len(self.serve._page_visual_checks(path, os.path.join(folder, "apply.html"))), 1)
         Path(path).write_text("{broken")

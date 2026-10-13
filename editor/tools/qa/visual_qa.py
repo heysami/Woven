@@ -337,6 +337,24 @@ def default_battery(box: Dict[str, float],
 
 def run_step(page: Any, step: Dict[str, Any]) -> None:
     kind = step.get("type")
+    sel = step.get("selector")
+    if sel:
+        # Element steps, for a screen's criteria ("click #yes", "fill #amount").
+        if kind == "click":
+            page.click(sel, timeout=3000)
+        elif kind == "fill":
+            page.fill(sel, str(step.get("value", "")), timeout=3000)
+        elif kind == "select":
+            page.select_option(sel, step.get("value"), timeout=3000)
+        elif kind == "check":
+            page.check(sel, timeout=3000)
+        elif kind == "hover":
+            page.hover(sel, timeout=3000)
+        elif kind == "key":
+            page.press(sel, step.get("key", "Enter"), timeout=3000)
+        else:
+            log("unknown step type: %r (skipped)" % kind)
+        return
     if kind == "move":
         page.mouse.move(step["x"], step["y"])
     elif kind == "click":
@@ -751,6 +769,8 @@ TYPED_KIND = "frame_check"
 MAX_CHECKS = 64
 _CHECK_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _CAPTURE = re.compile(r"^(page|idle:(start|end|motion|\d+)|(before|after):.+)$")
+# A design-system reference rendered from the DS gallery (compare only).
+_REF = re.compile(r"^ref:[A-Za-z_][\w-]*$")
 _CROP_PAD = 8
 
 
@@ -782,7 +802,7 @@ def parse_checks(raw: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         at = str(c.get("at") or "").strip()
         cmp_ = str(c.get("compare") or "").strip()
         row: Dict[str, Any] = {"id": cid, "at": at}
-        for k in ("shape", "x", "list", "statement", "criteria"):
+        for k in ("shape", "x", "list", "statement", "criteria", "context", "source", "optional"):
             if c.get(k) is not None:
                 row[k] = c[k]
         if cmp_:
@@ -799,7 +819,7 @@ def parse_checks(raw: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
             why = "id must be letters, digits, _ . - (max 64)"
         elif not _CAPTURE.match(at):
             why = "at must be page, idle:start|end|motion|<n>, before:<step> or after:<step>"
-        elif cmp_ and not _CAPTURE.match(cmp_):
+        elif cmp_ and not (_CAPTURE.match(cmp_) or _REF.match(cmp_)):
             why = "compare must name a capture like at does"
         else:
             try:
@@ -843,45 +863,171 @@ _BOXES_JS = """(sels) => Object.fromEntries(sels.map(s => {
 }))"""
 
 
-def typed_checks_on_page(context: Any, url: str, args: argparse.Namespace,
-                         settle_ms: int, out_dir: str, judge_fn: Any = None) -> Dict[str, Any]:
-    """The --checks about the settled page, on one fresh capture. Used where
-    the idle/interaction battery does not run (cases mode)."""
-    checks, rejected = load_checks(getattr(args, "checks", None))
-    if not checks and not rejected:
-        return {"mode": args.typed_judge, "checks": [], "rejected": [], "message": "no checks to run"}
+def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
+                       steps: List[Dict[str, Any]], selectors: List[str],
+                       gallery_url: Optional[str] = None,
+                       ref_classes: Optional[List[str]] = None) -> Dict[str, Any]:
+    """The captures the typed checks are asked on, taken on a FRESH page after
+    the main QA so nothing here can touch its verdict: the settled screen as a
+    full-page screenshot, then each criteria step with a before/after (all with
+    every check's element box, in page coordinates), then one crop per
+    design-system component from the DS gallery. Never raises."""
+    out: Dict[str, Any] = {"settled": None, "interactions": [], "refs": {}}
     page = context.new_page()
     try:
         page.goto(url, wait_until="load", timeout=30000)
         page.wait_for_timeout(settle_ms)
-        selectors = sorted({c["selector"] for c in checks if c.get("selector")})
         path = os.path.join(out_dir, "typed_page.png")
-        page.screenshot(path=path)
-        boxes = capture_boxes(page, selectors)
+        page.screenshot(path=path, full_page=True)
+        out["settled"] = {"t": 0.0, "path": path, "diffFromPrev": None,
+                          "boxes": capture_boxes(page, selectors, doc=True) or {}}
+        for idx, step in enumerate(steps or []):
+            label = step_label(step, idx)
+            before = os.path.join(out_dir, "typed_%02d_%s_before.png" % (idx, label))
+            after = os.path.join(out_dir, "typed_%02d_%s_after.png" % (idx, label))
+            page.screenshot(path=before, full_page=True)
+            b_boxes = capture_boxes(page, selectors, doc=True) or {}
+            try:
+                run_step(page, step)
+            except Exception as exc:
+                log("criteria step %s failed (%s)" % (label, exc))
+            page.wait_for_timeout(int(step.get("settleMs", 300)))
+            page.screenshot(path=after, full_page=True)
+            out["interactions"].append({"step": label, "beforePath": before, "afterPath": after,
+                                        "beforeBoxes": b_boxes,
+                                        "afterBoxes": capture_boxes(page, selectors, doc=True) or {}})
+    except Exception as exc:
+        log("typed capture pass failed (%s)" % exc)
     finally:
         page.close()
-    frame: Dict[str, Any] = {"t": 0.0, "path": path, "diffFromPrev": None}
-    if boxes is not None:
-        frame["boxes"] = boxes
+    if gallery_url and ref_classes:
+        g = context.new_page()
+        try:
+            g.goto(gallery_url, wait_until="load", timeout=30000)
+            g.wait_for_timeout(settle_ms)
+            for cls in ref_classes:
+                try:
+                    loc = g.locator("." + cls).first
+                    if not loc.count() or not loc.is_visible():
+                        continue
+                    p = os.path.join(out_dir, "ref_%s.png" % cls)
+                    loc.screenshot(path=p, timeout=5000)
+                    out["refs"][cls] = {"label": "the design system's own %s" % cls, "path": p,
+                                        "boxes": None}
+                except Exception as exc:
+                    log("gallery reference for .%s unavailable (%s)" % (cls, exc))
+        except Exception as exc:
+            log("design-system gallery unavailable (%s)" % exc)
+        finally:
+            g.close()
+    return out
+
+
+def prepare_typed(args: argparse.Namespace) -> None:
+    """Load everything the typed checks need into args: the screen's criteria
+    (--checks), the design system's plan (--ds-visual) turned into checks, and
+    the criteria steps (--typed-steps)."""
+    checks, rejected = load_checks(getattr(args, "checks", None))
+    args.ds_plan = None
+    args.typed_steps_list = []
+    for attr, key in (("ds_visual", "ds_plan"), ("typed_steps", "typed_steps_list")):
+        path = getattr(args, attr, None)
+        if not path:
+            continue
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+        except Exception as exc:
+            log("could not read %s (%s)" % (path, exc))
+            continue
+        if key == "typed_steps_list":
+            data = data.get("steps") if isinstance(data, dict) else data
+            data = [st for st in (data or []) if isinstance(st, dict)]
+        setattr(args, key, data)
+    checks = checks + ds_visual_checks(args.ds_plan)
+    args.parsed_checks = (checks[:MAX_CHECKS] if len(checks) > MAX_CHECKS else checks, rejected)
+
+
+def ds_visual_checks(plan: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The design system's checks for a page, from ds_lint.visual_plan - built
+    by code, never written: each element styled outside the design system is
+    asked ds-copy / new-ui / layout on its crop (layout is what passes), and
+    each documented component on the page is compared with the same component
+    rendered in the DS gallery. Elements not visible on the screen are skipped,
+    never reported missing."""
+    if not plan:
+        return []
+    names = "The design system on this page provides these components: %s." % plan.get("names", "")
+    raw: List[Dict[str, Any]] = []
+    for i, u in enumerate(plan.get("offSystem") or []):
+        raw.append({"id": "ds_off_%d" % (i + 1), "shape": "which", "list": "ds_origin",
+                    "x": "the element in the image", "expect": ["layout"], "at": "page",
+                    "selector": u["selector"], "context": names, "optional": True,
+                    "source": "design system: %s" % u.get("source")})
+    for c in plan.get("components") or []:
+        raw.append({"id": "ds_cmp_%s" % re.sub(r"[^\w.-]", "_", c["cls"]), "shape": "same_style",
+                    "x": "%s component" % c["title"], "at": "page", "compare": "ref:%s" % c["cls"],
+                    "selector": "." + c["cls"], "optional": True,
+                    "source": "design system: .%s" % c["cls"]})
+    checks, _rejected = parse_checks(raw)
+    return checks
+
+
+def typed_checks_on_page(context: Any, url: str, args: argparse.Namespace,
+                         settle_ms: int, out_dir: str, judge_fn: Any = None) -> Dict[str, Any]:
+    """Every typed check for a page asked on a typed capture pass. Used where
+    the battery does not run (cases mode)."""
+    checks, rejected = getattr(args, "parsed_checks", None) or load_checks(getattr(args, "checks", None))
+    if not checks and not rejected:
+        return {"mode": args.typed_judge, "checks": [], "rejected": [], "message": "no checks to run"}
+    report = {"idleFrames": [], "interactions": [],
+              "typedPass": typed_pass_for(context, url, args, settle_ms, out_dir, checks)}
     vw = int((getattr(args, "viewport", None) or (1280, 720))[0])
-    return run_visual_checks({"idleFrames": [frame], "interactions": []}, checks, rejected,
-                             args.typed_judge, vw, judge_fn)
+    return run_visual_checks(report, checks, rejected, args.typed_judge, vw, judge_fn)
 
 
-def capture_boxes(page: Any, selectors: List[str]) -> Optional[Dict[str, Any]]:
+def typed_pass_for(context: Any, url: str, args: argparse.Namespace, settle_ms: int,
+                   out_dir: str, checks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    plan = getattr(args, "ds_plan", None) or {}
+    refs = sorted({c["compare"][4:] for c in checks if str(c.get("compare") or "").startswith("ref:")})
+    return typed_capture_pass(context, url, settle_ms, out_dir, getattr(args, "typed_steps_list", None) or [],
+                              sorted({c["selector"] for c in checks if c.get("selector")}),
+                              plan.get("gallery"), refs)
+
+
+_DOC_BOXES_JS = _BOXES_JS.replace("{x: r.x, y: r.y,", "{x: r.x + window.scrollX, y: r.y + window.scrollY,")
+
+
+def capture_boxes(page: Any, selectors: List[str], doc: bool = False) -> Optional[Dict[str, Any]]:
     """Where each check's element is at THIS capture, or None when no check
-    needs a crop. Never raises: a failed probe means no crop, not no run."""
+    needs a crop. `doc` gives page coordinates, for full-page screenshots.
+    Never raises: a failed probe means no crop, not no run."""
     if not selectors:
         return None
     try:
-        return page.evaluate(_BOXES_JS, selectors)
+        return page.evaluate(_DOC_BOXES_JS if doc else _BOXES_JS, selectors)
     except Exception as exc:
         log("element boxes unavailable (%s)" % exc)
         return {}
 
 
 def _capture(report: Dict[str, Any], ref: str) -> Optional[Dict[str, Any]]:
-    """{label, path, boxes} for a capture name, or None."""
+    """{label, path, boxes} for a capture name, or None. The typed capture
+    pass (full-page, taken after the main QA) answers `page`, its criteria
+    steps and the gallery `ref:` crops; the main run answers the rest."""
+    tp = report.get("typedPass") or {}
+    if ref.startswith("ref:"):
+        r = (tp.get("refs") or {}).get(ref[4:])
+        return dict(r) if r else None
+    if ref == "page" and tp.get("settled"):
+        return {"label": "the page", "path": tp["settled"]["path"], "boxes": tp["settled"].get("boxes"),
+                "full": True}
+    if ref.startswith(("before:", "after:")):
+        side, step = ref.split(":", 1)
+        for ix in tp.get("interactions") or []:
+            if ix.get("step") == step:
+                return {"label": "%s %s" % (side, step), "path": ix["%sPath" % side],
+                        "boxes": ix.get("%sBoxes" % side), "full": True}
     idle = report.get("idleFrames") or []
     if ref == "page":
         ref = "idle:start"
@@ -972,19 +1118,23 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
                     missing = ref
                     break
                 crop = _crop(cap["path"], box, viewport_w)
+                if crop is None and _PIL_OK:
+                    missing = ref  # a zero-size or off-image box: nothing to show
+                    break
                 images.append(crop if crop is not None else {"path": cap["path"]})
                 row["images"].append(cap["label"] + (" cropped to " + sel if crop else " (full frame)"))
             else:
                 images.append({"path": cap["path"]})
                 row["images"].append(cap["label"])
         if missing:
-            row["status"] = "element-missing"
-            row["message"] = "%s is not on the page at %s" % (c["selector"], missing)
+            row["status"] = "not-visible" if c.get("optional") else "element-missing"
+            row["message"] = "%s is not visible on the page at %s" % (c["selector"], missing)
             order.append(("", row))
             continue
         row["claim"] = c["question"]["instructions"]
-        key = json.dumps([refs, c.get("selector") or ""])
-        g = groups.setdefault(key, {"images": images, "labels": row["images"], "rows": []})
+        key = json.dumps([refs, c.get("selector") or "", c.get("context") or ""])
+        g = groups.setdefault(key, {"images": images, "labels": row["images"], "rows": [],
+                                    "context": c.get("context") or ""})
         g["rows"].append(row)
         order.append((key, row))
     for key, g in groups.items():
@@ -992,6 +1142,8 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
         state = ("A screenshot of a web page%s." % (
             "" if len(g["images"]) == 1 else
             ": image 1 is %s, image 2 is %s" % (labels[0], labels[1])))
+        if g["context"]:
+            state += " " + g["context"]
         for start in range(0, len(g["rows"]), 64):
             part = g["rows"][start:start + 64]
             try:
@@ -1991,7 +2143,9 @@ def run_cases(args: argparse.Namespace) -> int:
         # capture; only checks about that capture (`page` / `idle:start`) can
         # be answered here. Records beside the cases and never touches their
         # verdict or the exit code.
-        if getattr(args, "typed_judge", None) and getattr(args, "checks", None):
+        if getattr(args, "typed_judge", None):
+            prepare_typed(args)
+        if getattr(args, "typed_judge", None) and args.parsed_checks[0]:
             try:
                 report["typedChecks"] = typed_checks_on_page(context, url, args, settle_ms, out_dir)
                 _flag_and_log(report, report["typedChecks"], args.typed_judge, args, None)
@@ -2113,7 +2267,7 @@ def run(args: argparse.Namespace) -> int:
 
     # Typed visual checks: parsed up front so each capture can record where
     # the checked elements are at that moment (crops come from that moment).
-    args.parsed_checks = load_checks(getattr(args, "checks", None))
+    prepare_typed(args)
     check_selectors = sorted({c["selector"] for c in args.parsed_checks[0] if c.get("selector")})
 
     idle_times = spec.get("idleTimes") or DEFAULT_IDLE_TIMES
@@ -2288,6 +2442,13 @@ def run(args: argparse.Namespace) -> int:
                     interactions[-1]["beforeBoxes"] = before_boxes
                     interactions[-1]["afterBoxes"] = after_boxes
         report["interactions"] = interactions
+
+        # The typed checks' own captures, on a fresh page AFTER everything
+        # the verdict reads: the settled screen full-page, the criteria steps,
+        # the design-system gallery crops.
+        if getattr(args, "typed_judge", None) and args.parsed_checks[0]:
+            report["typedPass"] = typed_pass_for(context, url, args, settle_ms, out_dir,
+                                                 args.parsed_checks[0])
 
         context.close()
         browser.close()
@@ -2468,6 +2629,15 @@ def build_parser() -> argparse.ArgumentParser:
                         "each tied to a capture (page, idle:start, after:<step>, ...) "
                         "and optionally cropped to a selector. See run_visual_checks. "
                         "Needs --typed-judge.")
+    p.add_argument("--ds-visual", default=None, metavar="PLAN_JSON",
+                   help="The design system's visual plan for this page (ds_lint.visual_plan "
+                        "plus the gallery URL): off-system elements to crop and ask "
+                        "ds-copy / new-ui / layout, components to compare with the gallery. "
+                        "Needs --typed-judge.")
+    p.add_argument("--typed-steps", default=None, metavar="STEPS_JSON",
+                   help="Criteria steps for the page (click / fill / select / check / hover / "
+                        "key on a selector), run on a fresh page after the main QA so "
+                        "criteria can be about after:<step>.")
     p.add_argument("--typed-judge", default=None, choices=["shadow", "flag"],
                    help="Ask the image-tier typed judge (editor/typed_judge.py) each "
                         "--checks statement. shadow records the answers and changes "

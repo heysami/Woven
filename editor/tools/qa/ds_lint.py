@@ -1193,6 +1193,55 @@ def run_jev_pass(contract, units, findings, index, log=None, project=None):
     return status
 
 
+def visual_plan(project_root, proto, page_path, max_off=12, max_comp=16):
+    # type: (str, str, str, int, int) -> Optional[Dict[str, object]]
+    """What the design system's visual checks need for ONE page, from code:
+    the elements styled outside the design system (by selector, the same
+    detection the --jev pass uses) and the design-system components the page
+    uses (by class). Visual QA crops each one on the screenshot: an
+    off-system element is asked ds-copy / new-ui / layout, a component is
+    compared with the same component rendered in the DS gallery. None when no
+    design system is bound."""
+    ds = resolve_ds(project_root, proto)
+    if not ds or not os.path.isfile(page_path):
+        return None
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        import ds_contract
+        contract = ds_contract.load_or_build(ds["dir"], ds["id"])
+    except Exception:
+        return None
+    index = contract_index(contract)
+    comps = index["components"]  # type: ignore[assignment]
+    vocab = load_ds_vocab(ds["dir"])
+    html = _read(page_path)
+    rules = [("<style>", sel, body) for sel, body in parse_css_rules(extract_style_blocks(html))]
+    page_dir = os.path.dirname(page_path)
+    linked = {os.path.basename(h.split("?")[0]) for h in
+              re.findall(r'<link\b[^>]*\bhref\s*=\s*["\']([^"\']+\.css[^"\']*)', html, re.I)}
+    for f in sorted(linked):
+        if os.path.isfile(os.path.join(page_dir, f)):
+            rules += [(f, sel, body) for sel, body in parse_css_rules(_read(os.path.join(page_dir, f)))]
+    units = off_system_units(os.path.basename(page_path), html, rules,
+                             vocab["classes"], index)  # type: ignore[arg-type]
+    off = [{"selector": u["selector"], "source": u["source"], "family": u["family"]}
+           for u in units if u.get("selector")][:max_off]
+    used = []  # type: List[Dict[str, object]]
+    seen = set()  # type: Set[str]
+    for row in element_inventory(html):
+        for c in row.get("classes") or []:  # type: ignore[union-attr]
+            comp = comps.get(c)  # type: ignore[union-attr]
+            # Only components the gallery documents (it gives them a heading):
+            # those are the ones with a rendered reference to compare against.
+            if comp and c not in seen and comp.get("title"):
+                seen.add(c)
+                used.append({"cls": c, "title": str(comp["title"])})
+    return {"dsId": ds["id"], "names": _ds_names(contract), "offSystem": off,
+            "components": used[:max_comp]}
+
+
 def main(argv=None):
     # type: (Optional[List[str]]) -> int
     ap = argparse.ArgumentParser(description="Woven design-system drift linter")

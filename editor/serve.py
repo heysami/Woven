@@ -15631,13 +15631,35 @@ def _page_visual_checks(path, abs_target):
     if not isinstance(doc, dict):
         return []
     out = [c for c in (doc.get("checks") or []) if isinstance(c, dict)]
-    pages = doc.get("pages") if isinstance(doc.get("pages"), dict) else {}
+    entry = _page_visual_entry(doc, path, abs_target)
+    if isinstance(entry, dict):
+        entry = entry.get("checks")
+    if isinstance(entry, list):
+        out += [c for c in entry if isinstance(c, dict)]
+    return out
+
+
+def _page_visual_entry(doc, path, abs_target):
+    """pages[<page>] of a visual-checks.json: a list of checks, or
+    {"steps": [...], "checks": [...]} when the criteria need clicks first."""
+    pages = doc.get("pages") if isinstance(doc, dict) and isinstance(doc.get("pages"), dict) else {}
     rel = os.path.relpath(abs_target, os.path.dirname(path)).replace(os.sep, "/")
     for key in (rel, os.path.basename(abs_target)):
-        if isinstance(pages.get(key), list):
-            out += [c for c in pages[key] if isinstance(c, dict)]
-            break
-    return out
+        if key in pages:
+            return pages[key]
+    return None
+
+
+def _page_visual_steps(path, abs_target):
+    """The criteria steps a page's entry declares (click / fill / select /
+    check / hover / key on a selector, each with a label), or []."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            entry = _page_visual_entry(json.load(f), path, abs_target)
+    except Exception:
+        return []
+    steps = entry.get("steps") if isinstance(entry, dict) else None
+    return [st for st in (steps or []) if isinstance(st, dict)]
 
 
 class H(http.server.SimpleHTTPRequestHandler):
@@ -27477,6 +27499,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         checks_raw = (_qs_get(qs, "checks") or "").strip()
         checks_path = None
         page_checks = []
+        page_steps = []
         if abs_target:
             # The screen's stored criteria: visual-checks.json next to the
             # target (or one level up), its `pages` entry for THIS page plus
@@ -27486,6 +27509,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 cand = os.path.join(cand_dir, "visual-checks.json")
                 if os.path.isfile(cand):
                     page_checks = _page_visual_checks(cand, abs_target)
+                    page_steps = _page_visual_steps(cand, abs_target)
                     break
         if checks_raw:
             try:
@@ -27497,9 +27521,39 @@ class H(http.server.SimpleHTTPRequestHandler):
             checks_path = os.path.join(out_dir, "checks.json")
             with open(checks_path, "w", encoding="utf-8") as f:
                 json.dump({"checks": page_checks}, f)
-        if checks_path and _tcfg.get("typedJudgeVisual"):
-            cmd += ["--checks", checks_path,
-                    "--typed-judge", _tcfg.get("typedJudgeVisualMode") or "shadow"]
+        # The design system's checks for a page, built by code from the
+        # linter's detection (ds_lint.visual_plan) plus the DS gallery to
+        # compare components with. Pages only: a node is one piece, not a screen.
+        ds_plan_path = None
+        if _tcfg.get("typedJudgeVisual") and abs_target and info.get("target") == "page":
+            try:
+                _proj_root = resolve_project_root(qs)
+                _proto = os.path.relpath(abs_target, os.path.join(_proj_root, "source")).split(os.sep)[0]
+                _qa_dir = os.path.join(INSTALL_ROOT, "editor", "tools", "qa")
+                if _qa_dir not in sys.path:
+                    sys.path.insert(0, _qa_dir)
+                import ds_lint as _ds_lint
+                _plan = _ds_lint.visual_plan(_proj_root, _proto, abs_target)
+                if _plan and (_plan.get("offSystem") or _plan.get("components")):
+                    _plan["gallery"] = ("http://127.0.0.1:%d/design-systems/%s/gallery.html?project=%s"
+                                        % (PORT, _plan["dsId"],
+                                           urllib.parse.quote(_qs_get(qs, "project") or "")))
+                    ds_plan_path = os.path.join(out_dir, "ds-visual.json")
+                    with open(ds_plan_path, "w", encoding="utf-8") as f:
+                        json.dump(_plan, f)
+            except Exception as _dsv_err:
+                print("[qa] design-system visual plan skipped: %s" % _dsv_err, flush=True)
+        if _tcfg.get("typedJudgeVisual") and (checks_path or ds_plan_path or page_steps):
+            if checks_path:
+                cmd += ["--checks", checks_path]
+            if ds_plan_path:
+                cmd += ["--ds-visual", ds_plan_path]
+            if page_steps:
+                steps_path = os.path.join(out_dir, "typed-steps.json")
+                with open(steps_path, "w", encoding="utf-8") as f:
+                    json.dump({"steps": page_steps}, f)
+                cmd += ["--typed-steps", steps_path]
+            cmd += ["--typed-judge", _tcfg.get("typedJudgeVisualMode") or "shadow"]
             if "--judge-project" not in cmd and (_qs_get(qs, "project") or ""):
                 cmd += ["--judge-project", _qs_get(qs, "project")]
         if nointeract and nointeract not in ("0", "false", "no"):

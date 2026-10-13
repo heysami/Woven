@@ -891,7 +891,7 @@ class P8VisualChecks(unittest.TestCase):
             def goto(self, *a, **k): pass
             def wait_for_timeout(self, ms): pass
             def close(self): pass
-            def screenshot(self, path):
+            def screenshot(self, path, **kw):
                 Path(path).write_bytes(png)
             def evaluate(self, js, arg=None):
                 return {"#hero": {"x": 10, "y": 10, "width": 50, "height": 40}}
@@ -925,6 +925,82 @@ class P8VisualChecks(unittest.TestCase):
         sizes = sorted(len(q) for _s, q, _kw in calls)
         self.assertEqual(sizes, [1, 2])
         self.assertEqual(report["typedChecks"]["requests"], 2)
+
+    def test_criteria_steps_and_design_system_checks_run_on_their_own_pass(self):
+        """Criteria steps click on a FRESH page after the main QA, so they can
+        never move its verdict; the design system's checks are built by code
+        from the linter's plan and compared with the DS gallery's own render."""
+        from types import SimpleNamespace
+        png = typed_judge.solid_png((30, 120, 200), size=200)
+        clicked = []
+
+        class Page:
+            def goto(self, *a, **k): pass
+            def wait_for_timeout(self, ms): pass
+            def close(self): pass
+            def screenshot(self, path, **kw):
+                Path(path).write_bytes(png)
+            def click(self, sel, **kw):
+                clicked.append(sel)
+            def evaluate(self, js, arg=None):
+                box = {"x": 20, "y": 20, "width": 60, "height": 40}
+                return {s: (None if s == ".modal" else box) for s in arg}
+            def locator(self, sel):
+                page = self
+
+                class Loc:
+                    first = None
+                    def count(self): return 1
+                    def is_visible(self): return True
+                    def screenshot(self, path, **kw): Path(path).write_bytes(png)
+                loc = Loc()
+                loc.first = loc
+                return loc
+
+        checks_file = Path(self.tmp) / "criteria.json"
+        checks_file.write_text(json.dumps([
+            {"id": "org_field", "shape": "shows", "x": "a text field for the sponsoring organisation",
+             "at": "after:pick_yes", "selector": "#orgFollowUp"}]))
+        steps_file = Path(self.tmp) / "steps.json"
+        steps_file.write_text(json.dumps({"steps": [{"label": "pick_yes", "type": "click",
+                                                     "selector": "#sponsorYes"}]}))
+        plan_file = Path(self.tmp) / "plan.json"
+        plan_file.write_text(json.dumps({
+            "dsId": "suss", "names": "Button (.btn), Popup / Modal (.modal)",
+            "gallery": "http://127.0.0.1:1/design-systems/suss/gallery.html",
+            "offSystem": [{"selector": ".sp-bar", "source": "<style> .sp-bar"}],
+            "components": [{"cls": "btn", "title": "Button"}, {"cls": "modal", "title": "Popup / Modal"}]}))
+        args = SimpleNamespace(checks=str(checks_file), ds_visual=str(plan_file),
+                               typed_steps=str(steps_file), typed_judge="flag", viewport=(200, 200))
+        visual_qa.prepare_typed(args)
+        self.assertEqual([c["id"] for c in args.parsed_checks[0]],
+                         ["org_field", "ds_off_1", "ds_cmp_btn", "ds_cmp_modal"])
+        asked = []
+
+        def judge(state, questions, **kw):
+            asked.append((state, questions, len(kw["images"])))
+            out = {}
+            for qid, q in questions.items():
+                out[qid] = ({"choice": "ds-copy", "confidence": 0.97,
+                             "probabilities": {"ds-copy": 0.97, "layout": 0.03}}
+                            if q["type"] == "choice" else {"noul": 0.97})
+            return {"answers": out, "provider": "clef", "model": "clef",
+                    "thresholds": typed_judge.thresholds("frame_check", "clef")}
+        block = visual_qa.typed_checks_on_page(SimpleNamespace(new_page=Page), "file:///x", args, 0,
+                                               self.tmp, judge)
+        rows = {r["id"]: r for r in block["checks"]}
+        self.assertEqual(clicked, ["#sponsorYes"])
+        self.assertEqual(rows["org_field"]["status"], "answered")
+        self.assertEqual(rows["org_field"]["images"], ["after pick_yes cropped to #orgFollowUp"])
+        self.assertEqual((rows["ds_off_1"]["answer"], rows["ds_off_1"]["passed"]), ("ds-copy", False))
+        self.assertEqual(rows["ds_cmp_btn"]["images"][0], "the design system's own btn")
+        self.assertEqual(rows["ds_cmp_modal"]["status"], "not-visible", "a hidden modal is skipped")
+        off_state = [st for st, qs, _n in asked if "ds_off_1" in qs][0]
+        self.assertIn("Button (.btn)", off_state, "the DS names travel with the off-system question")
+        report = {"typedChecks": block}
+        visual_qa._flag_and_log(report, block, "flag", args, lambda e: None)
+        self.assertEqual([f["check"] for f in report.get("findings", [])], ["ds_off_1"],
+                         "only the confident ds-copy is a finding; the hidden modal is not")
 
     def test_a_missing_element_is_reported_without_a_model_call(self):
         calls = []
