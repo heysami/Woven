@@ -719,7 +719,11 @@ def _finish_judge(judge: Dict[str, Any], res: Dict[str, Any]) -> Dict[str, Any]:
 # the --judge prose. It gets CHECKS, each one:
 #
 #   {"id": "menu_open",
-#    "statement": "A dropdown menu is open below the Account button.",
+#    "shape": "shows", "x": "a dropdown menu below the Account button",
+#                                          a shape from editor/visual_checks.py
+#                                          (shows / changed / same_as / intact /
+#                                          subject_is / which + list + expect),
+#                                          or a literal "statement" instead
 #    "at": "after:click_account",          which capture it is about
 #    "compare": "before:click_account",    optional reference capture, sent as
 #                                          IMAGE 1 with `at` as IMAGE 2, so the
@@ -747,29 +751,26 @@ TYPED_KIND = "frame_check"
 MAX_CHECKS = 16
 _CHECK_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _CAPTURE = re.compile(r"^(page|idle:(start|end|motion|\d+)|(before|after):.+)$")
-# Judgement phrases, not words: "The correct answer is highlighted" is a
-# literal claim; "The menu works correctly" is not.
-_VAGUE = re.compile(r"\bas (expected|intended|designed)\b"
-                    r"|\b(expected|intended|desired) (effect|behaviou?r|result|outcome|output|state)\b"
-                    r"|\b(correctly|properly)\b"
-                    r"|\b(works?|working|functions?)\b"
-                    r"|\b(is|are|looks?|renders?|appears?) (correct|right|fine|good|ok|okay|nice)\b"
-                    r"|\bachiev(e|es|ed|ing)\b", re.I)
-_COUNTING = re.compile(r"\b(how many|number of|count)\b", re.I)
 _CROP_PAD = 8
 
 
-def _typed_judge_module() -> Any:
+def _editor_module(name: str) -> Any:
     editor_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if editor_dir not in sys.path:
         sys.path.insert(0, editor_dir)
-    import typed_judge  # type: ignore
-    return typed_judge
+    import importlib
+    return importlib.import_module(name)
+
+
+def _typed_judge_module() -> Any:
+    return _editor_module("typed_judge")
 
 
 def parse_checks(raw: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """(checks, rejected). Accepts a list or {"checks": [...]}. A rejected
-    check carries the reason, so the caller can rewrite it as a claim."""
+    """(checks, rejected). Accepts a list or {"checks": [...]}. Each check is a
+    shape from editor/visual_checks.py or a literal statement; the question is
+    BUILT there, never written here. A rejected check carries the reason."""
+    vc = _editor_module("visual_checks")
     rows = raw.get("checks") if isinstance(raw, dict) else raw
     checks: List[Dict[str, Any]] = []
     rejected: List[Dict[str, Any]] = []
@@ -778,40 +779,47 @@ def parse_checks(raw: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
             rejected.append({"index": i, "reason": "a check is an object"})
             continue
         cid = str(c.get("id") or "check_%d" % (i + 1))
-        st = str(c.get("statement") or "").strip()
         at = str(c.get("at") or "").strip()
         cmp_ = str(c.get("compare") or "").strip()
+        row: Dict[str, Any] = {"id": cid, "at": at}
+        for k in ("shape", "x", "list", "statement", "criteria"):
+            if c.get(k) is not None:
+                row[k] = c[k]
+        if cmp_:
+            row["compare"] = cmp_
+        exp = c.get("expect")
+        if isinstance(exp, str) and exp:
+            row["expect"] = [exp]
+        elif isinstance(exp, list) and exp:
+            row["expect"] = [str(e) for e in exp]
+        if isinstance(c.get("selector"), str) and c["selector"].strip():
+            row["selector"] = c["selector"].strip()[:200]
         why = None
         if not _CHECK_ID.match(cid):
             why = "id must be letters, digits, _ . - (max 64)"
-        elif not st or "\n" in st or len(st) > 240:
-            why = "statement must be one sentence, at most 240 characters"
-        elif _VAGUE.search(st):
-            why = ("statement restates intent (%r) instead of naming what is visible - "
-                   "say what the image shows, e.g. 'A dropdown menu is open below the "
-                   "Account button.'" % _VAGUE.search(st).group(0))
-        elif _COUNTING.search(st):
-            why = "never ask a judge to count; one check per thing"
         elif not _CAPTURE.match(at):
             why = "at must be page, idle:start|end|motion|<n>, before:<step> or after:<step>"
         elif cmp_ and not _CAPTURE.match(cmp_):
             why = "compare must name a capture like at does"
-        elif cmp_ and not re.search(r"\bimage [12]\b", st, re.I):
-            why = "with compare, say which image: 'Image 2 shows ... that image 1 does not.'"
+        else:
+            try:
+                q, need = vc.question(row)
+                if need != (2 if cmp_ else 1):
+                    why = ("this shape needs %d image(s): %s" %
+                           (need, "add compare" if need == 2 else "drop compare"))
+                elif q["type"] == "choice" and row.get("expect") and \
+                        not set(row["expect"]) <= set(q["criteria"]):
+                    why = "expect must be options of list %s" % row.get("list")
+                else:
+                    row["question"] = q
+            except ValueError as exc:
+                why = str(exc)
         if why:
-            rejected.append({"id": cid, "statement": st, "reason": why})
+            rejected.append({"id": cid, "statement": row.get("statement") or row.get("x"), "reason": why})
             continue
         if len(checks) >= MAX_CHECKS:
-            rejected.append({"id": cid, "statement": st, "reason": "over %d checks" % MAX_CHECKS})
+            rejected.append({"id": cid, "reason": "over %d checks" % MAX_CHECKS})
             continue
-        row: Dict[str, Any] = {"id": cid, "statement": st, "at": at}
-        if cmp_:
-            row["compare"] = cmp_
-        if isinstance(c.get("selector"), str) and c["selector"].strip():
-            row["selector"] = c["selector"].strip()[:200]
-        if isinstance(c.get("criteria"), dict):
-            row["criteria"] = {k: str(v)[:300] for k, v in c["criteria"].items()
-                               if k in ("true", "false") and v}
         checks.append(row)
     return checks, rejected
 
@@ -946,9 +954,8 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
         state = ("A screenshot of a web page%s." % (
             "" if len(images) == 1 else
             ": image 1 is %s, image 2 is %s" % (row["images"][0], row["images"][1])))
-        q: Dict[str, Any] = {"type": "noul", "instructions": c["statement"]}
-        if c.get("criteria"):
-            q["criteria"] = c["criteria"]
+        q: Dict[str, Any] = c["question"]
+        row["claim"] = q["instructions"]
         try:
             res = judge_fn(state, {c["id"]: q}, tier="image", images=images, kind=TYPED_KIND)
         except Exception as exc:
@@ -961,9 +968,11 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
                     block["checks"].append(dict(rest, status="unavailable", images=[]))
                 return block
             continue
-        v = tj.noul_verdict(res["answers"].get(c["id"]), res["thresholds"])
-        row.update({"noul": v["noul"], "passed": v["pass"], "confidence": v["confidence"],
-                    "band": v["band"], "status": "answered" if v["noul"] is not None else "no-answer"})
+        v = _editor_module("visual_checks").verdict(q, res["answers"].get(c["id"]),
+                                                   res["thresholds"], c.get("expect"))
+        row.update({"answer": v["answer"], "noul": v.get("noul"), "passed": v["passed"],
+                    "confidence": v["confidence"], "band": v["band"],
+                    "status": "answered" if v["answer"] is not None else "no-answer"})
         block["available"] = True
         block["provider"] = res.get("provider")
         block["model"] = res.get("model")
@@ -1060,7 +1069,8 @@ def _flag_and_log(report: Dict[str, Any], block: Optional[Dict[str, Any]], mode:
                 sink({"provider": block.get("provider"), "kind": TYPED_KIND,
                       "noul": r.get("noul"), "llmOk": None,
                       "project": getattr(args, "judge_project", None),
-                      "subject": "%s: %s @ %s" % (r["id"], r["statement"], r["at"])})
+                      "answer": r.get("answer"),
+                      "subject": "%s: %s @ %s" % (r["id"], r.get("claim"), r["at"])})
             except Exception:
                 pass
         if mode != "flag":
@@ -1073,8 +1083,9 @@ def _flag_and_log(report: Dict[str, Any], block: Optional[Dict[str, Any]], mode:
             report.setdefault("findings", []).append({
                 "rule": "typed-judge", "severity": "warn", "kind": TYPED_KIND,
                 "check": r["id"], "provider": block.get("provider"), "noul": r.get("noul"),
-                "message": "check %s is confidently false at %s: %s"
-                           % (r["id"], ", ".join(r.get("images") or [r["at"]]), r["statement"])})
+                "message": "check %s is confidently not met at %s (judge said %s): %s"
+                           % (r["id"], ", ".join(r.get("images") or [r["at"]]), r.get("answer"),
+                              r.get("claim"))})
     log(block.get("message") or "typed checks completed")
 
 

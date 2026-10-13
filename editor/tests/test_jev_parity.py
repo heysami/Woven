@@ -182,6 +182,17 @@ def _recorded(choice, confidence):
             "probabilities": {choice: confidence, "page-layout-only": 1.0 - confidence}}
 
 
+def _two_stage(rec, question):
+    """Answer the DS judgment's two questions from one recorded verdict: stage 1
+    (ds-copy / new-ui / layout) says ds-copy unless the record names layout or
+    new-ui, and stage 2 (which component) answers the record's component."""
+    if "ds-copy" in question["criteria"]:
+        stage1 = {"page-layout-only": "layout", "layout": "layout",
+                  "new-ui": "new-ui"}.get(rec["choice"], "ds-copy")
+        return _recorded(stage1, rec["confidence"])
+    return rec
+
+
 class P2SupersetInvariant(unittest.TestCase):
     """For the same page, jev-off findings must be a subset of jev-on findings
     by (rule, page, line), and no finding's severity may DECREASE when Jev is
@@ -221,7 +232,8 @@ class P2SupersetInvariant(unittest.TestCase):
         real_ask, real_enabled, real_available = jev.ask, jev.enabled, jev.available
         if jev_answer is not None:
             argv.append("--jev")
-            jev.ask = lambda state, questions, **kw: {q: jev_answer for q in questions}
+            jev.ask = lambda state, questions, **kw: {q: _two_stage(jev_answer, questions[q])
+                                                       for q in questions}
             jev.enabled = lambda: True
             jev.available = lambda *a, **k: True
         try:
@@ -346,6 +358,16 @@ class _FailingOpener:
         raise self.exc
 
 
+def _unit(cls, tag="div", text="", family="box", count=1):
+    """One off-system unit, as ds_lint.off_system_units emits it."""
+    return {"page": "p.html", "source": "<style> .%s" % cls, "selector": "." + cls,
+            "skin": ["border: 1px solid <colour>", "border-radius: 12px"],
+            "decls": "border:1px solid #eee;border-radius:12px;padding:16px",
+            "element": {"line": 3, "tag": tag, "classes": [cls], "inlineStyle": "",
+                        "textSample": text, "childShape": []},
+            "count": count, "lines": [3], "classes": [cls], "family": family}
+
+
 class P4Degradation(unittest.TestCase):
     """No key, 401, a 429 that exhausts retries, a malformed body. Every
     consumer returns the non-Jev result and logs; none raises. Modelled on
@@ -422,10 +444,7 @@ class P4Degradation(unittest.TestCase):
         try:
             status = ds_lint.run_jev_pass(
                 {"components": [{"id": "card", "role": "surface", "oneLine": "A bounded surface"}]},
-                [{"page": "p", "class": "x", "suspect": "card",
-                  "element": {"line": 3, "tag": "div", "classes": ["x"],
-                              "inlineStyle": "", "textSample": "hi", "childShape": []}}],
-                findings,
+                [_unit("x")], findings,
                 ds_lint.contract_index({"components": [{"id": "card", "role": "surface"}]}))
         finally:
             jev.ask, jev.enabled, jev.available = real_ask, real_enabled, real_available
@@ -438,11 +457,7 @@ class P4Degradation(unittest.TestCase):
         jev.enabled = lambda: False
         try:
             status = ds_lint.run_jev_pass(
-                {"components": []},
-                [{"page": "p", "class": "x", "element": {"line": 1, "tag": "div", "classes": ["x"],
-                                                         "inlineStyle": "", "textSample": "",
-                                                         "childShape": []}}],
-                [], ds_lint.contract_index({"components": []}))
+                {"components": []}, [_unit("x")], [], ds_lint.contract_index({"components": []}))
         finally:
             jev.enabled = real_enabled
         self.assertFalse(status["available"])
@@ -464,78 +479,139 @@ class P4Degradation(unittest.TestCase):
             jev.ask("x" * 400_000, self.QUESTIONS, api_key="k")
 
 
-# ── Scoping: each element is asked only about what its evidence points at ───
+# ── Off-system UI: found by styling, judged against the whole vocabulary ────
 
-class ScopedRoleJudgment(unittest.TestCase):
-    """The DS role judgment verifies a hypothesis ("is .x a hand-rolled copy
-    of .card?"), never "which of the design system's ~100 components is
-    this". Sending the whole vocabulary per element made one page 231k
-    characters, 78% of it the same option list, and Cloudflare refused it."""
+class OffSystemJudgment(unittest.TestCase):
+    """The classifier guards against INVENTED components, so what it judges is
+    found from what PAINTS an element, never from naming or BEM structure (an
+    invented component follows neither), and each one is judged against every
+    design-system component of its family, never a top-N guess. With the
+    classifier off none of this runs: the linter is unchanged."""
 
-    CONTRACT = {"components": [
-        {"id": "card", "role": "surface", "oneLine": "Bounded content surface",
-         "requiredParts": ["card__title"], "optionalParts": ["card__body", "card__media"]},
-        {"id": "section-card", "role": "surface", "oneLine": "A card that heads a section"},
-        {"id": "btn", "role": "control", "oneLine": "The primary clickable action"},
-        {"id": "check-btn", "role": "control", "oneLine": "A toggle button with a check"},
-        {"id": "tabs", "role": "container", "oneLine": "Switches between panels of content"},
-    ] + [{"id": "filler-%d" % i, "role": "surface", "oneLine": "Unrelated thing %d" % i}
-         for i in range(90)]}
+    DS_CLASSES = {"card", "btn", "card__title"}
+    CONTRACT = {"id": "ds1", "components": [
+        {"id": "card", "role": "container", "name": "Card", "oneLine": "Bounded content surface"},
+        {"id": "btn", "role": "control", "name": "Button", "oneLine": "The primary action"},
+        {"id": "chip", "role": "indicator", "name": "Chip", "oneLine": "A small label"},
+        {"id": "h1", "role": "text", "name": "Heading", "oneLine": "Page title"},
+    ] + [{"id": "box-%d" % i, "role": "container", "oneLine": "Box %d" % i} for i in range(80)]}
 
     @classmethod
     def setUpClass(cls):
         cls.index = ds_lint.contract_index(cls.CONTRACT)
 
-    def row(self, cls, tag="div", text="", children=(), suspect=None):
-        return {"page": "p.html", "class": cls, "suspect": suspect, "chrome": ["border", "padding"],
-                "element": {"line": 1, "tag": tag, "classes": [cls], "inlineStyle": "",
-                            "textSample": text, "childShape": [{"tag": "div", "classes": [c]}
-                                                               for c in children]}}
+    def units(self, html, shared=()):
+        rules = [("<style>", sel, body) for sel, body in
+                 ds_lint.parse_css_rules(ds_lint.extract_style_blocks(html))]
+        rules += [("site.css", sel, body) for sel, body in shared]
+        return ds_lint.off_system_units("p.html", html, rules, self.DS_CLASSES, self.index)
 
-    def ids(self, row):
-        return [c for c, _s, _w in ds_lint.jev_candidates(row, self.index)]
+    def test_found_by_what_paints_it_not_by_its_name(self):
+        html = ("<style>.sidebar > div{background:#fff;border-radius:12px}"
+                "#hero-box{box-shadow:0 2px 4px #0003}"
+                ".intro p{color:#333;line-height:1.5}"
+                "body{background:#fafafa}.gutter{margin-left:12px}</style>"
+                "<div class='sidebar'><div>Inbox</div></div>"
+                "<section id='hero-box'><h2>Hi</h2></section>"
+                "<span style='border:1px solid #ccc;border-radius:999px;padding:2px 8px'>New</span>"
+                "<div class='intro'><p>text</p></div><div class='gutter'>x</div>")
+        got = {u["source"] for u in self.units(html)}
+        self.assertEqual(got, {"<style> .sidebar > div", "<style> #hero-box", "inline style on <span>"},
+                         "text-only, layout-only and page background are not UI")
 
-    def test_the_head_noun_points_at_a_component(self):
-        self.assertEqual(self.ids(self.row("promo-card"))[:2], ["card", "section-card"])
-        self.assertEqual(self.ids(self.row("sp-btn--ghost", tag="button"))[0], "btn")
+    def test_the_prototypes_own_css_files_count_too(self):
+        html = "<div class='promo-tile'>Sale</div>"
+        got = self.units(html, shared=[(".promo-tile", "border:1px solid #ddd;border-radius:8px")])
+        self.assertEqual([u["source"] for u in got], ["site.css .promo-tile"])
 
-    def test_a_prefix_is_not_the_component(self):
-        """`.card-foot` is a foot belonging to a card, not a card."""
-        self.assertNotIn("card", self.ids(self.row("card-foot")))
+    def test_design_system_classes_stay_with_the_deterministic_rules(self):
+        html = ("<style>.page .card{border:2px solid red}.wrap > div{background:#fff}</style>"
+                "<div class='page'><div class='card'>a</div></div>"
+                "<div class='wrap'><div class='card'>b</div></div>")
+        self.assertEqual(self.units(html), [],
+                         "a DS class in the selector, or a DS component as the element, is not invented UI")
 
-    def test_a_bem_part_is_never_a_candidate(self):
-        self.assertEqual(self.ids(self.row("promo-card__cancel")), [])
+    def test_one_question_per_styling_source_however_many_elements_it_paints(self):
+        html = "<style>.row{border-bottom:1px solid #eee}</style>" + "".join(
+            "<div class='row'>%d</div>" % i for i in range(20))
+        (u,) = self.units(html)
+        self.assertEqual(u["count"], 20)
 
-    def test_shared_parts_and_a_structure_suspect_count(self):
-        self.assertEqual(self.ids(self.row("tile", children=("tile__title", "tile__body"),
-                                           suspect="card"))[0], "card")
-
-    def test_no_evidence_means_no_question(self):
-        self.assertEqual(self.ids(self.row("hero-wrap", text="Welcome back")), [])
-
-    def test_never_more_than_three_options_plus_layout_and_unknown(self):
+    def _ask(self, units, stage1, stage2=("card", 0.97)):
         asked = []
         real = (jev.ask, jev.enabled, jev.available)
         jev.enabled, jev.available = (lambda: True), (lambda *a, **k: True)
-        jev.ask = lambda state, questions, **kw: (asked.append((state, questions)), {})[1]
+
+        def fake(state, questions, **kw):
+            asked.append((state, questions))
+            out = {}
+            for qid, q in questions.items():
+                if "ds-copy" in q["criteria"]:
+                    out[qid] = _recorded(stage1[0], stage1[1])
+                else:
+                    out[qid] = _recorded(stage2[0], stage2[1])
+            return out
+        jev.ask = fake
+        findings = []
         try:
-            rows = [self.row("promo-card"), self.row("hero-wrap"), self.row("sp-btn--ghost", tag="button")]
-            rows += [self.row("x%d-card" % i) for i in range(40)]
-            status = ds_lint.run_jev_pass(self.CONTRACT, rows, [], self.index)
+            status = ds_lint.run_jev_pass(self.CONTRACT, units, findings, self.index)
         finally:
             jev.ask, jev.enabled, jev.available = real
-        self.assertEqual(status["skipped"], 1)
-        self.assertEqual(status["asked"], 42)
-        self.assertGreater(len(asked), 1, "42 questions must be split")
-        for state, questions in asked:
-            self.assertLess(len(state), 400, "state is a framing line, not the contract")
-            self.assertLessEqual(len(questions), ds_lint.JEV_MAX_QUESTIONS_PER_REQUEST)
-            self.assertLessEqual(len(json.dumps(questions)), ds_lint.JEV_MAX_CHARS_PER_REQUEST)
-            for q in questions.values():
-                opts = set(q["criteria"]) - {"page-layout-only", "unknown"}
-                self.assertTrue(1 <= len(opts) <= ds_lint.JEV_MAX_CANDIDATES)
-                self.assertIn("page-layout-only", q["criteria"])
-                self.assertFalse(any(o.startswith("filler-") for o in opts))
+        return status, findings, asked
+
+    def test_every_unit_is_asked_with_no_cap(self):
+        units = [_unit("u%d" % i) for i in range(40)]
+        status, _f, asked = self._ask(units, ("layout", 0.99))
+        self.assertEqual(status["asked"], 40)
+        questions = [q for _s, qs in asked for q in qs.values()]
+        self.assertEqual(len(questions), 40)
+        for state, qs in asked:
+            self.assertIn("Card (.card)", state, "the vocabulary travels once per request, in state")
+            self.assertLessEqual(len(qs), ds_lint.JUDGE_MAX_QUESTIONS_PER_REQUEST)
+            for q in qs.values():
+                self.assertEqual(set(q["criteria"]), {"ds-copy", "new-ui", "layout"})
+
+    def test_which_component_is_asked_against_the_whole_family(self):
+        _s, findings, asked = self._ask([_unit("promo-tile")], ("ds-copy", 0.97))
+        stage2 = [q for _s2, qs in asked for q in qs.values() if "ds-copy" not in q["criteria"]]
+        self.assertEqual(len(stage2), 1)
+        opts = set(stage2[0]["criteria"])
+        self.assertEqual(len(opts), 83, "card + chip + all 80 boxes + none-of-these, no top-N")
+        self.assertNotIn("btn", opts, "a control is a different family")
+        self.assertNotIn("h1", opts)
+        (f,) = findings
+        self.assertEqual((f["rule"], f["severity"], f["component"]), ("invented-component", "error", "card"))
+
+    def test_a_copy_whose_component_is_unclear_is_a_warning(self):
+        _s, findings, _a = self._ask([_unit("promo-tile")], ("ds-copy", 0.97), ("card", 0.4))
+        (f,) = findings
+        self.assertEqual((f["rule"], f["severity"], f["component"]), ("invented-component", "warn", None))
+
+    def test_new_ui_is_a_warning_and_layout_or_unsure_adds_nothing(self):
+        _s, findings, _a = self._ask([_unit("meter")], ("new-ui", 0.97))
+        self.assertEqual([(f["rule"], f["severity"]) for f in findings], [("off-system-component", "warn")])
+        for verdict in (("layout", 0.99), ("ds-copy", 0.5), ("new-ui", 0.6)):
+            self.assertEqual(self._ask([_unit("x")], verdict)[1], [], verdict)
+
+    def test_without_the_classifier_the_linter_output_is_unchanged(self):
+        """--jev off: no off-system detection runs, nothing is added."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "design-systems" / "ds1").mkdir(parents=True)
+            (root / "design-systems" / "ds1" / "styles.css").write_text(".card{padding:8px;border:1px solid #ddd}")
+            (root / "source" / "main").mkdir(parents=True)
+            (root / "source" / "main" / "index.html").write_text(
+                "<style>.tile{border:1px solid #eee;border-radius:9px}</style>"
+                "<div class='tile' style='box-shadow:0 1px 2px #0002'>x</div>")
+            import io
+            import contextlib
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                ds_lint.main(["--project-root", tmp, "--prototype", "main", "--json"])
+            report = json.loads(buf.getvalue())
+        self.assertNotIn("jev", report)
+        self.assertFalse(any(f["rule"] in ("off-system-component",) or f.get("matchedBy") == "jev"
+                             for f in report["findings"]))
 
 
 # ── P5 - no preamble divergence ─────────────────────────────────────────────
@@ -728,6 +804,46 @@ class P8VisualChecks(unittest.TestCase):
                           self.report["interactions"][0]["afterPath"]],
                          "compare is image 1, at is image 2")
         self.assertEqual(report["typedChecks"]["summary"]["confidentPass"], 2)
+
+    def test_page_checks_are_built_from_shapes_not_written(self):
+        checks, rejected = visual_qa.parse_checks([
+            {"id": "menu", "shape": "shows", "x": "a dropdown menu below the Account button",
+             "at": "after:click_account", "selector": "#menu"},
+            {"id": "opened", "shape": "changed", "x": "an open menu",
+             "at": "after:click_account", "compare": "before:click_account"},
+            {"id": "toggle", "shape": "which", "list": "control_state", "x": "the Dark mode toggle",
+             "expect": "on", "at": "after:click_account"},
+            {"id": "bad_expect", "shape": "which", "list": "control_state", "x": "the toggle",
+             "expect": "sideways", "at": "page"},
+            {"id": "needs_two", "shape": "changed", "x": "an open menu", "at": "page"},
+        ])
+        self.assertEqual([c["id"] for c in checks], ["menu", "opened", "toggle"])
+        self.assertEqual(checks[0]["question"]["instructions"],
+                         "The image shows a dropdown menu below the Account button.")
+        self.assertEqual(checks[1]["question"]["instructions"],
+                         "Image 2 shows an open menu that image 1 does not.")
+        self.assertEqual(checks[2]["question"]["type"], "choice")
+        self.assertEqual({r["id"] for r in rejected}, {"bad_expect", "needs_two"})
+
+    def test_a_choice_check_is_graded_against_expect(self):
+        import copy
+        checks = [{"id": "toggle", "shape": "which", "list": "control_state", "x": "the Dark mode toggle",
+                   "expect": "on", "at": "after:click_account"}]
+
+        def judge(state, questions, **kw):
+            return {"answers": {"toggle": {"choice": "off", "confidence": 0.96,
+                                           "probabilities": {"off": 0.96, "on": 0.04}}},
+                    "provider": "clef", "model": "clef",
+                    "thresholds": typed_judge.thresholds("frame_check", "clef")}
+        report = copy.deepcopy(self.report)
+        args = self._args("flag", checks)
+        visual_qa.apply_frame_judges(
+            report, "pass", [], self.tmp, args, llm_judge=lambda r, o, a: dict(self.LLM["confirms"]),
+            checks_fn=lambda rep, c, rj, m, w: visual_qa.run_visual_checks(rep, c, rj, m, w, judge),
+            shadow_log=lambda e: None)
+        (row,) = report["typedChecks"]["checks"]
+        self.assertEqual((row["answer"], row["passed"]), ("off", False))
+        self.assertIn("judge said off", report["findings"][0]["message"])
 
     def test_a_missing_element_is_reported_without_a_model_call(self):
         calls = []

@@ -18535,52 +18535,34 @@ class H(http.server.SimpleHTTPRequestHandler):
 
         # Typed judgment for visual checks, BESIDE the describe gate above,
         # which stays authoritative: this never raises and never rejects a
-        # sheet. One noul per image ("The subject faces <facing>"), up to 4
-        # images per request. Shadow records each answer next to the describe
-        # verdict it shadows (the calibration log); Flag also returns a
-        # `typed-judge` finding on a confident fail - including on frames 2-4,
-        # which the describe gate never looks at.
+        # sheet. The checks are BUILT from this node's own fields by
+        # editor/visual_checks.py (facing -> which direction, endState -> "the
+        # subject is ...", every sheet -> same character first vs last frame),
+        # never written here. Shadow records each answer; Flag also returns a
+        # `typed-judge` finding on a confident failure - including on frames
+        # the describe gate never looks at.
         _tcfg = _compact_config()
         typed_mode = _tcfg.get("typedJudgeVisualMode") if _tcfg.get("typedJudgeVisual") else None
-        typed_out = {"mode": typed_mode, "checks": [], "findings": []} if (typed_mode and facing) else None
+        typed_out = {"mode": typed_mode, "stages": []} if typed_mode else None
 
-        def _typed_facing(stage, images, describe_verdicts):
+        def _typed_fields(stage, images, fields):
             if typed_out is None:
                 return
-            images = images[:4]
-            many = len(images) > 1
-            questions = {"cell_%d" % (i + 1): {"type": "noul", "instructions":
-                         ("In image %d, the subject faces %s." % (i + 1, facing)) if many
-                         else "The subject faces %s." % facing} for i in range(len(images))}
-            try:
-                res = typed_judge.judge("Images of one game sprite subject, in order.", questions,
-                                        tier="image", images=images, kind="sprite_facing",
-                                        resolve_key=_resolve_provider_key, image_roots=[project_root])
-            except Exception as tj_err:
-                typed_out["checks"].append({"stage": stage, "available": False,
-                                            "message": str(tj_err)[:200]})
+            import visual_checks as _vc
+            checks = _vc.from_fields(fields, len(images))
+            if not checks:
                 return
-            for i in range(len(images)):
-                v = typed_judge.noul_verdict(res["answers"].get("cell_%d" % (i + 1)), res["thresholds"])
-                said = describe_verdicts[i] if i < len(describe_verdicts) else None
-                llm_ok = None if not said else not said.upper().startswith("FAIL")
-                row = dict(v, stage=stage, cell=i, provider=res["provider"], describeOk=llm_ok)
-                typed_out["checks"].append(row)
-                if v["noul"] is not None and llm_ok is not None:
-                    typed_judge.shadow_log({"provider": res["provider"], "kind": "sprite_facing",
-                                            "noul": v["noul"], "llmOk": llm_ok, "project": project_id,
-                                            "subject": "%s %s cell %d faces %s" % (node_id, stage, i, facing)})
-                if typed_mode == "flag" and v["pass"] is False and v["band"] == "act":
-                    typed_out["findings"].append({
-                        "rule": "typed-judge", "severity": "warn", "kind": "sprite_facing",
-                        "stage": stage, "cell": i, "provider": res["provider"], "noul": v["noul"],
-                        "message": "typed judge (%s) is confident %s does not face %s"
-                                   % (res["provider"], "the base plate" if stage == "plate"
-                                      else "frame %d" % (i + 1), facing)})
+            block = _vc.run(checks, images,
+                            lambda *a, **k: typed_judge.judge(*a, resolve_key=_resolve_provider_key,
+                                                              image_roots=[project_root], **k),
+                            "sprite", typed_mode, shadow_log=typed_judge.shadow_log,
+                            subject=project_id)
+            block["stage"] = stage
+            typed_out["stages"].append(block)
 
         if facing:
             verdict = _vision_judge(_judge_prompt(facing), input_path=src)
-            _typed_facing("plate", [{"path": src}], [verdict])
+            _typed_fields("plate", [{"path": src}], {"facing": facing})
             if verdict and verdict.upper().startswith("FAIL"):
                 raise ValueError(
                     "facing gate: base plate %s does not match facing=%r (%s). The animated sheet was NOT "
@@ -18631,8 +18613,6 @@ class H(http.server.SimpleHTTPRequestHandler):
         if facing:
             verdict = _vision_judge(_judge_prompt(facing),
                                     input_data_uri=_cell_data_uri(strip.crop((0, 0, CELL, CELL))))
-            _typed_facing("sheet", [_cell_data_uri(strip.crop((i * CELL, 0, (i + 1) * CELL, CELL)))
-                                    for i in range(min(n, 4))], [verdict])
             if verdict and verdict.upper().startswith("FAIL"):
                 raise ValueError(
                     "facing gate: the generated sheet's FIRST frame does not match facing=%r (%s). "
@@ -18646,6 +18626,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "end-state gate: the generated sheet's FINAL frame does not match endState=%r (%s). "
                     "The sheet was rejected before commit - re-run this node, or tighten `endState`."
                     % (end_state, verdict))
+
+        # Every frame of the strip, checked against the node's own fields.
+        _typed_fields("sheet", [_cell_data_uri(strip.crop((i * CELL, 0, (i + 1) * CELL, CELL)))
+                                for i in range(n)],
+                      {"facing": facing, "endState": end_state if not loops else "",
+                       "sameSubject": True})
 
         sheet_rel = "source/%s/sprites/animated-sprite-%s.png" % (branch, node_id)
         sheet_abs = _safe_join(project_root, sheet_rel)
@@ -18688,10 +18674,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         })
         out = {"sheet": sheet_rel, "atlas": canonical_rel, "frames": n,
                "frameWidth": CELL, "frameHeight": CELL, "animation": anim}
-        if typed_out is not None:
-            out["typedJudge"] = typed_out
-            for f in typed_out["findings"]:
-                print("[animated-sprite] typed-judge finding: %s" % f["message"], flush=True)
+        if typed_out is not None and typed_out["stages"]:
+            out["typedChecks"] = typed_out
+            for st in typed_out["stages"]:
+                for f in st.get("findings") or []:
+                    print("[animated-sprite] typed-judge finding: %s" % f["message"], flush=True)
         return out
 
     def _workflow_node_run(self, qs, node_id):
@@ -24385,10 +24372,36 @@ class H(http.server.SimpleHTTPRequestHandler):
         except Exception as _vsn_err:
             print(f"[asset-versioning] /__asset_generate snapshot error: {_vsn_err}", flush=True)
 
+        # Typed visual checks on the image just written, from fields the
+        # caller ALREADY has (`expect`: {alt, subject, cutout, facing, ...}),
+        # built by editor/visual_checks.py - no model writes a question. Only
+        # when typed judgment for visual checks is on; never fails the
+        # generation; Flag adds findings, Shadow only records.
+        typed_checks = None
+        expect = body.get("expect")
+        _tcfg = _compact_config()
+        if isinstance(expect, dict) and expect and _tcfg.get("typedJudgeVisual") \
+                and typed_judge.sniff_image(bytes_[:16] if isinstance(bytes_, (bytes, bytearray)) else b""):
+            try:
+                import visual_checks as _vc
+                checks = _vc.from_fields({k: v for k, v in expect.items() if isinstance(k, str)}, 1)
+                if checks:
+                    typed_checks = _vc.run(
+                        checks, [bytes(bytes_)],
+                        lambda *a, **k: typed_judge.judge(*a, resolve_key=_resolve_provider_key, **k),
+                        "asset", _tcfg.get("typedJudgeVisualMode") or "shadow",
+                        shadow_log=typed_judge.shadow_log,
+                        subject=os.path.basename(project_root.rstrip("/")))
+            except Exception as _tc_err:
+                typed_checks = {"message": "typed checks skipped: %s" % _tc_err}
+
         return self._reply(200, {
             "ok": True, "path": output, "bytes": len(bytes_),
             "skill": skill, "provider": provider, "model": model,
             "medium": medium,
+            # Present only when the caller passed `expect` and typed judgment
+            # for visual checks is on: one result per check built from it.
+            "typedChecks": typed_checks,
             # Measured frames-per-keyframe after a scrub re-encode (None when
             # not requested / ffmpeg absent). Callers building scroll- or
             # pointer-scrub bindings should assert this is <= 12 rather than

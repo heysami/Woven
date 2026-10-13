@@ -682,7 +682,6 @@ def lint_page(page_path, ds_vocab, shared_classes, index=None):
             continue
         ambiguous.append({"page": page, "class": cls, "element": el,
                           "suspect": suspects.get(cls),
-                          "chrome": has_chrome_props(body)[:10] if body else [],
                           "reason": "structure" if cls in suspects else "chrome"})
     return findings, local_bare_defs, ambiguous
 
@@ -712,153 +711,23 @@ _UNKNOWN_ID = "unknown"
 
 def _element_state(contract, row):
     # type: (Dict[str, object], Dict[str, object]) -> str
-    """The context for ONE element question: the element itself and nothing
-    else - no contract, no page. Its options carry the only design-system
-    text it is judged against."""
+    """The state for ONE element question: the element's own context and
+    nothing else. The contract travels once, in the shared preamble line."""
     el = row["element"]  # type: ignore[index]
     children = ", ".join(
         "<%s%s>" % (c.get("tag"), ("." + ".".join(c.get("classes") or [])) if c.get("classes") else "")
         for c in (el.get("childShape") or [])[:12])  # type: ignore[union-attr]
     return (
+        "Page: %s (line %s)\n"
         "Element: <%s class=\"%s\">\n"
         "Inline style: %s\n"
         "Own text: %s\n"
         "Immediate children: %s\n"
-        "The page's own CSS for .%s sets: %s\n"
-        % (el.get("tag"),
+        % (row["page"], el.get("line"), el.get("tag"),
            " ".join(el.get("classes") or []),  # type: ignore[arg-type]
            el.get("inlineStyle") or "(none)",
            (el.get("textSample") or "(none)"),
-           children or "(none)",
-           row.get("class"), ", ".join(row.get("chrome") or []) or "(nothing visual)"))
-
-
-# ── Scoping: which components could this element be a copy of? ──────────────
-# The judgment is NOT "which of the design system's ~100 components is this".
-# It is "is this element a hand-rolled copy of component X", asked only for the
-# few X its own evidence points at. Sending the whole vocabulary per element
-# buried 18 elements' 4k characters of context under 180k characters of the
-# same option list (suss-cal fa-application.html, 2026-10-13) and Cloudflare
-# refused it. An element nothing points at is not asked at all: there is no
-# hypothesis to verify, so it stays the info finding it already is.
-JEV_MAX_CANDIDATES = 3
-_JEV_MIN_SCORE = 2
-_STOPWORDS = set("""a an and are as at be by for from has have in into is it its of on or
-that the this to with without used use when where which while page item items content
-element elements component components optional required""".split())
-
-
-def _words(text):
-    # type: (str) -> Set[str]
-    out = set()  # type: Set[str]
-    for w in re.split(r"[^a-z0-9]+", str(text).lower()):
-        if len(w) >= 3 and w not in _STOPWORDS:
-            out.add(w[:-1] if len(w) > 4 and w.endswith("s") else w)
-    return out
-
-
-def jev_candidates(row, index, limit=JEV_MAX_CANDIDATES):
-    # type: (Dict[str, object], Dict[str, object], int) -> List[Tuple[str, int, List[str]]]
-    """[(componentId, score, evidence)] for the components this ambiguous
-    element could be a copy of, strongest first, at most `limit`. Evidence is
-    what the linter can see, never a guess:
-      structure suspect (two shared part names, or a required one)  +4
-      the class's head noun (its LAST token, modifiers stripped) is
-        the component id's last token                               +3
-        ...and the class ends with the whole id                     +1
-      one of its children uses a part suffix the component declares +1 each
-      a word of the class or its own text is in the component's id,
-        parts or one-line description                                +1 each (max 2)
-      its own CSS sets the same visual skin as the component's root
-        (3+ shared properties, at least half of each side)          +2
-        (2 shared properties)                                        +1
-      a control-shaped tag (button, a, input, select) and role control +1
-    Only scores of at least 2 count: one shared generic word is not a
-    hypothesis worth a request.
-
-    Head noun only: English compounds put it last, so `.product-card` may be a
-    card while `.card-foot` is a foot belonging to one (the same lesson as
-    _name_match). A BEM part (`.sp-bar__cancel`) is never a candidate: it is a
-    part of a page-local block, and the block is what gets judged."""
-    comps = index["components"]           # type: ignore[assignment]
-    substantial = index["substantial"]    # type: ignore[assignment]
-    el = row["element"]                   # type: ignore[assignment]
-    cls = str(row.get("class") or "")
-    base = cls.split("--", 1)[0]
-    if "__" in base:
-        return []
-    cls_tokens = [t for t in re.split(r"[-_]+", base.lower()) if t]
-    words = _words(" ".join(cls_tokens[:-1]) + " " + str(el.get("textSample") or ""))  # type: ignore[union-attr]
-    child_suffixes = set()  # type: Set[str]
-    for child in el.get("childShape") or []:  # type: ignore[union-attr]
-        for c in child.get("classes") or []:
-            if "__" in c:
-                child_suffixes.add(c.split("__", 1)[1])
-    tag = str(el.get("tag") or "").lower()  # type: ignore[union-attr]
-    scored = []  # type: List[Tuple[str, int, List[str]]]
-    for cid in sorted(substantial):  # type: ignore[union-attr]
-        comp = comps.get(cid) or {}   # type: ignore[union-attr]
-        score, why = 0, []  # type: Tuple[int, List[str]]
-        if row.get("suspect") == cid:
-            score += 4
-            why.append("shares its part structure")
-        id_tokens = [t for t in re.split(r"[-_]+", cid.lower()) if t]
-        if id_tokens and cls_tokens and id_tokens[-1] == cls_tokens[-1]:
-            score += 3
-            why.append("class name ends in '%s'" % id_tokens[-1])
-            if cls_tokens[-len(id_tokens):] == id_tokens:
-                score += 1
-        parts = [str(p).split("__", 1)[-1] for p in
-                 list(comp.get("requiredParts") or []) + list(comp.get("optionalParts") or [])]
-        shared = sorted(child_suffixes & set(parts))
-        if shared:
-            score += len(shared)
-            why.append("children use its parts " + ", ".join("__" + x for x in shared[:3]))
-        vocab = _words(" ".join(id_tokens) + " " + " ".join(parts) + " " + str(comp.get("oneLine") or ""))
-        common = sorted(words & vocab)
-        if common:
-            score += min(2, len(common))
-            why.append("shares the words " + ", ".join(common[:3]))
-        skin = set(comp.get("skin") or [])  # type: ignore[arg-type]
-        mine = set(row.get("chrome") or [])  # type: ignore[arg-type]
-        same = skin & mine
-        if len(same) >= 3 and len(same) * 2 >= max(len(skin), len(mine)):
-            score += 2
-            why.append("same skin: " + ", ".join(sorted(same)[:4]))
-        elif len(same) >= 2:
-            score += 1
-        if tag in ("button", "a", "input", "select", "textarea") and comp.get("role") == "control":
-            score += 1
-            why.append("control-shaped <%s>" % tag)
-        if score >= _JEV_MIN_SCORE:
-            scored.append((cid, score, why))
-    def skin_fit(cid):
-        # type: (str) -> float
-        skin = set((comps.get(cid) or {}).get("skin") or [])  # type: ignore[union-attr]
-        mine = set(row.get("chrome") or [])  # type: ignore[arg-type]
-        return len(skin & mine) / float(len(skin | mine) or 1)
-    scored.sort(key=lambda r: (-r[1], -skin_fit(r[0]), r[0]))
-    return scored[:limit]
-
-
-def jev_criterion(comp):
-    # type: (Dict[str, object]) -> str
-    """One component as a Choice option: what it is, its parts, and when it is
-    NOT the right component - verbatim from the contract."""
-    text = str(comp.get("oneLine") or comp.get("id") or "")
-    req = [str(p) for p in comp.get("requiredParts") or []]  # type: ignore[union-attr]
-    opt = [str(p) for p in comp.get("optionalParts") or []]  # type: ignore[union-attr]
-    if req or opt:
-        text += " Parts: %s." % ", ".join([p + " (required)" for p in req] + opt[:6])
-    if comp.get("notForUseWhen"):
-        text += " NOT for use when: %s" % comp["notForUseWhen"]
-    return text[:600]
-
-
-# Requests stay well inside every judge's budget (Clef Flash holds 24,576
-# tokens, Clef 64 questions); splitting is a guard now, not the fix.
-JEV_MAX_QUESTIONS_PER_REQUEST = 16
-JEV_MAX_CHARS_PER_REQUEST = 20000
+           children or "(none)"))
 
 
 def jev_criteria(contract):
@@ -884,21 +753,273 @@ def jev_criteria(contract):
     return criteria
 
 
-def run_jev_pass(contract, ambiguous, findings, index, log=None):
+# ── Typed judgment: off-system UI, found by STYLING, never by name ──────────
+# What the classifier guards against is a component the agent INVENTED: a
+# rounded, bordered, padded thing that is not the design system's. It need not
+# follow our naming, our BEM parts, or live in a bare `.class {}` rule, so it is
+# found from what paints it: every page rule (any selector shape) or inline
+# style that gives an element its own SKIN - background, border, shadow,
+# outline - from outside the design system. One unit per styling source, so a
+# rule painting 20 list rows is asked about once.
+#
+# The deterministic linter above is unchanged and is the whole check when the
+# classifier is off. This only runs under --jev with typed judgment on, and it
+# only ever APPENDS findings (invariant I3).
+SKIN_PROPS = ("background", "border", "box-shadow", "outline", "backdrop-filter")
+_COLOR_LITERAL = re.compile(r"#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla|oklch|oklab|color-mix)\([^)]*\)")
+_CONTROL_TAGS = ("button", "a", "input", "select", "textarea", "summary")
+JUDGE_MAX_QUESTIONS_PER_REQUEST = 16
+JUDGE_MAX_CHARS_PER_REQUEST = 24000
+_NONE_ID = "none-of-these"
+
+
+def _skin_decls(body):
+    # type: (str) -> List[str]
+    out = []
+    for decl in body.split(";"):
+        if ":" not in decl:
+            continue
+        prop, val = decl.split(":", 1)
+        prop = prop.strip().lower()
+        if any(prop == p or prop.startswith(p + "-") for p in SKIN_PROPS):
+            v = val.strip()
+            if v and v.lower() not in ("none", "transparent", "0", "inherit", "initial", "unset"):
+                out.append("%s: %s" % (prop, v))
+    return out
+
+
+def _compound(selector):
+    # type: (str) -> Tuple[Optional[str], Optional[str], Set[str]]
+    """(tag, id, classes) of the selector's subject, pseudo parts dropped."""
+    sel = selector.split("::")[0]
+    parts = [p for p in re.split(r"[\s>+~]+", sel.strip()) if p]
+    if not parts:
+        return None, None, set()
+    subj = re.sub(r":[\w-]+(\([^)]*\))?", "", parts[-1])
+    subj = re.sub(r"\[[^\]]*\]", "", subj)
+    tag_m = re.match(r"^([a-zA-Z][\w-]*|\*)", subj)
+    id_m = re.search(r"#([\w-]+)", subj)
+    return ((tag_m.group(1).lower() if tag_m else None), (id_m.group(1) if id_m else None),
+            set(re.findall(r"\.([\w-]+)", subj)))
+
+
+def _family(tag, decl_text):
+    # type: (str, str) -> str
+    """control / overlay / box, from the element and its own styling - the
+    same split the contract's roles make, coarse on purpose so a hand-rolled
+    card is compared with every DS box, not only the ones with its exact role."""
+    t = decl_text.lower()
+    if tag in _CONTROL_TAGS or "cursor:" in t.replace(" ", ""):
+        return "control"
+    if re.search(r"position\s*:\s*(fixed|absolute)", t) and "z-index" in t:
+        return "overlay"
+    return "box"
+
+
+_ROLE_FAMILY = {"control": "control", "overlay": "overlay", "container": "box",
+                "surface": "box", "indicator": "box"}
+
+
+def styled_inventory(html):
+    # type: (str) -> List[Dict[str, object]]
+    """Like element_inventory, plus the elements that carry no class but are
+    painted through an id or an inline style - invented UI need not be classed."""
+    rows = element_inventory(html)
+    stripped = re.sub(r"<(style|script)[^>]*>.*?</\1>", lambda m: "\n" * m.group(0).count("\n"),
+                      html, flags=re.S | re.I)
+    by_line_tag = {(r["line"], r["tag"]): r for r in rows}
+    for m in _TAG.finditer(stripped):
+        if m.group(1):
+            continue
+        tag, attrs = m.group(2).lower(), m.group(3)
+        line = stripped.count("\n", 0, m.start()) + 1
+        id_m = re.search(r'\bid\s*=\s*["\']([^"\']+)["\']', attrs)
+        row = by_line_tag.get((line, tag))
+        if row is not None:
+            if id_m:
+                row["id"] = id_m.group(1)
+            continue
+        style = _attr_style(attrs)
+        if id_m or _skin_decls(style):
+            rows.append({"line": line, "tag": tag, "classes": [], "id": id_m.group(1) if id_m else None,
+                         "inlineStyle": style, "textSample": "", "childShape": []})
+    return rows
+
+
+def off_system_units(page, html, rules, ds_classes, index):
+    # type: (str, str, List[Tuple[str, str, str]], Set[str], Dict[str, object]) -> List[Dict[str, object]]
+    """Every styling source that paints an element of this page from outside
+    the design system. `rules` is [(source label, selector, body)] for the
+    page's <style> blocks and the prototype's own CSS files."""
+    inventory = styled_inventory(html)
+    comps = index["components"] if index else {}  # type: ignore[index]
+
+    def is_ds_root(row):
+        # type: (Dict[str, object]) -> bool
+        return any(c in comps for c in row.get("classes") or [])  # type: ignore[union-attr]
+
+    units = {}  # type: Dict[Tuple[str, str], Dict[str, object]]
+    for source, sel_group, body in rules:
+        skin = _skin_decls(body)
+        if not skin:
+            continue
+        for sel in sel_group.split(","):
+            sel = sel.strip()
+            tag, ident, classes = _compound(sel)
+            if classes & ds_classes:      # DS class restyled: the deterministic rules own it
+                continue
+            classes = {c for c in classes if not c.startswith(STATE_PREFIXES)}
+            if not (tag or ident or classes) or (tag in ("html", "body", "*") and not ident and not classes):
+                continue
+            parts = [x for x in re.split(r"[\s>+~]+", sel.split("::")[0].strip()) if x]
+            if not classes and not ident and len(parts) > 1:
+                # A bare tag under a context (`.wrap > div`): only the children
+                # of elements matching the context count, or every div on the
+                # page would.
+                _ct, c_id, c_classes = _compound(parts[-2])
+                hits = []
+                for parent in inventory:
+                    if (c_classes and not c_classes <= set(parent.get("classes") or [])) \
+                            or (c_id and parent.get("id") != c_id) or not (c_classes or c_id):
+                        continue
+                    for ch in parent.get("childShape") or []:  # type: ignore[union-attr]
+                        if tag in (None, "*") or ch.get("tag") == tag:
+                            row = next((r for r in inventory if r.get("classes") and
+                                        r.get("classes") == ch.get("classes")), None) or \
+                                {"line": parent["line"], "tag": ch.get("tag"),
+                                 "classes": list(ch.get("classes") or []), "inlineStyle": "",
+                                 "textSample": "", "childShape": []}
+                            if not is_ds_root(row):
+                                hits.append(row)
+            else:
+                hits = [r for r in inventory
+                        if (not tag or tag == "*" or r["tag"] == tag)
+                        and (not ident or r.get("id") == ident)
+                        and classes <= set(r.get("classes") or [])  # type: ignore[arg-type]
+                        and not is_ds_root(r)]
+            if not hits:
+                continue
+            # `.x:hover`, `.x::before` and `.x` paint ONE thing: one unit.
+            base = re.sub(r"::?[\w-]+(\([^)]*\))?", "", sel).strip() or sel
+            key = (source, base)
+            if key not in units:
+                units[key] = {"page": page, "source": "%s %s" % (source, base), "selector": base,
+                              "skin": skin[:10], "decls": body.strip()[:600], "element": hits[0],
+                              "count": len(hits), "lines": [r["line"] for r in hits[:6]],
+                              "classes": sorted(classes)}
+            else:
+                u = units[key]
+                u["skin"] = (list(u["skin"]) + [d for d in skin if d not in u["skin"]])[:10]  # type: ignore[arg-type]
+                if len(str(u["decls"])) < 600:
+                    u["decls"] = ("%s | %s: %s" % (u["decls"], sel, body.strip()))[:600]
+    for r in inventory:
+        skin = _skin_decls(str(r.get("inlineStyle") or ""))
+        if not skin or is_ds_root(r):
+            continue
+        key = ("inline", "%s.%s|%s" % (r["tag"], ".".join(r.get("classes") or []),  # type: ignore[arg-type]
+                                       ",".join(sorted(d.split(":", 1)[0] for d in skin))))
+        if key in units:
+            units[key]["count"] = int(units[key]["count"]) + 1  # type: ignore[arg-type]
+            continue
+        units[key] = {"page": page, "source": "inline style on <%s>" % r["tag"], "selector": None,
+                      "skin": skin[:10], "decls": str(r.get("inlineStyle"))[:600], "element": r,
+                      "count": 1, "lines": [r["line"]], "classes": list(r.get("classes") or [])}
+    out = list(units.values())
+    for u in out:
+        u["family"] = _family(str(u["element"]["tag"]), str(u["decls"]))  # type: ignore[index]
+    return out
+
+
+def _unit_context(u):
+    # type: (Dict[str, object]) -> str
+    """The evidence for ONE unit: how it is styled and what it is. Colour
+    values are masked - colour is never a judged property (rule 4)."""
+    el = u["element"]  # type: ignore[assignment]
+    children = ", ".join(
+        "<%s%s>" % (c.get("tag"), ("." + ".".join(c.get("classes") or [])) if c.get("classes") else "")
+        for c in (el.get("childShape") or [])[:12])  # type: ignore[union-attr]
+    return ("Styled by: %s\n"
+            "Its own styling: %s\n"
+            "Element: <%s%s%s> (%d on the page)\n"
+            "Own text: %s\n"
+            "Immediate children: %s\n"
+            % (u["source"], _COLOR_LITERAL.sub("<colour>", str(u["decls"])),
+               el.get("tag"),  # type: ignore[union-attr]
+               (' class="%s"' % " ".join(el.get("classes") or [])) if el.get("classes") else "",  # type: ignore[union-attr]
+               (' id="%s"' % el["id"]) if el.get("id") else "",  # type: ignore[union-attr,index]
+               int(u["count"]),  # type: ignore[arg-type]
+               el.get("textSample") or "(none)",  # type: ignore[union-attr]
+               children or "(none)"))
+
+
+def jev_criterion(comp):
+    # type: (Dict[str, object]) -> str
+    """One component as a Choice option: what it is, its parts, and when it is
+    NOT the right component - verbatim from the contract."""
+    text = str(comp.get("oneLine") or comp.get("id") or "")
+    req = [str(p) for p in comp.get("requiredParts") or []]  # type: ignore[union-attr]
+    opt = [str(p) for p in comp.get("optionalParts") or []]  # type: ignore[union-attr]
+    if req or opt:
+        text += " Parts: %s." % ", ".join([p + " (required)" for p in req] + opt[:6])
+    if comp.get("notForUseWhen"):
+        text += " NOT for use when: %s" % comp["notForUseWhen"]
+    return text[:600]
+
+
+def _ds_names(contract):
+    # type: (Dict[str, object]) -> str
+    names = []
+    for c in contract.get("components") or []:  # type: ignore[union-attr]
+        if isinstance(c, dict) and c.get("role") in _ROLE_FAMILY:
+            label = str(c.get("name") or c["id"])
+            names.append("%s (.%s)" % (label, c["id"]) if label != c["id"] else ".%s" % c["id"])
+    return ", ".join(names)
+
+
+def _batches(items, budget_q=JUDGE_MAX_QUESTIONS_PER_REQUEST, budget_c=JUDGE_MAX_CHARS_PER_REQUEST):
+    # type: (List[Tuple[object, Dict[str, object]]], int, int) -> List[List[Tuple[object, Dict[str, object]]]]
+    out = []  # type: List[List[Tuple[object, Dict[str, object]]]]
+    size = 0
+    for item in items:
+        n = len(json.dumps(item[1]))
+        if not out or len(out[-1]) >= budget_q or size + n > budget_c:
+            out.append([])
+            size = 0
+        out[-1].append(item)
+        size += n
+    return out
+
+
+def run_jev_pass(contract, units, findings, index, log=None):
     # type: (Dict[str, object], List[Dict[str, object]], List[Dict[str, object]], Dict[str, object], Optional[object]) -> Dict[str, object]
-    """Promote the ambiguous residue. ALWAYS returns a status dict and NEVER
-    raises: an unreachable judge leaves the deterministic verdict exactly as it
-    was, which is the same fail-soft posture as visual_qa.run_judge."""
-    status = {"available": False, "asked": 0, "promoted": 0, "message": None}  # type: Dict[str, object]
-    if not ambiguous:
-        status["message"] = "nothing ambiguous to judge"
+    """Typed judgment over the off-system units. ALWAYS returns a status dict
+    and NEVER raises: an unreachable judge leaves the deterministic verdict
+    exactly as it was.
+
+    Stage 1, every unit (no cap): what is it? A choice over three fixed
+    options - ds-copy / new-ui / layout - with the design system's component
+    names in the state, ONCE per request.
+    Stage 2, only units confidently ds-copy: which component? A choice over
+    EVERY design-system component of the same family (control / overlay /
+    box), plus none-of-these.
+
+    Findings it appends (removes nothing, I3):
+      ds-copy + a confident component -> invented-component  error (names it)
+      ds-copy, component unclear      -> invented-component  warn
+      new-ui                          -> off-system-component warn
+      layout, or not confident        -> nothing"""
+    status = {"available": False, "asked": 0, "promoted": 0, "units": len(units),
+              "message": None}  # type: Dict[str, object]
+    if not units:
+        status["message"] = "nothing styled outside the design system"
         return status
     try:
         sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
             os.path.dirname(os.path.abspath(__file__))))))
         import jev  # noqa: E402
+        import visual_checks  # noqa: E402
     except Exception as exc:
-        status["message"] = "jev helper unavailable: %s" % exc
+        status["message"] = "typed judgment helpers unavailable: %s" % exc
         return status
     if not jev.enabled():
         status["message"] = "typed judgment is turned off (Settings -> Context and cost)"
@@ -907,90 +1028,110 @@ def run_jev_pass(contract, ambiguous, findings, index, log=None):
         status["message"] = "no typed judge is set up (Settings -> Model Config -> API keys)"
         return status
 
-    thresholds = jev.thresholds("ds_role")
+    th = jev.thresholds("ds_role")
     comps = index["components"]  # type: ignore[assignment]
-
-    # One question per element, scoped to ITS candidates. Elements nothing
-    # points at are skipped: there is no hypothesis to verify.
-    asked = []  # type: List[Tuple[Dict[str, object], Dict[str, object]]]
-    skipped = 0
-    for row in ambiguous:
-        cands = jev_candidates(row, index)
-        if not cands:
-            skipped += 1
-            continue
-        criteria = {cid: jev_criterion(comps.get(cid) or {"id": cid})  # type: ignore[union-attr]
-                    for cid, _score, _why in cands}
-        criteria[_PAGE_LAYOUT_ID] = (
-            "Page layout or page-specific decoration, not a copy of any of the components "
-            "listed here: a wrapper that positions things, a grid or column holder, a spacer, "
-            "a page-only flourish.")
-        criteria[_UNKNOWN_ID] = "There is not enough here to say what this element is."
-        asked.append((row, {
-            "type": "choice",
-            "instructions": "Which of these is this page element?\n\n" + _element_state(contract, row),
-            "criteria": criteria,
-        }))
-    status["skipped"] = skipped
-    if not asked:
-        status["message"] = "no ambiguous element had evidence pointing at a component (%d skipped)" % skipped
-        return status
-
-    # Batch by page, then split by budget so no request nears a judge's limit.
-    batches = []  # type: List[Tuple[str, List[Tuple[Dict[str, object], Dict[str, object]]]]]
-    for row, q in sorted(asked, key=lambda rq: str(rq[0]["page"])):
-        size = len(json.dumps(q))
-        page = str(row["page"])
-        last = batches[-1] if batches else None
-        if (last is None or last[0] != page or len(last[1]) >= JEV_MAX_QUESTIONS_PER_REQUEST
-                or sum(len(json.dumps(x[1])) for x in last[1]) + size > JEV_MAX_CHARS_PER_REQUEST):
-            batches.append((page, []))
-        batches[-1][1].append((row, q))
-
+    already = {c for f in findings if f.get("rule") == "invented-component"
+               for c in (f.get("classes") or [])}
+    units = [u for u in units if not (set(u.get("classes") or []) & already)]  # type: ignore[arg-type]
+    origin = visual_checks.option_list("ds_origin")
+    state = ("A design system named %s provides these components: %s. Each question is one "
+             "element of a page that is styled outside that design system."
+             % (contract.get("id") or "the design system", _ds_names(contract)))
     errors = []  # type: List[str]
-    for page, items in batches:
-        rows = [row for row, _q in items]
-        questions = {"el_%d" % i: q for i, (_row, q) in enumerate(items)}
-        state = ("Elements from the page %s that define their own visual styling, each with "
-                 "the few design-system components it might be a hand-rolled copy of. Judge "
-                 "each element only against its own options." % page)
-        try:
-            answers = jev.ask(state, questions)
-        except Exception as exc:
-            errors.append("%s: %s" % (page, exc))
+
+    def ask(items):
+        # type: (List[Tuple[object, Dict[str, object]]]) -> Dict[int, object]
+        """Every batch, up to 4 at a time: a classifier call is sub-second,
+        so wall time is the slowest batch, not the sum."""
+        from concurrent.futures import ThreadPoolExecutor
+        answers = {}  # type: Dict[int, object]
+
+        def one(batch):
+            # type: (List[Tuple[object, Dict[str, object]]]) -> None
+            qs = {"u_%d" % i: q for i, (_u, q) in enumerate(batch)}
+            try:
+                got = jev.ask(state, qs)
+            except Exception as exc:
+                errors.append(str(exc)[:200])
+                return
+            status["available"] = True
+            for i, (u, _q) in enumerate(batch):
+                answers[id(u)] = got.get("u_%d" % i)
+
+        batches = _batches(items)
+        with ThreadPoolExecutor(max_workers=min(4, max(1, len(batches)))) as pool:
+            list(pool.map(one, batches))
+        return answers
+
+    def read(answer):
+        # type: (object) -> Tuple[Optional[str], Optional[float], str]
+        ranked = jev.choice_ranked(answer, 1)
+        conf = jev.confidence(answer)
+        if not ranked:
+            return None, conf, "escalate"
+        return ranked[0][0], conf, jev.band(conf, th["low"], th["high"])
+
+    stage1 = [(u, {"type": "choice",
+                   "instructions": "What is this page element?\n\n" + _unit_context(u),
+                   "criteria": origin}) for u in units]
+    status["asked"] = len(stage1)
+    a1 = ask(stage1)
+    copies = []
+    for u in units:
+        top, conf, band_ = read(a1.get(id(u)))
+        u["origin"] = {"answer": top, "confidence": conf, "band": band_}
+        if band_ != "act":
             continue
-        status["available"] = True
-        status["asked"] = int(status["asked"]) + len(questions)
-        for i, row in enumerate(rows):
-            ranked = jev.choice_ranked(answers.get("el_%d" % i), 1)
-            conf = jev.confidence(answers.get("el_%d" % i))
-            if not ranked:
-                continue
-            top, prob = ranked[0]
-            if top in (_PAGE_LAYOUT_ID, _UNKNOWN_ID):
-                # Declines to promote. Does NOT remove the info finding: jev-off
-                # findings must stay a subset of jev-on ones.
-                continue
-            if jev.band(conf, thresholds["low"], thresholds["high"]) != "act":
-                continue
-            comp = index["components"].get(top, {})  # type: ignore[union-attr]
+        if top == "ds-copy":
+            copies.append(u)
+        elif top == "new-ui":
             findings.append({
-                "rule": "invented-component", "severity": "error",
-                "page": page, "classes": [row["class"]], "component": top,
-                "line": row["element"].get("line"), "matchedBy": "jev",  # type: ignore[union-attr]
-                "confidence": conf, "probability": prob,
-                "detail": ".%s defines component chrome and reads as the design system's .%s - "
-                          "use .%s%s instead of a parallel page-local component"
-                          % (row["class"], top, top,
-                             (" with one of " + ", ".join("." + v for v in (comp.get("variants") or [])[:4]))
-                             if comp.get("variants") else ""),
-            })
-            status["promoted"] = int(status["promoted"]) + 1
-    if errors:
+                "rule": "off-system-component", "severity": "warn", "page": u["page"],
+                "line": u["lines"][0], "lines": u["lines"], "classes": u.get("classes"),  # type: ignore[index]
+                "matchedBy": "jev", "confidence": conf, "source": u["source"],
+                "detail": "%s paints a self-contained piece of UI the design system does not "
+                          "have - add it to the design system, or build it from design-system "
+                          "parts, rather than styling it on the page" % u["source"]})
+            status["promoted"] = int(status["promoted"]) + 1  # type: ignore[arg-type]
+
+    stage2 = []
+    for u in copies:
+        fam = u["family"]
+        crit = {cid: jev_criterion(c) for cid, c in sorted(comps.items())  # type: ignore[union-attr]
+                if _ROLE_FAMILY.get(str(c.get("role"))) == fam}
+        if not crit:
+            continue
+        crit[_NONE_ID] = "None of these components: the element rebuilds something else."
+        stage2.append((u, {"type": "choice",
+                           "instructions": "Which design-system component does this page element "
+                                           "rebuild?\n\n" + _unit_context(u),
+                           "criteria": crit}))
+    a2 = ask(stage2) if stage2 else {}
+    for u in copies:
+        top, conf, band_ = read(a2.get(id(u)))
+        named = top if (band_ == "act" and top and top != _NONE_ID) else None
+        comp = comps.get(named, {}) if named else {}  # type: ignore[union-attr]
+        findings.append({
+            "rule": "invented-component", "severity": "error" if named else "warn",
+            "page": u["page"], "line": u["lines"][0], "lines": u["lines"],  # type: ignore[index]
+            "classes": u.get("classes"), "component": named, "matchedBy": "jev",
+            "confidence": u["origin"]["confidence"], "source": u["source"],  # type: ignore[index]
+            "detail": ("%s rebuilds the design system's .%s by hand - use .%s%s instead"
+                       % (u["source"], named, named,
+                          (" with one of " + ", ".join("." + v for v in (comp.get("variants") or [])[:4]))
+                          if comp.get("variants") else ""))
+                      if named else
+                      ("%s rebuilds a design-system component by hand (which one is unclear) - "
+                       "use the design system's component instead of styling it on the page"
+                       % u["source"])})
+        status["promoted"] = int(status["promoted"]) + 1  # type: ignore[arg-type]
+
+    if errors and not status["available"]:
         status["message"] = "; ".join(errors)[:300]
-    elif status["available"]:
-        status["message"] = "judged %d ambiguous element(s), promoted %d, %d with no evidence skipped" % (
-            status["asked"], status["promoted"], skipped)
+    else:
+        status["message"] = ("judged %d off-system element(s) (%d asked which component), promoted %d%s"
+                             % (len(stage1), len(stage2), status["promoted"],
+                                ("; errors: " + "; ".join(errors)[:200]) if errors else ""))
     return status
 
 
@@ -1135,7 +1276,24 @@ def main(argv=None):
     # to place, and only ever appends.
     jev_status = None  # type: Optional[Dict[str, object]]
     if args.jev:
-        jev_status = run_jev_pass(contract, ambiguous, all_findings, index)
+        shared_rules = {}  # type: Dict[str, List[Tuple[str, str, str]]]
+        for f in sorted(os.listdir(proto_dir)) if os.path.isdir(proto_dir) else []:
+            if f.endswith(".css"):
+                shared_rules[f] = [(f, sel, body) for sel, body in
+                                   parse_css_rules(_read(os.path.join(proto_dir, f)))]
+        units = []  # type: List[Dict[str, object]]
+        for p in pages:
+            html = _read(p)
+            page_rules = [("<style>", sel, body) for sel, body in parse_css_rules(extract_style_blocks(html))]
+            # Only the prototype stylesheets THIS page links paint it.
+            linked = {os.path.basename(h.split("?")[0]) for h in
+                      re.findall(r'<link\b[^>]*\bhref\s*=\s*["\']([^"\']+\.css[^"\']*)', html, re.I)}
+            for f, rules_f in shared_rules.items():
+                if f in linked:
+                    page_rules += rules_f
+            units += off_system_units(os.path.basename(p), html, page_rules,
+                                      ds_vocab["classes"], index)  # type: ignore[arg-type]
+        jev_status = run_jev_pass(contract, units, all_findings, index)
 
     errors = [f for f in all_findings if f["severity"] == "error"]
     warns = [f for f in all_findings if f["severity"] == "warn"]

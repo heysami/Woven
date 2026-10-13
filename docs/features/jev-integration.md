@@ -530,15 +530,16 @@ is absent, the switch is off, or the call fails.
 
 ## One deviation from this plan, and why
 
-> **2026-10-13: 3c's budget was wrong, and the judgment is now scoped.** The
-> Budget paragraph above counts ~60 tokens per element question and forgets
-> that a Choice carries its options INSIDE each question: one page sent 231k
-> characters, 78% of it the same 99-option list repeated per element, and
-> Clef refused it. Each element is now asked only about the 1 to 3 components
-> its own evidence points at, against a one-line state; an element with no
-> evidence is not asked (it stays `info`, as keyless does). See
-> `jev_candidates` in `editor/tools/qa/ds_lint.py` and
-> `docs/features/typed-judgment-providers.md`.
+> **2026-10-13: 3c's budget was wrong, and 3c now judges invented UI found by
+> styling.** The Budget paragraph above counts ~60 tokens per element question
+> and forgets that a Choice carries its options INSIDE each question: one page
+> sent 231k characters and Clef refused it. 3c no longer starts from the
+> ambiguous residue either (it only held bare `.class {}` rules): under `--jev`
+> it finds every styling source that paints an element from outside the design
+> system, asks each one ds-copy / new-ui / layout, and asks the confident copies
+> which component over the whole same-family vocabulary. With the classifier
+> off, nothing here runs. See `off_system_units` and `run_jev_pass` in
+> `editor/tools/qa/ds_lint.py`.
 
 **3b's structure-match row does not gate.** This plan put "undefined class whose
 name OR STRUCTURE matches a contract component" in the deterministic `error`

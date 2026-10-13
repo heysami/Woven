@@ -95,8 +95,8 @@ Where an item needs a BUCKET rather than a boolean, ask that one as a Choice ove
 
 Some checklist items are about what the user sees on the rendered page rather than what the markup says: "the pricing page shows three plans side by side", "the empty state shows an illustration". Markup can satisfy those on paper and still render something else. When the user has typed judgment for visual checks on and a judge that reads images is set up, verify THOSE items on a render, one literal check each.
 
-**Turn each item into a check, never into "does it match the requirement".** A judge can only verify a claim it can see. For each visible item write:
-- `statement`: ONE sentence naming what is visible, in the requirement's own nouns. "The empty state shows an illustration above the message." Not "the empty state is correct", not "matches the spec", not a count ("three plans" becomes one check per plan: "A plan card titled Basic is visible.").
+**Turn each item into a check, never into "does it match the requirement".** A judge can only verify a claim it can see, and the daemon builds that claim from a shape, so for each visible item give:
+- `shape` + `x`: `shows` with `x` naming what is visible in the requirement's own nouns ("an illustration above the empty-state message"), or `which` with a `list` and `expect` for a state ("control_state", "on"). Not "the empty state is correct", not "matches the spec", not a count ("three plans" becomes one check per plan, `x`: "a plan card titled Basic").
 - `selector`: the element the item is about, so the judge sees that element and nothing else (the daemon crops to it at that moment). Omit it only for a whole-page claim.
 - `at`: `page` for a static render; `after:<step>` when the item is about a state reached by an interaction in a spec.
 
@@ -104,8 +104,8 @@ Some checklist items are about what the user sees on the rendered page rather th
 curl -sS -G "$TH_DAEMON_URL/__qa/run" \
   --data-urlencode "project=$TH_PROJECT_ID" --data-urlencode "page=<slug>" --data-urlencode "mode=render" \
   --data-urlencode 'checks={"checks":[
-    {"id":"req_7","statement":"The empty state shows an illustration above the message.","at":"page","selector":".empty-state"},
-    {"id":"req_9","statement":"A plan card titled Basic is visible.","at":"page","selector":"#plans"}]}'
+    {"id":"req_7","shape":"shows","x":"an illustration above the empty-state message","at":"page","selector":".empty-state"},
+    {"id":"req_9","shape":"shows","x":"a plan card titled Basic","at":"page","selector":"#plans"}]}'
 ```
 
 Read `typedChecks` in the reply: each check comes back `answered` (with `noul`, `passed`, `band`), `element-missing` (the selector is not on the page: that alone is a finding, the element the requirement needs is not there), `no-capture`, or `unavailable`; `rejected` lists checks you wrote vaguely, with the reason. Route answered checks on `band` exactly as for text items: `act` with `passed: true` is satisfied, `act` with `passed: false` is a finding, anything else is judged the way it is judged today.
