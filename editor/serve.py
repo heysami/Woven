@@ -11562,7 +11562,6 @@ class RunState:
                  # it was stopped because the user replied, so its
                  # planner-done says that instead of a partial verdict.
                  "qa_check", "qa_cancelled",
-                 "_vqa_nudged_at", "last_user_message_at",
                  # intentional-termination flag ("completed-orchestrator",
                  # "user-stop", or None for natural exit). Lets finish() report
                  # SIGTERM-after-success as exit 0 instead of "failed".
@@ -11698,11 +11697,6 @@ class RunState:
         self.exit_code = None
         self.turn_done = False
         self.turns_completed = 0
-        # Visual QA the daemon runs itself at the end of a turn (see
-        # _auto_visual_qa_maybe): the earliest turn start whose changes have
-        # not been QA'd yet, and whether a QA pass is in flight.
-        self._vqa_nudged_at = None
-        self.last_user_message_at = None
         # intentional-termination flag. None = natural exit (exit_code
         # is the truth: 0 = done, !=0 = failed). Otherwise: a string naming
         # WHY we terminated the subprocess on purpose, so the run record can
@@ -11806,8 +11800,6 @@ class RunState:
                 data = {**data, "executionProfile": self.execution_profile, "parentRunId": self.parent_run_id}
             seq = len(self.events)
             self.events.append({"seq": seq, "type": ev_type, "data": data})
-            if ev_type == "user_message":
-                self.last_user_message_at = time.time()
             self.updated_at = time.time()
             # Keep "is this thread waiting on a card pick" current. Cheap fold,
             # done here so nothing downstream ever has to rescan the log.
@@ -13320,134 +13312,6 @@ def _cancel_qa_checks(state) -> list:
     return stopped
 
 
-# ── Visual QA the daemon runs itself ────────────────────────────────────────
-# With the thread's visual check on, the screenshot QA is not left to the
-# agent: an agent that verifies some other way (DOM probes through the preview
-# tool) skips it, and the check silently never happens. At the end of every
-# turn the daemon finds the pages that turn changed - by file time under
-# source/<prototype>/, so edits made through Bash count too, and a changed
-# .js/.css counts for every page that links it - and runs /__qa/run on each in
-# the background (render + test cases + the typed visual checks when those are
-# on), posting one "Visual QA" line per page in the thread.
-AUTO_VISUAL_QA_MAX_PAGES = 4
-
-# Every page a /__qa/run rendered (real path -> when the run started), so the
-# turn-end check can tell which changed pages no QA has covered since.
-_QA_PAGE_RUNS = {}  # type: Dict[str, float]
-_QA_PAGE_RUNS_LOCK = threading.Lock()
-
-
-def _turn_started_at(state):
-    """When the turn now ending started: its last user message, else the run."""
-    return float(getattr(state, "last_user_message_at", None) or getattr(state, "started_at", None)
-                 or time.time())
-
-
-def _changed_pages(project_root, protos, since):
-    """[(prototype, page)] the files changed since `since` affect: changed
-    pages first, then pages linking a changed script or stylesheet. Drafts and
-    clones (dot-prefixed) are skipped."""
-    direct, linked = [], []
-    for proto in protos:
-        base = os.path.join(project_root, "source", proto)
-        if not os.path.isdir(base):
-            continue
-        pages, assets = [], []
-        for dirpath, dirnames, filenames in os.walk(base):
-            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-            if dirpath[len(base):].count(os.sep) > 1:
-                continue
-            for f in filenames:
-                if f.startswith("."):
-                    continue
-                full = os.path.join(dirpath, f)
-                rel = os.path.relpath(full, base).replace(os.sep, "/")
-                if f.endswith((".html", ".htm")):
-                    pages.append(rel)
-                try:
-                    changed = os.path.getmtime(full) >= since - 2
-                except OSError:
-                    changed = False
-                if not changed:
-                    continue
-                if f.endswith((".html", ".htm")):
-                    direct.append((proto, rel))
-                elif f.endswith((".js", ".css")):
-                    assets.append(f)
-        if assets:
-            for rel in pages:
-                if (proto, rel) in direct:
-                    continue
-                try:
-                    with open(os.path.join(base, rel), "r", encoding="utf-8", errors="replace") as fh:
-                        html = fh.read()
-                except OSError:
-                    continue
-                if any(re.search(r'(?:src|href)\s*=\s*["\'][^"\']*\b%s(?:\?[^"\']*)?["\']'
-                                 % re.escape(a), html) for a in assets):
-                    linked.append((proto, rel))
-    out = []
-    for item in direct + linked:
-        if item not in out:
-            out.append(item)
-    return out
-
-
-def _qa_ran_after(page_abs, after):
-    """A /__qa/run rendered this page at or after `after`."""
-    with _QA_PAGE_RUNS_LOCK:
-        ran = _QA_PAGE_RUNS.get(os.path.realpath(page_abs))
-    return ran is not None and ran >= after - 2
-
-
-def _auto_visual_qa_maybe(state):
-    """Visual QA on: every page this turn changed must have been through the
-    screenshot QA, which the visual-qa subagent runs in the same message as
-    the visual-verifier and the ds-guardian. A changed page no QA covered after
-    its last change gets ONE daemon message asking the agent to dispatch it, so
-    a skipped check still ends in a verdict the agent acts on. Once per user
-    message, and never ahead of a message the user queued."""
-    if getattr(state, "workflow_node_id", None) or not getattr(state, "project_root", None):
-        return
-    from kinds.capabilities import normalize_guards
-    if not normalize_guards(getattr(state, "guards", None)).get("visual"):
-        return
-    since = _turn_started_at(state)
-    if (getattr(state, "_vqa_nudged_at", None) or 0) >= since:
-        return
-    root = state.project_root
-    proto = getattr(state, "prototype", None)
-    protos = [proto] if proto else sorted(
-        d for d in os.listdir(os.path.join(root, "source"))
-        if not d.startswith(".") and os.path.isdir(os.path.join(root, "source", d))
-    ) if os.path.isdir(os.path.join(root, "source")) else []
-    missing = []
-    for p, rel in _changed_pages(root, protos, since):
-        full = os.path.join(root, "source", p, rel)
-        try:
-            changed = os.path.getmtime(full)
-        except OSError:
-            continue
-        if not _qa_ran_after(full, max(since, changed)):
-            missing.append("%s/%s" % (p, rel))
-    if not missing:
-        return
-    with _QUEUE_LOCK:
-        if list(getattr(state, "msg_queue", None) or []) or getattr(state, "_queue_draining", False):
-            return
-        shown = ", ".join(missing[:AUTO_VISUAL_QA_MAX_PAGES]) + (
-            " and %d more" % (len(missing) - AUTO_VISUAL_QA_MAX_PAGES) if len(missing) > AUTO_VISUAL_QA_MAX_PAGES else "")
-        text = ("[Woven: Visual QA did not run on %s after this turn changed it. Dispatch the visual-qa "
-                "subagent for those pages now (brief: project root, prototype, pages) and act on its "
-                "VISUAL-QA verdict: fix each confirmed failure before you tell the user it is done.]" % shown)
-        state.msg_queue = [{"id": uuid.uuid4().hex[:12], "text": text, "send": text, "meta": {},
-                            "at": time.time(), "auto": "visual-qa"}]
-        state._vqa_nudged_at = time.time()
-    _queue_persist(state)
-    _queue_drain_maybe(state, mode="stdin")
-    _queue_drain_maybe(state, mode="resume")
-
-
 def _qa_cancel_note(checks) -> str:
     """Prefix for the user frame that follows a cancel, so the agent reads the
     interrupted check as the user's doing rather than re-running it at once
@@ -14005,13 +13869,6 @@ def _drain_stdout_body(state: "RunState") -> None:
                             _turn_fail = None
                         if ev.get("label") == "done" and not _stale:
                             _settle_run_jobs(state)
-                            # Visual QA on: the daemon screenshots every page
-                            # this turn changed, itself, instead of trusting
-                            # the agent to have run it.
-                            try:
-                                _auto_visual_qa_maybe(state)
-                            except Exception as _avq_err:
-                                print("[visual-qa] auto run skipped: %s" % _avq_err, flush=True)
                     elif ev.get("label") == "starting":
                         state.turn_done = False
     finally:
@@ -27724,7 +27581,6 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Typed visual checks explore the page's screens and ask about every
         # element on them: give that its time too.
         qa_timeout = 600 if use_cases else (420 if "--typed-judge" in cmd else 120)
-        qa_started = time.time()
         try:
             proc = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=qa_timeout,
@@ -27788,9 +27644,6 @@ class H(http.server.SimpleHTTPRequestHandler):
                 report["visualReport"] = _vr
         except Exception as _vr_err:
             print("[qa] visual report not saved: %s" % _vr_err, flush=True)
-        if abs_target and info.get("target") == "page":
-            with _QA_PAGE_RUNS_LOCK:
-                _QA_PAGE_RUNS[os.path.realpath(abs_target)] = qa_started
         # Keep complete evidence on disk. Brief responses change no checks.
         if _compact_config()["compactQa"] and _qs_get(qs, "detail") != "full":
             try:
