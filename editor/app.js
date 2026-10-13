@@ -15158,9 +15158,17 @@ function SubagentPanel({ agent, runId, runTitle }) {
   const reportIds = visualQaReportIds(a.result);
   const state = a.error ? "failed" : a.done ? "done" : "running";
   const dot   = a.error ? "fail"   : a.done ? "done" : "live";
-  // Prompt collapses by default so the task history (activity + result) is what
-  // you land on when opening a subagent; click the header to reveal the prompt.
-  const [promptOpen, setPromptOpen] = useState(false);
+  // Tabs, so nothing is a long scroll away: the judge's answers (a visual-qa
+  // subagent's report) open first when there are any, else the result.
+  const [tab, setTab] = useState(null);
+  useEffect(() => { setTab(null); }, [a.id]);
+  const tabs = [
+    reportIds.length > 0 && ["judge", "Judge"],
+    ["result", "Result"],
+    a.actions && a.actions.length > 0 && ["activity", `Activity · ${a.actions.length}`],
+    a.prompt && ["prompt", "Prompt"],
+  ].filter(Boolean);
+  const cur = tabs.some(([k]) => k === tab) ? tab : tabs[0][0];
   return html`
     <div className="th-rail-panel th-rail-panel-embedded th-subagent-panel">
       <div className="runs-panel-head th-subagent-head">
@@ -15175,39 +15183,27 @@ function SubagentPanel({ agent, runId, runTitle }) {
           aria-label="Refresh subagent detail" disabled=${refreshing} data-busy=${refreshing}
           onClick=${refresh}><${Icon.Refresh}/></button>
       </div>
-      <div className="th-rail-panel-body th-subagent-body">
+      <div className="th-tasks-filter" role="tablist" aria-label="Subagent detail">
+        ${tabs.map(([k, lbl]) => html`
+          <button key=${k} role="tab" aria-selected=${cur === k}
+            className=${"th-tasks-filter-btn" + (cur === k ? " is-active" : "")}
+            onClick=${() => setTab(k)}>${lbl}</button>`)}
+      </div>
+      <div className="th-rail-panel-body th-subagent-body" role="tabpanel">
         ${runTitle && html`<div className="th-subagent-run">from ${runTitle}</div>`}
-        ${a.prompt && html`
-          <div className="th-tasks-agent-sec">
-            <button className="th-tasks-agent-sec-h th-tasks-agent-sec-toggle" onClick=${() => setPromptOpen((v) => !v)} aria-expanded=${promptOpen}>
-              <span className="tool-caret" data-open=${promptOpen}>▸</span>
-              Prompt
-            </button>
-            ${promptOpen && html`<pre className="th-tasks-agent-pre th-subagent-pre">${a.prompt}</pre>`}
-          </div>`}
-        ${a.actions && a.actions.length > 0 && html`
-          <div className="th-tasks-agent-sec">
-            <div className="th-tasks-agent-sec-h">Activity · ${a.actions.length} step${a.actions.length === 1 ? "" : "s"}</div>
-            <ol className="th-subagent-actions">
-              ${a.actions.map((act, i) => html`
-                <li className="th-subagent-action" key=${i}>
-                  <span className="th-subagent-action-dot" aria-hidden="true"/>
-                  <span className="th-subagent-action-text">${act}</span>
-                </li>`)}
-            </ol>
-          </div>`}
-        ${reportIds.length > 0 && html`
-          <div className="th-tasks-agent-sec">
-            <div className="th-tasks-agent-sec-h">Sent to the judge</div>
-            ${reportIds.map(id => html`<${VisualQaReport} key=${id} id=${id}/>`)}
-          </div>`}
-        ${a.result
-          ? html`
-            <div className="th-tasks-agent-sec">
-              <div className="th-tasks-agent-sec-h">Result</div>
-              <pre className="th-tasks-agent-pre th-subagent-pre" data-error=${a.error}>${a.result}</pre>
-            </div>`
-          : html`<div className="th-tasks-agent-empty">Still running - no result yet. Use the refresh button above to check again.</div>`}
+        ${cur === "judge" && reportIds.map(id => html`<${VisualQaReport} key=${id} id=${id}/>`)}
+        ${cur === "result" && (a.result
+          ? html`<pre className="th-tasks-agent-pre th-subagent-pre" data-error=${a.error}>${a.result}</pre>`
+          : html`<div className="th-tasks-agent-empty">Still running - no result yet.</div>`)}
+        ${cur === "activity" && html`
+          <ol className="th-subagent-actions">
+            ${a.actions.map((act, i) => html`
+              <li className="th-subagent-action" key=${i}>
+                <span className="th-subagent-action-dot" aria-hidden="true"/>
+                <span className="th-subagent-action-text">${act}</span>
+              </li>`)}
+          </ol>`}
+        ${cur === "prompt" && html`<pre className="th-tasks-agent-pre th-subagent-pre">${a.prompt}</pre>`}
       </div>
     </div>
   `;

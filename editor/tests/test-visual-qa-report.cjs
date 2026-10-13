@@ -71,6 +71,15 @@ const report = {
       ${constLine('VQA_ORDER')}
       ${slice('function visualQaOutcome(')}
       ${slice('function VisualQaReport(')}
+      const Icon = { Bot: () => null, Refresh: () => null };
+      const chatRowsToEvents = rows => rows;
+      function extractRunSubagents() { return []; }
+      const { useRef } = React;
+      ${slice('function SubagentPanel(')}
+      window.renderPanel = () => ReactDOM.createRoot(document.getElementById('panel')).render(
+        html\`<\${SubagentPanel} agent=\${{ id: 'a1', type: 'woven:visual-qa', label: 'Visual QA', done: true,
+          prompt: 'Project root: /x. Pages: fa-application.html.', actions: ['Running QA', 'Reading answers'],
+          result: 'VISUAL-QA FAIL - fa-application.html\\nfa-application.html: QA pass · report 20261013-161310-ab12cd' }}/>\`);
       const ids = visualQaReportIds("VISUAL-QA FAIL - fa-application.html\\nfa-application.html: QA pass · 3 criteria · report 20261013-161310-ab12cd\\n- CONFIRMED s0_txt_10: covered");
       window.ids = ids;
       ReactDOM.createRoot(document.getElementById('root')).render(
@@ -93,8 +102,19 @@ const report = {
     assert.deepEqual(srcs.map(s => decodeURIComponent(s.split('f=')[1])), ['sent_01_1.png', 'ref_btn.png', 'sent_02_2.png'],
       'the images of the listed calls, as sent; none of the sure-yes call');
     await page.waitForFunction(() => [...document.querySelectorAll('.th-vqa-imgs img')].every(i => i.complete && i.naturalWidth > 0));
+    // The subagent panel: tabs, the judge's answers first.
+    await page.evaluate(() => { const d = document.createElement('div'); d.id = 'panel'; document.body.appendChild(d); window.renderPanel(); });
+    await page.waitForSelector('#panel [role=tab]');
+    assert.deepEqual(await page.locator('#panel [role=tab]').allTextContents(), ['Judge', 'Result', 'Activity · 2', 'Prompt']);
+    await page.waitForSelector('#panel .th-vqa-counts');
+    assert.equal(await page.locator('#panel [role=tab][aria-selected=true]').innerText(), 'Judge');
+    await page.locator('#panel [role=tab]', { hasText: 'Result' }).click();
+    assert.match(await page.locator('#panel [role=tabpanel]').innerText(), /VISUAL-QA FAIL/);
+    assert.equal(await page.locator('#panel .th-vqa').count(), 0, 'one tab at a time, no long scroll');
+    await page.locator('#panel [role=tab]', { hasText: 'Prompt' }).click();
+    assert.match(await page.locator('#panel [role=tabpanel]').innerText(), /Pages: fa-application.html/);
     assert.deepEqual(errors, []);
-    console.log('PASS: visual-qa report - counts, only no and unsure, images as sent, nothing else.');
+    console.log('PASS: visual-qa report - counts, only no and unsure, images as sent, nothing else; panel tabs.');
   } finally {
     await browser.close();
     server.close();

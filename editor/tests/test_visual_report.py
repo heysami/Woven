@@ -141,6 +141,24 @@ class CallRecord(unittest.TestCase):
         row = visual_report.label(rid, "orig", "layout", root=str(root))
         self.assertEqual((row["escalation"]["passed"], row["escalation"]["agrees"]), (True, False))
 
+    def test_a_quota_refusal_stops_the_asking_and_says_why(self):
+        asked = []
+
+        def judge(state, questions, **kw):
+            asked.append(list(questions))
+            raise typed_judge.JudgeError(
+                "clef request failed: http 429 you have used up your daily free allocation of 10,000 neurons",
+                status=429)
+        checks, rejected = visual_qa.parse_checks([
+            {"id": "a%d" % i, "shape": "shows", "x": "a heading %d" % i, "at": "page",
+             "selector": "#menu"} if i % 2 else
+            {"id": "a%d" % i, "shape": "shows", "x": "a heading %d" % i, "at": "page"} for i in range(2)])
+        block = visual_qa.run_visual_checks(copy.deepcopy(self.report), checks, rejected, "shadow", 200, judge)
+        self.assertEqual(len(asked), 1, "after one refusal the other call is not sent")
+        self.assertIn("daily free allowance", block["refused"])
+        self.assertIn("refused the rest", block["message"])
+        self.assertTrue(all(r["status"] == "unavailable" for r in block["checks"]))
+
     def test_a_run_that_asked_nothing_saves_nothing(self):
         self.assertIsNone(visual_report.save({"typedChecks": {"checks": [], "rejected": []}}, self.tmp,
                                              root=str(Path(self.tmp) / "r")))

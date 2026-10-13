@@ -1077,6 +1077,8 @@ class P8VisualChecks(unittest.TestCase):
             '<link rel="stylesheet" href="design-systems/x/styles.css">'
             "<style>.hero{background:#0af;padding:20px}.card .tag{background:#efe;border-radius:6px}</style>"
             '<section class="hero"><h1>Choose the support you need</h1></section>'
+            '<div style="position:relative"><p id="under">Applications close soon</p>'
+            '<div id="over" style="position:absolute;left:0;top:0;right:0;bottom:0;background:#000"></div></div>'
             + "".join('<div class="card"><span class="card__icon"></span><h3>Card %d</h3>'
                       '<span class="tag">Closes 30 June</span></div>' % i for i in range(3)))
         plan = {"dsPath": "/design-systems/x/", "dsClasses": ["card", "card__icon"], "componentRoots": ["card"],
@@ -1093,17 +1095,27 @@ class P8VisualChecks(unittest.TestCase):
         found = first["found"]
         self.assertEqual([c["title"] for c in found["comps"]], ["Card", "Card icon"] * 3,
                          "every card and every icon tile, not the first of each")
-        self.assertEqual(sorted({u["source"] for u in found["off"]}), ["<style> .card .tag", "<style> .hero"],
+        self.assertEqual(sorted({u["source"] for u in found["off"]}),
+                         ["<style> .card .tag", "<style> .hero", "inline style on <div>"],
                          "page styling inside a component counts too")
-        self.assertEqual(len(found["off"]), 4, "the hero and each of the three tags")
+        self.assertEqual(len(found["off"]), 5, "the hero, each of the three tags, the overlay")
         texts = [t["text"] for t in found["texts"]]
         self.assertIn("Choose the support you need", texts)
+        title = next(t for t in found["texts"] if t["text"] == "Choose the support you need")
+        self.assertIn("<h1>Choose the support you need</h1>", title["ev"]["code"])
+        self.assertIn("font ", title["ev"]["style"])
+        self.assertIsNone(title["ev"]["coveredBy"])
+        under = next(t for t in found["texts"] if t["text"] == "Applications close soon")
+        self.assertEqual(under["ev"]["coveredBy"], "#over", "what sits on top of the text, by selector")
+        card = next(c for c in found["comps"] if c["title"] == "Card")
+        self.assertIn("border 1px solid", card["ev"]["style"], "the element's computed look, as text")
         self.assertEqual(texts.count("Closes 30 June"), 1, "a repeated text is one check")
         checks = visual_qa.screen_checks(collector.screens, dict(plan, names="Card (.card)"))
         kinds = {}
         for c in checks:
             kinds[c["shape"]] = kinds.get(c["shape"], 0) + 1
-        self.assertEqual(kinds, {"same_style": 6, "which": 4, "text": 5})
+        self.assertEqual(kinds, {"same_style": 6, "which": 5, "text": 6})
+        self.assertTrue(all(c.get("evidence", {}).get("code") for c in checks), "every question carries its element")
         self.assertTrue(all(c["at"] == "screen:0" and c["selector"] in first["boxes"] for c in checks))
 
     def test_the_gallery_example_matches_the_page_element_state(self):

@@ -808,7 +808,7 @@ def parse_checks(raw: Any, limit: int = MAX_CHECKS) -> Tuple[List[Dict[str, Any]
         at = str(c.get("at") or "").strip()
         cmp_ = str(c.get("compare") or "").strip()
         row: Dict[str, Any] = {"id": cid, "at": at}
-        for k in ("shape", "x", "list", "statement", "criteria", "context", "source", "optional"):
+        for k in ("shape", "x", "list", "statement", "criteria", "context", "source", "optional", "evidence"):
             if c.get(k) is not None:
                 row[k] = c[k]
         if cmp_:
@@ -955,7 +955,8 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
                                         % (shown, " (%s)" % state if state else "",
                                            "" if pick["exact"] else " (base, no matching variant)",
                                            " (set to %s for the comparison)" % state if pick.get("set") else ""),
-                                        "path": p, "boxes": None, "exactVariant": pick["exact"]}
+                                        "path": p, "boxes": None, "exactVariant": pick["exact"],
+                                        "style": pick.get("style")}
                 except Exception as exc:
                     log("gallery reference for %s unavailable (%s)" % (key, exc))
         except Exception as exc:
@@ -994,7 +995,51 @@ _STATE_JS = """
   };
 """
 
-_GALLERY_PICK_JS = """(parts) => {""" + _STATE_JS + """
+# The element as text, captured with its screenshot so whoever reads a
+# judge's answer can tell what is wrong without looking at the image: its
+# HTML, its computed look, what (if anything) sits on top of it, and whether
+# its content is clipped.
+_EVIDENCE_JS = """
+  const styleOf = el => {
+    const st = getComputedStyle(el), out = [];
+    const add = (k, v) => { if (v && !/^(none|normal|0px|auto|static|1|rgba\\(0, 0, 0, 0\\))$/.test(v)) out.push(k + ' ' + v); };
+    add('bg', st.backgroundColor);
+    if (st.backgroundImage && st.backgroundImage !== 'none') out.push('bg-image yes');
+    if (st.borderTopWidth !== '0px' && st.borderTopStyle !== 'none')
+      out.push('border ' + st.borderTopWidth + ' ' + st.borderTopStyle + ' ' + st.borderTopColor);
+    add('radius', st.borderTopLeftRadius);
+    add('shadow', st.boxShadow);
+    add('color', st.color);
+    out.push('font ' + st.fontWeight + ' ' + st.fontSize + ' ' + (st.fontFamily || '').split(',')[0].replace(/["']/g, ''));
+    add('padding', st.padding);
+    add('position', st.position);
+    add('z', st.zIndex);
+    add('opacity', st.opacity);
+    return out.join(' · ');
+  };
+  const codeOf = el => {
+    const h = (el.outerHTML || '').replace(/\\s+/g, ' ');
+    return h.length > 320 ? h.slice(0, 320) + '...' : h;
+  };
+  const coverOf = (el, pathOf) => {
+    const r = el.getBoundingClientRect();
+    for (const [x, y] of [[r.left + r.width / 2, r.top + r.height / 2], [r.left + 6, r.top + r.height / 2],
+                          [r.right - 6, r.top + r.height / 2]]) {
+      const hit = document.elementFromPoint(x, y);
+      if (hit && hit !== el && !el.contains(hit) && !hit.contains(el)) return pathOf(hit);
+    }
+    return null;
+  };
+  const clippedOf = el => {
+    const st = getComputedStyle(el);
+    return (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)
+      && /hidden|clip|ellipsis/.test(st.overflow + ' ' + st.overflowX + ' ' + st.textOverflow);
+  };
+  const evidenceOf = (el, pathOf) => ({code: codeOf(el), style: styleOf(el), coveredBy: coverOf(el, pathOf),
+                                       clipped: clippedOf(el)});
+"""
+
+_GALLERY_PICK_JS = """(parts) => {""" + _STATE_JS + _EVIDENCE_JS + """
   const base = parts[0];
   const want = parts.slice(1).filter(p => p.indexOf('state-') !== 0).sort().join(' ');
   const wantState = parts.filter(p => p.indexOf('state-') === 0).map(p => p.slice(6)).sort();
@@ -1038,7 +1083,7 @@ _GALLERY_PICK_JS = """(parts) => {""" + _STATE_JS + """
       el = pool.find(settable);
       if (el) { boxOf(el).checked = wantState.indexOf('checked') >= 0; set = true; }
     }
-    if (el) return {selector: path(el), exact: variant, set: set};
+    if (el) return {selector: path(el), exact: variant, set: set, style: styleOf(el)};
   }
   return {stateMismatch: true, seen: [...new Set(all.map(el => stateOf(el).join(' ') || 'default'))]};
 }"""
@@ -1054,7 +1099,7 @@ _GALLERY_PICK_JS = """(parts) => {""" + _STATE_JS + """
 #   texts - every piece of visible text, at its outermost element that holds
 #           exactly that text (a button, a link, a heading).
 # Without a design system only `texts` is filled.
-_RENDERED_DS_JS = """(a) => {""" + _STATE_JS + """
+_RENDERED_DS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + """
   const dsClasses = new Set(a.dsClasses || []);
   const titles = {};
   for (const c of a.components || []) titles[c.cls] = c.title;
@@ -1107,6 +1152,7 @@ _RENDERED_DS_JS = """(a) => {""" + _STATE_JS + """
       }
       if (!base || !visible(el, 8)) continue;
       comps.push({cls: base, title: title, selector: path(el), state: stateOf(el), box: box(el),
+                  ev: evidenceOf(el, path),
                   variant: [...el.classList].filter(x => dsClasses.has(x) && x.indexOf(base + '--') === 0).sort()});
     }
   }
@@ -1126,7 +1172,8 @@ _RENDERED_DS_JS = """(a) => {""" + _STATE_JS + """
         try { els = [...document.querySelectorAll(sel)]; } catch (e) { continue; }
         for (const el of els) {
           if (off.has(el) || hasDs(el) || !visible(el, 8)) continue;
-          off.set(el, {selector: path(el), source: sheet + ' ' + sel, count: 1, skin: skin, box: box(el)});
+          off.set(el, {selector: path(el), source: sheet + ' ' + sel, count: 1, skin: skin, box: box(el),
+                       ev: evidenceOf(el, path)});
         }
       }
     }
@@ -1142,7 +1189,7 @@ _RENDERED_DS_JS = """(a) => {""" + _STATE_JS + """
       const skin = skinOf(el.style);
       if (!skin.length || off.has(el) || hasDs(el) || !visible(el, 8)) continue;
       off.set(el, {selector: path(el), source: 'inline style on <' + el.tagName.toLowerCase() + '>',
-                   count: 1, skin: skin, box: box(el)});
+                   count: 1, skin: skin, box: box(el), ev: evidenceOf(el, path)});
     }
   }
   const texts = [];
@@ -1167,7 +1214,11 @@ _RENDERED_DS_JS = """(a) => {""" + _STATE_JS + """
     const key = text + '|' + path(el);
     if (seen.has(text) || seen.has(key)) continue;
     seen.add(text);
-    texts.push({text: text.slice(0, 200), selector: path(el), box: box(el)});
+    const ev = evidenceOf(el, path);
+    // What covers the text itself, not the wrapper it was cropped by (the
+    // wrapper may hold the very thing on top of it).
+    ev.coveredBy = coverOf(node.parentElement, path);
+    texts.push({text: text.slice(0, 200), selector: path(el), box: box(el), ev: ev});
   }
   return {off: [...off.values()].slice(0, a.maxOff || 60), comps: comps, texts: texts};
 }"""
@@ -1446,6 +1497,17 @@ def prepare_typed(args: argparse.Namespace) -> None:
     args.parsed_checks = (checks[:MAX_CHECKS] if len(checks) > MAX_CHECKS else checks, rejected)
 
 
+# What "the same visual style" means for two crops of one component whose
+# content differs (another label, another size): without it the judge reads
+# different words as a different style and hedges.
+SAME_STYLE_CRITERIA = {
+    "true": ("Both show the same kind of component styled the same way: the same fill colour, border, "
+             "corner radius, font weight and spacing. Their words, numbers, icons, width and height may differ."),
+    "false": ("The styling differs: another fill colour, border, corner radius, shape or font weight, "
+              "or a visibly different design."),
+}
+
+
 def _text_check(t: Dict[str, Any]) -> Dict[str, Any]:
     text = t["text"]
     if len(text) <= 60:
@@ -1490,7 +1552,8 @@ def screen_checks(screens: List[Dict[str, Any]], plan: Optional[Dict[str, Any]],
             shown, state = _ref_name(key)
             raw.append({"id": uid("s%d_%s" % (n, key)), "shape": "same_style",
                         "x": "%s component" % c["title"], "at": at, "compare": "ref:%s" % key,
-                        "selector": c["selector"], "optional": True,
+                        "selector": c["selector"], "optional": True, "criteria": SAME_STYLE_CRITERIA,
+                        "evidence": c.get("ev"),
                         "source": "design system: .%s%s" % (shown, " (%s)" % state if state else "")})
         for i, u in enumerate(found.get("off") or []):
             if ("off", u["selector"]) in asked or not plan:
@@ -1498,14 +1561,15 @@ def screen_checks(screens: List[Dict[str, Any]], plan: Optional[Dict[str, Any]],
             asked.add(("off", u["selector"]))
             raw.append({"id": uid("s%d_off_%d" % (n, i + 1)), "shape": "which", "list": "ds_origin",
                         "x": "the element in the image", "expect": ["layout"], "at": at,
-                        "selector": u["selector"], "context": names, "optional": True,
+                        "selector": u["selector"], "context": names, "optional": True, "evidence": u.get("ev"),
                         "source": "styled outside the design system: %s" % u.get("source")})
         for i, t in enumerate(found.get("texts") or []):
             if ("txt", t["text"]) in asked:
                 continue
             asked.add(("txt", t["text"]))
             raw.append(dict(_text_check(t), id=uid("s%d_txt_%d" % (n, i + 1)), at=at,
-                            selector=t["selector"], optional=True, source="text on the screen"))
+                            selector=t["selector"], optional=True, source="text on the screen",
+                            evidence=t.get("ev")))
     checks, _rejected = parse_checks(raw, limit)
     return checks
 
@@ -1754,6 +1818,8 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
         sources: List[Dict[str, Any]] = []
         missing = None
         for ref, cap in zip(refs, caps):
+            if ref.startswith("ref:") and cap.get("style"):
+                row["evidence"] = dict(row.get("evidence") or {}, dsStyle=cap["style"])
             sel = c.get("selector")
             if sel and isinstance(cap.get("boxes"), dict):
                 box = cap["boxes"].get(sel)
@@ -1805,13 +1871,21 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
                 r["call"] = n
             jobs.append((call, part, g, state))
 
+    # A judge that refuses for quota (Cloudflare's daily free allowance, a
+    # 429) refuses every call after it too: stop asking, say why once.
+    refused: List[Any] = []
+
     def ask(job: Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any], str]) -> Tuple[Any, Any, int]:
         _call, part, g, state = job
+        if refused:
+            return None, refused[0], 0
         t0 = time.time()
         try:
             return (judge_fn(state, {r["id"]: r["question"] for r in part}, tier="image",
                              images=g["images"], kind=TYPED_KIND), None, int((time.time() - t0) * 1000))
         except Exception as exc:
+            if getattr(exc, "status", None) in (402, 429) or "allocation" in str(exc) or "quota" in str(exc).lower():
+                refused.append(exc)
             return None, exc, int((time.time() - t0) * 1000)
 
     if len(jobs) > 1:
@@ -1845,6 +1919,8 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
                       "confidence": v["confidence"], "band": v["band"],
                       "probabilities": (raw.get("probabilities") if isinstance(raw, dict) else None),
                       "status": "answered" if v["answer"] is not None else "no-answer"})
+    if refused:
+        block["refused"] = _refusal_text(refused[0])
     if unavailable is not None and not block["available"]:
         block["message"] = "typed judge unavailable: %s" % unavailable
         for _k, r in order:
@@ -1862,7 +1938,18 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
         "notAsked": sum(1 for r in block["checks"] if r["status"] not in ("answered",)),
     }
     block["message"] = "%d check(s) answered via %s" % (len(answered), block["provider"])
+    if block.get("refused"):
+        block["message"] += "; the judge refused the rest: %s" % block["refused"]
     return block
+
+
+def _refusal_text(exc: Any) -> str:
+    """One readable line for a judge's quota refusal."""
+    text = str(exc)
+    if "daily free allocation" in text:
+        return ("Cloudflare's daily free allowance (10,000 neurons) is used up; it resets daily, "
+                "or move the account to Workers Paid to keep going")
+    return text[:200]
 
 
 def _all_confident_pass(block: Optional[Dict[str, Any]]) -> bool:
