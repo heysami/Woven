@@ -14046,12 +14046,22 @@ function extractRunSubagents(events) {
     const job = linkedJobs.find(j => !["completed", "failed", "stopped", "killed", "cancelled"].includes(j.status))
       || linkedJobs.find(j => j.status !== "completed") || linkedJobs[0];
     const terminal = ["completed", "failed", "stopped", "killed", "cancelled"].includes(job?.status);
+    // A background dispatch's tool_result is only the "launched" ack; its
+    // real report arrives as the finished job's text (the CLI's completion
+    // notice). Use that, so the panel shows what the subagent returned.
+    const ackText = resultToText(result);
+    const launched = /launched|running in (the )?background|agentId:/i.test(ackText);
+    const finalText = linkedJobs
+      .filter(j => j.status === "completed" || j.status === "failed")
+      .map(j => String(j.description || ""))
+      .filter(t => t && t !== inp.description && !/^Running /.test(t))
+      .sort((x, y) => y.length - x.length)[0] || "";
     out.push({
       id: d.id || `a-${out.length}`,
       type: inp.subagent_type || "subagent",
       label: inp.description || "Subagent task",
       prompt: inp.prompt || "",
-      result: resultToText(result),
+      result: launched && finalText ? finalText : ackText,
       actions: actionsById.get(d.id) || [],
       // A background dispatch's tool_result is an immediate "launched"
       // acknowledgement, NOT its outcome - it lands within a second of the
@@ -21153,6 +21163,11 @@ function buildBlocks(events) {
   for (let i = 0; i < events.length; i++) {
     const ev = events[i];
     const d = ev.data;
+    // A subagent's own tool calls, results (its screenshots and image Reads)
+    // and text are its work, not the thread's: they live in its Tasks &
+    // subagents entry, never inline in the transcript.
+    if (ev.event === "agent" && d && d.sidechain
+        && ["tool_use", "tool_result", "text_delta", "thinking_delta"].includes(d.type)) continue;
     if (ev.event === "agent" && d) {
       if (d.type === "text_delta") {
         closeThinking(); closeGrid();

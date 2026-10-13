@@ -47,7 +47,8 @@ whole JSON.
 curl -sS "$TH_DAEMON_URL/__qa/visual-report?id=<visualReport id>&project=$TH_PROJECT_ID" > "${TMPDIR:-/tmp}/vqa-report.json"
 ```
 
-`dir` is the folder that holds every image exactly as the judge got it.
+`dir` is the folder that holds every image exactly as the judge got it;
+`sheets` lists the contact sheets of the rows you will look at (Step 3).
 `typedChecks.checks` has one row per question (`s0_...` is screen 1,
 `s1_...` screen 2, and so on): `id`, `question.instructions`
 (the sentence asked), `question.criteria` (a choice question's options),
@@ -64,10 +65,20 @@ Each row is one of:
   a row without `optional` is a confirmed failure: the element the criterion
   is about is not on the page.
 
-## Step 3 - look at every sure no and unsure
+## Step 3 - look at every sure no and unsure, on the sheets
 
-For each one, Read the images of its call (`<dir>/<file>`) and answer the
-question yourself, literally as written:
+The judge already answered every question; you look only where it said no or
+was not sure. `sheets` in the report lists contact sheets (`<dir>/<file>`)
+that hold exactly those rows: each row is numbered, names its check id, and
+shows the images of its call left to right as the judge got them (image 1,
+then image 2). Read each sheet ONCE, in order, and decide every row on it.
+Images are expensive even here:
+- never Read the same file twice;
+- never Read a single crop when its row is on a sheet (at most 3 single crops
+  per page, and only when a sheet row is too small to judge);
+- never build your own montage or screenshot.
+
+For each row, answer the question yourself, literally as written:
 - a yes/no question (`question.type` noul): is the sentence true of the
   image(s)?
 - a choice question: which option is right? (`question.criteria` describes
@@ -98,9 +109,8 @@ curl -sS -X POST "$TH_DAEMON_URL/__qa/visual-report/label?project=$TH_PROJECT_ID
 `value` is the right answer, not the judge's: `true` / `false` for a yes/no
 question, the right option id for a choice.
 
-Look at no more than 60 rows per page. With more, take every sure no first,
-then the unsure ones with the lowest confidence, and say how many you did not
-look at. A text row ("The image shows the text ...") fails when the text is
+The sheets already put every sure no first, then the unsure ones least sure
+first. A text row ("The image shows the text ...") fails when the text is
 cut off, covered by something else, or unreadable; a different font is not a
 failure.
 
