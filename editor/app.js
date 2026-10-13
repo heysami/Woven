@@ -18121,36 +18121,21 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // SDK's "<subagent> is doing X" narration) rides along as the task text when
   // present, falling back to the dispatch description.
   const activeAgents = useMemo(() => {
-    if (status !== "streaming" && status !== "connecting") return [];
-    // Latest task_progress description keyed by the parent Agent tool_use id.
-    const actionById = new Map();
-    for (const ev of events) {
-      if (ev.event !== "agent") continue;
-      const d = ev.data;
-      if (!d) continue;
-      const isTP = (d.type === "system" && d.subtype === "task_progress")
-                 || (d.type === "raw"    && d.subtype === "task_progress");
-      if (!isTP) continue;
-      const id   = d.type === "system" ? d.toolUseId   : d.frame?.tool_use_id;
-      const desc = d.type === "system" ? d.description  : d.frame?.description;
-      if (id && desc) actionById.set(id, desc);
-    }
+    // Same source as Tasks & subagents, so the two never disagree. A
+    // background dispatch keeps running after the agent's turn has ended (its
+    // tool result is only the "launched" ack); its job status says when it
+    // is done. A dispatch with no job record counts only while the turn is
+    // live, as before.
+    if (processEnded) return [];
+    const live = status === "streaming" || status === "connecting";
     const out = [];
-    for (const bl of blocks) {
-      if (bl.kind !== "agent_grid") continue;
-      for (const c of (bl.calls || [])) {
-        if (c.toolResult) continue;  // finished - drop from the live strip
-        const inp = c.toolUse?.input || {};
-        const id = c.toolUse?.id;
-        out.push({
-          id: id || `a-${out.length}`,
-          type: inp.subagent_type || "subagent",
-          task: actionById.get(id) || inp.description || "Working…",
-        });
-      }
+    for (const a of extractRunSubagents(events)) {
+      const running = a.jobStatus ? ["pending", "running"].includes(a.jobStatus) : (live && !a.done);
+      if (!running) continue;
+      out.push({ id: a.id, type: a.type, task: a.actions[a.actions.length - 1] || a.label || "Working…" });
     }
     return out;
-  }, [blocks, events, status]);
+  }, [events, status, processEnded]);
 
   // Which orchestrator families this thread has run, and what is still in
   // flight under each. Unlike the live strip above, this survives the turn:
