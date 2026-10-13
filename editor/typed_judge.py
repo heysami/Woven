@@ -57,7 +57,11 @@ JUDGES_PATH = os.path.join(_HERE, "judges.json")
 THRESHOLDS_PATH = os.path.join(_HERE, "tools", "qa", "jev_thresholds.json")
 MEDIA_CONFIG_PATH = os.path.join(_HARNESS, "media-config.json")
 COMPACT_CONFIG_PATH = os.path.join(_HARNESS, "compact-config.json")
+# Every typed answer Woven acts on or shadows (visual checks, sprite and asset
+# checks, the DS check), one JSON line each with an `id`. Labels for
+# calibration live beside it, keyed by that id, so the log is never rewritten.
 SHADOW_LOG_PATH = os.path.join(_HARNESS, "typed-judge-shadow.jsonl")
+LABELS_PATH = os.path.join(_HARNESS, "typed-judge-labels.json")
 SHADOW_LOG_MAX_BYTES = 5 * 1024 * 1024
 
 TIERS = ("text", "image")
@@ -1088,7 +1092,56 @@ def shadow_log(entry):
             pass
         line = dict(entry)
         line.setdefault("ts", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+        if "id" not in line:
+            import hashlib
+            line["id"] = hashlib.sha1(json.dumps([line["ts"], line.get("kind"), line.get("subject"),
+                                                  line.get("source"), random.random()],
+                                                 default=str).encode("utf-8")).hexdigest()[:10]
         with open(SHADOW_LOG_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(line, ensure_ascii=False) + "\n")
     except Exception:
         pass
+
+
+def read_log(paths=None):
+    # type: (Optional[List[str]]) -> List[Dict[str, Any]]
+    """Every row of the answer log (the .1 generation first), with its label
+    merged in as `expected` when one has been given. Unparseable lines are
+    skipped."""
+    labels = load_labels()
+    rows = []  # type: List[Dict[str, Any]]
+    for path in paths or [SHADOW_LOG_PATH + ".1", SHADOW_LOG_PATH]:
+        try:
+            with open(path, encoding="utf-8") as f:
+                for raw in f:
+                    try:
+                        row = json.loads(raw)
+                    except ValueError:
+                        continue
+                    if isinstance(row, dict):
+                        if row.get("id") in labels:
+                            row["expected"] = labels[row["id"]]
+                        rows.append(row)
+        except OSError:
+            continue
+    return rows
+
+
+def load_labels():
+    # type: () -> Dict[str, Any]
+    data = _read_json(LABELS_PATH)
+    return data if isinstance(data, dict) else {}
+
+
+def save_labels(pairs):
+    # type: (Dict[str, Any]) -> Dict[str, Any]
+    """Merge {logId: expected answer} into the labels file and return it."""
+    data = load_labels()
+    data.update(pairs)
+    os.makedirs(os.path.dirname(LABELS_PATH), exist_ok=True)
+    tmp = LABELS_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=1, sort_keys=True)
+    os.replace(tmp, LABELS_PATH)
+    return data
+

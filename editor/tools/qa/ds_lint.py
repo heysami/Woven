@@ -29,7 +29,7 @@ import os
 import re
 import subprocess
 import sys
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 # Properties that change a component's SKIN or internal geometry. A page-local
 # contextual rule on a DS class that only PLACES the component (margin, width,
@@ -998,8 +998,8 @@ def _batches(items, budget_q=JUDGE_MAX_QUESTIONS_PER_REQUEST, budget_c=JUDGE_MAX
     return out
 
 
-def run_jev_pass(contract, units, findings, index, log=None):
-    # type: (Dict[str, object], List[Dict[str, object]], List[Dict[str, object]], Dict[str, object], Optional[object]) -> Dict[str, object]
+def run_jev_pass(contract, units, findings, index, log=None, project=None):
+    # type: (Dict[str, object], List[Dict[str, object]], List[Dict[str, object]], Dict[str, object], Optional[object], Optional[str]) -> Dict[str, object]
     """Typed judgment over the off-system units. ALWAYS returns a status dict
     and NEVER raises: an unreachable judge leaves the deterministic verdict
     exactly as it was.
@@ -1015,7 +1015,12 @@ def run_jev_pass(contract, units, findings, index, log=None):
       ds-copy + a confident component -> invented-component  error (names it)
       ds-copy, component unclear      -> invented-component  warn
       new-ui                          -> off-system-component warn
-      layout, or not confident        -> nothing"""
+      layout, or not confident        -> nothing
+
+    Every answer is LOGGED (typed_judge.shadow_log, kinds ds_origin and
+    ds_component) with the question's evidence, the probabilities and the
+    confidence, and returned in status["judged"], so what the judge said is
+    visible and can be labelled for calibration (tools/qa/jev_calibrate.py)."""
     status = {"available": False, "asked": 0, "promoted": 0, "units": len(units),
               "message": None}  # type: Dict[str, object]
     if not units:
@@ -1038,6 +1043,29 @@ def run_jev_pass(contract, units, findings, index, log=None):
 
     th = jev.thresholds("ds_role")
     comps = index["components"]  # type: ignore[assignment]
+    try:
+        import typed_judge  # noqa: E402
+        provider = typed_judge.pick("text")
+        logger = typed_judge.shadow_log  # type: Optional[Any]
+    except Exception:
+        provider, logger = None, None
+    judged = []  # type: List[Dict[str, object]]
+
+    def top3(answer):
+        # type: (object) -> Dict[str, float]
+        return {k: round(v, 3) for k, v in jev.choice_ranked(answer, 3)}
+
+    def record(kind, u, answer, top, conf, band_, n_options):
+        # type: (str, Dict[str, object], object, Optional[str], Optional[float], str, int) -> None
+        if logger is None or top is None:
+            return
+        try:
+            logger({"kind": kind, "provider": provider, "project": project, "page": u["page"],
+                    "source": u["source"], "lines": u["lines"], "options": n_options,
+                    "answer": top, "probabilities": top3(answer), "confidence": conf,
+                    "band": band_, "context": _unit_context(u)[:700]})
+        except Exception:
+            pass
     already = {c for f in findings if f.get("rule") == "invented-component"
                for c in (f.get("classes") or [])}
     units = [u for u in units if not (set(u.get("classes") or []) & already)]  # type: ignore[arg-type]
@@ -1088,6 +1116,10 @@ def run_jev_pass(contract, units, findings, index, log=None):
     for u in units:
         top, conf, band_ = read(a1.get(id(u)))
         u["origin"] = {"answer": top, "confidence": conf, "band": band_}
+        record("ds_origin", u, a1.get(id(u)), top, conf, band_, 3)
+        judged.append({"source": u["source"], "page": u["page"], "lines": u["lines"],
+                       "answer": top, "probabilities": top3(a1.get(id(u))),
+                       "confidence": conf, "band": band_})
         if band_ != "act":
             continue
         if top == "ds-copy":
@@ -1127,6 +1159,12 @@ def run_jev_pass(contract, units, findings, index, log=None):
         a2.update(ask(items, fam_state, budget_q=8))
     for u in copies:
         top, conf, band_ = read(a2.get(id(u)))
+        record("ds_component", u, a2.get(id(u)), top, conf, band_,
+               sum(1 for c in comps.values() if _ROLE_FAMILY.get(str(c.get("role"))) == u["family"]) + 1)  # type: ignore[union-attr]
+        for j in judged:
+            if j["source"] == u["source"] and j["page"] == u["page"]:
+                j["component"] = {"answer": top, "probabilities": top3(a2.get(id(u))),
+                                  "confidence": conf, "band": band_}
         named = top if (band_ == "act" and top and top != _NONE_ID) else None
         comp = comps.get(named, {}) if named else {}  # type: ignore[union-attr]
         findings.append({
@@ -1144,6 +1182,8 @@ def run_jev_pass(contract, units, findings, index, log=None):
                        % u["source"])})
         status["promoted"] = int(status["promoted"]) + 1  # type: ignore[arg-type]
 
+    status["provider"] = provider
+    status["judged"] = judged
     if errors and not status["available"]:
         status["message"] = "; ".join(errors)[:300]
     else:
@@ -1311,7 +1351,8 @@ def main(argv=None):
                     page_rules += rules_f
             units += off_system_units(os.path.basename(p), html, page_rules,
                                       ds_vocab["classes"], index)  # type: ignore[arg-type]
-        jev_status = run_jev_pass(contract, units, all_findings, index)
+        jev_status = run_jev_pass(contract, units, all_findings, index,
+                                  project=os.path.basename(root))
 
     errors = [f for f in all_findings if f["severity"] == "error"]
     warns = [f for f in all_findings if f["severity"] == "warn"]
@@ -1337,6 +1378,12 @@ def main(argv=None):
             print("  [%s] %s %s: %s" % (f["severity"], f["rule"], loc, f["detail"]))
         if jev_status is not None:
             print("  typed judgment: %s" % (jev_status.get("message") or "no verdict"))
+            for j in jev_status.get("judged") or []:  # type: ignore[union-attr]
+                comp = j.get("component") or {}
+                print("    %-44s %-8s conf=%s %s%s" % (
+                    str(j["source"])[:44], j["answer"],
+                    ("%.2f" % j["confidence"]) if isinstance(j.get("confidence"), float) else j.get("confidence"),
+                    j["band"], (" -> %s (%s)" % (comp.get("answer"), comp.get("band"))) if comp else ""))
     return 1 if report["status"] == "violations" else 0
 
 

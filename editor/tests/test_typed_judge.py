@@ -92,7 +92,7 @@ class Isolated(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="typed-judge-test-")
         self.saved = {k: getattr(tj, k) for k in ("JUDGES_PATH", "MEDIA_CONFIG_PATH",
                                                    "COMPACT_CONFIG_PATH", "THRESHOLDS_PATH",
-                                                   "SHADOW_LOG_PATH")}
+                                                   "SHADOW_LOG_PATH", "LABELS_PATH")}
         tj.JUDGES_PATH = os.path.join(self.tmp, "judges.json")
         shutil.copy(self.saved["JUDGES_PATH"], tj.JUDGES_PATH)
         tj.THRESHOLDS_PATH = os.path.join(self.tmp, "jev_thresholds.json")
@@ -100,6 +100,7 @@ class Isolated(unittest.TestCase):
         tj.MEDIA_CONFIG_PATH = os.path.join(self.tmp, "media-config.json")
         tj.COMPACT_CONFIG_PATH = os.path.join(self.tmp, "compact-config.json")
         tj.SHADOW_LOG_PATH = os.path.join(self.tmp, "shadow.jsonl")
+        tj.LABELS_PATH = os.path.join(self.tmp, "labels.json")
         self.env = {k: os.environ.pop(k) for k in
                     list(tj.ENV_KEYS.values()) + list(tj.ACCOUNT_ENV.values())
                     + list(tj.ENDPOINT_ENV.values()) if k in os.environ}
@@ -720,6 +721,28 @@ class Calibrate(Isolated):
         rows = self.cal.run_cases(cases, judge=self._judge("clef", 0.99))
         fitted = self.cal.fit(rows, self.cal.DEFAULT_TARGETS, 0.85)
         self.assertFalse(fitted[("clef", "frame_check")]["trustPass"])
+
+    def test_the_answer_log_is_labelled_by_id_and_fits_per_provider(self):
+        tj.LABELS_PATH = os.path.join(self.tmp, "labels.json")
+        for i in range(25):
+            tj.shadow_log({"kind": "ds_origin", "provider": "clef", "source": "<style> .x%d" % i,
+                           "answer": "ds-copy", "confidence": 0.75 if i < 20 else 0.55,
+                           "band": "confirm"})
+        rows = tj.read_log()
+        self.assertEqual(len(rows), 25)
+        self.assertEqual(len({r["id"] for r in rows}), 25, "every row has its own id")
+        rep = self.cal.log_report(rows, "ds_origin")
+        self.assertEqual((rep["groups"][0]["n"], rep["groups"][0]["labelled"]), (25, 0))
+        self.assertEqual(len(rep["unlabelled"]), 25)
+        # The confident answers were right, the five hesitant ones wrong.
+        tj.save_labels({r["id"]: ("ds-copy" if r["confidence"] > 0.6 else "layout") for r in rows})
+        labelled = self.cal.log_rows_for_fit(tj.read_log())
+        self.assertEqual(len(labelled), 25)
+        self.assertEqual(labelled[0]["kind"], "ds_role", "DS answers fit the ds_role band")
+        fitted = self.cal.fit(labelled, self.cal.DEFAULT_TARGETS, 0.9)
+        self.assertTrue(fitted[("clef", "ds_role")]["met"])
+        self.assertEqual(fitted[("clef", "ds_role")]["high"], 0.6,
+                         "Clef's own bar sits just above its own wrong answers")
 
     def test_shadow_report_counts_agreement_and_lists_disagreements(self):
         for noul, llm in ((0.9, True), (0.1, False), (0.9, False), (0.2, True), (0.8, True)):

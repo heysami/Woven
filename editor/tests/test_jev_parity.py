@@ -21,6 +21,7 @@ daemon - so CI exercises the Jev path on every commit.
      exactly what they are with it off.
 """
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -41,6 +42,19 @@ import ds_lint                  # noqa: E402
 import kinds.capabilities as capabilities  # noqa: E402
 
 AXES_PATH = ROOT / "docs" / "research" / "direction-axes.jev.json"
+
+# Nothing in this suite may write into the user's real answer log or labels.
+_LOG_DIR = tempfile.mkdtemp(prefix="jev-parity-log-")
+_REAL_LOG = (typed_judge.SHADOW_LOG_PATH, typed_judge.LABELS_PATH)
+
+
+def setUpModule():
+    typed_judge.SHADOW_LOG_PATH = os.path.join(_LOG_DIR, "log.jsonl")
+    typed_judge.LABELS_PATH = os.path.join(_LOG_DIR, "labels.json")
+
+
+def tearDownModule():
+    typed_judge.SHADOW_LOG_PATH, typed_judge.LABELS_PATH = _REAL_LOG
 PROTOTYPE_MD = ROOT / "PROTOTYPE.md"
 
 # Mirrors DIRECTION_AXES in scripts/build-library-indexes.py. Named here rather
@@ -600,6 +614,23 @@ class OffSystemJudgment(unittest.TestCase):
         for verdict in (("layout", 0.99), ("ds-copy", 0.5), ("new-ui", 0.6)):
             self.assertEqual(self._ask([_unit("x")], verdict)[1], [], verdict)
 
+    def test_every_answer_is_logged_and_returned(self):
+        logged = []
+        import typed_judge as tj
+        real = tj.shadow_log
+        tj.shadow_log = logged.append
+        try:
+            status, _f, _a = self._ask([_unit("promo-tile"), _unit("wrap")], ("ds-copy", 0.97))
+        finally:
+            tj.shadow_log = real
+        kinds = sorted(r["kind"] for r in logged)
+        self.assertEqual(kinds, ["ds_component", "ds_component", "ds_origin", "ds_origin"])
+        row = [r for r in logged if r["kind"] == "ds_origin"][0]
+        for key in ("source", "page", "lines", "answer", "probabilities", "confidence", "band", "context"):
+            self.assertIn(key, row)
+        self.assertEqual(len(status["judged"]), 2)
+        self.assertEqual(status["judged"][0]["component"]["answer"], "card")
+
     def test_without_the_classifier_the_linter_output_is_unchanged(self):
         """--jev off: no off-system detection runs, nothing is added."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -851,6 +882,23 @@ class P8VisualChecks(unittest.TestCase):
         (row,) = report["typedChecks"]["checks"]
         self.assertEqual((row["answer"], row["passed"]), ("off", False))
         self.assertIn("judge said off", report["findings"][0]["message"])
+
+    def test_the_page_declares_image_checks_through_alt_text(self):
+        class FakePage:
+            def evaluate(self, js):
+                return [{"alt": "a red delivery van outside a bakery", "selector": "#hero"},
+                        {"alt": "Logo", "selector": "#logo"},
+                        {"alt": "", "selector": "#spacer"},
+                        {"alt": "a red delivery van outside a bakery", "selector": "#dup"},
+                        {"alt": "a blue ceramic mug", "selector": "body > img:nth-of-type(2)"}]
+        checks, rejected = visual_qa.page_declared_checks(FakePage())
+        self.assertEqual([(c["x"], c["selector"]) for c in checks],
+                         [("a red delivery van outside a bakery", "#hero"),
+                          ("a blue ceramic mug", "body > img:nth-of-type(2)")])
+        self.assertEqual(checks[0]["question"]["instructions"],
+                         "The image shows a red delivery van outside a bakery.")
+        self.assertTrue(all(c["declaredBy"] == "img alt" and c["at"] == "page" for c in checks))
+        self.assertEqual(rejected, [])
 
     def test_a_missing_element_is_reported_without_a_model_call(self):
         calls = []

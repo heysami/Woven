@@ -53,6 +53,17 @@ what the floor drops, so that trade is cheap.
     python3 editor/tools/qa/jev_calibrate.py --labels cases.json [--provider clef]
                                               [--target 0.95] [--write [--trust-pass]]
     python3 editor/tools/qa/jev_calibrate.py --shadow [--limit 40]
+    python3 editor/tools/qa/jev_calibrate.py --log [--kind ds_origin] [--limit 40]
+    python3 editor/tools/qa/jev_calibrate.py --label 3f2a9c1b0d=ds-copy 77e0c41a2b=layout
+    python3 editor/tools/qa/jev_calibrate.py --fit-log [--write [--trust-pass]]
+
+THE ANSWER LOG. Every typed answer Woven acted on or shadowed is one line in
+~/.test-harness/typed-judge-shadow.jsonl with an `id` (the DS check logs kinds
+ds_origin and ds_component with the element's evidence, the probabilities and
+the confidence). --log summarises it per (provider, kind) and lists unlabelled
+rows; --label records what the right answer was, by id, in
+typed-judge-labels.json (the log is never rewritten); --fit-log fits the bands
+from the labelled rows exactly as --labels does from a cases file.
 
 Stdlib only, Python 3.9-safe.
 """
@@ -180,6 +191,65 @@ def fit(rows, targets, fallback_target):
     return out
 
 
+# Which thresholds row each logged kind is judged with.
+LOG_KIND_THRESHOLD = {"ds_origin": "ds_role", "ds_component": "ds_role"}
+
+
+def log_rows_for_fit(rows):
+    # type: (List[Dict[str, Any]]) -> List[Dict[str, Any]]
+    """Labelled log rows in the shape fit() reads. A noul row is said-true at
+    0.5 and its confidence is its distance from 0.5 when the judge sent none."""
+    out = []  # type: List[Dict[str, Any]]
+    for r in rows:
+        if "expected" not in r or r.get("answer") is None:
+            continue
+        ans, conf, exp = r["answer"], r.get("confidence"), r["expected"]
+        if isinstance(ans, (int, float)) and not isinstance(ans, bool):
+            said = ans >= 0.5
+            exp = exp in (True, "true", "yes", "1", 1)
+            if conf is None:
+                conf = abs(ans - 0.5) * 2.0
+        else:
+            said = ans
+        out.append({"provider": r.get("provider") or "default",
+                    "kind": LOG_KIND_THRESHOLD.get(r.get("kind"), r.get("kind") or "default"),
+                    "said": said, "expected": exp, "confidence": conf, "correct": said == exp})
+    return out
+
+
+def log_report(rows, kind=None, limit=40):
+    # type: (List[Dict[str, Any]], Optional[str], int) -> Dict[str, Any]
+    groups = {}  # type: Dict[Tuple[str, str], Dict[str, Any]]
+    pending = []  # type: List[Dict[str, Any]]
+    for r in rows:
+        if kind and r.get("kind") != kind:
+            continue
+        key = (str(r.get("provider") or "?"), str(r.get("kind") or "?"))
+        g = groups.setdefault(key, {"provider": key[0], "kind": key[1], "n": 0, "labelled": 0,
+                                    "answers": {}, "bands": {}, "confidences": []})
+        g["n"] += 1
+        g["labelled"] += 1 if "expected" in r else 0
+        a = str(r.get("answer")) if not isinstance(r.get("answer"), float) else (
+            "true" if r["answer"] >= 0.5 else "false")
+        g["answers"][a] = g["answers"].get(a, 0) + 1
+        g["bands"][str(r.get("band"))] = g["bands"].get(str(r.get("band")), 0) + 1
+        if isinstance(r.get("confidence"), (int, float)):
+            g["confidences"].append(float(r["confidence"]))
+        if "expected" not in r:
+            pending.append(r)
+    for g in groups.values():
+        cs = sorted(g.pop("confidences"))
+        g["confidence"] = ({"min": round(cs[0], 3), "median": round(cs[len(cs) // 2], 3),
+                            "max": round(cs[-1], 3)} if cs else None)
+    pending = pending[-limit:]
+    return {"groups": [groups[k] for k in sorted(groups)],
+            "unlabelled": [{"id": r.get("id"), "kind": r.get("kind"), "ts": r.get("ts"),
+                            "project": r.get("project"), "page": r.get("page"),
+                            "what": r.get("source") or r.get("subject"), "answer": r.get("answer"),
+                            "probabilities": r.get("probabilities"),
+                            "confidence": r.get("confidence")} for r in pending]}
+
+
 def write_fitted(fitted, trust_pass=False, path=None):
     # type: (Dict[Tuple[str, str], Dict[str, Any]], bool, Optional[str]) -> str
     """Merge met bands into providers[<judge>][<kind>]. Never loosens a floor
@@ -249,6 +319,13 @@ def main(argv=None):
     mode.add_argument("--labels", help="labelled cases JSON (see the module docstring)")
     mode.add_argument("--shadow", nargs="?", const="", metavar="LOG",
                       help="report Shadow-mode agreement (default: the shadow log)")
+    mode.add_argument("--log", action="store_true",
+                      help="summarise the answer log and list unlabelled rows")
+    mode.add_argument("--label", nargs="+", metavar="ID=ANSWER",
+                      help="record the right answer for logged rows, by id")
+    mode.add_argument("--fit-log", action="store_true",
+                      help="fit bands from the labelled rows of the answer log")
+    ap.add_argument("--kind", default=None, help="with --log: only this kind (e.g. ds_origin)")
     ap.add_argument("--provider", default=None,
                     help="judge id to calibrate (default: whatever each case routes to)")
     ap.add_argument("--target", type=float, default=0.90,
@@ -261,6 +338,53 @@ def main(argv=None):
                     help="with --write, also set trustPass where the labelled set earned it")
     ap.add_argument("--json", action="store_true", dest="as_json")
     args = ap.parse_args(argv)
+
+    if args.label:
+        pairs = {}
+        for item in args.label:
+            if "=" not in item:
+                print("label must be ID=ANSWER, got %r" % item)
+                return 2
+            k, v = item.split("=", 1)
+            pairs[k.strip()] = {"true": True, "false": False}.get(v.strip().lower(), v.strip())
+        typed_judge.save_labels(pairs)
+        print("labelled %d row(s) in %s" % (len(pairs), typed_judge.LABELS_PATH))
+        return 0
+
+    if args.log:
+        report = log_report(typed_judge.read_log(), args.kind, args.limit)
+        if args.as_json:
+            print(json.dumps(report, indent=2))
+            return 0
+        print("Typed-judge answer log (%s)" % typed_judge.SHADOW_LOG_PATH)
+        if not report["groups"]:
+            print("  nothing logged yet")
+        for g in report["groups"]:
+            print("  %-12s %-14s n=%-4d labelled=%-4d answers=%s bands=%s confidence=%s"
+                  % (g["provider"], g["kind"], g["n"], g["labelled"], g["answers"], g["bands"],
+                     g["confidence"]))
+        if report["unlabelled"]:
+            print("  unlabelled (label with --label ID=ANSWER):")
+            for r in report["unlabelled"]:
+                print("    %s  %-12s %-40s said %-10s conf=%s %s"
+                      % (r["id"], r["kind"], str(r["what"])[:40], r["answer"], r["confidence"],
+                         r.get("probabilities") or ""))
+        return 0
+
+    if args.fit_log:
+        rows = log_rows_for_fit(typed_judge.read_log())
+        if not rows:
+            print("no labelled rows in the answer log yet - label some with --label ID=ANSWER")
+            return 2
+        fitted = fit(rows, DEFAULT_TARGETS, args.target)
+        if args.write:
+            print("wrote %s" % write_fitted(fitted, trust_pass=args.trust_pass))
+        for row in fitted.values():
+            print("  %-12s %-18s n=%-3d target=%.2f  %s high=%.2f low=%.2f  trustPass=%s"
+                  % (row["provider"], row["kind"], row["cases"], row["target"],
+                     "MET " if row["met"] else "NOT MET (kept the conservative default)",
+                     row["high"], row["low"], "earned" if row["trustPass"] else "no"))
+        return 0
 
     if args.shadow is not None:
         report = shadow_report([args.shadow] if args.shadow else None, args.limit)

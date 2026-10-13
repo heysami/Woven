@@ -843,6 +843,55 @@ _BOXES_JS = """(sels) => Object.fromEntries(sels.map(s => {
 }))"""
 
 
+_DECLARED_JS = """() => {
+  const path = el => {
+    const parts = [];
+    while (el && el.nodeType === 1 && el !== document.body) {
+      if (el.id) { parts.unshift('#' + CSS.escape(el.id)); return parts.join(' > '); }
+      let i = 1, s = el;
+      while ((s = s.previousElementSibling)) if (s.tagName === el.tagName) i++;
+      parts.unshift(el.tagName.toLowerCase() + ':nth-of-type(' + i + ')');
+      el = el.parentElement;
+    }
+    return 'body > ' + parts.join(' > ');
+  };
+  return Array.from(document.querySelectorAll('img[alt], svg[role="img"][aria-label]'))
+    .filter(el => { const r = el.getBoundingClientRect(); return r.width >= 32 && r.height >= 32; })
+    .map(el => ({alt: (el.getAttribute('alt') || el.getAttribute('aria-label') || '').trim(),
+                 selector: path(el)}));
+}"""
+# Alt text that names no content: an image "shows" these only trivially.
+_GENERIC_ALT = re.compile(r"^(image|img|photo|picture|pic|icon|logo|banner|graphic|"
+                          r"illustration|placeholder|thumbnail|avatar|hero|decoration)s?\.?$", re.I)
+MAX_DECLARED = 12
+
+
+def page_declared_checks(page: Any, existing: int = 0
+                         ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Checks the page's own markup declares: one `shows` check per visible
+    image whose alt (or aria-label) names content. Never raises."""
+    try:
+        found = page.evaluate(_DECLARED_JS) or []
+    except Exception as exc:
+        log("page-declared checks unavailable (%s)" % exc)
+        return [], []
+    raw = []
+    seen = set()
+    for i, f in enumerate(found):
+        alt = re.sub(r"\s+", " ", str(f.get("alt") or "")).strip()
+        if not alt or _GENERIC_ALT.match(alt) or len(alt.split()) < 2 or alt.lower() in seen:
+            continue
+        seen.add(alt.lower())
+        raw.append({"id": "img_alt_%d" % (len(raw) + 1), "shape": "shows", "x": alt[:160],
+                    "at": "page", "selector": f.get("selector")})
+        if len(raw) >= max(0, min(MAX_DECLARED, MAX_CHECKS - existing)):
+            break
+    checks, rejected = parse_checks(raw)
+    for c in checks:
+        c["declaredBy"] = "img alt"
+    return checks, rejected
+
+
 def capture_boxes(page: Any, selectors: List[str]) -> Optional[Dict[str, Any]]:
     """Where each check's element is at THIS capture, or None when no check
     needs a crop. Never raises: a failed probe means no crop, not no run."""
@@ -2160,6 +2209,21 @@ def run(args: argparse.Namespace) -> int:
                 log("camera piece (getUserMedia called); warming up vision ~7s")
                 report["cameraUsed"] = True
                 page.wait_for_timeout(7000)
+
+        # ----- PAGE-DECLARED CHECKS -----
+        # With typed visual checks on, the page itself says what some of it
+        # must show: every visible <img alt> / labelled <svg role=img> becomes
+        # "The image shows <alt>", cropped to that image. Built from the
+        # markup by code - no model writes it, and an image with no usable alt
+        # is no check.
+        if getattr(args, "typed_judge", None):
+            auto, auto_rejected = page_declared_checks(page, len(args.parsed_checks[0]))
+            if auto:
+                args.parsed_checks = (args.parsed_checks[0] + auto,
+                                      args.parsed_checks[1] + auto_rejected)
+                check_selectors = sorted({c["selector"] for c in args.parsed_checks[0]
+                                          if c.get("selector")})
+                log("page declares %d image check(s) through alt text" % len(auto))
 
         # ----- IDLE TIMELINE -----
         idle_frames: List[Dict[str, Any]] = []
