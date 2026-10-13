@@ -65,6 +65,28 @@ class Ranking(unittest.TestCase):
         self.assertIn("ranked the design library", out["forAgent"])
         self.assertIn("do not call /__judge", out["forAgent"])
         self.assertIn("style (confidence 0.60): %s 0.80" % style["top"][0]["id"], out["forAgent"])
+        self.assertEqual(len(ev["proposals"]), 3)
+        self.assertIn("start your three options from them", out["forAgent"])
+
+    def test_three_proposals_spread_across_the_open_axis(self):
+        ev = {"thresholds": {"high": 0.7}, "axes": {
+            "shell": {"top": [{"id": "canvas", "label": "canvas", "p": 0.23}, {"id": "mobile", "label": "mobile", "p": 0.13}]},
+            "style": {"top": [{"id": "pixel", "label": "pixel", "p": 0.8}, {"id": "flat", "label": "flat", "p": 0.03}]},
+            "aesthetic": {"top": [{"id": "ps1", "label": "ps1", "p": 0.16}, {"id": "8bit", "label": "8bit", "p": 0.15},
+                                  {"id": "cozy", "label": "cozy", "p": 0.14}]}}}
+        props = dr.proposals(ev)
+        self.assertEqual(len(props), 3)
+        self.assertEqual({p["spread"] for p in props}, {"aesthetic"}, "the axis the brief leaves most open")
+        self.assertEqual([p["picks"]["aesthetic"]["id"] for p in props], ["ps1", "8bit", "cozy"])
+        self.assertEqual({p["picks"]["style"]["id"] for p in props}, {"pixel"}, "the implied style stays")
+        self.assertEqual({p["picks"]["shell"]["id"] for p in props}, {"canvas"})
+
+    def test_each_pick_has_its_library_preview(self):
+        pv = dr.previews(str(EDITOR.parent / "PROTOTYPE.md"))
+        self.assertEqual(pv.get("pixel-grid-bitmap"), "design-library/style-pixel-bitmap-ui.png",
+                         "ids and file names differ: the roster line links them")
+        self.assertEqual(pv.get("canvas-floating-panels"), "design-library/shell-canvas-floating-ui.png")
+        self.assertGreater(len(pv), 100)
 
     def test_a_failure_is_shown_never_missing(self):
         def down(*a, **k):

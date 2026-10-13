@@ -5179,6 +5179,17 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .chat-judge-pick:first-child { color: var(--text); }
 .chat-judge-pick.is-strong { color: var(--hot-text); font-weight: 700; }
 .chat-judge-proposal-note { color: var(--text-muted); margin-top: 4px; }
+.chat-judge-option { display: grid; grid-template-columns: 16px repeat(3, minmax(0, 1fr)); gap: 8px; align-items: start; padding: 6px 0; border-top: 1px solid var(--border); }
+.chat-judge-option:first-of-type { border-top: 0; }
+.chat-judge-option-n { font-weight: 700; color: var(--text-muted); padding-top: 2px; }
+.chat-judge-part { margin: 0; min-width: 0; }
+.chat-judge-part img, .chat-judge-part-none { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); }
+.chat-judge-part-none { display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 11px; }
+.chat-judge-part.is-spread img { border-color: var(--hot-text); }
+.chat-judge-part figcaption { font-size: 11px; color: var(--text); margin-top: 2px; overflow-wrap: anywhere; }
+.chat-judge-part figcaption span { color: var(--text-muted); margin-right: 3px; }
+.chat-judge-ranking { margin-top: 4px; }
+.chat-judge-ranking summary { cursor: pointer; color: var(--text-muted); }
 .chat-judge-proposal[data-error="true"] .chat-judge-proposal-note { color: var(--danger); }
 .th-vqa-ans { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); white-space: nowrap; padding-top: 1px; }
 .th-subagent-run {

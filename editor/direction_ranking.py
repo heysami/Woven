@@ -13,15 +13,20 @@ cannot be skipped. With the setting off nothing here runs.
 
 import json
 import os
+import re
 import time
 from typing import Any, Callable, Dict, List, Optional
 
 import typed_judge
 
 AXES = ("recipe", "shell", "style", "aesthetic")
+CORE = ("shell", "style", "aesthetic")
 TOP = 5
-AXES_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                         "docs", "research", "direction-axes.jev.json")
+PROPOSALS = 3
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+AXES_FILE = os.path.join(_ROOT, "docs", "research", "direction-axes.jev.json")
+PROTOTYPE_MD = os.path.join(_ROOT, "PROTOTYPE.md")
+_ROSTER_LINK = re.compile(r"^- \*\*([^*]+)\*\*.*?\(\./design-library/([\w+.-]+)\.md\)", re.M)
 NEEDS_DIRECTION = "This request leaves the visual direction unspecified."
 
 
@@ -58,6 +63,58 @@ def questions(axes):
         if k in axes:
             qs[k] = {"type": "choice", "instructions": axes[k]["question"], "criteria": axes[k]["criteria"]}
     return qs
+
+
+_PREVIEWS = None  # type: Optional[Dict[str, str]]
+
+
+def previews(path=None):
+    # type: (Optional[str]) -> Dict[str, str]
+    """Library id -> its preview image (`design-library/<file>-ui.png`), from
+    the roster lines in PROTOTYPE.md that link each id to its library file."""
+    global _PREVIEWS
+    if _PREVIEWS is not None and path is None:
+        return _PREVIEWS
+    out = {}  # type: Dict[str, str]
+    try:
+        with open(path or PROTOTYPE_MD, "r", encoding="utf-8") as f:
+            text = f.read()
+        lib = os.path.join(os.path.dirname(path or PROTOTYPE_MD), "design-library")
+        for m in _ROSTER_LINK.finditer(text):
+            png = m.group(2) + "-ui.png"
+            if m.group(1).strip() not in out and os.path.isfile(os.path.join(lib, png)):
+                out[m.group(1).strip()] = "design-library/" + png
+    except OSError:
+        pass
+    if path is None:
+        _PREVIEWS = out
+    return out
+
+
+def proposals(event, n=PROPOSALS):
+    # type: (Dict[str, Any], int) -> List[Dict[str, Any]]
+    """Three complete directions (shell + style + aesthetic) from the ranking,
+    by PROTOTYPE.md step -1's own rule: an axis the brief implies (top pick at
+    or over the high threshold) keeps its top pick in all three; the three
+    SPREAD across the axis the brief leaves most open (aesthetic first, then
+    style, then shell), taking its top picks in order."""
+    axes = event.get("axes") or {}
+    high = float((event.get("thresholds") or {}).get("high") or 0.7)
+    core = [a for a in CORE if (axes.get(a) or {}).get("top")]
+    if not core:
+        return []
+    open_axes = [a for a in core if axes[a]["top"][0]["p"] < high]
+    spread = open_axes[-1] if open_axes else min(core, key=lambda a: axes[a]["top"][0]["p"])
+    for a in ("aesthetic", "style", "shell"):
+        if a in open_axes:
+            spread = a
+            break
+    out = []
+    for i, pick in enumerate(axes[spread]["top"][:n]):
+        combo = {a: (pick if a == spread else axes[a]["top"][0]) for a in core}
+        out.append({"spread": spread, "picks": {a: {k: t[k] for k in ("id", "label", "p", "preview") if k in t}
+                                                 for a, t in combo.items()}})
+    return out
 
 
 def _label(option_id):
@@ -107,9 +164,11 @@ def propose(project_root, brief, judge=None, axes_path=None, enabled=None):
         event["axes"][k] = {
             "question": axes[k]["question"], "optional": bool(axes[k].get("optional")),
             "confidence": a.get("confidence"),
-            "top": [{"id": i, "label": _label(i), "p": round(float(p), 4),
-                     "desc": str(axes[k]["criteria"].get(i, ""))[:200]} for i, p in ranked],
+            "top": [dict({"id": i, "label": _label(i), "p": round(float(p), 4),
+                          "desc": str(axes[k]["criteria"].get(i, ""))[:200]},
+                         **({"preview": previews()[i]} if i in previews() else {})) for i, p in ranked],
         }
+    event["proposals"] = proposals(event)
     return {"event": event, "forAgent": for_agent(event, out.get("provider") or "the text judge")}
 
 
@@ -125,6 +184,12 @@ def for_agent(event, provider):
     for k, ax in (event.get("axes") or {}).items():
         lines.append("%s (confidence %s): %s" % (k, _n(ax.get("confidence")),
                                                  ", ".join("%s %s" % (t["id"], _n(t["p"])) for t in ax["top"])))
+    props = event.get("proposals") or []
+    if props:
+        lines.append("The user sees these %d proposals built from it (spread across %s, the axis the brief "
+                     "leaves most open); start your three options from them:" % (len(props), props[0]["spread"]))
+        for i, pr in enumerate(props):
+            lines.append("  %d. %s" % (i + 1, " + ".join("%s %s" % (a, t["id"]) for a, t in pr["picks"].items())))
     return "\n".join(lines) + "]"
 
 

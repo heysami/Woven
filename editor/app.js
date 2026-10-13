@@ -24463,16 +24463,30 @@ function JudgeProposal({ data }) {
     </div>`;
   }
   const high = (d.thresholds && d.thresholds.high) || 0.7;
-  return html`<div className="chat-judge-proposal">
-    <div className="chat-judge-proposal-h">Judge's proposal from the library
-      <span className="chat-judge-proposal-meta">${providerName} · ${((d.ms || 0) / 1000).toFixed(1)} s</span></div>
-    ${Object.entries(d.axes || {}).map(([k, ax]) => html`
+  const props = d.proposals || [];
+  const ranking = Object.entries(d.axes || {}).map(([k, ax]) => html`
       <div className="chat-judge-axis" key=${k}>
         <span className="chat-judge-axis-name">${JUDGE_AXIS_LABEL[k] || k}</span>
         <span className="chat-judge-axis-picks">${(ax.top || []).slice(0, 3).map((t, i) => html`<span key=${t.id}
             className=${"chat-judge-pick" + (i === 0 && t.p >= high ? " is-strong" : "")} title=${t.desc || t.id}>${i ? " · " : ""}${t.label} ${Number(t.p).toFixed(2)}</span>`)}</span>
+      </div>`);
+  return html`<div className="chat-judge-proposal">
+    <div className="chat-judge-proposal-h">Judge's ${props.length || ""} proposal${props.length === 1 ? "" : "s"} from the library
+      <span className="chat-judge-proposal-meta">${providerName} · ${((d.ms || 0) / 1000).toFixed(1)} s</span></div>
+    ${props.map((pr, n) => html`
+      <div className="chat-judge-option" key=${n}>
+        <span className="chat-judge-option-n">${n + 1}</span>
+        ${["shell", "style", "aesthetic"].filter(a => pr.picks && pr.picks[a]).map(a => {
+          const t = pr.picks[a];
+          return html`<figure className=${"chat-judge-part" + (a === pr.spread ? " is-spread" : "")} key=${a}>
+            ${t.preview ? html`<img src=${apiUrl("/" + t.preview)} alt=${`${JUDGE_AXIS_LABEL[a]}: ${t.label}`} loading="lazy"/>`
+                        : html`<div className="chat-judge-part-none">${t.label}</div>`}
+            <figcaption><span>${JUDGE_AXIS_LABEL[a]}</span> ${t.label}${a === pr.spread ? ` ${Number(t.p).toFixed(2)}` : ""}</figcaption>
+          </figure>`;
+        })}
       </div>`)}
-    ${d.needsDirection != null && html`<div className="chat-judge-proposal-note">The brief leaves the direction open: ${Number(d.needsDirection).toFixed(2)}</div>`}
+    ${props.length > 0 ? html`<details className="chat-judge-ranking"><summary>Full ranking</summary>${ranking}</details>` : ranking}
+    ${d.needsDirection != null && html`<div className="chat-judge-proposal-note">The brief leaves the direction open: ${Number(d.needsDirection).toFixed(2)}${props.length ? ` · the three differ in ${props[0].spread}, the axis it leaves most open` : ""}</div>`}
   </div>`;
 }
 
