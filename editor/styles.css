@@ -5168,7 +5168,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-vqa-o-sure-no { color: var(--danger); }
 .th-vqa-o-sure-yes { color: var(--success); }
 .th-vqa-counts { display: flex; gap: 12px; padding: 2px 8px 6px; }
-.th-judge-mark { color: var(--accent); }
+.th-judge-mark { color: var(--hot-text); font-weight: 700; }
 .th-vqa-ans { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); white-space: nowrap; padding-top: 1px; }
 .th-subagent-run {
   font-size: 11px;
