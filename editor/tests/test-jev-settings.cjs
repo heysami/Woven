@@ -65,7 +65,7 @@ function slice(app, name) {
       window.fetch = async (url, opts) => {
         if (url === "/__judge/status") return { ok: true, json: async () => window.judgeStatus };
         if (url === "/__media_config") { window.posted.push(JSON.parse(opts.body)); return { ok: true, json: async () => ({ ok: true }) }; }
-        if (url.startsWith("/__media_config/test")) return { ok: true, json: async () => ({ ok: true }) };
+        if (url.startsWith("/__media_config/test")) return { ok: true, json: async () => ({ ok: true, judge: { text: true, images: true }, imagesVerified: true }) };
         throw new Error("unexpected fetch " + url);
       };
       function useContextCostConfig() {
@@ -180,7 +180,7 @@ function slice(app, name) {
     const localTest = row('clef_local').getByRole('button', { name: 'Test' });
     assert.equal(await localTest.isDisabled(), false, 'a keyless judge is testable with no key');
     await localTest.click();
-    await assert.doesNotReject(row('clef_local').getByText('Local Clef answered.').waitFor({ timeout: 2000 }));
+    await assert.doesNotReject(row('clef_local').getByText('Local Clef answered. Reads images.', { exact: false }).waitFor({ timeout: 2000 }));
 
     assert.deepEqual(errors, [], 'no page errors');
     console.log('PASS: typed-judgment settings - two tiers, keyed-only picks, status line, judge key rows.');

@@ -100729,6 +100729,8 @@ function WorkflowProviderSection({ provider, status, onChanged }) {
   const fields = provider.fields || [];
   const savedFields = status.fields || {};
   const [fieldInputs, setFieldInputs] = useState({});
+  // What the last Test found about images (typed judges only): true, false, or null.
+  const [testImages, setTestImages] = useState(null);
 
   const integrated = !!provider.integrated;
   const testable   = !!provider.testable;
@@ -100783,6 +100785,7 @@ function WorkflowProviderSection({ provider, status, onChanged }) {
         setTestError(typeof j.detail === "object" ? JSON.stringify(j.detail).slice(0, 200) : (j.error || `HTTP ${r.status}`));
       } else {
         setTestStatus("ok");
+        setTestImages(j.judge ? (typeof j.imagesVerified === "boolean" ? j.imagesVerified : null) : undefined);
       }
       await onChanged();
     } catch (e) {
@@ -100866,7 +100869,10 @@ function WorkflowProviderSection({ provider, status, onChanged }) {
       ${integrated && html`
         ${testStatus === "ok" && html`
           <div className="workflow-settings-msg workflow-settings-msg-ok">
-            ${keyless ? `${provider.label} answered.` : "Key works."}${status.last_test_at ? ` Last tested ${status.last_test_at}.` : ""}
+            ${keyless ? `${provider.label} answered.` : "Key works."}${
+              testImages === true ? " Reads images."
+              : testImages === false ? " Text only: it could not tell a red image from a blue one, so image checks skip it."
+              : ""}${status.last_test_at ? ` Last tested ${status.last_test_at}.` : ""}
           </div>
         `}
         ${testStatus === "fail" && html`
