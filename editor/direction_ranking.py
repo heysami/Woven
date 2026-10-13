@@ -132,10 +132,12 @@ def _label(option_id):
 
 def propose(project_root, brief, judge=None, axes_path=None, enabled=None):
     # type: (str, str, Optional[Callable[..., Dict[str, Any]]], Optional[str], Optional[bool]) -> Optional[Dict[str, Any]]
-    """{"event": <what the thread shows>, "forAgent": <block for the agent's
-    first message>} or None when the setting is off or a direction exists.
-    Never raises: a failure is an event that says why, so the proposal is
-    never silently missing."""
+    """{"event": <what the thread shows, or None>, "forAgent": <block for the
+    agent's first message>}, or None when the setting is off or a direction
+    exists. With the setting on the agent never composes direction options:
+    proposals are shown and it waits for the pick; a brief that states its
+    direction is locked as stated; a request that is no new build gets
+    nothing. Never raises: a failure is shown and the agent told why."""
     if enabled is None:
         try:
             enabled = bool(typed_judge.config().get("jevJudge"))
@@ -146,26 +148,28 @@ def propose(project_root, brief, judge=None, axes_path=None, enabled=None):
     try:
         axes = load_axes(axes_path)
     except Exception as exc:
-        return {"event": {"error": "the design library's ranking file could not be read (%s)" % exc},
-                "forAgent": ""}
+        return _failed("the design library's ranking file could not be read (%s)" % exc)
     t0 = time.time()
     try:
         out = (judge or typed_judge.judge)(brief.strip()[:6000], questions(axes), tier="text",
                                            kind="direction_axis")
     except typed_judge.JudgeUnavailable as exc:
-        return {"event": {"error": "no text judge is set up (%s)" % exc}, "forAgent": ""}
+        return _failed("no text judge is set up (%s)" % exc)
     except Exception as exc:
-        return {"event": {"error": str(exc)[:240]}, "forAgent": ""}
+        return _failed(str(exc)[:240])
     ms = int((time.time() - t0) * 1000)
     answers = out.get("answers") or {}
     th = out.get("thresholds") or {}
     # The chain's first two links, from the same call: a request that is not a
-    # new build, or that already states its direction, gets no proposal.
+    # new build needs no direction; one that states its whole direction gets
+    # it locked as stated. Neither shows proposals.
     cut = float(th.get("noul") or 0.5)
     is_build = typed_judge.noul_value(answers.get("is_build"))
     needs = typed_judge.noul_value(answers.get("needs_direction"))
-    if is_build is None or needs is None or is_build < cut or needs < NEEDS_CUT:
-        return None
+    if is_build is None or is_build < cut:
+        return {"event": None, "forAgent": ""}
+    if needs is None or needs < NEEDS_CUT:
+        return _stated(needs or 0.0, out.get("provider") or "the text judge")
     event = {"provider": out.get("provider"), "model": out.get("model"), "ms": ms,
              "needsDirection": needs, "isBuild": is_build,
              "thresholds": {k: th.get(k) for k in ("low", "high", "noul")},
@@ -187,6 +191,33 @@ def propose(project_root, brief, judge=None, axes_path=None, enabled=None):
     return {"event": event, "forAgent": for_agent(event, out.get("provider") or "the text judge")}
 
 
+# With the judge on, the agent never composes direction options (PROTOTYPE.md
+# step -1): every path below locks a direction or waits for the user's pick.
+LOCK = ("To lock a direction: map it to library ids (shell, style, aesthetic: from the ranking when one is given, else "
+        "PROTOTYPE.md's rosters), read those library files for palette and fonts, POST "
+        "/__decision/prototype-direction with values, labels and the full detail, and go on to the next step.")
+
+
+def _block(text):
+    # type: (str) -> str
+    return "[Woven: typed judgment is on, so do NOT compose direction options, do not run PROTOTYPE.md " \
+           "step -1's composing or recolouring, and do not call /__judge. " + text + " " + LOCK + "]"
+
+
+def _stated(needs, provider):
+    # type: (float, str) -> Dict[str, Any]
+    return {"event": None, "forAgent": _block(
+        "The typed judge (%s) read this request as a new build that already states its direction "
+        "(leaves it open: %s). Lock the direction it states." % (provider, _n(needs)))}
+
+
+def _failed(error):
+    # type: (str) -> Dict[str, Any]
+    return {"event": {"error": error}, "forAgent": _block(
+        "The judge could not rank the library (%s). If the request states a direction, lock it; if it "
+        "states none, ask the user in one line to describe the look they want, then stop." % error)}
+
+
 def for_agent(event, provider):
     # type: (Dict[str, Any], str) -> str
     """The block for the agent's first message. With proposals on screen the
@@ -204,8 +235,8 @@ def for_agent(event, provider):
              "<id>, style <id>, aesthetic <id>` (already saved with those ids as its detail); continue from the "
              "direction lock: read those library files, add the palette and fonts to the decision's detail "
              "(POST /__decision/prototype-direction with the full detail) and go on to the next step. If they "
-             "describe their own direction instead, run step -1 as usual." % (provider, (event.get("ms") or 0) / 1000.0,
-                                                                         len(props)),
+             "describe their own direction instead, lock THAT one directly (%s); never compose options."
+             % (provider, (event.get("ms") or 0) / 1000.0, len(props), LOCK),
              "the proposals (they differ in %s, the axis the brief leaves most open):" % props[0]["spread"]]
     for i, pr in enumerate(props):
         lines.append("  %d. %s" % (i + 1, ", ".join("%s %s" % (a, t["id"]) for a, t in pr["picks"].items())))

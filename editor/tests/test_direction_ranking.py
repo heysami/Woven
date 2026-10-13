@@ -68,6 +68,8 @@ class Ranking(unittest.TestCase):
         self.assertEqual(len(ev["proposals"]), 3)
         self.assertIn("Do NOT compose direction options", out["forAgent"])
         self.assertIn("[decision:prototype-direction] judgeN", out["forAgent"])
+        self.assertIn("lock THAT one directly", out["forAgent"])
+        self.assertNotIn("run step -1 as usual", out["forAgent"])
 
     def test_only_a_new_build_that_leaves_the_direction_open_gets_proposals(self):
         def answering(is_build, needs):
@@ -76,11 +78,14 @@ class Ranking(unittest.TestCase):
                 out["answers"].update({"is_build": {"noul": is_build}, "needs_direction": {"noul": needs}})
                 return out
             return j
-        self.assertIsNone(dr.propose(self.root, "how do I export?", answering(0.1, 0.9), AXES, enabled=True),
-                          "not a build request")
-        self.assertIsNone(dr.propose(self.root, "a brutalist site in Space Mono", answering(0.95, 0.2), AXES,
-                                     enabled=True), "the brief states its direction")
-        self.assertIsNotNone(dr.propose(self.root, "a ludo game", answering(0.95, 0.7), AXES, enabled=True))
+        self.assertEqual(dr.propose(self.root, "how do I export?", answering(0.1, 0.9), AXES, enabled=True),
+                         {"event": None, "forAgent": ""}, "not a build request: no direction step at all")
+        stated = dr.propose(self.root, "a brutalist site in Space Mono", answering(0.95, 0.03), AXES, enabled=True)
+        self.assertIsNone(stated["event"], "nothing to choose, so nothing shown")
+        self.assertIn("Lock the direction it states", stated["forAgent"])
+        self.assertIn("do NOT compose direction options", stated["forAgent"])
+        self.assertIsNotNone(dr.propose(self.root, "a ludo game", answering(0.95, 0.32), AXES, enabled=True)["event"],
+                             "a brief that names only its style still gets proposals")
 
     def test_three_proposals_spread_across_the_open_axis(self):
         ev = {"thresholds": {"high": 0.7}, "axes": {
@@ -107,7 +112,8 @@ class Ranking(unittest.TestCase):
             raise typed_judge.JudgeUnavailable("no text judge", reason="no-key")
         out = dr.propose(self.root, "a pixel art ludo game", down, AXES, enabled=True)
         self.assertIn("no text judge is set up", out["event"]["error"])
-        self.assertEqual(out["forAgent"], "")
+        self.assertIn("do NOT compose direction options", out["forAgent"],
+                      "judge on: the agent never falls back to composing options")
 
 
 if __name__ == "__main__":

@@ -35910,7 +35910,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # instruction; we keep those out of the chat log so it stays clean.
         if kind == "freeform" and user_prompt:
             state.append("user_message", {"text": user_prompt})
-        if _proposal:
+        if _proposal and _proposal.get("event"):
             state.append("agent", dict({"type": "judge_proposal"}, **_proposal["event"]))
 
         with RUNS_LOCK:
