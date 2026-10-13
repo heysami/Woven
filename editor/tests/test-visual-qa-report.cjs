@@ -71,6 +71,8 @@ const report = {
       ${constLine('VQA_ORDER')}
       ${slice('function visualQaOutcome(')}
       ${slice('function VisualQaReport(')}
+      const _judgeCounts = new Map();
+      ${slice('function JudgeMark(')}
       const Icon = { Bot: () => null, Refresh: () => null };
       const chatRowsToEvents = rows => rows;
       function extractRunSubagents() { return []; }
@@ -102,6 +104,11 @@ const report = {
     assert.deepEqual(srcs.map(s => decodeURIComponent(s.split('f=')[1])), ['sent_01_1.png', 'ref_btn.png', 'sent_02_2.png'],
       'the images of the listed calls, as sent; none of the sure-yes call');
     await page.waitForFunction(() => [...document.querySelectorAll('.th-vqa-imgs img')].every(i => i.complete && i.naturalWidth > 0));
+    // The Subagents list marks a subagent that has a Judge tab.
+    await page.evaluate(() => { const d = document.createElement('div'); d.id = 'mark'; document.body.appendChild(d);
+      ReactDOM.createRoot(d).render(React.createElement(JudgeMark, { ids: ['20261013-161310-ab12cd'] })); });
+    await page.waitForFunction(() => /unsure/.test(document.querySelector('#mark').innerText));
+    assert.equal((await page.locator('#mark').innerText()).trim(), '· judge 1 no, 1 unsure');
     // The subagent panel: tabs, the judge's answers first.
     await page.evaluate(() => { const d = document.createElement('div'); d.id = 'panel'; document.body.appendChild(d); window.renderPanel(); });
     await page.waitForSelector('#panel [role=tab]');

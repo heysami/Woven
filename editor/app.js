@@ -14935,7 +14935,7 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagen
                   <span className="runs-row-dot" data-status=${a.error ? "fail" : a.done ? "done" : "live"}/>
                   <${Icon.Bot}/>
                   <span className="th-tasks-row-main">
-                    <span className="th-tasks-row-type">${a.type}</span>
+                    <span className="th-tasks-row-type">${a.type}<${JudgeMark} ids=${visualQaReportIds(a.result)}/></span>
                     <span className="th-tasks-row-label">${a.label}</span>
                   </span>
                   <span className="th-tasks-row-state">${a.error ? "failed" : a.done ? "done" : "running"}</span>
@@ -15038,6 +15038,38 @@ function visualQaReportIds(text) {
 }
 
 const VQA_ORDER = { "sure-no": 0, unsure: 1, answered: 2, "sure-yes": 3 };
+
+/* JudgeMark - on a Tasks & subagents row, says the subagent has a Judge tab
+   and what is in it: " · judge 3 no, 6 unsure" (only the answers that need a
+   look are counted). Reports never change once saved, so counts are cached. */
+const _judgeCounts = new Map();
+function JudgeMark({ ids }) {
+  const key = (ids || []).join(",");
+  const [counts, setCounts] = useState(() => _judgeCounts.get(key) || null);
+  useEffect(() => {
+    if (!key || _judgeCounts.has(key)) { setCounts(_judgeCounts.get(key) || null); return; }
+    let dead = false;
+    Promise.all(ids.map(id => fetch(apiUrl("/__qa/visual-report?id=" + encodeURIComponent(id)), { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null).catch(() => null)))
+      .then(reports => {
+        const c = { no: 0, unsure: 0 };
+        for (const d of reports) {
+          for (const r of ((d && d.typedChecks && d.typedChecks.checks) || [])) {
+            if (r.status !== "answered" || r.call == null) continue;
+            const o = visualQaOutcome(r);
+            if (o === "sure-no") c.no += 1;
+            else if (o === "unsure") c.unsure += 1;
+          }
+        }
+        _judgeCounts.set(key, c);
+        if (!dead) setCounts(c);
+      });
+    return () => { dead = true; };
+  }, [key]);
+  if (!key) return null;
+  return html`<span className="th-judge-mark" title="This subagent has a Judge tab: the image judge's answers that need a look">${
+    " · judge" + (counts ? ` ${counts.no} no, ${counts.unsure} unsure` : "")}</span>`;
+}
 function visualQaOutcome(r) {
   if (r.band !== "act") return "unsure";
   return r.passed === false ? "sure-no" : r.passed === true ? "sure-yes" : "answered";

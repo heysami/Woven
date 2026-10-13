@@ -1081,6 +1081,7 @@ class P8VisualChecks(unittest.TestCase):
             '<link rel="stylesheet" href="design-systems/x/styles.css">'
             "<style>.hero{background:#0af;padding:20px}.card .tag{background:#efe;border-radius:6px}</style>"
             '<section class="hero"><h1>Choose the support you need</h1></section>'
+            '<div style="max-height:0;overflow:hidden"><p>Inside a collapsed panel</p></div>'
             '<div style="position:relative"><p id="under">Applications close soon</p>'
             '<div id="over" style="position:absolute;left:0;top:0;right:0;bottom:0;background:#000"></div></div>'
             + "".join('<div class="card"><span class="card__icon"></span><h3>Card %d</h3>'
@@ -1114,6 +1115,7 @@ class P8VisualChecks(unittest.TestCase):
         card = next(c for c in found["comps"] if c["title"] == "Card")
         self.assertIn("border 1px solid", card["ev"]["style"], "the element's computed look, as text")
         self.assertEqual(texts.count("Closes 30 June"), 1, "a repeated text is one check")
+        self.assertNotIn("Inside a collapsed panel", texts, "text clipped away by its container is not on screen")
         checks = visual_qa.screen_checks(collector.screens, dict(plan, names="Card (.card)"))
         kinds = {}
         for c in checks:

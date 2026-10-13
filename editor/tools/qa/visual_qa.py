@@ -1130,7 +1130,19 @@ _RENDERED_DS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + """
     if (el.checkVisibility && !el.checkVisibility({opacityProperty: true, visibilityProperty: true}))
       return false;
     const r = el.getBoundingClientRect();
-    return r.width >= min && r.height >= min;
+    if (r.width < min || r.height < min) return false;
+    // Cut away by a container (a collapsed panel, a scroll box) is not on
+    // screen: most of the element has to be inside every clipping ancestor.
+    let x1 = r.left, y1 = r.top, x2 = r.right, y2 = r.bottom;
+    for (let p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) {
+      const st = getComputedStyle(p);
+      if (st.overflowX === 'visible' && st.overflowY === 'visible') continue;
+      const pr = p.getBoundingClientRect();
+      if (st.overflowX !== 'visible') { x1 = Math.max(x1, pr.left); x2 = Math.min(x2, pr.right); }
+      if (st.overflowY !== 'visible') { y1 = Math.max(y1, pr.top); y2 = Math.min(y2, pr.bottom); }
+      if (x2 <= x1 || y2 <= y1) return false;
+    }
+    return (x2 - x1) * (y2 - y1) >= 0.6 * r.width * r.height;
   };
   const box = el => {
     const r = el.getBoundingClientRect();
