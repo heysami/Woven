@@ -27657,14 +27657,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, report)
 
     # GET /__qa/visual-report?id=<id> - one QA run's typed visual checks:
-    # every question, answer and confidence, each judge call's images as sent
-    # (files under `dir`), and the visual-qa subagent's decision per row.
+    # every question, answer and confidence, and each judge call's images by
+    # name (served by /file for the Tasks panel). No folder path: nobody but
+    # the judge is meant to read these images.
     def _qa_visual_report(self, qs):
         rid = (_qs_get(qs, "id") or "").strip()
         data = visual_report.load(rid)
         if data is None:
             return self._reply(404, {"error": "no visual QA report %s" % rid})
-        data["dir"] = os.path.join(visual_report.REPORTS_DIR, rid)
         return self._reply(200, data)
 
     # POST /__qa/visual-report/label {id, check, value, note?} - the right

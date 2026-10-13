@@ -141,31 +141,6 @@ class CallRecord(unittest.TestCase):
         row = visual_report.label(rid, "orig", "layout", root=str(root))
         self.assertEqual((row["escalation"]["passed"], row["escalation"]["agrees"]), (True, False))
 
-    def test_the_rows_that_need_a_look_are_on_a_few_sheets(self):
-        """Whoever looks reads a few sheets, not every crop: the sure no and
-        unsure rows only, sure no first, each with its id and its images."""
-        if not visual_qa._PIL_OK:
-            self.skipTest("Pillow not installed")
-        block = self._run({"menu": {"noul": 0.02}, "title": {"noul": 0.97}})
-        root = Path(self.tmp) / "sheets"
-        rid = visual_report.save({"typedChecks": block}, self.tmp, root=str(root))
-        data = visual_report.load(rid, str(root))
-        self.assertEqual([sh["rows"] for sh in data["sheets"]], [["menu"]],
-                         "the sure yes (title) needs no look")
-        path = visual_report.file_path(rid, data["sheets"][0]["file"], str(root))
-        from PIL import Image
-        self.assertEqual(Image.open(path).width, visual_report.SHEET_W)
-
-        many = copy.deepcopy(block)
-        row = next(r for r in many["checks"] if r["id"] == "menu")
-        many["checks"] = [dict(row, id="m%02d" % i, band="act" if i % 2 else "escalate",
-                               confidence=i / 100.0) for i in range(20)]
-        rid = visual_report.save({"typedChecks": many}, self.tmp, root=str(root))
-        sheets = visual_report.load(rid, str(root))["sheets"]
-        self.assertEqual([len(sh["rows"]) for sh in sheets], [8, 8, 4])
-        ids = [i for sh in sheets for i in sh["rows"]]
-        self.assertEqual(ids[:10], ["m%02d" % i for i in range(1, 20, 2)], "every sure no first")
-
     def test_a_run_that_asked_nothing_saves_nothing(self):
         self.assertIsNone(visual_report.save({"typedChecks": {"checks": [], "rejected": []}}, self.tmp,
                                              root=str(Path(self.tmp) / "r")))

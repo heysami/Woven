@@ -76,7 +76,6 @@ def save(report, out_dir, project=None, page=None, root=None):
             im["file"] = keep(im.pop("path", None))
             im["captureFile"] = keep(im.pop("capture", None))
     block["pageShotFile"] = keep(block.pop("pageShot", None))
-    sheets = _sheets(dest, block)
     cs = report.get("casesSummary") or {}
     data = {
         "id": rid, "created": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -84,92 +83,12 @@ def save(report, out_dir, project=None, page=None, root=None):
         "verdict": report.get("verdict"), "mode": report.get("mode"),
         "cases": {"pass": cs.get("pass", 0), "total": cs.get("total", 0)} if cs else None,
         "reasons": [str(r) for r in (report.get("reasons") or [])[:10]],
-        "sizes": sizes, "typedChecks": block, "sheets": sheets,
+        "sizes": sizes, "typedChecks": block,
     }
     with open(os.path.join(dest, "report.json"), "w", encoding="utf-8") as f:
         json.dump(data, f)
     prune(root)
     return rid
-
-
-SHEET_ROWS = 8
-SHEET_W = 1000
-ROW_H = 160
-ROW_MIN_H = 64
-
-
-def _sheets(dest, block):
-    # type: (str, Dict[str, Any]) -> List[Dict[str, Any]]
-    """Contact sheets of the answers that need a look (every sure no, then
-    the unsure ones, least sure first): per row the check's id, then the
-    images of its call left to right exactly as the judge got them (image 1,
-    image 2). SHEET_ROWS rows a sheet, so whoever looks reads a few sheets
-    instead of every crop. [] without Pillow or with nothing to look at."""
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-    except Exception:
-        return []
-    calls = {c.get("n"): c for c in block.get("calls") or []}
-    rows = [r for r in block.get("checks") or []
-            if outcome(r) in ("sure-no", "unsure") and r.get("call") in calls]
-    rows.sort(key=lambda r: (0 if outcome(r) == "sure-no" else 1, r.get("confidence") or 0))
-    font = None
-    for face in ("/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Helvetica.ttc",
-                 "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "DejaVuSans.ttf", "Arial.ttf"):
-        try:
-            font = ImageFont.truetype(face, 15)
-            break
-        except Exception:
-            continue
-    if font is None:
-        try:
-            font = ImageFont.load_default(size=15)
-        except TypeError:
-            font = ImageFont.load_default()
-    out = []  # type: List[Dict[str, Any]]
-    n = 0
-    for start in range(0, len(rows), SHEET_ROWS):
-        tiles = []
-        for r in rows[start:start + SHEET_ROWS]:
-            ims = []
-            for im in calls[r["call"]].get("images") or []:
-                try:
-                    ims.append(Image.open(os.path.join(dest, im["file"])).convert("RGB"))
-                except Exception:
-                    pass
-            if not ims:
-                continue
-            fit = []
-            for i in ims:
-                h = min(ROW_H, max(ROW_MIN_H, i.height))
-                fit.append(i.resize((max(1, int(i.width * h / float(i.height))), h)))
-            total = sum(i.width for i in fit) + 12 * (len(fit) - 1)
-            if total > SHEET_W - 16:
-                f = (SHEET_W - 16) / float(total)
-                fit = [i.resize((max(1, int(i.width * f)), max(1, int(i.height * f)))) for i in fit]
-            tiles.append((r, fit))
-        if not tiles:
-            continue
-        height = sum(24 + max(i.height for i in fit) + 14 for _r, fit in tiles) + 8
-        sheet = Image.new("RGB", (SHEET_W, height), (255, 255, 255))
-        draw = ImageDraw.Draw(sheet)
-        y = 8
-        for r, fit in tiles:
-            n += 1
-            draw.text((8, y), "%d. %s" % (n, r["id"]), fill=(20, 20, 20), font=font)
-            y += 24
-            x = 8
-            for i in fit:
-                sheet.paste(i, (x, y))
-                draw.rectangle([x - 1, y - 1, x + i.width, y + i.height], outline=(190, 190, 190))
-                x += i.width + 12
-            y += max(i.height for i in fit) + 6
-            draw.line([(0, y + 3), (SHEET_W, y + 3)], fill=(225, 225, 225))
-            y += 8
-        name = "sheet_%02d.png" % (len(out) + 1)
-        sheet.save(os.path.join(dest, name))
-        out.append({"file": name, "rows": [r["id"] for r, _fit in tiles]})
-    return out
 
 
 def prune(root=None, keep=KEEP):

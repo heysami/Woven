@@ -1058,7 +1058,7 @@ class DaemonRoutes(Isolated):
             code, data = self.serve.H._qa_visual_report(self.handler(), {"id": [rid]})
             self.assertEqual(code, 200)
             self.assertEqual(data["typedChecks"]["checks"][0]["escalation"]["note"], "it is there")
-            self.assertTrue(os.path.isfile(os.path.join(data["dir"], "typed_page.png")))
+            self.assertNotIn("dir", data, "no image path for anyone but the judge")
             code, _b = label({"id": rid, "check": "org_field", "value": "maybe"})
             self.assertEqual(code, 400)
             code, _b = label({"id": rid, "check": "nope", "value": True})
