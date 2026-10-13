@@ -28,6 +28,13 @@ AXES_FILE = os.path.join(_ROOT, "docs", "research", "direction-axes.jev.json")
 PROTOTYPE_MD = os.path.join(_ROOT, "PROTOTYPE.md")
 _ROSTER_LINK = re.compile(r"^- \*\*([^*]+)\*\*.*?\(\./design-library/([\w+.-]+)\.md\)", re.M)
 NEEDS_DIRECTION = "This request leaves the visual direction unspecified."
+IS_BUILD = "This request asks to build or design something new: an app, a website, a game, a page or a screen."
+# A brief that names only part of its direction ("pixel art": a style, no
+# aesthetic, no layout) sits around 0.5 on NEEDS_DIRECTION; one that states it
+# all ("Swiss modernist, Helvetica, a 12-column grid, black and red") near
+# 0.03. Proposals keep what the brief states and spread across what it leaves
+# open, so only a fully stated brief skips them (Clef, 2026-10-13 samples).
+NEEDS_CUT = 0.25
 
 
 def applies(project_root):
@@ -58,7 +65,8 @@ def load_axes(path=None):
 
 def questions(axes):
     # type: (Dict[str, Any]) -> Dict[str, Any]
-    qs = {"needs_direction": {"type": "noul", "instructions": NEEDS_DIRECTION}}  # type: Dict[str, Any]
+    qs = {"is_build": {"type": "noul", "instructions": IS_BUILD},
+          "needs_direction": {"type": "noul", "instructions": NEEDS_DIRECTION}}  # type: Dict[str, Any]
     for k in AXES:
         if k in axes:
             qs[k] = {"type": "choice", "instructions": axes[k]["question"], "criteria": axes[k]["criteria"]}
@@ -151,8 +159,15 @@ def propose(project_root, brief, judge=None, axes_path=None, enabled=None):
     ms = int((time.time() - t0) * 1000)
     answers = out.get("answers") or {}
     th = out.get("thresholds") or {}
+    # The chain's first two links, from the same call: a request that is not a
+    # new build, or that already states its direction, gets no proposal.
+    cut = float(th.get("noul") or 0.5)
+    is_build = typed_judge.noul_value(answers.get("is_build"))
+    needs = typed_judge.noul_value(answers.get("needs_direction"))
+    if is_build is None or needs is None or is_build < cut or needs < NEEDS_CUT:
+        return None
     event = {"provider": out.get("provider"), "model": out.get("model"), "ms": ms,
-             "needsDirection": typed_judge.noul_value(answers.get("needs_direction")),
+             "needsDirection": needs, "isBuild": is_build,
              "thresholds": {k: th.get(k) for k in ("low", "high", "noul")},
              "axes": {}}  # type: Dict[str, Any]
     for k in AXES:
@@ -174,22 +189,30 @@ def propose(project_root, brief, judge=None, axes_path=None, enabled=None):
 
 def for_agent(event, provider):
     # type: (Dict[str, Any], str) -> str
+    """The block for the agent's first message. With proposals on screen the
+    agent does NOT compose direction options: the judge's three are the
+    options, and the user's pick arrives as a decision."""
     th = event.get("thresholds") or {}
-    lines = ["[Woven: the typed judge (%s, %.1f s) ranked the design library for this request before you "
-             "started, and the user can see this ranking. It is the ranking PROTOTYPE.md step -1 asks for "
-             "(Ranking the axes with typed judgment): read it with those rules and do not call /__judge "
-             "for it again." % (provider, (event.get("ms") or 0) / 1000.0),
-             "brief leaves the direction open: %s (counts at %s)" % (_n(event.get("needsDirection")), _n(th.get("noul"))),
-             "thresholds: low %s, high %s" % (_n(th.get("low")), _n(th.get("high")))]
-    for k, ax in (event.get("axes") or {}).items():
-        lines.append("%s (confidence %s): %s" % (k, _n(ax.get("confidence")),
-                                                 ", ".join("%s %s" % (t["id"], _n(t["p"])) for t in ax["top"])))
     props = event.get("proposals") or []
-    if props:
-        lines.append("The user sees these %d proposals built from it (spread across %s, the axis the brief "
-                     "leaves most open); start your three options from them:" % (len(props), props[0]["spread"]))
-        for i, pr in enumerate(props):
-            lines.append("  %d. %s" % (i + 1, " + ".join("%s %s" % (a, t["id"]) for a, t in pr["picks"].items())))
+    if not props:
+        return ""
+    lines = ["[Woven: the typed judge (%s, %.1f s) ranked the design library for this request and the user "
+             "is now choosing a direction from its %d proposals, shown under their message. Do NOT compose "
+             "direction options, do not run PROTOTYPE.md step -1's composing or recolouring, and do not call "
+             "/__judge: reply in one short line that they can pick one of the proposals above or describe their "
+             "own direction, then stop. Their pick arrives as `[decision:prototype-direction] judgeN - shell "
+             "<id>, style <id>, aesthetic <id>` (already saved with those ids as its detail); continue from the "
+             "direction lock: read those library files, add the palette and fonts to the decision's detail "
+             "(POST /__decision/prototype-direction with the full detail) and go on to the next step. If they "
+             "describe their own direction instead, run step -1 as usual." % (provider, (event.get("ms") or 0) / 1000.0,
+                                                                         len(props)),
+             "the proposals (they differ in %s, the axis the brief leaves most open):" % props[0]["spread"]]
+    for i, pr in enumerate(props):
+        lines.append("  %d. %s" % (i + 1, ", ".join("%s %s" % (a, t["id"]) for a, t in pr["picks"].items())))
+    lines.append("ranking behind them (thresholds low %s, high %s):" % (_n(th.get("low")), _n(th.get("high"))))
+    for k, ax in (event.get("axes") or {}).items():
+        lines.append("  %s (confidence %s): %s" % (k, _n(ax.get("confidence")),
+                                                   ", ".join("%s %s" % (t["id"], _n(t["p"])) for t in ax["top"])))
     return "\n".join(lines) + "]"
 
 

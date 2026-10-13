@@ -5179,7 +5179,13 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .chat-judge-pick:first-child { color: var(--text); }
 .chat-judge-pick.is-strong { color: var(--hot-text); font-weight: 700; }
 .chat-judge-proposal-note { color: var(--text-muted); margin-top: 4px; }
-.chat-judge-option { display: grid; grid-template-columns: 16px repeat(3, minmax(0, 1fr)); gap: 8px; align-items: start; padding: 6px 0; border-top: 1px solid var(--border); }
+.chat-judge-option { display: grid; grid-template-columns: 16px repeat(3, minmax(0, 1fr)) auto; gap: 8px; align-items: start; padding: 6px 0; border-top: 1px solid var(--border); }
+.chat-judge-option[data-picked="true"] .chat-judge-option-n { color: var(--hot-text); }
+.chat-judge-use { font: inherit; font-size: 11.5px; padding: 3px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); cursor: pointer; align-self: center; white-space: nowrap; }
+.chat-judge-use:hover:not(:disabled) { border-color: var(--hot-text); color: var(--hot-text); }
+.chat-judge-use:disabled { cursor: default; opacity: .55; }
+.chat-judge-option[data-picked="true"] .chat-judge-use { opacity: 1; border-color: var(--hot-text); color: var(--hot-text); font-weight: 700; }
+.chat-judge-proposal-note[data-error="true"] { color: var(--danger); }
 .chat-judge-option:first-of-type { border-top: 0; }
 .chat-judge-option-n { font-weight: 700; color: var(--text-muted); padding-top: 2px; }
 .chat-judge-part { margin: 0; min-width: 0; }

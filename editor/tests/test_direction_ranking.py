@@ -21,7 +21,7 @@ AXES = str(EDITOR.parent / "docs" / "research" / "direction-axes.jev.json")
 
 
 def judge(state, questions, **kw):
-    ans = {"needs_direction": {"noul": 0.66}}
+    ans = {"needs_direction": {"noul": 0.66}, "is_build": {"noul": 0.95}}
     for k, q in questions.items():
         if q["type"] == "choice":
             ids = list(q["criteria"])
@@ -50,7 +50,7 @@ class Ranking(unittest.TestCase):
 
     def test_every_question_is_one_the_judge_accepts(self):
         qs = dr.questions(dr.load_axes(AXES))
-        self.assertEqual(sorted(qs), ["aesthetic", "needs_direction", "recipe", "shell", "style"])
+        self.assertEqual(sorted(qs), ["aesthetic", "is_build", "needs_direction", "recipe", "shell", "style"])
         self.assertTrue(all(q.get("instructions") for q in qs.values()), "every choice carries its question")
         typed_judge.validate_questions(qs, typed_judge.provider("clef"))
 
@@ -66,7 +66,21 @@ class Ranking(unittest.TestCase):
         self.assertIn("do not call /__judge", out["forAgent"])
         self.assertIn("style (confidence 0.60): %s 0.80" % style["top"][0]["id"], out["forAgent"])
         self.assertEqual(len(ev["proposals"]), 3)
-        self.assertIn("start your three options from them", out["forAgent"])
+        self.assertIn("Do NOT compose direction options", out["forAgent"])
+        self.assertIn("[decision:prototype-direction] judgeN", out["forAgent"])
+
+    def test_only_a_new_build_that_leaves_the_direction_open_gets_proposals(self):
+        def answering(is_build, needs):
+            def j(state, questions, **kw):
+                out = judge(state, questions, **kw)
+                out["answers"].update({"is_build": {"noul": is_build}, "needs_direction": {"noul": needs}})
+                return out
+            return j
+        self.assertIsNone(dr.propose(self.root, "how do I export?", answering(0.1, 0.9), AXES, enabled=True),
+                          "not a build request")
+        self.assertIsNone(dr.propose(self.root, "a brutalist site in Space Mono", answering(0.95, 0.2), AXES,
+                                     enabled=True), "the brief states its direction")
+        self.assertIsNotNone(dr.propose(self.root, "a ludo game", answering(0.95, 0.7), AXES, enabled=True))
 
     def test_three_proposals_spread_across_the_open_axis(self):
         ev = {"thresholds": {"high": 0.7}, "axes": {
