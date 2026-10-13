@@ -18205,6 +18205,12 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   const userMsgCount = useMemo(
     () => events.reduce((n, ev) => n + (ev.type === "user_message" || ev.event === "user_message" ? 1 : 0), 0),
     [events]);
+  // Queue entries the daemon has already sent: each delivered message's echo
+  // carries its `queueId`. Joined to a string so the prop is stable.
+  const deliveredQueueIds = useMemo(
+    () => events.filter(ev => (ev.type === "user_message" || ev.event === "user_message") && ev.data?.queueId)
+      .map(ev => ev.data.queueId).join(","),
+    [events]);
 
   // Same idea for the per-thread checks AND plan mode: the spawn event carries
   // the flags the system prompt was actually built with. Threads spawned
@@ -18442,6 +18448,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         agentId=${run?.agentId}
         runtimeDriver=${events.find(e => e.data?.executionProfile?.driver)?.data.executionProfile.driver || run?.executionProfile?.driver}
         userMsgCount=${userMsgCount}
+        deliveredQueueIds=${deliveredQueueIds}
         disabled=${!isNew && (status === "streaming" || status === "connecting")}
         locked=${processEnded || !!run?.historical}
         selectionCount=${selectionCount}
@@ -19254,7 +19261,7 @@ function __chipSegments(text, chips) {
   if (i < text.length) out.push({ text: text.slice(i) });
   return out;
 }
-function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, runtimeDriver, userMsgCount, interceptSend }) {
+function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, runtimeDriver, userMsgCount, deliveredQueueIds, interceptSend }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -19343,7 +19350,14 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // stays raw so the chip previews what the user typed and can put it back in
   // the composer. Everything the UI needs beyond text rides in `meta`, which
   // the daemon treats as opaque.
-  const qFromServer = (arr) => (Array.isArray(arr) ? arr : []).map(e => ({
+  // An entry whose echo already arrived is sent, whatever a queue read says.
+  // Reads land out of order: an /enqueue reply is built before the daemon's
+  // drain thread removes the entry it is about to send, and could arrive
+  // after the fresh read the echo triggered, pinning a sent message on
+  // screen as queued until a refresh.
+  const deliveredRef = useRef(new Set());
+  deliveredRef.current = new Set((deliveredQueueIds || "").split(",").filter(Boolean));
+  const qFromServer = (arr) => (Array.isArray(arr) ? arr : []).filter(e => !deliveredRef.current.has(e.id)).map(e => ({
     id: e.id,
     text: e.text || "",
     attachments: (e.meta && e.meta.attachments) || [],
@@ -19410,6 +19424,10 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // drawer was closed) shows up as a new user_message event. Re-read then, so
   // the chips reflect what is actually still pending.
   useEffect(() => { queueFetch(runId); }, [userMsgCount, runId, queueFetch]);
+  useEffect(() => {
+    setQueue(prev => prev.some(q => deliveredRef.current.has(q.id))
+      ? prev.filter(q => !deliveredRef.current.has(q.id)) : prev);
+  }, [deliveredQueueIds]);
 
   const uploadAttachment = useCallback(async (file) => {
     if (!file) return;

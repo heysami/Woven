@@ -10134,11 +10134,11 @@ def _queue_drain_maybe(state, mode: str = "stdin") -> None:
                             ok = True
                     if ok:
                         state.append("user_message", {"text": head.get("text") or text,
-                                                      "queued": True})
+                                                      "queued": True, "queueId": head.get("id")})
                 except Exception as e:
                     print(f"[queue] stdin deliver failed run={state.run_id}: {e}", flush=True)
             else:
-                ok = _queue_deliver_via_resume(state, text)
+                ok = _queue_deliver_via_resume(state, text, queue_id=head.get("id") or "")
             if ok:
                 _queue_drop(state, head.get("id"))
             # A failed delivery leaves the message at the head: the next turn
@@ -10150,7 +10150,22 @@ def _queue_drain_maybe(state, mode: str = "stdin") -> None:
                      name=f"queue-drain-{state.run_id}").start()
 
 
-def _queue_deliver_via_resume(state, text: str, auto: str = "") -> bool:
+def _user_echo(text: str, auto: str = "", queue_id: str = "") -> dict:
+    """The thread's echo of a user message (also the /resume body that leads
+    to one). `auto` marks the daemon speaking for the user. `queueId` names
+    the queue entry it came from, so the composer drops that chip the moment
+    the echo arrives: its queue reads can land out of order (an /enqueue
+    reply built before the drain thread removed the entry), and a stale one
+    used to pin a sent message on screen as "queued" until a refresh."""
+    d = {"text": text}
+    if auto:
+        d["auto"] = auto
+    if queue_id:
+        d["queueId"] = queue_id
+    return d
+
+
+def _queue_deliver_via_resume(state, text: str, auto: str = "", queue_id: str = "") -> bool:
     """Respawn the run with the queued text as its next message, by POSTing our
     own /resume. Building the resume spawn inline here would mean duplicating
     the tier / prototype / guards / MCP reconstruction that handler owns, and a
@@ -10160,8 +10175,7 @@ def _queue_deliver_via_resume(state, text: str, auto: str = "") -> bool:
         import urllib.request
         req = urllib.request.Request(
             f"http://127.0.0.1:{PORT}/__run/{state.run_id}/resume",
-            data=json.dumps({"text": text, "auto": auto} if auto
-                            else {"text": text}).encode("utf-8"),
+            data=json.dumps(_user_echo(text, auto, queue_id)).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
@@ -36415,7 +36429,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # replaces state.proc in-place so the chat drawer keeps streaming on
     # the same runId - the user perceives one continuous conversation, as
     # they would with any normal chat UI.
-    def _run_resume_planner_claude(self, state, run_id, text):
+    def _run_resume_planner_claude(self, state, run_id, text, queue_id: str = ""):
         """Fake resume for CLAUDE-runtime planner runs. Planners spawn with
         --no-session-persistence (their transcripts would otherwise litter
         the session store), which means `claude --resume <sessionId>` can
@@ -36531,7 +36545,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.turn_done = False
         state.append("status", {"label": "resumed", "agentId": "claude",
                                 "plannerFallback": True})
-        state.append("user_message", {"text": text})
+        state.append("user_message", _user_echo(text, queue_id=queue_id))
         try:
             proc.stdin.write(_claude_user_frame(first_msg))
             proc.stdin.flush()
@@ -36543,7 +36557,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                          name=f"run-{run_id}-stderr-resumed").start()
         return self._reply(200, {"ok": True, "agentId": "claude", "plannerFallback": True})
 
-    def _run_resume_codex(self, state, run_id, text, auto: str = ""):
+    def _run_resume_codex(self, state, run_id, text, auto: str = "", queue_id: str = ""):
         """Resume for the argv-prompt single-shot agents (codex AND opencode).
 
         Two paths:
@@ -36647,8 +36661,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             state.stop_reason = None
             state.append("status", {"label": "resumed", "agentId": "codex",
                                     "resume": "session"})
-            state.append("user_message", dict({"text": text},
-                                              **({"auto": auto} if auto else {})))
+            state.append("user_message", _user_echo(text, auto, queue_id))
             threading.Thread(target=_drain_stdout, args=(state,), daemon=True,
                              name=f"run-{run_id}-stdout-resumed").start()
             threading.Thread(target=_drain_stderr, args=(state,), daemon=True,
@@ -36731,8 +36744,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.turn_done = False
         state.stop_reason = None
         state.append("status", {"label": "resumed", "agentId": state.agent_id})
-        state.append("user_message", dict({"text": text},
-                                          **({"auto": auto} if auto else {})))
+        state.append("user_message", _user_echo(text, auto, queue_id))
         threading.Thread(target=_drain_stdout, args=(state,), daemon=True,
                          name=f"run-{run_id}-stdout-resumed").start()
         threading.Thread(target=_drain_stderr, args=(state,), daemon=True,
@@ -36748,6 +36760,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # chat can label it and so the auto-continue can see its own last turn
         # and refuse to fire twice in a row.
         auto = str(body.get("auto") or "").strip()[:40]
+        queue_id = str(body.get("queueId") or "").strip()[:32]
         if not text:
             return self._reply(400, {"error": "empty text"})
         with RUNS_LOCK:
@@ -36831,7 +36844,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # then spawning a fresh run with that combined prompt. Same run_id,
         # same event log - new process underneath.
         if state.agent_id in ("codex", "opencode"):
-            return self._run_resume_codex(state, run_id, text, auto=auto)
+            return self._run_resume_codex(state, run_id, text, auto=auto, queue_id=queue_id)
         if state.agent_id != "claude":
             return self._reply(400, {"error": f"resume not yet supported for agent {state.agent_id!r}"})
         # Planner runs spawn with --no-session-persistence, so their session
@@ -36840,7 +36853,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # matter how many times the user retries. Route them through the
         # transcript-rebuild fallback instead.
         if str(getattr(state, "kind", "") or "").startswith("planner:"):
-            return self._run_resume_planner_claude(state, run_id, text)
+            return self._run_resume_planner_claude(state, run_id, text, queue_id=queue_id)
         # A compacted run deliberately has NO session id - _compact_run
         # cleared it so the next message seeds a FRESH session from the
         # handoff summary (via the compact-aware transcript) instead of
@@ -36995,8 +37008,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             **({"compactResume": True} if _compact_seed else {}),
         })
         state.stop_reason = None
-        state.append("user_message", dict({"text": text},
-                                          **({"auto": auto} if auto else {})))
+        state.append("user_message", _user_echo(text, auto, queue_id))
 
         try:
             proc.stdin.write(_claude_user_frame(_compact_seed or text))

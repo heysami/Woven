@@ -306,6 +306,36 @@ class QaCancelTests(unittest.TestCase):
             self.assertIsNone(payload["error"])
 
 
+class QueueEchoTests(unittest.TestCase):
+    """A sent queue entry is named on its echo, so the composer can drop the
+    chip even when an older queue read lands after the fresh one."""
+
+    def test_stdin_delivery_echo_names_the_entry(self):
+        with tempfile.TemporaryDirectory() as root, patch.object(serve, "_chat_jsonl_append"), \
+             patch.object(serve, "_queue_persist"):
+            proc = Mock(poll=Mock(return_value=None), stdin=io.BytesIO())
+            state = serve.RunState("p", proc, "claude", "main", "freeform", "test", project_root=root)
+            state.turn_done = True
+            state.msg_queue = [{"id": "q1", "text": "make it blue", "send": "make it blue"}]
+            serve._queue_drain_maybe(state, mode="stdin")
+            for t in threading.enumerate():
+                if t.name == "queue-drain-p":
+                    t.join(5)
+            echo = [e["data"] for e in state.events if e["type"] == "user_message"]
+            self.assertEqual(echo, [{"text": "make it blue", "queued": True, "queueId": "q1"}])
+            self.assertFalse(state.msg_queue)
+
+    def test_resume_delivery_carries_the_entry_to_its_echo(self):
+        sent = {}
+        def fake_urlopen(req, timeout=0):
+            sent.update(json.loads(req.data))
+            return Mock(__enter__=lambda self: Mock(status=200), __exit__=lambda *a: False)
+        with patch("urllib.request.urlopen", fake_urlopen):
+            self.assertTrue(serve._queue_deliver_via_resume(SimpleNamespace(run_id="p"), "make it blue", queue_id="q1"))
+        self.assertEqual(sent, {"text": "make it blue", "queueId": "q1"})
+        self.assertEqual(serve._user_echo("go on", auto="compact-continue"), {"text": "go on", "auto": "compact-continue"})
+
+
 class MCPTests(unittest.TestCase):
     def test_remote_and_timeout_units(self):
         spec = {"url": "https://example.test/mcp", "headers": {"X-Test": "value"}, "startupTimeoutMs": 15000}
