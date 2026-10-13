@@ -490,7 +490,9 @@ class OffSystemJudgment(unittest.TestCase):
 
     DS_CLASSES = {"card", "btn", "card__title"}
     CONTRACT = {"id": "ds1", "components": [
-        {"id": "card", "role": "container", "name": "Card", "oneLine": "Bounded content surface"},
+        {"id": "card", "role": "container", "name": "Card", "title": "Cards",
+         "oneLine": "Card .card [--plain|--filled]",
+         "description": "Groups related content and actions on one bounded surface."},
         {"id": "btn", "role": "control", "name": "Button", "oneLine": "The primary action"},
         {"id": "chip", "role": "indicator", "name": "Chip", "oneLine": "A small label"},
         {"id": "h1", "role": "text", "name": "Heading", "oneLine": "Page title"},
@@ -579,6 +581,11 @@ class OffSystemJudgment(unittest.TestCase):
         self.assertEqual(len(opts), 83, "card + chip + all 80 boxes + none-of-these, no top-N")
         self.assertNotIn("btn", opts, "a control is a different family")
         self.assertNotIn("h1", opts)
+        state2 = [st for st, qs in asked if "ds-copy" not in next(iter(qs.values()))["criteria"]][0]
+        self.assertEqual(state2.count("Groups related content and actions on one bounded surface."), 1,
+                         "the authors' description travels once, in the state")
+        self.assertEqual(stage2[0]["criteria"]["card"], "Cards (.card)", "options are short titles")
+        self.assertNotIn("Groups related", json.dumps(stage2[0]["criteria"]))
         (f,) = findings
         self.assertEqual((f["rule"], f["severity"], f["component"]), ("invented-component", "error", "card"))
 

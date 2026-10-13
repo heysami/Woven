@@ -952,11 +952,19 @@ def _unit_context(u):
                children or "(none)"))
 
 
+def _title(cid, comp):
+    # type: (str, Dict[str, object]) -> str
+    """A component's short label: its gallery heading, else its id."""
+    t = str(comp.get("title") or "").strip()
+    return "%s (.%s)" % (t, cid) if t else ".%s" % cid
+
+
 def jev_criterion(comp):
     # type: (Dict[str, object]) -> str
-    """One component as a Choice option: what it is, its parts, and when it is
-    NOT the right component - verbatim from the contract."""
-    text = str(comp.get("oneLine") or comp.get("id") or "")
+    """What one component is, verbatim from the contract: the authors'
+    description (gallery.html + DESIGN.md) when there is one, else its
+    DESIGN.md line, plus its parts and when it is NOT the right component."""
+    text = str(comp.get("description") or comp.get("oneLine") or comp.get("id") or "")
     req = [str(p) for p in comp.get("requiredParts") or []]  # type: ignore[union-attr]
     opt = [str(p) for p in comp.get("optionalParts") or []]  # type: ignore[union-attr]
     if req or opt:
@@ -1039,8 +1047,8 @@ def run_jev_pass(contract, units, findings, index, log=None):
              % (contract.get("id") or "the design system", _ds_names(contract)))
     errors = []  # type: List[str]
 
-    def ask(items):
-        # type: (List[Tuple[object, Dict[str, object]]]) -> Dict[int, object]
+    def ask(items, req_state=None, budget_q=JUDGE_MAX_QUESTIONS_PER_REQUEST):
+        # type: (List[Tuple[object, Dict[str, object]]], Optional[str], int) -> Dict[int, object]
         """Every batch, up to 4 at a time: a classifier call is sub-second,
         so wall time is the slowest batch, not the sum."""
         from concurrent.futures import ThreadPoolExecutor
@@ -1050,7 +1058,7 @@ def run_jev_pass(contract, units, findings, index, log=None):
             # type: (List[Tuple[object, Dict[str, object]]]) -> None
             qs = {"u_%d" % i: q for i, (_u, q) in enumerate(batch)}
             try:
-                got = jev.ask(state, qs)
+                got = jev.ask(req_state or state, qs)
             except Exception as exc:
                 errors.append(str(exc)[:200])
                 return
@@ -1058,7 +1066,7 @@ def run_jev_pass(contract, units, findings, index, log=None):
             for i, (u, _q) in enumerate(batch):
                 answers[id(u)] = got.get("u_%d" % i)
 
-        batches = _batches(items)
+        batches = _batches(items, budget_q=budget_q)
         with ThreadPoolExecutor(max_workers=min(4, max(1, len(batches)))) as pool:
             list(pool.map(one, batches))
         return answers
@@ -1094,19 +1102,29 @@ def run_jev_pass(contract, units, findings, index, log=None):
                           "parts, rather than styling it on the page" % u["source"]})
             status["promoted"] = int(status["promoted"]) + 1  # type: ignore[arg-type]
 
-    stage2 = []
-    for u in copies:
-        fam = u["family"]
-        crit = {cid: jev_criterion(c) for cid, c in sorted(comps.items())  # type: ignore[union-attr]
-                if _ROLE_FAMILY.get(str(c.get("role"))) == fam}
-        if not crit:
+    # Stage 2, per family: what each component IS (the authors' description
+    # from gallery.html and DESIGN.md) travels ONCE, in the state; each option
+    # is just its title. Repeating ~95 descriptions inside every question is
+    # what made one page 231k characters.
+    a2 = {}  # type: Dict[int, object]
+    stage2_count = 0
+    for fam in ("box", "control", "overlay"):
+        mine = [u for u in copies if u["family"] == fam]
+        fam_comps = [(cid, c) for cid, c in sorted(comps.items())  # type: ignore[union-attr]
+                     if _ROLE_FAMILY.get(str(c.get("role"))) == fam]
+        if not mine or not fam_comps:
             continue
-        crit[_NONE_ID] = "None of these components: the element rebuilds something else."
-        stage2.append((u, {"type": "choice",
-                           "instructions": "Which design-system component does this page element "
-                                           "rebuild?\n\n" + _unit_context(u),
-                           "criteria": crit}))
-    a2 = ask(stage2) if stage2 else {}
+        crit = {cid: _title(cid, c) for cid, c in fam_comps}
+        crit[_NONE_ID] = "None of the components described in the state."
+        fam_state = ("Components of the design system %s, each with what it is:\n%s"
+                     % (contract.get("id") or "", "\n".join("- %s: %s" % (_title(cid, c), jev_criterion(c))
+                                                          for cid, c in fam_comps)))
+        items = [(u, {"type": "choice",
+                      "instructions": "Which of the design-system components described in the state "
+                                      "does this page element rebuild?\n\n" + _unit_context(u),
+                      "criteria": crit}) for u in mine]
+        stage2_count += len(items)
+        a2.update(ask(items, fam_state, budget_q=8))
     for u in copies:
         top, conf, band_ = read(a2.get(id(u)))
         named = top if (band_ == "act" and top and top != _NONE_ID) else None
@@ -1130,7 +1148,7 @@ def run_jev_pass(contract, units, findings, index, log=None):
         status["message"] = "; ".join(errors)[:300]
     else:
         status["message"] = ("judged %d off-system element(s) (%d asked which component), promoted %d%s"
-                             % (len(stage1), len(stage2), status["promoted"],
+                             % (len(stage1), stage2_count, status["promoted"],
                                 ("; errors: " + "; ".join(errors)[:200]) if errors else ""))
     return status
 

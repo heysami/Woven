@@ -272,6 +272,81 @@ def _design_prose(ds_dir, bases):
     return out
 
 
+def _design_entries(ds_dir, bases):
+    # type: (str, Set[str]) -> Dict[str, str]
+    """Per base class, the WHOLE DESIGN.md entry that introduces it: its first
+    line plus the lines indented under it (catalog rows wrap their prose onto
+    indented continuation lines). _design_prose keeps only the first line,
+    which in most catalogs is just the selector list - the description is
+    what follows it."""
+    path = os.path.join(ds_dir, "DESIGN.md")
+    if not os.path.isfile(path):
+        return {}
+    lines = _read(path).splitlines()
+    out = {}  # type: Dict[str, str]
+    for i, raw in enumerate(lines):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        mentioned = [c for c in re.findall(r"\.([A-Za-z_][\w-]*)", line) if c in bases and c not in out]
+        if not mentioned:
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        for base in mentioned:
+            body = []  # type: List[str]
+            for nxt in lines[i + 1:i + 40]:
+                if not nxt.strip() or nxt.lstrip().startswith("#"):
+                    break
+                if len(nxt) - len(nxt.lstrip()) <= indent:
+                    break
+                # A continuation line that opens with ANOTHER component's
+                # class is that component's entry, nested under this one.
+                lead = re.match(r"\s*\.([A-Za-z_][\w-]*)", nxt)
+                if lead and lead.group(1).split("--")[0].split("__")[0] != base:
+                    break
+                body.append(nxt.strip())
+            text = _prose_only(" ".join(body))
+            if text:
+                out[base] = text[:700]
+    return out
+
+
+def _prose_only(text):
+    # type: (str) -> str
+    """Collapsed text, or "" when it is only selectors and punctuation - a
+    class list is not a description."""
+    import html as _html
+    text = re.sub(r"\s+", " ", _html.unescape(text)).strip()
+    words = re.findall(r"[A-Za-z]{3,}", re.sub(r"[.#][\w-]+|--[\w-]+", " ", text))
+    return text if len(words) >= 4 else ""
+
+
+def _gallery_descriptions(ds_dir, bases):
+    # type: (str, Set[str]) -> Dict[str, Dict[str, str]]
+    """Per base class, the description its gallery section gives it: in each
+    <section>, the classes its first <code> lists get its heading and its first
+    <p>. Galleries differ per DS; one with no such sections yields nothing."""
+    path = os.path.join(ds_dir, "gallery.html")
+    if not os.path.isfile(path):
+        return {}
+    html = _read(path)
+    out = {}  # type: Dict[str, Dict[str, str]]
+    for sec in re.findall(r"<section\b[^>]*>(.*?)</section>", html, re.S | re.I):
+        code = re.search(r"<code[^>]*>(.*?)</code>", sec, re.S | re.I)
+        para = re.search(r"<p[^>]*>(.*?)</p>", sec, re.S | re.I)
+        if not code or not para:
+            continue
+        text = _prose_only(re.sub(r"<[^>]+>", "", para.group(1)))
+        head = re.search(r"<h[1-4][^>]*>(.*?)</h[1-4]>", sec, re.S | re.I)
+        import html as _html
+        name = _html.unescape(re.sub(r"<[^>]+>", "", head.group(1))).strip() if head else ""
+        for cls in re.findall(r"\.([A-Za-z_][\w-]*)", code.group(1)):
+            base = cls.split("--")[0].split("__")[0]
+            if base in bases and base not in out and text:
+                out[base] = {"text": text[:700], "name": name}
+    return out
+
+
 # ── The contract ────────────────────────────────────────────────────────────
 
 def build(ds_dir, ds_id=None):
@@ -303,6 +378,8 @@ def build(ds_dir, ds_id=None):
                    and PART_SEP not in b and VARIANT_SEP not in b)
 
     prose = _design_prose(ds_dir, set(bases))
+    entries = _design_entries(ds_dir, set(bases))
+    gallery = _gallery_descriptions(ds_dir, set(bases))
 
     # Required vs optional parts, from the DS's own pages.
     pages = _usage_pages(ds_dir)
@@ -362,6 +439,22 @@ def build(ds_dir, ds_id=None):
         row["oneLineSource"] = source
         if md.get("notForUseWhen"):
             row["notForUseWhen"] = md["notForUseWhen"]
+        # What the component IS, in the authors' words: the gallery's
+        # description, then the rest of its DESIGN.md entry. oneLine stays the
+        # entry's first line, unchanged, for everything that already reads it.
+        desc, src = [], []
+        g = gallery.get(base) or {}
+        if g.get("name") and len(g["name"]) <= 40:
+            row["title"] = g["name"]
+        if g.get("text"):
+            desc.append(g["text"])
+            src.append("gallery.html")
+        if entries.get(base):
+            desc.append(entries[base])
+            src.append("DESIGN.md")
+        if desc:
+            row["description"] = " ".join(desc)[:900]
+            row["descriptionSource"] = " + ".join(src)
         components.append(row)
 
     states = sorted(c for c in all_classes if _is_state(c))
