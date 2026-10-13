@@ -35683,7 +35683,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # its first message, so the ranking is never skipped. Setting off:
         # nothing happens here.
         _proposal = None
-        if kind == "freeform" and user_prompt and _chat_tier in ("normal", "setup") and not _split_check:
+        if kind == "freeform" and user_prompt and _chat_tier in ("normal", "setup", "scoped") and not _split_check:
             try:
                 _proposal = direction_ranking.propose(project_root, user_prompt)
             except Exception as _dr_err:
@@ -35925,7 +35925,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 # The card (palette, fonts, recoloured previews) takes a couple
                 # of seconds: it lands as soon as it is ready.
                 threading.Thread(target=_judge_card_worker,
-                                 args=(state, _proposal["event"], user_prompt, project_root),
+                                 args=(state, _proposal["event"], direction_ranking.brief_of(user_prompt),
+                                       project_root),
                                  daemon=True, name="judge-card-%s" % run_id).start()
             else:
                 state.append("agent", dict({"type": "judge_proposal"}, **_proposal["event"]))

@@ -57,6 +57,27 @@ def applies(project_root):
     return True
 
 
+_CONTEXT = re.compile(r"^\[Context: you're chatting from (?:WORKFLOW|EDITOR) MODE[^\n]*(?:\n(?!\n)[^\n]*)*\n\n")
+_BLOCK = re.compile(r"^\s*<(selected-nodes|whiteboard|selected-frame|chat-target)\b[\s\S]*?</\1>\s*")
+
+
+def brief_of(message):
+    # type: (str) -> str
+    """The user's own words from a first message: the editor prefixes its
+    context ("[Context: you're chatting from WORKFLOW MODE ...]" and blocks
+    like <chat-target>), which is not the request. Mirrors the chat's own
+    stripChatPreamble."""
+    s = (message or "").lstrip()
+    m = _CONTEXT.match(s)
+    if m:
+        s = s[m.end():]
+    prev = None
+    while prev != s:
+        prev = s
+        s = _BLOCK.sub("", s, count=1)
+    return s.strip()
+
+
 def load_axes(path=None):
     # type: (Optional[str]) -> Dict[str, Any]
     with open(path or AXES_FILE, "r", encoding="utf-8") as f:
@@ -143,7 +164,8 @@ def propose(project_root, brief, judge=None, axes_path=None, enabled=None):
             enabled = bool(typed_judge.config().get("jevJudge"))
         except Exception:
             enabled = False
-    if not enabled or not (brief or "").strip() or not applies(project_root):
+    brief = brief_of(brief)
+    if not enabled or not brief or not applies(project_root):
         return None
     try:
         axes = load_axes(axes_path)

@@ -149,6 +149,21 @@ class Ranking(unittest.TestCase):
         _bg, _s, fg2, _m, _b, _a = dr.palette_tokens(pale, pale + ["#181818"])
         self.assertEqual(fg2, "#181818", "ink too close to its ground takes the entry's darkest")
 
+    def test_the_judge_reads_the_request_not_the_editor_context(self):
+        msg = ("[Context: you're chatting from WORKFLOW MODE of the prototype editor.]\n"
+               "The canvas holds two kinds of object: nodes and whiteboard items.\n\n"
+               "<chat-target>\nYou are editing prototype `prototype`.\n</chat-target>\n\n"
+               "make me a real time pokemon game")
+        self.assertEqual(dr.brief_of(msg), "make me a real time pokemon game")
+        self.assertEqual(dr.brief_of("a plain request"), "a plain request")
+        seen = []
+
+        def spy(state, questions, **kw):
+            seen.append(state)
+            return judge(state, questions, **kw)
+        dr.propose(self.root, msg, spy, AXES, enabled=True)
+        self.assertEqual(seen, ["make me a real time pokemon game"])
+
     def test_a_failure_is_shown_never_missing(self):
         def down(*a, **k):
             raise typed_judge.JudgeUnavailable("no text judge", reason="no-key")
