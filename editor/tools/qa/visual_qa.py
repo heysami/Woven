@@ -748,7 +748,7 @@ def _finish_judge(judge: Dict[str, Any], res: Dict[str, Any]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 TYPED_KIND = "frame_check"
-MAX_CHECKS = 16
+MAX_CHECKS = 64
 _CHECK_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _CAPTURE = re.compile(r"^(page|idle:(start|end|motion|\d+)|(before|after):.+)$")
 _CROP_PAD = 8
@@ -945,6 +945,12 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
         block["message"] = "typed judge unavailable: %s" % exc
         return block
     judge_fn = judge_fn or tj.judge
+    vc = _editor_module("visual_checks")
+    # Resolve every check to the exact images it needs, then ask ALL the
+    # checks that share those images in ONE call: a screenshot (or one
+    # element's crop) gets its whole criteria list at once.
+    groups: Dict[str, Dict[str, Any]] = {}
+    order: List[Tuple[str, Dict[str, Any]]] = []
     for c in checks:
         row: Dict[str, Any] = dict(c, status=None, noul=None, passed=None,
                                    confidence=None, band=None, images=[])
@@ -954,7 +960,7 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
             row["status"] = "no-capture"
             row["message"] = "no capture named %s in this run" % ", ".join(
                 r for r, cap in zip(refs, caps) if cap is None)
-            block["checks"].append(row)
+            order.append(("", row))
             continue
         images: List[Any] = []
         missing = None
@@ -974,35 +980,47 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
         if missing:
             row["status"] = "element-missing"
             row["message"] = "%s is not on the page at %s" % (c["selector"], missing)
-            block["checks"].append(row)
+            order.append(("", row))
             continue
+        row["claim"] = c["question"]["instructions"]
+        key = json.dumps([refs, c.get("selector") or ""])
+        g = groups.setdefault(key, {"images": images, "labels": row["images"], "rows": []})
+        g["rows"].append(row)
+        order.append((key, row))
+    for key, g in groups.items():
+        labels = g["labels"]
         state = ("A screenshot of a web page%s." % (
-            "" if len(images) == 1 else
-            ": image 1 is %s, image 2 is %s" % (row["images"][0], row["images"][1])))
-        q: Dict[str, Any] = c["question"]
-        row["claim"] = q["instructions"]
-        try:
-            res = judge_fn(state, {c["id"]: q}, tier="image", images=images, kind=TYPED_KIND)
-        except Exception as exc:
-            row["status"] = "unavailable"
-            row["message"] = str(exc)[:200]
-            block["checks"].append(row)
-            if getattr(exc, "reason", None) in ("off", "no-key", "no-image-judge"):
-                block["message"] = "typed judge unavailable: %s" % exc
-                for rest in checks[checks.index(c) + 1:]:
-                    block["checks"].append(dict(rest, status="unavailable", images=[]))
-                return block
-            continue
-        v = _editor_module("visual_checks").verdict(q, res["answers"].get(c["id"]),
-                                                   res["thresholds"], c.get("expect"))
-        row.update({"answer": v["answer"], "noul": v.get("noul"), "passed": v["passed"],
-                    "confidence": v["confidence"], "band": v["band"],
-                    "status": "answered" if v["answer"] is not None else "no-answer"})
-        block["available"] = True
-        block["provider"] = res.get("provider")
-        block["model"] = res.get("model")
-        block["trustPass"] = bool(res["thresholds"].get("trustPass"))
-        block["checks"].append(row)
+            "" if len(g["images"]) == 1 else
+            ": image 1 is %s, image 2 is %s" % (labels[0], labels[1])))
+        for start in range(0, len(g["rows"]), 64):
+            part = g["rows"][start:start + 64]
+            try:
+                res = judge_fn(state, {r["id"]: r["question"] for r in part}, tier="image",
+                               images=g["images"], kind=TYPED_KIND)
+            except Exception as exc:
+                for r in part:
+                    r["status"] = "unavailable"
+                    r["message"] = str(exc)[:200]
+                if getattr(exc, "reason", None) in ("off", "no-key", "no-image-judge"):
+                    block["message"] = "typed judge unavailable: %s" % exc
+                    for _k, r in order:
+                        if r["status"] is None:
+                            r["status"] = "unavailable"
+                    block["checks"] = [r for _k, r in order]
+                    return block
+                continue
+            block["available"] = True
+            block["provider"] = res.get("provider")
+            block["model"] = res.get("model")
+            block["trustPass"] = bool(res["thresholds"].get("trustPass"))
+            block["requests"] = int(block.get("requests") or 0) + 1
+            for r in part:
+                v = vc.verdict(r["question"], res["answers"].get(r["id"]), res["thresholds"],
+                               r.get("expect"))
+                r.update({"answer": v["answer"], "noul": v.get("noul"), "passed": v["passed"],
+                          "confidence": v["confidence"], "band": v["band"],
+                          "status": "answered" if v["answer"] is not None else "no-answer"})
+    block["checks"] = [r for _k, r in order]
     answered = [r for r in block["checks"] if r["status"] == "answered"]
     block["summary"] = {
         "confidentPass": sum(1 for r in answered if r["passed"] is True and r["band"] == "act"),

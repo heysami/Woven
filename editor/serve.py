@@ -15616,6 +15616,30 @@ def _stamp_url_is_external(val, schemes):
     return False
 
 
+def _page_visual_checks(path, abs_target):
+    """The checks a visual-checks.json holds for ONE page: its shared `checks`
+    plus `pages[<page>]`, where <page> is the target's file name or its path
+    relative to the file's folder. A bare list, or {"checks": [...]} with no
+    `pages`, applies to every target beside it. Unreadable -> []."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            doc = json.load(f)
+    except Exception:
+        return []
+    if isinstance(doc, list):
+        return [c for c in doc if isinstance(c, dict)]
+    if not isinstance(doc, dict):
+        return []
+    out = [c for c in (doc.get("checks") or []) if isinstance(c, dict)]
+    pages = doc.get("pages") if isinstance(doc.get("pages"), dict) else {}
+    rel = os.path.relpath(abs_target, os.path.dirname(path)).replace(os.sep, "/")
+    for key in (rel, os.path.basename(abs_target)):
+        if isinstance(pages.get(key), list):
+            out += [c for c in pages[key] if isinstance(c, dict)]
+            break
+    return out
+
+
 class H(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         # `directory=INSTALL_ROOT` is mostly a fallback - translate_path()
@@ -27452,20 +27476,27 @@ class H(http.server.SimpleHTTPRequestHandler):
         _tcfg = _compact_config()
         checks_raw = (_qs_get(qs, "checks") or "").strip()
         checks_path = None
-        if checks_raw:
-            try:
-                json.loads(checks_raw)
-            except ValueError as e:
-                return self._reply(400, {"error": "checks must be JSON: %s" % e})
-            checks_path = os.path.join(out_dir, "checks.json")
-            with open(checks_path, "w", encoding="utf-8") as f:
-                f.write(checks_raw)
-        elif abs_target:
+        page_checks = []
+        if abs_target:
+            # The screen's stored criteria: visual-checks.json next to the
+            # target (or one level up), its `pages` entry for THIS page plus
+            # its shared `checks`. Written by whoever builds or changes the
+            # screen and reused by every run.
             for cand_dir in (os.path.dirname(abs_target), os.path.dirname(os.path.dirname(abs_target))):
                 cand = os.path.join(cand_dir, "visual-checks.json")
                 if os.path.isfile(cand):
-                    checks_path = cand
+                    page_checks = _page_visual_checks(cand, abs_target)
                     break
+        if checks_raw:
+            try:
+                extra = json.loads(checks_raw)
+            except ValueError as e:
+                return self._reply(400, {"error": "checks must be JSON: %s" % e})
+            page_checks += (extra.get("checks") if isinstance(extra, dict) else extra) or []
+        if page_checks:
+            checks_path = os.path.join(out_dir, "checks.json")
+            with open(checks_path, "w", encoding="utf-8") as f:
+                json.dump({"checks": page_checks}, f)
         if checks_path and _tcfg.get("typedJudgeVisual"):
             cmd += ["--checks", checks_path,
                     "--typed-judge", _tcfg.get("typedJudgeVisualMode") or "shadow"]

@@ -788,8 +788,7 @@ class P8VisualChecks(unittest.TestCase):
             if self.TYPED[kind] is None:
                 raise typed_judge.JudgeUnavailable("no image judge", reason="no-image-judge")
             self.assertEqual(kw["tier"], "image")
-            qid = next(iter(questions))
-            return {"answers": {qid: {"type": "noul", "noul": self.TYPED[kind]}},
+            return {"answers": {qid: {"type": "noul", "noul": self.TYPED[kind]} for qid in questions},
                     "provider": "clef", "model": "clef",
                     "thresholds": typed_judge.thresholds("frame_check", "clef")}
         return fn
@@ -910,6 +909,22 @@ class P8VisualChecks(unittest.TestCase):
                                                self.tmp, judge)
         self.assertEqual(block["summary"]["confidentPass"], 1)
         self.assertIsInstance(asked[0][0], bytes, "cropped to the image, not the frame")
+
+    def test_one_call_per_screenshot_or_crop_with_all_its_criteria(self):
+        calls = []
+        checks = [
+            {"id": "menu_open", "shape": "shows", "x": "a dropdown menu", "at": "after:click_account",
+             "selector": "#menu"},
+            {"id": "menu_items", "shape": "shows", "x": "an item labelled Sign out",
+             "at": "after:click_account", "selector": "#menu"},
+            {"id": "page_title", "shape": "shows", "x": "the heading Account settings",
+             "at": "after:click_account"},
+        ]
+        _v, _r, report, _l = self._run("pass", "confirms", "pass", "shadow", calls, checks)
+        self.assertEqual(len(calls), 2, "the two #menu criteria share one crop and one call")
+        sizes = sorted(len(q) for _s, q, _kw in calls)
+        self.assertEqual(sizes, [1, 2])
+        self.assertEqual(report["typedChecks"]["requests"], 2)
 
     def test_a_missing_element_is_reported_without_a_model_call(self):
         calls = []

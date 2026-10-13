@@ -1013,6 +1013,23 @@ class DaemonRoutes(Isolated):
         self.assertFalse(out["judge"]["text"])
         self.assertIsNone(out["imagesVerified"])
 
+    def test_a_pages_stored_criteria_are_its_own_plus_the_shared_ones(self):
+        folder = os.path.join(self.project, "source", "main")
+        path = os.path.join(folder, "visual-checks.json")
+        Path(path).write_text(json.dumps({
+            "checks": [{"id": "brand", "shape": "shows", "x": "the SUSS logo", "at": "page"}],
+            "pages": {"apply.html": [{"id": "q1", "shape": "shows", "x": "a Yes/No question",
+                                      "at": "page", "selector": "#q1"}],
+                      "other.html": [{"id": "z", "shape": "shows", "x": "x y z", "at": "page"}]}}))
+        got = self.serve._page_visual_checks(path, os.path.join(folder, "apply.html"))
+        self.assertEqual([c["id"] for c in got], ["brand", "q1"])
+        self.assertEqual([c["id"] for c in self.serve._page_visual_checks(
+            path, os.path.join(folder, "none.html"))], ["brand"])
+        Path(path).write_text(json.dumps([{"id": "a", "shape": "shows", "x": "x y", "at": "page"}]))
+        self.assertEqual(len(self.serve._page_visual_checks(path, os.path.join(folder, "apply.html"))), 1)
+        Path(path).write_text("{broken")
+        self.assertEqual(self.serve._page_visual_checks(path, os.path.join(folder, "apply.html")), [])
+
     def test_judge_status_route(self):
         self.media({"typesafe": {"api_key": "ts"}})
         st = tj.status(resolve_key=self.serve._resolve_provider_key)
