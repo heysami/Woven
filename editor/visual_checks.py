@@ -43,6 +43,12 @@ SHAPES = {
     "same_style": {"type": "noul", "images": 2,
                    "text": "Image 2 shows the same {x} as image 1, in the same visual style."},
     "which":      {"type": "choice", "images": 1, "text": "Which of these is true of {x}?"},
+    # Text read off the rendered page (never written by anyone): the crop of
+    # the element that holds it shows that text, legible and not covered.
+    "text":       {"type": "noul", "images": 1, "dom": True,
+                   "text": "The image shows the text \"{x}\", fully readable and not covered."},
+    "text_start": {"type": "noul", "images": 1, "dom": True,
+                   "text": "The image shows text that begins \"{x}\", readable and not covered."},
 }
 
 # ── Option lists (choice) ───────────────────────────────────────────────────
@@ -174,10 +180,10 @@ def question(check):
     x = str(check.get("x") or "").strip()
     if not x or len(x) > MAX_X or "\n" in x:
         raise ValueError("x must be a short phrase (at most %d characters)" % MAX_X)
-    why = literal_problem(x)
+    why = None if shape.get("dom") else literal_problem(x)
     if why:
         raise ValueError("x " + why)
-    text = shape["text"].format(x=x)
+    text = shape["text"].format(x=x.replace('"', "'"))
     if shape["type"] == "choice":
         name = str(check.get("list") or "")
         if name not in LISTS:

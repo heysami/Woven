@@ -5153,6 +5153,22 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-subagent-head .th-subagent-refresh { flex: 0 0 auto; }
 .th-subagent-refresh[data-busy="true"] svg { animation: chat-active-agent-spin 0.7s linear infinite; }
 .th-subagent-body { gap: 10px; padding: 10px 12px; }
+/* A visual-qa subagent's report: per judge call, the images as sent, the
+   text sent, and each question with its answer and confidence. */
+.th-vqa-call { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 8px; border-top: 1px solid var(--border); }
+.th-vqa-call:first-of-type { border-top: 0; }
+.th-vqa-imgs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 8px; }
+.th-vqa-imgs img { display: block; max-width: 220px; max-height: 140px; min-width: 32px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.th-vqa-state { padding: 0 8px; font-size: 10.5px; color: var(--text-faint); }
+.th-vqa-state summary { cursor: pointer; }
+.th-vqa-state .th-tasks-agent-pre { max-height: 140px; overflow: auto; }
+.th-vqa-row { grid-template-columns: auto auto 1fr auto; align-items: start; }
+.th-vqa-row .runs-row-dot { margin-top: 5px; }
+.th-vqa-o { font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); white-space: nowrap; padding-top: 2px; }
+.th-vqa-o-sure-no { color: var(--danger); }
+.th-vqa-o-sure-yes { color: var(--success); }
+.th-vqa-counts { display: flex; gap: 12px; padding: 2px 8px 6px; }
+.th-vqa-ans { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); white-space: nowrap; padding-top: 1px; }
 .th-subagent-run {
   font-size: 11px;
   color: var(--text-faint);
@@ -26188,14 +26204,6 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   overflow: auto;
 }
 .chat-status { color: var(--text-muted); font-size: 11.5px; }
-/* Woven's own Visual QA row: opens its task; Report opens the screenshots. */
-.chat-vqa { display: flex; align-items: center; gap: 8px; }
-.chat-vqa-open { all: unset; cursor: pointer; color: inherit; }
-.chat-vqa-open:hover { color: var(--text); text-decoration: underline; }
-.chat-vqa-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.chat-vqa-report { color: var(--accent); text-decoration: none; }
-.chat-vqa-report:hover { text-decoration: underline; }
-.chat-vqa[data-error="true"] .chat-vqa-open { color: var(--danger, #c0392b); }
 /* v3.11 - Collapsed activity row ("auto" chat view mode). One compact line
    stands in for a finished turn's tool/thinking blocks; clicking re-expands
    the original cards inline. Deliberately quieter than a tool card - it's

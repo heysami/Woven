@@ -13977,19 +13977,6 @@ function RightRailDock({ mode }) {
   </div>`;
 }
 
-/* visualQaAgent - one page's Visual QA run (the daemon's own check, see
-   _visual_qa_task in serve.py) in the shape a Tasks & subagents row carries.
-   `report` is the page with every question, answer and image as sent. */
-function visualQaAgent(v) {
-  const done = v.status === "completed" || v.status === "failed";
-  return {
-    id: v.id, type: "visual-qa", label: v.label || "Visual QA", prompt: v.prompt || "",
-    result: v.result || "", actions: v.actions || [], background: false,
-    jobStatus: done ? v.status : "running", lastTick: 0, tickTotal: 0,
-    done, error: v.status === "failed", report: v.report || null,
-  };
-}
-
 /* extractRunSubagents / extractRunTasks - pull the subagent dispatches and the
    harness Task list out of ONE run's transcript (events mapped from /__chat or
    the live SSE: { event, data }). Mirrors the live-strip logic in ChatDrawer,
@@ -14009,18 +13996,11 @@ function extractRunSubagents(events) {
   // signal there is.
   const tickById = new Map();
   const jobs = new Map();
-  // Woven's own Visual QA (the daemon's turn-end check, no Claude agent):
-  // one entry per page, its events merged by id as it goes from running to done.
-  const visualQa = new Map();
   let ticks = 0;
   for (const ev of events || []) {
     if (ev?.event !== "agent") continue;
     const d = ev?.data;
     if (!d) continue;
-    if (d.type === "visual_qa" && d.id) {
-      visualQa.set(d.id, { ...(visualQa.get(d.id) || {}), ...d });
-      continue;
-    }
     if (d.type === "job") {
       const key = d.jobId || d.toolUseId;
       const oldKey = d.toolUseId && jobs.has(d.toolUseId) ? d.toolUseId : key;
@@ -14084,7 +14064,6 @@ function extractRunSubagents(events) {
       error: job ? ["failed", "stopped", "killed", "cancelled"].includes(job.status) : !!(result && (result.isError || result.is_error)),
     });
   }
-  for (const v of visualQa.values()) out.push(visualQaAgent(v));
   for (const job of jobs.values()) {
     if (out.some(a => a.id === job.toolUseId)) continue;
     out.push({ id: job.jobId, type: job.profile?.role || job.taskType || "subagent",
@@ -15038,6 +15017,103 @@ function useOpenSubagentEvent(openWindow) {
   }, [openWindow]);
 }
 
+/* Visual QA report ids a visual-qa subagent names in its verdict
+   ("... · report 20261013-161310-ab12cd"). */
+function visualQaReportIds(text) {
+  const out = [];
+  for (const m of String(text || "").matchAll(/\breport (\d{8}-\d{6}-[0-9a-f]{6})\b/g)) {
+    if (!out.includes(m[1])) out.push(m[1]);
+  }
+  return out;
+}
+
+const VQA_ORDER = { "sure-no": 0, unsure: 1, answered: 2, "sure-yes": 3 };
+function visualQaOutcome(r) {
+  if (r.band !== "act") return "unsure";
+  return r.passed === false ? "sure-no" : r.passed === true ? "sure-yes" : "answered";
+}
+
+/* VisualQaReport - one page's judge calls, as sent and as answered: the
+   images exactly as the judge got them, the text that went with them, and
+   each question with its answer, confidence and (once the visual-qa subagent
+   looked) the right answer. Nothing else. */
+function VisualQaReport({ id }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let dead = false;
+    fetch(apiUrl("/__qa/visual-report?id=" + encodeURIComponent(id)), { cache: "no-store" })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+      .then(j => { if (!dead) setData(j); })
+      .catch(e => { if (!dead) setErr(e.message || String(e)); });
+    return () => { dead = true; };
+  }, [id]);
+  if (err) return html`<div className="th-tasks-agent-empty">Report ${id} could not be read: ${err}</div>`;
+  if (!data) return html`<div className="th-tasks-agent-empty">Loading report…</div>`;
+  const block = data.typedChecks || {};
+  const rows = (block.checks || []).filter(r => r.status === "answered" && r.call != null);
+  const count = o => rows.filter(r => visualQaOutcome(r) === o).length;
+  // Only what needs a look: the "no"s and the unsure ones. A sure yes is
+  // counted, never listed.
+  const shown = rows.filter(r => ["sure-no", "unsure"].includes(visualQaOutcome(r)));
+  const file = f => apiUrl("/__qa/visual-report/file?id=" + encodeURIComponent(id) + "&f=" + encodeURIComponent(f));
+  const page = String(data.page || "").split("/").pop();
+  return html`
+    <div className="th-tasks-group th-vqa">
+      <div className="th-tasks-group-head">
+        <span className="th-tasks-group-title">${page}</span>
+        <span className="runs-row-age">${rows.length} question${rows.length === 1 ? "" : "s"}</span>
+      </div>
+      <div className="th-vqa-counts">
+        <span className="th-vqa-o th-vqa-o-sure-no">${count("sure-no")} sure no</span>
+        <span className="th-vqa-o th-vqa-o-unsure">${count("unsure")} unsure</span>
+        <span className="th-vqa-o th-vqa-o-sure-yes">${count("sure-yes")} sure yes</span>
+      </div>
+      ${(block.calls || []).map(call => {
+        const mine = shown.filter(r => r.call === call.n)
+          .sort((x, y) => VQA_ORDER[visualQaOutcome(x)] - VQA_ORDER[visualQaOutcome(y)]);
+        if (!mine.length) return null;
+        return html`
+          <div className="th-vqa-call" key=${call.n}>
+            <div className="th-vqa-imgs">
+              ${(call.images || []).filter(im => im.file).map((im, i) => html`
+                <a key=${i} href=${file(im.file)} target="_blank" rel="noopener" title="Open this image at full size">
+                  <img src=${file(im.file)} alt=${`Image ${i + 1} sent to the judge`}/>
+                </a>`)}
+            </div>
+            <details className="th-vqa-state">
+              <summary>Text sent</summary>
+              <pre className="th-tasks-agent-pre">${call.state || ""}</pre>
+            </details>
+            ${mine.map(r => {
+              const o = visualQaOutcome(r);
+              const q = r.question || {};
+              const esc = r.escalation;
+              const dot = esc ? (esc.passed === false ? "fail" : esc.passed === true ? "done" : "none")
+                : o === "sure-no" ? "fail" : o === "sure-yes" ? "done" : o === "unsure" ? "waiting" : "none";
+              const ans = q.type === "choice" ? String(r.answer ?? "-")
+                : r.noul == null ? "-" : (r.passed ? "yes" : "no");
+              const probs = r.probabilities || {};
+              const exp = new Set(r.expect || []);
+              return html`
+                <div className="th-tasks-row th-vqa-row" key=${r.id}>
+                  <span className="runs-row-dot" data-status=${dot}/>
+                  <span className=${"th-vqa-o th-vqa-o-" + o}>${o.replace("-", " ")}</span>
+                  <span className="th-tasks-row-main">
+                    <span className="th-tasks-row-label">${q.instructions || r.claim || r.id}</span>
+                    ${q.type === "choice" && html`<span className="th-plan-verdict">
+                      ${Object.keys(q.criteria || {}).map((k, i) => html`<span key=${k}>${i ? " · " : ""}${exp.has(k) ? html`<b>${k}</b>` : k}${k in probs ? " " + Number(probs[k]).toFixed(2) : ""}</span>`)}
+                    </span>`}
+                    ${esc && html`<span className="th-plan-verdict">Looked: ${esc.passed === false ? "does not meet it" : esc.passed === true ? "meets it" : String(esc.value)}${esc.note ? html`, ${esc.note}` : ""}</span>`}
+                  </span>
+                  <span className="th-vqa-ans">${ans}${r.confidence != null ? " · " + Number(r.confidence).toFixed(2) : ""}</span>
+                </div>`;
+            })}
+          </div>`;
+      })}
+    </div>`;
+}
+
 function SubagentPanel({ agent, runId, runTitle }) {
   // The dock stores a click-time snapshot; Refresh re-reads chat.jsonl and
   // swaps in the subagent's current state (new activity lines, the result once
@@ -15060,6 +15136,16 @@ function SubagentPanel({ agent, runId, runTitle }) {
     setRefreshing(false);
   };
   const a = live || agent || {};
+  // A running subagent is followed live: its activity and result land
+  // without pressing refresh.
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  useEffect(() => {
+    if (a.done || a.error) return;
+    const t = setInterval(() => refreshRef.current(), 4000);
+    return () => clearInterval(t);
+  }, [a.id, a.done, a.error]);
+  const reportIds = visualQaReportIds(a.result);
   const state = a.error ? "failed" : a.done ? "done" : "running";
   const dot   = a.error ? "fail"   : a.done ? "done" : "live";
   // Prompt collapses by default so the task history (activity + result) is what
@@ -15081,8 +15167,6 @@ function SubagentPanel({ agent, runId, runTitle }) {
       </div>
       <div className="th-rail-panel-body th-subagent-body">
         ${runTitle && html`<div className="th-subagent-run">from ${runTitle}</div>`}
-        ${a.report && html`<div className="th-subagent-run"><a href=${a.report} target="_blank" rel="noopener"
-          title="Every question with its answer and confidence, and each screenshot and crop exactly as sent to the judge">Open the report with the screenshots</a></div>`}
         ${a.prompt && html`
           <div className="th-tasks-agent-sec">
             <button className="th-tasks-agent-sec-h th-tasks-agent-sec-toggle" onClick=${() => setPromptOpen((v) => !v)} aria-expanded=${promptOpen}>
@@ -15101,6 +15185,11 @@ function SubagentPanel({ agent, runId, runTitle }) {
                   <span className="th-subagent-action-text">${act}</span>
                 </li>`)}
             </ol>
+          </div>`}
+        ${reportIds.length > 0 && html`
+          <div className="th-tasks-agent-sec">
+            <div className="th-tasks-agent-sec-h">Sent to the judge</div>
+            ${reportIds.map(id => html`<${VisualQaReport} key=${id} id=${id}/>`)}
           </div>`}
         ${a.result
           ? html`
@@ -21092,13 +21181,6 @@ function buildBlocks(events) {
       if (d.type === "tool_result") {
         continue; // already attached to its owning tool/agent_grid block
       }
-      if (d.type === "visual_qa") {
-        const at = d.id ? blocks.findIndex(b => b.kind === "visual_qa" && b.data.id === d.id) : -1;
-        if (at >= 0) { blocks[at] = { ...blocks[at], data: { ...blocks[at].data, ...d } }; continue; }
-        closeAll();
-        blocks.push({ kind: "visual_qa", data: d, key: `vqa-${d.id || i}` });
-        continue;
-      }
       if (d.type === "status") {
         // Suppress the "starting · <model>" banner - it's noise. Only the
         // turn-final status frame (label === "done"/"error" with durationMs
@@ -24467,23 +24549,6 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
       // context overflow gets the actionable "start a new chat" line.
       const stReason = d.label === "error" ? (contextLimitReason(d.usage) || d.subtype) : null;
       return html`<div className="chat-row chat-status" data-error=${d.label === "error"}>${bits.join(" · ")}${stReason ? html` - ${stReason}` : ""}${d.promptPreview ? html` - ${d.promptPreview}` : ""}</div>`;
-    }
-    case "visual_qa": {
-      // Woven's own Visual QA for one page. The row opens its task (criteria,
-      // activity, every answer); Report opens the page with the images exactly
-      // as the judge got them. No image ever enters the thread.
-      const d = block.data;
-      const running = d.status !== "completed" && d.status !== "failed";
-      const open = () => {
-        try { window.dispatchEvent(new CustomEvent("th:open-subagent", { detail: { agent: visualQaAgent(d), runId } })); } catch {}
-      };
-      return html`<div className="chat-row chat-status chat-vqa" data-error=${d.status === "failed"} data-running=${running}>
-        ${running && html`<span className="chat-active-agent-spin" aria-hidden="true"/>`}
-        <button type="button" className="chat-vqa-open" onClick=${open}
-          title="Open this check: the criteria asked, what Woven did, and every answer with its confidence">${d.label || "Visual QA"}${running ? " · running" : ""}</button>
-        ${d.report && html`<a className="chat-vqa-report" href=${d.report} target="_blank" rel="noopener"
-          title="Every question with its answer and confidence, and each screenshot and crop exactly as sent to the judge">Report</a>`}
-      </div>`;
     }
     case "usage": {
       const u = block.data.usage || {};

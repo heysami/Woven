@@ -10134,12 +10134,15 @@ def _queue_drain_maybe(state, mode: str = "stdin") -> None:
                             state.turn_done = False
                             ok = True
                     if ok:
-                        state.append("user_message", {"text": head.get("text") or text,
-                                                      "queued": True, "queueId": head.get("id")})
+                        echo = {"text": head.get("text") or text, "queued": True, "queueId": head.get("id")}
+                        if head.get("auto"):
+                            echo["auto"] = head["auto"]
+                        state.append("user_message", echo)
                 except Exception as e:
                     print(f"[queue] stdin deliver failed run={state.run_id}: {e}", flush=True)
             else:
-                ok = _queue_deliver_via_resume(state, text, queue_id=head.get("id") or "")
+                ok = _queue_deliver_via_resume(state, text, auto=head.get("auto") or "",
+                                               queue_id=head.get("id") or "")
             if ok:
                 _queue_drop(state, head.get("id"))
             # A failed delivery leaves the message at the head: the next turn
@@ -11559,7 +11562,7 @@ class RunState:
                  # it was stopped because the user replied, so its
                  # planner-done says that instead of a partial verdict.
                  "qa_check", "qa_cancelled",
-                 "qa_pending_since", "_auto_qa_running", "last_user_message_at",
+                 "_vqa_nudged_at", "last_user_message_at",
                  # intentional-termination flag ("completed-orchestrator",
                  # "user-stop", or None for natural exit). Lets finish() report
                  # SIGTERM-after-success as exit 0 instead of "failed".
@@ -11698,8 +11701,7 @@ class RunState:
         # Visual QA the daemon runs itself at the end of a turn (see
         # _auto_visual_qa_maybe): the earliest turn start whose changes have
         # not been QA'd yet, and whether a QA pass is in flight.
-        self.qa_pending_since = None
-        self._auto_qa_running = False
+        self._vqa_nudged_at = None
         self.last_user_message_at = None
         # intentional-termination flag. None = natural exit (exit_code
         # is the truth: 0 = done, !=0 = failed). Otherwise: a string naming
@@ -13329,6 +13331,11 @@ def _cancel_qa_checks(state) -> list:
 # on), posting one "Visual QA" line per page in the thread.
 AUTO_VISUAL_QA_MAX_PAGES = 4
 
+# Every page a /__qa/run rendered (real path -> when the run started), so the
+# turn-end check can tell which changed pages no QA has covered since.
+_QA_PAGE_RUNS = {}  # type: Dict[str, float]
+_QA_PAGE_RUNS_LOCK = threading.Lock()
+
 
 def _turn_started_at(state):
     """When the turn now ending started: its last user message, else the run."""
@@ -13386,15 +13393,27 @@ def _changed_pages(project_root, protos, since):
     return out
 
 
+def _qa_ran_after(page_abs, after):
+    """A /__qa/run rendered this page at or after `after`."""
+    with _QA_PAGE_RUNS_LOCK:
+        ran = _QA_PAGE_RUNS.get(os.path.realpath(page_abs))
+    return ran is not None and ran >= after - 2
+
+
 def _auto_visual_qa_maybe(state):
+    """Visual QA on: every page this turn changed must have been through the
+    screenshot QA, which the visual-qa subagent runs in the same message as
+    the visual-verifier and the ds-guardian. A changed page no QA covered after
+    its last change gets ONE daemon message asking the agent to dispatch it, so
+    a skipped check still ends in a verdict the agent acts on. Once per user
+    message, and never ahead of a message the user queued."""
     if getattr(state, "workflow_node_id", None) or not getattr(state, "project_root", None):
         return
     from kinds.capabilities import normalize_guards
     if not normalize_guards(getattr(state, "guards", None)).get("visual"):
         return
-    since = min(getattr(state, "qa_pending_since", None) or float("inf"), _turn_started_at(state))
-    if getattr(state, "_auto_qa_running", False):
-        state.qa_pending_since = since  # the next turn end covers these too
+    since = _turn_started_at(state)
+    if (getattr(state, "_vqa_nudged_at", None) or 0) >= since:
         return
     root = state.project_root
     proto = getattr(state, "prototype", None)
@@ -13402,142 +13421,31 @@ def _auto_visual_qa_maybe(state):
         d for d in os.listdir(os.path.join(root, "source"))
         if not d.startswith(".") and os.path.isdir(os.path.join(root, "source", d))
     ) if os.path.isdir(os.path.join(root, "source")) else []
-    pages = _changed_pages(root, protos, since)
-    state.qa_pending_since = None
-    if not pages:
+    missing = []
+    for p, rel in _changed_pages(root, protos, since):
+        full = os.path.join(root, "source", p, rel)
+        try:
+            changed = os.path.getmtime(full)
+        except OSError:
+            continue
+        if not _qa_ran_after(full, max(since, changed)):
+            missing.append("%s/%s" % (p, rel))
+    if not missing:
         return
-    state._auto_qa_running = True
-    threading.Thread(target=_auto_visual_qa_worker,
-                     args=(state, pages[:AUTO_VISUAL_QA_MAX_PAGES], len(pages)),
-                     daemon=True).start()
-
-
-def _visual_qa_line(page, rep):
-    """One thread line for one page's QA report."""
-    if not isinstance(rep, dict):
-        return "Visual QA · %s · could not run" % page, None
-    verdict = rep.get("verdict") or "error"
-    bits = [verdict]
-    cs = rep.get("casesSummary") or {}
-    if cs:
-        bits.append("%d/%d cases" % (cs.get("pass", 0), cs.get("total", 0)))
-    tc = rep.get("typedChecks") or {}
-    sm = tc.get("summary") or {}
-    if sm:
-        bits.append("visual checks: %d sure yes, %d sure no, %d unsure%s" % (
-            sm.get("confidentPass", 0), sm.get("confidentFail", 0), sm.get("unsure", 0),
-            " (%s)" % tc.get("mode") if tc.get("mode") else ""))
-    detail = []
-    for r in (rep.get("reasons") or [])[:3]:
-        detail.append(str(r))
-    for f in (rep.get("findings") or [])[:6]:
-        detail.append(str(f.get("message") or f)[:200])
-    for r in (tc.get("checks") or []):
-        if r.get("status") == "element-missing" or (r.get("passed") is False and r.get("band") == "act"):
-            detail.append("%s: %s%s" % (r.get("id"), r.get("claim") or r.get("message") or "",
-                                        " (judge said %s)" % r.get("answer") if r.get("answer") is not None else ""))
-    return "Visual QA · %s · %s" % (page, " · ".join(bits)), ("\n".join(detail)[:1500] or None)
-
-
-def _visual_qa_task(rel, rep, ms):
-    """The thread's task entry for one page's Visual QA: what was checked
-    (prompt), what the daemon did (actions), every question and answer
-    (result) and the report page with the images as sent. Text only: the
-    images stay on the report page."""
-    label, detail = _visual_qa_line(rel, rep)
-    rid = str(rep.get("visualReport") or "").split("id=")[-1] if rep.get("visualReport") else ""
-    data = visual_report.load(rid) if rid else None
-    block = (data or {}).get("typedChecks") or rep.get("typedChecks") or {}
-    actions = ["Opened %s in a headless browser" % (rep.get("url") or rel)]
-    cs = rep.get("casesSummary") or {}
-    if cs:
-        actions.append("Ran %d/%d test cases" % (cs.get("pass", 0), cs.get("total", 0)))
-    actions.append("QA verdict: %s" % (rep.get("verdict") or "error"))
-    sizes = (data or {}).get("sizes") or {}
-    shot = block.get("pageShotFile")
-    if shot and sizes.get(shot):
-        actions.append("Took a full-page screenshot, %d x %d px" % tuple(sizes[shot]))
-    found = block.get("dsFound")
-    if found:
-        actions.append("Found %d design-system component(s) and %d element(s) styled outside it on "
-                       "the rendered page" % (len(found.get("components") or []),
-                                              len(found.get("offSystem") or [])))
-    calls = block.get("calls") or []
-    crops = sum(1 for c in calls for im in c.get("images") or [] if im.get("box"))
-    if crops:
-        actions.append("Cropped %d element(s) out of the screenshots" % crops)
-    if calls:
-        actions.append("Asked %s %d question(s) in %d call(s), %.1f s" % (
-            block.get("provider") or "the image judge", sum(len(c.get("questions") or []) for c in calls),
-            len(calls), sum(c.get("ms") or 0 for c in calls) / 1000.0))
-    for c in calls:
-        for i, im in enumerate(c.get("images") or []):
-            if (im.get("oneColour") or 0) >= visual_report.BLANK_SHARE:
-                actions.append("Warning: image %d of call %s is %d%% one colour (empty screenshot or crop?)"
-                               % (i + 1, c.get("n"), int(round(im["oneColour"] * 100))))
-    if block.get("checks") or block.get("rejected"):
-        actions.append("Visual checks: %s" % visual_report.summary_line(block))
-    elif block.get("message"):
-        actions.append("No visual checks asked: %s" % block["message"])
-    else:
-        actions.append("No visual checks asked: typed judgment for visual checks is off or this page "
-                       "has no criteria")
-    criteria = []
-    for r in block.get("checks") or []:
-        where = r.get("at") or ""
-        if r.get("compare"):
-            where = "%s vs %s" % (r["compare"], where)
-        if r.get("selector"):
-            where += " cropped to " + r["selector"]
-        criteria.append("- %s: %s\n    on %s · %s" % (r.get("id"), (r.get("question") or {}).get("instructions")
-                                                      or r.get("claim") or "", where,
-                                                      r.get("source") or "screen criteria"))
-    for rj in block.get("rejected") or []:
-        criteria.append("- refused %s: %s (%s)" % (rj.get("id") or rj.get("index"), rj.get("statement") or "",
-                                                   rj.get("reason")))
-    prompt = ("Woven ran this itself at the end of the turn (no Claude agent, no image in the thread): "
-              "it opens the page, runs its QA, screenshots it, crops each element a check names, and "
-              "asks the image judge every criterion about that screenshot or crop in one call.\n\n"
-              + ("Criteria asked:\n" + "\n".join(criteria) if criteria else "No criteria were asked."))
-    result = visual_report.text_table(data) if data else ""
-    ev = {"type": "visual_qa", "page": rel, "label": label, "status":
-          "failed" if rep.get("verdict") in (None, "error") else "completed",
-          "actions": actions, "prompt": prompt, "result": result or (detail or label), "durationMs": ms}
-    if rep.get("visualReport"):
-        ev["report"] = rep["visualReport"]
-    return ev
-
-
-def _auto_visual_qa_worker(state, pages, total):
-    try:
-        pid = os.path.basename(state.project_root.rstrip("/"))
-        for proto, rel in pages:
-            url = "http://127.0.0.1:%d/__qa/run?project=%s&page=%s&detail=full" % (
-                PORT, urllib.parse.quote(pid, safe=""), urllib.parse.quote(proto + "/" + rel, safe="/"))
-            vid = "vqa-%s" % uuid.uuid4().hex[:10]
-            state.append("agent", {"type": "visual_qa", "id": vid, "page": rel, "status": "running",
-                                   "label": "Visual QA · %s" % rel,
-                                   "actions": ["Opening %s in a headless browser" % rel]})
-            t0 = time.time()
-            try:
-                with urllib.request.urlopen(url, timeout=700) as r:
-                    rep = json.loads(r.read().decode("utf-8", "replace"))
-            except Exception as exc:
-                rep = {"verdict": "error", "reasons": ["QA did not run: %s" % exc]}
-            try:
-                ev = _visual_qa_task(rel, rep, int((time.time() - t0) * 1000))
-            except Exception as exc:
-                label, detail = _visual_qa_line(rel, rep)
-                ev = {"type": "visual_qa", "page": rel, "label": label, "status": "failed",
-                      "actions": ["Report could not be built: %s" % exc], "result": detail or label}
-            ev["id"] = vid
-            state.append("agent", ev)
-        if total > len(pages):
-            state.append("agent", {"type": "status",
-                                   "label": "Visual QA · %d more changed page(s) not run this turn"
-                                            % (total - len(pages))})
-    finally:
-        state._auto_qa_running = False
+    with _QUEUE_LOCK:
+        if list(getattr(state, "msg_queue", None) or []) or getattr(state, "_queue_draining", False):
+            return
+        shown = ", ".join(missing[:AUTO_VISUAL_QA_MAX_PAGES]) + (
+            " and %d more" % (len(missing) - AUTO_VISUAL_QA_MAX_PAGES) if len(missing) > AUTO_VISUAL_QA_MAX_PAGES else "")
+        text = ("[Woven: Visual QA did not run on %s after this turn changed it. Dispatch the visual-qa "
+                "subagent for those pages now (brief: project root, prototype, pages) and act on its "
+                "VISUAL-QA verdict: fix each confirmed failure before you tell the user it is done.]" % shown)
+        state.msg_queue = [{"id": uuid.uuid4().hex[:12], "text": text, "send": text, "meta": {},
+                            "at": time.time(), "auto": "visual-qa"}]
+        state._vqa_nudged_at = time.time()
+    _queue_persist(state)
+    _queue_drain_maybe(state, mode="stdin")
+    _queue_drain_maybe(state, mode="resume")
 
 
 def _qa_cancel_note(checks) -> str:
@@ -16172,6 +16080,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._exa_search_run(qs)
             if parsed.path == "/__judge":
                 return self._judge_run(qs)
+            if parsed.path == "/__qa/visual-report/label":
+                return self._qa_visual_report_label(qs)
             if parsed.path == "/__jev":
                 return self._judge_run(qs, alias_tier="text")
             if parsed.path == "/__assistant/tester":
@@ -27811,7 +27721,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Cases mode walks every planned case end to end (journeys + matrix +
         # abuse + soak) on fresh pages; give it a real budget. The generic
         # battery keeps the old 120s.
-        qa_timeout = 600 if use_cases else 120
+        # Typed visual checks explore the page's screens and ask about every
+        # element on them: give that its time too.
+        qa_timeout = 600 if use_cases else (420 if "--typed-judge" in cmd else 120)
+        qa_started = time.time()
         try:
             proc = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=qa_timeout,
@@ -27872,9 +27785,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             _vr = visual_report.save(report, out_dir, project=_qs_get(qs, "project") or None,
                                      page=info.get("page") or info.get("node"))
             if _vr:
-                report["visualReport"] = visual_report.page_url(_vr)
+                report["visualReport"] = _vr
         except Exception as _vr_err:
             print("[qa] visual report not saved: %s" % _vr_err, flush=True)
+        if abs_target and info.get("target") == "page":
+            with _QA_PAGE_RUNS_LOCK:
+                _QA_PAGE_RUNS[os.path.realpath(abs_target)] = qa_started
         # Keep complete evidence on disk. Brief responses change no checks.
         if _compact_config()["compactQa"] and _qs_get(qs, "detail") != "full":
             try:
@@ -27887,21 +27803,36 @@ class H(http.server.SimpleHTTPRequestHandler):
                 pass  # A context optimization must not lose a completed QA result.
         return self._reply(200, report)
 
-    # GET /__qa/visual-report?id=<id> - the report page for one QA run.
+    # GET /__qa/visual-report?id=<id> - one QA run's typed visual checks:
+    # every question, answer and confidence, each judge call's images as sent
+    # (files under `dir`), and the visual-qa subagent's decision per row.
     def _qa_visual_report(self, qs):
         rid = (_qs_get(qs, "id") or "").strip()
         data = visual_report.load(rid)
         if data is None:
             return self._reply(404, {"error": "no visual QA report %s" % rid})
-        if (_qs_get(qs, "format") or "") == "json":
-            return self._reply(200, data)
-        body = visual_report.render(data, visual_report.file_url(rid)).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        data["dir"] = os.path.join(visual_report.REPORTS_DIR, rid)
+        return self._reply(200, data)
+
+    # POST /__qa/visual-report/label {id, check, value, note?} - the right
+    # answer to one check, from whoever looked at its images (the visual-qa
+    # subagent). Kept on the report row and in the judge's label file, which
+    # is what calibrates it.
+    def _qa_visual_report_label(self, qs):
+        body = self._read_json_body()
+        try:
+            row = visual_report.label(str(body.get("id") or ""), str(body.get("check") or ""),
+                                      body.get("value"), str(body.get("note") or "")[:300])
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if row is None:
+            return self._reply(404, {"error": "no such report or check"})
+        if row.get("logId"):
+            try:
+                typed_judge.save_labels({row["logId"]: row["escalation"]["value"]})
+            except Exception as e:
+                print("[qa] label not saved to the judge's label file: %s" % e, flush=True)
+        return self._reply(200, {"ok": True, "check": row.get("id"), "escalation": row.get("escalation")})
 
     # GET /__qa/visual-report/file?id=<id>&f=<name> - one saved image.
     def _qa_visual_report_file(self, qs):

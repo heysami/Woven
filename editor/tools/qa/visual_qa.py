@@ -767,8 +767,14 @@ def _finish_judge(judge: Dict[str, Any], res: Dict[str, Any]) -> Dict[str, Any]:
 
 TYPED_KIND = "frame_check"
 MAX_CHECKS = 64
+# The per-element pass: every distinct screen the QA reaches (at most
+# MAX_SCREENS), every element worth judging on it, at most MAX_ELEMENT_CHECKS
+# questions a page, asked JUDGE_WORKERS calls at a time.
+MAX_SCREENS = 12
+MAX_ELEMENT_CHECKS = 240
+JUDGE_WORKERS = 6
 _CHECK_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
-_CAPTURE = re.compile(r"^(page|idle:(start|end|motion|\d+)|(before|after):.+)$")
+_CAPTURE = re.compile(r"^(page|screen:\d+|idle:(start|end|motion|\d+)|(before|after):.+)$")
 # A design-system reference rendered from the DS gallery (compare only).
 _REF = re.compile(r"^ref:[A-Za-z_][\w.-]*$")
 _CROP_PAD = 8
@@ -786,7 +792,7 @@ def _typed_judge_module() -> Any:
     return _editor_module("typed_judge")
 
 
-def parse_checks(raw: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def parse_checks(raw: Any, limit: int = MAX_CHECKS) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """(checks, rejected). Accepts a list or {"checks": [...]}. Each check is a
     shape from editor/visual_checks.py or a literal statement; the question is
     BUILT there, never written here. A rejected check carries the reason."""
@@ -837,8 +843,8 @@ def parse_checks(raw: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         if why:
             rejected.append({"id": cid, "statement": row.get("statement") or row.get("x"), "reason": why})
             continue
-        if len(checks) >= MAX_CHECKS:
-            rejected.append({"id": cid, "reason": "over %d checks" % MAX_CHECKS})
+        if len(checks) >= limit:
+            rejected.append({"id": cid, "reason": "over %d checks" % limit})
             continue
         checks.append(row)
     return checks, rejected
@@ -869,26 +875,25 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
                        steps: List[Dict[str, Any]], selectors: List[str],
                        gallery_url: Optional[str] = None,
                        ref_classes: Optional[List[str]] = None,
-                       ds_plan: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                       ds_plan: Optional[Dict[str, Any]] = None,
+                       collector: Optional["ScreenCollector"] = None) -> Dict[str, Any]:
     """The captures the typed checks are asked on, taken on a FRESH page after
     the main QA so nothing here can touch its verdict: the settled screen as a
     full-page screenshot, then each criteria step with a before/after (all with
-    every check's element box, in page coordinates), then one crop per
-    design-system component from the DS gallery. Never raises."""
-    out: Dict[str, Any] = {"settled": None, "interactions": [], "refs": {}, "ds": None}
-    selectors = list(selectors)
+    every check's element box, in page coordinates). Every distinct screen
+    among them joins the screens the case runner already collected, each with
+    every element worth judging on it; then one crop per design-system
+    component (and part) from the DS gallery. Never raises."""
+    out: Dict[str, Any] = {"settled": None, "interactions": [], "refs": {}, "ds": None, "screens": []}
+    collector = collector or ScreenCollector(out_dir, ds_plan)
+    selectors = sorted(set(selectors))
     ref_classes = list(ref_classes or [])
     page = context.new_page()
     try:
         page.goto(url, wait_until="load", timeout=30000)
         page.wait_for_timeout(settle_ms)
-        out["ds"] = detect_rendered_ds(page, ds_plan)
-        for u in (out["ds"] or {}).get("off") or []:
-            selectors.append(u["selector"])
-        for c in (out["ds"] or {}).get("comps") or []:
-            selectors.append(c["selector"])
-            ref_classes.append(_comp_key(c))
-        selectors = sorted(set(selectors))
+        first = collector.capture(page, "the page")
+        out["ds"] = (first or (collector.screens[0] if collector.screens else {})).get("found")
         path = os.path.join(out_dir, "typed_page.png")
         page.screenshot(path=path, full_page=True)
         out["settled"] = {"t": 0.0, "path": path, "diffFromPrev": None,
@@ -908,10 +913,16 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
             out["interactions"].append({"step": label, "beforePath": before, "afterPath": after,
                                         "beforeBoxes": b_boxes,
                                         "afterBoxes": capture_boxes(page, selectors, doc=True) or {}})
+            collector.capture(page, "after %s" % label)
     except Exception as exc:
         log("typed capture pass failed (%s)" % exc)
     finally:
         page.close()
+    explore_screens(context, url, settle_ms, collector)
+    out["screens"] = collector.screens
+    for sc in collector.screens:
+        for c in (sc.get("found") or {}).get("comps") or []:
+            ref_classes.append(_comp_key(c))
     ref_classes = sorted(set(ref_classes))
     if gallery_url and ref_classes:
         g = context.new_page()
@@ -1014,6 +1025,11 @@ _GALLERY_PICK_JS = """(parts) => {""" + _STATE_JS + """
   };
   const all = [...document.querySelectorAll('.' + CSS.escape(base))].filter(visible);
   if (!all.length) return null;
+  // A card that wraps a checkbox is not itself checked or unchecked unless
+  // the design system shows the component checkable.
+  if (!all.some(el => boxOf(el))) {
+    for (let i = wantState.length - 1; i >= 0; i--) if (CHECK.has(wantState[i])) wantState.splice(i, 1);
+  }
   const mods = el => [...el.classList].filter(c => c.indexOf(base + '--') === 0).sort().join(' ');
   for (const variant of [true, false]) {
     const pool = variant ? all.filter(el => mods(el) === want) : all;
@@ -1028,23 +1044,33 @@ _GALLERY_PICK_JS = """(parts) => {""" + _STATE_JS + """
 }"""
 
 
-# Found on the RENDERED page, in the browser: every rule from a stylesheet that
-# is not the design system's (page <style>, prototype CSS, any selector shape)
-# that gives a visible element its own skin, plus inline-styled skin; and every
-# documented DS component visible on screen. A selector naming a DS class, an
-# element that IS a DS component, and anything not visible are skipped.
+# Found on the RENDERED screen, in the browser, with each element's box in page
+# coordinates (for the full-page screenshot):
+#   comps - EVERY visible instance of a documented design-system component and
+#           of its parts (".section-card__icon"), with its variant and state;
+#   off   - every visible element that gets its own skin (background, border,
+#           shadow, outline, backdrop) from a stylesheet that is not the design
+#           system's, or from an inline style, and carries no DS class;
+#   texts - every piece of visible text, at its outermost element that holds
+#           exactly that text (a button, a link, a heading).
+# Without a design system only `texts` is filled.
 _RENDERED_DS_JS = """(a) => {""" + _STATE_JS + """
   const dsClasses = new Set(a.dsClasses || []);
-  const roots = new Set(a.componentRoots || []);
+  const titles = {};
+  for (const c of a.components || []) titles[c.cls] = c.title;
   const SKIN = /^(background|border|box-shadow|outline|backdrop-filter)/;
   const EMPTY = /^(none|transparent|0|0px|initial|inherit|unset|rgba\\(0, 0, 0, 0\\)|0px none.*)$/;
-  const visible = el => {
+  const visible = (el, min) => {
     if (el.checkVisibility && !el.checkVisibility({opacityProperty: true, visibilityProperty: true}))
       return false;
     const r = el.getBoundingClientRect();
-    return r.width >= 8 && r.height >= 8;
+    return r.width >= min && r.height >= min;
   };
-  const isRoot = el => el.classList && [...el.classList].some(c => roots.has(c));
+  const box = el => {
+    const r = el.getBoundingClientRect();
+    return {x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height};
+  };
+  const hasDs = el => el.classList && [...el.classList].some(c => dsClasses.has(c));
   const path = el => {
     const parts = [];
     while (el && el.nodeType === 1 && el !== document.body) {
@@ -1066,7 +1092,25 @@ _RENDERED_DS_JS = """(a) => {""" + _STATE_JS + """
     }
     return out;
   };
-  const units = {};
+  const comps = [];
+  if (dsClasses.size) {
+    for (const el of document.querySelectorAll('[class]')) {
+      if (comps.length >= (a.maxComp || 80)) break;
+      let base = null, title = null;
+      for (const c of el.classList) if (titles[c]) { base = c; title = titles[c]; break; }
+      if (!base) for (const c of el.classList) {
+        const i = c.indexOf('__');
+        if (i > 0 && c.indexOf('--') < 0 && dsClasses.has(c) && titles[c.slice(0, i)]) {
+          base = c; title = titles[c.slice(0, i)] + ' ' + c.slice(i + 2).replace(/[-_]+/g, ' ');
+          break;
+        }
+      }
+      if (!base || !visible(el, 8)) continue;
+      comps.push({cls: base, title: title, selector: path(el), state: stateOf(el), box: box(el),
+                  variant: [...el.classList].filter(x => dsClasses.has(x) && x.indexOf(base + '--') === 0).sort()});
+    }
+  }
+  const off = new Map();
   const visit = (rules, sheet) => {
     for (const rule of rules) {
       if (!rule.selectorText) {
@@ -1076,51 +1120,303 @@ _RENDERED_DS_JS = """(a) => {""" + _STATE_JS + """
       const skin = rule.style ? skinOf(rule.style) : [];
       if (!skin.length) continue;
       for (const raw of rule.selectorText.split(',')) {
-        const base = raw.trim().replace(/::?[\\w-]+(\\([^)]*\\))?/g, '').trim();
-        if (!base || /^(html|body|\\*|:root)$/i.test(base)) continue;
-        if ([...base.matchAll(/\\.([\\w-]+)/g)].some(m => dsClasses.has(m[1]))) continue;
+        const sel = raw.trim().replace(/::?[\\w-]+(\\([^)]*\\))?/g, '').trim();
+        if (!sel || /^(html|body|\\*|:root)$/i.test(sel)) continue;
         let els = [];
-        try { els = [...document.querySelectorAll(base)]; } catch (e) { continue; }
-        const vis = els.filter(e => visible(e) && !isRoot(e));
-        if (!vis.length) continue;
-        const key = sheet + '|' + base;
-        if (!units[key]) units[key] = {selector: path(vis[0]), source: sheet + ' ' + base,
-                                       count: vis.length, skin: skin};
+        try { els = [...document.querySelectorAll(sel)]; } catch (e) { continue; }
+        for (const el of els) {
+          if (off.has(el) || hasDs(el) || !visible(el, 8)) continue;
+          off.set(el, {selector: path(el), source: sheet + ' ' + sel, count: 1, skin: skin, box: box(el)});
+        }
       }
     }
   };
-  for (const sh of document.styleSheets) {
-    if (sh.href && sh.href.indexOf(a.dsPath) >= 0) continue;
-    let rules = null;
-    try { rules = sh.cssRules; } catch (e) { continue; }
-    visit(rules, sh.href ? sh.href.split('/').pop().split('?')[0] : '<style>');
+  if (dsClasses.size) {
+    for (const sh of document.styleSheets) {
+      if (sh.href && a.dsPath && sh.href.indexOf(a.dsPath) >= 0) continue;
+      let rules = null;
+      try { rules = sh.cssRules; } catch (e) { continue; }
+      visit(rules, sh.href ? sh.href.split('/').pop().split('?')[0] : '<style>');
+    }
+    for (const el of document.querySelectorAll('[style]')) {
+      const skin = skinOf(el.style);
+      if (!skin.length || off.has(el) || hasDs(el) || !visible(el, 8)) continue;
+      off.set(el, {selector: path(el), source: 'inline style on <' + el.tagName.toLowerCase() + '>',
+                   count: 1, skin: skin, box: box(el)});
+    }
   }
-  for (const el of document.querySelectorAll('[style]')) {
-    const skin = skinOf(el.style);
-    if (!skin.length || !visible(el) || isRoot(el)) continue;
-    const p = path(el);
-    units['inline|' + p] = {selector: p, source: 'inline style on <' + el.tagName.toLowerCase() + '>',
-                            count: 1, skin: skin};
+  const texts = [];
+  const seen = new Set();
+  const SKIP = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|OPTION|TITLE|HEAD)$/;
+  const norm = t => (t || '').replace(/\\s+/g, ' ').trim();
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode()) && texts.length < (a.maxText || 80)) {
+    const own = norm(node.nodeValue);
+    if (own.length < 2 || !/[A-Za-z0-9]/.test(own)) continue;
+    let el = node.parentElement;
+    if (!el || SKIP.test(el.tagName) || !visible(el, 4)) continue;
+    let text = norm(el.innerText);
+    if (!text || text.length > 200) { text = own; }
+    else {
+      for (let up = el.parentElement, n = 0; up && up !== document.body && n < 3; up = up.parentElement, n++) {
+        if (norm(up.innerText) !== text) break;
+        el = up;
+      }
+    }
+    const key = text + '|' + path(el);
+    if (seen.has(text) || seen.has(key)) continue;
+    seen.add(text);
+    texts.push({text: text.slice(0, 200), selector: path(el), box: box(el)});
   }
-  const comps = [];
-  for (const c of a.components || []) {
-    let el = null;
-    try { el = [...document.querySelectorAll('.' + CSS.escape(c.cls))].find(visible); } catch (e) {}
-    if (el) comps.push({cls: c.cls, title: c.title, selector: path(el), state: stateOf(el),
-                        variant: [...el.classList].filter(x => dsClasses.has(x) && x.indexOf(c.cls + '--') === 0).sort()});
-    if (comps.length >= (a.maxComp || 16)) break;
-  }
-  return {off: Object.values(units).sort((x, y) => y.count - x.count).slice(0, a.maxOff || 12),
-          comps: comps};
+  return {off: [...off.values()].slice(0, a.maxOff || 60), comps: comps, texts: texts};
 }"""
 
 
-def detect_rendered_ds(page: Any, plan: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """The design system's elements on the rendered page, or None. Never raises."""
-    if not plan:
-        return None
+# A screen's identity: the visible headings, dialogs and the URL hash. Two
+# moments with the same identity are the same screen, captured once.
+_SCREEN_SIG_JS = """() => {
+  const vis = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const heads = [...document.querySelectorAll('h1,h2,h3,legend,[role=heading],[role=dialog],dialog[open],[aria-modal=true]')]
+    .filter(vis).map(e => e.tagName + ':' + (e.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 60));
+  return location.pathname + location.hash + '|' + heads.join('|');
+}"""
+
+
+# What can be clicked on the current screen, for the exploration: buttons,
+# tabs, in-page links, checkboxes, the first radio of each group, summaries.
+# Never a log-out, never a link that leaves the page.
+_CLICKABLES_JS = """(max) => {
+  const vis = e => {
+    if (e.checkVisibility && !e.checkVisibility({opacityProperty: true, visibilityProperty: true})) return false;
+    const r = e.getBoundingClientRect();
+    return r.width >= 6 && r.height >= 6;
+  };
+  const path = el => {
+    const parts = [];
+    while (el && el.nodeType === 1 && el !== document.body) {
+      if (el.id) { parts.unshift('#' + CSS.escape(el.id)); return parts.join(' > '); }
+      let i = 1, s = el;
+      while ((s = s.previousElementSibling)) if (s.tagName === el.tagName) i++;
+      parts.unshift(el.tagName.toLowerCase() + ':nth-of-type(' + i + ')');
+      el = el.parentElement;
+    }
+    return 'body > ' + parts.join(' > ');
+  };
+  // Most likely to open another screen first: steps, tabs and forward
+  // buttons, then other buttons and in-page links, then choices. Controls
+  // that look alike (five "pick this card" boxes) are tried once.
+  const GO = /\\b(next|continue|proceed|start|begin|review|submit|open|view|details|add|edit|step)\\b/i;
+  // A forward button that is disabled waits for a choice: choices first then.
+  const blocked = [...document.querySelectorAll('button:disabled, [aria-disabled=true]')]
+    .some(b => vis(b) && GO.test(b.innerText || b.getAttribute('aria-label') || ''));
+  const rank = (el, label) => el.tagName === 'INPUT' ? (blocked ? 0 : 3)
+    : el.getAttribute('role') === 'tab' || GO.test(label) ? 0
+    : (el.tagName === 'BUTTON' || el.getAttribute('role') === 'button') ? 1 : 2;
+  const found = [], radios = new Set(), alike = new Set();
+  const sel = 'button, [role=button], [role=tab], a[href^="#"], a:not([href]), input[type=checkbox], input[type=radio], summary';
+  for (const el of document.querySelectorAll(sel)) {
+    if (!vis(el) || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
+    if (el.type === 'radio') { if (el.name && radios.has(el.name)) continue; radios.add(el.name); }
+    const own = el.tagName === 'INPUT' ? '' : (el.innerText || '').trim();
+    const label = (own || el.getAttribute('aria-label') || el.title
+                   || (el.labels && el.labels[0] && el.labels[0].innerText.trim())
+                   || (el.tagName === 'INPUT' ? el.type : el.value) || el.tagName.toLowerCase())
+      .replace(/\\s+/g, ' ').trim().slice(0, 40);
+    if (/\\b(log ?out|sign ?out)\\b/i.test(label)) continue;
+    const kind = el.tagName + '.' + el.className + (el.tagName === 'INPUT' ? '' : '|' + label);
+    if (alike.has(kind)) continue;
+    alike.add(kind);
+    found.push({selector: path(el), label: label, r: rank(el, label)});
+  }
+  return found.sort((x, y) => x.r - y.r).slice(0, max).map(c => ({selector: c.selector, label: c.label}));
+}"""
+
+# What a click can change without changing the screen: checked boxes,
+# selections, disabled buttons. A click that changes it (picking a card)
+# is kept, so the next click (Continue) can reach the step it unlocks.
+_STATE_HASH_JS = """() => ({
+  disabled: document.querySelectorAll('button:disabled, [aria-disabled=true]').length,
+  state: [...document.querySelectorAll('input:checked, [aria-checked=true], [aria-selected=true], [aria-expanded=true]')]
+    .map(e => e.id || e.className || e.tagName).join(',') + '|' + location.hash})"""
+
+
+# Has the screen stopped moving? Finite animations still running, the scroll
+# position, the document height. Two equal readings with nothing running =
+# settled (an infinite ambient animation never blocks).
+_MOTION_JS = """() => {
+  const running = document.getAnimations().filter(a => a.playState === 'running'
+    && !(a.effect && a.effect.getTiming && a.effect.getTiming().iterations === Infinity)).length;
+  const se = document.scrollingElement || document.documentElement;
+  return running + ',' + Math.round(window.scrollY) + ',' + Math.round(se.scrollHeight);
+}"""
+
+
+def _settle_screen(page: Any, timeout_ms: int = 3000) -> None:
+    """Wait until nothing on the screen moves: smooth scrolls, step
+    transitions, fades. Boxes measured mid-motion crop the wrong pixels."""
+    last, t0 = None, time.time()
+    while (time.time() - t0) * 1000 < timeout_ms:
+        try:
+            now = str(page.evaluate(_MOTION_JS))
+        except Exception:
+            return
+        if now == last and now.startswith("0,"):
+            return
+        last = now
+        page.wait_for_timeout(150)
+
+
+class ScreenCollector:
+    """Every distinct screen the QA reaches, captured once: a full-page
+    screenshot plus every element worth judging on it (detect_rendered_ds),
+    each with its box. Fed by the typed capture pass (the settled page, each
+    criteria step) and by the case runner (each case's end state). Never
+    raises: a failed capture is a screen not judged, not a failed QA."""
+
+    def __init__(self, out_dir: str, plan: Optional[Dict[str, Any]], cap: int = MAX_SCREENS):
+        self.out_dir, self.plan, self.cap = out_dir, plan or {}, cap
+        self.screens: List[Dict[str, Any]] = []
+        self.seen: set = set()
+
+    def capture(self, page: Any, label: str) -> Optional[Dict[str, Any]]:
+        if len(self.screens) >= self.cap:
+            return None
+        try:
+            sig = str(page.evaluate(_SCREEN_SIG_JS))
+        except Exception:
+            sig = None
+        if sig is not None and sig in self.seen:
+            return None
+        self.seen.add(sig)
+        n = len(self.screens)
+        path = os.path.join(self.out_dir, "screen_%02d.png" % n)
+        # Measure and shoot the SAME layout: at the top, settled, with the
+        # viewport as tall as the page (what a full-page shot does inside),
+        # so fixed and sticky bars sit where the boxes say they do.
+        vp = None
+        try:
+            page.evaluate("window.scrollTo(0, 0)")
+            _settle_screen(page)
+            vp = page.viewport_size
+            height = int(page.evaluate("(document.scrollingElement || document.documentElement).scrollHeight"))
+            page.set_viewport_size({"width": vp["width"], "height": max(vp["height"], min(height, 12000))})
+            _settle_screen(page, 1500)
+        except Exception:
+            vp = None
+        try:
+            found = detect_rendered_ds(page, self.plan) or {}
+            page.screenshot(path=path, full_page=vp is None)
+        except Exception as exc:
+            log("screen capture %s failed (%s)" % (label, exc))
+            return None
+        finally:
+            if vp:
+                try:
+                    page.set_viewport_size(vp)
+                except Exception:
+                    pass
+        boxes: Dict[str, Any] = {}
+        for item in (found.get("comps") or []) + (found.get("off") or []) + (found.get("texts") or []):
+            if item.get("selector") and item.get("box"):
+                boxes[item["selector"]] = item["box"]
+        screen = {"n": n, "label": label, "path": path, "found": found, "boxes": boxes}
+        self.screens.append(screen)
+        return screen
+
+
+def explore_screens(context: Any, url: str, settle_ms: int, collector: "ScreenCollector",
+                    max_clicks: int = 60, max_depth: int = 4, budget_s: float = 150.0,
+                    per_screen: int = 15) -> int:
+    """Reach the screens a page hides behind clicks (wizard steps, tabs,
+    dialogs) and capture each new one. Every probe is a FRESH browser context
+    (no state carried between probes): load, replay the click path, click one
+    candidate. A click that shows a new screen is captured and explored from;
+    the first click on a screen that only changes its state (a picked card) is
+    kept as a path to explore from too. A click that leaves the page is
+    dropped. Returns the clicks made; never raises."""
     try:
-        return page.evaluate(_RENDERED_DS_JS, plan)
+        browser = context.browser
+        vp = (context.pages[0].viewport_size if context.pages else None) or {"width": 1280, "height": 720}
+    except Exception:
+        return 0
+    settle = min(int(settle_ms), 800)
+    started, clicks = time.time(), 0
+    queue: List[List[Dict[str, str]]] = [[]]
+    unlocks: Dict[str, int] = {}
+
+    def fresh(seq: List[Dict[str, str]]) -> Tuple[Any, Any]:
+        ctx = browser.new_context(viewport=vp)
+        page = ctx.new_page()
+        page.goto(url, wait_until="load", timeout=20000)
+        page.wait_for_timeout(settle)
+        for c in seq:
+            page.click(c["selector"], timeout=2000)
+            page.wait_for_timeout(300)
+        return ctx, page
+
+    while queue and clicks < max_clicks and time.time() - started < budget_s \
+            and len(collector.screens) < collector.cap:
+        seq = queue.pop(0)
+        if len(seq) >= max_depth:
+            continue
+        try:
+            ctx, page = fresh(seq)
+            try:
+                cands = page.evaluate(_CLICKABLES_JS, per_screen) or []
+            finally:
+                ctx.close()
+        except Exception:
+            continue
+        for cand in cands:
+            if clicks >= max_clicks or time.time() - started >= budget_s:
+                break
+            clicks += 1
+            try:
+                ctx, page = fresh(seq)
+            except Exception:
+                continue
+            try:
+                where = page.evaluate("location.pathname")
+                before = page.evaluate(_STATE_HASH_JS)
+                page.click(cand["selector"], timeout=2000)
+                page.wait_for_timeout(400)
+                if page.evaluate("location.pathname") != where:
+                    continue
+                path = seq + [cand]
+                sig = str(page.evaluate(_SCREEN_SIG_JS))
+                after = page.evaluate(_STATE_HASH_JS)
+                if sig not in collector.seen:
+                    if collector.capture(page, "after " + " > ".join(c["label"] for c in path)):
+                        queue.append(path)
+                elif after["disabled"] < before["disabled"] and unlocks.get(sig, 0) < 2:
+                    # It enabled a button (a picked card unlocks Continue).
+                    unlocks[sig] = unlocks.get(sig, 0) + 1
+                    queue.insert(0, path)
+                elif after["state"] != before["state"] and unlocks.get("state:" + sig, 0) < 3:
+                    # A choice made (a picked card, a checked box) is explored
+                    # first: forward buttons usually need one.
+                    unlocks["state:" + sig] = unlocks.get("state:" + sig, 0) + 1
+                    if "input" in cand["selector"]:
+                        queue.insert(0, path)
+                    else:
+                        queue.append(path)
+            except Exception:
+                pass
+            finally:
+                try:
+                    ctx.close()
+                except Exception:
+                    pass
+    log("explored %d click(s), %d screen(s)" % (clicks, len(collector.screens)))
+    return clicks
+
+
+def detect_rendered_ds(page: Any, plan: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Every element worth judging on the rendered screen (see _RENDERED_DS_JS);
+    with no design system, its text only. None when the probe fails."""
+    try:
+        return page.evaluate(_RENDERED_DS_JS, plan or {})
     except Exception as exc:
         log("design-system detection on the rendered page failed (%s)" % exc)
         return None
@@ -1150,31 +1446,76 @@ def prepare_typed(args: argparse.Namespace) -> None:
     args.parsed_checks = (checks[:MAX_CHECKS] if len(checks) > MAX_CHECKS else checks, rejected)
 
 
+def _text_check(t: Dict[str, Any]) -> Dict[str, Any]:
+    text = t["text"]
+    if len(text) <= 60:
+        return {"shape": "text", "x": text}
+    cut = text[:50].rsplit(" ", 1)[0] or text[:50]
+    return {"shape": "text_start", "x": cut}
+
+
+def screen_checks(screens: List[Dict[str, Any]], plan: Optional[Dict[str, Any]],
+                  limit: int = MAX_ELEMENT_CHECKS) -> List[Dict[str, Any]]:
+    """The checks every captured screen calls for, built by code from what the
+    browser found on it, never written:
+      - each design-system component or part instance is compared with the
+        same component rendered in the DS gallery (same variant and state);
+      - each element styled outside the design system is asked copy / new UI
+        / layout on its crop (layout is what passes);
+      - each visible text is asked to show on its element's crop, readable and
+        not covered.
+    An element seen on an earlier screen (same element, same text) is asked
+    once. Every check is optional: an element gone by the time of the crop is
+    "not visible", never a failure."""
+    raw: List[Dict[str, Any]] = []
+    asked: set = set()
+    ids: set = set()
+
+    def uid(base: str) -> str:
+        base = re.sub(r"[^\w-]", "_", base)[:56]
+        out, i = base, 2
+        while out in ids:
+            out, i = "%s_%d" % (base, i), i + 1
+        ids.add(out)
+        return out
+    names = ("The design system on this page provides these components: %s."
+             % (plan or {}).get("names", "")) if plan else ""
+    for sc in screens or []:
+        at, n, found = "screen:%d" % sc["n"], sc["n"], sc.get("found") or {}
+        for i, c in enumerate(found.get("comps") or []):
+            key = _comp_key(c)
+            if ("cmp", key, c["selector"]) in asked:
+                continue
+            asked.add(("cmp", key, c["selector"]))
+            shown, state = _ref_name(key)
+            raw.append({"id": uid("s%d_%s" % (n, key)), "shape": "same_style",
+                        "x": "%s component" % c["title"], "at": at, "compare": "ref:%s" % key,
+                        "selector": c["selector"], "optional": True,
+                        "source": "design system: .%s%s" % (shown, " (%s)" % state if state else "")})
+        for i, u in enumerate(found.get("off") or []):
+            if ("off", u["selector"]) in asked or not plan:
+                continue
+            asked.add(("off", u["selector"]))
+            raw.append({"id": uid("s%d_off_%d" % (n, i + 1)), "shape": "which", "list": "ds_origin",
+                        "x": "the element in the image", "expect": ["layout"], "at": at,
+                        "selector": u["selector"], "context": names, "optional": True,
+                        "source": "styled outside the design system: %s" % u.get("source")})
+        for i, t in enumerate(found.get("texts") or []):
+            if ("txt", t["text"]) in asked:
+                continue
+            asked.add(("txt", t["text"]))
+            raw.append(dict(_text_check(t), id=uid("s%d_txt_%d" % (n, i + 1)), at=at,
+                            selector=t["selector"], optional=True, source="text on the screen"))
+    checks, _rejected = parse_checks(raw, limit)
+    return checks
+
+
 def ds_visual_checks(found: Optional[Dict[str, Any]], plan: Optional[Dict[str, Any]]
                      ) -> List[Dict[str, Any]]:
-    """The design system's checks for a page, built by code from what the
-    browser found on the RENDERED page (detect_rendered_ds), never written:
-    each element styled outside the design system is asked ds-copy / new-ui /
-    layout on its crop (layout is what passes), and each documented component
-    on screen is compared with the same component rendered in the DS gallery."""
-    if not found or not plan:
+    """screen_checks for one screen's findings, as screen 0 (the settled page)."""
+    if not found:
         return []
-    names = "The design system on this page provides these components: %s." % plan.get("names", "")
-    raw: List[Dict[str, Any]] = []
-    for i, u in enumerate(found.get("off") or []):
-        raw.append({"id": "ds_off_%d" % (i + 1), "shape": "which", "list": "ds_origin",
-                    "x": "the element in the image", "expect": ["layout"], "at": "page",
-                    "selector": u["selector"], "context": names, "optional": True,
-                    "source": "design system: %s (%d on screen)" % (u.get("source"), u.get("count") or 1)})
-    for c in found.get("comps") or []:
-        key = _comp_key(c)
-        shown, state = _ref_name(key)
-        raw.append({"id": "ds_cmp_%s" % re.sub(r"[^\w-]", "_", key), "shape": "same_style",
-                    "x": "%s component" % c["title"], "at": "page", "compare": "ref:%s" % key,
-                    "selector": c["selector"], "optional": True,
-                    "source": "design system: .%s%s" % (shown, " (%s)" % state if state else "")})
-    checks, _rejected = parse_checks(raw)
-    return checks
+    return screen_checks([{"n": 0, "found": found}], plan)
 
 
 def typed_checks_on_page(context: Any, url: str, args: argparse.Namespace,
@@ -1182,10 +1523,8 @@ def typed_checks_on_page(context: Any, url: str, args: argparse.Namespace,
     """Every typed check for a page asked on a typed capture pass. Used where
     the battery does not run (cases mode)."""
     checks, rejected = getattr(args, "parsed_checks", None) or load_checks(getattr(args, "checks", None))
-    if not checks and not rejected and not getattr(args, "ds_plan", None):
-        return {"mode": args.typed_judge, "checks": [], "rejected": [], "message": "no checks to run"}
     tp = typed_pass_for(context, url, args, settle_ms, out_dir, checks)
-    checks = checks + ds_visual_checks(tp.get("ds"), getattr(args, "ds_plan", None))
+    checks = checks + screen_checks(tp.get("screens") or [], getattr(args, "ds_plan", None))
     report = {"idleFrames": [], "interactions": [], "typedPass": tp}
     vw = int((getattr(args, "viewport", None) or (1280, 720))[0])
     return run_visual_checks(report, checks, rejected, args.typed_judge, vw, judge_fn)
@@ -1197,7 +1536,8 @@ def typed_pass_for(context: Any, url: str, args: argparse.Namespace, settle_ms: 
     refs = sorted({c["compare"][4:] for c in checks if str(c.get("compare") or "").startswith("ref:")})
     return typed_capture_pass(context, url, settle_ms, out_dir, getattr(args, "typed_steps_list", None) or [],
                               sorted({c["selector"] for c in checks if c.get("selector")}),
-                              plan.get("gallery"), refs, plan or None)
+                              plan.get("gallery"), refs, plan or None,
+                              getattr(args, "screen_collector", None))
 
 
 def _comp_key(c: Dict[str, Any]) -> str:
@@ -1253,6 +1593,10 @@ def _capture(report: Dict[str, Any], ref: str) -> Optional[Dict[str, Any]]:
     pass (full-page, taken after the main QA) answers `page`, its criteria
     steps and the gallery `ref:` crops; the main run answers the rest."""
     tp = report.get("typedPass") or {}
+    if ref.startswith("screen:"):
+        sc = next((x for x in tp.get("screens") or [] if "screen:%d" % x["n"] == ref), None)
+        return ({"label": "screen %d (%s)" % (sc["n"] + 1, sc.get("label")), "path": sc["path"],
+                 "boxes": sc.get("boxes") or {}, "full": True} if sc else None)
     if ref.startswith("ref:"):
         r = (tp.get("refs") or {}).get(ref[4:])
         return dict(r) if r else None
@@ -1439,6 +1783,9 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
                                     "context": c.get("context") or "", "sources": sources})
         g["rows"].append(row)
         order.append((key, row))
+    # Every call is numbered and its images saved first, in order; then the
+    # calls go to the judge JUDGE_WORKERS at a time.
+    jobs: List[Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any], str]] = []
     for key, g in groups.items():
         labels = g["labels"]
         state = ("A screenshot of a web page%s." % (
@@ -1450,46 +1797,61 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
             part = g["rows"][start:start + 64]
             # The record of this call: the state text and every image exactly
             # as the judge receives it, so the report shows what was asked about.
-            call: Dict[str, Any] = {"n": len(block.setdefault("calls", [])) + 1, "state": state,
-                                    "questions": [r["id"] for r in part],
-                                    "images": _sent_images(tj, g["images"], g["sources"],
-                                                           len(block["calls"]) + 1, viewport_w)}
+            n = len(block.setdefault("calls", [])) + 1
+            call: Dict[str, Any] = {"n": n, "state": state, "questions": [r["id"] for r in part],
+                                    "images": _sent_images(tj, g["images"], g["sources"], n, viewport_w)}
             block["calls"].append(call)
             for r in part:
-                r["call"] = call["n"]
-            t0 = time.time()
-            try:
-                res = judge_fn(state, {r["id"]: r["question"] for r in part}, tier="image",
-                               images=g["images"], kind=TYPED_KIND)
-            except Exception as exc:
-                call["ms"] = int((time.time() - t0) * 1000)
-                call["error"] = str(exc)[:300]
-                for r in part:
-                    r["status"] = "unavailable"
-                    r["message"] = str(exc)[:200]
-                if getattr(exc, "reason", None) in ("off", "no-key", "no-image-judge"):
-                    block["message"] = "typed judge unavailable: %s" % exc
-                    for _k, r in order:
-                        if r["status"] is None:
-                            r["status"] = "unavailable"
-                    block["checks"] = [r for _k, r in order]
-                    return block
-                continue
-            call["ms"] = int((time.time() - t0) * 1000)
-            call.update({"provider": res.get("provider"), "model": res.get("model"),
-                         "thresholds": res.get("thresholds")})
-            block["available"] = True
-            block["provider"] = res.get("provider")
-            block["model"] = res.get("model")
-            block["trustPass"] = bool(res["thresholds"].get("trustPass"))
-            block["requests"] = int(block.get("requests") or 0) + 1
+                r["call"] = n
+            jobs.append((call, part, g, state))
+
+    def ask(job: Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any], str]) -> Tuple[Any, Any, int]:
+        _call, part, g, state = job
+        t0 = time.time()
+        try:
+            return (judge_fn(state, {r["id"]: r["question"] for r in part}, tier="image",
+                             images=g["images"], kind=TYPED_KIND), None, int((time.time() - t0) * 1000))
+        except Exception as exc:
+            return None, exc, int((time.time() - t0) * 1000)
+
+    if len(jobs) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=JUDGE_WORKERS) as pool:
+            outcomes = list(pool.map(ask, jobs))
+    else:
+        outcomes = [ask(j) for j in jobs]
+    unavailable = None
+    for (call, part, _g, _state), (res, exc, ms) in zip(jobs, outcomes):
+        call["ms"] = ms
+        if exc is not None:
+            call["error"] = str(exc)[:300]
             for r in part:
-                raw = res["answers"].get(r["id"])
-                v = vc.verdict(r["question"], raw, res["thresholds"], r.get("expect"))
-                r.update({"answer": v["answer"], "noul": v.get("noul"), "passed": v["passed"],
-                          "confidence": v["confidence"], "band": v["band"],
-                          "probabilities": (raw.get("probabilities") if isinstance(raw, dict) else None),
-                          "status": "answered" if v["answer"] is not None else "no-answer"})
+                r["status"] = "unavailable"
+                r["message"] = str(exc)[:200]
+            if getattr(exc, "reason", None) in ("off", "no-key", "no-image-judge"):
+                unavailable = exc
+            continue
+        call.update({"provider": res.get("provider"), "model": res.get("model"),
+                     "thresholds": res.get("thresholds")})
+        block["available"] = True
+        block["provider"] = res.get("provider")
+        block["model"] = res.get("model")
+        block["trustPass"] = bool(res["thresholds"].get("trustPass"))
+        block["requests"] = int(block.get("requests") or 0) + 1
+        for r in part:
+            raw = res["answers"].get(r["id"])
+            v = vc.verdict(r["question"], raw, res["thresholds"], r.get("expect"))
+            r.update({"answer": v["answer"], "noul": v.get("noul"), "passed": v["passed"],
+                      "confidence": v["confidence"], "band": v["band"],
+                      "probabilities": (raw.get("probabilities") if isinstance(raw, dict) else None),
+                      "status": "answered" if v["answer"] is not None else "no-answer"})
+    if unavailable is not None and not block["available"]:
+        block["message"] = "typed judge unavailable: %s" % unavailable
+        for _k, r in order:
+            if r["status"] is None:
+                r["status"] = "unavailable"
+        block["checks"] = [r for _k, r in order]
+        return block
     block["checks"] = [r for _k, r in order]
     answered = [r for r in block["checks"] if r["status"] == "answered"]
     block["summary"] = {
@@ -1578,11 +1940,15 @@ def _flag_and_log(report: Dict[str, Any], block: Optional[Dict[str, Any]], mode:
         sink = None
     for r in block.get("checks") or []:
         if r.get("status") == "answered" and sink:
+            # The row keeps its log id, so whoever later looks at its images
+            # (the visual-qa subagent) can label exactly this answer.
+            r["logId"] = "%s%06x" % (time.strftime("%y%m%d%H%M%S"), random.getrandbits(24))
             try:
-                sink({"provider": block.get("provider"), "kind": TYPED_KIND,
+                sink({"id": r["logId"], "provider": block.get("provider"), "kind": TYPED_KIND,
                       "noul": r.get("noul"), "llmOk": None,
                       "project": getattr(args, "judge_project", None),
-                      "answer": r.get("answer"),
+                      "answer": r.get("answer"), "confidence": r.get("confidence"),
+                      "band": r.get("band"),
                       "subject": "%s: %s @ %s" % (r["id"], r.get("claim"), r["at"])})
             except Exception:
                 pass
@@ -1912,7 +2278,7 @@ def _safe_id(s: str) -> str:
 
 def _run_one_case(context: Any, url: str, case: Dict[str, Any],
                   base_ctx: Dict[str, Any], settle_ms: int,
-                  out_dir: str) -> Dict[str, Any]:
+                  out_dir: str, on_screen: Any = None) -> Dict[str, Any]:
     """Run one case on a FRESH page (isolation between cases). Returns the
     per-case report entry."""
     console_errors: List[str] = []
@@ -1967,6 +2333,13 @@ def _run_one_case(context: Any, url: str, case: Dict[str, Any],
             page.screenshot(path=shots["after"])
         fails = _eval_expects(page, case, ctx, page_errors, console_errors,
                               shots)
+        # The screen this case ended on, for the typed checks: after the
+        # expects, so it never touches the case's verdict.
+        if on_screen and not step_err:
+            try:
+                on_screen(page, "after case %s" % case.get("id"))
+            except Exception:
+                pass
         if fails:
             result["verdict"] = "fail"
             result["failedExpect"] = fails
@@ -2443,9 +2816,15 @@ def run_cases(args: argparse.Namespace) -> int:
                 % ("pass" if report["seam"]["ok"]
                    else "; ".join(report["seam"]["problems"])))
 
+        # Typed visual checks: every distinct screen a case ends on is
+        # captured once, then judged with the settled page below.
+        if getattr(args, "typed_judge", None):
+            prepare_typed(args)
+            args.screen_collector = ScreenCollector(out_dir, args.ds_plan)
+        collector = getattr(args, "screen_collector", None)
         for i, case in enumerate(cases):
             entry = _run_one_case(context, url, case, base_ctx, settle_ms,
-                                  out_dir)
+                                  out_dir, collector.capture if collector else None)
             report["cases"].append(entry)
             log("case %d/%d %s: %s" % (i + 1, len(cases),
                                        entry.get("id"), entry["verdict"]))
@@ -2457,13 +2836,11 @@ def run_cases(args: argparse.Namespace) -> int:
                 % (report["soak"]["verdict"], report["soak"]["injected"]))
 
         # Typed visual checks run here too: cases mode replaces the battery,
-        # not the --checks about the page. One fresh page, settled, one
-        # capture; only checks about that capture (`page` / `idle:start`) can
-        # be answered here. Records beside the cases and never touches their
-        # verdict or the exit code.
+        # not the checks about the page. The settled page and the criteria
+        # steps join the screens the cases ended on; every screen is asked.
+        # Records beside the cases and never touches their verdict or the
+        # exit code.
         if getattr(args, "typed_judge", None):
-            prepare_typed(args)
-        if getattr(args, "typed_judge", None) and (args.parsed_checks[0] or args.ds_plan):
             try:
                 report["typedChecks"] = typed_checks_on_page(context, url, args, settle_ms, out_dir)
                 _flag_and_log(report, report["typedChecks"], args.typed_judge, args, None)
@@ -2764,12 +3141,12 @@ def run(args: argparse.Namespace) -> int:
         # The typed checks' own captures, on a fresh page AFTER everything
         # the verdict reads: the settled screen full-page, the criteria steps,
         # the design-system gallery crops.
-        if getattr(args, "typed_judge", None) and (args.parsed_checks[0] or args.ds_plan):
+        if getattr(args, "typed_judge", None):
             report["typedPass"] = typed_pass_for(context, url, args, settle_ms, out_dir,
                                                  args.parsed_checks[0])
-            ds_checks = ds_visual_checks(report["typedPass"].get("ds"), args.ds_plan)
-            if ds_checks:
-                args.parsed_checks = (args.parsed_checks[0] + ds_checks, args.parsed_checks[1])
+            el_checks = screen_checks(report["typedPass"].get("screens") or [], args.ds_plan)
+            if el_checks:
+                args.parsed_checks = (args.parsed_checks[0] + el_checks, args.parsed_checks[1])
 
         context.close()
         browser.close()

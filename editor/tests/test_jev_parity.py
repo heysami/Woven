@@ -943,12 +943,17 @@ class P8VisualChecks(unittest.TestCase):
             def click(self, sel, **kw):
                 clicked.append(sel)
             def evaluate(self, js, arg=None):
+                box = {"x": 20, "y": 20, "width": 60, "height": 40}
+                if js == visual_qa._SCREEN_SIG_JS:
+                    return "screen after %d clicks" % len(clicked)
                 if js == visual_qa._RENDERED_DS_JS:
                     return {"off": [{"selector": "#bar", "source": "<style> .sp-bar", "count": 1,
-                                     "skin": ["border"]}],
-                            "comps": [{"cls": "btn", "title": "Button", "selector": "#b1", "variant": []},
+                                     "skin": ["border"], "box": box}],
+                            "comps": [{"cls": "btn", "title": "Button", "selector": "#b1", "variant": [],
+                                       "box": box},
                                       {"cls": "modal", "title": "Popup / Modal", "selector": "#m",
-                                       "variant": []}]}
+                                       "variant": []}],
+                            "texts": [{"text": "Sponsored by an organisation?", "selector": "#q", "box": box}]}
                 if js == visual_qa._GALLERY_PICK_JS:
                     return {"selector": "#gallery-" + arg[0], "exact": True}
                 box = {"x": 20, "y": 20, "width": 60, "height": 40}
@@ -998,18 +1003,22 @@ class P8VisualChecks(unittest.TestCase):
         block = visual_qa.typed_checks_on_page(SimpleNamespace(new_page=Page), "file:///x", args, 0,
                                                self.tmp, judge)
         rows = {r["id"]: r for r in block["checks"]}
-        self.assertEqual(sorted(rows), ["ds_cmp_btn", "ds_cmp_modal", "ds_off_1", "org_field"])
+        self.assertEqual(sorted(rows), ["org_field", "s0_btn", "s0_modal", "s0_off_1", "s0_txt_1"],
+                         "the step's screen repeats screen 0's elements, so they are asked once")
         self.assertEqual(clicked, ["#sponsorYes"])
         self.assertEqual(rows["org_field"]["status"], "answered")
         self.assertEqual(rows["org_field"]["images"], ["after pick_yes cropped to #orgFollowUp"])
-        self.assertEqual((rows["ds_off_1"]["answer"], rows["ds_off_1"]["passed"]), ("ds-copy", False))
-        self.assertEqual(rows["ds_cmp_btn"]["images"][0], "the design system's own .btn")
-        self.assertEqual(rows["ds_cmp_modal"]["status"], "not-visible", "a hidden modal is skipped")
-        off_state = [st for st, qs, _n in asked if "ds_off_1" in qs][0]
+        self.assertEqual((rows["s0_off_1"]["answer"], rows["s0_off_1"]["passed"]), ("ds-copy", False))
+        self.assertEqual(rows["s0_btn"]["images"][0], "the design system's own .btn")
+        self.assertEqual(rows["s0_btn"]["images"][1], "screen 1 (the page) cropped to #b1")
+        self.assertEqual(rows["s0_modal"]["status"], "not-visible", "a hidden modal is skipped")
+        self.assertEqual(rows["s0_txt_1"]["question"]["instructions"],
+                         'The image shows the text "Sponsored by an organisation?", fully readable and not covered.')
+        off_state = [st for st, qs, _n in asked if "s0_off_1" in qs][0]
         self.assertIn("Button (.btn)", off_state, "the DS names travel with the off-system question")
         report = {"typedChecks": block}
         visual_qa._flag_and_log(report, block, "flag", args, lambda e: None)
-        self.assertEqual([f["check"] for f in report.get("findings", [])], ["ds_off_1"],
+        self.assertEqual([f["check"] for f in report.get("findings", [])], ["s0_off_1"],
                          "only the confident ds-copy is a finding; the hidden modal is not")
 
     def test_design_system_elements_are_found_on_the_rendered_page(self):
@@ -1048,6 +1057,54 @@ class P8VisualChecks(unittest.TestCase):
         self.assertEqual(sources, ["<style> .promo", "inline style on <span>"],
                          "the JS-made .promo is found; DS rules and DS-class selectors are not")
         self.assertEqual([c["cls"] for c in found["comps"]], ["card"], "the closed modal is not on screen")
+
+    def test_every_element_worth_judging_is_found_on_every_screen(self):
+        """The user's complaint: a page of cards, icons, icon tiles, a title and
+        a coloured hero, and the judge saw five crops. Every instance of every
+        documented component AND its parts, every element styled outside the
+        design system (also inside a component), and every visible text."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except Exception:
+            self.skipTest("Playwright not installed")
+        root = Path(self.tmp) / "every"
+        (root / "design-systems" / "x").mkdir(parents=True, exist_ok=True)
+        (root / "design-systems" / "x" / "styles.css").write_text(
+            ".card{border:1px solid #ccc;padding:12px}.card__icon{background:#eef;display:inline-block;"
+            "width:24px;height:24px}")
+        page_html = root / "p.html"
+        page_html.write_text(
+            '<link rel="stylesheet" href="design-systems/x/styles.css">'
+            "<style>.hero{background:#0af;padding:20px}.card .tag{background:#efe;border-radius:6px}</style>"
+            '<section class="hero"><h1>Choose the support you need</h1></section>'
+            + "".join('<div class="card"><span class="card__icon"></span><h3>Card %d</h3>'
+                      '<span class="tag">Closes 30 June</span></div>' % i for i in range(3)))
+        plan = {"dsPath": "/design-systems/x/", "dsClasses": ["card", "card__icon"], "componentRoots": ["card"],
+                "components": [{"cls": "card", "title": "Card"}]}
+        with sync_playwright() as pw:
+            browser, _label = visual_qa.launch_browser(pw)
+            page = browser.new_page()
+            page.goto(page_html.as_uri())
+            collector = visual_qa.ScreenCollector(self.tmp, plan)
+            first = collector.capture(page, "the page")
+            again = collector.capture(page, "after a case that changed nothing")
+            browser.close()
+        self.assertIsNone(again, "the same screen is captured once")
+        found = first["found"]
+        self.assertEqual([c["title"] for c in found["comps"]], ["Card", "Card icon"] * 3,
+                         "every card and every icon tile, not the first of each")
+        self.assertEqual(sorted({u["source"] for u in found["off"]}), ["<style> .card .tag", "<style> .hero"],
+                         "page styling inside a component counts too")
+        self.assertEqual(len(found["off"]), 4, "the hero and each of the three tags")
+        texts = [t["text"] for t in found["texts"]]
+        self.assertIn("Choose the support you need", texts)
+        self.assertEqual(texts.count("Closes 30 June"), 1, "a repeated text is one check")
+        checks = visual_qa.screen_checks(collector.screens, dict(plan, names="Card (.card)"))
+        kinds = {}
+        for c in checks:
+            kinds[c["shape"]] = kinds.get(c["shape"], 0) + 1
+        self.assertEqual(kinds, {"same_style": 6, "which": 4, "text": 5})
+        self.assertTrue(all(c["at"] == "screen:0" and c["selector"] in first["boxes"] for c in checks))
 
     def test_the_gallery_example_matches_the_page_element_state(self):
         """A checked gallery checkbox against an unchecked one on the page is a

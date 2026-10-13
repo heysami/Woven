@@ -1065,88 +1065,80 @@ class DaemonRoutes(Isolated):
     def _run_state(self, guards, node=None):
         from types import SimpleNamespace
         return SimpleNamespace(project_root=self.project, prototype="main", guards=guards,
-                               workflow_node_id=node, qa_pending_since=None, _auto_qa_running=False,
-                               last_user_message_at=None, started_at=0)
+                               workflow_node_id=node, _vqa_nudged_at=None, msg_queue=[],
+                               _queue_draining=False, last_user_message_at=None, started_at=0,
+                               run_id="r1")
 
-    def test_turn_end_runs_visual_qa_on_changed_pages_when_visual_is_on(self):
+    def test_a_changed_page_no_qa_covered_gets_one_nudge_to_dispatch_visual_qa(self):
+        """Visual QA is the visual-qa subagent, dispatched with the verifier and
+        the guardian. A turn that changed a page and ran no QA on it gets ONE
+        daemon message asking for it, so the skipped check still ends in a
+        verdict the agent acts on."""
         import time as _t
         from unittest.mock import patch
         base = self._proto()
-        started = []
-
-        class FakeThread:
-            def __init__(self, target, args, daemon):
-                started.append(args)
-            def start(self):
-                pass
-        st = self._run_state({"visual": True})
-        st.last_user_message_at = _t.time()
-        Path(base, "b.html").write_text("changed")
-        with patch.object(self.serve.threading, "Thread", FakeThread):
+        drained = []
+        with patch.object(self.serve, "_queue_persist", lambda st: None), \
+             patch.object(self.serve, "_queue_drain_maybe", lambda st, mode="stdin": drained.append(mode)):
+            st = self._run_state({"visual": True})
+            st.last_user_message_at = _t.time() - 5
+            Path(base, "b.html").write_text("changed")
             self.serve._auto_visual_qa_maybe(st)
-            self.assertEqual(started[0][1], [("main", "b.html")])
-            self.assertTrue(st._auto_qa_running)
-            started.clear()
-            self.serve._auto_visual_qa_maybe(st)          # still running: deferred, not dropped
-            self.assertEqual(started, [])
-            self.assertIsNotNone(st.qa_pending_since)
-            for off in (self._run_state({"visual": False}), self._run_state({"visual": True}, node="n1")):
-                off.last_user_message_at = _t.time() - 10
-                self.serve._auto_visual_qa_maybe(off)
-            self.assertEqual(started, [], "visual off, or a node run: nothing")
+            (entry,) = st.msg_queue
+            self.assertEqual(entry["auto"], "visual-qa")
+            self.assertIn("main/b.html", entry["text"])
+            self.assertIn("visual-qa subagent", entry["text"])
+            self.assertNotIn("main/a.html", entry["text"], "an unchanged page is not asked for")
+            self.assertEqual(drained, ["stdin", "resume"])
+            st.msg_queue = []
+            self.serve._auto_visual_qa_maybe(st)
+            self.assertEqual(st.msg_queue, [], "once per user message")
 
-    def test_the_thread_line_says_what_qa_found(self):
-        label, detail = self.serve._visual_qa_line("fa-monitoring.html", {
-            "verdict": "pass", "casesSummary": {"pass": 45, "total": 45},
-            "typedChecks": {"mode": "shadow", "summary": {"confidentPass": 1, "confidentFail": 1, "unsure": 2},
-                            "checks": [{"id": "org_field", "claim": "The image shows a text field.",
-                                        "passed": False, "band": "act", "answer": 0.03}]}})
-        self.assertEqual(label, "Visual QA · fa-monitoring.html · pass · 45/45 cases · "
-                                "visual checks: 1 sure yes, 1 sure no, 2 unsure (shadow)")
-        self.assertIn("org_field: The image shows a text field. (judge said 0.03)", detail)
+            covered = self._run_state({"visual": True})
+            covered.last_user_message_at = _t.time() - 5
+            with self.serve._QA_PAGE_RUNS_LOCK:
+                self.serve._QA_PAGE_RUNS[os.path.realpath(str(Path(base, "b.html")))] = _t.time() + 1
+            self.serve._auto_visual_qa_maybe(covered)
+            self.assertEqual(covered.msg_queue, [], "the subagent's QA covered the page")
+            with self.serve._QA_PAGE_RUNS_LOCK:
+                self.serve._QA_PAGE_RUNS.clear()
 
-    def test_each_page_run_is_a_task_in_the_thread_with_its_report(self):
-        """Woven's own Visual QA shows in the thread and the Tasks panel: one
-        entry per page, running then done, with the criteria asked, what the
-        daemon did, every answer, and the report page. Text only."""
-        import io
-        from unittest.mock import patch
+            for st2 in (self._run_state({"visual": False}), self._run_state({"visual": True}, node="n1")):
+                st2.last_user_message_at = _t.time() - 5
+                self.serve._auto_visual_qa_maybe(st2)
+                self.assertEqual(st2.msg_queue, [], "visual off, or a node run: nothing")
+            busy = self._run_state({"visual": True})
+            busy.last_user_message_at = _t.time() - 5
+            busy.msg_queue = [{"id": "u1", "text": "the user's next message"}]
+            self.serve._auto_visual_qa_maybe(busy)
+            self.assertEqual([e["id"] for e in busy.msg_queue], ["u1"], "never ahead of the user")
+
+    def test_a_label_reaches_the_report_row_and_the_judge_label_file(self):
         import visual_report
-        tmp = tempfile.mkdtemp(prefix="vqa-task-")
+        from unittest.mock import patch
+        tmp = tempfile.mkdtemp(prefix="vqa-label-")
         shot = Path(tmp, "typed_page.png")
         shot.write_bytes(tj.solid_png((255, 255, 255), size=64))
-        block = {"mode": "shadow", "provider": "clef", "pageShot": str(shot),
-                 "dsFound": {"offSystem": [], "components": [{"cls": "btn"}]},
-                 "calls": [{"n": 1, "state": "A screenshot of a web page.", "questions": ["org_field"],
-                            "ms": 900, "images": [{"label": "the page", "path": str(shot),
-                                                   "capture": str(shot), "box": None, "oneColour": 1.0}]}],
-                 "checks": [{"id": "org_field", "call": 1, "status": "answered", "passed": False,
-                             "band": "act", "noul": 0.03, "confidence": 0.94, "at": "page",
-                             "question": {"type": "noul", "instructions": "The image shows a text field."},
-                             "source": "screen criteria: visual-checks.json"}],
-                 "rejected": []}
-        root = os.path.join(tmp, "reports")
-        with patch.object(visual_report, "REPORTS_DIR", root):
-            rid = visual_report.save({"typedChecks": block, "verdict": "pass"}, tmp, project="p")
-            rep = {"verdict": "pass", "url": "http://x/a.html", "typedChecks": block,
-                   "visualReport": visual_report.page_url(rid)}
-            events = []
-            from types import SimpleNamespace
-            st = SimpleNamespace(project_root=self.project, _auto_qa_running=True,
-                                 append=lambda kind, data: events.append((kind, dict(data))))
-            with patch.object(self.serve.urllib.request, "urlopen",
-                              lambda url, timeout=0: io.BytesIO(json.dumps(rep).encode())):
-                self.serve._auto_visual_qa_worker(st, [("main", "a.html")], 1)
-        (k1, first), (k2, last) = events
-        self.assertEqual((k1, first["type"], first["status"]), ("agent", "visual_qa", "running"))
-        self.assertEqual((last["type"], last["status"], last["id"]), ("visual_qa", "completed", first["id"]))
-        self.assertEqual(last["report"], "/__qa/visual-report?id=" + rid)
-        self.assertIn("The image shows a text field.", last["prompt"])
-        self.assertTrue(last["result"].startswith("SURE NO  org_field"))
-        self.assertIn("Asked clef 1 question(s) in 1 call(s), 0.9 s", last["actions"])
-        self.assertTrue(any("100% one colour" in a for a in last["actions"]),
-                        "a blank screenshot is called out")
-        self.assertFalse(st._auto_qa_running)
+        block = {"checks": [{"id": "org_field", "call": 1, "status": "answered", "passed": False,
+                             "band": "act", "noul": 0.03, "logId": "L1",
+                             "question": {"type": "noul", "instructions": "The image shows a text field."}}],
+                 "calls": [{"n": 1, "images": [{"path": str(shot), "capture": str(shot)}]}], "rejected": []}
+        saved = {}
+        with patch.object(visual_report, "REPORTS_DIR", os.path.join(tmp, "r")), \
+             patch.object(tj, "save_labels", lambda pairs: saved.update(pairs) or saved):
+            rid = visual_report.save({"typedChecks": block}, tmp)
+            label = lambda body: self.serve.H._qa_visual_report_label(self.handler(body), {})
+            code, body = label({"id": rid, "check": "org_field", "value": True, "note": "it is there"})
+            self.assertEqual(code, 200, body)
+            self.assertEqual(saved, {"L1": True})
+            code, data = self.serve.H._qa_visual_report(self.handler(), {"id": [rid]})
+            self.assertEqual(code, 200)
+            self.assertEqual(data["typedChecks"]["checks"][0]["escalation"]["note"], "it is there")
+            self.assertTrue(os.path.isfile(os.path.join(data["dir"], "typed_page.png")))
+            code, _b = label({"id": rid, "check": "org_field", "value": "maybe"})
+            self.assertEqual(code, 400)
+            code, _b = label({"id": rid, "check": "nope", "value": True})
+            self.assertEqual(code, 404)
 
     def test_judge_status_route(self):
         self.media({"typesafe": {"api_key": "ts"}})

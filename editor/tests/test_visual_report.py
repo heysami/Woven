@@ -3,7 +3,8 @@
 A Visual QA run that asks typed visual checks has to be inspectable after the
 fact: which questions were asked, about which screenshot or crop, what the
 judge answered and how sure it was. These tests pin that record (the images
-saved are the bytes the judge receives), the saved report, and the page.
+saved are the bytes the judge receives), the saved report, and the decisions
+recorded on it.
 """
 
 import copy
@@ -81,7 +82,7 @@ class CallRecord(unittest.TestCase):
         block = self._run({"menu": {"noul": 0.5}, "title": {"noul": 0.5}})
         self.assertGreaterEqual(block["calls"][0]["images"][0]["oneColour"], 0.99)
 
-    def test_save_copies_only_the_run_images_and_renders_every_question(self):
+    def test_save_copies_only_the_run_images(self):
         block = self._run({"menu": {"noul": 0.02}, "title": {"noul": 0.97}})
         root = Path(self.tmp) / "reports"
         rid = visual_report.save({"typedChecks": block, "verdict": "pass", "page": "a.html",
@@ -99,21 +100,46 @@ class CallRecord(unittest.TestCase):
         self.assertIsNone(visual_report.file_path(rid, "../report.json", str(root)))
         self.assertIsNone(visual_report.load("../etc", str(root)))
 
-        page = visual_report.render(data, visual_report.file_url(rid))
-        self.assertIn("Sure no", page)
-        self.assertIn("The image shows a dropdown menu.", page)
-        self.assertIn("screen criteria: visual-checks.json", page)
-        self.assertIn("The page renders correctly.", page, "a refused criterion is listed with its reason")
-        self.assertIn("<div class='bx", page, "the crop box is drawn on the screenshot")
-        self.assertIn("3/3 cases", page)
-        self.assertNotIn("—", page)
-        self.assertNotIn("–", page)
-
         text = visual_report.text_table(data)
         self.assertTrue(text.startswith("SURE NO  menu"), "the sure no comes first")
         self.assertIn("NOT ASKED  gone", text)
         self.assertEqual(visual_report.summary_line(data["typedChecks"]),
                          "1 sure no, 1 sure yes, 1 not asked")
+
+    def test_a_decision_on_a_check_is_kept_on_its_row(self):
+        block = self._run({"menu": {"noul": 0.02}, "title": {"noul": 0.97}})
+        for r in block["checks"]:
+            if r["status"] == "answered":
+                r["logId"] = "log-" + r["id"]
+        root = Path(self.tmp) / "labels"
+        rid = visual_report.save({"typedChecks": block}, self.tmp, root=str(root))
+        row = visual_report.label(rid, "menu", True, "the menu is open below Account", root=str(root))
+        self.assertEqual(row["escalation"]["passed"], True)
+        self.assertEqual(row["escalation"]["agrees"], False, "the judge said no; it is there")
+        saved = visual_report.load(rid, str(root))
+        menu = next(r for r in saved["typedChecks"]["checks"] if r["id"] == "menu")
+        self.assertEqual(menu["escalation"]["note"], "the menu is open below Account")
+        self.assertEqual(menu["logId"], "log-menu")
+        self.assertIsNone(visual_report.label(rid, "nope", True, root=str(root)))
+        with self.assertRaises(ValueError):
+            visual_report.label(rid, "menu", "maybe", root=str(root))
+
+    def test_a_choice_decision_must_be_one_of_its_options(self):
+        checks, _rj = visual_qa.parse_checks([{"id": "orig", "shape": "which", "list": "ds_origin",
+                                               "x": "the element", "expect": "layout", "at": "page"}])
+
+        def judge(state, questions, **kw):
+            return {"answers": {"orig": {"choice": "ds-copy", "confidence": 0.95,
+                                         "probabilities": {"ds-copy": 0.95, "layout": 0.05}}},
+                    "provider": "clef", "model": "m",
+                    "thresholds": typed_judge.thresholds("frame_check", "clef")}
+        block = visual_qa.run_visual_checks(copy.deepcopy(self.report), checks, [], "shadow", 200, judge)
+        root = Path(self.tmp) / "choice"
+        rid = visual_report.save({"typedChecks": block}, self.tmp, root=str(root))
+        with self.assertRaises(ValueError):
+            visual_report.label(rid, "orig", "sideways", root=str(root))
+        row = visual_report.label(rid, "orig", "layout", root=str(root))
+        self.assertEqual((row["escalation"]["passed"], row["escalation"]["agrees"]), (True, False))
 
     def test_a_run_that_asked_nothing_saves_nothing(self):
         self.assertIsNone(visual_report.save({"typedChecks": {"checks": [], "rejected": []}}, self.tmp,
