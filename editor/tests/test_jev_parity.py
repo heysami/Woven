@@ -883,25 +883,8 @@ class P8VisualChecks(unittest.TestCase):
         self.assertEqual((row["answer"], row["passed"]), ("off", False))
         self.assertIn("judge said off", report["findings"][0]["message"])
 
-    def test_the_page_declares_image_checks_through_alt_text(self):
-        class FakePage:
-            def evaluate(self, js):
-                return [{"alt": "a red delivery van outside a bakery", "selector": "#hero"},
-                        {"alt": "Logo", "selector": "#logo"},
-                        {"alt": "", "selector": "#spacer"},
-                        {"alt": "a red delivery van outside a bakery", "selector": "#dup"},
-                        {"alt": "a blue ceramic mug", "selector": "body > img:nth-of-type(2)"}]
-        checks, rejected = visual_qa.page_declared_checks(FakePage())
-        self.assertEqual([(c["x"], c["selector"]) for c in checks],
-                         [("a red delivery van outside a bakery", "#hero"),
-                          ("a blue ceramic mug", "body > img:nth-of-type(2)")])
-        self.assertEqual(checks[0]["question"]["instructions"],
-                         "The image shows a red delivery van outside a bakery.")
-        self.assertTrue(all(c["declaredBy"] == "img alt" and c["at"] == "page" for c in checks))
-        self.assertEqual(rejected, [])
-
-    def test_cases_mode_still_runs_the_pages_declared_checks(self):
-        """Cases mode replaces the battery, not the page's own image checks."""
+    def test_cases_mode_still_runs_the_checks_about_the_page(self):
+        """Cases mode replaces the battery, not the --checks about the page."""
         from types import SimpleNamespace
         png = typed_judge.solid_png((200, 30, 30), size=200)
 
@@ -912,16 +895,17 @@ class P8VisualChecks(unittest.TestCase):
             def screenshot(self, path):
                 Path(path).write_bytes(png)
             def evaluate(self, js, arg=None):
-                if arg is None:
-                    return [{"alt": "a red delivery van", "selector": "#hero"}]
                 return {"#hero": {"x": 10, "y": 10, "width": 50, "height": 40}}
         asked = []
 
         def judge(state, questions, **kw):
             asked.append(kw["images"])
-            return {"answers": {"img_alt_1": {"noul": 0.97}}, "provider": "clef", "model": "clef",
+            return {"answers": {"hero": {"noul": 0.97}}, "provider": "clef", "model": "clef",
                     "thresholds": typed_judge.thresholds("frame_check", "clef")}
-        args = SimpleNamespace(checks=None, typed_judge="shadow", viewport=(200, 200))
+        checks = Path(self.tmp) / "checks.json"
+        checks.write_text(json.dumps([{"id": "hero", "shape": "shows", "x": "a red delivery van",
+                                       "at": "page", "selector": "#hero"}]))
+        args = SimpleNamespace(checks=str(checks), typed_judge="shadow", viewport=(200, 200))
         block = visual_qa.typed_checks_on_page(SimpleNamespace(new_page=Page), "file:///x", args, 0,
                                                self.tmp, judge)
         self.assertEqual(block["summary"]["confidentPass"], 1)

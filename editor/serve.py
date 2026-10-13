@@ -27466,13 +27466,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if os.path.isfile(cand):
                     checks_path = cand
                     break
-        # With visual checks on, every run gets --typed-judge: visual_qa then
-        # adds the checks the page declares itself (each <img alt>), on top of
-        # any &checks= / visual-checks.json.
-        if _tcfg.get("typedJudgeVisual"):
-            if checks_path:
-                cmd += ["--checks", checks_path]
-            cmd += ["--typed-judge", _tcfg.get("typedJudgeVisualMode") or "shadow"]
+        if checks_path and _tcfg.get("typedJudgeVisual"):
+            cmd += ["--checks", checks_path,
+                    "--typed-judge", _tcfg.get("typedJudgeVisualMode") or "shadow"]
             if "--judge-project" not in cmd and (_qs_get(qs, "project") or ""):
                 cmd += ["--judge-project", _qs_get(qs, "project")]
         if nointeract and nointeract not in ("0", "false", "no"):
