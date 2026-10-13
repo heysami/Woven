@@ -627,10 +627,10 @@ class Thresholds(Isolated):
         self.assertEqual(tj.thresholds("ds_role")["high"], 0.90)
 
     def test_trust_pass_is_off_unless_the_table_says_so(self):
-        self.assertFalse(tj.thresholds("frame_effect", "clef")["trustPass"])
-        self._table({"providers": {"clef": {"frame_effect": {"high": 0.9, "trustPass": True}}}})
-        self.assertTrue(tj.thresholds("frame_effect", "clef")["trustPass"])
-        self.assertFalse(tj.thresholds("frame_effect", "openai")["trustPass"])
+        self.assertFalse(tj.thresholds("frame_check", "clef")["trustPass"])
+        self._table({"providers": {"clef": {"frame_check": {"high": 0.9, "trustPass": True}}}})
+        self.assertTrue(tj.thresholds("frame_check", "clef")["trustPass"])
+        self.assertFalse(tj.thresholds("frame_check", "openai")["trustPass"])
 
     def test_the_shipped_table_trusts_nothing(self):
         doc = json.loads(Path(self.saved["THRESHOLDS_PATH"]).read_text())
@@ -665,7 +665,7 @@ class ShadowLog(Isolated):
         tj.SHADOW_LOG_MAX_BYTES = 200
         try:
             for i in range(10):
-                tj.shadow_log({"provider": "clef", "kind": "frame_effect", "noul": 0.1 * i,
+                tj.shadow_log({"provider": "clef", "kind": "frame_check", "noul": 0.1 * i,
                                "llmOk": True, "project": "p"})
         finally:
             tj.SHADOW_LOG_MAX_BYTES = real
@@ -690,7 +690,7 @@ class Calibrate(Isolated):
         cls.cal = jev_calibrate
 
     def _cases(self, n, right=True):
-        return [{"kind": "frame_effect", "tier": "image", "images": ["/x.png"],
+        return [{"kind": "frame_check", "tier": "image", "images": ["/x.png"],
                  "state": "frames", "questions": {"q": {"type": "noul", "instructions": "x"}},
                  "expected": {"q": True}} for _ in range(n)]
 
@@ -703,15 +703,15 @@ class Calibrate(Isolated):
         rows = self.cal.run_cases(self._cases(25), judge=self._judge("clef", 0.99))
         rows += self.cal.run_cases(self._cases(5), judge=self._judge("openai", 0.99))
         fitted = self.cal.fit(rows, self.cal.DEFAULT_TARGETS, 0.9)
-        self.assertEqual(set(fitted), {("clef", "frame_effect"), ("openai", "frame_effect")})
-        self.assertTrue(fitted[("clef", "frame_effect")]["trustPass"])
-        self.assertFalse(fitted[("openai", "frame_effect")]["trustPass"], "too few cases")
+        self.assertEqual(set(fitted), {("clef", "frame_check"), ("openai", "frame_check")})
+        self.assertTrue(fitted[("clef", "frame_check")]["trustPass"])
+        self.assertFalse(fitted[("openai", "frame_check")]["trustPass"], "too few cases")
         self.cal.write_fitted(fitted, trust_pass=False)
-        self.assertFalse(tj.thresholds("frame_effect", "clef")["trustPass"])
+        self.assertFalse(tj.thresholds("frame_check", "clef")["trustPass"])
         self.cal.write_fitted(fitted, trust_pass=True)
-        self.assertTrue(tj.thresholds("frame_effect", "clef")["trustPass"])
-        self.assertFalse(tj.thresholds("frame_effect", "openai")["trustPass"])
-        self.assertFalse(tj.thresholds("frame_effect", "jev")["trustPass"])
+        self.assertTrue(tj.thresholds("frame_check", "clef")["trustPass"])
+        self.assertFalse(tj.thresholds("frame_check", "openai")["trustPass"])
+        self.assertFalse(tj.thresholds("frame_check", "jev")["trustPass"])
 
     def test_wrong_passes_never_earn_trust(self):
         cases = self._cases(30)
@@ -719,17 +719,17 @@ class Calibrate(Isolated):
             c["expected"] = {"q": False}
         rows = self.cal.run_cases(cases, judge=self._judge("clef", 0.99))
         fitted = self.cal.fit(rows, self.cal.DEFAULT_TARGETS, 0.85)
-        self.assertFalse(fitted[("clef", "frame_effect")]["trustPass"])
+        self.assertFalse(fitted[("clef", "frame_check")]["trustPass"])
 
     def test_shadow_report_counts_agreement_and_lists_disagreements(self):
         for noul, llm in ((0.9, True), (0.1, False), (0.9, False), (0.2, True), (0.8, True)):
-            tj.shadow_log({"provider": "clef", "kind": "frame_effect", "noul": noul,
+            tj.shadow_log({"provider": "clef", "kind": "frame_check", "noul": noul,
                            "llmOk": llm, "project": "p"})
-        tj.shadow_log({"provider": "clef", "kind": "frame_effect", "noul": None, "llmOk": True})
+        tj.shadow_log({"provider": "clef", "kind": "frame_check", "noul": None, "llmOk": True})
         rep = self.cal.shadow_report()
         self.assertEqual(rep["skipped"], 1)
         g = rep["groups"][0]
-        self.assertEqual((g["provider"], g["kind"], g["n"], g["agree"]), ("clef", "frame_effect", 5, 3))
+        self.assertEqual((g["provider"], g["kind"], g["n"], g["agree"]), ("clef", "frame_check", 5, 3))
         self.assertEqual(len(g["disagreements"]), 2)
         self.assertEqual(g["agreement"], 0.6)
 

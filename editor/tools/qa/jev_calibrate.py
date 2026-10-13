@@ -35,7 +35,7 @@ Fitted bands are written under `providers[<judge id>][<kind>]`.
 TRUST PASS. With --write --trust-pass, a (provider, kind) whose confident PASS
 verdicts were right at least TRUST_TARGET of the time over at least
 TRUST_MIN_CASES gets `trustPass: true`, which lets a confident typed PASS skip
-the model call it shadows (the frame judge, for kind frame_effect). This is the
+the model call it shadows (the frame judge, for kind frame_check). This is the
 ONLY writer of trustPass; the UI never sets it.
 
 SHADOW REPORT. --shadow reads ~/.test-harness/typed-judge-shadow.jsonl (what

@@ -710,25 +710,53 @@ def _finish_judge(judge: Dict[str, Any], res: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Typed frame judge (optional, --typed-judge shadow|flag). A typed judge that
-# reads images (Cloudflare Clef, OpenAI Decisions; editor/typed_judge.py picks)
-# gets up to four key frames as SEPARATE images and ONE noul, "The frames show
-# this effect: <expected>". It runs ALONGSIDE the LLM frame judge, never
-# instead of it:
-#   shadow - its answer is recorded in judge.typed and in the shadow log; the
-#            verdict, the reasons and the exit code are exactly what they would
-#            have been without it (P8 in editor/tests/test_jev_parity.py).
-#   flag   - additionally, a confident typed FAIL adds a `typed-judge` finding
-#            next to the LLM verdict. It never removes or softens an LLM finding
-#            and never changes the exit code (invariant I3).
-# The ONE exception: in flag mode, when tools/qa/jev_thresholds.json has
-# trustPass for (provider, frame_effect) - written only by jev_calibrate.py
-# from a labelled set - a confident typed PASS stands in for the LLM call.
-# Plan: docs/features/typed-judgment-providers.md.
+# Typed visual checks (optional, --checks FILE with --typed-judge shadow|flag).
+#
+# A typed judge (Cloudflare Clef, OpenAI Decisions; editor/typed_judge.py
+# picks) is a classifier: it can only verify a LITERAL claim about the exact
+# evidence the claim needs. "Do the frames show the expected effect?" is not
+# such a claim - there is nothing to classify - so the typed judge never gets
+# the --judge prose. It gets CHECKS, each one:
+#
+#   {"id": "menu_open",
+#    "statement": "A dropdown menu is open below the Account button.",
+#    "at": "after:click_account",          which capture it is about
+#    "compare": "before:click_account",    optional reference capture, sent as
+#                                          IMAGE 1 with `at` as IMAGE 2, so the
+#                                          statement reads "Image 2 shows X that
+#                                          image 1 does not."
+#    "selector": "#account-menu",          optional: crop to that element's box
+#                                          as it was AT that capture
+#    "criteria": {"true": "...", "false": "..."}}   optional boundary cases
+#
+# Captures: page (= idle:start), idle:start | idle:end | idle:motion | idle:<n>,
+# before:<step> | after:<step> (the step's label, or `last`).
+# A statement that only restates intent ("works as expected", "is correct"),
+# counts ("how many"), or has no capture is REJECTED with the reason, never
+# asked. A selector that is not on the page at that capture is reported as
+# element-missing without a model call.
+#
+# Posture (docs/features/typed-judgment-providers.md): shadow records the
+# answers and changes nothing; flag also adds one `typed-judge` finding per
+# confident failure. Neither changes the verdict, the reasons or the exit code
+# (P8). Only a calibrated trustPass for (provider, frame_check), in flag mode,
+# with EVERY check a confident pass, may stand in for the LLM frame judge.
 # ---------------------------------------------------------------------------
 
-TYPED_KIND = "frame_effect"
-TYPED_MAX_FRAMES = 4
+TYPED_KIND = "frame_check"
+MAX_CHECKS = 16
+_CHECK_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+_CAPTURE = re.compile(r"^(page|idle:(start|end|motion|\d+)|(before|after):.+)$")
+# Judgement phrases, not words: "The correct answer is highlighted" is a
+# literal claim; "The menu works correctly" is not.
+_VAGUE = re.compile(r"\bas (expected|intended|designed)\b"
+                    r"|\b(expected|intended|desired) (effect|behaviou?r|result|outcome|output|state)\b"
+                    r"|\b(correctly|properly)\b"
+                    r"|\b(works?|working|functions?)\b"
+                    r"|\b(is|are|looks?|renders?|appears?) (correct|right|fine|good|ok|okay|nice)\b"
+                    r"|\bachiev(e|es|ed|ing)\b", re.I)
+_COUNTING = re.compile(r"\b(how many|number of|count)\b", re.I)
+_CROP_PAD = 8
 
 
 def _typed_judge_module() -> Any:
@@ -739,95 +767,258 @@ def _typed_judge_module() -> Any:
     return typed_judge
 
 
-def _typed_frames(report: Dict[str, Any]) -> List[Tuple[str, str]]:
-    """Idle start, the idle frame with the most motion, and the before/after
-    of the interaction that changed the most: at most four, in time order."""
-    picks: List[Tuple[str, str]] = []
+def parse_checks(raw: Any) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """(checks, rejected). Accepts a list or {"checks": [...]}. A rejected
+    check carries the reason, so the caller can rewrite it as a claim."""
+    rows = raw.get("checks") if isinstance(raw, dict) else raw
+    checks: List[Dict[str, Any]] = []
+    rejected: List[Dict[str, Any]] = []
+    for i, c in enumerate(rows if isinstance(rows, list) else []):
+        if not isinstance(c, dict):
+            rejected.append({"index": i, "reason": "a check is an object"})
+            continue
+        cid = str(c.get("id") or "check_%d" % (i + 1))
+        st = str(c.get("statement") or "").strip()
+        at = str(c.get("at") or "").strip()
+        cmp_ = str(c.get("compare") or "").strip()
+        why = None
+        if not _CHECK_ID.match(cid):
+            why = "id must be letters, digits, _ . - (max 64)"
+        elif not st or "\n" in st or len(st) > 240:
+            why = "statement must be one sentence, at most 240 characters"
+        elif _VAGUE.search(st):
+            why = ("statement restates intent (%r) instead of naming what is visible - "
+                   "say what the image shows, e.g. 'A dropdown menu is open below the "
+                   "Account button.'" % _VAGUE.search(st).group(0))
+        elif _COUNTING.search(st):
+            why = "never ask a judge to count; one check per thing"
+        elif not _CAPTURE.match(at):
+            why = "at must be page, idle:start|end|motion|<n>, before:<step> or after:<step>"
+        elif cmp_ and not _CAPTURE.match(cmp_):
+            why = "compare must name a capture like at does"
+        elif cmp_ and not re.search(r"\bimage [12]\b", st, re.I):
+            why = "with compare, say which image: 'Image 2 shows ... that image 1 does not.'"
+        if why:
+            rejected.append({"id": cid, "statement": st, "reason": why})
+            continue
+        if len(checks) >= MAX_CHECKS:
+            rejected.append({"id": cid, "statement": st, "reason": "over %d checks" % MAX_CHECKS})
+            continue
+        row: Dict[str, Any] = {"id": cid, "statement": st, "at": at}
+        if cmp_:
+            row["compare"] = cmp_
+        if isinstance(c.get("selector"), str) and c["selector"].strip():
+            row["selector"] = c["selector"].strip()[:200]
+        if isinstance(c.get("criteria"), dict):
+            row["criteria"] = {k: str(v)[:300] for k, v in c["criteria"].items()
+                               if k in ("true", "false") and v}
+        checks.append(row)
+    return checks, rejected
+
+
+def load_checks(path: Optional[str]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    if not path:
+        return [], []
+    try:
+        with open(path, "r") as f:
+            return parse_checks(json.load(f))
+    except Exception as exc:
+        return [], [{"reason": "could not read checks %s (%s)" % (path, exc)}]
+
+
+_BOXES_JS = """(sels) => Object.fromEntries(sels.map(s => {
+  let el = null; try { el = document.querySelector(s); } catch (e) { return [s, null]; }
+  if (!el) return [s, null];
+  const r = el.getBoundingClientRect();
+  if (!r.width || !r.height) return [s, null];
+  return [s, {x: r.x, y: r.y, width: r.width, height: r.height}];
+}))"""
+
+
+def capture_boxes(page: Any, selectors: List[str]) -> Optional[Dict[str, Any]]:
+    """Where each check's element is at THIS capture, or None when no check
+    needs a crop. Never raises: a failed probe means no crop, not no run."""
+    if not selectors:
+        return None
+    try:
+        return page.evaluate(_BOXES_JS, selectors)
+    except Exception as exc:
+        log("element boxes unavailable (%s)" % exc)
+        return {}
+
+
+def _capture(report: Dict[str, Any], ref: str) -> Optional[Dict[str, Any]]:
+    """{label, path, boxes} for a capture name, or None."""
     idle = report.get("idleFrames") or []
-    if idle:
-        picks.append(("idle start t=%.2fs" % float(idle[0].get("t", 0.0)), idle[0]["path"]))
-        rest = [f for f in idle[1:] if f.get("path")]
-        if rest:
-            top = max(rest, key=lambda f: (f.get("diffFromPrev") or 0.0))
-            picks.append(("idle with most motion t=%.2fs" % float(top.get("t", 0.0)), top["path"]))
-    interactions = [ix for ix in (report.get("interactions") or [])
-                    if ix.get("beforePath") and ix.get("afterPath")]
-    if interactions:
-        key_ix = max(interactions, key=lambda ix: ix.get("diff") or 0.0)
-        step = key_ix.get("step", "interaction")
-        picks.append(("before %s" % step, key_ix["beforePath"]))
-        picks.append(("after %s" % step, key_ix["afterPath"]))
-    return picks[:TYPED_MAX_FRAMES]
+    if ref == "page":
+        ref = "idle:start"
+    if ref.startswith("idle:"):
+        which = ref.split(":", 1)[1]
+        frame = None
+        if idle and which == "start":
+            frame = idle[0]
+        elif idle and which == "end":
+            frame = idle[-1]
+        elif idle and which == "motion":
+            frame = max(idle[1:] or idle, key=lambda f: f.get("diffFromPrev") or 0.0)
+        elif which.isdigit() and int(which) < len(idle):
+            frame = idle[int(which)]
+        if not frame:
+            return None
+        return {"label": "idle t=%.2fs" % float(frame.get("t", 0.0)), "path": frame["path"],
+                "boxes": frame.get("boxes")}
+    side, step = ref.split(":", 1)
+    ixs = report.get("interactions") or []
+    ix = (ixs[-1] if ixs and step == "last"
+          else next((x for x in ixs if x.get("step") == step), None))
+    if not ix:
+        return None
+    return {"label": "%s %s" % (side, ix.get("step")), "path": ix["%sPath" % side],
+            "boxes": ix.get("%sBoxes" % side)}
 
 
-def run_typed_judge(report: Dict[str, Any], expected: str, mode: str,
-                    judge_fn: Any = None) -> Dict[str, Any]:
-    """Ask the image-tier typed judge. ALWAYS returns a dict with at least
-    {available, mode, message}; never raises."""
-    typed: Dict[str, Any] = {"available": False, "mode": mode, "kind": TYPED_KIND,
-                             "provider": None, "noul": None, "pass": None,
-                             "confidence": None, "band": None, "message": None}
-    frames = _typed_frames(report)
-    if not frames:
-        typed["message"] = "no frames to send"
-        return typed
+def _crop(path: str, box: Dict[str, float], viewport_w: int) -> Optional[bytes]:
+    if not _PIL_OK:
+        return None
+    import io
+    img = Image.open(path)
+    scale = img.width / float(viewport_w or img.width)
+    l = max(0, int((box["x"] - _CROP_PAD) * scale))
+    t = max(0, int((box["y"] - _CROP_PAD) * scale))
+    r = min(img.width, int((box["x"] + box["width"] + _CROP_PAD) * scale))
+    b = min(img.height, int((box["y"] + box["height"] + _CROP_PAD) * scale))
+    if r - l < 4 or b - t < 4:
+        return None
+    buf = io.BytesIO()
+    img.crop((l, t, r, b)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
+                      rejected: List[Dict[str, Any]], mode: str, viewport_w: int,
+                      judge_fn: Any = None) -> Dict[str, Any]:
+    """Ask the image-tier typed judge each check, with exactly the images it
+    names (cropped to its element when it has a selector). ALWAYS returns a
+    block; never raises."""
+    block: Dict[str, Any] = {"mode": mode, "kind": TYPED_KIND, "available": False,
+                             "provider": None, "checks": [], "rejected": rejected,
+                             "message": None}
+    if not checks:
+        block["message"] = "no checks to run" + (" (%d rejected)" % len(rejected) if rejected else "")
+        return block
     try:
         tj = _typed_judge_module()
-        judge_fn = judge_fn or tj.judge
-        state = ("Frames of an interactive piece, one image each, in this order: "
-                 + "; ".join("%d) %s" % (i + 1, label) for i, (label, _p) in enumerate(frames)))
-        res = judge_fn(state, {"effect": {"type": "noul",
-                                          "instructions": "The frames show this effect: " + expected}},
-                       tier="image", images=[{"path": p} for (_l, p) in frames], kind=TYPED_KIND)
-        verdict = tj.noul_verdict(res["answers"].get("effect"), res["thresholds"])
-    except Exception as exc:  # JudgeUnavailable, JudgeError, ValueError, import
-        typed["message"] = "typed judge unavailable: %s" % exc
-        typed["reason"] = getattr(exc, "reason", None)
-        return typed
-    typed.update(verdict)
-    typed.update({"available": verdict["noul"] is not None, "provider": res.get("provider"),
-                  "model": res.get("model"), "trustPass": bool(res["thresholds"].get("trustPass")),
-                  "frames": [label for (label, _p) in frames],
-                  "message": "typed judge ran via %s" % res.get("provider")})
-    return typed
+    except Exception as exc:
+        block["message"] = "typed judge unavailable: %s" % exc
+        return block
+    judge_fn = judge_fn or tj.judge
+    for c in checks:
+        row: Dict[str, Any] = dict(c, status=None, noul=None, passed=None,
+                                   confidence=None, band=None, images=[])
+        refs = ([c["compare"]] if c.get("compare") else []) + [c["at"]]
+        caps = [_capture(report, r) for r in refs]
+        if any(cap is None for cap in caps):
+            row["status"] = "no-capture"
+            row["message"] = "no capture named %s in this run" % ", ".join(
+                r for r, cap in zip(refs, caps) if cap is None)
+            block["checks"].append(row)
+            continue
+        images: List[Any] = []
+        missing = None
+        for ref, cap in zip(refs, caps):
+            sel = c.get("selector")
+            if sel and isinstance(cap.get("boxes"), dict):
+                box = cap["boxes"].get(sel)
+                if box is None:
+                    missing = ref
+                    break
+                crop = _crop(cap["path"], box, viewport_w)
+                images.append(crop if crop is not None else {"path": cap["path"]})
+                row["images"].append(cap["label"] + (" cropped to " + sel if crop else " (full frame)"))
+            else:
+                images.append({"path": cap["path"]})
+                row["images"].append(cap["label"])
+        if missing:
+            row["status"] = "element-missing"
+            row["message"] = "%s is not on the page at %s" % (c["selector"], missing)
+            block["checks"].append(row)
+            continue
+        state = ("A screenshot of a web page%s." % (
+            "" if len(images) == 1 else
+            ": image 1 is %s, image 2 is %s" % (row["images"][0], row["images"][1])))
+        q: Dict[str, Any] = {"type": "noul", "instructions": c["statement"]}
+        if c.get("criteria"):
+            q["criteria"] = c["criteria"]
+        try:
+            res = judge_fn(state, {c["id"]: q}, tier="image", images=images, kind=TYPED_KIND)
+        except Exception as exc:
+            row["status"] = "unavailable"
+            row["message"] = str(exc)[:200]
+            block["checks"].append(row)
+            if getattr(exc, "reason", None) in ("off", "no-key", "no-image-judge"):
+                block["message"] = "typed judge unavailable: %s" % exc
+                for rest in checks[checks.index(c) + 1:]:
+                    block["checks"].append(dict(rest, status="unavailable", images=[]))
+                return block
+            continue
+        v = tj.noul_verdict(res["answers"].get(c["id"]), res["thresholds"])
+        row.update({"noul": v["noul"], "passed": v["pass"], "confidence": v["confidence"],
+                    "band": v["band"], "status": "answered" if v["noul"] is not None else "no-answer"})
+        block["available"] = True
+        block["provider"] = res.get("provider")
+        block["model"] = res.get("model")
+        block["trustPass"] = bool(res["thresholds"].get("trustPass"))
+        block["checks"].append(row)
+    answered = [r for r in block["checks"] if r["status"] == "answered"]
+    block["summary"] = {
+        "confidentPass": sum(1 for r in answered if r["passed"] is True and r["band"] == "act"),
+        "confidentFail": sum(1 for r in answered if r["passed"] is False and r["band"] == "act"),
+        "unsure": sum(1 for r in answered if r["band"] != "act"),
+        "elementMissing": sum(1 for r in block["checks"] if r["status"] == "element-missing"),
+        "notAsked": sum(1 for r in block["checks"] if r["status"] not in ("answered",)),
+    }
+    block["message"] = "%d check(s) answered via %s" % (len(answered), block["provider"])
+    return block
 
 
-def _typed_confident(typed: Dict[str, Any], passed: bool) -> bool:
-    return bool(typed.get("available") and typed.get("pass") is passed
-                and typed.get("band") == "act")
+def _all_confident_pass(block: Optional[Dict[str, Any]]) -> bool:
+    rows = (block or {}).get("checks") or []
+    return bool(rows) and all(r.get("status") == "answered" and r.get("passed") is True
+                              and r.get("band") == "act" for r in rows)
 
 
 def apply_frame_judges(report: Dict[str, Any], verdict: str, reasons: List[str],
                        out_dir: str, args: argparse.Namespace,
-                       llm_judge: Any = None, typed_judge_fn: Any = None,
+                       llm_judge: Any = None, checks_fn: Any = None,
                        shadow_log: Any = None) -> str:
     """The optional judges, in their precedence. Mutates report/reasons and
-    returns the verdict. The LLM frame judge only ESCALATES or CONFIRMS; it
-    never relaxes an error/static/no-reaction pixel verdict:
+    returns the verdict. The LLM frame judge (--judge prose) only ESCALATES or
+    CONFIRMS; it never relaxes an error/static/no-reaction pixel verdict:
       - judge unavailable  -> a pixel pass becomes inconclusive.
-      - judge ok:false     -> a pixel pass becomes "effect-wrong" (the wrong
-                              thing renders even if pixels moved); an existing
-                              error/static/no-reaction is the stronger signal.
+      - judge ok:false     -> a pixel pass becomes "effect-wrong".
       - judge ok:true      -> CONFIRMS; verdict unchanged.
       - judge inconclusive -> a pixel pass becomes inconclusive.
-    The typed judge (see run_typed_judge) never changes any of that."""
-    if not args.judge:
-        return verdict
-    llm_judge = llm_judge or run_judge
+    The typed checks (run_visual_checks) never change any of that."""
     mode = getattr(args, "typed_judge", None)
-    typed = run_typed_judge(report, args.judge, mode, typed_judge_fn) if mode else None
+    checks, rejected = (getattr(args, "parsed_checks", None) or ([], []))
+    block = None
+    if mode and (checks or rejected):
+        block = (checks_fn or run_visual_checks)(report, checks, rejected, mode,
+                                                 int((getattr(args, "viewport", None) or (1280, 720))[0]))
+        report["typedChecks"] = block
+    if not args.judge:
+        _flag_and_log(report, block, mode, args, shadow_log)
+        return verdict
 
-    if (typed and mode == "flag" and typed.get("trustPass") and _typed_confident(typed, True)):
+    if (block and mode == "flag" and block.get("trustPass") and _all_confident_pass(block)):
         judge = {"available": True, "ok": True, "expected": args.judge,
-                 "reasoning": "typed judge (%s) confident pass; trustPass is calibrated for %s"
-                              % (typed.get("provider"), TYPED_KIND),
-                 "observed": None, "model": typed.get("model"), "transport": "typed-judge",
+                 "reasoning": "every typed check is a confident pass (%s) and trustPass is "
+                              "calibrated for %s" % (block.get("provider"), TYPED_KIND),
+                 "observed": None, "model": block.get("model"), "transport": "typed-checks",
                  "skippedLlm": True,
-                 "message": "LLM frame judge skipped: calibrated typed pass"}
+                 "message": "LLM frame judge skipped: calibrated typed pass on every check"}
     else:
-        judge = llm_judge(report, out_dir, args)
-    if typed is not None:
-        judge["typed"] = typed
+        judge = (llm_judge or run_judge)(report, out_dir, args)
     report["judge"] = judge
     if judge.get("available"):
         if judge.get("ok") is False and verdict == "pass":
@@ -848,27 +1039,43 @@ def apply_frame_judges(report: Dict[str, Any], verdict: str, reasons: List[str],
         reasons.append("frame-judge unavailable: %s"
                        % (judge.get("message") or "unknown reason"))
     log(judge.get("message") or "frame-judge completed")
+    _flag_and_log(report, block, mode, args, shadow_log)
+    return verdict
 
-    if typed and typed.get("available"):
-        # Calibration data: the typed answer next to the verdict it shadowed.
-        if not judge.get("skippedLlm"):
+
+def _flag_and_log(report: Dict[str, Any], block: Optional[Dict[str, Any]], mode: Optional[str],
+                  args: argparse.Namespace, shadow_log: Any) -> None:
+    """Shadow-log every answered check (for labelling; it is NOT paired with
+    the LLM's whole-effect verdict, which answers a different question) and, in
+    flag mode, add one finding per confident failure or missing element."""
+    if not block:
+        return
+    try:
+        sink = shadow_log or _typed_judge_module().shadow_log
+    except Exception:
+        sink = None
+    for r in block.get("checks") or []:
+        if r.get("status") == "answered" and sink:
             try:
-                (shadow_log or _typed_judge_module().shadow_log)({
-                    "provider": typed.get("provider"), "kind": TYPED_KIND,
-                    "noul": typed.get("noul"),
-                    "llmOk": judge.get("ok") if judge.get("available") else None,
-                    "project": getattr(args, "judge_project", None),
-                    "subject": (args.judge or "")[:160]})
+                sink({"provider": block.get("provider"), "kind": TYPED_KIND,
+                      "noul": r.get("noul"), "llmOk": None,
+                      "project": getattr(args, "judge_project", None),
+                      "subject": "%s: %s @ %s" % (r["id"], r["statement"], r["at"])})
             except Exception:
                 pass
-        if mode == "flag" and _typed_confident(typed, False):
+        if mode != "flag":
+            continue
+        if r.get("status") == "element-missing":
             report.setdefault("findings", []).append({
                 "rule": "typed-judge", "severity": "warn", "kind": TYPED_KIND,
-                "provider": typed.get("provider"), "noul": typed.get("noul"),
-                "message": "typed judge (%s) is confident the frames do not show: %s"
-                           % (typed.get("provider"), args.judge)})
-        log(typed.get("message") or "typed judge completed")
-    return verdict
+                "check": r["id"], "message": "check %s: %s" % (r["id"], r.get("message"))})
+        elif r.get("status") == "answered" and r.get("passed") is False and r.get("band") == "act":
+            report.setdefault("findings", []).append({
+                "rule": "typed-judge", "severity": "warn", "kind": TYPED_KIND,
+                "check": r["id"], "provider": block.get("provider"), "noul": r.get("noul"),
+                "message": "check %s is confidently false at %s: %s"
+                           % (r["id"], ", ".join(r.get("images") or [r["at"]]), r["statement"])})
+    log(block.get("message") or "typed checks completed")
 
 
 def exit_code(verdict: str) -> int:
@@ -1838,6 +2045,11 @@ def run(args: argparse.Namespace) -> int:
             log("ERROR: could not read spec %s (%s)" % (args.spec, exc))
             return 3
 
+    # Typed visual checks: parsed up front so each capture can record where
+    # the checked elements are at that moment (crops come from that moment).
+    args.parsed_checks = load_checks(getattr(args, "checks", None))
+    check_selectors = sorted({c["selector"] for c in args.parsed_checks[0] if c.get("selector")})
+
     idle_times = spec.get("idleTimes") or DEFAULT_IDLE_TIMES
     settle_ms = int(spec.get("settleMs", args.settle_ms))
     interact_settle_ms = int(spec.get("interactSettleMs", 250))
@@ -1950,11 +2162,14 @@ def run(args: argparse.Namespace) -> int:
             fname = "idle_%02d_t%0.2f.png" % (i, float(t))
             fpath = os.path.join(out_dir, fname)
             page.screenshot(path=fpath)
+            boxes = capture_boxes(page, check_selectors)
             diff_prev = None
             if prev_path is not None:
                 diff_prev = diff_frames(prev_path, fpath)
             idle_frames.append({"t": float(t), "path": fpath,
                                 "diffFromPrev": diff_prev})
+            if boxes is not None:
+                idle_frames[-1]["boxes"] = boxes
             prev_path = fpath
         report["idleFrames"] = idle_frames
 
@@ -1987,12 +2202,14 @@ def run(args: argparse.Namespace) -> int:
                 after = os.path.join(out_dir, "ix_%02d_%s_after.png"
                                      % (idx, label))
                 page.screenshot(path=before)
+                before_boxes = capture_boxes(page, check_selectors)
                 try:
                     run_step(page, step)
                 except Exception as exc:
                     log("step %s failed (%s)" % (label, exc))
                 page.wait_for_timeout(interact_settle_ms)
                 page.screenshot(path=after)
+                after_boxes = capture_boxes(page, check_selectors)
                 d = diff_frames(before, after)
                 interactions.append({
                     "step": label,
@@ -2001,6 +2218,9 @@ def run(args: argparse.Namespace) -> int:
                     "afterPath": after,
                     "diff": d,
                 })
+                if before_boxes is not None:
+                    interactions[-1]["beforeBoxes"] = before_boxes
+                    interactions[-1]["afterBoxes"] = after_boxes
         report["interactions"] = interactions
 
         context.close()
@@ -2177,13 +2397,17 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Provider for the daemon /__llm_run describe call "
                         "(default anthropic). Ignored by the direct-API "
                         "fallback, which is always Anthropic.")
+    p.add_argument("--checks", default=None, metavar="CHECKS_JSON",
+                   help="Typed visual checks: a JSON file of literal statements, "
+                        "each tied to a capture (page, idle:start, after:<step>, ...) "
+                        "and optionally cropped to a selector. See run_visual_checks. "
+                        "Needs --typed-judge.")
     p.add_argument("--typed-judge", default=None, choices=["shadow", "flag"],
-                   help="Also ask the image-tier typed judge (editor/typed_judge.py) "
-                        "with --judge's expected effect. shadow records its answer "
-                        "and changes nothing; flag also adds a typed-judge finding "
-                        "on a confident fail. Never changes the exit code. The "
-                        "daemon passes this when typed judgment for visual checks "
-                        "is on.")
+                   help="Ask the image-tier typed judge (editor/typed_judge.py) each "
+                        "--checks statement. shadow records the answers and changes "
+                        "nothing; flag also adds a typed-judge finding per confident "
+                        "failure. Never changes the verdict or the exit code. The "
+                        "daemon passes this when typed judgment for visual checks is on.")
     p.add_argument("--judge-model", default=None, metavar="MODEL",
                    help="Vision model id (default %s for the direct API; the "
                         "daemon picks its own default if omitted)."

@@ -530,6 +530,16 @@ is absent, the switch is off, or the call fails.
 
 ## One deviation from this plan, and why
 
+> **2026-10-13: 3c's budget was wrong, and the judgment is now scoped.** The
+> Budget paragraph above counts ~60 tokens per element question and forgets
+> that a Choice carries its options INSIDE each question: one page sent 231k
+> characters, 78% of it the same 99-option list repeated per element, and
+> Clef refused it. Each element is now asked only about the 1 to 3 components
+> its own evidence points at, against a one-line state; an element with no
+> evidence is not asked (it stays `info`, as keyless does). See
+> `jev_candidates` in `editor/tools/qa/ds_lint.py` and
+> `docs/features/typed-judgment-providers.md`.
+
 **3b's structure-match row does not gate.** This plan put "undefined class whose
 name OR STRUCTURE matches a contract component" in the deterministic `error`
 row. Measured against a real 26-page prototype (`projects/woven-safa`, DS

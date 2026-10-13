@@ -341,6 +341,12 @@ def build(ds_dir, ds_id=None):
             "requiredParts": required,
             "optionalParts": optional,
             "variants": variants,
+            # The visual properties the ROOT declares (border, background,
+            # padding, radius, shadow...). A page element whose own CSS sets the
+            # same skin is evidence it re-draws this component, which is how
+            # ds_lint scopes the typed judgment to a few candidates.
+            "skin": sorted(p for p in props_by_class.get(base, set())
+                           if any(p == c or p.startswith(c + "-") for c in CHROME_PROPS)),
         }  # type: Dict[str, object]
         if parts:
             # Only meaningful where there are parts to observe. On a partless

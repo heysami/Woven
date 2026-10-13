@@ -15,9 +15,10 @@ daemon - so CI exercises the Jev path on every commit.
      returns the non-Jev result and none raises.
   P5 no preamble divergence - the toggles change exactly one block and nothing
      else, so the two paths cannot start building differently.
-  P8 shadow is inert - with typed judgment for visual checks in Shadow mode,
-     visual_qa's verdict, reasons, exit code and LLM verdict are exactly what
-     they are with it off (docs/features/typed-judgment-providers.md).
+  P8 typed visual checks - only literal claims tied to a capture (cropped to
+     one element) are asked, vague restatements of intent are rejected, and in
+     Shadow mode visual_qa's verdict, reasons, exit code and LLM verdict are
+     exactly what they are with it off.
 """
 import json
 from pathlib import Path
@@ -421,9 +422,9 @@ class P4Degradation(unittest.TestCase):
         try:
             status = ds_lint.run_jev_pass(
                 {"components": [{"id": "card", "role": "surface", "oneLine": "A bounded surface"}]},
-                [{"page": "p", "class": "x", "element": {"line": 3, "tag": "div", "classes": ["x"],
-                                                         "inlineStyle": "", "textSample": "hi",
-                                                         "childShape": []}}],
+                [{"page": "p", "class": "x", "suspect": "card",
+                  "element": {"line": 3, "tag": "div", "classes": ["x"],
+                              "inlineStyle": "", "textSample": "hi", "childShape": []}}],
                 findings,
                 ds_lint.contract_index({"components": [{"id": "card", "role": "surface"}]}))
         finally:
@@ -461,6 +462,80 @@ class P4Degradation(unittest.TestCase):
     def test_an_oversized_request_is_refused_rather_than_truncated(self):
         with self.assertRaises(ValueError):
             jev.ask("x" * 400_000, self.QUESTIONS, api_key="k")
+
+
+# ── Scoping: each element is asked only about what its evidence points at ───
+
+class ScopedRoleJudgment(unittest.TestCase):
+    """The DS role judgment verifies a hypothesis ("is .x a hand-rolled copy
+    of .card?"), never "which of the design system's ~100 components is
+    this". Sending the whole vocabulary per element made one page 231k
+    characters, 78% of it the same option list, and Cloudflare refused it."""
+
+    CONTRACT = {"components": [
+        {"id": "card", "role": "surface", "oneLine": "Bounded content surface",
+         "requiredParts": ["card__title"], "optionalParts": ["card__body", "card__media"]},
+        {"id": "section-card", "role": "surface", "oneLine": "A card that heads a section"},
+        {"id": "btn", "role": "control", "oneLine": "The primary clickable action"},
+        {"id": "check-btn", "role": "control", "oneLine": "A toggle button with a check"},
+        {"id": "tabs", "role": "container", "oneLine": "Switches between panels of content"},
+    ] + [{"id": "filler-%d" % i, "role": "surface", "oneLine": "Unrelated thing %d" % i}
+         for i in range(90)]}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.index = ds_lint.contract_index(cls.CONTRACT)
+
+    def row(self, cls, tag="div", text="", children=(), suspect=None):
+        return {"page": "p.html", "class": cls, "suspect": suspect, "chrome": ["border", "padding"],
+                "element": {"line": 1, "tag": tag, "classes": [cls], "inlineStyle": "",
+                            "textSample": text, "childShape": [{"tag": "div", "classes": [c]}
+                                                               for c in children]}}
+
+    def ids(self, row):
+        return [c for c, _s, _w in ds_lint.jev_candidates(row, self.index)]
+
+    def test_the_head_noun_points_at_a_component(self):
+        self.assertEqual(self.ids(self.row("promo-card"))[:2], ["card", "section-card"])
+        self.assertEqual(self.ids(self.row("sp-btn--ghost", tag="button"))[0], "btn")
+
+    def test_a_prefix_is_not_the_component(self):
+        """`.card-foot` is a foot belonging to a card, not a card."""
+        self.assertNotIn("card", self.ids(self.row("card-foot")))
+
+    def test_a_bem_part_is_never_a_candidate(self):
+        self.assertEqual(self.ids(self.row("promo-card__cancel")), [])
+
+    def test_shared_parts_and_a_structure_suspect_count(self):
+        self.assertEqual(self.ids(self.row("tile", children=("tile__title", "tile__body"),
+                                           suspect="card"))[0], "card")
+
+    def test_no_evidence_means_no_question(self):
+        self.assertEqual(self.ids(self.row("hero-wrap", text="Welcome back")), [])
+
+    def test_never_more_than_three_options_plus_layout_and_unknown(self):
+        asked = []
+        real = (jev.ask, jev.enabled, jev.available)
+        jev.enabled, jev.available = (lambda: True), (lambda *a, **k: True)
+        jev.ask = lambda state, questions, **kw: (asked.append((state, questions)), {})[1]
+        try:
+            rows = [self.row("promo-card"), self.row("hero-wrap"), self.row("sp-btn--ghost", tag="button")]
+            rows += [self.row("x%d-card" % i) for i in range(40)]
+            status = ds_lint.run_jev_pass(self.CONTRACT, rows, [], self.index)
+        finally:
+            jev.ask, jev.enabled, jev.available = real
+        self.assertEqual(status["skipped"], 1)
+        self.assertEqual(status["asked"], 42)
+        self.assertGreater(len(asked), 1, "42 questions must be split")
+        for state, questions in asked:
+            self.assertLess(len(state), 400, "state is a framing line, not the contract")
+            self.assertLessEqual(len(questions), ds_lint.JEV_MAX_QUESTIONS_PER_REQUEST)
+            self.assertLessEqual(len(json.dumps(questions)), ds_lint.JEV_MAX_CHARS_PER_REQUEST)
+            for q in questions.values():
+                opts = set(q["criteria"]) - {"page-layout-only", "unknown"}
+                self.assertTrue(1 <= len(opts) <= ds_lint.JEV_MAX_CANDIDATES)
+                self.assertIn("page-layout-only", q["criteria"])
+                self.assertFalse(any(o.startswith("filler-") for o in opts))
 
 
 # ── P5 - no preamble divergence ─────────────────────────────────────────────
@@ -543,25 +618,30 @@ class P5PreambleParity(unittest.TestCase):
                 os.environ.update(env)
 
 
-# ── P8 - shadow is inert ────────────────────────────────────────────────────
+# ── P8 - typed visual checks: literal claims, and shadow is inert ──────────
 
-class P8ShadowIsInert(unittest.TestCase):
-    """Shadow mode records the typed answer and changes nothing: same verdict,
-    same reasons, same exit code, same LLM verdict, for every pixel verdict,
-    every recorded LLM reply and every typed answer. Flag may only ADD a
-    finding; it never changes the verdict or the exit code either."""
+class P8VisualChecks(unittest.TestCase):
+    """The typed judge is a classifier, so it only ever gets LITERAL claims
+    about the exact evidence each needs (a capture, cropped to one element).
+    The --judge prose is never handed to it. Shadow records the answers and
+    changes nothing: same verdict, reasons, exit code and LLM verdict, for every
+    pixel verdict, every recorded LLM reply and every typed answer. Flag may
+    only ADD findings."""
 
     PIXEL = ("pass", "static", "no-reaction", "error", "blank")
-    # Recorded frame-judge replies, as run_judge returns them.
     LLM = {
-        "confirms": {"available": True, "ok": True, "reasoning": "the ripple follows the cursor"},
-        "rejects": {"available": True, "ok": False, "reasoning": "no ripple, only a fade"},
+        "confirms": {"available": True, "ok": True, "reasoning": "the menu opens"},
+        "rejects": {"available": True, "ok": False, "reasoning": "nothing opens"},
         "inconclusive": {"available": True, "ok": None, "message": "reply was not JSON"},
         "unavailable": {"available": False, "ok": None, "message": "no LLM endpoint"},
     }
-    # Typed answers: confident pass, confident fail, a coin flip, and a judge
-    # that is not set up.
     TYPED = {"pass": 0.97, "fail": 0.03, "unsure": 0.52, "absent": None}
+    CHECKS = [
+        {"id": "menu_open", "statement": "A dropdown menu is open below the Account button.",
+         "at": "after:click_account", "selector": "#menu"},
+        {"id": "ripple", "statement": "Image 2 shows a ripple around the button that image 1 does not.",
+         "at": "after:click_account", "compare": "before:click_account"},
+    ]
 
     @classmethod
     def setUpClass(cls):
@@ -569,39 +649,115 @@ class P8ShadowIsInert(unittest.TestCase):
         frames = []
         for i in range(4):
             path = Path(cls.tmp) / ("f%d.png" % i)
-            path.write_bytes(typed_judge.solid_png((40 * i, 80, 120)))
+            path.write_bytes(typed_judge.solid_png((40 * i, 80, 120), size=200))
             frames.append(str(path))
-        cls.report = {"idleFrames": [{"t": 0.0, "path": frames[0]},
-                                     {"t": 0.7, "path": frames[1], "diffFromPrev": 0.2}],
-                      "interactions": [{"step": "click", "diff": 0.3,
-                                        "beforePath": frames[2], "afterPath": frames[3]}]}
+        box = {"x": 20, "y": 30, "width": 60, "height": 40}
+        cls.report = {"idleFrames": [{"t": 0.0, "path": frames[0], "boxes": {"#menu": None}},
+                                     {"t": 0.7, "path": frames[1], "diffFromPrev": 0.2,
+                                      "boxes": {"#menu": None}}],
+                      "interactions": [{"step": "click_account", "diff": 0.3,
+                                        "beforePath": frames[2], "afterPath": frames[3],
+                                        "beforeBoxes": {"#menu": None},
+                                        "afterBoxes": {"#menu": box}}]}
 
-    def _args(self, mode):
+    def _args(self, mode, checks=None, judge="a menu opens"):
         from types import SimpleNamespace
-        return SimpleNamespace(judge="a ripple follows the cursor", typed_judge=mode,
-                               judge_project="p8")
+        return SimpleNamespace(judge=judge, typed_judge=mode, judge_project="p8",
+                               viewport=(200, 200),
+                               parsed_checks=visual_qa.parse_checks(checks if checks is not None
+                                                                    else self.CHECKS))
 
-    def _typed(self, kind):
+    def _judge(self, kind, calls=None):
         def fn(state, questions, **kw):
+            if calls is not None:
+                calls.append((state, questions, kw))
             if self.TYPED[kind] is None:
                 raise typed_judge.JudgeUnavailable("no image judge", reason="no-image-judge")
             self.assertEqual(kw["tier"], "image")
-            self.assertLessEqual(len(kw["images"]), 4)
-            return {"answers": {"effect": {"type": "noul", "noul": self.TYPED[kind]}},
+            qid = next(iter(questions))
+            return {"answers": {qid: {"type": "noul", "noul": self.TYPED[kind]}},
                     "provider": "clef", "model": "clef",
-                    "thresholds": typed_judge.thresholds("frame_effect", "clef")}
+                    "thresholds": typed_judge.thresholds("frame_check", "clef")}
         return fn
 
-    def _run(self, pixel, llm, typed, mode):
+    def _run(self, pixel, llm, typed, mode, calls=None, checks=None):
         import copy
         report = copy.deepcopy(self.report)
         reasons = ["pixel reason"]
         logged = []
+        judge_fn = self._judge(typed, calls)
         verdict = visual_qa.apply_frame_judges(
-            report, pixel, reasons, self.tmp, self._args(mode),
+            report, pixel, reasons, self.tmp, self._args(mode, checks),
             llm_judge=lambda r, o, a: dict(self.LLM[llm]),
-            typed_judge_fn=self._typed(typed), shadow_log=logged.append)
+            checks_fn=lambda rep, c, rj, m, w: visual_qa.run_visual_checks(rep, c, rj, m, w, judge_fn),
+            shadow_log=logged.append)
         return verdict, reasons, report, logged
+
+    # The questions themselves ---------------------------------------------
+
+    def test_intent_restated_is_rejected_not_asked(self):
+        checks, rejected = visual_qa.parse_checks([
+            {"statement": "The animation works as expected.", "at": "page"},
+            {"statement": "The menu renders correctly.", "at": "page"},
+            {"statement": "The effect is achieved.", "at": "page"},
+            {"statement": "How many cards are shown?", "at": "page"},
+            {"statement": "A menu is open.", "at": "somewhere"},
+            {"statement": "A ripple appears.", "at": "after:x", "compare": "before:x"},
+            {"statement": "The correct answer is highlighted.", "at": "after:submit"},
+        ])
+        self.assertEqual([c["statement"] for c in checks], ["The correct answer is highlighted."])
+        self.assertEqual(len(rejected), 6)
+        self.assertTrue(all(r["reason"] for r in rejected))
+
+    def test_each_check_gets_only_its_own_images_cropped_to_its_element(self):
+        calls = []
+        _v, _r, report, _l = self._run("pass", "confirms", "pass", "shadow", calls)
+        self.assertEqual(len(calls), 2, "one request per check")
+        state, questions, kw = calls[0]
+        self.assertEqual(list(questions), ["menu_open"])
+        self.assertEqual(questions["menu_open"]["instructions"],
+                         "A dropdown menu is open below the Account button.")
+        self.assertEqual(len(kw["images"]), 1)
+        crop = kw["images"][0]
+        self.assertIsInstance(crop, bytes, "a selector check sends the CROP, not the frame")
+        w, h = typed_judge.image_size(crop, "png")
+        self.assertLess(w * h, 200 * 200 / 2)
+        _s, q2, kw2 = calls[1]
+        self.assertEqual([i["path"] for i in kw2["images"]],
+                         [self.report["interactions"][0]["beforePath"],
+                          self.report["interactions"][0]["afterPath"]],
+                         "compare is image 1, at is image 2")
+        self.assertEqual(report["typedChecks"]["summary"]["confidentPass"], 2)
+
+    def test_a_missing_element_is_reported_without_a_model_call(self):
+        calls = []
+        checks = [{"id": "menu_idle", "statement": "A dropdown menu is open.",
+                   "at": "idle:start", "selector": "#menu"}]
+        _v, _r, report, _l = self._run("pass", "confirms", "pass", "flag", calls, checks)
+        self.assertEqual(calls, [])
+        self.assertEqual(report["typedChecks"]["checks"][0]["status"], "element-missing")
+        self.assertEqual([f["check"] for f in report["findings"]], ["menu_idle"])
+
+    def test_no_checks_means_no_typed_question(self):
+        calls = []
+        _v, _r, report, _l = self._run("pass", "confirms", "pass", "flag", calls, [])
+        self.assertEqual(calls, [])
+        self.assertNotIn("typedChecks", report)
+
+    def test_checks_run_without_any_judge_prose(self):
+        import copy
+        report = copy.deepcopy(self.report)
+        args = self._args("shadow")
+        args.judge = None
+        v = visual_qa.apply_frame_judges(
+            report, "pass", [], self.tmp, args,
+            checks_fn=lambda rep, c, rj, m, w: visual_qa.run_visual_checks(rep, c, rj, m, w, self._judge("pass")),
+            shadow_log=lambda e: None)
+        self.assertEqual(v, "pass")
+        self.assertEqual(report["typedChecks"]["summary"]["confidentPass"], 2)
+        self.assertNotIn("judge", report)
+
+    # Posture ------------------------------------------------------------------
 
     def test_shadow_changes_nothing(self):
         for pixel in self.PIXEL:
@@ -615,9 +771,9 @@ class P8ShadowIsInert(unittest.TestCase):
                     self.assertEqual(shadow[1], off[1], case)
                     self.assertEqual(shadow[2]["judge"].get("ok"), off[2]["judge"].get("ok"), case)
                     self.assertNotIn("findings", shadow[2], case)
-                    self.assertIn("typed", shadow[2]["judge"], case)
+                    self.assertIn("typedChecks", shadow[2], case)
 
-    def test_flag_adds_a_finding_and_nothing_else(self):
+    def test_flag_adds_findings_and_nothing_else(self):
         for pixel in self.PIXEL:
             for llm in self.LLM:
                 for typed in self.TYPED:
@@ -627,44 +783,36 @@ class P8ShadowIsInert(unittest.TestCase):
                     self.assertEqual(flag[0], off[0], case)
                     self.assertEqual(flag[1], off[1], case)
                     findings = flag[2].get("findings") or []
-                    self.assertEqual(bool(findings), typed == "fail", case)
-                    for f in findings:
-                        self.assertEqual(f["rule"], "typed-judge")
+                    self.assertEqual(len(findings), 2 if typed == "fail" else 0, case)
+                    self.assertTrue(all(f["rule"] == "typed-judge" for f in findings))
 
-    def test_shadow_logs_the_pair_calibration_needs(self):
+    def test_answers_are_logged_unpaired_for_labelling(self):
+        """The LLM frame judge answers a different question (the whole prose
+        effect), so a check is never logged as agreeing or disagreeing with it."""
         _v, _r, _report, logged = self._run("pass", "confirms", "fail", "shadow")
-        self.assertEqual(len(logged), 1)
-        self.assertEqual({k: logged[0][k] for k in ("provider", "kind", "noul", "llmOk", "project")},
-                         {"provider": "clef", "kind": "frame_effect", "noul": 0.03,
-                          "llmOk": True, "project": "p8"})
-        self.assertEqual(self._run("pass", "confirms", "absent", "shadow")[3], [])
+        self.assertEqual(len(logged), 2)
+        self.assertTrue(all(e["llmOk"] is None and e["kind"] == "frame_check" for e in logged))
 
-    def test_only_a_calibrated_trust_pass_in_flag_mode_skips_the_llm(self):
-        calls = []
-
-        def llm(r, o, a):
-            calls.append(1)
-            return dict(self.LLM["confirms"])
-
+    def test_only_a_calibrated_trust_pass_on_every_check_in_flag_mode_skips_the_llm(self):
         def trusted(state, questions, **kw):
-            th = dict(typed_judge.thresholds("frame_effect", "clef"), trustPass=True)
-            return {"answers": {"effect": {"type": "noul", "noul": 0.99}},
+            qid = next(iter(questions))
+            th = dict(typed_judge.thresholds("frame_check", "clef"), trustPass=True)
+            return {"answers": {qid: {"type": "noul", "noul": 0.99}},
                     "provider": "clef", "model": "clef", "thresholds": th}
-
         for mode, expect_calls in (("shadow", 1), ("flag", 0)):
-            calls.clear()
-            report = {"idleFrames": self.report["idleFrames"]}
-            verdict = visual_qa.apply_frame_judges(report, "pass", [], self.tmp, self._args(mode),
-                                                   llm_judge=llm, typed_judge_fn=trusted,
-                                                   shadow_log=lambda e: None)
+            calls = []
+
+            def llm(r, o, a):
+                calls.append(1)
+                return dict(self.LLM["confirms"])
+            import copy
+            report = copy.deepcopy(self.report)
+            verdict = visual_qa.apply_frame_judges(
+                report, "pass", [], self.tmp, self._args(mode), llm_judge=llm,
+                checks_fn=lambda rep, c, rj, m, w: visual_qa.run_visual_checks(rep, c, rj, m, w, trusted),
+                shadow_log=lambda e: None)
             self.assertEqual(len(calls), expect_calls, mode)
             self.assertEqual(verdict, "pass")
-        self.assertTrue(report["judge"]["skippedLlm"])
-
-    def test_the_typed_judge_gets_at_most_four_key_frames_in_time_order(self):
-        frames = visual_qa._typed_frames(self.report)
-        self.assertEqual([label.split(" t=")[0] for label, _p in frames],
-                         ["idle start", "idle with most motion", "before click", "after click"])
 
 
 if __name__ == "__main__":

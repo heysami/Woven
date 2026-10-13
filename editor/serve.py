@@ -27347,7 +27347,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(200, info)
 
     # GET /__qa/run?project=<id>&node=<nodeId> | &page=<slug|path>
-    #   [&judge=<text>] [&mode=interactive|render] [&nointeract=1] [&cases=0]
+    #   [&judge=<text>] [&checks=<json>] [&mode=interactive|render] [&nointeract=1] [&cases=0]
     # When a test-cases.json sits next to the target, cases mode runs by
     # default (&cases=0 opts out and forces the generic battery).
     def _qa_run(self, qs):
@@ -27430,16 +27430,34 @@ class H(http.server.SimpleHTTPRequestHandler):
                     cmd += ["--judge-daemon", "http://127.0.0.1:%d" % PORT,
                             "--judge-project", _proj_qs,
                             "--judge-provider", _judge_provider]
-            # Typed judgment for visual checks: the image-tier typed judge runs
-            # ALONGSIDE the frame judge (shadow records, flag adds a finding on
-            # a confident fail). It never changes the verdict or the exit code;
-            # visual_qa.apply_frame_judges owns that. No image judge set up =
-            # judge.typed says so and nothing else differs.
-            _tcfg = _compact_config()
-            if _tcfg.get("typedJudgeVisual"):
-                cmd += ["--typed-judge", _tcfg.get("typedJudgeVisualMode") or "shadow"]
-                if "--judge-project" not in cmd and (_qs_get(qs, "project") or ""):
-                    cmd += ["--judge-project", _qs_get(qs, "project")]
+        # Typed visual checks: literal statements, each tied to a capture and
+        # optionally cropped to a selector (visual_qa.run_visual_checks). From
+        # &checks=<json> or a visual-checks.json next to the target, the same
+        # place test-cases.json is found. Asked only when typed judgment for
+        # visual checks is on; never changes the verdict or the exit code. No
+        # checks means no typed question: the --judge prose is not one.
+        _tcfg = _compact_config()
+        checks_raw = (_qs_get(qs, "checks") or "").strip()
+        checks_path = None
+        if checks_raw:
+            try:
+                json.loads(checks_raw)
+            except ValueError as e:
+                return self._reply(400, {"error": "checks must be JSON: %s" % e})
+            checks_path = os.path.join(out_dir, "checks.json")
+            with open(checks_path, "w", encoding="utf-8") as f:
+                f.write(checks_raw)
+        elif abs_target:
+            for cand_dir in (os.path.dirname(abs_target), os.path.dirname(os.path.dirname(abs_target))):
+                cand = os.path.join(cand_dir, "visual-checks.json")
+                if os.path.isfile(cand):
+                    checks_path = cand
+                    break
+        if checks_path and _tcfg.get("typedJudgeVisual"):
+            cmd += ["--checks", checks_path,
+                    "--typed-judge", _tcfg.get("typedJudgeVisualMode") or "shadow"]
+            if "--judge-project" not in cmd and (_qs_get(qs, "project") or ""):
+                cmd += ["--judge-project", _qs_get(qs, "project")]
         if nointeract and nointeract not in ("0", "false", "no"):
             cmd += ["--no-interact"]
         # Synthetic camera fixture for vision pieces (default both = hand+face).

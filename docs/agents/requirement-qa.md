@@ -93,25 +93,26 @@ Where an item needs a BUCKET rather than a boolean, ask that one as a Choice ove
 
 ### Items about what is visibly SHOWN (image tier, optional)
 
-Some checklist items are about what the user sees on the rendered page rather than what the markup says: "the pricing page shows three plans side by side", "the empty state shows an illustration". Markup can satisfy those on paper and still render something else. When the user has typed judgment for visual checks on and a judge that reads images is set up, judge THOSE items on a render instead of on the source:
+Some checklist items are about what the user sees on the rendered page rather than what the markup says: "the pricing page shows three plans side by side", "the empty state shows an illustration". Markup can satisfy those on paper and still render something else. When the user has typed judgment for visual checks on and a judge that reads images is set up, verify THOSE items on a render, one literal check each.
 
-1. Render the page once: `GET "$TH_DAEMON_URL/__qa/run?project=$TH_PROJECT_ID&page=<slug>&mode=render"`. The reply's `idleFrames[].path` are the PNG frames (they live in a `woven-qa-*` temp directory the daemon is allowed to read from).
-2. Ask, one noul per visible item, the item verbatim, up to 4 frames per request:
+**Turn each item into a check, never into "does it match the requirement".** A judge can only verify a claim it can see. For each visible item write:
+- `statement`: ONE sentence naming what is visible, in the requirement's own nouns. "The empty state shows an illustration above the message." Not "the empty state is correct", not "matches the spec", not a count ("three plans" becomes one check per plan: "A plan card titled Basic is visible.").
+- `selector`: the element the item is about, so the judge sees that element and nothing else (the daemon crops to it at that moment). Omit it only for a whole-page claim.
+- `at`: `page` for a static render; `after:<step>` when the item is about a state reached by an interaction in a spec.
 
 ```bash
-curl -sS -X POST "$TH_DAEMON_URL/__judge?project=$TH_PROJECT_ID" -H 'Content-Type: application/json' -d '{
-  "tier": "image", "kind": "visual_item",
-  "state": "A rendered page of the prototype.",
-  "images": [{"path": "<idleFrames[0].path>"}],
-  "questions": {"vis_3": {"type": "noul", "instructions": "<checklist item 3, verbatim>"}}
-}'
+curl -sS -G "$TH_DAEMON_URL/__qa/run" \
+  --data-urlencode "project=$TH_PROJECT_ID" --data-urlencode "page=<slug>" --data-urlencode "mode=render" \
+  --data-urlencode 'checks={"checks":[
+    {"id":"req_7","statement":"The empty state shows an illustration above the message.","at":"page","selector":".empty-state"},
+    {"id":"req_9","statement":"A plan card titled Basic is visible.","at":"page","selector":"#plans"}]}'
 ```
 
-3. Route each answer on the returned `thresholds` exactly as for text items: confident pass is silent, confident fail is a finding, anything in between is judged the way it is judged today.
+Read `typedChecks` in the reply: each check comes back `answered` (with `noul`, `passed`, `band`), `element-missing` (the selector is not on the page: that alone is a finding, the element the requirement needs is not there), `no-capture`, or `unavailable`; `rejected` lists checks you wrote vaguely, with the reason. Route answered checks on `band` exactly as for text items: `act` with `passed: true` is satisfied, `act` with `passed: false` is a finding, anything else is judged the way it is judged today.
 
-**Never Read the PNG yourself.** Pass the path and let the daemon send the bytes. A frame in your context breaks the prompt cache, and the visual-delegation hook denies a main-thread image read anyway.
+**Never Read the PNGs yourself.** The crops never enter your context: a frame there breaks the prompt cache, and the visual-delegation hook denies a main-thread image read anyway.
 
-A `503` with `reason` `no-image-judge` or `off` means: judge that item the way it is judged today, from the artefact, and leave anything only a render could settle out of scope as before. Never ask about geometry or colour (overlap, contrast, palette, spacing): those stay deterministic.
+No `typedChecks` in the reply (typed judgment for visual checks is off, or no judge reads images) means: judge those items the way they are judged today, from the artefact, and leave anything only a render could settle out of scope as before. Never write a check about geometry or colour (overlap, contrast, palette, spacing): those stay deterministic.
 
 ## Step 3 - classify every divergence
 

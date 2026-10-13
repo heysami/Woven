@@ -682,6 +682,7 @@ def lint_page(page_path, ds_vocab, shared_classes, index=None):
             continue
         ambiguous.append({"page": page, "class": cls, "element": el,
                           "suspect": suspects.get(cls),
+                          "chrome": has_chrome_props(body)[:10] if body else [],
                           "reason": "structure" if cls in suspects else "chrome"})
     return findings, local_bare_defs, ambiguous
 
@@ -711,23 +712,153 @@ _UNKNOWN_ID = "unknown"
 
 def _element_state(contract, row):
     # type: (Dict[str, object], Dict[str, object]) -> str
-    """The state for ONE element question: the element's own context and
-    nothing else. The contract travels once, in the shared preamble line."""
+    """The context for ONE element question: the element itself and nothing
+    else - no contract, no page. Its options carry the only design-system
+    text it is judged against."""
     el = row["element"]  # type: ignore[index]
     children = ", ".join(
         "<%s%s>" % (c.get("tag"), ("." + ".".join(c.get("classes") or [])) if c.get("classes") else "")
         for c in (el.get("childShape") or [])[:12])  # type: ignore[union-attr]
     return (
-        "Page: %s (line %s)\n"
         "Element: <%s class=\"%s\">\n"
         "Inline style: %s\n"
         "Own text: %s\n"
         "Immediate children: %s\n"
-        % (row["page"], el.get("line"), el.get("tag"),
+        "The page's own CSS for .%s sets: %s\n"
+        % (el.get("tag"),
            " ".join(el.get("classes") or []),  # type: ignore[arg-type]
            el.get("inlineStyle") or "(none)",
            (el.get("textSample") or "(none)"),
-           children or "(none)"))
+           children or "(none)",
+           row.get("class"), ", ".join(row.get("chrome") or []) or "(nothing visual)"))
+
+
+# ── Scoping: which components could this element be a copy of? ──────────────
+# The judgment is NOT "which of the design system's ~100 components is this".
+# It is "is this element a hand-rolled copy of component X", asked only for the
+# few X its own evidence points at. Sending the whole vocabulary per element
+# buried 18 elements' 4k characters of context under 180k characters of the
+# same option list (suss-cal fa-application.html, 2026-10-13) and Cloudflare
+# refused it. An element nothing points at is not asked at all: there is no
+# hypothesis to verify, so it stays the info finding it already is.
+JEV_MAX_CANDIDATES = 3
+_JEV_MIN_SCORE = 2
+_STOPWORDS = set("""a an and are as at be by for from has have in into is it its of on or
+that the this to with without used use when where which while page item items content
+element elements component components optional required""".split())
+
+
+def _words(text):
+    # type: (str) -> Set[str]
+    out = set()  # type: Set[str]
+    for w in re.split(r"[^a-z0-9]+", str(text).lower()):
+        if len(w) >= 3 and w not in _STOPWORDS:
+            out.add(w[:-1] if len(w) > 4 and w.endswith("s") else w)
+    return out
+
+
+def jev_candidates(row, index, limit=JEV_MAX_CANDIDATES):
+    # type: (Dict[str, object], Dict[str, object], int) -> List[Tuple[str, int, List[str]]]
+    """[(componentId, score, evidence)] for the components this ambiguous
+    element could be a copy of, strongest first, at most `limit`. Evidence is
+    what the linter can see, never a guess:
+      structure suspect (two shared part names, or a required one)  +4
+      the class's head noun (its LAST token, modifiers stripped) is
+        the component id's last token                               +3
+        ...and the class ends with the whole id                     +1
+      one of its children uses a part suffix the component declares +1 each
+      a word of the class or its own text is in the component's id,
+        parts or one-line description                                +1 each (max 2)
+      its own CSS sets the same visual skin as the component's root
+        (3+ shared properties, at least half of each side)          +2
+        (2 shared properties)                                        +1
+      a control-shaped tag (button, a, input, select) and role control +1
+    Only scores of at least 2 count: one shared generic word is not a
+    hypothesis worth a request.
+
+    Head noun only: English compounds put it last, so `.product-card` may be a
+    card while `.card-foot` is a foot belonging to one (the same lesson as
+    _name_match). A BEM part (`.sp-bar__cancel`) is never a candidate: it is a
+    part of a page-local block, and the block is what gets judged."""
+    comps = index["components"]           # type: ignore[assignment]
+    substantial = index["substantial"]    # type: ignore[assignment]
+    el = row["element"]                   # type: ignore[assignment]
+    cls = str(row.get("class") or "")
+    base = cls.split("--", 1)[0]
+    if "__" in base:
+        return []
+    cls_tokens = [t for t in re.split(r"[-_]+", base.lower()) if t]
+    words = _words(" ".join(cls_tokens[:-1]) + " " + str(el.get("textSample") or ""))  # type: ignore[union-attr]
+    child_suffixes = set()  # type: Set[str]
+    for child in el.get("childShape") or []:  # type: ignore[union-attr]
+        for c in child.get("classes") or []:
+            if "__" in c:
+                child_suffixes.add(c.split("__", 1)[1])
+    tag = str(el.get("tag") or "").lower()  # type: ignore[union-attr]
+    scored = []  # type: List[Tuple[str, int, List[str]]]
+    for cid in sorted(substantial):  # type: ignore[union-attr]
+        comp = comps.get(cid) or {}   # type: ignore[union-attr]
+        score, why = 0, []  # type: Tuple[int, List[str]]
+        if row.get("suspect") == cid:
+            score += 4
+            why.append("shares its part structure")
+        id_tokens = [t for t in re.split(r"[-_]+", cid.lower()) if t]
+        if id_tokens and cls_tokens and id_tokens[-1] == cls_tokens[-1]:
+            score += 3
+            why.append("class name ends in '%s'" % id_tokens[-1])
+            if cls_tokens[-len(id_tokens):] == id_tokens:
+                score += 1
+        parts = [str(p).split("__", 1)[-1] for p in
+                 list(comp.get("requiredParts") or []) + list(comp.get("optionalParts") or [])]
+        shared = sorted(child_suffixes & set(parts))
+        if shared:
+            score += len(shared)
+            why.append("children use its parts " + ", ".join("__" + x for x in shared[:3]))
+        vocab = _words(" ".join(id_tokens) + " " + " ".join(parts) + " " + str(comp.get("oneLine") or ""))
+        common = sorted(words & vocab)
+        if common:
+            score += min(2, len(common))
+            why.append("shares the words " + ", ".join(common[:3]))
+        skin = set(comp.get("skin") or [])  # type: ignore[arg-type]
+        mine = set(row.get("chrome") or [])  # type: ignore[arg-type]
+        same = skin & mine
+        if len(same) >= 3 and len(same) * 2 >= max(len(skin), len(mine)):
+            score += 2
+            why.append("same skin: " + ", ".join(sorted(same)[:4]))
+        elif len(same) >= 2:
+            score += 1
+        if tag in ("button", "a", "input", "select", "textarea") and comp.get("role") == "control":
+            score += 1
+            why.append("control-shaped <%s>" % tag)
+        if score >= _JEV_MIN_SCORE:
+            scored.append((cid, score, why))
+    def skin_fit(cid):
+        # type: (str) -> float
+        skin = set((comps.get(cid) or {}).get("skin") or [])  # type: ignore[union-attr]
+        mine = set(row.get("chrome") or [])  # type: ignore[arg-type]
+        return len(skin & mine) / float(len(skin | mine) or 1)
+    scored.sort(key=lambda r: (-r[1], -skin_fit(r[0]), r[0]))
+    return scored[:limit]
+
+
+def jev_criterion(comp):
+    # type: (Dict[str, object]) -> str
+    """One component as a Choice option: what it is, its parts, and when it is
+    NOT the right component - verbatim from the contract."""
+    text = str(comp.get("oneLine") or comp.get("id") or "")
+    req = [str(p) for p in comp.get("requiredParts") or []]  # type: ignore[union-attr]
+    opt = [str(p) for p in comp.get("optionalParts") or []]  # type: ignore[union-attr]
+    if req or opt:
+        text += " Parts: %s." % ", ".join([p + " (required)" for p in req] + opt[:6])
+    if comp.get("notForUseWhen"):
+        text += " NOT for use when: %s" % comp["notForUseWhen"]
+    return text[:600]
+
+
+# Requests stay well inside every judge's budget (Clef Flash holds 24,576
+# tokens, Clef 64 questions); splitting is a guard now, not the fix.
+JEV_MAX_QUESTIONS_PER_REQUEST = 16
+JEV_MAX_CHARS_PER_REQUEST = 20000
 
 
 def jev_criteria(contract):
@@ -773,34 +904,58 @@ def run_jev_pass(contract, ambiguous, findings, index, log=None):
         status["message"] = "typed judgment is turned off (Settings -> Context and cost)"
         return status
     if not jev.available():
-        status["message"] = "no typesafe api key configured"
+        status["message"] = "no typed judge is set up (Settings -> Model Config -> API keys)"
         return status
 
-    criteria = jev_criteria(contract)
-    if len(criteria) > jev.MAX_CHOICE_OPTIONS:
-        status["message"] = ("design system declares %d substantial components, over the "
-                             "%d-option cap - skipping the judgment rather than truncating "
-                             "the vocabulary" % (len(criteria), jev.MAX_CHOICE_OPTIONS))
-        return status
     thresholds = jev.thresholds("ds_role")
+    comps = index["components"]  # type: ignore[assignment]
 
-    # One request per PAGE: state must stay small, and sharding on the page
-    # boundary is the shard the parser already produces.
-    by_page = {}  # type: Dict[str, List[Dict[str, object]]]
+    # One question per element, scoped to ITS candidates. Elements nothing
+    # points at are skipped: there is no hypothesis to verify.
+    asked = []  # type: List[Tuple[Dict[str, object], Dict[str, object]]]
+    skipped = 0
     for row in ambiguous:
-        by_page.setdefault(str(row["page"]), []).append(row)
+        cands = jev_candidates(row, index)
+        if not cands:
+            skipped += 1
+            continue
+        criteria = {cid: jev_criterion(comps.get(cid) or {"id": cid})  # type: ignore[union-attr]
+                    for cid, _score, _why in cands}
+        criteria[_PAGE_LAYOUT_ID] = (
+            "Page layout or page-specific decoration, not a copy of any of the components "
+            "listed here: a wrapper that positions things, a grid or column holder, a spacer, "
+            "a page-only flourish.")
+        criteria[_UNKNOWN_ID] = "There is not enough here to say what this element is."
+        asked.append((row, {
+            "type": "choice",
+            "instructions": "Which of these is this page element?\n\n" + _element_state(contract, row),
+            "criteria": criteria,
+        }))
+    status["skipped"] = skipped
+    if not asked:
+        status["message"] = "no ambiguous element had evidence pointing at a component (%d skipped)" % skipped
+        return status
+
+    # Batch by page, then split by budget so no request nears a judge's limit.
+    batches = []  # type: List[Tuple[str, List[Tuple[Dict[str, object], Dict[str, object]]]]]
+    for row, q in sorted(asked, key=lambda rq: str(rq[0]["page"])):
+        size = len(json.dumps(q))
+        page = str(row["page"])
+        last = batches[-1] if batches else None
+        if (last is None or last[0] != page or len(last[1]) >= JEV_MAX_QUESTIONS_PER_REQUEST
+                or sum(len(json.dumps(x[1])) for x in last[1]) + size > JEV_MAX_CHARS_PER_REQUEST):
+            batches.append((page, []))
+        batches[-1][1].append((row, q))
 
     errors = []  # type: List[str]
-    for page, rows in sorted(by_page.items()):
-        questions = {}
-        for i, row in enumerate(rows):
-            questions["el_%d" % i] = {
-                "type": "choice",
-                "instructions": "Which of these is this element?\n\n" + _element_state(contract, row),
-                "criteria": criteria,
-            }
+    for page, items in batches:
+        rows = [row for row, _q in items]
+        questions = {"el_%d" % i: q for i, (_row, q) in enumerate(items)}
+        state = ("Elements from the page %s that define their own visual styling, each with "
+                 "the few design-system components it might be a hand-rolled copy of. Judge "
+                 "each element only against its own options." % page)
         try:
-            answers = jev.ask(contract, questions)
+            answers = jev.ask(state, questions)
         except Exception as exc:
             errors.append("%s: %s" % (page, exc))
             continue
@@ -834,8 +989,8 @@ def run_jev_pass(contract, ambiguous, findings, index, log=None):
     if errors:
         status["message"] = "; ".join(errors)[:300]
     elif status["available"]:
-        status["message"] = "judged %d ambiguous element(s), promoted %d" % (
-            status["asked"], status["promoted"])
+        status["message"] = "judged %d ambiguous element(s), promoted %d, %d with no evidence skipped" % (
+            status["asked"], status["promoted"], skipped)
     return status
 
 
