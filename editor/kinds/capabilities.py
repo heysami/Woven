@@ -952,6 +952,128 @@ The card has ONE button on purpose. Never add a Review / Revise / Change option:
 - This gate does NOT re-open a decision already locked elsewhere. If a build plan is locked for this project (Role A, a `pipeline.json` you were handed off to drive), drive it - the planning happened before you got here. This gate covers what the user asks for in THIS thread on top of that."""
 
 
+# ── Per-message chat modes: Normal / Plan / Triage ──────────────────────
+# The composer's mode picker (editor/app.js ChatWorkModePicker). Unlike the
+# checks, a mode is NOT compiled into the system prompt: it rides on each
+# user message (serve.py _mode_send), so the user can switch Normal -> Triage
+# -> Plan -> Normal inside one thread without a handoff, and the system prompt
+# stays byte-identical across the switch (no cache bust, and /resume rebuilds
+# the same preamble). The cost is that the rules travel with every message
+# sent in Plan or Triage; that is also what keeps them in view after the CLI
+# compacts the conversation, and puts them next to the request they govern.
+#
+# PLAN_MODE_STUB above stays for threads spawned with `guards.plan` before
+# the switch to per-message modes (resume must rebuild their prompt as-is).
+CHAT_MODES = ("normal", "plan", "triage")
+
+
+def normalize_chat_mode(raw) -> Optional[str]:
+    """A known mode name, or None for absent / unknown (= keep the thread's
+    current mode)."""
+    if isinstance(raw, str) and raw.strip().lower() in CHAT_MODES:
+        return raw.strip().lower()
+    return None
+
+
+# The per-message Plan block is the thread stub with its framing swapped, so
+# the two can never drift apart in their rules.
+_PLAN_STUB_HEAD = '\n\n### PLAN FIRST - mandatory gate (the user turned "Plan first" ON for this thread)\n'
+PLAN_MODE_MESSAGE = (
+    '### PLAN FIRST - mandatory gate (the user picked "Plan" mode for this message)\n'
+    + (PLAN_MODE_STUB[len(_PLAN_STUB_HEAD):] if PLAN_MODE_STUB.startswith(_PLAN_STUB_HEAD)
+       else PLAN_MODE_STUB.lstrip()).replace(
+        "Before you BUILD anything asked for in this thread,",
+        "Before you BUILD anything asked for in this message,", 1)
+)
+
+
+# TRIAGE. A report on the request, before anyone decides to build it. Written
+# for a reader who is not technical, which is why most of it is about what the
+# report must NOT say: an agent asked for "plain language" still names code,
+# just in friendlier words ("the save routine"), and that is the failure the
+# user called out. The earlier-decisions part is the one a reader cannot get
+# anywhere else, so it names exactly where to look (past threads, version
+# history, answered cards) and makes every decision carry a date and an
+# in-effect / overridden / stale tag, so a superseded one reads as "ignore".
+TRIAGE_MODE_MESSAGE = """### TRIAGE - report only (the user picked "Triage" mode for this message)
+Your whole reply to this message is a TRIAGE REPORT on what the user is asking for, and nothing else. You change NOTHING: do not write or edit a file, run a command that changes anything, generate an asset, add or move anything on the canvas, dispatch a subagent that builds, or emit a decision card. Reading files, searching the project and its history, and read-only research (a read-only subagent included) are expected. This overrides every other instruction you have to build, scaffold, plan, gate or dispatch, for this message.
+
+WHO READS IT: someone who is not technical. Write only about what a person using the product sees, does and is asked for: screens, sections, buttons, fields by their on-screen label, steps, messages, and what the product remembers about them.
+  - Never explain code and never name it: no file names, line numbers, function, variable, field or component names, data structures, endpoints, flags or settings keys.
+  - Code put into friendly words is still code talk and is NOT allowed: "the save routine", "the date value in the data", "the reminder logic", "the toggle's state", "the backend check" all describe code, so rewrite the sentence as what a person would notice.
+  - Bad: "The due-date value becomes optional, so the reminder logic needs a fallback." Good: "The form will stop asking for a due date, so the app has to pick a reminder day on its own, and nobody has decided which day yet."
+
+FORMAT, no exceptions: every idea is ONE complete sentence in its own bullet, a second idea is a second bullet, and there are NO paragraphs anywhere: headings, bullets and wireframes only.
+
+STEP 1 - ENUMERATE. List every discrete thing the user asked for, in their order, in their words: each bullet, each "and also", each clause naming a different screen, field or rule is its own item. Every item gets its own section below; never merge two and never drop one.
+
+STEP 2 - LOOK BEFORE YOU JUDGE. For each item, open the screen that shows it and read the part it names: a search that finds nothing is never proof that something is missing, because it may be on screen under another label. Then look up its history (EARLIER DECISIONS below).
+
+STEP 3 - ONE SECTION PER ITEM, headed `### <n>. <the user's words>`, with these parts in this order. Write a part only when it has something to say, and end the section with one bullet naming the parts that had nothing ("Nothing to report on: wrong turn, earlier decisions.").
+  **Where it stands** (always): exactly one of Done, Partly done, Not started or Could not confirm, then one sentence on what is there now; for Partly done, one bullet for what exists and one for what is missing.
+  **Assumption** (only when the request could mean more than one thing): the reading you chose, in one sentence, then one bullet naming the other reading; everything after it follows the assumption.
+  **Knock-on effects**: what else changes for a person using the product once this is done, such as other screens, steps, messages or people affected, then a BEFORE and AFTER wireframe of the most affected place.
+  **Possible wrong turn**: where the request fights something already built or decided, or looks like a slip (it undoes a recent change, contradicts another item in this same message, or breaks a promise another screen makes), one bullet per conflict naming both sides.
+  **Earlier decisions**: see below.
+  **Flow change**: when the change alters what the product must ask, decide or carry from one step to the next (a question that is removed means a later step that used to get that answer now has to work it out or ask for it), say what the later step now has to do and whether anyone has decided how, then a BEFORE and AFTER flow wireframe.
+
+EARLIER DECISIONS - where to look, and how to report them.
+  - Past conversations in this project: `curl -s "$TH_DAEMON_URL/__chat_search?project=$TH_PROJECT_ID&toolcalls=0&q=<a word or phrase from the item>"` answers newest first, each match with its thread title and its time (`ts`, seconds since 1970); try two or three wordings and read the matching lines before you rely on them.
+  - The project's saved version history: `git log --date=format:'%d %b %Y, %H:%M' --format='%ad  %s'` in the project folder, with `-- <path>` or `-S'<on-screen text>'` to find when something appeared, changed or went away.
+  - Answered choices saved in the project: the `DECISION_*.json` files at the project root, dated by when each was last saved.
+  - One bullet per decision: its date and time (`14 Oct 2026, 15:42`), then its tag, then what was decided in plain words, stated so it makes sense to someone who never saw that conversation.
+  - Tag each with exactly one of: **[In effect]** it is still how the product works today, which you checked by looking; **[Overridden - ignore]** a later decision replaced it, and you name which one and when; **[Stale - ignore]** what it was about no longer exists, or it was discussed and never built.
+  - When the same point changed direction two or more times, open with one bold bullet saying so ("**This has flipped 3 times.**") and say which way it points now.
+  - Never point at a place in the code in place of an explanation. A link is allowed only as a markdown link to a project file with a plain-words label, such as `[the sign-up form](source/main/signup.html)`, because only those open when clicked, and the sentence must still explain the decision without it.
+  - Draw the history as a timeline wireframe, one small box per version of the thing, left to right, each labelled with its date and its tag.
+  - Nothing found after looking in all three places: name it in the "Nothing to report on" bullet.
+
+WIREFRAMES - Knock-on effects, Earlier decisions and Flow change each carry one, in a fenced `text` block.
+  - A screen is ASCII boxes naming the regions, the on-screen labels and the controls, and nothing else.
+  - A flow is boxes joined by arrows, one box per step a person goes through or the product takes, named the way a person would say it.
+  - BEFORE and AFTER always show the SAME place, so the difference reads at a glance: mark what is added with `+`, what goes away with `-`, and what nobody has decided yet with `?`.
+  - A timeline reads like this:
+```text
+ 2 Oct, 14:10       5 Oct, 09:30       9 Oct, 16:45
++------------+     +------------+     +------------+
+| Due date   | --> | No due     | --> | Due date   |
+| asked      |     | date       |     | asked      |
++------------+     +------------+     +------------+
+ Overridden         Overridden         In effect
+```
+
+CLOSE THE REPORT with `### Needs your call`: one bullet per assumption, wrong turn or flip you raised, each one sentence ending in the question the user has to answer; then a last bullet saying nothing was changed, and that switching the mode next to the message box to Normal or Plan lets the next message act on this.
+
+- When the user replies to answer a question or correct an assumption, triage again only the items that change, in the same format, and name the unchanged items in one bullet.
+- When the user asks you to go ahead and build while this mode is on, do not: say in one sentence that this message is in Triage mode and that switching to Normal or Plan lets the next message build, then triage the request as usual."""
+
+
+_MODE_LEAD = ("[Woven mode for THIS message: %s. The user picks the mode next to the message box and can change it "
+              "between messages: follow the rules below for this message only, and ignore any mode rules that came "
+              "with earlier messages.]\n\n")
+_MODE_USER = "\n\n===== THE USER'S MESSAGE =====\n"
+# Said ONCE, on the first Normal message after a Plan or Triage one - after
+# that the conversation itself shows the agent building again. It also covers
+# a thread spawned with the old system-prompt plan gate.
+NORMAL_MODE_RETURN = ("[Woven mode for THIS message: NORMAL. The user switched back from %s mode: the rules that came "
+                      "with earlier messages (and a PLAN FIRST gate in your instructions, if you have one) do not apply "
+                      "to this message. Handle it the way you normally would.]\n\n")
+
+
+def chat_mode_message(mode: Optional[str], prev_mode: Optional[str], text: str) -> str:
+    """The text one user message reaches the agent as, under the composer's
+    mode. `prev_mode` is the mode the thread's previous message ran in."""
+    mode = normalize_chat_mode(mode) or "normal"
+    prev = normalize_chat_mode(prev_mode) or "normal"
+    if mode == "plan":
+        return _MODE_LEAD % "PLAN" + PLAN_MODE_MESSAGE + _MODE_USER + text
+    if mode == "triage":
+        return _MODE_LEAD % "TRIAGE" + TRIAGE_MODE_MESSAGE + _MODE_USER + text
+    if prev != "normal":
+        return NORMAL_MODE_RETURN % prev.capitalize() + text
+    return text
+
+
 # design goal is skim-proofing: a leaf's correct default is to PROCEED (not to
 # go read), so the stub says so - and gates escalation on a closed checklist
 # (binary triggers an agent can't rationalise past) plus a live fetch path so

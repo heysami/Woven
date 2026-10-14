@@ -162,16 +162,20 @@ def sibling_block(split: dict) -> str:
     return "\n\n" + "\n".join(lines)
 
 
-def thread_role(guards, split, split_check) -> Optional[dict]:
+def thread_role(guards, split, split_check, mode=None) -> Optional[dict]:
     """What a thread is in the plan/split flow, for the runs list and the
-    thread header: the PLANNING thread (plan mode armed at spawn), one SPLIT
-    item, or the PLAN CHECK opened after a split settles. None otherwise.
-    Read off the spawn record, so it holds for historical runs too."""
+    thread header: one SPLIT item or the PLAN CHECK opened after a split
+    settles (both fixed at spawn), else the mode its LATEST message ran in -
+    a PLAN or TRIAGE thread. `mode` is that latest mode (None when no message
+    carried one: a thread from before per-message modes, whose plan gate was
+    armed at spawn in `guards`). None otherwise."""
     if isinstance(split, dict) and isinstance(split.get("items"), list):
         return {"role": "split", "index": split.get("index", 0), "count": len(split["items"]),
                 "parent": split.get("parent"), "group": split.get("id")}
     if isinstance(split_check, dict):
         return {"role": "check", "parent": split_check.get("parent"), "group": split_check.get("group")}
+    if mode is not None:
+        return {"role": mode} if mode in ("plan", "triage") else None
     if isinstance(guards, dict) and guards.get("plan"):
         return {"role": "plan"}
     return None

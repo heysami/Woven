@@ -24544,16 +24544,24 @@ a.ds-badge:hover, button.ds-badge:hover {
   background: var(--accent-soft);
   color: var(--accent-text);
 }
-/* Plan mode sits next to the checks chip and stages onto the SPAWN the same
-   way they do, so it needs their staged-change marker too: a dashed ring says
-   "armed, but it cannot reach the thread you are looking at - the next Send
-   opens a successor with it". Matches .guards-picker [data-pending] in intent;
-   dashed rather than solid so an armed-and-staged toggle is still told apart
-   from an armed-and-live one at 28px. */
-.chat-plan-toggle-pending {
-  border-style: dashed;
-  border-color: color-mix(in oklab, var(--accent) 55%, transparent) !important;
+/* Chat mode picker (Normal / Plan / Triage): the icon-toggle trigger above,
+   lit for Plan and Triage, opening the shared perm-menu upward. Open state
+   takes the same ring the other footer menus use. */
+.chat-composer-toolbar .chat-mode-picker { position: relative; }
+.chat-mode-trigger[data-open="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
+/* Portaled to <body> (the left chat column clips an in-flow menu), so it sits
+   above the floating chat and standalone chrome layers. */
+.chat-mode-menu {
+  max-width: calc(100vw - 16px);
+  z-index: 9650;
+}
+/* The checks chip keeps its chevron's width while Plan or Triage makes it
+   inert, so switching modes does not shift the mode trigger sideways. */
+.guards-picker[data-inert="true"] .perm-chev { visibility: hidden; }
 
 /* Permission mode in Settings > Preferences: the segmented option carries the
    same coloured dot the chat header chip uses, so the two read as one thing. */
@@ -26293,6 +26301,14 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   margin-right: 4px;
   opacity: 0.72;
 }
+/* The mode a Plan / Triage message ran in. */
+.chat-bubble-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: -1px;
+}
+.chat-bubble-mode svg { width: 11px; height: 11px; }
 .chat-assistant {
   align-self: stretch;
   max-width: 100%;
@@ -34521,7 +34537,8 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   color: var(--text-muted);
 }
 .plan-role svg { display: block; width: 13px; height: 13px; }
-.plan-role-plan { color: var(--accent-text); }
+.plan-role-plan,
+.plan-role-triage { color: var(--accent-text); }
 .plan-role-n {
   font-size: 10.5px;
   line-height: 1;

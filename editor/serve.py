@@ -10124,17 +10124,19 @@ def _queue_drain_maybe(state, mode: str = "stdin") -> None:
             ok = False
             if mode == "stdin":
                 try:
+                    send, chat_mode = _mode_send(state, text, head.get("mode"))
                     # Same lock as /user-message: never write into a process
                     # the idle loop has just started parking. The message stays
                     # queued and the parked run's drain delivers it via resume.
                     with _PARK_LOCK:
                         if getattr(state, "stop_reason", None) != "parked":
-                            state.proc.stdin.write(_claude_user_frame(text))
+                            state.proc.stdin.write(_claude_user_frame(send))
                             state.proc.stdin.flush()
                             state.turn_done = False
                             ok = True
                     if ok:
-                        echo = {"text": head.get("text") or text, "queued": True, "queueId": head.get("id")}
+                        echo = {"text": head.get("text") or text, "queued": True, "queueId": head.get("id"),
+                                "mode": chat_mode}
                         if head.get("auto"):
                             echo["auto"] = head["auto"]
                         state.append("user_message", echo)
@@ -10142,7 +10144,7 @@ def _queue_drain_maybe(state, mode: str = "stdin") -> None:
                     print(f"[queue] stdin deliver failed run={state.run_id}: {e}", flush=True)
             else:
                 ok = _queue_deliver_via_resume(state, text, auto=head.get("auto") or "",
-                                               queue_id=head.get("id") or "")
+                                               queue_id=head.get("id") or "", mode=head.get("mode"))
             if ok:
                 _queue_drop(state, head.get("id"))
             # A failed delivery leaves the message at the head: the next turn
@@ -10154,22 +10156,25 @@ def _queue_drain_maybe(state, mode: str = "stdin") -> None:
                      name=f"queue-drain-{state.run_id}").start()
 
 
-def _user_echo(text: str, auto: str = "", queue_id: str = "") -> dict:
+def _user_echo(text: str, auto: str = "", queue_id: str = "", mode=None) -> dict:
     """The thread's echo of a user message (also the /resume body that leads
     to one). `auto` marks the daemon speaking for the user. `queueId` names
     the queue entry it came from, so the composer drops that chip the moment
     the echo arrives: its queue reads can land out of order (an /enqueue
     reply built before the drain thread removed the entry), and a stale one
-    used to pin a sent message on screen as "queued" until a refresh."""
+    used to pin a sent message on screen as "queued" until a refresh.
+    `mode` is the chat mode the message ran in (see _mode_send)."""
     d = {"text": text}
     if auto:
         d["auto"] = auto
     if queue_id:
         d["queueId"] = queue_id
+    if mode:
+        d["mode"] = mode
     return d
 
 
-def _queue_deliver_via_resume(state, text: str, auto: str = "", queue_id: str = "") -> bool:
+def _queue_deliver_via_resume(state, text: str, auto: str = "", queue_id: str = "", mode=None) -> bool:
     """Respawn the run with the queued text as its next message, by POSTing our
     own /resume. Building the resume spawn inline here would mean duplicating
     the tier / prototype / guards / MCP reconstruction that handler owns, and a
@@ -10179,7 +10184,7 @@ def _queue_deliver_via_resume(state, text: str, auto: str = "", queue_id: str = 
         import urllib.request
         req = urllib.request.Request(
             f"http://127.0.0.1:{PORT}/__run/{state.run_id}/resume",
-            data=json.dumps(_user_echo(text, auto, queue_id)).encode("utf-8"),
+            data=json.dumps(_user_echo(text, auto, queue_id, mode)).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
@@ -10808,10 +10813,18 @@ class _ChatFileIndex:
                     p_v = rec["data"].get("prototype")
                 if p_v:
                     meta["prototype"] = p_v
-            # Plan / split / plan-check badge, off the spawn banner.
+            # Plan / split / plan-check badge, off the spawn banner, then
+            # re-read as each message lands: Plan and Triage are per-message
+            # modes, so the badge follows the latest one (a split item or a
+            # plan check stays what it was spawned as).
             if isinstance(rec.get("data"), dict) and rec["data"].get("label") == "spawned":
                 _d = rec["data"]
-                meta["planRole"] = plan_split.thread_role(_d.get("guards"), _d.get("split"), _d.get("splitCheck"))
+                meta["_roleSpawn"] = (_d.get("guards"), _d.get("split"), _d.get("splitCheck"))
+                meta["planRole"] = plan_split.thread_role(*meta["_roleSpawn"])
+            elif rec.get("type") == "user_message" and isinstance(rec.get("data"), dict):
+                _m = _norm_chat_mode(rec["data"].get("mode"))
+                if _m:
+                    meta["planRole"] = plan_split.thread_role(*(meta.get("_roleSpawn") or (None, None, None)), _m)
             # Same gate fold the live RunState.append does, so a run the
             # daemon no longer holds still says "this one wants an answer".
             gate = {"pending": meta["gatePending"], "tail": meta["_gateTail"]}
@@ -10869,6 +10882,7 @@ def _scan_chat_jsonl_records(candidates: list) -> dict:
             metas = {rid: dict(meta) for rid, meta in idx.metas.items()}
         for rid, meta in metas.items():
             meta.pop("_gateTail", None)   # index-internal carry, never shipped
+            meta.pop("_roleSpawn", None)  # same
             cur = out.get(rid)
             if cur is None:
                 out[rid] = meta
@@ -15103,6 +15117,61 @@ def _delegated_guards(raw) -> dict:
     out = _normalize_chat_guards(raw)
     out["plan"] = False
     return out
+
+
+# ── Per-message chat modes (Normal / Plan / Triage) ─────────────────────
+# The composer sends the picked mode with EVERY message (`mode` on /__run,
+# /user-message, /enqueue, /resume); the daemon folds that mode's rules into
+# the text the agent receives (kinds.capabilities.chat_mode_message) and
+# stamps the mode on the thread's echo, which keeps the user's own words. The
+# echo is the record: the thread's current mode is simply the mode of its
+# latest message, so it survives a restart with the transcript and needs no
+# state of its own. A message that carries no mode (a card answer, a daemon
+# nudge) keeps the thread's current one.
+def _norm_chat_mode(raw):
+    try:
+        from kinds.capabilities import normalize_chat_mode
+        return normalize_chat_mode(raw)
+    except Exception:
+        return None
+
+
+def _last_message_mode(state):
+    """The mode stamped on the thread's latest user message, or None when no
+    message carried one (a thread from before per-message modes)."""
+    try:
+        with state.lock:
+            for ev in reversed(state.events):
+                if ev.get("type") == "user_message" and isinstance(ev.get("data"), dict):
+                    m = _norm_chat_mode(ev["data"].get("mode"))
+                    if m:
+                        return m
+    except Exception:
+        pass
+    return None
+
+
+def _thread_chat_mode(state) -> str:
+    m = _last_message_mode(state)
+    if m:
+        return m
+    # Spawned with the old system-prompt plan gate and never switched since.
+    return "plan" if (getattr(state, "guards", None) or {}).get("plan") else "normal"
+
+
+def _mode_text(mode, prev_mode, text: str) -> str:
+    try:
+        from kinds.capabilities import chat_mode_message
+        return chat_mode_message(mode, prev_mode, text)
+    except Exception:
+        return text
+
+
+def _mode_send(state, text: str, raw_mode):
+    """(the text the agent receives, the mode to stamp on the echo)."""
+    prev = _thread_chat_mode(state)
+    mode = _norm_chat_mode(raw_mode) or prev
+    return _mode_text(mode, prev, text), mode
 
 
 def _apply_guard_env(env: dict, guards: dict) -> dict:
@@ -34558,7 +34627,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "historical": False,
                 "planRole": plan_split.thread_role(getattr(s, "guards", None),
                                                    getattr(s, "split", None),
-                                                   getattr(s, "split_check", None)),
+                                                   getattr(s, "split_check", None),
+                                                   _last_message_mode(s)),
             })
         # Merge in historical runs that aren't in RUNS. Only runs from the
         # active project - the chat JSONLs live under the project root so this
@@ -35420,7 +35490,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             "contextTokens": _run_context_tokens(state),
             "planRole": plan_split.thread_role(getattr(state, "guards", None),
                                                getattr(state, "split", None),
-                                               getattr(state, "split_check", None)),
+                                               getattr(state, "split_check", None),
+                                               _last_message_mode(state)),
         })
 
     def _read_json_body(self, max_bytes: int = 256 * 1024):
@@ -35753,6 +35824,17 @@ class H(http.server.SimpleHTTPRequestHandler):
         _chat_guards = _normalize_chat_guards(body.get("guards"))
         if _parent_inherit is not None and body.get("guards") is None:
             _chat_guards = _delegated_guards(getattr(_parent_inherit, "guards", None))
+        # The composer's mode rides on the FIRST message like on every later
+        # one (see _mode_send), never in the system prompt. A `guards.plan`
+        # from a client that predates per-message modes becomes Plan mode the
+        # same way, so a new thread never carries the spawn-time plan gate.
+        _chat_mode = _norm_chat_mode(body.get("mode")) if kind == "freeform" else None
+        if _chat_guards.get("plan"):
+            if kind == "freeform" and _chat_mode is None:
+                _chat_mode = "plan"
+            _chat_guards = dict(_chat_guards, plan=False)
+        if _chat_mode:
+            prompt_text = _mode_text(_chat_mode, "normal", prompt_text)
         spawn_args = list(defs["args"])
         # Claude Code 2.1.163 split the bypass into TWO
         # flags. --dangerously-skip-permissions alone no longer skips
@@ -35960,7 +36042,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # (edits-apply, regenerate) wrap the user's intent in a system-style
         # instruction; we keep those out of the chat log so it stays clean.
         if kind == "freeform" and user_prompt:
-            state.append("user_message", {"text": user_prompt})
+            state.append("user_message", _user_echo(user_prompt, mode=_chat_mode))
 
         with RUNS_LOCK:
             RUNS[run_id] = state
@@ -35990,7 +36072,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             "prototype": _chat_proto,   # target bar locks onto this once the thread exists
             "title": title,
             # the header's Plan / Split / Plan check badge, from the first frame
-            "planRole": plan_split.thread_role(_chat_guards, _split, _split_check),
+            "planRole": plan_split.thread_role(_chat_guards, _split, _split_check, _chat_mode),
         })
 
     # GET /__stream?runId=<id>&after=<seq>  →  Server-Sent Events
@@ -36571,6 +36653,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "error": "agent process is not running - resume to continue",
                 "needsResume": True,
             })
+        send, chat_mode = _mode_send(state, text, body.get("mode"))
         # Under _PARK_LOCK so the idle loop cannot park between our checks
         # and the write: it re-checks turn_done under the same lock.
         with _PARK_LOCK:
@@ -36584,7 +36667,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             cancelled = _cancel_qa_checks(state) if body.get("steer") is True else []
             try:
                 state.proc.stdin.write(_claude_user_frame(
-                    _qa_cancel_note(cancelled) + text if cancelled else text))
+                    _qa_cancel_note(cancelled) + send if cancelled else send))
                 state.proc.stdin.flush()
             except Exception as e:
                 return self._reply(500, {"error": f"stdin write failed: {e}"})
@@ -36593,7 +36676,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             state.turn_done = False
             state.stop_reason = None
         # Echo into the event log so the UI shows the message in-thread.
-        state.append("user_message", {"text": text})
+        state.append("user_message", {"text": text, "mode": chat_mode})
         return self._reply(200, {"ok": True})
 
     # ── message queue ─────────────────────────────────────────────────
@@ -36635,6 +36718,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             "meta": body.get("meta") if isinstance(body.get("meta"), dict) else {},
             "at": time.time(),
         }
+        # The mode picked when it was typed, applied when it is delivered.
+        if _norm_chat_mode(body.get("mode")):
+            entry["mode"] = _norm_chat_mode(body.get("mode"))
         with _QUEUE_LOCK:
             q = list(getattr(state, "msg_queue", None) or [])
             q.append(entry)
@@ -36690,7 +36776,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     # replaces state.proc in-place so the chat drawer keeps streaming on
     # the same runId - the user perceives one continuous conversation, as
     # they would with any normal chat UI.
-    def _run_resume_planner_claude(self, state, run_id, text, queue_id: str = ""):
+    def _run_resume_planner_claude(self, state, run_id, text, queue_id: str = "", send=None, mode=None):
         """Fake resume for CLAUDE-runtime planner runs. Planners spawn with
         --no-session-persistence (their transcripts would otherwise litter
         the session store), which means `claude --resume <sessionId>` can
@@ -36775,10 +36861,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "===== PRIOR CONVERSATION =====\n"
                 f"{transcript}\n"
                 "===== END PRIOR CONVERSATION =====\n\n"
-                f"USER (new message): {text}"
+                f"USER (new message): {send or text}"
             )
         else:
-            first_msg = text
+            first_msg = send or text
         env = _build_child_env("claude", run_id,
                                project_root=state.project_root, project_id=state.project_id)
         # Same leaf-delegation exemption as the initial planner spawn.
@@ -36806,7 +36892,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.turn_done = False
         state.append("status", {"label": "resumed", "agentId": "claude",
                                 "plannerFallback": True})
-        state.append("user_message", _user_echo(text, queue_id=queue_id))
+        state.append("user_message", _user_echo(text, queue_id=queue_id, mode=mode))
         try:
             proc.stdin.write(_claude_user_frame(first_msg))
             proc.stdin.flush()
@@ -36818,7 +36904,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                          name=f"run-{run_id}-stderr-resumed").start()
         return self._reply(200, {"ok": True, "agentId": "claude", "plannerFallback": True})
 
-    def _run_resume_codex(self, state, run_id, text, auto: str = "", queue_id: str = ""):
+    def _run_resume_codex(self, state, run_id, text, auto: str = "", queue_id: str = "", send=None, mode=None):
         """Resume for the argv-prompt single-shot agents (codex AND opencode).
 
         Two paths:
@@ -36866,7 +36952,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             spawn_args = list(defs["args"]) + _agent_model_spawn_args(state.agent_id, defs, state.model, resolved=bool(state.execution_profile))
             if state.agent_id == "codex":
                 spawn_args += _codex_mcp_spawn_args(visual_deny=_main_thread)
-            prompt = text if state.session_id else _transcript_from_run_events(state) + "\n\nUSER: " + text
+            prompt = (send or text) if state.session_id else _transcript_from_run_events(state) + "\n\nUSER: " + (send or text)
             try:
                 proc = _spawn_runtime_process(state.agent_id, [bin_path, *spawn_args, prompt],
                     resume_id=state.session_id, driver_mode=frozen_mode, cwd=state.project_root, env=env)
@@ -36874,7 +36960,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._reply(502, {"error": str(error)[:500]})
             state.proc, state.done, state.exit_code, state.turn_done, state.stop_reason = proc, False, None, False, None
             state.append("status", {"label": "resumed", "runtimeMode": frozen_mode, "resume": "session" if state.session_id else "handoff"})
-            state.append("user_message", {"text": text})
+            state.append("user_message", _user_echo(text, mode=mode))
             threading.Thread(target=_drain_stdout, args=(state,), daemon=True).start()
             threading.Thread(target=_drain_stderr, args=(state,), daemon=True).start()
             return self._reply(200, {"ok": True, "runId": run_id, "sessionId": state.session_id})
@@ -36898,7 +36984,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                            "-c", 'sandbox_mode="danger-full-access"']
                           + _codex_mcp_spawn_args(visual_deny=_main_thread)
                           + _agent_model_spawn_args(state.agent_id, defs, state.model, resolved=bool(state.execution_profile))
-                          + [resume_sid, text])
+                          + [resume_sid, send or text])
             try:
                 proc = _spawn_runtime_process(state.agent_id,
                     [bin_path, *spawn_args],
@@ -36922,7 +37008,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             state.stop_reason = None
             state.append("status", {"label": "resumed", "agentId": "codex",
                                     "resume": "session"})
-            state.append("user_message", _user_echo(text, auto, queue_id))
+            state.append("user_message", _user_echo(text, auto, queue_id, mode))
             threading.Thread(target=_drain_stdout, args=(state,), daemon=True,
                              name=f"run-{run_id}-stdout-resumed").start()
             threading.Thread(target=_drain_stderr, args=(state,), daemon=True,
@@ -36963,7 +37049,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "===== PRIOR CONVERSATION =====\n"
                 f"{transcript}\n"
                 "===== END PRIOR CONVERSATION =====\n\n"
-                f"USER (new message): {text}"
+                f"USER (new message): {send or text}"
             )
         else:
             new_prompt = (
@@ -36971,7 +37057,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 + preamble
                 + "\n===== END HARNESS PREAMBLE =====\n\n"
                 + "===== USER REQUEST =====\n"
-                + text
+                + (send or text)
             )
         # Spawn fresh codex with the combined prompt. Re-apply the chosen model
         # (codex resume is a fresh process; without this the 2nd message reverts
@@ -37005,7 +37091,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         state.turn_done = False
         state.stop_reason = None
         state.append("status", {"label": "resumed", "agentId": state.agent_id})
-        state.append("user_message", _user_echo(text, auto, queue_id))
+        state.append("user_message", _user_echo(text, auto, queue_id, mode))
         threading.Thread(target=_drain_stdout, args=(state,), daemon=True,
                          name=f"run-{run_id}-stdout-resumed").start()
         threading.Thread(target=_drain_stderr, args=(state,), daemon=True,
@@ -37098,6 +37184,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         # every runtime to its compact-aware seed path instead.
         if state.session_id and _session_retired_by_compact(state):
             state.session_id = None
+        # What the agent receives (the mode's rules folded in) vs what the
+        # thread echoes (the user's words, stamped with the mode).
+        send, chat_mode = _mode_send(state, text, body.get("mode"))
         # Codex/opencode resume. Neither has Claude's stream-json
         # --resume <session-id> protocol; each `codex exec` / `opencode run`
         # is a fresh session. We fake resume by reconstructing the prior
@@ -37105,7 +37194,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         # then spawning a fresh run with that combined prompt. Same run_id,
         # same event log - new process underneath.
         if state.agent_id in ("codex", "opencode"):
-            return self._run_resume_codex(state, run_id, text, auto=auto, queue_id=queue_id)
+            return self._run_resume_codex(state, run_id, text, auto=auto, queue_id=queue_id,
+                                          send=send, mode=chat_mode)
         if state.agent_id != "claude":
             return self._reply(400, {"error": f"resume not yet supported for agent {state.agent_id!r}"})
         # Planner runs spawn with --no-session-persistence, so their session
@@ -37114,7 +37204,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         # matter how many times the user retries. Route them through the
         # transcript-rebuild fallback instead.
         if str(getattr(state, "kind", "") or "").startswith("planner:"):
-            return self._run_resume_planner_claude(state, run_id, text, queue_id=queue_id)
+            return self._run_resume_planner_claude(state, run_id, text, queue_id=queue_id,
+                                                   send=send, mode=chat_mode)
         # A compacted run deliberately has NO session id - _compact_run
         # cleared it so the next message seeds a FRESH session from the
         # handoff summary (via the compact-aware transcript) instead of
@@ -37139,7 +37230,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                     "===== PRIOR CONVERSATION =====\n"
                     f"{_tr}\n"
                     "===== END PRIOR CONVERSATION =====\n\n"
-                    f"USER (new message): {text}"
+                    f"USER (new message): {send}"
                 )
 
         defs = AGENT_DEFS[state.agent_id]
@@ -37269,10 +37360,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             **({"compactResume": True} if _compact_seed else {}),
         })
         state.stop_reason = None
-        state.append("user_message", _user_echo(text, auto, queue_id))
+        state.append("user_message", _user_echo(text, auto, queue_id, chat_mode))
 
         try:
-            proc.stdin.write(_claude_user_frame(_compact_seed or text))
+            proc.stdin.write(_claude_user_frame(_compact_seed or send))
             proc.stdin.flush()
         except Exception as e:
             state.append("error", {"message": f"failed to write resume message to stdin: {e}"})

@@ -930,6 +930,9 @@ const Icon = {
   // Phase 5a - branch-doc toolbar icons.
   NotesDoc: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="3" y="2" width="10" height="12" rx="1"/><path d="M5.5 5h5M5.5 7.5h5M5.5 10h3"/></svg>`,
   DocPencil: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M12.5 7.2V3a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h3.6"/><path d="M5.5 5h5M5.5 7.5h4M5.5 10h2.5"/><path d="M9.6 14.2l.35-1.6 3.4-3.4 1.25 1.25-3.4 3.4z"/></svg>`,
+  // Triage: DocPencil's sheet with a magnifier where the pencil sits - the
+  // chat mode that inspects a request and changes nothing.
+  Triage:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M12.5 6.6V3a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h3.4"/><path d="M5.5 5h5M5.5 7.5h3M5.5 10h1.5"/><circle cx="10.9" cy="10.9" r="2.1"/><path d="M12.45 12.45l1.75 1.75"/></svg>`,
   Brand:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="2.5" width="5" height="5" rx="0.6"/><rect x="8.5" y="2.5" width="5" height="5" rx="0.6"/><rect x="2.5" y="8.5" width="5" height="5" rx="0.6"/><path d="M9.5 11.5h3M11 9.5v4"/></svg>`,
   Spark:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 2l1.4 4.2L13.5 8l-4.1 1.8L8 14l-1.4-4.2L2.5 8l4.1-1.8z"/></svg>`,
   Bot:      () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="3" y="5" width="10" height="8" rx="2"/><path d="M8 5V3M6 9h.01M10 9h.01M6.5 11.5h3"/><path d="M2.5 8.5v2M13.5 8.5v2"/></svg>`,
@@ -10300,7 +10303,7 @@ function buildLottieSrcDoc(fileUrl, withDiagnostics) {
     '})();</script></body></html>';
 }
 
-async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, tier, prototype, guards }) {
+async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, tier, prototype, guards, mode }) {
   const project = activeProjectId();
   // Default the runtime from the user's agent-capability pick when the caller
   // didn't pass one - the server would otherwise fall back to its own
@@ -10317,7 +10320,7 @@ async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, t
   const res = await fetch(apiUrl("/__run"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ branch, agentId: effAgentId, kind, prompt, title, meta, project, model: effModel, tier, prototype, guards }),
+    body: JSON.stringify({ branch, agentId: effAgentId, kind, prompt, title, meta, project, model: effModel, tier, prototype, guards, mode }),
   });
   let body = null;
   try { body = await res.json(); } catch {}
@@ -12149,10 +12152,11 @@ function ChatComposerAddMenu({ busy, attachBusy, pickBusy, uploadBusy, onAttachI
 
 /* Per-thread agent checks - the gates that grade work that ALREADY EXISTS,
    which the user can drop for a thread where they are pure overhead (a copy
-   tweak, a docs pass, a question). Plan mode is deliberately NOT one of these
-   and does not belong in this dropdown: a check runs at the end of a turn and
-   judges what was built, while planning runs at the start and builds nothing.
-   It is its own control next to this one - see PLAN_MODE_OPTION.
+   tweak, a docs pass, a question). The chat mode (Normal / Plan / Triage) is
+   deliberately NOT one of these and does not belong in this dropdown: a check
+   runs at the end of a turn and judges what was built, while Plan and Triage
+   stop before anything is built. It is its own control next to this one - see
+   CHAT_MODE_OPTIONS.
      - visual   the visual-verification gate: render + look (delegated to a
                 visual-verifier subagent) before claiming a visual or canvas
                 deliverable is done. Off also releases the PreToolUse hook
@@ -12179,44 +12183,41 @@ const CHAT_GUARD_OPTIONS = [
   { key: "impactQa", def: false, icon: "Tree",    label: "Impact QA",           hint: "After a change that removes, renames, moves or reshapes something, a QA subagent looks across the rest of the prototype for screens and flows that depended on it: a step that dead-ends, a summary that reads a field nobody collects, a flow that can no longer be finished. Nothing is fixed without asking: you pick which fixes to make, since each one reaches past what you asked for." },
 ];
 
-/* PLAN MODE - its own control, sitting NEXT TO the checks chip, never inside
-   it. The distinction is not cosmetic: the three checks above all fire at the
-   END of a turn and grade something that exists, so a planning turn - which
-   deliberately builds nothing and stops on a gate card - has nothing for them
-   to judge. Filing it as a fourth "check before done" made a control that
-   means "stop before you start" read as one that means "look harder when you
-   finish".
-   They are not redundant either, which is why the checks stay armed while
-   planning rather than being forced off: they simply do not fire on the
-   planning turn, because it produces no artefact. They fire on the BUILD that
-   follows once the plan is approved - which this same thread carries out under
-   this same preamble. (Daemon-dispatched children inherit them too, via
-   serve.py _delegated_context; Task-tool subagents do not - those carry their
-   own agent spec, which is why the plan stub makes every split brief
-   self-contained.)
-   Plan rides the same spawn-flags payload as the checks (the daemon's
-   `guards` bag - see GUARD_DEFAULTS in kinds/capabilities.py) because it is
-   compiled into the system prompt the same way, which is also what gives it
-   the staged-change handoff for free. That shared transport is the ONLY thing
-   it shares with them; it is not a row in their menu.
-   It is also NOT STICKY, unlike every check: it is never written to the
-   settings blob and never read back, so each chat starts with it off and
-   arming it is always a deliberate act for the request in front of you. A
-   remembered "plan first" would quietly turn every later send into a planning
-   turn. It is not inherited by dispatched CHILD runs either - see
-   _delegated_context in serve.py, where a child that planned instead of
-   building would hang the parent waiting on it. */
-const PLAN_MODE_OPTION = {
-  key: "plan", def: false, icon: "DocPencil", label: "Plan first",
-  hint: "The agent plans before it builds anything: a text wireframe of the screen (before and after, for a change), a table of the logic, and a table of the copy with the component and dynamic value behind each line. One sentence per point, four bullets at most, no paragraphs. It stops there with one button, Execute the plan, which runs each point as its own thread; reply instead to change the plan. Applies to the run you start next and is not remembered: every chat begins with it off.",
-};
-// Everything the composer stages onto a SPAWN. The checks and plan mode are
-// separate controls with separate meanings, but one payload and one staging
-// rule: both are baked into the system prompt at spawn, so changing either
-// under a running thread hands that thread off on the next Send. Use this for
-// load / save / compare / diff; use CHAT_GUARD_OPTIONS only for the rows of
-// the checks dropdown.
-const CHAT_SPAWN_FLAGS = [...CHAT_GUARD_OPTIONS, PLAN_MODE_OPTION];
+/* CHAT MODE - Normal / Plan / Triage. Its own control, sitting NEXT TO the
+   checks chip, never inside it: the three checks above all fire at the END of
+   a turn and grade something that exists, while Plan and Triage stop BEFORE
+   anything is built (a plan with one Execute button; a report that changes
+   nothing), so there is nothing for the checks to judge on those turns. The
+   checks stay armed and grade the build that follows.
+   A mode is PER MESSAGE, not per thread. The checks are compiled into the
+   system prompt at spawn, so changing one hands the thread off; the mode is
+   not - the composer sends it with every message and the daemon folds that
+   mode's rules into the text the agent receives (serve.py _mode_send,
+   kinds/capabilities.py chat_mode_message). So the user can triage a
+   request, plan it and then build it in ONE thread, switching as they go.
+   The thread's current mode is the mode its latest message ran in (stamped on
+   the echo), which is what the picker shows when a thread is reopened.
+   NOT STICKY ACROSS THREADS: never written to settings, and a new chat always
+   starts on Normal, so arming Plan or Triage is always a deliberate act for
+   the request in front of you. Dispatched and split threads never inherit it:
+   they were opened to build, and a child that stopped to plan or triage would
+   hang the parent waiting on it (serve.py _delegated_context). */
+const CHAT_MODE_OPTIONS = [
+  { value: "normal", icon: "Pen", label: "Normal",
+    hint: "The agent does what you ask straight away." },
+  { value: "plan",   icon: "DocPencil", label: "Plan",
+    hint: "The agent plans before it builds anything: a text wireframe of the screen (before and after, for a change), a table of the logic and a table of the copy, one sentence per point. It stops there with one button, Execute the plan, which runs each point as its own thread; reply instead to change the plan." },
+  { value: "triage", icon: "Triage", label: "Triage",
+    hint: "The agent changes nothing. It reports on each thing you asked for, in plain words: what is already done, its assumptions where the ask is unclear, the knock-on effects, possible wrong turns, earlier decisions with their dates, and how the flow changes, with wireframes." },
+];
+function chatModeOption(value) {
+  return CHAT_MODE_OPTIONS.find(o => o.value === value) || CHAT_MODE_OPTIONS[0];
+}
+// Everything the composer stages onto a SPAWN: the checks only. The mode is
+// not here on purpose - it rides on each message instead (see above). Use this
+// for load / save / compare / diff; use CHAT_GUARD_OPTIONS only for the rows
+// of the checks dropdown.
+const CHAT_SPAWN_FLAGS = CHAT_GUARD_OPTIONS;
 // The spawn defaults, mirroring kinds/capabilities.py GUARD_DEFAULTS: not all
 // guards default the same way (the two always-on gates catch silent, expensive
 // failures; requirement QA is opt-in because most threads have no requirement
@@ -12224,31 +12225,19 @@ const CHAT_SPAWN_FLAGS = [...CHAT_GUARD_OPTIONS, PLAN_MODE_OPTION];
 // carries no `guards` at all - spawned before the flags shipped, or by a caller
 // that passes none, which is exactly what the daemon defaults such a spawn to.
 const GUARD_SPAWN_DEFAULTS = Object.fromEntries(CHAT_SPAWN_FLAGS.map(o => [o.key, !!o.def]));
-// PLAN MODE IS NEVER STICKY. The checks are a standing preference - how you
-// want your work graded does not change message to message, so they persist.
-// Plan first is a decision about ONE request ("lay this out before you build
-// it"), and a sticky version of that silently re-arms itself on the next chat
-// and the one after, turning every send into a planning turn nobody asked
-// for. So it is read from the DEFAULT every time and never written back: a
-// new chat always starts with it off, and arming it is always deliberate.
-// A RUNNING thread still reports its own spawn value (see runGuards) - that
-// is the thread telling you what it is, not a preference persisting.
+// The checks are a standing preference - how you want your work graded does
+// not change message to message - so they persist in the settings blob.
 function loadChatGuards() {
   const raw = loadSettings().chatGuards;
   const out = {};
   for (const o of CHAT_SPAWN_FLAGS) {
-    const sticky = o.key !== PLAN_MODE_OPTION.key;
-    out[o.key] = (sticky && raw && typeof raw === "object" && o.key in raw) ? !!raw[o.key] : !!o.def;
+    out[o.key] = (raw && typeof raw === "object" && o.key in raw) ? !!raw[o.key] : !!o.def;
   }
   return out;
 }
 function saveChatGuards(next) {
-  // Strip the non-sticky flags on the way out, so an armed plan can never
-  // reach the settings blob and be read back by the next chat.
   const persist = {};
-  for (const o of CHAT_SPAWN_FLAGS) {
-    if (o.key !== PLAN_MODE_OPTION.key) persist[o.key] = !!next[o.key];
-  }
+  for (const o of CHAT_SPAWN_FLAGS) persist[o.key] = !!next[o.key];
   saveSettings({ chatGuards: persist });
   // Two surfaces edit this: the composer dropdown and Settings > Preferences.
   // Broadcast so whichever one is not the editor re-reads instead of showing a
@@ -12261,16 +12250,9 @@ function sameChatGuards(a, b) {
   return CHAT_SPAWN_FLAGS.every(o => !!a[o.key] === !!b[o.key]);
 }
 // Human-readable diff for the staged-change note: only the flags that
-// actually moved, checks first and plan mode last, matching the footer order.
-// The note's HEADING follows from which side moved - a note headed "Checks
-// changed" is simply wrong when the only thing the user touched is plan mode,
-// which is not a check.
-function chatGuardsDiffHead(from, to) {
-  const moved = CHAT_SPAWN_FLAGS.filter(o => !!(from || {})[o.key] !== !!(to || {})[o.key]);
-  const checks = moved.some(o => o.key !== PLAN_MODE_OPTION.key);
-  const plan = moved.some(o => o.key === PLAN_MODE_OPTION.key);
-  if (checks && plan) return "Checks and plan mode changed";
-  return plan ? "Plan mode changed" : "Checks changed";
+// actually moved, in the footer order.
+function chatGuardsDiffHead() {
+  return "Checks changed";
 }
 function chatGuardsDiffLabel(from, to) {
   const moved = CHAT_SPAWN_FLAGS.filter(o => !!(from || {})[o.key] !== !!(to || {})[o.key]);
@@ -12318,17 +12300,17 @@ function chatGuardsStateLine(g) {
    `locked` still exists for surfaces with nowhere to go (a historical run
    that can no longer be handed off); a LIVE thread is editable - see
    `pending`, which reports that the change lands on a NEW thread. */
-function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending, planning }) {
+function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending, mode }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-  // Plan first is on, so there is nothing for these to grade: a planning turn
-  // stops on a gate card and builds no artefact. They are shown but NOT
-  // selectable while it is armed - offering a choice that cannot apply to the
-  // turn you are about to send is worse than showing it settled. The flags
-  // themselves are untouched, so the build you approve is still graded by
-  // whatever is ticked here. `shut` is "the menu cannot open", for either
+  // Plan or Triage is on, so there is nothing for these to grade: a planning
+  // turn stops on a gate card and a triage turn changes nothing. They are
+  // shown but NOT selectable meanwhile - offering a choice that cannot apply
+  // to the turn you are about to send is worse than showing it settled. The
+  // flags themselves are untouched, so the build that follows is still graded
+  // by whatever is ticked here. `shut` is "the menu cannot open", for either
   // reason; only `locked` means the VALUE can never change again.
-  const inert = !!planning && !locked;
+  const inert = !!mode && mode !== "normal" && !locked;
   const shut = locked || inert;
   useEffect(() => {
     if (!open) return;
@@ -12355,7 +12337,7 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending, p
   const lockedTitle = locked
     ? `This thread ran with: ${stateLine}. There is no way to start a follow-on thread from here, so its checks are fixed.`
     : inert
-    ? `Plan first is on, so these are not selectable: a planning turn builds nothing for them to check. They stay as they are (${stateLine}) and grade the build you get once you approve the plan. Turn Plan first off to change them.`
+    ? `${chatModeOption(mode).label} mode is on, so these are not selectable: ${mode === "triage" ? "a triage turn changes nothing" : "a planning turn builds nothing"} for them to check. They stay as they are (${stateLine}) and grade the build that follows. Switch to Normal mode to change them.`
     : pending
       ? `Staged: ${stateLine}. Checks are baked into a thread's system prompt, so Send starts a NEW thread with these, carrying a summary of this one.`
       : running
@@ -12385,7 +12367,7 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending, p
             </span>`
           : html`<span className="perm-trigger-label">Checks: off</span>`}
         ${pending && html`<span className="guards-trigger-pending" aria-hidden="true">*</span>`}
-        ${!shut && html`<span className="perm-chev">${openUp ? "▴" : "▾"}</span>`}
+        ${!locked && html`<span className="perm-chev">${openUp ? "▴" : "▾"}</span>`}
       </button>
       ${open && !shut && html`
         <div className="perm-menu">
@@ -12422,37 +12404,104 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending, p
   `;
 }
 
-/* Plan mode - an ICON next to the checks chip, not a row inside it. Same
-   two-state icon-toggle family as ChatViewModeToggle (a binary that the lit
-   icon carries on its own never earns a 340px menu), but it stages onto the
-   spawn the way the checks do, so it carries their `pending` marker too: armed
-   under a running thread it cannot reach that thread, and the next Send opens
-   a successor with it. `locked` mirrors the chip - a thread with nowhere to
-   send a successor cannot change either. */
-function ChatPlanModeToggle({ value, onChange, locked, running, pending }) {
-  const on = !!value;
-  let tip;
-  if (locked) {
-    tip = on
-      ? "This thread planned before building. There is no way to start a follow-on thread from here, so that is fixed."
-      : "This thread built without planning first. There is no way to start a follow-on thread from here, so that is fixed.";
-  } else if (pending) {
-    tip = on
-      ? "Plan first is STAGED. Send starts a new thread that plans before it builds, carrying a summary of this one."
-      : "Plan first is STAGED off. Send starts a new thread that builds without planning, carrying a summary of this one.";
-  } else if (on) {
-    tip = "Plan first - the agent answers with the UI, the logic and the copy it intends to write, then stops with an Execute the plan button that runs each point as its own thread; reply instead to change it. Nothing is built until you answer, and the runs it dispatches build rather than re-plan. Click to turn off.";
-  } else {
-    tip = "Plan first - have the agent lay out the UI, the logic and the copy before it builds any of it, then split the plan across one run per point. Applies to the next run only: it is never remembered, so every chat starts with it off. Click to turn on.";
-    if (running) tip += " Planning is baked into a thread's system prompt, so this starts a new thread on your next Send.";
-  }
-  return html`<${HoverTip}
-    className=${"chat-composer-icon-toggle chat-plan-toggle" + (pending ? " chat-plan-toggle-pending" : "")}
-    ariaLabel=${on ? "Plan first is on" : "Plan first is off"}
-    disabled=${!!locked}
-    tip=${tip}
-    onClick=${() => { if (!locked) onChange(!on); }}
-  ><span className="chat-composer-icon-toggle-mark" data-on=${on}><${Icon[PLAN_MODE_OPTION.icon]}/></span><//>`;
+/* Chat mode picker - Normal / Plan / Triage, next to the checks chip. A
+   single choice of three, so a menu in the same perm-* shell as the checks and
+   the "+" menu rather than a two-state icon toggle; the closed trigger is just
+   the current mode's icon, lit when it is Plan or Triage, so the footer stays
+   one row. Applies to the NEXT message and switches in place on a live thread:
+   no handoff, no pending marker (see CHAT_MODE_OPTIONS). */
+function ChatWorkModePicker({ value, onChange, openUp }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const ref = useRef(null);
+  const menuRef = useRef(null);
+  // PORTALED and fixed-positioned, same as ChatOrchestratorsChip: the left
+  // chat column is overflow-clipped and narrower than the 340px menu, so an
+  // in-flow menu anchored at this trigger lost its right ~100px there.
+  const place = () => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const W = 340, GAP = 8;
+    const left = Math.max(GAP, Math.min(r.left, window.innerWidth - W - GAP));
+    // Capped to the room on its side, scrolling inside, so a short window
+    // never pushes the heading off-screen.
+    setPos(openUp
+      ? { left, bottom: Math.round(window.innerHeight - r.top + 6), width: W, maxHeight: Math.max(120, Math.round(r.top - 6 - GAP)) }
+      : { left, top: Math.round(r.bottom + 6), width: W, maxHeight: Math.max(120, Math.round(window.innerHeight - r.bottom - 6 - GAP)) });
+  };
+  useEffect(() => {
+    if (!open) { setPos(null); return; }
+    place();
+    const off = (e) => {
+      if (ref.current && ref.current.contains(e.target)) return;
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    const esc = (e) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
+    const reflow = () => place();
+    document.addEventListener("mousedown", off);
+    document.addEventListener("keydown", esc, true);
+    window.addEventListener("resize", reflow);
+    window.addEventListener("scroll", reflow, true);
+    return () => {
+      document.removeEventListener("mousedown", off);
+      document.removeEventListener("keydown", esc, true);
+      window.removeEventListener("resize", reflow);
+      window.removeEventListener("scroll", reflow, true);
+    };
+  }, [open]);
+  const cur = chatModeOption(value);
+  const on = cur.value !== "normal";
+  return html`
+    <div className="perm-picker chat-mode-picker" ref=${ref} data-up=${!!openUp}>
+      <button
+        type="button"
+        className="chat-composer-icon-toggle chat-mode-trigger"
+        data-open=${open}
+        aria-haspopup="menu"
+        aria-expanded=${open}
+        aria-label=${`Mode: ${cur.label}`}
+        title=${`Mode: ${cur.label} - ${cur.hint}`}
+        onClick=${() => setOpen(o => !o)}
+      ><span className="chat-composer-icon-toggle-mark" data-on=${on}><${Icon[cur.icon]}/></span></button>
+      ${open && pos && createPortal(html`
+        <div
+          ref=${menuRef}
+          className="perm-menu chat-mode-menu"
+          role="menu"
+          style=${{
+            position: "fixed",
+            // Clear .perm-menu's in-flow top/right (see ChatOrchestratorsChip).
+            top: pos.top != null ? pos.top + "px" : "auto", right: "auto",
+            bottom: pos.bottom != null ? pos.bottom + "px" : "auto",
+            left: pos.left + "px", width: pos.width + "px",
+            maxHeight: pos.maxHeight + "px", overflowY: "auto",
+          }}
+        >
+          <div className="perm-menu-head">Mode for your next message</div>
+          ${CHAT_MODE_OPTIONS.map(opt => html`
+            <button
+              key=${opt.value}
+              type="button"
+              className="perm-item"
+              role="menuitemradio"
+              aria-checked=${opt.value === cur.value}
+              data-active=${opt.value === cur.value}
+              onClick=${() => { setOpen(false); if (opt.value !== cur.value) onChange(opt.value); }}
+            >
+              <span className="composer-add-icon" aria-hidden="true"><${Icon[opt.icon]}/></span>
+              <span className="perm-item-body">
+                <span className="perm-item-label">${opt.label}</span>
+                <span className="perm-item-hint">${opt.hint}</span>
+              </span>
+            </button>
+          `)}
+          <div className="perm-menu-foot">Switch at any time, even mid-thread: each message runs in the mode picked when you send it. A new chat starts on Normal.</div>
+        </div>
+      `, document.body)}
+    </div>
+  `;
 }
 
 function AgentPicker({ agents, value, onChange, disabled }) {
@@ -13839,6 +13888,8 @@ function RightRailDock({ mode }) {
       // are read fresh at send time (the footer control persists them) -
       // unless this spawn IS the handoff that carries staged checks.
       guards: (opts && opts.guards) || loadChatGuards(),
+      // The footer's chat mode for this first message (never remembered).
+      mode: (opts && opts.mode) || undefined,
     });
     pendingScopedRef.current = null;
     setChatRun(run);
@@ -17505,15 +17556,8 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   const [chatGuards, setChatGuards] = useState(loadChatGuards);
   const changeChatGuards = (g) => { setChatGuards(g); saveChatGuards(g); };
   useEffect(() => {
-    // Resync the STICKY flags only. saveChatGuards fires this event in the
-    // same window, and plan mode is deliberately absent from what it persists
-    // (see loadChatGuards), so a blind re-read would snap an armed plan back
-    // off the instant the user clicked it. Carry the live value forward and
-    // let the checks come from settings.
-    const on = () => setChatGuards(prev => ({
-      ...loadChatGuards(),
-      [PLAN_MODE_OPTION.key]: !!(prev || {})[PLAN_MODE_OPTION.key],
-    }));
+    // Settings > Preferences edits the same flags; re-read when it does.
+    const on = () => setChatGuards(loadChatGuards());
     window.addEventListener("th:chat-guards-changed", on);
     return () => window.removeEventListener("th:chat-guards-changed", on);
   }, []);
@@ -17528,18 +17572,13 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // seconds - the note says so rather than leaving Send looking stuck.
   const [handoffBusy, setHandoffBusy] = useState(false);
   useEffect(() => { setPendingGuards(null); setHandoffBusy(false); }, [run?.runId]);
-  // Plan mode is PER RUN, and this component outlives the run it shows: the
-  // drawer is not keyed on the thread, so swapping to another thread - or to
-  // a fresh "new chat" shell - keeps whatever `chatGuards` held. That is how
-  // an armed plan survived into the next thread even though it is never
-  // persisted: the stickiness was in memory, not in settings. Clear it on
-  // every run change so arming it is deliberate each time. The checks are
-  // untouched - those ARE meant to carry.
-  useEffect(() => {
-    setChatGuards(prev => (prev && prev[PLAN_MODE_OPTION.key])
-      ? { ...prev, [PLAN_MODE_OPTION.key]: false }
-      : prev);
-  }, [run?.runId, run?.isNew]);
+  // The chat mode the user picked in the footer, or null to follow the
+  // thread's own (the mode its latest message ran in - see threadMode). This
+  // component outlives the run it shows (the drawer is not keyed on the
+  // thread), so the pick is cleared on every run change: another thread
+  // shows ITS mode, and a fresh "new chat" shell starts on Normal.
+  const [modePick, setModePick] = useState(null);
+  useEffect(() => { setModePick(null); }, [run?.runId, run?.isNew]);
   const [answers, setAnswers] = useState({});   // { toolUseId: [{ question, answer }, …] }
   // A clicked DecisionRequestCard sends a user-message shaped
   // `[decision:<id>] <v1>[,v2,…] - <label1>[; label2;…]`.
@@ -18381,15 +18420,10 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       .map(ev => ev.data.queueId).join(","),
     [events]);
 
-  // Same idea for the per-thread checks AND plan mode: the spawn event carries
-  // the flags the system prompt was actually built with. Threads spawned
-  // before a given toggle existed carry none for it - they ran with that
-  // flag's default, which is what loadChatGuards-shaped defaults give us.
-  // Iterates CHAT_SPAWN_FLAGS, not CHAT_GUARD_OPTIONS: plan mode is not a row
-  // in the checks menu but it IS in this payload, and reading only the checks
-  // here left a planning thread rehydrating as plan-off - the toggle would
-  // show the wrong state, and arming it would stage a pointless handoff onto a
-  // thread that already had it.
+  // Same idea for the per-thread checks: the spawn event carries the flags
+  // the system prompt was actually built with. Threads spawned before a given
+  // toggle existed carry none for it - they ran with that flag's default,
+  // which is what loadChatGuards-shaped defaults give us.
   const runGuards = useMemo(() => {
     for (const ev of events) {
       if (ev.event === "agent" && ev.data?.type === "raw") continue;
@@ -18403,6 +18437,25 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     return null;
   }, [events]);
 
+  // The mode the thread is in: the mode stamped on its latest message by the
+  // daemon (serve.py _mode_send). A thread from before per-message modes
+  // carries none; one spawned with the old plan gate in `guards` still reads
+  // as Plan until a message switches it.
+  const threadMode = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const ev = events[i];
+      if ((ev.type === "user_message" || ev.event === "user_message") && ev.data
+          && CHAT_MODE_OPTIONS.some(o => o.value === ev.data.mode)) return ev.data.mode;
+    }
+    for (const ev of events) {
+      if (ev.event === "agent" && ev.data?.type === "raw") continue;
+      const g = ev.data && ev.data.guards;
+      if (g && typeof g === "object") return g.plan ? "plan" : "normal";
+    }
+    return "normal";
+  }, [events]);
+  const effMode = modePick || (isNew ? "normal" : threadMode);
+
   // The checks the footer control shows, and whether they are a STAGED change
   // this thread can't take. `pendingGuards` only exists on a running thread;
   // an empty shell edits the sticky preference directly.
@@ -18410,16 +18463,15 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   const guardsChanged = !isNew && !!pendingGuards
                         && !sameChatGuards(pendingGuards, runGuards || GUARD_SPAWN_DEFAULTS);
   // The isNew spawn path. The composer calls onStartNewChat(body) with no
-  // options, and the spawn sites default to `loadChatGuards()` - which no
-  // longer reports plan mode, by design (it is not sticky). So the armed
-  // value has to be handed over explicitly here or a plan armed on a fresh
-  // chat would be silently dropped at Send. Explicit opts still win, which
-  // keeps the handoff path (which passes its own guards) unchanged.
+  // options, so the footer's checks and mode are handed over here. Explicit
+  // opts still win, which keeps the handoff path (which passes its own)
+  // unchanged.
   const startNewChatWithFlags = useCallback((prompt, opts) => {
     const o = { ...(opts || {}) };
     if (!o.guards) o.guards = effGuards;
+    if (!o.mode) o.mode = effMode;
     return onStartNewChat(prompt, o);
-  }, [onStartNewChat, effGuards]);
+  }, [onStartNewChat, effGuards, effMode]);
 
   const stageGuards = useCallback((next) => {
     if (isNew) { changeChatGuards(next); return; }
@@ -18449,13 +18501,13 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       try { j = await r.json(); } catch {}
       if (!r.ok || !j || !j.summary) throw new Error((j && (j.error || j.hint)) || `HTTP ${r.status}`);
       const prompt = composeGuardHandoffPrompt(j.summary, env.send, run.title);
-      await onStartNewChat(prompt, WovenContext.handoffOptions(j.context, { guards: pendingGuards, handoffFrom: run.runId }));
+      await onStartNewChat(prompt, WovenContext.handoffOptions(j.context, { guards: pendingGuards, mode: effMode, handoffFrom: run.runId }));
       setPendingGuards(null);
       return true;
     } finally {
       setHandoffBusy(false);
     }
-  }, [guardsChanged, run?.runId, run?.title, onStartNewChat, pendingGuards, status]);
+  }, [guardsChanged, run?.runId, run?.title, onStartNewChat, pendingGuards, effMode, status]);
 
   // Current model - set by Claude Code's `system/init` frame, then echoed on
   // every status frame. Display in the footer chip instead of the "done"
@@ -18603,7 +18655,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
             <strong>Summarising this thread…</strong> - the new thread opens with the summary and your message as soon as it lands.
           ` : html`
             <strong>${chatGuardsDiffHead(runGuards || GUARD_SPAWN_DEFAULTS, pendingGuards)}</strong> - ${chatGuardsDiffLabel(runGuards || GUARD_SPAWN_DEFAULTS, pendingGuards)}.
-            Both are fixed when a thread starts, so Send
+            Checks are fixed when a thread starts, so Send
             ${(status === "streaming" || status === "connecting") ? " stops this thread and starts " : " starts "}
             a new one with the new settings, carrying a summary of this one. This thread stays reopenable with its full history.
             ${" "}<button type="button" className="chat-guards-note-undo" onClick=${() => setPendingGuards(null)}>Keep this thread's settings</button>
@@ -18613,6 +18665,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       <${ChatComposer}
         runId=${run?.runId}
         isNew=${isNew}
+        chatMode=${effMode}
         interceptSend=${guardsChanged ? handoffSend : null}
         agentId=${run?.agentId}
         runtimeDriver=${events.find(e => e.data?.executionProfile?.driver)?.data.executionProfile.driver || run?.executionProfile?.driver}
@@ -18632,15 +18685,13 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
               openUp=${true}
               running=${!isNew}
               pending=${guardsChanged}
-              planning=${!!effGuards.plan}
+              mode=${effMode}
               locked=${!isNew && !onStartNewChat}
             />
-            <${ChatPlanModeToggle}
-              value=${effGuards.plan}
-              onChange=${(on) => stageGuards({ ...effGuards, plan: on })}
-              running=${!isNew}
-              pending=${guardsChanged}
-              locked=${!isNew && !onStartNewChat}
+            <${ChatWorkModePicker}
+              value=${effMode}
+              onChange=${setModePick}
+              openUp=${true}
             />
           `}
           <${ChatOrchestratorsChip} orchestrators=${orchestrators}/>
@@ -19430,7 +19481,7 @@ function __chipSegments(text, chips) {
   if (i < text.length) out.push({ text: text.slice(i) });
   return out;
 }
-function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, runtimeDriver, userMsgCount, deliveredQueueIds, interceptSend }) {
+function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, runtimeDriver, userMsgCount, deliveredQueueIds, interceptSend, chatMode }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -19904,6 +19955,8 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         body: JSON.stringify({
           text: env.text || "",
           send: composeWithAttachments(env.text || "", env.attachments || [], env.uploads || [], env.fileRefs || [], env.scratchpads || []),
+          // The footer mode when this was typed; the daemon applies it on delivery.
+          mode: chatMode || undefined,
           meta: {
             attachments: env.attachments || [], uploads: env.uploads || [],
             fileRefs: env.fileRefs || [], scratchpads: env.scratchpads || [],
@@ -19950,7 +20003,9 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       const postTo = (ep) => fetch(apiUrl(`/__run/${encodeURIComponent(runId)}/${ep}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(steer ? { text: body, steer: true } : { text: body }),
+        // `mode` = the footer's chat mode; the daemon folds its rules into
+        // what the agent receives and stamps it on the echo (_mode_send).
+        body: JSON.stringify(steer ? { text: body, steer: true, mode: chatMode || undefined } : { text: body, mode: chatMode || undefined }),
       });
       // Converge, don't one-shot. While a stopped subprocess is mid
       // shutdown the daemon's two guards flip on DIFFERENT requests: /resume
@@ -20796,7 +20851,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
             title=${(() => {
               const baseTitle = canSend
                 ? (interceptSend
-                    ? "Checks or plan mode changed - Send starts a new thread with them, carrying a summary of this one  ⌘/Ctrl+Enter"
+                    ? "Checks changed - Send starts a new thread with them, carrying a summary of this one  ⌘/Ctrl+Enter"
                     : wouldQueue
                     ? "Agent is working - Send will queue this and fire it the moment the turn ends  ⌘/Ctrl+Enter"
                     : (isNew
@@ -24529,10 +24584,17 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
       return html`<div className="chat-row chat-assistant chat-tool-block"><${ToolCard} block=${block} runId=${runId} answers=${answers} onAnswered=${onAnswered}/></div>`;
     case "agent_grid":
       return html`<div className="chat-row chat-assistant chat-agent-grid"><${AgentGridCard} block=${block}/></div>`;
-    case "user_message":
+    case "user_message": {
+      // Plan / Triage are per message, so a thread can switch between them:
+      // the mode each message ran in is marked on its bubble (Normal is the
+      // default and stays unmarked).
+      const mode = block.data.mode === "plan" || block.data.mode === "triage" ? chatModeOption(block.data.mode) : null;
       return html`<div className="chat-bubble chat-bubble-user">${
+        mode ? html`<span className="chat-bubble-prefix chat-bubble-mode" title=${mode.label + " mode: " + mode.hint}><${Icon[mode.icon]}/>${mode.label}</span> ` : ""
+      }${
         block.data.auto ? html`<span className="chat-bubble-prefix">auto:</span> ` : ""
       }<${Markdown} text=${stripChatPreamble(block.data.text)} inline=${true}/></div>`;
+    }
     case "tool_answer": {
       let preview = block.data.content;
       try { preview = JSON.parse(block.data.content).answers?.map(a => a.answer).filter(Boolean).join(", ") || preview; } catch {}
@@ -32598,7 +32660,10 @@ function planRoleBadge(run) {
   const from = plan ? `the plan "${plan}"` : "its planning thread";
   if (r.role === "plan")
     return { icon: Icon.DocPencil, label: "Plan", cls: "plan",
-      title: "Plan thread: answers with a plan, then splits it into threads that run in parallel." };
+      title: "In Plan mode: answers with a plan, then splits it into threads that run in parallel." };
+  if (r.role === "triage")
+    return { icon: Icon.Triage, label: "Triage", cls: "triage",
+      title: "In Triage mode: reports on each request in plain words and changes nothing." };
   if (r.role === "split") {
     const n = Math.max(1, r.count || 1), i = Math.min(n, (r.index || 0) + 1);
     if (n === 1) return { icon: Icon.Fork, label: "Split", cls: "split", title: `The one item split from ${from}.` };
@@ -33203,6 +33268,8 @@ function WorkflowCanvas() {
       prototype: targetSlug || undefined,
       // opts.guards = the staged checks of a thread handing off to this one.
       guards: (opts && opts.guards) || loadChatGuards(),
+      // The footer's chat mode for this first message (never remembered).
+      mode: (opts && opts.mode) || undefined,
     });
     setChatRun(run);
     setChatRunFinished(false);
@@ -102833,6 +102900,7 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
       model: opts?.model, tier: opts?.tier, prototype: opts?.prototype,
       prompt: fullPrompt, title, permissionMode,
       guards: (opts && opts.guards) || loadChatGuards(),
+      mode: (opts && opts.mode) || undefined,
     });
     setChatRun(run);
     onChange && onChange({ runId: run.runId, lastRunId: run.runId });
@@ -107840,6 +107908,8 @@ function App() {
       permissionMode,
       // opts.guards = the staged checks of a thread handing off to this one.
       guards: (opts && opts.guards) || loadChatGuards(),
+      // The footer's chat mode for this first message (never remembered).
+      mode: (opts && opts.mode) || undefined,
     });
     setChatRun(run);
     setLastRun(run);
