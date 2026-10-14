@@ -885,6 +885,7 @@ _EDITOR_STATIC_FILES = {
     "app.js", "styles.css", "landing-shaders.js", "index.html",
     "figma-bridge.js", "compress.js", "context-policy.js", "edit-engine.js",
     "edit-components.js", "edit-controls.js", "kinds/logic_nodes.js",
+    "points.js",
 }
 _EDITOR_STATIC_DIR_PREFIXES = ("prompts/",)
 # Root-absolute daemon GET paths a guest may read. Everything else 404s.

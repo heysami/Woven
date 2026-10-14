@@ -35340,3 +35340,205 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   .zoom-overlay .zoom-inspector-panel { width: 264px; }
   .zoom-overlay:is([data-tool="select"], [data-tool="interact"]) .zoom-iframe-host { left: 238px; right: 264px; }
 }
+
+/* ── Point tool (editor/points.js) ─────────────────────────────────────────
+   Numbered orange badges the user drops on canvas nodes, whiteboard items and
+   elements inside pages (canvas + Preview). One look everywhere: orange
+   circle, white outline, white number, slight shadow. The same number shows
+   as an inline chip in the chat composer and in the sent bubble. */
+:root {
+  --wf-point-bg: oklch(62% 0.19 52);
+  --wf-point-ring: oklch(66% 0.19 52);
+}
+.wf-point-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: var(--wf-point-bg);
+  border: 2px solid #fff;
+  color: #fff;
+  font: 700 11px/1 var(--font-mono);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+  flex: 0 0 auto;
+}
+.wf-point-num-inline {
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-width: 1.5px;
+  font-size: 10px;
+  vertical-align: baseline;
+  margin: 0 1px;
+}
+
+/* Canvas: world-space layer inside .workflow-canvas; badges counter-scale
+   by 1/zoom (inline transform) so they stay 20px at any zoom. */
+.wf-point-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 99500;
+}
+.wf-point-badge {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  pointer-events: auto;
+  cursor: default;
+  transform-origin: center center;
+}
+.wf-point-badge[data-parked="true"] { opacity: 0.8; }
+.wf-point-badge[data-lost="true"] .wf-point-num { background: oklch(60% 0.02 60); }
+.wf-point-badge-tip {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 6px;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 3px 2px 8px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+  color: var(--text);
+}
+.wf-point-badge:hover .wf-point-badge-tip { display: inline-flex; }
+.wf-point-badge-label { font-family: var(--font-mono); max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.wf-point-badge-where { color: var(--text-faint); }
+.wf-point-badge-x {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.wf-point-badge-x:hover { background: var(--surface-2); color: var(--text); }
+
+/* Hover ring while pointing: fixed box in the canvas chrome layer, or
+   absolute inside the Preview stage layer. */
+.wf-point-ring {
+  position: fixed;
+  border: 2px solid var(--wf-point-ring);
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
+  background: color-mix(in oklab, var(--wf-point-ring) 8%, transparent);
+  pointer-events: none;
+  z-index: 50;
+  box-sizing: border-box;
+}
+/* Rings paint under the badges: the stage ring sits at the layer's base,
+   the canvas ring in world space just below the badge layer (99500). */
+.wf-point-ring-stage { position: absolute; z-index: 0; }
+.wf-point-stage-layer .wf-point-badge { z-index: 1; }
+.wf-point-ring-world {
+  position: absolute;
+  z-index: 99400;
+  box-shadow: none;
+  outline: 1px solid rgba(255, 255, 255, 0.6);
+}
+.wf-point-stage-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Armed on the canvas: node pages stop taking the pointer (the wrap
+   hit-tests into them instead) and everything reads as a crosshair. */
+.workflow-canvas-wrap[data-point-mode="true"] iframe { pointer-events: none !important; }
+.workflow-canvas-wrap[data-point-mode="true"],
+.workflow-canvas-wrap[data-point-mode="true"] *:not(.wf-point-badge):not(.wf-point-badge *) { cursor: crosshair !important; }
+
+/* Composer: the toggle next to + and the inline [n] chip. The chip keeps
+   the textarea's exact glyphs ("[n]") with the brackets painted clear, so
+   caret positions never drift. */
+.chat-composer-point[data-active="true"] {
+  color: var(--wf-point-bg);
+  background: color-mix(in oklab, var(--wf-point-bg) 14%, transparent);
+}
+.composer-chip.composer-chip-point {
+  padding: 0;
+  margin: 0;
+  background: none;
+}
+.composer-chip-point-br { color: transparent; }
+/* The circle is painted on the digits only (padding cancelled by an equal
+   negative margin, so metrics match the textarea), which leaves the clear
+   brackets as breathing room between neighbouring chips. */
+.composer-chip-point-n {
+  padding: 0 4px;
+  margin: 0 -4px;
+  border-radius: 999px;
+  background: var(--wf-point-bg);
+  color: #fff;
+  box-shadow: 0 0 0 1.5px #fff, 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.composer-chip.composer-chip-point.is-lost .composer-chip-point-n { background: oklch(60% 0.02 60); }
+
+/* Chip hover card: preview above, "{n} {label} {where}" below. */
+.wf-point-hover {
+  position: fixed;
+  z-index: 8000;
+  padding: 8px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.wf-point-hover-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 11px;
+  min-width: 0;
+}
+.wf-point-hover-label { font-family: var(--font-mono); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-point-hover-where { color: var(--text-faint); flex: 0 0 auto; }
+.wf-point-hover-lost { margin-top: 4px; font-size: 11px; color: var(--text-faint); }
+
+/* "=" menu: an inert hint row, then one row per point in the thread. */
+.chat-slash-item.chat-slash-item-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-weight: 500;
+}
+.chat-slash-item-hint svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.chat-slash-item.chat-slash-item-kind-point {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+.chat-slash-item-kind-point .wf-point-num { min-width: 18px; height: 18px; font-size: 10px; border-width: 1.5px; }
+.chat-slash-item-point-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.chat-slash-detail-glyph-point { color: var(--wf-point-bg); }
+/* A sent bubble's [n] keeps the hover preview after its badge has left the
+   canvas. */
+.wf-point-num-hoverable { cursor: default; }

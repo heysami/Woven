@@ -914,6 +914,7 @@ const Icon = {
   Crop:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M4.5 1.5V11a1.5 1.5 0 0 0 1.5 1.5H14"/><path d="M11.5 14.5V5a1.5 1.5 0 0 0-1.5-1.5H2"/></svg>`,
   External: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M7 3.5H4.5a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1V9"/><path d="M9.5 2.5h4v4M13.5 2.5L8 8"/></svg>`,
   Plus:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 3v10M3 8h10"/></svg>`,
+  Crosshair: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r=".6" fill="currentColor"/><path d="M8 1.5v2.5M8 12v2.5M1.5 8h2.5M12 8h2.5"/></svg>`,
   Minus:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 8h10"/></svg>`,
   // FitReset: frame with inward corner ticks - the "reset zoom / fit to view" mark.
   FitReset: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M2 5V2.5h2.5M14 5V2.5h-2.5M2 11v2.5h2.5M14 11v2.5h-2.5"/><rect x="5.5" y="5.5" width="5" height="5" rx="0.6"/></svg>`,
@@ -17559,7 +17560,7 @@ function chatStatusReducer(prev, ev) {
 // `variant` (optional) adds a `chat-drawer-<variant>` class to the root for
 // surface-specific layout. Workflow mode passes "dock" so the panel docks
 // BELOW the workflow bar instead of overlaying the full viewport height.
-function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onStartNewChat, preamble, selectionCount, onResizeStart, variant, targetBar }) {
+function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permissionMode, onStartNewChat, preamble, selectionCount, onResizeStart, variant, targetBar, pointTool }) {
   // Plan / Split n/N / Plan check, the same mark as the runs list row.
   const planBadge = planRoleBadge(run);
   // Publish WHICH thread is open, so the runs list can mark that row as the one
@@ -18777,6 +18778,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         locked=${processEnded || !!run?.historical}
         selectionCount=${selectionCount}
         targetBar=${targetBar}
+        pointTool=${!!pointTool}
         runStatus=${status}
         onStop=${stopRun}
         toolbarLeft=${html`
@@ -19537,7 +19539,7 @@ function PickerPreview({ item }) {
       </div>
     `;
   }
-  const I = SKILL_ICON[item.slug] || (item.kind === "cc" ? Icon.NotesDoc : Icon.Spark);
+  const I = SKILL_ICON[item.slug] || (item.kind === "cc" ? Icon.NotesDoc : item.kind === "point" ? Icon.Crosshair : Icon.Spark);
   return html`<div className=${"chat-slash-detail-glyph chat-slash-detail-glyph-" + item.kind}><${I}/></div>`;
 }
 
@@ -19587,7 +19589,73 @@ function __chipSegments(text, chips) {
   if (i < text.length) out.push({ text: text.slice(i) });
   return out;
 }
-function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, runtimeDriver, userMsgCount, deliveredQueueIds, interceptSend, chatMode }) {
+// Point tool (editor/points.js, window.WovenPoints). Re-renders the caller
+// on every store change; `enabled` false subscribes to nothing, so composers
+// without the point tool never pay for it.
+function useWovenPointsRev(enabled = true) {
+  const WP = typeof window !== "undefined" ? window.WovenPoints : null;
+  const [rev, setRev] = useState(() => (WP ? WP.rev() : 0));
+  useEffect(() => {
+    if (!enabled || !WP) return;
+    setRev(WP.rev());
+    return WP.subscribe(() => setRev(WP.rev()));
+  }, [enabled, WP]);
+  return rev;
+}
+// A point chip's text is "[n]". Any "[n]" in the message whose n is a live
+// point of this thread becomes a chip, so a reference typed by hand, pulled
+// back from the queue or picked from the "=" menu all read the same. Chips
+// for numbers that are no longer live go back to plain text.
+function __autoPointChips(chips, text, liveNs) {
+  let out = chips.filter(c => c.kind !== "point" || liveNs.has(c.n));
+  if (!liveNs.size) return out.length === chips.length ? chips : out;
+  const re = /\[(\d{1,3})\]/g;
+  let m;
+  const add = [];
+  while ((m = re.exec(text))) {
+    const n = Number(m[1]);
+    if (!liveNs.has(n)) continue;
+    const start = m.index, end = m.index + m[0].length;
+    if (out.some(c => c.start < end && c.end > start)) continue;
+    add.push({ id: "chip" + (++__chipSeq), start, end, kind: "point", n, label: m[0] });
+  }
+  if (!add.length) return out.length === chips.length ? chips : out;
+  return [...out, ...add];
+}
+// A point as a picker item, so the "=" menu and the chip hover card reuse
+// PickerPreview: an element previews its page framed on the element, a node
+// that shows a page previews that page, anything else falls back to a glyph.
+function __pointPickerItem(p) {
+  const WP = window.WovenPoints;
+  const name = WP ? WP.labelOf(p) : "";
+  const where = WP ? WP.whereOf(p) : "";
+  let preview = null;
+  if (p.kind === "element" && p.page && !p.lost) preview = { kind: "page", src: "/" + p.page, el: (p.anchor && p.anchor.selector) || null };
+  else if (p.kind === "node" && p.page) preview = { kind: "page", src: "/" + p.page };
+  return {
+    ns: "point", kind: "point", slug: "point-" + p.n, name, description: where,
+    token: "[" + p.n + "]", insertText: "[" + p.n + "] ", point: p, preview,
+  };
+}
+// Hover card over a point chip: preview above, "{n} {label} {where}" below.
+function PointChipHoverCard({ point, rect }) {
+  const item = __pointPickerItem(point);
+  const W = 280;
+  const left = Math.max(8, Math.min(window.innerWidth - W - 8, rect.left - 16));
+  const bottom = Math.max(8, window.innerHeight - rect.top + 14);
+  return createPortal(html`
+    <div className="wf-point-hover" style=${{ left: left + "px", bottom: bottom + "px", width: W + "px" }} role="tooltip">
+      <${PickerPreview} key=${item.slug + ":" + (item.preview ? item.preview.src : "")} item=${item}/>
+      <div className="wf-point-hover-foot">
+        <span className="wf-point-num">${point.n}</span>
+        <span className="wf-point-hover-label">${item.name}</span>
+        <span className="wf-point-hover-where">${item.description}</span>
+      </div>
+      ${point.lost && html`<div className="wf-point-hover-lost">Not on this page anymore</div>`}
+    </div>
+  `, document.body);
+}
+function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, runtimeDriver, userMsgCount, deliveredQueueIds, interceptSend, chatMode, pointTool }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -19615,6 +19683,18 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const prevTextRef = useRef("");
   const chipEditRef = useRef(false);   // set when an edit already reconciled chips itself
   const mirrorRef = useRef(null);
+  // Point tool (editor/points.js). Only the main workflow chat passes
+  // `pointTool`; every other composer keeps WP null and behaves as before.
+  // Points belong to the thread: its run id, or "draft" in the new-chat
+  // shell (moved onto the run id once it spawns - see the effect below).
+  const WP = pointTool && typeof window !== "undefined" ? (window.WovenPoints || null) : null;
+  const pointThreadKey = WP ? (runId || (isNew ? "draft" : null)) : null;
+  useWovenPointsRev(!!WP);
+  const pointMode = WP ? WP.mode() : null;
+  const pointArmed = !!(pointMode && pointMode.armed && pointThreadKey && pointMode.threadKey === pointThreadKey);
+  const threadPoints = WP && pointThreadKey ? WP.list(pointThreadKey) : [];
+  const lastCaretRef = useRef(null);
+  const [pointHover, setPointHover] = useState(null);   // { n, rect } while the pointer is over a point chip
   // Viewport-fixed anchor for the slash menu portal - see the measuring
   // useLayoutEffect below (it must be declared AFTER the textarea auto-grow
   // effect so it measures the post-growth rect).
@@ -19690,6 +19770,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     uploads:     (e.meta && e.meta.uploads) || [],
     fileRefs:    (e.meta && e.meta.fileRefs) || [],
     scratchpads: (e.meta && e.meta.scratchpads) || [],
+    points:      (e.meta && e.meta.points) || [],
   }));
   const queueFetch = useCallback(async (rid) => {
     if (!rid) { setQueue([]); return; }
@@ -19734,7 +19815,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 text: env.text || "",
-                send: composeWithAttachments(env.text || "", env.attachments || [], env.uploads || [], env.fileRefs || [], env.scratchpads || []),
+                send: composeWithAttachments(env.text || "", env.attachments || [], env.uploads || [], env.fileRefs || [], env.scratchpads || [], []),
                 meta: { attachments: env.attachments || [], uploads: env.uploads || [], fileRefs: env.fileRefs || [], scratchpads: env.scratchpads || [] },
               }),
             });
@@ -19897,8 +19978,22 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   };
   const sendRefs = () => (chips.length ? [...fileRefs, ...chipRefs()] : fileRefs);
 
-  const composeWithAttachments = (body, atts = attachments, ups = uploads, refs = sendRefs(), pads = scratchpads) => {
-    if (!atts.length && !ups.length && !refs.length && !pads.length) return body;
+  // Points the message names: one entry per distinct [n] chip, resolved
+  // against the store at send time so the block carries the latest anchor.
+  const pointsForSend = () => {
+    if (!WP || !pointThreadKey || !chips.length) return [];
+    const ns = [...new Set(chips.filter(c => c.kind === "point").map(c => c.n))];
+    return ns.map(n => WP.get(pointThreadKey, n)).filter(Boolean);
+  };
+  const markPointsSent = (pts) => {
+    if (WP && pointThreadKey && pts && pts.length) WP.markSent(pointThreadKey, pts.map(p => p.n));
+  };
+
+  const composeWithAttachments = (body, atts = attachments, ups = uploads, refs = sendRefs(), pads = scratchpads, pts = pointsForSend()) => {
+    // The <pointed-targets> block goes FIRST so stripChatPreamble can hide it
+    // in the transcript bubble (it only strips leading blocks).
+    const head = pts && pts.length && window.WovenPoints ? window.WovenPoints.formatPointedTargets(pts) : "";
+    if (!atts.length && !ups.length && !refs.length && !pads.length) return head + body;
     const lines = [];
     if (atts.length) {
       lines.push("User attached " + atts.length + " image" + (atts.length === 1 ? "" : "s") + " for vision:");
@@ -19949,7 +20044,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         + " back whole - it has no merge protocol and no history, and it must stay out of git.");
     }
     lines.push("");
-    return lines.join("\n") + body;
+    return head + lines.join("\n") + body;
   };
 
   // Re-anchor chip ranges after any text change this component did not do the
@@ -19962,8 +20057,135 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     if (prev === text) return;
     prevTextRef.current = text;
     if (skip) return;
-    setChips(cs => (cs.length ? __reanchorChips(cs, prev, text) : cs));
+    setChips(cs => {
+      const moved = cs.length ? __reanchorChips(cs, prev, text) : cs;
+      return WP && pointThreadKey
+        ? __autoPointChips(moved, text, new Set(WP.list(pointThreadKey).map(p => p.n)))
+        : moved;
+    });
   }, [text]);
+
+  // ── Point tool: chips follow the store ────────────────────────────────
+  // A point made on the canvas / preview lands as an [n] chip: replacing the
+  // "=" token when "=" armed it, else at the last caret. A point removed
+  // (badge x, or deleted elsewhere) takes its chips and their text with it.
+  const pointLiveRef = useRef({});
+  pointLiveRef.current = { text, chips, threadKey: pointThreadKey };
+  const insertPointChip = (p) => {
+    const cur = pointLiveRef.current.text;
+    const mode = WP ? WP.mode() : null;
+    const label = "[" + p.n + "]";
+    let start, end;
+    if (mode && mode.armed && mode.oneShot && mode.insertAt >= 0 && cur[mode.insertAt] === "=") {
+      start = mode.insertAt;
+      const m = /^=[A-Za-z0-9_:.\/-]*/.exec(cur.slice(start));
+      end = start + (m ? m[0].length : 1);
+    } else {
+      const caret = lastCaretRef.current;
+      start = end = (typeof caret === "number" && caret >= 0 && caret <= cur.length) ? caret : cur.length;
+    }
+    const before = cur.slice(0, start);
+    const after  = cur.slice(end);
+    const lead  = before && !/\s$/.test(before) ? " " : "";
+    const trail = after.startsWith(" ") ? "" : " ";
+    const ins   = lead + label + trail;
+    const next  = before + ins + after;
+    const cStart = start + lead.length;
+    const cEnd   = cStart + label.length;
+    const delta  = ins.length - (end - start);
+    const pos    = cEnd + 1;   // past the trailing space (ours or the one already there)
+    chipEditRef.current = true;
+    prevTextRef.current = next;
+    setChips(cs => [
+      ...cs.filter(c => c.end <= start || c.start >= end)
+        .map(c => (c.start >= end ? { ...c, start: c.start + delta, end: c.end + delta } : c)),
+      { id: "chip" + (++__chipSeq), start: cStart, end: cEnd, kind: "point", n: p.n, label },
+    ]);
+    setText(next);
+    setSlashOpen(false);
+    lastCaretRef.current = pos;
+    const el = taRef.current;
+    if (el) {
+      try { el.focus({ preventScroll: true }); } catch { /* fine */ }
+      setTimeout(() => { try { el.setSelectionRange(pos, pos); } catch {} }, 0);
+    }
+  };
+  const stripPointChips = (n) => {
+    const { text: cur, chips: cs } = pointLiveRef.current;
+    const hits = cs.filter(c => c.kind === "point" && c.n === n).sort((a, b) => b.start - a.start);
+    if (!hits.length) return;
+    let next = cur;
+    let kept = cs.filter(c => !(c.kind === "point" && c.n === n));
+    for (const h of hits) {
+      const cutEnd = next[h.end] === " " ? h.end + 1 : h.end;
+      const cut = cutEnd - h.start;
+      next = next.slice(0, h.start) + next.slice(cutEnd);
+      kept = kept.map(c => (c.start >= cutEnd ? { ...c, start: c.start - cut, end: c.end - cut } : c));
+    }
+    chipEditRef.current = true;
+    prevTextRef.current = next;
+    setChips(kept);
+    setText(next);
+  };
+  const insertPointChipRef = useRef(insertPointChip);
+  insertPointChipRef.current = insertPointChip;
+  const stripPointChipsRef = useRef(stripPointChips);
+  stripPointChipsRef.current = stripPointChips;
+  useEffect(() => {
+    if (!WP) return;
+    return WP.subscribe((evt) => {
+      const tk = pointLiveRef.current.threadKey;
+      if (!tk || !evt || evt.threadKey !== tk) return;
+      if (evt.type === "added" && evt.point) insertPointChipRef.current(evt.point);
+      else if (evt.type === "removed") stripPointChipsRef.current(evt.n);
+    });
+  }, [WP]);
+  // Thread change. The new-chat shell becoming a real run carries its points
+  // over; switching to ANOTHER thread drops this draft's point chips (they
+  // name the old thread's badges) and disarms.
+  const prevPointKeyRef = useRef(pointThreadKey);
+  useEffect(() => {
+    const prev = prevPointKeyRef.current;
+    prevPointKeyRef.current = pointThreadKey;
+    if (!WP || prev === pointThreadKey) return;
+    if (prev === "draft" && pointThreadKey) { WP.migrate("draft", pointThreadKey); return; }
+    const ns = [...new Set(pointLiveRef.current.chips.filter(c => c.kind === "point").map(c => c.n))];
+    for (const n of ns) stripPointChipsRef.current(n);
+    if (WP.mode().armed) WP.disarm();
+  }, [pointThreadKey]);
+  // A live point that a typed "[n]" names becomes a chip without an edit.
+  const pointNsKey = threadPoints.map(p => p.n).join(",");
+  useEffect(() => {
+    if (!WP || !pointThreadKey) return;
+    const live = new Set(threadPoints.map(p => p.n));
+    setChips(cs => __autoPointChips(cs, pointLiveRef.current.text, live));
+  }, [pointNsKey]);
+  // Leaving (drawer closed, column taken by another panel) disarms, so a
+  // canvas click can never make a point with no chat to land in.
+  useEffect(() => () => { if (WP && WP.mode().armed) WP.disarm(); }, [WP]);
+  const togglePointMode = () => {
+    if (!WP || !pointThreadKey) return;
+    if (pointArmed && !pointMode.oneShot) { WP.disarm(); return; }
+    const el = taRef.current;
+    if (el && document.activeElement === el) lastCaretRef.current = el.selectionStart;
+    WP.arm({ threadKey: pointThreadKey, oneShot: false });
+  };
+  // Hovering a point chip: the mirror under the textarea is pointer-events
+  // none, so hit-test its point spans against the pointer (layout reads on
+  // mousemove only, never per frame).
+  const onPointHoverMove = (e) => {
+    if (!WP || !mirrorRef.current) { if (pointHover) setPointHover(null); return; }
+    const spans = mirrorRef.current.querySelectorAll("[data-point-n]");
+    for (const sp of spans) {
+      const r = sp.getBoundingClientRect();
+      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+        const n = Number(sp.getAttribute("data-point-n"));
+        if (!pointHover || pointHover.n !== n) setPointHover({ n, rect: { left: r.left, top: r.top, width: r.width } });
+        return;
+      }
+    }
+    if (pointHover) setPointHover(null);
+  };
 
   // Auto-grow textarea up to a cap so the composer doesn't take over the drawer.
   useLayoutEffect(() => {
@@ -20060,12 +20282,13 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: env.text || "",
-          send: composeWithAttachments(env.text || "", env.attachments || [], env.uploads || [], env.fileRefs || [], env.scratchpads || []),
+          send: composeWithAttachments(env.text || "", env.attachments || [], env.uploads || [], env.fileRefs || [], env.scratchpads || [], env.points || []),
           // The footer mode when this was typed; the daemon applies it on delivery.
           mode: chatMode || undefined,
           meta: {
             attachments: env.attachments || [], uploads: env.uploads || [],
             fileRefs: env.fileRefs || [], scratchpads: env.scratchpads || [],
+            points: env.points || [],
           },
         }),
       });
@@ -20088,7 +20311,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   // Every other send (typed reply, queue drain, card answer) leaves checks be.
   const dispatch = async (envelope, { steer = false } = {}) => {
     if (!runId) return false;
-    const body = composeWithAttachments(envelope.text, envelope.attachments, envelope.uploads, envelope.fileRefs || [], envelope.scratchpads || []);
+    const body = composeWithAttachments(envelope.text, envelope.attachments, envelope.uploads, envelope.fileRefs || [], envelope.scratchpads || [], envelope.points || []);
     setBusy(true); setError(null);
     try {
       // Two endpoints, each with its own "wrong endpoint" failure mode. We try
@@ -20196,11 +20419,13 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     // not land in the thread we are leaving. On failure nothing is consumed,
     // so the typed text is still there to retry or send as-is.
     if (interceptSend) {
+      const pts = pointsForSend();
       const env = {
         text: text.trim(),
-        send: composeWithAttachments(text.trim(), attachments, uploads, sendRefs(), scratchpads),
+        send: composeWithAttachments(text.trim(), attachments, uploads, sendRefs(), scratchpads, pts),
         attachments: attachments.slice(), uploads: uploads.slice(),
         fileRefs: sendRefs(), scratchpads: scratchpads.slice(),
+        points: pts,
       };
       setBusy(true); setError(null);
       let handled = false;
@@ -20213,6 +20438,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       }
       setBusy(false);
       if (handled) {
+        markPointsSent(env.points);
         setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]); setChips([]);
         if (onSent) onSent(env.send);
         return;
@@ -20228,16 +20454,20 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         uploads: uploads.slice(),
         fileRefs: sendRefs(),
         scratchpads: scratchpads.slice(),
+        points: pointsForSend(),
       };
       const queued = await enqueue(env);
       if (!queued) return;   // error is surfaced; keep the text so nothing is lost
+      markPointsSent(env.points);
       setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]); setChips([]);
       return;
     }
     // isNew shell - spawn a brand-new run via the parent. Never queued
     // (no agent to be busy yet).
     if (isNew) {
-      const body = composeWithAttachments(text.trim());
+      const pts = pointsForSend();
+      const body = composeWithAttachments(text.trim(), attachments, uploads, sendRefs(), scratchpads, pts);
+      markPointsSent(pts);
       setBusy(true); setError(null);
       try {
         await onStartNewChat(body);
@@ -20257,8 +20487,10 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       uploads: uploads.slice(),
       fileRefs: sendRefs(),
       scratchpads: scratchpads.slice(),
+      points: pointsForSend(),
     };
     const ok = await dispatch(env);
+    if (ok) markPointsSent(env.points);
     if (ok) { setText(""); setAttachments([]); setUploads([]); setFileRefs([]); setScratchpads([]); setChips([]); }
   };
 
@@ -20272,7 +20504,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     const onInject = (e) => {
       const t = (((e && e.detail) || {}).text || "").trim();
       if (!t || isNew || !runId) return;
-      const env = { text: t, attachments: [], uploads: [], fileRefs: [], scratchpads: [] };
+      const env = { text: t, attachments: [], uploads: [], fileRefs: [], scratchpads: [], points: [] };
       if (disabled) { enqueueRef.current(env); return; }
       dispatchRef.current(env);
     };
@@ -20424,6 +20656,17 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   };
   const pickerRows = (() => {
     if (!slashOpen) return [];
+    // "=" lists this thread's points (to name one again) under an inert
+    // hint row: the main way to make a point is to click its target.
+    if (slashTrigger === "=") {
+      const q = slashQuery.trim().toLowerCase();
+      const out = [{ type: "hint" }];
+      for (const p of threadPoints) {
+        const it = __pointPickerItem(p);
+        if (!q || String(p.n).startsWith(q) || (it.name + " " + it.description).toLowerCase().includes(q)) out.push({ type: "item", item: it });
+      }
+      return out;
+    }
     const rows = [];
     if (activeNs) {
       const items = nsItems[activeNs.key] || [];
@@ -20476,11 +20719,24 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const slashStartRef = useRef(-1);   // index of the trigger char the open menu tracks
   const updateSlashMenu = (newText, caret) => {
     const at = typeof caret === "number" ? caret : newText.length;
-    const m = /(^|\s)([\/@])([A-Za-z0-9_:.\/-]*)$/.exec(newText.slice(0, at));
+    // "=" is the point tool's trigger, and only where the point tool exists.
+    // Word-start only like "/" and "@", and a space ends the token, so
+    // "a = b" or "a=b" never opens it.
+    const m = (WP && pointThreadKey
+      ? /(^|\s)([\/@=])([A-Za-z0-9_:.\/-]*)$/
+      : /(^|\s)([\/@])([A-Za-z0-9_:.\/-]*)$/).exec(newText.slice(0, at));
+    const pm = WP ? WP.mode() : null;
     if (m) {
       const trigger = m[2];
       const query   = m[3];
       slashStartRef.current = at - query.length - 1;
+      if (trigger === "=") {
+        if (!pm.armed || !pm.oneShot || pm.insertAt !== slashStartRef.current || pm.threadKey !== pointThreadKey) {
+          WP.arm({ threadKey: pointThreadKey, oneShot: true, insertAt: slashStartRef.current });
+        }
+      } else if (pm && pm.armed && pm.oneShot) {
+        WP.disarm();
+      }
       setSlashTrigger(trigger);
       setSlashOpen(true);
       setSlashQuery(query);
@@ -20493,6 +20749,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       return;
     }
     if (slashOpen) setSlashOpen(false);
+    if (pm && pm.armed && pm.oneShot) WP.disarm();
   };
 
   // Rewrite the tracked `<trigger><query>` span. `keepOpen` is how a
@@ -20558,7 +20815,8 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       ? { path: sk.ref.path, name: sk.ref.name || sk.ref.path.split("/").pop(),
           scope: sk.ref.scope || "project", label: sk.ref.label || "" }
       : null;
-    replaceToken(ins, false, { kind: sk.kind || "item", ref });
+    replaceToken(ins, false, sk.point ? { kind: "point", n: sk.point.n, ref: null } : { kind: sk.kind || "item", ref });
+    if (sk.point && WP && WP.mode().armed && WP.mode().oneShot) WP.disarm();
   };
 
   // Enter / Tab on the highlighted row: namespaces descend, items insert.
@@ -20603,8 +20861,15 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       if (e.key === "Escape") {
         e.preventDefault();
         setSlashOpen(false);
+        if (WP && WP.mode().armed && WP.mode().oneShot) WP.disarm();
         return;
       }
+    }
+    // Esc with the point tool on (menu closed) turns it off.
+    if (e.key === "Escape" && pointArmed) {
+      e.preventDefault();
+      WP.disarm();
+      return;
     }
     // Chips delete WHOLE. Backspace at a pill's right edge (or Delete at its
     // left edge), with nothing selected, takes the pill out in one press
@@ -20627,6 +20892,10 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         setText(next);
         setSlashOpen(false);
         setTimeout(() => { try { el.setSelectionRange(hit.start, hit.start); } catch {} }, 0);
+        if (hit.kind === "point" && WP && pointThreadKey && !chips.some(c => c.id !== hit.id && c.kind === "point" && c.n === hit.n)) {
+          const tk = pointThreadKey, n = hit.n;
+          setTimeout(() => WP.removeIfUnsent(tk, n), 0);
+        }
         return;
       }
     }
@@ -20803,10 +21072,18 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         ${chips.length > 0 && html`
           <div ref=${mirrorRef} className="chat-composer-mirror" aria-hidden="true">
             ${__chipSegments(text, chips).map((seg, i) => seg.chip
-              ? html`<span
-                  key=${"c" + i}
-                  className=${"composer-chip chat-slash-item-kind-" + (seg.chip.kind || "item")}
-                >${seg.text}</span>`
+              ? (seg.chip.kind === "point"
+                  // Same glyphs as the textarea underneath ("[n]"), brackets
+                  // painted transparent, so caret math stays exact.
+                  ? html`<span
+                      key=${"c" + i}
+                      className=${"composer-chip composer-chip-point" + ((WP && pointThreadKey && (WP.get(pointThreadKey, seg.chip.n) || {}).lost) ? " is-lost" : "")}
+                      data-point-n=${seg.chip.n}
+                    ><span className="composer-chip-point-br">[</span><span className="composer-chip-point-n">${seg.text.slice(1, -1)}</span><span className="composer-chip-point-br">]</span></span>`
+                  : html`<span
+                      key=${"c" + i}
+                      className=${"composer-chip chat-slash-item-kind-" + (seg.chip.kind || "item")}
+                    >${seg.text}</span>`)
               : html`<span key=${"t" + i}>${seg.text}</span>`)}
             ${"\u200b"}
           </div>`}
@@ -20819,6 +21096,9 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           disabled=${busy}
           data-chipped=${chips.length > 0 ? "true" : null}
           onInput=${(e) => { setText(e.target.value); updateSlashMenu(e.target.value, e.target.selectionStart); }}
+          onSelect=${(e) => { lastCaretRef.current = e.target.selectionStart; }}
+          onMouseMove=${WP ? onPointHoverMove : undefined}
+          onMouseLeave=${WP ? (() => { if (pointHover) setPointHover(null); }) : undefined}
           onKeyDown=${onKeyDown}
           onScroll=${() => { if (mirrorRef.current && taRef.current) mirrorRef.current.scrollTop = taRef.current.scrollTop; }}
           onPaste=${onPaste}
@@ -20851,23 +21131,29 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           const rowKey = (row, i) =>
             row.type === "ns"      ? "ns:" + row.ns.key
           : row.type === "loading" ? "ld:" + row.ns.key
+          : row.type === "hint"    ? "hint"
           : row.item.ns + ":" + row.item.slug + ":" + i;
+          const isPointMenu = slashTrigger === "=";
           // Portal to document.body so the panel columns' overflow:hidden
           // can't crop the menu (it grows wider than the chat column).
           return createPortal(html`
             <div className="chat-slash-menu" role="listbox"
-              aria-label=${slashTrigger === "/" ? "Orchestrators, skills and design library" : "Project pages and design systems"}
+              aria-label=${isPointMenu ? "Points in this thread" : slashTrigger === "/" ? "Orchestrators, skills and design library" : "Project pages and design systems"}
               style=${{ left: slashPos.left + "px", bottom: slashPos.bottom + "px", minWidth: slashPos.minWidth + "px" }}>
               <div className="chat-slash-head">
                 <span className="chat-slash-head-title">
                   ${activeNs
                     ? html`<code className="chat-slash-crumb">${slashTrigger}${activeNs.key}/</code><span>${activeNs.hint}</span>`
-                    : (slashTrigger === "/"
+                    : (isPointMenu
+                        ? "Points - what the message is about"
+                        : slashTrigger === "/"
                         ? "Actions - what the agent does"
                         : "Resources - what the agent reads")}
                 </span>
                 <span className="chat-slash-head-meta">${
-                  activeNs
+                  isPointMenu
+                    ? `${pickerRows.length - 1} in this thread - ↑↓ navigate, ↵ insert, Esc close`
+                    : activeNs
                     ? `${pickerRows.length} of ${(nsItems[activeNs.key] || []).length} - ↑↓ navigate, ↵ insert, ⌫ back`
                     : `${pickerRows.length} shown${pickerTotal ? ` of ${pickerTotal}` : ""} - ↑↓ navigate, ↵ open, Esc close`
                 }</span>
@@ -20876,6 +21162,22 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                 ${pickerRows.map((row, i) => {
                   if (row.type === "loading") return html`
                     <span key=${rowKey(row, i)} className="chat-slash-item chat-slash-item-loading">Loading ${row.ns.label.toLowerCase()}…</span>
+                  `;
+                  if (row.type === "hint") return html`
+                    <span key="hint" className=${"chat-slash-item chat-slash-item-hint" + (i === activeIdx ? " is-active" : "")}
+                      onMouseEnter=${() => setSlashIndex(i)}
+                    ><${Icon.Crosshair}/><span>Click a node or element to point at it</span></span>
+                  `;
+                  if (row.item.kind === "point") return html`
+                    <button
+                      key=${rowKey(row, i)}
+                      type="button"
+                      className=${"chat-slash-item chat-slash-item-kind-point" + (i === activeIdx ? " is-active" : "")}
+                      role="option"
+                      aria-selected=${i === activeIdx ? "true" : "false"}
+                      onMouseEnter=${() => setSlashIndex(i)}
+                      onMouseDown=${(e) => { e.preventDefault(); insertSlashSkill(row.item); }}
+                    ><span className="wf-point-num">${row.item.point.n}</span><span className="chat-slash-item-point-label">${row.item.name}</span><span className="chat-slash-item-sub">${row.item.description}</span></button>
                   `;
                   if (row.type === "ns") return html`
                     <button
@@ -20903,7 +21205,20 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                 })}
               </div>
               <div className="chat-slash-detail" aria-live="polite">
-                ${activeItem ? html`
+                ${activeRow && activeRow.type === "hint" ? html`
+                  <div className="chat-slash-detail-head">
+                    <span className="chat-slash-detail-name">Point at something</span>
+                  </div>
+                  <div className="chat-slash-detail-glyph chat-slash-detail-glyph-point"><${Icon.Crosshair}/></div>
+                  <p className="chat-slash-detail-desc">Click a node, a whiteboard item, or an element inside a page on the canvas or in Preview. It gets the next number and lands here. Esc to cancel.</p>
+                ` : activeItem && activeItem.kind === "point" ? html`
+                  <div className="chat-slash-detail-head">
+                    <span className="chat-slash-detail-name">${activeItem.name}</span>
+                    <span className="chat-slash-detail-badge chat-slash-detail-badge-point">${activeItem.description}</span>
+                  </div>
+                  <${PickerPreview} key=${activeItem.ns + ":" + activeItem.slug} item=${activeItem}/>
+                  ${activeItem.point.lost && html`<p className="chat-slash-detail-desc">Not on this page anymore</p>`}
+                ` : activeItem ? html`
                   <div className="chat-slash-detail-head">
                     <span className="chat-slash-detail-name">${activeItem.name}</span>
                     <span className=${"chat-slash-detail-badge chat-slash-detail-badge-" + activeItem.kind}>${kindLabelFor(activeItem)}</span>
@@ -20989,10 +21304,25 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           onAttachRef=${pickLocalFiles}
           onUpload=${() => uploadInputRef.current && uploadInputRef.current.click()}
         />
+        ${WP && pointThreadKey && html`
+          <button
+            className="chat-composer-attach chat-composer-point"
+            type="button"
+            data-active=${pointArmed && !pointMode.oneShot ? "true" : "false"}
+            aria-pressed=${pointArmed && !pointMode.oneShot ? "true" : "false"}
+            title="Point at something"
+            aria-label="Point at something"
+            onMouseDown=${(e) => e.preventDefault()}
+            onClick=${togglePointMode}
+          ><${Icon.Crosshair}/></button>
+        `}
         <span className="chat-composer-toolbar-spacer"/>
         ${toolbarRight}
       </div>
       ${error && html`<div className="chat-composer-error">${error}</div>`}
+      ${pointHover && WP && pointThreadKey && WP.get(pointThreadKey, pointHover.n) && html`
+        <${PointChipHoverCard} point=${WP.get(pointThreadKey, pointHover.n)} rect=${pointHover.rect}/>
+      `}
     </div>
   `;
 }
@@ -24488,6 +24818,84 @@ function chatErrorReason(ev) {
    from …MODE…]" envelope and strips through the blank line that precedes the
    real text. Non-matching messages (typed replies, per-node composed prompts)
    pass through untouched. */
+// Point numbers a sent message carries: the [n] lines of its own
+// <pointed-targets> block, so only real point references become badges.
+function __pointNumsInMessage(text) {
+  const out = new Set();
+  const m = typeof text === "string" ? /<pointed-targets>([\s\S]*?)<\/pointed-targets>/.exec(text) : null;
+  if (!m) return out;
+  const re = /^\[(\d{1,3})\]/gm;
+  let k;
+  while ((k = re.exec(m[1]))) out.add(Number(k[1]));
+  return out;
+}
+// The points a sent message described, rebuilt from its own block, so the
+// bubble can preview them even when this browser no longer holds the store
+// entry (another machine, pruned thread).
+function __pointsInMessage(text) {
+  const out = new Map();
+  const m = typeof text === "string" ? /<pointed-targets>([\s\S]*?)<\/pointed-targets>/.exec(text) : null;
+  if (!m) return out;
+  let cur = null;
+  for (const line of m[1].split("\n")) {
+    const head = /^\[(\d{1,3})\] (.*)$/.exec(line);
+    if (head) {
+      const n = Number(head[1]);
+      const rest = head[2];
+      let mm;
+      if ((mm = /^element on (\S+?),? (?:inside canvas node (\S+)(?: \("(.*)"\))?|in the Preview viewer)/.exec(rest))) {
+        cur = { n, kind: "element", page: mm[1], nodeId: mm[2] || null, nodeTitle: mm[3] || "", anchor: {} };
+      } else if ((mm = /^whiteboard (\S+) (\S+?)(?:: "(.*)")?$/.exec(rest))) {
+        cur = { n, kind: "wb", wbType: mm[1], wbId: mm[2], wbText: mm[3] || "" };
+      } else if ((mm = /^canvas node (\S+) \((?:"(.*)", )?([^)]*)\)(?:, showing (\S+))?/.exec(rest))) {
+        cur = { n, kind: "node", nodeId: mm[1], nodeTitle: mm[2] || "", nodeKind: mm[3] || "", page: mm[4] || null };
+      } else {
+        cur = { n, kind: "node", nodeTitle: rest };
+      }
+      out.set(n, cur);
+      continue;
+    }
+    if (!cur || cur.kind !== "element") continue;
+    const sel = /^\s+selector: (.*)$/.exec(line);
+    if (sel) {
+      cur.anchor.selector = sel[1];
+      const last = sel[1].split(">").pop().trim().replace(/:nth-child\(\d+ of ([^)]*)\)/, "$1");
+      cur.anchor.label = last;
+      continue;
+    }
+    if (/^\s+no longer found/.test(line)) cur.lost = true;
+  }
+  return out;
+}
+// One [n] in a sent bubble: the orange number, with the same hover card
+// the composer chip shows (the store's copy first, the block's as fallback).
+function PointNumBadge({ n, point }) {
+  const [rect, setRect] = useState(null);
+  return html`
+    <span
+      className="wf-point-num wf-point-num-inline wf-point-num-hoverable"
+      onMouseEnter=${(e) => { const r = e.currentTarget.getBoundingClientRect(); setRect({ left: r.left, top: r.top, width: r.width }); }}
+      onMouseLeave=${() => setRect(null)}
+    >${n}${rect && point && html`<${PointChipHoverCard} point=${point} rect=${rect}/>`}</span>
+  `;
+}
+// Draw [n] in a sent bubble as the orange point number (top-level text runs
+// of the inline markdown only; formatted runs keep their text).
+function __badgePointNums(nodes, nums, pointFor) {
+  const out = [];
+  (Array.isArray(nodes) ? nodes : [nodes]).forEach((nd, i) => {
+    if (typeof nd !== "string") { out.push(nd); return; }
+    const parts = nd.split(/(\[\d{1,3}\])/);
+    parts.forEach((part, j) => {
+      const mm = /^\[(\d{1,3})\]$/.exec(part);
+      if (mm && nums.has(Number(mm[1]))) {
+        const n = Number(mm[1]);
+        out.push(html`<${PointNumBadge} key=${"pt" + i + "_" + j} n=${n} point=${pointFor ? pointFor(n) : null}/>`);
+      } else if (part) out.push(part);
+    });
+  });
+  return out;
+}
 function stripChatPreamble(text) {
   if (typeof text !== "string") return text;
   let s = text;
@@ -24495,7 +24903,7 @@ function stripChatPreamble(text) {
     const idx = s.indexOf("\n\n");
     if (idx !== -1) s = s.slice(idx + 2);
   }
-  const BLOCK = /^<(selected-nodes|whiteboard|selected-frame)\b[\s\S]*?<\/\1>\s*/;
+  const BLOCK = /^<(selected-nodes|whiteboard|selected-frame|chat-target|pointed-targets)\b[\s\S]*?<\/\1>\s*/;
   let prev;
   do { prev = s; s = s.replace(BLOCK, ""); } while (s !== prev);
   return s;
@@ -24704,7 +25112,20 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
         mode ? html`<span className="chat-bubble-prefix chat-bubble-mode" title=${modeTip}><${Icon[mode.icon]}/>${auto ? "Auto: " + mode.label : mode.label}</span> ` : ""
       }${
         block.data.auto ? html`<span className="chat-bubble-prefix">auto:</span> ` : ""
-      }<${Markdown} text=${stripChatPreamble(block.data.text)} inline=${true}/></div>`;
+      }${(() => {
+        // Point references: badge the [n] this message actually defined.
+        // A queued message delivered raw carries no block, so it falls back
+        // to the thread's live points.
+        let nums = __pointNumsInMessage(block.data.text);
+        if (!nums.size && block.data.queueId && runId && window.WovenPoints) {
+          nums = new Set(window.WovenPoints.list(runId).map(p => p.n));
+        }
+        const shown = stripChatPreamble(block.data.text);
+        if (!nums.size || !shown) return html`<${Markdown} text=${shown} inline=${true}/>`;
+        const parsed = __pointsInMessage(block.data.text);
+        const pointFor = (n) => (runId && window.WovenPoints && window.WovenPoints.get(runId, n)) || parsed.get(n) || null;
+        return html`<span className="md-inline">${__badgePointNums(inlineParse(shown), nums, pointFor)}</span>`;
+      })()}</div>`;
     }
     case "tool_answer": {
       let preview = block.data.content;
@@ -32955,6 +33376,14 @@ function WorkflowCanvas() {
   const [chatRun, setChatRun] = useState(null);
   const [chatRunFinished, setChatRunFinished] = useState(false);
   const chatPermissionMode = usePermissionMode();
+  // Point tool: the open thread's points are the ones the canvas and the
+  // Preview viewer draw (editor/points.js). Follows chatRun rather than the
+  // drawer, so badges stay up while whiteboard mode hides the chat column.
+  const pointThreadKey = chatRun ? (chatRun.runId || (chatRun.isNew ? "draft" : null)) : null;
+  useEffect(() => {
+    if (window.WovenPoints) window.WovenPoints.setActive(pointThreadKey);
+  }, [pointThreadKey]);
+  useEffect(() => () => { if (window.WovenPoints) window.WovenPoints.setActive(null); }, []);
 
   // ── Right tiling dock (workflow surface) ──────────────────────────────
   // Same model as the editor App's dock, but floating (its own
@@ -33357,7 +33786,10 @@ function WorkflowCanvas() {
     // Wrap with workflow-mode preamble; the agent reads the context line and
     // anchors its responses on the node-canvas surface (not the data files).
     const wrappedPrompt = composeModeAwarePrompt("workflow", userText);
-    const title = text.length > 60 ? text.slice(0, 60) + "…" : text;
+    // The point tool's <pointed-targets> block leads the composed text; the
+    // thread title is the user's words.
+    const titleText = stripChatPreamble(text) || text;
+    const title = titleText.length > 60 ? titleText.slice(0, 60) + "…" : titleText;
     // Read the user's default agent model from settings, if any. The
     // daemon's CLI invocation already maps "sonnet"/"opus"/"haiku" substrings
     // onto Claude CLI --model flags (see serve.py:868-872), so passing the
@@ -34575,6 +35007,7 @@ function WorkflowCanvas() {
         onStartNewChat=${spawnWorkflowChat}
         selectionCount=${selectionCount}
         targetBar=${html`<${WorkflowChatTargetBar} summary=${selectionSummary} override=${chatTargetOverride} onChangeOverride=${setChatTargetOverrideBoth} activePreviewSlug=${activePreviewSlug} run=${chatRun} />`}
+        pointTool=${true}
       />`}
       fullscreen=${fullscreen}
       setFullscreen=${setFullscreen}
@@ -44629,6 +45062,364 @@ function wfOwnsInput(idRef) {
    the scratchpad tile never leaves the keyboard pointed at a dead board. */
 function wfReleaseSurface(id) { if (_wfActiveSurface === id) _wfActiveSurface = "main"; }
 
+/* ── Point tool: canvas + preview helpers (store: editor/points.js) ─────────
+   Hit-testing reads the node iframes' documents directly (same-origin); it
+   never isolates them, so the live page is what gets pointed at. Browser
+   nodes (another site) and nodes with no live page get a whole-node point. */
+const WF_POINT_FRAME_SEL = 'iframe[data-prototype-id], iframe[data-asset-id], iframe[data-draft-id]';
+function wfPointCssEsc(s) {
+  try { return CSS.escape(s); } catch { return String(s).replace(/[^a-zA-Z0-9_-]/g, "\\$&"); }
+}
+// Project-relative page path an iframe is showing: its live location, or its
+// src while it is still an authoring srcdoc / about:blank.
+function wfPointPagePath(frame) {
+  const norm = (pathname) => {
+    if (!pathname) return null;
+    let p = pathname.replace(/^\/+/, "");
+    try { p = decodeURIComponent(p); } catch { /* keep raw */ }
+    if (!p || p.startsWith("__")) return null;
+    if (p.endsWith("/")) p += "index.html";
+    return /\.html?$/i.test(p) ? p : null;
+  };
+  try {
+    const loc = frame.contentWindow && frame.contentWindow.location;
+    if (loc && /^https?:$/.test(loc.protocol)) {
+      const p = norm(loc.pathname);
+      if (p) return p;
+    }
+  } catch { /* cross-origin */ }
+  try {
+    const src = frame.getAttribute("src");
+    if (src) return norm(new URL(src, location.href).pathname);
+  } catch { /* no src */ }
+  return null;
+}
+// Durable selector for a pointed element. Elements another edit INSERTED are
+// found by their marker; everything else uses the patch-grade selector.
+// (elementCssPath is not used: it returns the runtime data-woven-id.)
+function wfPointSelector(el) {
+  const marked = el.closest && el.closest("[data-th-ins],[data-th-rep]");
+  if (marked) {
+    const a = marked.hasAttribute("data-th-ins") ? "data-th-ins" : "data-th-rep";
+    const base = "[" + a + "=\"" + String(marked.getAttribute(a)).replace(/["\\]/g, "\\$&") + "\"]";
+    if (marked === el) return base;
+    const cls = (typeof el.className === "string" ? el.className : "").trim().split(/\s+/)
+      .filter(c => c && !c.startsWith("th-pick-") && !c.startsWith("zoom-")).slice(0, 2);
+    return base + " " + el.tagName.toLowerCase() + cls.map(c => "." + wfPointCssEsc(c)).join("");
+  }
+  return elementPatchSelector(el);
+}
+function wfPointAnchor(el) {
+  const html = el.outerHTML || "";
+  const close = html.indexOf(">");
+  const snippet = (close > 0 ? html.slice(0, close + 1) : html).replace(/\s+/g, " ").slice(0, 200);
+  return {
+    selector: wfPointSelector(el),
+    fp: _elementDeleteFingerprint(el),
+    label: zoomElementLabel(el),
+    snippet,
+    text: (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80),
+  };
+}
+// The element under a viewport point inside a same-origin iframe, walking
+// into nested iframes (canvas-frames drafts). html/body count as no element.
+function wfPointElementAt(frame, clientX, clientY) {
+  let f = frame, x = clientX, y = clientY;
+  for (let depth = 0; f && depth < 4; depth++) {
+    const r = f.getBoundingClientRect();
+    const cw = f.clientWidth || r.width || 1, ch = f.clientHeight || r.height || 1;
+    const sx = r.width / cw, sy = r.height / ch;
+    const lx = (x - r.left) / (sx || 1), ly = (y - r.top) / (sy || 1);
+    if (lx < 0 || ly < 0 || lx > cw || ly > ch) return null;
+    let doc = null;
+    try { doc = f.contentDocument; } catch { return null; }
+    if (!doc || !doc.body || doc.readyState === "loading") return null;
+    const el = doc.elementFromPoint(lx, ly);
+    if (!el) return null;
+    if (el.tagName === "IFRAME") { f = el; x = lx; y = ly; continue; }
+    const tag = el.tagName.toLowerCase();
+    if (tag === "html" || tag === "body") return null;
+    return { el, frame: f };
+  }
+  return null;
+}
+// What the canvas pointer is over, for the point tool. Whiteboard items
+// first (geometric - they are pointer-events:none in build mode, the same
+// order build-mode selection uses), then a node, then an element inside that
+// node's page.
+function wfPointHitCanvas({ target, clientX, clientY, world, wbItems, zoom, order, nodeHitAt, nodesById }) {
+  const wbId = wbHitTest(wbItems, world.x, world.y, zoom, { order });
+  if (wbId) {
+    const it = (wbItems || []).find(i => i.id === wbId);
+    if (it) return { kind: "wb", item: it };
+  }
+  let nodeEl = target && target.closest ? target.closest(".workflow-node[data-node-id]") : null;
+  let nodeId = nodeEl ? nodeEl.getAttribute("data-node-id") : null;
+  if (!nodeId) {
+    nodeId = nodeHitAt(world.x, world.y);
+    if (nodeId) nodeEl = document.querySelector('.workflow-node[data-node-id="' + wfPointCssEsc(nodeId) + '"]');
+  }
+  const node = nodeId ? nodesById.get(nodeId) : null;
+  if (!node) return null;
+  let page = null;
+  if (nodeEl) {
+    const frames = Array.from(nodeEl.querySelectorAll(WF_POINT_FRAME_SEL));
+    for (const f of frames) {
+      const r = f.getBoundingClientRect();
+      if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) continue;
+      page = wfPointPagePath(f);
+      const hit = wfPointElementAt(f, clientX, clientY);
+      if (hit) {
+        const p = wfPointPagePath(hit.frame);
+        if (p) return { kind: "element", node, nodeEl, el: hit.el, frame: hit.frame, page: p };
+      }
+      break;
+    }
+    if (!page) {
+      const f0 = nodeEl.querySelector(WF_POINT_FRAME_SEL);
+      if (f0) page = wfPointPagePath(f0);
+    }
+  }
+  return { kind: "node", node, nodeEl, page };
+}
+// Store payload for a canvas / preview hit.
+function wfPointData(hit) {
+  if (!hit) return null;
+  if (hit.kind === "wb") {
+    const it = hit.item;
+    const raw = String(it.text || it.label || it.title || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return { kind: "wb", wbId: it.id, wbType: it.type || "item", wbText: raw.slice(0, 80) };
+  }
+  const n = hit.node || null;
+  const nodeBits = n ? { nodeId: n.id, nodeTitle: n.title || n.label || n.name || "", nodeKind: n.kind || "" } : {};
+  if (hit.kind === "element") return { kind: "element", page: hit.page, ...nodeBits, anchor: wfPointAnchor(hit.el) };
+  return { kind: "node", page: hit.page || null, ...nodeBits };
+}
+// Same target as an existing point? Then the click names that point again
+// instead of stacking a duplicate badge.
+function wfPointSameTarget(p, d) {
+  if (!p || !d || p.kind !== d.kind) return false;
+  if (d.kind === "wb") return p.wbId === d.wbId;
+  if (d.kind === "node") return p.nodeId === d.nodeId;
+  return p.page === d.page && !!p.anchor && !!d.anchor && p.anchor.selector === d.anchor.selector;
+}
+// Make (or re-name) the point for a hit, in the armed thread. A one-shot
+// ("=") disarms after its point; a second press on the same target within
+// half a second (a double-click) is ignored.
+let __wfPointLastClick = { sig: "", t: 0 };
+function wfPointCommit(hit) {
+  const WP = window.WovenPoints;
+  const m = WP ? WP.mode() : null;
+  if (!m || !m.armed || !m.threadKey) return null;
+  const d = wfPointData(hit);
+  if (!d) return null;
+  const sig = d.kind + ":" + (d.wbId || "") + ":" + (d.nodeId || "") + ":" + (d.page || "") + ":" + ((d.anchor && d.anchor.selector) || "");
+  const now = Date.now();
+  if (__wfPointLastClick.sig === sig && now - __wfPointLastClick.t < 500) return null;
+  __wfPointLastClick = { sig, t: now };
+  const existing = WP.list(m.threadKey).find(p => wfPointSameTarget(p, d));
+  const p = existing ? (WP.reference(m.threadKey, existing.n), existing) : WP.add(m.threadKey, d);
+  if (m.oneShot) WP.disarm();
+  return p;
+}
+// Screen rect of a hit, for the hover ring.
+function wfPointHitRect(hit, wrapRect, pan, zoom) {
+  if (!hit) return null;
+  if (hit.kind === "element") return zoomRectFor(hit.el);
+  if (hit.kind === "node" && hit.nodeEl) {
+    const r = hit.nodeEl.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, h: r.height };
+  }
+  if (hit.kind === "wb" && wrapRect) {
+    const b = wbItemBBox(hit.item);
+    return { x: wrapRect.left + pan.x + b.x * zoom, y: wrapRect.top + pan.y + b.y * zoom, w: b.w * zoom, h: b.h * zoom };
+  }
+  return null;
+}
+// Where an element point sits relative to the canvas node showing its page,
+// in world units, so node drag / pan / zoom move the badge with no layout
+// reads (only iframe load / scroll / resize and node resize re-measure).
+function wfMeasureElementPoint(p) {
+  const WP = window.WovenPoints;
+  const nodeEls = p.nodeId
+    ? [document.querySelector('.workflow-canvas .workflow-node[data-node-id="' + wfPointCssEsc(p.nodeId) + '"]')].filter(Boolean)
+    : Array.from(document.querySelectorAll(".workflow-canvas .workflow-node[data-node-id]"))
+        .filter(ne => Array.from(ne.querySelectorAll(WF_POINT_FRAME_SEL)).some(f => wfPointPagePath(f) === p.page));
+  for (const nodeEl of nodeEls) {
+    const nodeId = nodeEl.getAttribute("data-node-id");
+    const frames = Array.from(nodeEl.querySelectorAll(WF_POINT_FRAME_SEL));
+    for (const top of frames) {
+      // The page can be the node's own frame or one nested a level down.
+      const cands = [top];
+      try { if (top.contentDocument) cands.push(...top.contentDocument.querySelectorAll("iframe")); } catch {}
+      // Off screen or zoomed far out the node hides its page (data-lod off /
+      // far / cold) and the frame has no box to measure: keep the last good
+      // offset rather than computing one from a hidden frame.
+      const lodEl = top.closest("[data-lod]");
+      const lod = lodEl ? lodEl.getAttribute("data-lod") : "full";
+      const topBox = top.getBoundingClientRect();
+      if (lod !== "full" || topBox.width < 2 || topBox.height < 2) {
+        if (wfPointPagePath(top) === p.page || cands.length > 1) return { nodeId, keep: true, frames };
+        continue;
+      }
+      for (const f of cands) {
+        if (wfPointPagePath(f) !== p.page) continue;
+        let doc = null;
+        try { doc = f.contentDocument; } catch { doc = null; }
+        if (!doc || !doc.body || doc.readyState === "loading") return { nodeId, parked: true, frames };
+        const el = WP ? WP.resolve(doc, p.anchor) : null;
+        if (!el) return { nodeId, parked: true, lost: doc.readyState === "complete", frames };
+        const er = zoomRectFor(el);
+        const fr = top.getBoundingClientRect();
+        const nr = nodeEl.getBoundingClientRect();
+        const z = nr.width / (nodeEl.offsetWidth || nr.width || 1) || 1;
+        if (!er) return { nodeId, parked: true, frames };
+        // Pin to the element's top-right, kept inside the visible page.
+        const sx = Math.min(Math.max(er.x + er.w, fr.left), fr.right);
+        const sy = Math.min(Math.max(er.y, fr.top), fr.bottom);
+        return { nodeId, dx: (sx - nr.left) / z, dy: (sy - nr.top) / z, frames };
+      }
+    }
+  }
+  return p.nodeId ? { nodeId: p.nodeId, parked: true, frames: [] } : null;
+}
+
+/* Badges for the open thread's points, drawn in WORLD space inside
+   .workflow-canvas (counter-scaled by 1/zoom like the marquee), positioned
+   from data so node drag, pan and zoom cost no layout reads. */
+function WorkflowPointLayer({ points, nodes, wbItems, zoom, threadKey }) {
+  const WP = window.WovenPoints;
+  const nodesById = useMemo(() => new Map((nodes || []).map(n => [n.id, n])), [nodes]);
+  const elPoints = points.filter(p => p.kind === "element");
+  const [geo, setGeo] = useState({});
+  // Re-measure when the element points or their host nodes' SIZE change -
+  // never on position, which the data already carries.
+  const hostSig = elPoints.map(p => {
+    const n = p.nodeId ? nodesById.get(p.nodeId) : null;
+    return p.id + "@" + (n ? (n.w || 0) + "x" + (n.h || 0) : "-") + ":" + (p.anchor ? p.anchor.selector : "");
+  }).join("|");
+  const [frameTick, setFrameTick] = useState(0);
+  useEffect(() => {
+    if (!elPoints.length) { setGeo(g => (Object.keys(g).length ? {} : g)); return; }
+    let cancelled = false;
+    let raf = 0;
+    let frameSig = "";
+    const measure = () => {
+      raf = 0;
+      if (cancelled) return;
+      const out = {};
+      const frames = new Set();
+      for (const p of elPoints) {
+        const m = wfMeasureElementPoint(p);
+        if (!m) continue;
+        (m.frames || []).forEach(f => frames.add(f));
+        out[p.id] = m.keep ? { keep: true, nodeId: m.nodeId } : { nodeId: m.nodeId, dx: m.dx, dy: m.dy, parked: !!m.parked };
+        if (!m.keep && WP && threadKey && (m.lost || !m.parked)) WP.setLost(threadKey, p.n, !!m.lost);
+      }
+      setGeo(prev => {
+        const next = {};
+        for (const id of Object.keys(out)) {
+          next[id] = out[id].keep ? (prev[id] || { nodeId: out[id].nodeId, parked: true }) : out[id];
+        }
+        return JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
+      });
+      const sig = Array.from(frames).map(f => (f.getAttribute("data-prototype-id") || f.getAttribute("data-asset-id") || f.getAttribute("data-draft-id") || "") + ":" + (f.getAttribute("src") || "")).join("|");
+      if (frameSig && sig !== frameSig) setFrameTick(t => t + 1);   // re-bind listeners to the new frames
+      frameSig = sig;
+      return frames;
+    };
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(measure); };
+    const frames = measure() || new Set();
+    const offs = [];
+    for (const f of frames) {
+      const onLoad = () => setTimeout(schedule, 80);
+      f.addEventListener("load", onLoad);
+      offs.push(() => f.removeEventListener("load", onLoad));
+      try {
+        const w = f.contentWindow;
+        w.addEventListener("scroll", schedule, true);
+        w.addEventListener("resize", schedule);
+        offs.push(() => { try { w.removeEventListener("scroll", schedule, true); w.removeEventListener("resize", schedule); } catch {} });
+      } catch { /* cross-origin */ }
+    }
+    // Late layout (web fonts, JS-rendered pages) - a slow, cheap re-check.
+    const iv = setInterval(schedule, 1500);
+    return () => { cancelled = true; clearInterval(iv); if (raf) cancelAnimationFrame(raf); offs.forEach(fn => fn()); };
+  }, [hostSig, frameTick, threadKey]);
+
+  if (!WP || !threadKey || !points.length) return null;
+  const inv = 1 / Math.max(zoom || 1, 0.05);
+  // Corner badges of one node (node points + parked element points) line
+  // up leftwards from its top-right instead of stacking on one spot.
+  const cornerCount = new Map();
+  const cornerOf = (node) => {
+    const i = cornerCount.get(node.id) || 0;
+    cornerCount.set(node.id, i + 1);
+    const { w } = workflowNodeDrawnSize(node);
+    return { x: (node.x || 0) + w - i * 26 * inv, y: node.y || 0 };
+  };
+  const badges = [];
+  for (const p of points) {
+    let pos = null, parked = false;
+    if (p.kind === "wb") {
+      const it = (wbItems || []).find(i => i.id === p.wbId);
+      if (!it) continue;
+      const b = wbItemBBox(it);
+      pos = { x: b.x + b.w, y: b.y };
+    } else if (p.kind === "node") {
+      const n = nodesById.get(p.nodeId);
+      if (!n) continue;
+      pos = cornerOf(n);
+    } else {
+      const g = geo[p.id];
+      const n = g && g.nodeId ? nodesById.get(g.nodeId) : (p.nodeId ? nodesById.get(p.nodeId) : null);
+      if (!n) continue;
+      if (g && !g.parked && typeof g.dx === "number") pos = { x: (n.x || 0) + g.dx, y: (n.y || 0) + g.dy };
+      else { pos = cornerOf(n); parked = true; }
+    }
+    badges.push(html`
+      <${WorkflowPointBadge} key=${p.id} point=${p} x=${pos.x} y=${pos.y} scale=${inv} parked=${parked} threadKey=${threadKey}/>
+    `);
+  }
+  return html`<div className="wf-point-layer" aria-label="Points">${badges}</div>`;
+}
+function WorkflowPointBadge({ point, x, y, scale, parked, threadKey, onRemove }) {
+  const WP = window.WovenPoints;
+  return html`
+    <div
+      className="wf-point-badge"
+      data-parked=${parked ? "true" : null}
+      data-lost=${point.lost ? "true" : null}
+      data-sent=${point.sent ? "true" : null}
+      style=${{ left: x + "px", top: y + "px", transform: "translate(-50%, -50%) scale(" + scale + ")" }}
+      onMouseDown=${(e) => e.stopPropagation()}
+    >
+      <span className="wf-point-num">${point.n}</span>
+      <span className="wf-point-badge-tip">
+        <span className="wf-point-badge-label">${WP ? WP.labelOf(point) : ""}</span>
+        <span className="wf-point-badge-where">${WP ? WP.whereOf(point) : ""}</span>
+        <button
+          type="button"
+          className="wf-point-badge-x"
+          title="Remove point"
+          aria-label="Remove point"
+          onClick=${(e) => { e.stopPropagation(); if (onRemove) onRemove(point); else if (WP) WP.remove(threadKey, point.n); }}
+        >×</button>
+      </span>
+    </div>
+  `;
+}
+// Hover ring while pointing, in WORLD space inside .workflow-canvas: it
+// rides pan / zoom with its target and paints under the badge layer, so a
+// ring never hides a number. Stroke and outset stay 2 screen px at any zoom.
+function WorkflowPointRing({ rect, zoom }) {
+  if (!rect) return null;
+  const px = 2 / Math.max(zoom || 1, 0.05);
+  return html`
+    <div className="wf-point-ring wf-point-ring-world" style=${{ left: (rect.x - px) + "px", top: (rect.y - px) + "px", width: (rect.w + 2 * px) + "px", height: (rect.h + 2 * px) + "px", borderWidth: px + "px", borderRadius: (3 * px / 2) + "px" }}/>
+  `;
+}
+
 function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsRef, history, historyOpen, onOpenHistory, onCloseHistory, chatActive, chatBusy, fullscreen, setFullscreen, onOpenNewChat, onStartChatWithPrompt, onReopenRun, onOpenWindow, openKinds, selectionRef, onSelectionCountChange, onActivePreviewChange, onLibResizeStart, chatPanel, chatOpenTick, chatExists }) {
   // Input-arbiter identity for THIS surface instance (see wfClaimSurface).
   // The main canvas is the default owner; an embedded board claims ownership
@@ -49966,6 +50757,55 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       window.removeEventListener("keydown", onKey);
     };
   }, [pickModeNodeId]);
+  // ── Point tool (editor/points.js) ──────────────────────────────────────
+  // The main surface draws the OPEN thread's points and, while the composer
+  // has the tool armed, turns clicks into points. Embedded boards (the
+  // scratchpad tile) stay out of it entirely.
+  useWovenPointsRev(!embedded);
+  const pointWP = !embedded && typeof window !== "undefined" ? (window.WovenPoints || null) : null;
+  const pointModeNow = pointWP ? pointWP.mode() : null;
+  const pointArmed = !!(pointModeNow && pointModeNow.armed);
+  const pointThread = pointWP ? pointWP.active() : null;
+  // Only points still waiting to be sent are drawn: once a message carries
+  // them, their badges leave the canvas (the sent bubble keeps the hover).
+  const pointList = pointWP && pointThread ? pointWP.list(pointThread).filter(p => !p.sent) : [];
+  const [pointRing, setPointRing] = useState(null);   // world rect of the hovered target
+  // One mode at a time: arming points ends element pick mode and drops an
+  // armed whiteboard tool back to Select; entering pick mode, arming a wb
+  // tool or opening the full-screen edit overlay disarms points.
+  useEffect(() => {
+    if (!pointArmed) { setPointRing(null); return; }
+    if (pickModeNodeId) window.dispatchEvent(new CustomEvent("th:exit-pick-mode"));
+    if (wbToolRef.current && wbToolRef.current !== "select") setWbTool("select");
+  }, [pointArmed]);
+  useEffect(() => { if (pickModeNodeId && pointWP && pointWP.mode().armed) pointWP.disarm(); }, [pickModeNodeId]);
+  useEffect(() => { if (wbTool !== "select" && pointWP && pointWP.mode().armed) pointWP.disarm(); }, [wbTool]);
+  useEffect(() => { if (zoomTarget && pointWP && pointWP.mode().armed) pointWP.disarm(); }, [zoomTarget]);
+  // Esc turns pointing off. Capture phase, so it runs before the canvas's
+  // own Esc ladder; typing targets (the composer) handle their own Esc.
+  useEffect(() => {
+    if (!pointWP || !pointArmed) return;
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      const t = e.target;
+      const tag = t && t.tagName ? t.tagName.toLowerCase() : "";
+      if (tag === "input" || tag === "textarea" || tag === "select" || (t && t.isContentEditable)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      pointWP.disarm();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [pointArmed]);
+  // Pointer -> point target on the canvas (shared by hover and click).
+  const pointHitAtEvent = (e) => {
+    const world = screenToWorld(e.clientX, e.clientY);
+    return wfPointHitCanvas({
+      target: e.target, clientX: e.clientX, clientY: e.clientY, world,
+      wbItems: wbItemsRef.current, zoom, order: paintOrderRef.current,
+      nodeHitAt, nodesById: new Map((dataNodesRef.current || []).map(n => [n.id, n])),
+    });
+  };
   // Bridge for picked-element reports from inside the iframe.
   useEffect(() => {
     const onPicked = (e) => {
@@ -59297,6 +60137,14 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
               lastCanvasCursorRef.current.x = worldX;
               lastCanvasCursorRef.current.y = worldY;
             }
+            // Point tool armed: ring whatever a click would point at.
+            if (pointArmed) {
+              const hit = e.buttons ? null : pointHitAtEvent(e);
+              const sr = hit ? wfPointHitRect(hit, r, pan, zoom) : null;
+              // World coords, so the ring rides pan / zoom like the badges.
+              const rr = sr ? { x: (sr.x - r.left - pan.x) / zoom, y: (sr.y - r.top - pan.y) / zoom, w: sr.w / zoom, h: sr.h / zoom } : null;
+              setPointRing(prev => (prev && rr && prev.x === rr.x && prev.y === rr.y && prev.w === rr.w && prev.h === rr.h) ? prev : rr);
+            }
             // Arrow tool: preview the side port under the pointer BEFORE the
             // click, so "where will this arrow start" is answered by looking
             // rather than by drawing one and undoing it. Meta/ctrl is the
@@ -59310,8 +60158,10 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
               setWbArrowSnap(null);
             }
           }}
-          onMouseLeave=${() => { if (wbArrowSnapRef.current) setWbArrowSnap(null); }}
+          onMouseLeave=${() => { if (wbArrowSnapRef.current) setWbArrowSnap(null); if (pointRing) setPointRing(null); }}
           onContextMenu=${(e) => {
+            // Point tool armed: no context menu, nothing selected.
+            if (pointArmed) { e.preventDefault(); return; }
             // Right-click context menu. If the user right-clicks on
             // a node and that node isn't already in the selection, replace
             // selection with just that node so Copy/Delete operate on the
@@ -59373,6 +60223,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
             // the canvas/node beneath, not the item). A node under the
             // cursor keeps priority - let its own dbl-click run. The only
             // text-bearing wb types are text / textbox / sticky.
+            if (pointArmed) return;
             if (e.target.closest && e.target.closest("[data-node-id], input, textarea, select, [contenteditable]")) return;
             const r = e.currentTarget.getBoundingClientRect();
             const wx = (e.clientX - r.left - pan.x) / zoom;
@@ -59405,6 +60256,19 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
             //      (alt / middle-click / space) fall through to the
             //      useEndlessCanvas pan handler instead.
             if (!e.target || !e.target.closest) return;
+            // Point badges own their clicks (hover x) in every mode.
+            if (e.target.closest(".wf-point-badge")) return;
+            // Point tool armed: a plain left press points at whatever is under
+            // it (wb item, node, or an element in the node's page) and does
+            // nothing else - no select, drag, marquee or edge. Pan gestures
+            // (space / alt / middle / meta) still fall through to panning.
+            if (pointArmed && e.button === 0 && !e.altKey && !e.metaKey && !e.ctrlKey && !spaceHeld) {
+              e.preventDefault();
+              e.stopPropagation();
+              const hit = pointHitAtEvent(e);
+              if (hit) wfPointCommit(hit);
+              return;
+            }
             // Whiteboard resize/endpoint handles own their events in BOTH
             // modes (they're visible whenever a wb item is selected).
             if (e.target.closest(".workflow-wb-handle, .workflow-group-handle")) return;
@@ -59636,6 +60500,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
           data-wb-tool=${wbMode ? wbTool : "none"}
           data-wb-dragging=${wbDragging ? "true" : "false"}
           data-marquee=${marquee ? "true" : "false"}
+          data-point-mode=${pointArmed ? "true" : null}
         >
           <canvas className="workflow-fx-under" ref=${fxUnderRef} aria-hidden="true"/>
           <div
@@ -59660,6 +60525,10 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
                      }}/>
               `;
             })()}
+            ${pointWP && pointList.length > 0 && html`
+              <${WorkflowPointLayer} points=${pointList} nodes=${data.nodes || []} wbItems=${wbItems} zoom=${zoom} threadKey=${pointThread}/>
+            `}
+            ${pointArmed && pointRing && mainView === "canvas" && html`<${WorkflowPointRing} rect=${pointRing} zoom=${zoom}/>`}
             ${/* Bound (inner) sections render AFTER their host so they paint
                  on top and stay clickable - array order alone would bury a
                  section that was created before the frame it now sits on. */ ""}
@@ -61457,6 +62326,176 @@ function liveLocationToSourcePath(loc) {
   return null;
 }
 
+/* Point tool in Preview: while armed, the ACTIVE tab's live page turns
+   presses into points (capture listeners on its window, so the page's own
+   handlers never see them; wheel and scroll stay native). Badges for the
+   open thread's points on this page sit in a layer over the stage. The page
+   is never isolated - it is the live document the user is looking at. */
+function ProtoViewerPointLayer({ stageRef, activeId, zoom, deviceVp, visible }) {
+  useWovenPointsRev(true);
+  const WP = window.WovenPoints || null;
+  const mode = WP ? WP.mode() : null;
+  const armed = !!(visible && mode && mode.armed);
+  const threadKey = WP ? WP.active() : null;
+  const points = WP && threadKey && visible ? WP.list(threadKey).filter(p => p.kind === "element" && !p.sent) : [];
+  const [ring, setRing] = useState(null);       // stage-relative rect of the hovered element
+  const [geo, setGeo] = useState({});           // point id -> stage-relative {x, y}
+  const [frameTick, setFrameTick] = useState(0);
+  const activeFrame = () => {
+    const st = stageRef.current;
+    return st ? st.querySelector('iframe.workflow-proto-frame[data-active="true"]') : null;
+  };
+  const stageRel = (r) => {
+    const st = stageRef.current;
+    if (!st || !r) return null;
+    const sr = st.getBoundingClientRect();
+    return { x: r.x - sr.left, y: r.y - sr.top, w: r.w, h: r.h };
+  };
+  // Pointing: capture listeners on the active page's window.
+  useEffect(() => {
+    if (!armed) { setRing(null); return; }
+    const f = activeFrame();
+    if (!f) return;
+    let win = null;
+    let cursorStyle = null;
+    const block = (e) => { e.preventDefault(); e.stopImmediatePropagation(); };
+    const pickable = (el) => el && el.tagName && !/^(html|body)$/i.test(el.tagName);
+    let hovered = null;
+    const onMove = (e) => {
+      const el = e.target;
+      hovered = pickable(el) ? el : null;
+      setRing(hovered ? stageRel(zoomRectFor(hovered)) : null);
+    };
+    // Scrolling moves the page under a still pointer: keep the ring on the
+    // element it outlines instead of leaving it where the element was.
+    const onScroll = () => { if (hovered) setRing(stageRel(zoomRectFor(hovered))); };
+    // Points are made on pointerdown: cancelling it is what stops the page's
+    // own press handling, and it also suppresses the mousedown that follows,
+    // so mousedown can never be the trigger.
+    const onDown = (e) => {
+      if (e.button !== 0 || e.isPrimary === false) return;
+      block(e);
+      const el = e.target;
+      if (!pickable(el)) return;
+      const page = wfPointPagePath(f);
+      if (!page) return;
+      wfPointCommit({ kind: "element", el, frame: f, page });
+    };
+    const onLeave = () => { hovered = null; setRing(null); };
+    const attach = () => {
+      detach();
+      try { win = f.contentWindow; } catch { win = null; }
+      if (!win) return;
+      try {
+        win.addEventListener("mousemove", onMove, true);
+        win.addEventListener("pointerdown", onDown, true);
+        win.addEventListener("scroll", onScroll, true);
+        for (const t of ["mousedown", "pointerup", "mouseup", "click", "dblclick", "auxclick", "contextmenu"]) win.addEventListener(t, block, true);
+        win.document.addEventListener("mouseleave", onLeave);
+        // Crosshair over the page while pointing. Tagged like the pick
+        // overlay's style so WovenEdit.serialize would strip it too.
+        const st = win.document.createElement("style");
+        st.setAttribute("data-th-pick-style", "point");
+        st.textContent = "*{cursor:crosshair !important}";
+        (win.document.head || win.document.documentElement).appendChild(st);
+        cursorStyle = st;
+      } catch { win = null; }
+    };
+    const detach = () => {
+      if (!win) return;
+      try {
+        win.removeEventListener("mousemove", onMove, true);
+        win.removeEventListener("pointerdown", onDown, true);
+        win.removeEventListener("scroll", onScroll, true);
+        for (const t of ["mousedown", "pointerup", "mouseup", "click", "dblclick", "auxclick", "contextmenu"]) win.removeEventListener(t, block, true);
+        win.document.removeEventListener("mouseleave", onLeave);
+      } catch {}
+      if (cursorStyle) { try { cursorStyle.remove(); } catch {} cursorStyle = null; }
+      win = null;
+    };
+    const onLoad = () => attach();
+    attach();
+    f.addEventListener("load", onLoad);
+    return () => { f.removeEventListener("load", onLoad); detach(); setRing(null); };
+  }, [armed, activeId, frameTick]);
+  // Badges: resolve each point on the active page and pin it to the
+  // element's top-right, kept inside the visible page. Re-measured on page
+  // scroll / resize / load, zoom and tab changes, plus a slow re-check.
+  const pointsSig = points.map(p => p.id + ":" + p.page + ":" + (p.anchor ? p.anchor.selector : "")).join("|");
+  useEffect(() => {
+    if (!points.length) { setGeo(g => (Object.keys(g).length ? {} : g)); return; }
+    const f = activeFrame();
+    if (!f) { setGeo({}); return; }
+    let cancelled = false, raf = 0, win = null;
+    const measure = () => {
+      raf = 0;
+      if (cancelled) return;
+      const out = {};
+      const page = wfPointPagePath(f);
+      let doc = null;
+      try { doc = f.contentDocument; } catch { doc = null; }
+      const fr = stageRel((() => { const r = f.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })());
+      for (const p of points) {
+        if (!page || p.page !== page || !doc || !doc.body || doc.readyState === "loading") continue;
+        const el = WP.resolve(doc, p.anchor);
+        if (doc.readyState === "complete") WP.setLost(threadKey, p.n, !el);
+        if (!el) continue;
+        const r = stageRel(zoomRectFor(el));
+        if (!r || !fr) continue;
+        out[p.id] = {
+          x: Math.min(Math.max(r.x + r.w, fr.x), fr.x + fr.w),
+          y: Math.min(Math.max(r.y, fr.y), fr.y + fr.h),
+        };
+      }
+      setGeo(prev => (JSON.stringify(prev) === JSON.stringify(out) ? prev : out));
+    };
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(measure); };
+    const bind = () => {
+      try {
+        win = f.contentWindow;
+        win.addEventListener("scroll", schedule, true);
+        win.addEventListener("resize", schedule);
+      } catch { win = null; }
+    };
+    const unbind = () => {
+      if (!win) return;
+      try { win.removeEventListener("scroll", schedule, true); win.removeEventListener("resize", schedule); } catch {}
+      win = null;
+    };
+    const onLoad = () => { unbind(); bind(); setTimeout(schedule, 80); };
+    measure();
+    bind();
+    f.addEventListener("load", onLoad);
+    window.addEventListener("resize", schedule);
+    const iv = setInterval(schedule, 1500);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+      if (raf) cancelAnimationFrame(raf);
+      f.removeEventListener("load", onLoad);
+      window.removeEventListener("resize", schedule);
+      unbind();
+    };
+  }, [pointsSig, activeId, zoom, deviceVp && deviceVp.w, deviceVp && deviceVp.h, visible, threadKey, frameTick]);
+  // A remounted tab frame (reload / nonce) is a new element: rebind.
+  useEffect(() => {
+    const st = stageRef.current;
+    if (!st || typeof MutationObserver === "undefined") return;
+    const mo = new MutationObserver(() => setFrameTick(t => t + 1));
+    mo.observe(st, { childList: true });
+    return () => mo.disconnect();
+  }, []);
+  if (!WP || !visible || (!armed && !points.length)) return null;
+  return html`
+    <div className="wf-point-stage-layer" data-armed=${armed ? "true" : null}>
+      ${armed && ring && html`<div className="wf-point-ring wf-point-ring-stage" style=${{ left: (ring.x - 2) + "px", top: (ring.y - 2) + "px", width: (ring.w + 4) + "px", height: (ring.h + 4) + "px" }}/>`}
+      ${points.map(p => geo[p.id] && html`
+        <${WorkflowPointBadge} key=${p.id} point=${p} x=${geo[p.id].x} y=${geo[p.id].y} scale=${1} parked=${false} threadKey=${threadKey}/>
+      `)}
+    </div>
+  `;
+}
+
 function ProtoViewerFrame({ tab, src, isActive, zoom = 1, deviceVp = null, registerNav }) {
   const iframeRef = useRef(null);
   const navHistRef = useRef({ past: [], future: [], current: null });
@@ -62701,6 +63740,7 @@ function WorkflowProtoViewer({ active, onEditTab, onActivePathChange, awaitingFi
             registerNav=${registerNav}
           />
         `)}
+        <${ProtoViewerPointLayer} stageRef=${stageRef} activeId=${activeId} zoom=${zoom} deviceVp=${deviceVp} visible=${!!active}/>
       </div>
       ${pickerOpen && html`
         <div className="workflow-proto-picker-backdrop" onClick=${() => setPickerOpen(false)}/>
