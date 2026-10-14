@@ -902,6 +902,29 @@ class P8VisualChecks(unittest.TestCase):
         self.assertEqual(f["measured"], "it and the next cell overlap by 24x18px")
         self.assertTrue(all(len(q) == 1 for q in asked), "one literal claim per call")
 
+    def test_every_named_state_is_captured_even_when_its_headings_match(self):
+        """Edit and read-only of one tab show the same headings: the screen
+        signature took them for one screen and two of three named states were
+        never checked (suss-cal, 2026-10-14)."""
+        from types import SimpleNamespace
+        png = typed_judge.solid_png((200, 200, 200), size=50)
+
+        class Page:
+            def goto(self, *a, **k): pass
+            def wait_for_timeout(self, ms): pass
+            def close(self): pass
+            def click(self, sel, **kw): pass
+            def screenshot(self, path, **kw): Path(path).write_bytes(png)
+            def evaluate(self, js, arg=None):
+                if js == visual_qa._SCREEN_SIG_JS:
+                    return "/x|H1:Scheme version"
+                return {"defects": [], "scoped": False, "impact": None} if js == visual_qa._DEFECTS_JS else {}
+        scope = {"states": [{"label": s, "query": "v=%d" % i, "steps": [{"type": "click", "selector": "#tab"}]}
+                            for i, s in enumerate(("edit", "overridden", "read-only"))]}
+        tp = visual_qa.typed_capture_pass(SimpleNamespace(new_page=Page), "file:///x", 0, self.tmp, [], [],
+                                          what="page", scope=scope)
+        self.assertEqual([sc["label"] for sc in tp["screens"]], ["the page", "edit", "overridden", "read-only"])
+
     def test_a_defect_the_judge_does_not_see_stays_with_its_measurement(self):
         """On the Bursary register the judge saw 6 of 9 real overlaps. A group
         nobody confirmed is reported unconfirmed, with what code measured."""

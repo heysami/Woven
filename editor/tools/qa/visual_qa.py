@@ -954,7 +954,8 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
                 except Exception as exc:
                     log("scope state %s: step %s failed (%s)" % (label, step_label(step, idx), exc))
                 page.wait_for_timeout(int(step.get("settleMs", 400)) if isinstance(step, dict) else 400)
-            collector.capture(page, label, st.get("changed") if isinstance(st.get("changed"), list) else None)
+            collector.capture(page, label, st.get("changed") if isinstance(st.get("changed"), list) else None,
+                              named=True)
         except Exception as exc:
             log("scope state %s not captured (%s)" % (label, exc))
         finally:
@@ -1639,14 +1640,18 @@ class ScreenCollector:
         self.screens: List[Dict[str, Any]] = []
         self.seen: set = set()
 
-    def capture(self, page: Any, label: str, changed: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+    def capture(self, page: Any, label: str, changed: Optional[List[str]] = None,
+                named: bool = False) -> Optional[Dict[str, Any]]:
+        """`named`: a state the scope names is always captured; its headings
+        can match another state's (edit and read-only of one tab), which the
+        screen signature would take for the same screen."""
         if len(self.screens) >= self.cap:
             return None
         try:
             sig = str(page.evaluate(_SCREEN_SIG_JS))
         except Exception:
             sig = None
-        if sig is not None and sig in self.seen:
+        if sig is not None and sig in self.seen and not named:
             return None
         self.seen.add(sig)
         n = len(self.screens)
