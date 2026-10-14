@@ -24,6 +24,7 @@ the change impacts are listed; with no `changed`, the whole screen is.
 
 ```
 curl -sS -G "$TH_DAEMON_URL/__qa/run" --data-urlencode "project=$TH_PROJECT_ID" \
+  --data-urlencode "run=$TH_RUN_ID" \
   --data-urlencode "page=<slug>/<page>.html?<the page's own query, if any>" \
   --data-urlencode "typed=ds" --data-urlencode "detail=full" \
   --data-urlencode "scope=$(cat <scope file>)" > "${TMPDIR:-/tmp}/dsc-list.json"

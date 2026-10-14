@@ -12225,6 +12225,35 @@ const CHAT_SPAWN_FLAGS = CHAT_GUARD_OPTIONS;
 // carries no `guards` at all - spawned before the flags shipped, or by a caller
 // that passes none, which is exactly what the daemon defaults such a spawn to.
 const GUARD_SPAWN_DEFAULTS = Object.fromEntries(CHAT_SPAWN_FLAGS.map(o => [o.key, !!o.def]));
+/* TYPED JUDGMENT, per thread. Settings > Context and cost holds two global
+   switches (typed judgment for text checks, for visual checks), and every new
+   chat follows them. These two toggles, at the top of the checks menu, let ONE
+   thread differ. A value is true / false when the thread overrides Settings
+   and absent (null) when it follows them, so a chat nobody touched keeps
+   tracking Settings and every spawn site that passes none behaves as before.
+   They ride the spawn's `guards` like the checks: the daemon compiles them
+   into the preamble, stamps the agent's env (ds_lint) and applies them at
+   /__judge, /__qa/run and the DS lint for requests that name the run - so a
+   change under a running thread is staged and hands off, same as a check.
+   NOT sticky: never written to the settings blob. Each row shows only when a
+   judge is set up for its tier (GET /__judge/status), the whole block only
+   when one is set up for either. */
+const CHAT_JUDGE_OPTIONS = [
+  { key: "judgeText",  tier: "text",  label: "Text checks",   what: "requirement QA and the design-system check" },
+  { key: "judgeImage", tier: "image", label: "Visual checks", what: "visual QA and the design-system comparison" },
+];
+// Settings' value per toggle, from /__judge/status; null until it loads.
+function chatJudgeDefaults(status) {
+  return status && status.enabled
+    ? { judgeText: !!status.enabled.text, judgeImage: !!status.enabled.image } : null;
+}
+// What a toggle shows: the thread's own choice, else Settings (null while
+// Settings are unknown).
+function chatJudgeOn(g, key, defaults) {
+  const v = (g || {})[key];
+  if (typeof v === "boolean") return v;
+  return defaults ? !!defaults[key] : null;
+}
 // The checks are a standing preference - how you want your work graded does
 // not change message to message - so they persist in the settings blob.
 function loadChatGuards() {
@@ -12245,19 +12274,24 @@ function saveChatGuards(next) {
   try { window.dispatchEvent(new CustomEvent("th:chat-guards-changed")); } catch {}
   return next;
 }
-function sameChatGuards(a, b) {
+function sameChatGuards(a, b, judgeDefaults) {
   if (!a || !b) return false;
-  return CHAT_SPAWN_FLAGS.every(o => !!a[o.key] === !!b[o.key]);
+  return CHAT_SPAWN_FLAGS.every(o => !!a[o.key] === !!b[o.key])
+    && CHAT_JUDGE_OPTIONS.every(o => chatJudgeOn(a, o.key, judgeDefaults) === chatJudgeOn(b, o.key, judgeDefaults));
 }
 // Human-readable diff for the staged-change note: only the flags that
 // actually moved, in the footer order.
 function chatGuardsDiffHead() {
   return "Checks changed";
 }
-function chatGuardsDiffLabel(from, to) {
+function chatGuardsDiffLabel(from, to, judgeDefaults) {
   const moved = CHAT_SPAWN_FLAGS.filter(o => !!(from || {})[o.key] !== !!(to || {})[o.key]);
-  if (!moved.length) return "";
-  return moved.map(o => `${o.label} ${to[o.key] ? "on" : "off"}`).join(", ");
+  const judged = CHAT_JUDGE_OPTIONS.filter(o =>
+    chatJudgeOn(from, o.key, judgeDefaults) !== chatJudgeOn(to, o.key, judgeDefaults));
+  return [
+    ...moved.map(o => `${o.label} ${to[o.key] ? "on" : "off"}`),
+    ...judged.map(o => `typed judgment for ${o.label.toLowerCase()} ${chatJudgeOn(to, o.key, judgeDefaults) ? "on" : "off"}`),
+  ].join(", ");
 }
 /* The first message of a thread that CONTINUES another one. The daemon's
    /__run/<id>/handoff wrote the summary; this wraps it so the fresh agent
@@ -12300,9 +12334,14 @@ function chatGuardsStateLine(g) {
    `locked` still exists for surfaces with nowhere to go (a historical run
    that can no longer be handed off); a LIVE thread is editable - see
    `pending`, which reports that the change lands on a NEW thread. */
-function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending, mode }) {
+function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending, mode, judges, onOpen }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  // Re-read the judge status on every open, so a Settings change shows here.
+  useEffect(() => { if (open && onOpen) onOpen(); }, [open]);
+  const judgeDefaults = chatJudgeDefaults(judges);
+  const judgeRows = judgeDefaults
+    ? CHAT_JUDGE_OPTIONS.filter(o => judges[o.tier] && judges[o.tier].name) : [];
   // Plan or Triage is on, so there is nothing for these to grade: a planning
   // turn stops on a gate card and a triage turn changes nothing. They are
   // shown but NOT selectable meanwhile - offering a choice that cannot apply
@@ -12371,6 +12410,28 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending, m
       </button>
       ${open && !shut && html`
         <div className="perm-menu">
+          ${judgeRows.length > 0 && html`
+            <div className="perm-menu-head">Typed judgment</div>
+            <div className="guards-judge">
+              ${judgeRows.map(o => {
+                const on = !!chatJudgeOn(value, o.key, judgeDefaults);
+                const name = judges[o.tier].name;
+                return html`<button
+                  key=${o.key}
+                  type="button"
+                  className=${"share-switch guards-judge-switch" + (on ? " is-on" : "")}
+                  role="switch"
+                  aria-checked=${on ? "true" : "false"}
+                  title=${`${name} answers ${o.what} in this chat. Settings has it ${judgeDefaults[o.key] ? "on" : "off"}, and every new chat starts from Settings.`}
+                  onClick=${() => onChange({ ...value, [o.key]: !on })}
+                >
+                  <span className="share-switch-track"><span className="share-switch-knob"/></span>
+                  <span className="share-switch-label">${o.label}</span>
+                  <span className="guards-judge-name">${name}</span>
+                </button>`;
+              })}
+            </div>
+          `}
           <div className="perm-menu-head">Checks before "done"</div>
           ${CHAT_GUARD_OPTIONS.map(opt => html`
             <button
@@ -17568,10 +17629,17 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // `chatGuards` preference: a thread you open that happens to differ from your
   // global pick must not read as a staged change you never made.
   const [pendingGuards, setPendingGuards] = useState(null);
+  // The new-chat shell's typed-judgment choice (CHAT_JUDGE_OPTIONS): only the
+  // toggles the user moved AWAY from Settings, never persisted, cleared with
+  // every thread change - so each new chat starts from Settings.
+  const [judgePick, setJudgePick] = useState({});
+  const [judgeTick, setJudgeTick] = useState(0);
+  const judgeStatus = useJudgeStatus([judgeTick]);
+  const judgeDefaults = chatJudgeDefaults(judgeStatus);
   // The handoff summarises a whole thread through the model, which takes real
   // seconds - the note says so rather than leaving Send looking stuck.
   const [handoffBusy, setHandoffBusy] = useState(false);
-  useEffect(() => { setPendingGuards(null); setHandoffBusy(false); }, [run?.runId]);
+  useEffect(() => { setPendingGuards(null); setHandoffBusy(false); setJudgePick({}); }, [run?.runId]);
   // The chat mode the user picked in the footer, or null to follow the
   // thread's own (the mode its latest message ran in - see threadMode). This
   // component outlives the run it shows (the drawer is not keyed on the
@@ -18431,6 +18499,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
       if (g && typeof g === "object") {
         const out = {};
         for (const o of CHAT_SPAWN_FLAGS) out[o.key] = (o.key in g) ? !!g[o.key] : !!o.def;
+        for (const o of CHAT_JUDGE_OPTIONS) out[o.key] = typeof g[o.key] === "boolean" ? g[o.key] : null;
         return out;
       }
     }
@@ -18459,9 +18528,9 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // The checks the footer control shows, and whether they are a STAGED change
   // this thread can't take. `pendingGuards` only exists on a running thread;
   // an empty shell edits the sticky preference directly.
-  const effGuards = isNew ? chatGuards : (pendingGuards || runGuards || GUARD_SPAWN_DEFAULTS);
+  const effGuards = isNew ? { ...chatGuards, ...judgePick } : (pendingGuards || runGuards || GUARD_SPAWN_DEFAULTS);
   const guardsChanged = !isNew && !!pendingGuards
-                        && !sameChatGuards(pendingGuards, runGuards || GUARD_SPAWN_DEFAULTS);
+                        && !sameChatGuards(pendingGuards, runGuards || GUARD_SPAWN_DEFAULTS, judgeDefaults);
   // The isNew spawn path. The composer calls onStartNewChat(body) with no
   // options, so the footer's checks and mode are handed over here. Explicit
   // opts still win, which keeps the handoff path (which passes its own)
@@ -18474,11 +18543,24 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   }, [onStartNewChat, effGuards, effMode]);
 
   const stageGuards = useCallback((next) => {
-    if (isNew) { changeChatGuards(next); return; }
+    if (isNew) {
+      // The checks are the sticky preference; the judge toggles are this
+      // chat's only, and a toggle moved back to Settings' value is dropped,
+      // so the chat follows Settings again rather than pinning a copy.
+      const pick = {};
+      for (const o of CHAT_JUDGE_OPTIONS) {
+        const v = next[o.key];
+        if (typeof v === "boolean" && !(judgeDefaults && v === judgeDefaults[o.key])) pick[o.key] = v;
+      }
+      setJudgePick(pick);
+      const checks = Object.fromEntries(CHAT_SPAWN_FLAGS.map(o => [o.key, !!next[o.key]]));
+      if (!sameChatGuards(checks, chatGuards)) changeChatGuards(checks);
+      return;
+    }
     // Toggling back to what the thread is actually running with is not a
     // change - drop the staging so the note and the * both go away.
-    setPendingGuards(sameChatGuards(next, runGuards || GUARD_SPAWN_DEFAULTS) ? null : next);
-  }, [isNew, runGuards, chatGuards]);
+    setPendingGuards(sameChatGuards(next, runGuards || GUARD_SPAWN_DEFAULTS, judgeDefaults) ? null : next);
+  }, [isNew, runGuards, chatGuards, judgeDefaults]);
 
   // Spend a staged check change: summarise THIS thread (daemon side, from its
   // own transcript), then spawn a new one whose first message carries the
@@ -18654,7 +18736,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           ${handoffBusy ? html`
             <strong>Summarising this thread…</strong> - the new thread opens with the summary and your message as soon as it lands.
           ` : html`
-            <strong>${chatGuardsDiffHead(runGuards || GUARD_SPAWN_DEFAULTS, pendingGuards)}</strong> - ${chatGuardsDiffLabel(runGuards || GUARD_SPAWN_DEFAULTS, pendingGuards)}.
+            <strong>${chatGuardsDiffHead(runGuards || GUARD_SPAWN_DEFAULTS, pendingGuards)}</strong> - ${chatGuardsDiffLabel(runGuards || GUARD_SPAWN_DEFAULTS, pendingGuards, judgeDefaults)}.
             Checks are fixed when a thread starts, so Send
             ${(status === "streaming" || status === "connecting") ? " stops this thread and starts " : " starts "}
             a new one with the new settings, carrying a summary of this one. This thread stays reopenable with its full history.
@@ -18687,6 +18769,8 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
               pending=${guardsChanged}
               mode=${effMode}
               locked=${!isNew && !onStartNewChat}
+              judges=${judgeStatus}
+              onOpen=${() => setJudgeTick(t => t + 1)}
             />
             <${ChatWorkModePicker}
               value=${effMode}

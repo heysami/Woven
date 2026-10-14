@@ -712,17 +712,37 @@ HOW:
 GUARD_DEFAULTS = {"visual": True, "dsGuard": True, "reqQa": False, "impactQa": False, "plan": False}
 
 
+# Per-thread typed judgment, one flag per tier. NOT a check and not a
+# boolean with a default: None means "follow Settings" (the two global
+# switches, `jevJudge` / `typedJudgeVisual`), and only an explicit True or
+# False overrides them for this thread. So every caller that passes nothing
+# (node runs, planners, older clients) behaves exactly as before.
+JUDGE_GUARD_TIERS = {"judgeText": "text", "judgeImage": "image"}
+
+
 def normalize_guards(raw) -> dict:
     """Coerce whatever the client sent onto the known boolean flags.
     Missing / malformed -> each flag falls back to its GUARD_DEFAULTS value:
     an always-on gate is never dropped by an absent field, only by an
-    explicit false, and an opt-in one is never armed by accident."""
+    explicit false, and an opt-in one is never armed by accident. The
+    typed-judgment flags stay None unless set (see JUDGE_GUARD_TIERS)."""
     out = dict(GUARD_DEFAULTS)
     if isinstance(raw, dict):
         for k in out:
             if k in raw:
                 out[k] = bool(raw[k])
+    for k in JUDGE_GUARD_TIERS:
+        v = raw.get(k) if isinstance(raw, dict) else None
+        out[k] = v if isinstance(v, bool) else None
     return out
+
+
+def judge_overrides(guards) -> dict:
+    """{"text": bool|None, "image": bool|None} from a guards bag: a thread's
+    own typed-judgment choice per tier, None where it follows Settings."""
+    g = guards if isinstance(guards, dict) else {}
+    return {tier: (g.get(k) if isinstance(g.get(k), bool) else None)
+            for k, tier in JUDGE_GUARD_TIERS.items()}
 
 
 # Header of the mandatory visual gate, stripped when the user turns the check
@@ -809,13 +829,19 @@ This thread checks whether a change to one part of a prototype broke another par
 # thing. It picks no direction and runs no requirement QA, so the endpoint is
 # noise there. ds_lint, visual_qa and the sprite gate reach typed judgment on
 # their own, not through anybody's preamble.
-def _typed_judgment_state() -> Optional[dict]:
+def _typed_judgment_state(overrides: Optional[dict] = None) -> Optional[dict]:
     """{"text": judge name | None, "image": judge name | None} for each tier
     that is switched on AND has a judge set up, or None when neither does. Any
-    failure answers None - the path without typed judgment always works."""
+    failure answers None - the path without typed judgment always works.
+    `overrides` ({"text": bool|None, "image": bool|None}) is a thread's own
+    choice, which wins over the global switch for that tier."""
     try:
         _tj = _editor_import("typed_judge")
-        cfg = _tj.config()
+        cfg = dict(_tj.config())
+        for tier, key in (("text", "jevJudge"), ("image", "typedJudgeVisual")):
+            v = (overrides or {}).get(tier)
+            if isinstance(v, bool):
+                cfg[key] = v
 
         def _name(tier: str) -> Optional[str]:
             pid = _tj.pick(tier)
@@ -854,7 +880,7 @@ A judgment model that answers MANY small typed questions about ONE state in a si
 
 Judges on this install: text checks -> %s; visual checks -> %s.
 
-`curl -sS -X POST "$TH_DAEMON_URL/__judge" -H 'Content-Type: application/json' -d '{"state": "<the thing being judged>", "kind": "<requirement_item|ds_role|visual_item>", "questions": {"q1": {"type": "noul", "instructions": "<one clause, read literally>"}}}'` (`/__jev` is the same endpoint fixed to text and still works.)
+`curl -sS -X POST "$TH_DAEMON_URL/__judge?run=$TH_RUN_ID" -H 'Content-Type: application/json' -d '{"state": "<the thing being judged>", "kind": "<requirement_item|ds_role|visual_item>", "questions": {"q1": {"type": "noul", "instructions": "<one clause, read literally>"}}}'` (`/__jev` is the same endpoint fixed to text and still works.) The user can turn either tier on or off for THIS thread, so always pass `run=$TH_RUN_ID` (on `/__judge`, a typed `/__qa/run` and `/__asset_generate`): without it the daemon applies the global setting instead of this thread's.
 
 Question types: `noul` (a yes/no statement, optional `criteria.true`/`criteria.false`, returns `noul` 0-1), `choice` (a `criteria` map of optionId to rubric, 2-255 options, returns the FULL `probabilities` map plus `confidence`), `score` (an ordered `criteria` array of 2-10 levels). The reply is `{ok, answers, thresholds, provider, model, tier}`; `thresholds` is the calibrated `{low, high, noul}` band for that judge and the `kind` you named - route with those numbers, never with one you invented. A 503 names its `reason` (off, no-key, no-image-judge): run the check the way you would without it.
 
@@ -3436,7 +3462,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if isinstance(jev, dict):
         _tj_state = jev if (jev.get("text") or jev.get("image")) else None
     elif jev is None:
-        _tj_state = _typed_judgment_state()
+        _tj_state = _typed_judgment_state(judge_overrides(_g))
     elif jev:
         _tj_state = _typed_judgment_state() or {"text": "TypeSafe Jev", "image": None}
     else:

@@ -58,6 +58,7 @@ change) is always captured too: put that query on the page path in step 2.
 ```
 for p in <page1>.html <page2>.html; do
   curl -sS -G "$TH_DAEMON_URL/__qa/run" --data-urlencode "project=$TH_PROJECT_ID" \
+    --data-urlencode "run=$TH_RUN_ID" \
     --data-urlencode "page=<slug>/$p?<the page's own query, if any>" \
     --data-urlencode "typed=page" --data-urlencode "detail=full" \
     --data-urlencode "scope=$(cat <scope file for $p>)" > "${TMPDIR:-/tmp}/vqa-$p.json" &
@@ -73,8 +74,8 @@ found" means the path is wrong; fix it and run that page again.
 - `verdict` other than `pass` (`blank`, `error`, `static`, `cases-fail`, ...)
   is a failure: put it in the verdict with its `reasons`. A `Failed to load
   resource` console error alone is the page's own 404, name it.
-- No `visualReport`: typed judgment for visual checks is off or no judge is set
-  up. Say so in the verdict.
+- No `visualReport`: typed judgment for visual checks is off (for this thread,
+  or in Settings) or no judge is set up. Say so in the verdict.
 
 ## Step 3 - read the findings, as text
 

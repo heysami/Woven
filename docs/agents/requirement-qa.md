@@ -56,10 +56,12 @@ LOGIC, not code style and not visuals.
 Probe once, before Step 3:
 
 ```bash
-curl -sS -o /dev/null -w '%{http_code}' -X POST "$TH_DAEMON_URL/__judge" \
+curl -sS -o /dev/null -w '%{http_code}' -X POST "$TH_DAEMON_URL/__judge?run=$TH_RUN_ID" \
   -H 'Content-Type: application/json' \
   -d '{"kind":"requirement_item","state":"probe","questions":{"p":{"type":"noul","instructions":"This state is the word probe."}}}'
 ```
+
+Every `/__judge` and `/__qa/run` call in this spec carries `run=$TH_RUN_ID`: the user can turn typed judgment on or off for one chat thread, and a call without it gets the global setting instead of that thread's.
 
 Anything but `200` means the fast path is unavailable (no judge set up, or the user turned it off). Go straight to Step 3 and read the build yourself, exactly as this spec has always said. Never report a check as done because the probe failed.
 
@@ -102,7 +104,8 @@ Some checklist items are about what the user sees on the rendered page rather th
 
 ```bash
 curl -sS -G "$TH_DAEMON_URL/__qa/run" \
-  --data-urlencode "project=$TH_PROJECT_ID" --data-urlencode "page=<slug>" --data-urlencode "mode=render" \
+  --data-urlencode "project=$TH_PROJECT_ID" --data-urlencode "run=$TH_RUN_ID" \
+  --data-urlencode "page=<slug>" --data-urlencode "mode=render" \
   --data-urlencode 'checks={"checks":[
     {"id":"req_7","shape":"shows","x":"an illustration above the empty-state message","at":"page","selector":".empty-state"},
     {"id":"req_9","shape":"shows","x":"a plan card titled Basic","at":"page","selector":"#plans"}]}'

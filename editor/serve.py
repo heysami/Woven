@@ -15073,7 +15073,35 @@ def _normalize_chat_guards(raw) -> dict:
             for k in out:
                 if k in raw:
                     out[k] = bool(raw[k])
+        for k in ("judgeText", "judgeImage"):
+            v = raw.get(k) if isinstance(raw, dict) else None
+            out[k] = v if isinstance(v, bool) else None
         return out
+
+
+# A thread's typed-judgment choice (guards judgeText / judgeImage) mapped onto
+# the two global switches it overrides.
+_JUDGE_GUARD_SWITCH = {"judgeText": "jevJudge", "judgeImage": "typedJudgeVisual"}
+
+
+def _judge_config(qs=None, run_id=None) -> dict:
+    """The compact config as the calling THREAD sees it: its own typed-judgment
+    choice (set per chat in the Checks menu) replaces the global switch for
+    each tier it set. The caller names its thread with `run=$TH_RUN_ID`; a
+    request that names none, or a run this daemon does not know, gets the
+    global settings, which is what every caller got before the per-thread
+    choice existed."""
+    cfg = dict(_compact_config())
+    rid = run_id if isinstance(run_id, str) and run_id else (_qs_get(qs, "run") if qs else None)
+    if rid:
+        with RUNS_LOCK:
+            state = RUNS.get(rid)
+        g = getattr(state, "guards", None) if state is not None else None
+        if isinstance(g, dict):
+            for k, switch in _JUDGE_GUARD_SWITCH.items():
+                if isinstance(g.get(k), bool):
+                    cfg[switch] = g[k]
+    return cfg
 
 
 def _delegated_context(project_root, body, qs):
@@ -15191,6 +15219,15 @@ def _apply_guard_env(env: dict, guards: dict) -> dict:
             env["TH_DS_GUARD"] = "0"
         else:
             env.pop("TH_DS_GUARD", None)
+        # The thread's typed-judgment choice, for the tools the agent runs
+        # itself (ds_lint --jev reads typed_judge.enabled). Only an explicit
+        # choice is stamped; absent = follow Settings.
+        for k, var in (("judgeText", "TH_JUDGE_TEXT"), ("judgeImage", "TH_JUDGE_IMAGE")):
+            v = (guards or {}).get(k)
+            if isinstance(v, bool):
+                env[var] = "1" if v else "0"
+            else:
+                env.pop(var, None)
     except Exception:
         pass
     return env
@@ -23679,8 +23716,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                                      "judges": [r["id"] for r in typed_judge.providers()]})
         # The switches are enforced HERE, not only in the preamble, because the
         # callers that need them most (a Task subagent running requirement QA,
-        # ds_lint under the ds-guardian, visual_qa) never see a preamble.
-        cfg = _compact_config()
+        # ds_lint under the ds-guardian, visual_qa) never see a preamble. The
+        # calling thread's own choice wins (?run= or body run).
+        cfg = _judge_config(qs, body.get("run"))
         if not cfg.get("jevJudge" if tier == "text" else "typedJudgeVisual"):
             return self._reply(503, {"ok": False, "available": False, "reason": "off",
                                      "error": "typed judgment for %s checks is turned off" % tier,
@@ -24512,7 +24550,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # generation; Flag adds findings, Shadow only records.
         typed_checks = None
         expect = body.get("expect")
-        _tcfg = _compact_config()
+        _tcfg = _judge_config(qs, body.get("run") if isinstance(body, dict) else None)
         if isinstance(expect, dict) and expect and _tcfg.get("typedJudgeVisual") \
                 and typed_judge.sniff_image(bytes_[:16] if isinstance(bytes_, (bytes, bytearray)) else b""):
             try:
@@ -27635,8 +27673,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         # &checks=<json> or a visual-checks.json next to the target, the same
         # place test-cases.json is found. Asked only when typed judgment for
         # visual checks is on; never changes the verdict or the exit code. No
-        # checks means no typed question: the --judge prose is not one.
-        _tcfg = _compact_config()
+        # checks means no typed question: the --judge prose is not one. The
+        # calling thread's own choice wins over the setting (?run=).
+        _tcfg = _judge_config(qs)
         checks_raw = (_qs_get(qs, "checks") or "").strip()
         checks_path = None
         page_checks = []
@@ -28059,10 +28098,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         # switch is on: ds_lint itself re-checks the switch and the key, so the
         # flag is a silent no-op without them and the report is byte-identical
         # to the one this endpoint returned before typed judgment existed.
-        if _compact_config().get("jevJudge"):
+        # The calling thread's own choice wins (?run=), and the subprocess is
+        # told it too, since ds_lint re-checks the switch itself.
+        _jcfg = _judge_config(qs)
+        _lint_env = dict(os.environ, TH_JUDGE_TEXT="1" if _jcfg.get("jevJudge") else "0")
+        if _jcfg.get("jevJudge"):
             cmd.append("--jev")
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180, env=_lint_env)
         except subprocess.TimeoutExpired:
             return self._reply(200, {"ok": False, "status": "error",
                                      "error": "ds lint timed out after 180s"})

@@ -24301,6 +24301,29 @@ a.ds-badge:hover, button.ds-badge:hover {
   color: #fff;
 }
 .guard-check svg { width: 11px; height: 11px; }
+/* Typed-judgment toggles at the top of the checks menu: the share-switch, one
+   compact row per tier, the judge that answers right-aligned. */
+.guards-judge {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 2px 6px;
+  margin-bottom: 2px;
+  border-bottom: 1px dashed var(--border);
+}
+.guards-judge .share-switch {
+  width: 100%;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+}
+.guards-judge .share-switch:hover { background: var(--surface-2); }
+.guards-judge-name {
+  margin-left: auto;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
 /* One icon per check that is ON. The row replaces the old "2/3" count: a
    count told you how many but never which, so the chip was unreadable
    without opening it. Each icon owns a HoverTip naming its check. */

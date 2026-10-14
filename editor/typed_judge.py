@@ -165,10 +165,21 @@ def config():
     return coerce_config(_read_json(COMPACT_CONFIG_PATH))
 
 
+# A chat thread's own choice, stamped on the agent's env by the daemon
+# (serve.py _apply_guard_env) when the user overrode Settings for that thread.
+# Tools the agent runs itself (ds_lint --jev) inherit it, so they agree with
+# what the daemon's endpoints apply to the same thread.
+_ENABLED_ENV = {"text": "TH_JUDGE_TEXT", "image": "TH_JUDGE_IMAGE"}
+
+
 def enabled(tier="text"):
     # type: (str) -> bool
-    """The user's switch for this tier. An intent, not a capability: callers
-    gate on enabled(tier) AND pick(tier)."""
+    """The user's switch for this tier: the thread's override when the env
+    carries one, else the global setting. An intent, not a capability:
+    callers gate on enabled(tier) AND pick(tier)."""
+    env = os.environ.get(_ENABLED_ENV.get(tier, "TH_JUDGE_TEXT"))
+    if env in ("0", "1"):
+        return env == "1"
     return bool(config().get(_ENABLED_KEY.get(tier, "jevJudge")))
 
 
