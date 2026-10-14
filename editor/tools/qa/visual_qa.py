@@ -1133,7 +1133,8 @@ _GALLERY_PICK_JS = """(parts) => {""" + _STATE_JS + _EVIDENCE_JS + """
   if (!all.some(el => boxOf(el))) {
     for (let i = wantState.length - 1; i >= 0; i--) if (CHECK.has(wantState[i])) wantState.splice(i, 1);
   }
-  // A part's variant includes its root's modifiers (_COMP_JS variantOf).
+  // A part's variant includes its root's modifiers: the title inside
+  // .blank-slate--noresults is the noresults title.
   const root = base.indexOf('__') > 0 ? base.slice(0, base.indexOf('__')) : null;
   const mods = el => {
     const out = [...el.classList].filter(c => c.indexOf(base + '--') === 0);
@@ -1238,12 +1239,9 @@ _DOM_JS = """
   };
 """
 
-# A design-system component (or part) on the page, as everything its
-# comparison needs. Its variant counts the root's modifiers for a part: the
-# title inside `.blank-slate--noresults` is the noresults title, not the
-# plain one. `content` is its inner HTML when every class inside it is the
-# design system's (so the DS's own copy can carry the same words and icon);
-# `backdrop` is the colour it sits on.
+# The design system's vocabulary in the browser: which class is a documented
+# component (or one of its parts, ".section-card__icon"), and the colour an
+# element sits on.
 _COMP_JS = """
   const dsClasses = new Set(a.dsClasses || []);
   const titles = {};
@@ -1261,17 +1259,6 @@ _COMP_JS = """
     }
     return null;
   };
-  // A container (a card, a nav, a field) holds other DS components: its look
-  // depends on its content, so its parts are compared, not it.
-  const leafComp = el => ![...el.querySelectorAll('[class]')].some(d => compOf(d));
-  const variantOf = (el, c) => {
-    const out = [...el.classList].filter(x => dsClasses.has(x) && x.indexOf(c.cls + '--') === 0);
-    if (c.root) {
-      const r = el.closest('.' + CSS.escape(c.root));
-      if (r) out.push(...[...r.classList].filter(x => dsClasses.has(x) && x.indexOf(c.root + '--') === 0));
-    }
-    return out.sort();
-  };
   const CLEAR = /^(transparent|rgba\\(0, 0, 0, 0\\))$/;
   const backdropOf = el => {
     for (let p = el.parentElement; p; p = p.parentElement) {
@@ -1280,16 +1267,6 @@ _COMP_JS = """
     }
     return 'rgb(255, 255, 255)';
   };
-  const contentOf = el => {
-    const html = el.innerHTML;
-    const own = d => [...d.classList].every(x => dsClasses.has(x) || /^(is|has|js)-/.test(x));
-    return html.length <= 6000 && [...el.querySelectorAll('[class]')].every(own) ? html : null;
-  };
-  const compInfo = (el, c) => ({
-    cls: c.cls, title: c.title, selector: path(el), state: stateOf(el), box: box(el), leaf: leafComp(el),
-    ev: evidenceOf(el, path), props: propsOf(el), variant: variantOf(el, c),
-    backdrop: backdropOf(el), clearFill: CLEAR.test(getComputedStyle(el).backgroundColor),
-    content: contentOf(el)});
 """
 
 # What a change touches, MEASURED rather than guessed: the changed elements
@@ -2446,13 +2423,6 @@ def _full_pass(args: argparse.Namespace) -> Optional[str]:
     if v is True:
         return "page"
     return v if v in ("page", "ds") else None
-
-
-def _comp_key(c: Dict[str, Any]) -> str:
-    """One on-screen DS component as a reference key: class, its modifiers,
-    its state ("checkbox.state-unchecked"). The gallery example must match all."""
-    return ".".join([c["cls"]] + list(c.get("variant") or [])
-                    + ["state-" + st for st in c.get("state") or [] if re.match(r"^[\w-]+$", str(st))])
 
 
 def _ref_name(key: str) -> Tuple[str, str]:
