@@ -20110,12 +20110,15 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       setTimeout(() => { try { el.setSelectionRange(pos, pos); } catch {} }, 0);
     }
   };
-  const stripPointChips = (n) => {
+  // `which`: one number, or a Set of them - one pass over the latest text,
+  // so stripping several never works from a stale copy.
+  const stripPointChips = (which) => {
     const { text: cur, chips: cs } = pointLiveRef.current;
-    const hits = cs.filter(c => c.kind === "point" && c.n === n).sort((a, b) => b.start - a.start);
-    if (!hits.length) return;
+    const hit = (c) => c.kind === "point" && (which instanceof Set ? which.has(c.n) : c.n === which);
+    const hits = cs.filter(hit).sort((a, b) => b.start - a.start);
+    if (!hits.length) return false;
     let next = cur;
-    let kept = cs.filter(c => !(c.kind === "point" && c.n === n));
+    let kept = cs.filter(c => !hit(c));
     for (const h of hits) {
       const cutEnd = next[h.end] === " " ? h.end + 1 : h.end;
       const cut = cutEnd - h.start;
@@ -20124,8 +20127,10 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     }
     chipEditRef.current = true;
     prevTextRef.current = next;
+    pointLiveRef.current = { ...pointLiveRef.current, text: next, chips: kept };
     setChips(kept);
     setText(next);
+    return true;
   };
   const insertPointChipRef = useRef(insertPointChip);
   insertPointChipRef.current = insertPointChip;
@@ -20149,10 +20154,25 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     prevPointKeyRef.current = pointThreadKey;
     if (!WP || prev === pointThreadKey) return;
     if (prev === "draft" && pointThreadKey) { WP.migrate("draft", pointThreadKey); return; }
-    const ns = [...new Set(pointLiveRef.current.chips.filter(c => c.kind === "point").map(c => c.n))];
-    for (const n of ns) stripPointChipsRef.current(n);
+    const ns = new Set(pointLiveRef.current.chips.filter(c => c.kind === "point").map(c => c.n));
+    if (ns.size && stripPointChipsRef.current(ns)) skipPointPruneRef.current = true;
     if (WP.mode().armed) WP.disarm();
   }, [pointThreadKey]);
+  // A point chip that leaves the message by ANY edit (Backspace, a
+  // selection deleted or cut, the box cleared) deletes its point when it was
+  // never sent, so the badge leaves the page with it. Sends mark points sent
+  // before they clear the box, and a thread switch says so (skip flag), so
+  // neither one deletes anything; a composer that unmounts runs no effect.
+  const pointChipNsRef = useRef(new Set());
+  const skipPointPruneRef = useRef(false);
+  useEffect(() => {
+    const now = new Set(chips.filter(c => c.kind === "point").map(c => c.n));
+    const before = pointChipNsRef.current;
+    pointChipNsRef.current = now;
+    if (skipPointPruneRef.current) { skipPointPruneRef.current = false; return; }
+    if (!WP || !pointThreadKey) return;
+    for (const n of before) if (!now.has(n)) WP.removeIfUnsent(pointThreadKey, n);
+  }, [chips]);
   // A live point that a typed "[n]" names becomes a chip without an edit.
   const pointNsKey = threadPoints.map(p => p.n).join(",");
   useEffect(() => {
@@ -45203,10 +45223,43 @@ function wfPointSameTarget(p, d) {
   if (d.kind === "node") return p.nodeId === d.nodeId;
   return p.page === d.page && !!p.anchor && !!d.anchor && p.anchor.selector === d.anchor.selector;
 }
-// Make (or re-name) the point for a hit, in the armed thread. A one-shot
-// ("=") disarms after its point; a second press on the same target within
-// half a second (a double-click) is ignored.
+// A point press owns the WHOLE gesture. Its pointerup / mouseup / click must
+// reach neither the page nor the canvas underneath, including after a
+// one-shot "=" has made its point: disarming on the press would drop the
+// listeners and let the release click a link or button. So the rest of the
+// gesture is swallowed on every window involved until the click lands (or
+// shortly after the release when no click follows, e.g. a drag), and only
+// then does `after` run - which is when a one-shot disarms.
+function wfPointSwallowGesture(wins, after) {
+  const types = ["pointerup", "mouseup", "click", "dblclick", "auxclick", "contextmenu"];
+  let done = false, timer = 0;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    for (const w of wins) for (const t of types) { try { w.removeEventListener(t, swallow, true); } catch {} }
+    if (after) { try { after(); } catch {} }
+  };
+  const swallow = (e) => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (e.type === "click" || e.type === "auxclick") finish();
+    else if (e.type === "pointerup" || e.type === "mouseup") { clearTimeout(timer); timer = setTimeout(finish, 350); }
+  };
+  for (const w of wins) for (const t of types) { try { w.addEventListener(t, swallow, true); } catch {} }
+  timer = setTimeout(finish, 4000);   // a press held for ages still ends
+}
+// Make (or re-name) the point for a hit, in the armed thread. The caller
+// swallows the rest of the gesture and disarms a one-shot at its end (see
+// wfPointSwallowGesture). A second press on the same target within half a
+// second (a double-click) is ignored.
 let __wfPointLastClick = { sig: "", t: 0 };
+function wfPointEndOneShot(mode) {
+  const WP = window.WovenPoints;
+  if (!WP || !mode || !mode.oneShot) return;
+  const now = WP.mode();
+  if (now.armed && now.oneShot && now.threadKey === mode.threadKey && now.insertAt === mode.insertAt) WP.disarm();
+}
 function wfPointCommit(hit) {
   const WP = window.WovenPoints;
   const m = WP ? WP.mode() : null;
@@ -45218,9 +45271,7 @@ function wfPointCommit(hit) {
   if (__wfPointLastClick.sig === sig && now - __wfPointLastClick.t < 500) return null;
   __wfPointLastClick = { sig, t: now };
   const existing = WP.list(m.threadKey).find(p => wfPointSameTarget(p, d));
-  const p = existing ? (WP.reference(m.threadKey, existing.n), existing) : WP.add(m.threadKey, d);
-  if (m.oneShot) WP.disarm();
-  return p;
+  return existing ? (WP.reference(m.threadKey, existing.n), existing) : WP.add(m.threadKey, d);
 }
 // Screen rect of a hit, for the hover ring.
 function wfPointHitRect(hit, wrapRect, pan, zoom) {
@@ -60265,8 +60316,12 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
             if (pointArmed && e.button === 0 && !e.altKey && !e.metaKey && !e.ctrlKey && !spaceHeld) {
               e.preventDefault();
               e.stopPropagation();
+              const mode0 = { ...pointWP.mode() };
               const hit = pointHitAtEvent(e);
-              if (hit) wfPointCommit(hit);
+              const made = hit ? wfPointCommit(hit) : null;
+              // The release and click are swallowed too, so nothing on the
+              // canvas (node buttons, a selected node's page) sees them.
+              wfPointSwallowGesture([window], () => { if (made) wfPointEndOneShot(mode0); });
               return;
             }
             // Whiteboard resize/endpoint handles own their events in BOTH
@@ -62358,7 +62413,10 @@ function ProtoViewerPointLayer({ stageRef, activeId, zoom, deviceVp, visible }) 
     if (!f) return;
     let win = null;
     let cursorStyle = null;
-    const block = (e) => { e.preventDefault(); e.stopImmediatePropagation(); };
+    // stopPropagation, not stopImmediatePropagation: the page never sees the
+    // event, but wfPointSwallowGesture's listener on this same window still
+    // has to, or a one-shot would never learn that its gesture ended.
+    const block = (e) => { e.preventDefault(); e.stopPropagation(); };
     const pickable = (el) => el && el.tagName && !/^(html|body)$/i.test(el.tagName);
     let hovered = null;
     const onMove = (e) => {
@@ -62376,10 +62434,15 @@ function ProtoViewerPointLayer({ stageRef, activeId, zoom, deviceVp, visible }) 
       if (e.button !== 0 || e.isPrimary === false) return;
       block(e);
       const el = e.target;
-      if (!pickable(el)) return;
+      if (!pickable(el)) { wfPointSwallowGesture([e.view].filter(Boolean)); return; }
       const page = wfPointPagePath(f);
       if (!page) return;
-      wfPointCommit({ kind: "element", el, frame: f, page });
+      const mode0 = { ...WP.mode() };
+      const made = wfPointCommit({ kind: "element", el, frame: f, page });
+      // Keep swallowing this gesture on the page's own window even after the
+      // effect re-binds, so its release never clicks the link or button.
+      const pageWin = e.view || (el.ownerDocument && el.ownerDocument.defaultView);
+      wfPointSwallowGesture([pageWin, window].filter(Boolean), () => { if (made) wfPointEndOneShot(mode0); });
     };
     const onLeave = () => { hovered = null; setRing(null); };
     const attach = () => {
