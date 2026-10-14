@@ -136,7 +136,7 @@ Commit `im_research_<imId>` directly (no lens gate on research itself).
 
 ## 3. Phase B - User steerage interrupt (§12.5)
 
-After research synthesis, emit `<decision-request id="cp_im_research_<imId>">` with the committed input/output/mapping/permission/`buildTier` summary. Options: Approve / Steer / Reject. 5%-budget abort point. This is the only steerage interrupt in the playbook - there are no longer any per-drawer pick checkpoints.
+After research synthesis, emit `<decision-request id="cp_im_research_<imId>">` with the committed input/output/mapping/permission/`buildTier` summary. Options: Approve / Reject (no Steer option: a typed reply is the steer). 5%-budget abort point. This is the only steerage interrupt in the playbook - there are no longer any per-drawer pick checkpoints.
 
 ## 4. Phase C - Scaffold + dispatch INCREMENTALLY (no batch-then-pray)
 
@@ -207,7 +207,7 @@ poll until scaffold.gateNode is done/error                     # builders commit
 #    done  -> if its output carries a <decision-request> (iteration cap / success
 #             checkpoint), RELAY the block VERBATIM in your reply - only the chat can
 #             render the card - then honour the pick (Accept -> container commit with
-#             accept-override; Push deeper / Replace / Tweak -> re-dispatch the gate
+#             accept-override; Push deeper / Replace / a typed reply -> re-dispatch the gate
 #             node with the pick in the run body). Otherwise relay the pass summary.
 #    error -> surface the gate node's runError; ONLY then may you run contract 3
 #             inline as the legacy fallback - and say so out loud.

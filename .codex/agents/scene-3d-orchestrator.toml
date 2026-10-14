@@ -140,7 +140,7 @@ Commit `s3d_research_<sceneId>` directly (no lens gate on research itself).
 
 ## 3. Phase B - User steerage interrupt (§12.5)
 
-After research commits, emit `<decision-request id="cp_s3d_research_pick_<sceneId>">` summarizing: **`immersionMode`** (object-hero vs immersive-place), and for immersive-place the **`locationArchetype` + `fidelityRegister` + the six-pillar plan** (one line each: lighting / surface / density / distance / color-script / motion), then integration + drive mode, the renderer/lighting story, the post chain, the interaction grammar, **and the subsystem list** (one line per subsystem: `sysId · role · renderRoute · one-line intent`). Options: Approve / Steer / Reject. This is the 5%-budget abort point - and the user's chance to flip immersionMode, swap the archetype/register, or add/drop/merge subsystems before any are built.
+After research commits, emit `<decision-request id="cp_s3d_research_pick_<sceneId>">` summarizing: **`immersionMode`** (object-hero vs immersive-place), and for immersive-place the **`locationArchetype` + `fidelityRegister` + the six-pillar plan** (one line each: lighting / surface / density / distance / color-script / motion), then integration + drive mode, the renderer/lighting story, the post chain, the interaction grammar, **and the subsystem list** (one line per subsystem: `sysId · role · renderRoute · one-line intent`). Options: Approve / Reject (no Steer option: a typed reply is the steer). This is the 5%-budget abort point - and the user's chance to flip immersionMode, swap the archetype/register, or add/drop/merge subsystems before any are built.
 
 ## 4. Phase C - Decompose → scaffold + dispatch INCREMENTALLY
 

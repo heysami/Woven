@@ -95,10 +95,11 @@ Write `source/<branch>/vx-voice-design.md` with:
     Voice on for that share, and it stays rate-capped when you do.
   </details>
   <option value="approve">Approve - build the voice layer.</option>
-  <option value="steer">Steer - reply with the triggers to drop, add or re-word, or a different voice.</option>
   <option value="reject">Reject - skip the voice layer.</option>
 </decision-request>
 ```
+
+A typed reply instead of a pick is the steer: drop, add or re-word the triggers the user named (or change the voice), and re-emit the card.
 
 On `reject`, return `runStatus: error` with `runError: "user declined the voice layer"`.
 

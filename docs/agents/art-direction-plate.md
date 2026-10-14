@@ -105,17 +105,16 @@ So: **do not emit the gate. RETURN the `<direction-options>` block below verbati
     <why><how it diverges from candidate 1 - name the axis (tensionAxis / palette / value key / density)></why>
   </opt>
   <!-- ...one <opt> per remaining plate (cap 3)... -->
-  <opt value="steer"><label>Steer - adjust palette / type / register / the divergence axis; I regenerate the plate(s)</label></opt>
   <opt value="reject"><label>Reject - skip art direction, build from the text-only committed aesthetic</label></opt>
 </direction-options>
 ```
 
 **The CALLER** (not you) waits for `[decision:art_direction_<projectId>] <value>` and acts:
 - `plate-<n>` → re-dispatches YOU with `mode: "finalize"`, `chosenPlate: <n>` → you run §4.5 + §4.6 + §5.
-- `steer` → re-dispatches YOU with `mode: "plate"` + the correction → you regenerate the plate(s) and return a fresh gate. Nothing was committed.
+- a typed reply instead of a pick (the steer: palette / type / register / the divergence axis; there is no Steer option, the card prints "Or reply below to change it.") → re-dispatches YOU with `mode: "plate"` + the correction → you regenerate the plate(s) and return a fresh gate. Nothing was committed.
 - `reject` → the build proceeds text-only as today; you are not re-dispatched.
 
-In your `mode: "plate"` dispatch you STOP after returning the `gateBlock`. You author NO contract and crop NOTHING - those happen only in the `mode: "finalize"` dispatch, after the pick. A single-plate set still uses `<direction-options>` (one plate `<opt>` + steer + reject) - never `<decision-request>`. Approval covers THIS build pass.
+In your `mode: "plate"` dispatch you STOP after returning the `gateBlock`. You author NO contract and crop NOTHING - those happen only in the `mode: "finalize"` dispatch, after the pick. A single-plate set still uses `<direction-options>` (one plate `<opt>` + reject) - never `<decision-request>`. Approval covers THIS build pass.
 
 **Motion plates are a USER DECISION, not an auto-spend.** When `GET /__capabilities` reports a non-empty `videoModels` AND `approvedOwnsSurface` contains at least one motion-benefiting family (motion roster: narrative-experience, game-experience, interactive-media, motion-studio, scene-3d), ALSO return a second card in the hand-off (`motionGateBlock`, alongside `gateBlock`) asking whether to lock each such surface's motion feel with a short video, or stay stills-only. The caller emits it right after the plate gate and threads the answer into the finalize dispatch as `motionPlates: true|false`. When either eligibility condition fails, set `motionGateBlock: null` - do NOT ask a question the capability cannot honour.
 

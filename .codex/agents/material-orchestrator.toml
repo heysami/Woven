@@ -189,10 +189,11 @@ After all material assignments are planned, BEFORE applying anything:
     Mobile vs desktop coverage: <which reactive behaviours degrade gracefully>
   </details>
   <option value="approve">Approve - commit all material fidelity.</option>
-  <option value="steer">Steer - list selectors + desired materialIds + reactive budget change.</option>
   <option value="reject">Reject - keep the existing styling.</option>
 </decision-request>
 ```
+
+A typed reply instead of a pick is the steer: re-assign the selectors the user named (materialIds, reactive budget) and re-emit the card.
 
 ## 4. Phase C - Scaffold + dispatch INCREMENTALLY
 

@@ -191,7 +191,7 @@ Per-component briefing each drawer reads.
 
 ## 3. Phase B - User steerage interrupt (§12.5)
 
-After research synthesis emit `<decision-request id="cp_nx_research_<nxId>">` with the committed register + pacing + spine outline + buildTier. Options: Approve / Steer / Reject. Same 5%-budget abort point.
+After research synthesis emit `<decision-request id="cp_nx_research_<nxId>">` with the committed register + pacing + spine outline + buildTier. Options: Approve / Reject (no Steer option: a typed reply is the steer). Same 5%-budget abort point.
 
 Concept-lens needs `successFeel` to be a felt-state, not intuition. If the user steers toward "the user understands Vermeer better" (cognitive) → push back ASK FOR a felt-state: "what does it FEEL like after they leave?"
 
@@ -262,7 +262,7 @@ poll until scaffold.gateNode is done/error                     # builders commit
 #    done  -> if its output carries a <decision-request> (iteration cap: cp_nx_gate_<nxId>),
 #             RELAY the block VERBATIM in your reply - only the chat can render the
 #             card - then honour the pick (Accept -> container commit with
-#             accept-override; Push deeper / Replace / Tweak -> re-dispatch the gate
+#             accept-override; Push deeper / Replace / a typed reply -> re-dispatch the gate
 #             node with the pick in the run body). Otherwise relay the pass summary.
 #    error -> surface the gate node's runError; ONLY then may you run contract 3
 #             inline as the legacy fallback - and say so out loud.

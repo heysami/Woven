@@ -1,6 +1,6 @@
 """Plan-mode split groups: who claims what, and the plan check once they finish.
 
-Answering a plan gate with "split" makes the APP open one real thread per plan
+Answering a plan gate with "execute" makes the APP open one real thread per plan
 item (app.js spawnPlanSplitRuns). Those threads start at the same moment in
 the SAME working tree. On suss-cal (2026-09-29) one split thread saw its
 sibling's edit in `git status`, took it for its own subagent's stray, and ran
@@ -33,8 +33,10 @@ BRIEF_CHARS = 6000
 PLAN_CHARS = 15000
 ASK_CHARS = 3000
 SIBLING_MARK = "\n\n---\nPARALLEL THREADS"
-# Typed go-aheads in the planning thread are commands, not asks.
-_APPROVALS = {"split", "split it", "yes", "go", "yes go", "go ahead", "do it", "ok", "okay"}
+# Typed go-aheads in the planning thread are commands, not asks. "split" is
+# the gate's old button word, "execute" its current one.
+_APPROVALS = {"execute", "execute it", "execute the plan", "split", "split it",
+              "yes", "go", "yes go", "go ahead", "do it", "ok", "okay"}
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,120}$")
 

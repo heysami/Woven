@@ -112,10 +112,11 @@ For each enumerated shader slot:
     Cost: 0 image-gen calls (shaders are procedural). The shader skill / app-node author renders them at build.
   </details>
   <option value="approve">Approve.</option>
-  <option value="steer">Steer - list slots + desired library shaderIds / stack.</option>
   <option value="reject">Reject - skip shader orchestration entirely.</option>
 </decision-request>
 ```
+
+A typed reply instead of a pick is the steer: re-pick the slots the user named (library shaderIds / stack) and re-emit the card.
 
 ## 4. Phase C - Scaffold + commit
 

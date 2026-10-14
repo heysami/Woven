@@ -107,11 +107,12 @@ You are about to spend the user's ElevenLabs credits. Nothing has been generated
     Nothing has been generated yet. Sound effects and music bill per generation; narration bills per character.
   </details>
   <option value="approve">Approve - generate all planned assets.</option>
-  <option value="trim">Trim - reply with the assetIds to drop, or shorter scripts.</option>
   <option value="plan-only">Plan only - commit the direction and the glue plan, generate nothing.</option>
   <option value="reject">Reject - skip sound orchestration entirely.</option>
 </decision-request>
 ```
+
+A typed reply instead of a pick is the steer: drop the assetIds the user named or shorten the scripts they asked for, and re-emit the card with the new cost.
 
 `plan-only` is not a polite decline, it is a real mode: the enrichment nodes still land with null `assetPath` fields and populated `synthFallback` descriptors, so game-feedback-author and im-output-audio get a coherent register for their synth paths at zero spend. Set `planOnly: true` on the container.
 

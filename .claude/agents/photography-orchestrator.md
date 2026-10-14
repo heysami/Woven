@@ -197,12 +197,11 @@ After all enrichments are picked, BEFORE committing, emit a `<decision-request>`
     Estimated cost: 0 image-gen calls yet - that happens when visual-orchestrator dispatches raster-photo per slot.
   </details>
   <option value="approve">Approve - commit the enrichments.</option>
-  <option value="steer">Steer - list which slots to re-pick + the desired style (by library styleId).</option>
   <option value="reject">Reject - skip photography orchestration entirely.</option>
 </decision-request>
 ```
 
-On `steer`, re-pick the named slots. On `reject`, return `runStatus: error` with `runError: "user rejected photography enrichment"` and let visual-orchestrator dispatch raster-photo with default (un-enriched) prompts.
+A typed reply instead of a pick is the steer: re-pick the named slots. On `reject`, return `runStatus: error` with `runError: "user rejected photography enrichment"` and let visual-orchestrator dispatch raster-photo with default (un-enriched) prompts.
 
 ## 4. Phase C - Scaffold + commit
 

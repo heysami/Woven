@@ -12202,7 +12202,7 @@ const CHAT_GUARD_OPTIONS = [
    building would hang the parent waiting on it. */
 const PLAN_MODE_OPTION = {
   key: "plan", def: false, icon: "DocPencil", label: "Plan first",
-  hint: "The agent plans before it builds anything: a text wireframe of the screen (before and after, for a change), a table of the logic, and a table of the copy with the component and dynamic value behind each line. One sentence per point, four bullets at most, no paragraphs. It stops there and offers to split the plan across one agent run per point, or to let you edit the plan first. Applies to the run you start next and is not remembered: every chat begins with it off.",
+  hint: "The agent plans before it builds anything: a text wireframe of the screen (before and after, for a change), a table of the logic, and a table of the copy with the component and dynamic value behind each line. One sentence per point, four bullets at most, no paragraphs. It stops there with one button, Execute the plan, which runs each point as its own thread; reply instead to change the plan. Applies to the run you start next and is not remembered: every chat begins with it off.",
 };
 // Everything the composer stages onto a SPAWN. The checks and plan mode are
 // separate controls with separate meanings, but one payload and one staging
@@ -12435,7 +12435,7 @@ function ChatPlanModeToggle({ value, onChange, locked, running, pending }) {
       ? "Plan first is STAGED. Send starts a new thread that plans before it builds, carrying a summary of this one."
       : "Plan first is STAGED off. Send starts a new thread that builds without planning, carrying a summary of this one.";
   } else if (on) {
-    tip = "Plan first - the agent answers with the UI, the logic and the copy it intends to write, then stops and offers to split the plan across one agent run per point. Nothing is built until you answer, and the runs it dispatches build rather than re-plan. Click to turn off.";
+    tip = "Plan first - the agent answers with the UI, the logic and the copy it intends to write, then stops with an Execute the plan button that runs each point as its own thread; reply instead to change it. Nothing is built until you answer, and the runs it dispatches build rather than re-plan. Click to turn off.";
   } else {
     tip = "Plan first - have the agent lay out the UI, the logic and the copy before it builds any of it, then split the plan across one run per point. Applies to the next run only: it is never remembered, so every chat starts with it off. Click to turn on.";
     if (running) tip += " Planning is baked into a thread's system prompt, so this starts a new thread on your next Send.";
@@ -22646,6 +22646,20 @@ function recoverGateMarkup(body) {
   return { tag: null, attrs: "", body: out };
 }
 
+// Options whose only job is to make the user type something next (Steer,
+// Review, Revise, Trim...). The cards never render them as buttons: they
+// print "Or reply below to change it." instead, because a typed reply carries
+// the change in one turn where the button cost a round trip (a bare "review"
+// pick just made the agent ask "what do you want to change?"). `<opt input>`
+// is the explicit marker; the rest is caught by value / label so old prompts
+// and free-typed cards lose the button too.
+const REPLY_ONLY_VALUE_RE = /^(steer|review|revise|tweak|trim|reject-sites|reply)$/i;
+function isReplyOnlyOption(value, attrs, label) {
+  return REPLY_ONLY_VALUE_RE.test(String(value || "").trim())
+    || /\binput\b/i.test(attrs || "")
+    || /^(steer|revise)\b/i.test(String(label || "").trim());
+}
+
 // Flat-option parser shared by <decision-request> bodies and the flat
 // fallback inside <direction-options>. Stage 1: canonical
 // <option value="...">Label</option>. Stage 2: the rich
@@ -22669,9 +22683,7 @@ function parseDecisionOptions(body) {
       preview: gateAttr("preview", oattrs),
       group:   gateAttr("group", oattrs),
       checked: gateChecked(oattrs),
-      // "steer" options open a freeform textarea on click so the user types
-      // WHAT to steer before sending.
-      needsInput: value.toLowerCase() === "steer" || /\binput\b/i.test(oattrs) || /^steer\b/i.test(lbl),
+      replyOnly: isReplyOnlyOption(value, oattrs, lbl),
     });
   }
   if (opts.length > 0) return opts;
@@ -22695,7 +22707,7 @@ function parseDecisionOptions(body) {
       preview: gateAttr("preview", oattrs),
       group:   gateAttr("group", oattrs),
       checked: gateChecked(oattrs),
-      needsInput: value.toLowerCase() === "steer" || /\binput\b/i.test(oattrs) || /^steer\b/i.test(lbl),
+      replyOnly: isReplyOnlyOption(value, oattrs, lbl),
     });
   }
   return opts;
@@ -22711,9 +22723,9 @@ function parseProseDecisionOptions(body) {
   const flat = String(body || "").replace(/<[^>]+>/g, " ");
   if (!/\bapprove\b/i.test(flat) || !/\bsteer\b/i.test(flat) || !/\breject\b/i.test(flat)) return [];
   return [
-    { value: "approve", label: "Approve", preview: null, group: null, checked: false, needsInput: false },
-    { value: "steer",   label: "Steer",   preview: null, group: null, checked: false, needsInput: true  },
-    { value: "reject",  label: "Reject",  preview: null, group: null, checked: false, needsInput: false },
+    { value: "approve", label: "Approve", preview: null, group: null, checked: false, replyOnly: false },
+    { value: "steer",   label: "Steer",   preview: null, group: null, checked: false, replyOnly: true  },
+    { value: "reject",  label: "Reject",  preview: null, group: null, checked: false, replyOnly: false },
   ];
 }
 
@@ -22721,10 +22733,9 @@ function parseProseDecisionOptions(body) {
 // degrade to raw tag soup with nothing to click - an unanswerable gate that
 // stalls the build until a human reads chat.jsonl (the failure mode this
 // whole suite exists to prevent). Instead render the body as prose with the
-// wrapper tags stripped, plus a minimal one-option Reply card on the same
-// [decision:<id>] submit protocol (needsInput opens the typed-reply panel,
-// so the user can still answer "approve" / steer in their own words - the
-// resuming agent reads it like any other gate answer). Never returns null:
+// wrapper tags stripped, plus a card with no buttons whose reply hint asks the
+// user to answer in the composer ("approve" / a change, in their own words -
+// the resuming agent reads it like any other reply). Never returns null:
 // this is the floor under every parser above it.
 function lastDitchGateSegments(rawText, id, prompt) {
   const prose = String(rawText || "")
@@ -22734,8 +22745,8 @@ function lastDitchGateSegments(rawText, id, prompt) {
     { kind: "text", text: prose },
     { kind: "decision", decision: {
       id: id || gateSlug(prompt || "") || "gate-reply",
-      prompt: prompt || "This gate card did not parse into buttons. Reply to answer it (e.g. \"approve\").",
-      options: [{ value: "reply", label: "Reply", preview: null, group: null, checked: false, needsInput: true }],
+      prompt: prompt || "This question did not come through with buttons.",
+      options: [],
       multiSelect: false, groupBy: null, picksPerGroup: null, minPicks: 1, maxPicks: 1,
     }, raw: rawText },
   ];
@@ -22750,7 +22761,7 @@ function lastDitchGateSegments(rawText, id, prompt) {
 // Accepts the AskUserQuestion shape (first non-empty question) and a flat
 // {prompt|question, multiSelect, options:[...]} shape; options may be strings
 // or {label, description, value, checked, recommended}. Returns
-// { prompt, multiSelect, options:[{value,label,checked,needsInput}] } or null.
+// { prompt, multiSelect, options:[{value,label,checked,replyOnly}] } or null.
 function parseGateJsonBody(body) {
   if (!body || body.indexOf("{") === -1) return null;
   const j = tolerantJsonParse(body);
@@ -22775,9 +22786,7 @@ function parseGateJsonBody(body) {
       preview: null,
       group:   null,
       checked: o.checked === true || o.recommended === true,
-      // "Steer: ..." options open the freeform textarea so the user types
-      // WHAT to steer, mirroring the XML steer semantics.
-      needsInput: /^steer\b/i.test(lbl0),
+      replyOnly: isReplyOnlyOption(value, "", lbl0),
     });
   }
   if (options.length === 0) return null;
@@ -22927,12 +22936,9 @@ function parseDirectionOpts(body) {
     const badge = pull("badge")?.inner || "";
     const recommended = gateChecked(oattrs);
     const value = uniq(gateAttr("value", oattrs) || gateSlug(label) || String(opts.length + 1));
-    // "steer" (or any <opt … input>) opens a freeform input instead of
-    // submitting on click - so the user types WHAT to steer before sending,
-    // rather than firing a bare "steer" that makes the agent ask back.
-    const needsInput = value.toLowerCase() === "steer" || /\binput\b/i.test(oattrs) || /^steer\b/i.test(label);
+    const replyOnly = isReplyOnlyOption(value, oattrs, label);
     opts.push({
-      value, recommended, needsInput,
+      value, recommended, replyOnly,
       label, axes, vibe, why, palette,
       display, body: bodyTxt, image, images, badge,
     });
@@ -22941,7 +22947,7 @@ function parseDirectionOpts(body) {
   // Flat <option value>Label</option> children inside a direction wrapper:
   // render label-only rich opts (no palette / type / image chrome to pull).
   return parseDecisionOptions(body).map((o) => ({
-    value: o.value, recommended: o.checked, needsInput: o.needsInput,
+    value: o.value, recommended: o.checked, replyOnly: o.replyOnly,
     label: o.label, axes: "", vibe: "", why: "", palette: [],
     display: null, body: null, image: null, images: [], badge: "",
   }));
@@ -23446,6 +23452,15 @@ function DecisionOptionPreview({ preview, label }) {
   />`;
 }
 
+// The line under every open gate card that replaces the old Steer / Review /
+// Revise buttons: the composer is the steer. One line, no button - a click on
+// a "change something" option only made the agent spend a turn asking what.
+function GateReplyHint({ hasOptions }) {
+  return html`<div className="chat-gate-reply-hint">
+    ${hasOptions ? "Or reply below to change it." : "Reply below to answer it."}
+  </div>`;
+}
+
 // Onboarding checkpoint protocol - the orchestrator emits
 //   <decision-request id="cp_ds_pick" prompt="Which DS variant?">
 //     <option value="a" preview="source/main/_ds_brainstorm/a.html">Editorial Mono</option>
@@ -23489,17 +23504,16 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
       setSplitBusy(false);
     }
   };
-  // Which "steer"-style option is expanded for freeform input (its value), and
-  // the text typed into it. Clicking a needsInput option opens this panel
-  // instead of submitting; the message is sent only on confirm.
-  const [steerOpen, setSteerOpen] = useState(null);
-  const [steerText, setSteerText] = useState("");
   const key = `decision:${decision.id}`;
   // `answered` may be a string (legacy single-pick) or an array (multi).
   // Normalise to an array for rendering; preserve the shape on send.
   const answeredArr = Array.isArray(answered) ? answered : (answered ? [answered] : []);
   const isAnswered = answeredArr.length > 0;
   const isMulti    = !!decision.multiSelect || !!decision.groupBy;
+  // Reply-only options (Steer / Review / ...) are not buttons: the reply hint
+  // under the card replaces them. Kept only when it is the pick an older card
+  // was answered with, so its history still shows what was chosen.
+  const options = decision.options.filter(o => !o.replyOnly || answeredArr.includes(o.value));
 
   // Local pick state - single value or array of values depending on mode.
   // Initialise from answered so a reload-rehydrated card shows the prior pick.
@@ -23507,7 +23521,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
   // proposal pre-ticked (orchestrator-plan gate UX: edit the roster, Send).
   const [localPicks, setLocalPicks] = useState(() => {
     if (answeredArr.length > 0) return answeredArr;
-    if (isMulti) return decision.options.filter(o => o.checked).map(o => o.value);
+    if (isMulti) return options.filter(o => o.checked).map(o => o.value);
     return [];
   });
 
@@ -23515,18 +23529,18 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
   // sit in a single implicit group "_all".
   const groups = useMemo(() => {
     const by = new Map();
-    for (const opt of decision.options) {
+    for (const opt of options) {
       const g = decision.groupBy ? (opt.group || "_ungrouped") : "_all";
       if (!by.has(g)) by.set(g, []);
       by.get(g).push(opt);
     }
-    return Array.from(by.entries()).map(([groupId, options]) => ({ groupId, options }));
-  }, [decision.options, decision.groupBy]);
+    return Array.from(by.entries()).map(([groupId, opts]) => ({ groupId, options: opts }));
+  }, [decision.options, decision.groupBy, answered]);
 
   // Submission gating - counts per-group when grouped, or total when flat.
   const picksPerGroup = decision.picksPerGroup || 1;
   const minTotal = decision.minPicks || (isMulti ? 1 : 1);
-  const maxTotal = decision.maxPicks || (decision.groupBy ? (groups.length * picksPerGroup) : (isMulti ? decision.options.length : 1));
+  const maxTotal = decision.maxPicks || (decision.groupBy ? (groups.length * picksPerGroup) : (isMulti ? options.length : 1));
   const groupedComplete = !decision.groupBy ? true : groups.every(g => {
     const count = g.options.filter(o => localPicks.includes(o.value)).length;
     return count === picksPerGroup;
@@ -23543,7 +23557,7 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
     setLocalPicks(prev => {
       if (decision.groupBy) {
         // Radio within group: clicking an option replaces any prior pick in its group.
-        const siblings = decision.options.filter(o => (o.group || "_ungrouped") === (opt.group || "_ungrouped")).map(o => o.value);
+        const siblings = options.filter(o => (o.group || "_ungrouped") === (opt.group || "_ungrouped")).map(o => o.value);
         const withoutSiblings = prev.filter(v => !siblings.includes(v));
         return [...withoutSiblings, opt.value];
       }
@@ -23580,6 +23594,13 @@ function DecisionRequestCard({ decision, runId, answered, onAnswered, processEnd
 function isPlanSplitGate(id) {
   return typeof id === "string" && /^plan-next(-\d+)?$/.test(id);
 }
+// The plan gate's one button. "split" is what it was called before the card
+// lost its Review option; kept so answered cards in older threads still read
+// as executed (and can still retry opening their threads).
+function isPlanExecutePick(value) {
+  return value === "execute" || value === "split";
+}
+
 
 async function spawnPlanSplitRuns(parentRunId) {
   // The project root is served statically, same way DECISION_*.json is read
@@ -23670,7 +23691,7 @@ async function spawnPlanSplitRuns(parentRunId) {
   return opened;
 }
 
-  const submit = async (overridePicks, extra) => {
+  const submit = async (overridePicks) => {
     const picks = overridePicks || localPicks;
     if (!runId || isAnswered || busy || picks.length === 0) return;
     setBusy(true); setError(null); setWarning(null);
@@ -23679,10 +23700,7 @@ async function spawnPlanSplitRuns(parentRunId) {
     const values = picks.slice();
     const labels = picks.map(v => optsByValue.get(v)?.label || v);
     // User-message format: `[decision:<id>] v1,v2,v3 - label1; label2; label3`
-    // A steer option appends the freeform detail: `... - label: <detail>`.
-    const detail = (extra || "").trim();
-    const text = `[decision:${decision.id}] ${values.join(",")} - ${labels.join("; ")}`
-      + (detail ? `: ${detail}` : "");
+    const text = `[decision:${decision.id}] ${values.join(",")} - ${labels.join("; ")}`;
     try {
       await postRunReply(runId, text);
       // Durability - non-fatal but surfaced.
@@ -23702,12 +23720,12 @@ async function spawnPlanSplitRuns(parentRunId) {
       } catch (e2) {
         setWarning(`Choice sent, but not persisted (${e2.message || e2}). Reloading the page will re-ask this checkpoint.`);
       }
-      // Plan-mode fan-out. "split" on the plan gate means the APP opens one
+      // Plan-mode fan-out. "execute" on the plan gate means the APP opens one
       // real thread per plan point - see spawnPlanSplitRuns. Done after the
       // reply + the durability POST so the gate is recorded as answered even
       // if spawning fails, and surfaced as a warning rather than an error
       // because the answer itself did land.
-      if (isPlanSplitGate(decision.id) && values[0] === "split") {
+      if (isPlanSplitGate(decision.id) && isPlanExecutePick(values[0])) {
         await runSplitFanOut();
       }
       // Onward state: a single pick stays as a string (legacy), multi/grouped become an array.
@@ -23720,14 +23738,6 @@ async function spawnPlanSplitRuns(parentRunId) {
   };
 
   const pickAndMaybeSubmit = (opt) => {
-    if (opt.needsInput) {
-      // Steer-style option: open the freeform panel instead of submitting.
-      // Toggle closed if it's already open for this option.
-      if (isAnswered || busy) return;
-      setSteerText("");
-      setSteerOpen(v => v === opt.value ? null : opt.value);
-      return;
-    }
     if (isSinglePick) {
       // Single-pick: skip the localPicks dance, submit immediately so the
       // single-click UX is preserved.
@@ -23746,7 +23756,7 @@ async function spawnPlanSplitRuns(parentRunId) {
     return html`
       <button
         key=${opt.value}
-        className=${"chat-decision-opt" + (finalPicked ? " is-picked" : "") + (opt.preview ? " has-preview" : "") + (opt.needsInput && steerOpen === opt.value ? " is-steering" : "")}
+        className=${"chat-decision-opt" + (finalPicked ? " is-picked" : "") + (opt.preview ? " has-preview" : "")}
         disabled=${busy || isAnswered}
         onClick=${() => pickAndMaybeSubmit(opt)}
         title=${opt.label}>
@@ -23777,38 +23787,9 @@ async function spawnPlanSplitRuns(parentRunId) {
               <div className="chat-decision-options">${renderOptions(g.options)}</div>
             </div>
           `)
-        : html`<div className="chat-decision-options">${renderOptions(decision.options)}</div>`
+        : options.length > 0 && html`<div className="chat-decision-options">${renderOptions(options)}</div>`
       }
-      ${steerOpen && !isAnswered && (() => {
-        const opt = decision.options.find(o => o.value === steerOpen);
-        if (!opt) return null;
-        return html`
-          <div className="chat-direction-steer-panel">
-            <textarea
-              className="chat-direction-steer-input"
-              placeholder="What should I adjust? e.g. drop the entrance settle, logo breathe only, skip parallax"
-              value=${steerText}
-              autoFocus
-              disabled=${busy || isAnswered}
-              onInput=${(e) => setSteerText(e.target.value)}
-              onKeyDown=${(e) => {
-                if (e.key === "Escape") { e.preventDefault(); setSteerOpen(null); }
-                else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit([opt.value], steerText); }
-              }}
-            ></textarea>
-            <div className="chat-direction-steer-actions">
-              <span className="chat-direction-steer-hint">⌘↵ to send · Esc to cancel</span>
-              <button type="button" className="chat-direction-steer-cancel"
-                disabled=${busy}
-                onClick=${() => setSteerOpen(null)}>Cancel</button>
-              <button type="button" className="chat-direction-steer-send"
-                disabled=${busy || isAnswered || !steerText.trim()}
-                onClick=${() => submit([opt.value], steerText)}>Send steer</button>
-            </div>
-          </div>
-        `;
-      })()}
-      ${!isSinglePick && !isAnswered && html`
+      ${!isSinglePick && !isAnswered && options.length > 0 && html`
         <div className="chat-decision-submit-row">
           <button
             className="chat-decision-submit"
@@ -23821,7 +23802,7 @@ async function spawnPlanSplitRuns(parentRunId) {
       ${error && html`<div className="chat-decision-error">${error}</div>`}
       ${warning && html`<div className="chat-decision-warning">${warning}</div>`}
       ${splitNote && html`<div className="chat-decision-split-note">${splitNote}</div>`}
-      ${(splitRetry || (isAnswered && isPlanSplitGate(decision.id) && answeredArr[0] === "split" && !splitNote)) && html`
+      ${(splitRetry || (isAnswered && isPlanSplitGate(decision.id) && isPlanExecutePick(answeredArr[0]) && !splitNote)) && html`
         <div className="chat-decision-split-note">
           <button type="button" className="chat-decision-split-retry"
                   disabled=${splitBusy} onClick=${runSplitFanOut}>
@@ -23829,8 +23810,9 @@ async function spawnPlanSplitRuns(parentRunId) {
           </button>
         </div>
       `}
+      ${!isAnswered && html`<${GateReplyHint} hasOptions=${options.length > 0}/>`}
       ${isAnswered && html`<div className="chat-decision-status">Sent · agent will continue from here</div>`}
-      ${processEnded && !isAnswered && html`<div className="chat-decision-status">Run ended - sending a pick resumes it.</div>`}
+      ${processEnded && !isAnswered && options.length > 0 && html`<div className="chat-decision-status">Run ended - sending a pick resumes it.</div>`}
     </div>
   `;
 }
@@ -23844,13 +23826,11 @@ async function spawnPlanSplitRuns(parentRunId) {
 function DirectionOptionsCard({ direction, runId, answered, onAnswered, processEnded }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  // Which "steer"-style option is expanded for freeform input (its value), and
-  // the text typed into it. Clicking a needsInput option opens this panel
-  // instead of submitting; the message is sent only on confirm.
-  const [steerOpen, setSteerOpen] = useState(null);
-  const [steerText, setSteerText] = useState("");
   const key = `decision:${direction.id}`;
   const isAnswered = !!answered;
+  // Steer-style options are not buttons; the reply hint replaces them (see
+  // isReplyOnlyOption). An older card answered with one still shows it.
+  const options = (direction.options || []).filter(o => !o.replyOnly || answered === o.value);
   // A rendered, UNANSWERED direction pick IS the "user asked for a new
   // prototype build" detection - broadcast it so the workflow surface can
   // flip a first-time project into Preview mode (building empty state) while
@@ -23870,12 +23850,10 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
       if (opt.body?.font)    ensureGoogleFontFamily(opt.body.font);
     });
   }, [direction]);
-  const submit = async (opt, extra) => {
+  const submit = async (opt) => {
     if (!runId || isAnswered || busy) return;
     setBusy(true); setError(null);
-    const detail = (extra || "").trim();
-    const text = `[decision:${direction.id}] ${opt.value} - ${opt.label}`
-      + (detail ? `: ${detail}` : "");
+    const text = `[decision:${direction.id}] ${opt.value} - ${opt.label}`;
     try {
       await postRunReply(runId, text);
       try {
@@ -23899,7 +23877,7 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
         ${direction.prompt && html`<div className="chat-direction-prompt">${direction.prompt}</div>`}
       </div>
       <div className="chat-direction-options">
-        ${direction.options.map(opt => {
+        ${options.map(opt => {
           const picked = isAnswered && answered === opt.value;
           const caseMap = { upper: "uppercase", lower: "lowercase", title: "capitalize", normal: "none" };
           const buildTextStyle = (spec) => {
@@ -23925,16 +23903,9 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
             <button
               key=${opt.value}
               type="button"
-              className=${"chat-direction-opt" + (picked ? " is-picked" : "") + (opt.recommended ? " is-recommended" : "") + (opt.needsInput && steerOpen === opt.value ? " is-steering" : "")}
+              className=${"chat-direction-opt" + (picked ? " is-picked" : "") + (opt.recommended ? " is-recommended" : "")}
               disabled=${busy || isAnswered}
-              onClick=${() => {
-                if (opt.needsInput) {
-                  setSteerText("");
-                  setSteerOpen(v => v === opt.value ? null : opt.value);
-                } else {
-                  submit(opt);
-                }
-              }}
+              onClick=${() => submit(opt)}
               title=${opt.label}
             >
               <div className="chat-direction-meta">
@@ -24056,35 +24027,7 @@ function DirectionOptionsCard({ direction, runId, answered, onAnswered, processE
           `;
         })}
       </div>
-      ${steerOpen && (() => {
-        const opt = direction.options.find(o => o.value === steerOpen);
-        if (!opt) return null;
-        return html`
-          <div className="chat-direction-steer-panel">
-            <textarea
-              className="chat-direction-steer-input"
-              placeholder="What should I adjust? e.g. warmer palette, denser panels, quieter glitch"
-              value=${steerText}
-              autoFocus
-              disabled=${busy || isAnswered}
-              onInput=${(e) => setSteerText(e.target.value)}
-              onKeyDown=${(e) => {
-                if (e.key === "Escape") { e.preventDefault(); setSteerOpen(null); }
-                else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(opt, steerText); }
-              }}
-            ></textarea>
-            <div className="chat-direction-steer-actions">
-              <span className="chat-direction-steer-hint">⌘↵ to send · Esc to cancel</span>
-              <button type="button" className="chat-direction-steer-cancel"
-                disabled=${busy}
-                onClick=${() => setSteerOpen(null)}>Cancel</button>
-              <button type="button" className="chat-direction-steer-send"
-                disabled=${busy || isAnswered || !steerText.trim()}
-                onClick=${() => submit(opt, steerText)}>Send steer</button>
-            </div>
-          </div>
-        `;
-      })()}
+      ${!isAnswered && html`<${GateReplyHint} hasOptions=${options.length > 0}/>`}
       ${error && html`<div className="chat-direction-error">${error}</div>`}
     </div>
   `;

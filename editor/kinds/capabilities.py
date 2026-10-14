@@ -585,13 +585,24 @@ def _strip_sections_by_header(text: str, headers: list) -> str:
 # threads are told not to fetch - vicelife + arena-battle (2026-07-15) both
 # improvised and shipped unanswerable gates. The contract now rides on every
 # spawn.
+#
+# GATE_REPLY_RULE rides with it (and on the setup tier, which has its own card
+# exemplars instead of GATE_CARD_SYNTAX). Cards used to carry Steer / Review /
+# Revise options; clicking one sent a bare pick, and the agent spent a whole
+# turn asking "what do you want to change?" before the user typed the change
+# anyway. The card now prints "Or reply below to change it." itself (app.js
+# GateReplyHint) and hides such options (isReplyOnlyOption), so the reply IS
+# the steer and lands in one turn.
+GATE_REPLY_RULE = """
+NO "TYPE SOMETHING" BUTTONS. Every option on a card must be a complete answer by itself: approve, one of the picks, reject / skip. Never add an option whose only job is to make the user write something next (Steer, Review, Revise, Trim, "change something", "none of these"): the card already prints "Or reply below to change it." under its buttons, and a click on such an option only spends a turn asking what they want. Do not add your own "or reply to adjust" line either. A plain chat reply while your card is open IS the change: apply it in that turn, then re-emit the updated card. Keep its id - a typed reply does not answer a card, so the id is still open - unless the user already clicked it, in which case append `-2`, `-3`."""
+
 GATE_CARD_SYNTAX = """
 
 ### Chat gate cards - EXACT syntax (every stop-and-ask you emit: roster gate, plate pick, surface-reconciliation, checkpoints)
 The chat UI parses these tags with a STRICT grammar - a wrong option shape renders as raw XML with no buttons and the user cannot answer. There are exactly TWO card vocabularies; never blend them and never substitute a JSON body (AskUserQuestion-style payloads do not render):
   - `<decision-request id="<gate-id>" prompt="<question>" [multiSelect="true" minPicks="1"]>` containing FLAT options only: `<option value="<pick-id>" [checked]>One plain-text line: name - what it does / why</option>` ... `</decision-request>`. No nested tags inside `<option>`.
   - `<direction-options id="<gate-id>" prompt="...">` containing RICH options: `<opt value="1" [recommended]><label>..</label><why>..</why><palette>#hex,#hex</palette><display font="..">Sample</display><image src="<path>" axis="aesthetic"/></opt>` ... `</direction-options>` - ONLY for picks that carry palette / type / image previews (the Step -1 direction pick, plate picks).
-When a dispatch hands back a `gateBlock`, paste it into the chat VERBATIM - never restate it as prose, a path, or your own card."""
+When a dispatch hands back a `gateBlock`, paste it into the chat VERBATIM - never restate it as prose, a path, or your own card.""" + GATE_REPLY_RULE
 
 
 # Appended to the INTERACTIVE chat tiers (setup / normal / scoped), NOT leaf:
@@ -861,6 +872,10 @@ JEV_FAST_PATH_STUB = typed_judgment_block({"text": "TypeSafe Jev", "image": None
 # The SPLIT list exists so the closing gate means something: "one agent per
 # point" needs points, and the three sections are three VIEWS of one change,
 # not three units of work.
+#
+# The gate is ONE button, "Execute the plan". It used to offer "Review the
+# plan first" too, which only made the agent ask what to change; a revision is
+# now just a chat reply (GATE_REPLY_RULE).
 PLAN_MODE_STUB = """
 
 ### PLAN FIRST - mandatory gate (the user turned "Plan first" ON for this thread)
@@ -895,18 +910,18 @@ BEFORE you emit the card, WRITE THE SPLIT MANIFEST so the app can fan the work o
   `{"items": [{"title": "<short run title, <=60 chars>", "owns": ["<claim>", ...], "brief": "<the whole self-contained brief for this item>"}, ...]}`
 One entry per Split item, at most 4, IN ORDER - every entry here starts at the same moment.
 `owns` lists EVERYTHING that item will write, one claim each: `path` for a file no other item touches, `path#region` for the item's part of a shared file, where the region names the functions, markup blocks or CSS rules (`source/<prototype>/form.html#awardDueCard()`, `source/<prototype>/model.js#validators: award date`). The app refuses a split where two items claim the same file whole, or one claims a file whole and another claims part of it, or two items name the same region. Each thread is shown its siblings' claims so it stays out of them - a missing or vague claim is exactly how one thread ends up overwriting another.
-THE MANIFEST MUST BE ON DISK BEFORE THE CARD IS IN YOUR REPLY, not "coming next" and not written later in the turn. The card is LIVE the moment it renders: the user can click split seconds after they see it, the app reads the file at that instant, and a manifest that is still being written means the click finds nothing and opens no threads. Write the file, confirm the write succeeded, and only THEN emit the card - as the last thing in that same reply. Each `brief` must stand alone: the run that receives it sees neither this plan nor this conversation, so restate that item's UI rows, logic rows and copy rows inside it, name what it claims, and say what done looks like. Overwrite your own previous manifest.
+THE MANIFEST MUST BE ON DISK BEFORE THE CARD IS IN YOUR REPLY, not "coming next" and not written later in the turn. The card is LIVE the moment it renders: the user can click Execute seconds after they see it, the app reads the file at that instant, and a manifest that is still being written means the click finds nothing and opens no threads. Write the file, confirm the write succeeded, and only THEN emit the card - as the last thing in that same reply. Each `brief` must stand alone: the run that receives it sees neither this plan nor this conversation, so restate that item's UI rows, logic rows and copy rows inside it, name what it claims, and say what done looks like. Overwrite your own previous manifest.
 
-Then STOP. End the reply with this card, in the gate-card syntax, and nothing after it but one line saying each point opens as its own thread.
-THE CARD ID MUST BE NEW EVERY TIME YOU EMIT ONE. Number it: `plan-next-1` for this plan, `plan-next-2` when you revise and re-emit, `plan-next-3` after that. An id is answered ONCE and stays answered - re-using it renders the fresh card as already-clicked and un-clickable, which is exactly what a user who changed their mind and asked for a revision does NOT want. Count the plan cards you have already emitted in this thread and use the next number.
-<decision-request id="plan-next-1" prompt="Plan ready - how do you want to run it?">
-<option value="split">Split it - one thread per point, opened now</option>
-<option value="review">Review the plan first - I want to change something</option>
+Then STOP. End the reply with this card, in the gate-card syntax, and nothing after it.
+THE CARD ID MUST BE NEW EVERY TIME YOU EMIT ONE. Number it: `plan-next-1` for this plan, `plan-next-2` when you revise and re-emit, `plan-next-3` after that. An id is answered ONCE and stays answered - re-using it renders the fresh card as already-clicked and un-clickable. Count the plan cards you have already emitted in this thread and use the next number.
+<decision-request id="plan-next-1" prompt="Plan ready. Each point runs as its own thread.">
+<option value="execute">Execute the plan</option>
 </decision-request>
+The card has ONE button on purpose. Never add a Review / Revise / Change option: the card prints "Or reply below to change it." under the button, and a revision arrives as a plain chat reply.
 
-- IF THE USER APPROVES IN CHAT INSTEAD OF ON THE CARD ("split it", "yes go", "do it") - which happens whenever the card is missing, stale or already answered - YOU STILL CANNOT SPLIT. The fan-out is driven by the APP when the card is clicked; a typed approval reaches you and nothing else, and there is no tool you can call to open those threads. NEVER answer it with "splitting now" or "dispatching" - that is a claim that nothing will make true, and the user is left watching for threads that never appear. Instead: rewrite your manifest if the plan has changed since you last wrote it, re-emit the card with the NEXT id, and say in one line that the split needs the button because the app opens the threads, not you.
-- On **split** (the card was clicked): YOU DO NOTHING. Do not dispatch agents, do not start building, do not reply with a plan of how you will build it. The APP reads your manifest and opens one real Woven thread per item, each running on its own - that is why the manifest has to be on disk before the card. Your turn is over; the work happens in those threads. If the manifest is missing or you never wrote it, say so plainly instead of quietly building it yourself. Once every split thread has finished, the daemon opens a SEPARATE plan-check thread that verifies the work against this plan; you are not part of it.
-- On **review**: apply what the user says, rewrite your manifest to match the REVISED plan, then re-emit the WHOLE plan and the card with the NEXT id. Never start building on a partial approval or on silence.
+- IF THE USER APPROVES IN CHAT INSTEAD OF ON THE CARD ("execute", "yes go", "do it") - which happens whenever the card is missing, stale or already answered - YOU STILL CANNOT SPLIT. The fan-out is driven by the APP when the card is clicked; a typed approval reaches you and nothing else, and there is no tool you can call to open those threads. NEVER answer it with "splitting now" or "dispatching" - that is a claim that nothing will make true, and the user is left watching for threads that never appear. Instead: rewrite your manifest if the plan has changed since you last wrote it, re-emit the card with the NEXT id, and say in one line that execution needs the button because the app opens the threads, not you.
+- On **execute** (the button was clicked): YOU DO NOTHING. Do not dispatch agents, do not start building, do not reply with a plan of how you will build it. The APP reads your manifest and opens one real Woven thread per item, each running on its own - that is why the manifest has to be on disk before the card. Your turn is over; the work happens in those threads. If the manifest is missing or you never wrote it, say so plainly instead of quietly building it yourself. Once every split thread has finished, the daemon opens a SEPARATE plan-check thread that verifies the work against this plan; you are not part of it.
+- On ANY OTHER REPLY (anything that is not the button or a plain go-ahead): it is a revision. Apply what the user says, rewrite your manifest to match the REVISED plan, then re-emit the WHOLE plan and the card with the NEXT id. Never start building on a partial approval or on silence.
 - Once a plan is approved, this gate is SPENT for that request: carry it out, and do NOT re-plan the follow-ups it produces (an answer to the card, a correction, a "yes go"). A genuinely NEW request in this thread re-arms it.
 - This gate does NOT re-open a decision already locked elsewhere. If a build plan is locked for this project (Role A, a `pipeline.json` you were handed off to drive), drive it - the planning happened before you got here. This gate covers what the user asks for in THIS thread on top of that."""
 
@@ -2229,7 +2244,7 @@ An orchestrator only RESEARCHES, SCAFFOLDS the node graph, and HANDS BACK. It ne
    #            in your reply - a node run cannot render a chat gate card, only you
    #            can (same contract as Task-subagent gateBlocks). Then honour the pick:
    #            Accept -> POST the container commit with accept-override;
-   #            Push deeper / Replace / Tweak -> re-dispatch <gate> with the pick in
+   #            Push deeper / Replace / a typed reply -> re-dispatch <gate> with it in
    #            the run body prompt (it re-enters the loop with that steer).
    #            No decision block -> relay the gate's pass summary and you're done.
    #   error -> surface the gate node's runError. ONLY in this case may you run
@@ -3080,7 +3095,7 @@ Every other primary family follows: you write the HTML slots → orchestrator fi
 
 1. `Task(motion-studio-orchestrator, mode=brainstorm)` with the user's brief **verbatim**. It reads the motion-scene library index (30 techniques: scroll-entrance / scroll-scrub rotation / mouse-scrub look / pointer parallax layers / quiet-zone composition / frame-hold beats / …) and returns `sectionClaims[]` - per claimed surface: msId, purpose, scene-count estimate, binding (self | host-scroll), candidate techniques, a proposed success-feel, and the **exact ms-mount iframe tag to paste** - plus `hygienicScope[]` (everything you build normally: nav, footer, forms, secondary pages) and `scopeQuestions[]` (surface these to the user BEFORE building if non-empty).
 2. YOU scaffold `source/<prototype>/index.html` + siblings, pasting the returned slot tags where they belong, and build the hygienic scope with your normal craft (DS, tokens, /prototype skill). The orchestrator never touches HTML - in either mode.
-3. `Task(motion-studio-orchestrator, mode=build)` ONCE. It enumerates every ms-mount iframe, runs `ms-research-technique` per slot, scaffolds the per-slot drawer set (research / storyboard / concept-plates / scenes / motion / interactions / runtime + container), and returns the hand-off envelope. You drive the build phase per the standard harness (§8.3 lens trios, opt-in §8.7 cruxes at storyboard / concept / motion / runtime, container commit, Step-8 QA + Phase F). **The concept-plate gate is mandatory**: after `ms_concept_<msId>` commits, surface its generated design plates (full composed frame per scene - asset + UI drawn together) to the user via `<decision-request>` (approve / steer / re-draft) BEFORE dispatching `ms_scenes_<msId>`. Video budget is only spent on approved plates; the approved plate is the composition contract the production assets, the UI build, and Step-8 QA are all checked against.
+3. `Task(motion-studio-orchestrator, mode=build)` ONCE. It enumerates every ms-mount iframe, runs `ms-research-technique` per slot, scaffolds the per-slot drawer set (research / storyboard / concept-plates / scenes / motion / interactions / runtime + container), and returns the hand-off envelope. You drive the build phase per the standard harness (§8.3 lens trios, opt-in §8.7 cruxes at storyboard / concept / motion / runtime, container commit, Step-8 QA + Phase F). **The concept-plate gate is mandatory**: after `ms_concept_<msId>` commits, surface its generated design plates (full composed frame per scene - asset + UI drawn together) to the user via `<decision-request>` (approve / re-draft; a typed reply is the steer) BEFORE dispatching `ms_scenes_<msId>`. Video budget is only spent on approved plates; the approved plate is the composition contract the production assets, the UI build, and Step-8 QA are all checked against.
 
 ### The trigger
 
@@ -3312,7 +3327,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     # after ship time (not covered by the static prose above). Appended AFTER
     # the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
-    return _preamble + _catalog + _ds_block + _req_block + _jev_block + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
+    return _preamble + _catalog + _ds_block + _req_block + _jev_block + GATE_REPLY_RULE + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
 
 
 def orchestrator_routing_text(project_root: Optional[str] = None) -> str:

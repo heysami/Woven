@@ -135,6 +135,10 @@ class GroupReadyTests(unittest.TestCase):
         self.assertIn("wrong text, call it Indicative First Award Date", snap["asks"])
         self.assertFalse(any(a.startswith("[decision:") for a in snap["asks"]))
 
+    def test_typed_execute_is_an_approval_not_an_ask(self):
+        events = PLAN_EVENTS[:5] + [{"type": "user_message", "data": {"text": "Execute the plan!"}}]
+        self.assertNotIn("Execute the plan!", plan_split.plan_snapshot(events)["asks"])
+
     def test_check_brief_is_self_contained_and_skips_stopped_items(self):
         rows = [{"index": 0, "runId": "a", "status": "done", "report": "x" * 5000,
                  "brief": "build the quota screen" + plan_split.sibling_block(split(0))},

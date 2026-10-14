@@ -170,11 +170,11 @@ After research, BEFORE any drawer fires, emit `<decision-request>`:
     - <site 3 quote>
   </details>
   <option value="approve">Approve - proceed to drawer dispatch.</option>
-  <option value="steer">Steer - supply a one-line nudge ("lighter register" / "skip shader" / "more hover surprise less scroll").</option>
-  <option value="reject-sites">Reject some sites - the user names which sites to drop.</option>
   <option value="reject">Reject - re-research with different brief.</option>
 </decision-request>
 ```
+
+A typed reply instead of a pick is the steer: drop the sites the user named or shift the register they asked for, and re-emit the card.
 
 This is the abort point - if the polish plan is too aggressive or off-brief, the user stops it before any drawer runs.
 

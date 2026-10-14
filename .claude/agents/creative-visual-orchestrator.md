@@ -131,10 +131,11 @@ After all promotions are planned, BEFORE applying any HTML rewrite:
     Estimated cost: <N supplemental image-gen calls>
   </details>
   <option value="approve">Approve - apply all promotions.</option>
-  <option value="steer">Steer - list slots to skip or change promotion type.</option>
   <option value="reject">Reject - keep the standard visual pass as-is.</option>
 </decision-request>
 ```
+
+A typed reply instead of a pick is the steer: re-plan the slots the user named (skip them or change their promotion type) and re-emit the card.
 
 ## 4. Phase C - Scaffold + dispatch INCREMENTALLY
 

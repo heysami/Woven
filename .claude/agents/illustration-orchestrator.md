@@ -131,10 +131,11 @@ Same as `photography-orchestrator.md §3`:
     Estimated cost: 0 image-gen calls yet - that happens when visual-orchestrator dispatches raster-foreground per slot.
   </details>
   <option value="approve">Approve.</option>
-  <option value="steer">Steer - list slots + desired library styleIds.</option>
   <option value="reject">Reject - skip illustration orchestration entirely.</option>
 </decision-request>
 ```
+
+A typed reply instead of a pick is the steer: re-pick the slots the user named (by library styleId) and re-emit the card.
 
 ## 4. Phase C - Scaffold + commit
 

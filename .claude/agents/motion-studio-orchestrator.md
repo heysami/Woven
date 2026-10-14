@@ -160,12 +160,11 @@ After research, BEFORE any drawer fires, emit per slot:
     Estimated cost: <tier>-sized builder set + <N> concept plates (1 image per scene, cheap, user-reviewed BEFORE video) + ~<M> production asset generations + ONE final QA+lens gate on the assembled runtime.
   </details>
   <option value="approve">Approve - proceed to scaffold.</option>
-  <option value="steer">Steer - one-line nudge ("fewer scenes", "make scene 2 a mouse-scrub", "scrub the timeline instead of swapping scenes", "raster only").</option>
   <option value="reject">Reject - re-run research with a different brief.</option>
 </decision-request>
 ```
 
-Wait for resolution. On `steer`, re-dispatch research with the nudge appended. On `reject`, fresh research. This is the 5%-budget abort point.
+Wait for resolution. A typed reply instead of a pick is the steer: re-dispatch research with the nudge appended. On `reject`, fresh research. This is the 5%-budget abort point.
 
 ## 4. Phase C - Scaffold INCREMENTALLY (no batch-then-pray)
 
@@ -176,7 +175,7 @@ Build order the caller will run, in dependency order (bake the dependency edges 
 **Voice of the brief** - phrase the interpretive portion of each drawer envelope in `research.registerDirective` at `buildRegister.cadence`, deriving the actual words from what this scene actually does, not a house vocabulary. State `research.principleStance` as the quality bar. Do NOT name a profession or write "imagine you are". Keep structural spec (files, primitives, lens gates, paths) literal. Fire the register only for the committed medium.
 
 1. `ms_storyboard_<msId>` - name `ms-storyboard-author`. Envelope: research.md path + buildTier + brief + successFeel + library-index techniques committed by research + sceneCountHint. THE contract drawer. Commits on file-existence.
-2. `ms_concept_<msId>` - name `ms-concept-frames-author`. Envelope: storyboard.json path + styleCue + dsRef + successFeel. Per scene, ONE hi-res design plate of the COMPOSED frame (asset + UI drawn together, real copy) via visual-orchestrator co-dispatch, then visual inspection → concept.json (observed layout, palette, scrim needs, asset-prompt notes). Commits on file-existence. **After it commits, the caller MUST surface the plates via `<decision-request>` (approve / steer / re-draft) BEFORE dispatching ms_scenes - the cheap-stills-before-expensive-video COST gate. On steer: patch storyboard/concept envelopes and re-run concept (cheap); only on approve does video budget get spent. This gate is mandatory at every tier and is NOT the final lens gate.**
+2. `ms_concept_<msId>` - name `ms-concept-frames-author`. Envelope: storyboard.json path + styleCue + dsRef + successFeel. Per scene, ONE hi-res design plate of the COMPOSED frame (asset + UI drawn together, real copy) via visual-orchestrator co-dispatch, then visual inspection → concept.json (observed layout, palette, scrim needs, asset-prompt notes). Commits on file-existence. **After it commits, the caller MUST surface the plates via `<decision-request>` (approve / re-draft; no Steer button) BEFORE dispatching ms_scenes - the cheap-stills-before-expensive-video COST gate. On a typed reply (the steer): patch storyboard/concept envelopes and re-run concept (cheap); only on approve does video budget get spent. This gate is mandatory at every tier and is NOT the final lens gate.**
 3. `ms_scenes_<msId>` - name `ms-scene-composer`. Envelope: storyboard.json path + concept.json path + approved plates dir + assetPolicy + provider availability + "co-dispatch visual-orchestrator per storyboard asset; hi-res ≥1920×1080 edge-to-edge; subjectAnchor + quietZone + interactionClause INTO the generation prompt; derive each prompt to MATCH the approved plate (assetPromptNotes; pass the plate as image-reference when the provider supports i2v); UI styling from concept.json uiBuildNotes; universal negative keywords from the library primer §3". Commits on file-existence.
 4. `ms_motion_<msId>` - name `ms-motion-author`. (`standard`+ only; at `simple`, motion folds into runtime.) Envelope: storyboard + scenes paths + transition register + always-in-motion rule + **the committed `driveModel`** (under `scrubbed`/`hybrid` the scene engine drives `currentTime` from a position variable with a damped pursuit rather than play/pause-to-hold; under `stepped` it does not). Commits on file-existence.
 5. `ms_interactions_<msId>` - name `ms-interactions-author`. (`full` only.) Envelope: storyboard path + binding + **the committed `driveModel`** + which techniqueIds are present (implement ONLY their bindings) + the no-trap contract for host-scroll. Under `driveModel: scrubbed` with `binding: self`, this layer must EXPOSE its wheel/swipe accumulator as a normalised progress value for `ms_motion` to pursue - collapsing the gesture to a bare integer step index and discarding the magnitudes is the concrete code shape of the slideshow regression. Commits on file-existence.
@@ -214,7 +213,7 @@ Return as your final text (per slot, or an array when multiple slots):
     "hostScroll": "sticky-viewport wrapper: <div style='height:<N+1>00vh;position:relative'><iframe style='position:sticky;top:0;height:100vh;width:100%;border:0' ...></div> + the ms-scroll forwarder snippet (§1.3); iframe touch-action: pan-y; runtime never preventDefaults",
     "exampleForwarder": "<the §1.3 snippet verbatim>"
   },
-  "nextStep": "Caller auto-chains drawerNodes in TWO segments split at the concept-plate review COST gate (§5.5 pseudocode). Segment 1: storyboard → concept in one POST /run?chain=. When ms_concept commits, surface the concept plates to the user via <decision-request> (approve / steer / re-draft) BEFORE any video budget; on steer, patch + re-run concept cheaply. Only on approve: scaffold scaffold.containerNode, then Segment 2: scenes → (motion / interactions per tier) → runtime + scaffold.gateNode as the LAST chain link in one POST. NO per-drawer lens - builders commit on file-existence; the runtime/composer assembles runtime.html, then qa_gate_<msId> runs the SINGLE final QA+lens gate as its own leaf run and commits scaffold.containerNode (§5.5). Caller APPLIES hostPageGuidance to the host page and RELAYS any <decision-request> block from the gate node's output verbatim, then honours the pick."
+  "nextStep": "Caller auto-chains drawerNodes in TWO segments split at the concept-plate review COST gate (§5.5 pseudocode). Segment 1: storyboard → concept in one POST /run?chain=. When ms_concept commits, surface the concept plates to the user via <decision-request> (approve / re-draft; a typed reply is the steer) BEFORE any video budget; on a typed reply, patch + re-run concept cheaply. Only on approve: scaffold scaffold.containerNode, then Segment 2: scenes → (motion / interactions per tier) → runtime + scaffold.gateNode as the LAST chain link in one POST. NO per-drawer lens - builders commit on file-existence; the runtime/composer assembles runtime.html, then qa_gate_<msId> runs the SINGLE final QA+lens gate as its own leaf run and commits scaffold.containerNode (§5.5). Caller APPLIES hostPageGuidance to the host page and RELAYS any <decision-request> block from the gate node's output verbatim, then honours the pick."
 }
 ```
 
@@ -230,8 +229,8 @@ tier = handoff.buildTier                       # simple | standard | full
 # segment 1 - storyboard → concept; HALT for the concept-plate review COST gate
 POST /__workflow/node/ms_storyboard_<msId>/run?chain=ms_concept_<msId>
 poll until ms_concept_<msId> is done
-surface the plates via <decision-request> (approve / steer / re-draft)
-# on steer: patch + re-run concept (cheap). Only on approve is video budget spent.
+surface the plates via <decision-request> (approve / re-draft)
+# on a typed reply (the steer): patch + re-run concept (cheap). Only on approve is video budget spent.
 
 # segment 2 - remaining builders + the GATE as the last chain link
 scaffold ms_<msId> (container)                 # must exist before the gate lands
@@ -288,7 +287,7 @@ Builders commit on file-existence; quality is judged once at the final QA+lens g
 | §4 | drawer nodes (scaffold-only, tier-sized) + `qa_gate_<msId>` (scaffold-only) | YOU | pending | (n/a) |
 | §5 hand-off | (envelope text) | YOU | - | - |
 | caller | `ms_storyboard_<msId>` | CALLER | done | (file-existence) |
-| caller | `ms_concept_<msId>` → then user concept-plate review COST gate (approve/steer/re-draft) | CALLER | done | (file-existence) |
+| caller | `ms_concept_<msId>` → then user concept-plate review COST gate (approve / re-draft / typed reply) | CALLER | done | (file-existence) |
 | caller | `ms_scenes_<msId>` | CALLER | done | (file-existence) |
 | caller | `ms_motion_<msId>` (standard+) / `ms_interactions_<msId>` (full) | CALLER | done | (file-existence) |
 | caller | `ms_runtime_<msId>` (LAST builder = composer; assembles runtime.html) | CALLER (chain) | done | (file-existence) |

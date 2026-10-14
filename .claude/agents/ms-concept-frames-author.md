@@ -117,7 +117,7 @@ curl -fsS -X POST "$TH_DAEMON_URL/__workflow/node/ms_concept_<msId>/commit?proje
 
 Lens gating: **aesthetic** (the plates read as the committed register - one composed cinematic frame, not a collage) + **concept** (the boards, read in order, deliver the successFeel arc) gate you; craft is light (files exist, resolution, parseable JSON).
 
-**After your commit, the caller MUST surface the plates to the user** (`<decision-request>`: approve / steer / re-draft) before dispatching `ms_scenes_<msId>`. That review is the entire point of this drawer - never let the build proceed past you silently.
+**After your commit, the caller MUST surface the plates to the user** (`<decision-request>`: approve / re-draft; a typed reply is the steer, never a Steer button) before dispatching `ms_scenes_<msId>`. That review is the entire point of this drawer - never let the build proceed past you silently.
 
 ## 6. What you do NOT do
 

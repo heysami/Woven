@@ -209,12 +209,11 @@ After research synthesis, BEFORE any drawer fires, emit a `<decision-request>` t
     Estimated cost from here: ~<N> builder dispatches (tier-sized) + ONE final QA+lens gate (~3-9 lens runs).
   </details>
   <option value="approve">Approve - proceed to builder fanout.</option>
-  <option value="steer">Steer - supply a one-line nudge ("more 2D, less 3D" / "drop the multi-touch" / "tighter juice").</option>
   <option value="reject">Reject - start research over with a different brief.</option>
 </decision-request>
 ```
 
-Wait for resolution. On `steer`, re-dispatch the researcher with the user's nudge. On `reject`, re-dispatch fresh. On `approve`, proceed.
+Wait for resolution. A typed reply instead of a pick is the steer: re-dispatch the researcher with the user's nudge. On `reject`, re-dispatch fresh. On `approve`, proceed.
 
 This is the 5%-budget abort point - the user can stop here if the paradigm + objective + juice register + buildTier feel wrong, before any builder fires.
 
@@ -399,7 +398,7 @@ poll until scaffold.gateNode is done/error                     # builders commit
 #    done  -> if its output carries a <decision-request> (iteration cap / success
 #             checkpoint), RELAY the block VERBATIM in your reply - only the chat can
 #             render the card - then honour the pick (Accept -> container commit with
-#             accept-override; Push deeper / Replace / Tweak -> re-dispatch the gate
+#             accept-override; Push deeper / Replace / a typed reply -> re-dispatch the gate
 #             node with the pick in the run body). Otherwise relay the pass summary.
 #    error -> surface the gate node's runError; ONLY then may you run contract 3
 #             inline as the legacy fallback - and say so out loud.

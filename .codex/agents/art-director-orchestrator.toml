@@ -92,8 +92,8 @@ If `imageGenSkills` is empty → abort per §1.
 
 These phase files are authoritative parts of this playbook. Do not read all phases.
 At the plate gate, the caller emits gateBlock and eligible motionGateBlock verbatim.
-A plate pick redispatches finalize with chosenPlate and the motion opt-in. Steer
-redispatches plate with the correction. Reject continues the text-only build.
+A plate pick redispatches finalize with chosenPlate and the motion opt-in. A typed
+reply (the steer; the card has no Steer option) redispatches plate with the correction. Reject continues the text-only build.
 The final build consumes contractPath. Token/layout/component/content/motion
 steps read extracted, authored, voice, and buildRegister. Asset orchestrators use
 crossSurfaceContract plus matching itemReferences. Surface researchers use their

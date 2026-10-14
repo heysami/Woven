@@ -158,12 +158,11 @@ After research synthesis, BEFORE any pass fires, emit a `<decision-request>` to 
     Estimated cost from here: ~<N> passes + ~<M> visual-orchestrator sub-dispatches + ONE final QA+lens gate (3 lens runs, re-dispatch capped at 3).
   </details>
   <option value="approve">Approve - proceed to commission + compose.</option>
-  <option value="steer">Steer - one-line nudge ("tighter density" / "more cottagecore, less Y2K" / "fewer PNG sequences").</option>
   <option value="reject">Reject - start research over with a different brief.</option>
 </decision-request>
 ```
 
-Wait for resolution. On `steer`, re-dispatch the researcher with the nudge. On `reject`, re-dispatch fresh. On `approve`, proceed. This is the 5%-budget abort point - before any visual-orchestrator dispatches fire.
+Wait for resolution. A typed reply instead of a pick is the steer: re-dispatch the researcher with the nudge. On `reject`, re-dispatch fresh. On `approve`, proceed. This is the 5%-budget abort point - before any visual-orchestrator dispatches fire.
 
 ## 4. Phase C - Scaffold + dispatch INCREMENTALLY (no batch-then-pray)
 
@@ -250,7 +249,7 @@ poll until scaffold.gateNode is done/error                     # passes commit o
 #    done  -> if its output carries a <decision-request> (iteration cap:
 #             cp_sb_gate_<sbId>), RELAY the block VERBATIM in your reply - only the
 #             chat can render the card - then honour the pick (Accept -> done with
-#             accept-override; Push deeper / Replace / Tweak -> re-dispatch the gate
+#             accept-override; Push deeper / Replace / a typed reply -> re-dispatch the gate
 #             node with the pick in the run body). Otherwise relay the pass summary
 #             and proceed to interactive-polish-orchestrator.
 #    error -> surface the gate node's runError; ONLY then may you run contract 3
