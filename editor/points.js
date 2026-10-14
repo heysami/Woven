@@ -20,7 +20,9 @@
 
    Persistence: localStorage per project + thread, the 40 most recently
    touched threads kept. Skipped under ?embed=1, which shares localStorage
-   with the outer editor. */
+   with the outer editor. Only SENT points are stored: an unsent point lives
+   exactly as long as its chip in the composer draft, and the draft itself is
+   not kept across a reload, so neither is the point. */
 (function () {
   "use strict";
 
@@ -52,7 +54,7 @@
         var raw = localStorage.getItem(storeKey(tk));
         if (raw) {
           var j = JSON.parse(raw);
-          if (j && Array.isArray(j.points)) rec.points = j.points.filter(function (p) { return p && p.n > 0; });
+          if (j && Array.isArray(j.points)) rec.points = j.points.filter(function (p) { return p && p.n > 0 && p.sent; });
           if (j && Array.isArray(j.tomb)) rec.tomb = j.tomb.filter(function (n) { return n > 0; });
         }
       } catch (e) { /* unreadable - start empty */ }
@@ -64,15 +66,16 @@
   function save(tk) {
     if (EMBED || !tk) return;
     var rec = load(tk);
+    var sent = rec.points.filter(function (p) { return p.sent; });
     try {
-      if (!rec.points.length && !rec.tomb.length) localStorage.removeItem(storeKey(tk));
-      else localStorage.setItem(storeKey(tk), JSON.stringify({ points: rec.points, tomb: rec.tomb }));
+      if (!sent.length && !rec.tomb.length) localStorage.removeItem(storeKey(tk));
+      else localStorage.setItem(storeKey(tk), JSON.stringify({ points: sent, tomb: rec.tomb }));
     } catch (e) { return; }
     // Touch the per-project index and prune the oldest threads past the cap.
     try {
       var idx = {};
       try { idx = JSON.parse(localStorage.getItem(indexKey()) || "{}") || {}; } catch (e2) { idx = {}; }
-      if (rec.points.length || rec.tomb.length) idx[tk] = Date.now(); else delete idx[tk];
+      if (sent.length || rec.tomb.length) idx[tk] = Date.now(); else delete idx[tk];
       var keys = Object.keys(idx).sort(function (a, b) { return idx[b] - idx[a]; });
       for (var i = MAX_THREADS; i < keys.length; i++) {
         try { localStorage.removeItem(storeKey(keys[i])); } catch (e3) {}
@@ -158,6 +161,20 @@
     var p = get(tk, n);
     if (!p || p.sent) return false;
     return remove(tk, n);
+  }
+
+  // Drop every unsent point of a thread that the composer draft no longer
+  // names (keep: a Set of numbers still chipped). The composer calls it when
+  // it mounts (its draft starts empty), unmounts (the draft is lost) and
+  // leaves a thread, so no badge outlives its chip.
+  function pruneUnsent(tk, keep) {
+    if (!tk) return;
+    var rec = load(tk);
+    var gone = rec.points.filter(function (p) { return !p.sent && !(keep && keep.has(p.n)); });
+    if (!gone.length) return;
+    rec.points = rec.points.filter(function (p) { return gone.indexOf(p) < 0; });
+    save(tk);
+    for (var i = 0; i < gone.length; i++) emit({ type: "removed", threadKey: tk, n: gone[i].n, point: gone[i] });
   }
 
   function markSent(tk, ns) {
@@ -353,6 +370,7 @@
     remove: remove,
     reference: reference,
     removeIfUnsent: removeIfUnsent,
+    pruneUnsent: pruneUnsent,
     markSent: markSent,
     setLost: setLost,
     migrate: migrate,

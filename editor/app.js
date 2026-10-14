@@ -20156,6 +20156,10 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     if (prev === "draft" && pointThreadKey) { WP.migrate("draft", pointThreadKey); return; }
     const ns = new Set(pointLiveRef.current.chips.filter(c => c.kind === "point").map(c => c.n));
     if (ns.size && stripPointChipsRef.current(ns)) skipPointPruneRef.current = true;
+    // The thread we left loses its unsent points with its chips; the one we
+    // arrived in starts with an empty draft, so it keeps none either.
+    if (prev) WP.pruneUnsent(prev, null);
+    if (pointThreadKey) WP.pruneUnsent(pointThreadKey, null);
     if (WP.mode().armed) WP.disarm();
   }, [pointThreadKey]);
   // A point chip that leaves the message by ANY edit (Backspace, a
@@ -20180,9 +20184,21 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     const live = new Set(threadPoints.map(p => p.n));
     setChips(cs => __autoPointChips(cs, pointLiveRef.current.text, live));
   }, [pointNsKey]);
-  // Leaving (drawer closed, column taken by another panel) disarms, so a
-  // canvas click can never make a point with no chat to land in.
-  useEffect(() => () => { if (WP && WP.mode().armed) WP.disarm(); }, [WP]);
+  // An unsent point lives exactly as long as its chip. The draft starts
+  // empty on mount and is lost on unmount (drawer closed, the column taken
+  // by whiteboard mode or Layers), so both drop the thread's unsent points -
+  // a badge never outlives its chip. Leaving also disarms, so a canvas click
+  // can never make a point with no chat to land in.
+  const pointKeyRef = useRef(pointThreadKey);
+  pointKeyRef.current = pointThreadKey;
+  useEffect(() => {
+    if (WP && pointKeyRef.current) WP.pruneUnsent(pointKeyRef.current, null);
+    return () => {
+      if (!WP) return;
+      if (WP.mode().armed) WP.disarm();
+      if (pointKeyRef.current) WP.pruneUnsent(pointKeyRef.current, null);
+    };
+  }, [WP]);
   const togglePointMode = () => {
     if (!WP || !pointThreadKey) return;
     if (pointArmed && !pointMode.oneShot) { WP.disarm(); return; }

@@ -82,13 +82,32 @@ function boot({ search = '?project=demo', storage } = {}) {
   const shared = new Map();
   const one = boot({ storage: shared });
   one.WP.add('run1', { kind: 'node', nodeId: 'n1' });
+  one.WP.add('run1', { kind: 'node', nodeId: 'n2' });
+  one.WP.markSent('run1', [1]);
   const two = boot({ storage: shared });
-  assert.equal(two.WP.list('run1').length, 1, 'reloaded from localStorage');
+  assert.deepEqual(JSON.parse(JSON.stringify(two.WP.list('run1').map(p => p.n))), [1], 'only the SENT point comes back after a reload');
+  assert.equal(two.WP.add('run1', { kind: 'node', nodeId: 'n3' }).n, 2, 'the dropped unsent number is free again');
   const other = boot({ storage: shared, search: '?project=other' });
   assert.equal(other.WP.list('run1').length, 0, 'another project never sees it');
   const embed = boot({ storage: new Map(), search: '?project=demo&embed=1' });
   embed.WP.add('run1', { kind: 'node', nodeId: 'n1' });
   assert.equal(embed.store.size, 0, 'embed mode does not touch localStorage');
+}
+
+// ── pruneUnsent: a badge never outlives its chip ──
+{
+  const { WP } = boot();
+  WP.add('t', { kind: 'node', nodeId: 'a' });
+  WP.add('t', { kind: 'node', nodeId: 'b' });
+  WP.add('t', { kind: 'node', nodeId: 'c' });
+  WP.markSent('t', [3]);
+  const removed = [];
+  WP.subscribe((e) => { if (e.type === 'removed') removed.push(e.n); });
+  WP.pruneUnsent('t', new Set([2]));
+  assert.deepEqual(JSON.parse(JSON.stringify(WP.list('t').map(p => p.n))), [2, 3], 'unchipped unsent go, chipped and sent stay');
+  WP.pruneUnsent('t', null);
+  assert.deepEqual(JSON.parse(JSON.stringify(WP.list('t').map(p => p.n))), [3]);
+  assert.deepEqual(removed, [1, 2]);
 }
 
 // ── the agent block ──
