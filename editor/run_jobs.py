@@ -6,7 +6,7 @@ TERMINAL = frozenset(("completed", "failed", "stopped", "killed", "cancelled"))
 ACTIVE = frozenset(("pending", "running", "unknown"))
 
 # Subagents that grade work the thread already did: the chat checks
-# (capabilities.py visual / dsGuard / reqQa) and the lens judges. A steer
+# (capabilities.py visual / dsGuard / reqQa / impactQa) and the lens judges. A steer
 # (the queue card's bolt) that lands while one is in flight cancels it
 # (serve.py _cancel_qa_checks): it grades the state the user steered away
 # from. A plain queued reply does not.
@@ -21,13 +21,16 @@ QA_CHECK_AGENTS = {
 
 def qa_check(subagent_type, prompt=""):
     """The QA check a subagent dispatch runs, or None. Claude namespaces plugin
-    agents (`woven:visual-verifier`); requirement QA is a general-purpose
-    dispatch, recognisable only by the playbook its brief points at."""
+    agents (`woven:visual-verifier`); requirement QA and impact QA are
+    general-purpose dispatches, recognisable only by the playbook their brief
+    points at."""
     name = str(subagent_type or "").rsplit(":", 1)[-1].strip()
     if name in QA_CHECK_AGENTS:
         return QA_CHECK_AGENTS[name]
     if "requirement-qa.md" in str(prompt or ""):
         return "requirement QA"
+    if "impact-qa.md" in str(prompt or ""):
+        return "impact QA"
     return None
 
 

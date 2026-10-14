@@ -15047,14 +15047,14 @@ def _normalize_chat_tier(raw) -> str:
 
 def _normalize_chat_guards(raw) -> dict:
     """The chat composer's per-thread check toggles (visual / dsGuard, on by
-    default; reqQa and plan, off by default) coerced onto plain booleans. Kept as a thin wrapper so
+    default; reqQa, impactQa and plan, off by default) coerced onto plain booleans. Kept as a thin wrapper so
     an import failure of kinds.capabilities (which every preamble call already
     tolerates) still yields a usable dict rather than exploding a spawn."""
     try:
         from kinds.capabilities import normalize_guards
         return normalize_guards(raw)
     except Exception:
-        out = {"visual": True, "dsGuard": True, "reqQa": False, "plan": False}
+        out = {"visual": True, "dsGuard": True, "reqQa": False, "impactQa": False, "plan": False}
         if isinstance(raw, dict):
             for k in out:
                 if k in raw:
@@ -15072,7 +15072,13 @@ def _delegated_context(project_root, body, qs):
     a child it breaks the child - an `-orchestrator` planner spawns at SETUP
     tier, which carries the plan block, so a dispatch out of a plan-armed
     thread would answer with its own plan gate card instead of doing the job
-    it was dispatched for, and the parent would wait forever on it."""
+    it was dispatched for, and the parent would wait forever on it.
+
+    IMPACT QA IS NOT INHERITED HERE EITHER, for the same reason: it ends on a
+    card asking the user which fixes to make, and nobody answers a node run or
+    a planner while its parent waits on it. The parent covers what its
+    children changed in its own impact check. (A plan-split thread, opened
+    through /__run, is a thread the user works in, so it does inherit it.)"""
     parent_id = body.get("parent") or _qs_get(qs, "parent")
     with RUNS_LOCK:
         parent = RUNS.get(parent_id) if parent_id else None
@@ -15086,7 +15092,8 @@ def _delegated_context(project_root, body, qs):
             "runtime": getattr(parent, "agent_id", None),
             "model": getattr(parent, "model", None),
             "executionProfile": getattr(parent, "execution_profile", None),
-            "guards": _delegated_guards(body.get("guards", getattr(parent, "guards", None))),
+            "guards": dict(_delegated_guards(body.get("guards", getattr(parent, "guards", None))),
+                           impactQa=False),
             "parent": parent.run_id if parent else None}
 
 
@@ -35739,7 +35746,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # that, a `parent` run id makes this a DELEGATED spawn (today: the
         # plan-mode fan-out, which opens one real thread per plan point) and
         # it inherits the parent thread's ACTUAL checks - visual / DS / req QA
-        # all ride down, because these threads are the ones doing the work the
+        # / impact QA all ride down, because these threads are the ones doing the work the
         # parent only planned. _delegated_guards forces plan mode OFF on the
         # way: they were opened to BUILD an already-decided point, and a
         # thread that stopped to re-plan it would never do the job.

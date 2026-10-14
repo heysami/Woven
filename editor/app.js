@@ -12164,6 +12164,11 @@ function ChatComposerAddMenu({ busy, attachBusy, pickBusy, uploadBusy, onAttachI
                 system bound - the preamble emits nothing there either way.
      - reqQa    the requirement gate: a QA subagent diffs the build against the
                 requirement source it was given. Opt-in.
+     - impactQa the impact gate: a QA subagent looks for OTHER screens and
+                flows that depended on what a change removed or reshaped.
+                Opt-in, and report-only all the way to the user: the agent
+                asks which fixes to make instead of making them, because each
+                one widens the change.
    The first two default ON. They shape the SPAWN's system prompt, so like the
    permission mode they apply to the next run, not the one already streaming.
    Persisted in the shared editor settings blob (a sticky user preference). */
@@ -12171,6 +12176,7 @@ const CHAT_GUARD_OPTIONS = [
   { key: "visual",  def: true,  icon: "Eye",      label: "Visual verification", hint: "Agent renders and looks at what it built (via a throwaway verifier subagent) before saying it is done - including anything it creates on the canvas. Off: it reports without checking, and may glance inline." },
   { key: "dsGuard", def: true,  icon: "Palette",  label: "Design system guard", hint: "Includes the full bound DESIGN.md during generation and runs the DS-drift check after markup or CSS edits. Off: no full catalog injection or drift check; the design system still applies. Projects with no design system are unaffected." },
   { key: "reqQa",   def: false, icon: "NotesDoc", label: "Requirement QA",      hint: "For work driven by a requirement doc or referenced file: a QA subagent re-reads the requirement and checks the build's terms, logic and facts against it. The agent auto-fixes hallucinated facts and mechanical drift, and brings anything needing a decision to you. Off unless the thread has a requirement to check." },
+  { key: "impactQa", def: false, icon: "Tree",    label: "Impact QA",           hint: "After a change that removes, renames, moves or reshapes something, a QA subagent looks across the rest of the prototype for screens and flows that depended on it: a step that dead-ends, a summary that reads a field nobody collects, a flow that can no longer be finished. Nothing is fixed without asking: you pick which fixes to make, since each one reaches past what you asked for." },
 ];
 
 /* PLAN MODE - its own control, sitting NEXT TO the checks chip, never inside

@@ -706,8 +706,10 @@ HOW:
 # on because their failures (self-certified "done", silent DS drift) are silent
 # and expensive, while requirement QA is off because most threads have no
 # requirement document to check against - dispatching it there would burn a
-# subagent to report "no source named".
-GUARD_DEFAULTS = {"visual": True, "dsGuard": True, "reqQa": False, "plan": False}
+# subagent to report "no source named". Impact QA is off for a different
+# reason: it ends in a question to the user, and a caller that passes no flags
+# (a node run, a planner) has nobody watching to answer it.
+GUARD_DEFAULTS = {"visual": True, "dsGuard": True, "reqQa": False, "impactQa": False, "plan": False}
 
 
 def normalize_guards(raw) -> dict:
@@ -761,6 +763,30 @@ This thread checks its work against the REQUIREMENT it was given. A requirement 
   - **Non-mechanical findings (`mechanical: no`) and every `ambiguous` line: STOP and ask the user.** These need a product decision - the requirement is ambiguous, two requirements conflict, or the fix changes scope or a flow already built. Put them to the user as a short numbered list: what the requirement says, what the build does, and the options. Do not pick for them, and do not bury it in a summary.
   - **Findings you deliberately reject: say so and why.** You may know something the subagent cannot (the user asked for it in chat, the item is deferred to a later step, the "invention" is agreed placeholder data). Overriding is legitimate; overriding silently is not - one line per rejection.
 - Report the outcome in one line the user can trust: what the QA found, what you auto-fixed, and what needs their decision. If the dispatch itself failed, say that rather than implying the check passed."""
+
+
+# Rides on the interactive tiers ONLY when the user ticks it on (default off).
+# The failure it targets sits outside the screen being worked on: a change
+# removes a field, a step or a status, the changed screen looks right, and a
+# later screen in another flow now reads data nobody collects, links to a page
+# that is gone, or cannot be finished. Visual QA is scoped to the change and
+# requirement QA to the requirement, so neither walks the rest of the flow.
+#
+# Unlike requirement QA, NOTHING it finds is fixed without asking, not even a
+# one-line fix: every fix widens the change past what the user asked for, and
+# one fix can surface the next. The user decides how far the change goes, on a
+# multi-select card. See docs/agents/impact-qa.md.
+IMPACT_QA_STUB = """
+
+### IMPACT QA - mandatory gate (the user turned this check ON for this thread)
+This thread checks whether a change to one part of a prototype broke another part the user is not looking at: a flow that can no longer be finished, a screen that now reads data nobody collects, a link or step that dead-ends. It applies when a reply CHANGED an existing prototype by removing, renaming, moving or reshaping something other screens could depend on (an element, field, data value, status, page, step, route, id or rule), or by adding a new required input or step. Pure additions and restyles that change no structure: skip it, and do not dispatch.
+
+- AFTER such a change and BEFORE you tell the user it is done: dispatch ONE general-purpose `Task` subagent, in the same message as the other checks, with this self-contained brief (it does not see this preamble): "Read $TH_PROTOCOL_ROOT/docs/agents/impact-qa.md and execute it. Project root: <absolute cwd>. Prototype: source/<slug>/. Changed: <each thing removed / renamed / moved / reshaped, before -> after, with its id, field, value or file>. Artefacts changed: <the exact files touched>." Cover everything the reply changed, including what runs you dispatched changed. It returns a compact `IMPACT-QA` report: breaks / degrades / records, each with the dependent location, a proposed fix (revise the dependent or re-add what it needs) and its size. It edits nothing.
+- THEN ASK THE USER. Never apply an impact fix on your own, not even a small one: each one reaches past what the user asked for and the list can balloon, so only the user decides how far the change goes.
+  - CLEAN: one line, "Impact QA: nothing else in the prototype depends on what changed." No card.
+  - FINDINGS: one line per finding (the dependent screen, what breaks, the proposed fix and its size), then close the reply with ONE `<decision-request id="impact-qa" prompt="This change affects other parts of the prototype. Pick what to fix now." multiSelect="true" minPicks="1">`: one option per breaks / degrades finding (value `fix-<n>`, e.g. "Payment receipt: drop the Phone row, its field was removed (small)"), a second option `alt-<n>` for a finding whose report gives an `alt`, ONE option `records` covering every stale record, and a last option `none` ("Leave them as they are"). Apply only what is picked; `none` wins over anything picked with it.
+  - The picked fixes are new work: the other checks grade them as usual, but do not run impact QA again on them unless a fix itself removed or reshaped something.
+- If the dispatch failed, say so rather than implying the check passed."""
 
 
 # TYPED JUDGMENT. Two settings, one per tier, neither a new check: typed
@@ -1419,8 +1445,9 @@ def capabilities_preamble(project_root: Optional[str] = None, tier: str = "full"
         App-capabilities + verify gates are kept (a leaf needs those).
 
     `guards` carries the chat composer's per-thread check toggles
-    ({"visual": bool, "dsGuard": bool, "reqQa": bool, "plan": bool} - see
-    GUARD_DEFAULTS; the first two default on, the last two off). The flags are
+    ({"visual": bool, "dsGuard": bool, "reqQa": bool, "impactQa": bool,
+    "plan": bool} - see GUARD_DEFAULTS; the first two default on, the rest
+    off). The flags are
     independent, so every combination is legal. A dropped always-on flag
     removes that gate's blocks from the preamble entirely; an armed opt-in one
     appends its block - see normalize_guards.
@@ -3271,8 +3298,9 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     # The DS drift gate is per-prototype (empty string when no DS is bound),
     # and the user can drop it for this thread the same way.
     _ds_block = _ds_guard_stub(project_root, prototype) if _g["dsGuard"] else ""
-    # Opt-in, so it is empty on almost every thread.
+    # Opt-in, so these are empty on almost every thread.
     _req_block = REQUIREMENT_QA_STUB if _g["reqQa"] else ""
+    _impact_block = IMPACT_QA_STUB if _g["impactQa"] else ""
     # The functional check: plan the UI / logic / copy before building. Also
     # opt-in, and the only guard that runs BEFORE the work rather than grading
     # it after, so it rides at the very END of the preamble where a
@@ -3313,7 +3341,7 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "scoped":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root, embedded=bool(_catalog)) + _catalog + _ds_block + _req_block + _jev_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
+        return _preamble + _scoped_iteration_stub(prototype, project_root=project_root, embedded=bool(_catalog)) + _catalog + _ds_block + _req_block + _impact_block + _jev_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
     # NORMAL path: the project's everyday chat, the untargeted default. Same
     # routing strip as scoped (routing is fetched on demand only when the user
     # asks for a genuine new build), but NOT bound to one prototype - a general
@@ -3321,13 +3349,13 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     if tier == "normal":
         _preamble = _strip_disabled_orchestrator_blocks(_preamble, set())
         _preamble = _strip_sections_by_header(_preamble, _ROUTING_FRAME_HEADERS)
-        return _preamble + _normal_general_stub() + _catalog + _ds_block + _req_block + _jev_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
+        return _preamble + _normal_general_stub() + _catalog + _ds_block + _req_block + _impact_block + _jev_block + GATE_CARD_SYNTAX + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
     # SETUP path (default): a new prototype build. Keeps the full routing
     # catalog. Append manifest-carried hard rules for orchestrators added
     # after ship time (not covered by the static prose above). Appended AFTER
     # the strip pass - _dynamic_hard_rule_sections self-filters on enabled ids.
     _preamble = _preamble + _dynamic_hard_rule_sections(enabled_orchestrators)
-    return _preamble + _catalog + _ds_block + _req_block + _jev_block + GATE_REPLY_RULE + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
+    return _preamble + _catalog + _ds_block + _req_block + _impact_block + _jev_block + GATE_REPLY_RULE + _visual_block + DURABLE_WRITE_DISCIPLINE + CONTENT_FIDELITY_REFLECTION + _plan_block
 
 
 def orchestrator_routing_text(project_root: Optional[str] = None) -> str:
