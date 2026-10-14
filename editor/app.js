@@ -12203,6 +12203,12 @@ const CHAT_GUARD_OPTIONS = [
    they were opened to build, and a child that stopped to plan or triage would
    hang the parent waiting on it (serve.py _delegated_context). */
 const CHAT_MODE_OPTIONS = [
+  // AUTO picks one of the three below per message with the typed judge
+  // (editor/auto_mode.py: the same fixed questions every time, read with the
+  // conversation so far). Offered only while typed judgment is on for this
+  // chat and a judge is set up; see autoAvailable in ChatDrawer.
+  { value: "auto",   icon: "Spark", label: "Auto",
+    hint: "The typed judge picks the mode for each message by fixed rules, reading where the conversation is: Triage when the request may affect other screens, flows or earlier work; Plan when it needs a new layout or interaction; Normal only for a question or a small, straightforward change. After a triage, an answer to its questions moves on to Plan or Normal, unless it adds new work that needs triaging again; a reply to a plan stays in Plan." },
   { value: "normal", icon: "Pen", label: "Normal",
     hint: "The agent does what you ask straight away." },
   { value: "plan",   icon: "DocPencil", label: "Plan",
@@ -12349,7 +12355,7 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending, m
   // flags themselves are untouched, so the build that follows is still graded
   // by whatever is ticked here. `shut` is "the menu cannot open", for either
   // reason; only `locked` means the VALUE can never change again.
-  const inert = !!mode && mode !== "normal" && !locked;
+  const inert = (mode === "plan" || mode === "triage") && !locked;
   const shut = locked || inert;
   useEffect(() => {
     if (!open) return;
@@ -12471,8 +12477,11 @@ function ChatGuardsPicker({ value, onChange, openUp, locked, running, pending, m
    the current mode's icon, lit when it is Plan or Triage, so the footer stays
    one row. Applies to the NEXT message and switches in place on a live thread:
    no handoff, no pending marker (see CHAT_MODE_OPTIONS). */
-function ChatWorkModePicker({ value, onChange, openUp }) {
+function ChatWorkModePicker({ value, onChange, openUp, autoAvailable, onOpen }) {
   const [open, setOpen] = useState(false);
+  // Re-read the judge status on every open, so turning typed judgment on in
+  // Settings offers Auto here without a reload.
+  useEffect(() => { if (open && onOpen) onOpen(); }, [open]);
   const [pos, setPos] = useState(null);
   const ref = useRef(null);
   const menuRef = useRef(null);
@@ -12541,7 +12550,7 @@ function ChatWorkModePicker({ value, onChange, openUp }) {
           }}
         >
           <div className="perm-menu-head">Mode for your next message</div>
-          ${CHAT_MODE_OPTIONS.map(opt => html`
+          ${CHAT_MODE_OPTIONS.filter(opt => opt.value !== "auto" || autoAvailable !== false).map(opt => html`
             <button
               key=${opt.value}
               type="button"
@@ -18514,7 +18523,10 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     for (let i = events.length - 1; i >= 0; i--) {
       const ev = events[i];
       if ((ev.type === "user_message" || ev.event === "user_message") && ev.data
-          && CHAT_MODE_OPTIONS.some(o => o.value === ev.data.mode)) return ev.data.mode;
+          && CHAT_MODE_OPTIONS.some(o => o.value === ev.data.mode)) {
+        // An Auto message records both: what the user picked and what ran.
+        return ev.data.modePick === "auto" ? "auto" : ev.data.mode;
+      }
     }
     for (const ev of events) {
       if (ev.event === "agent" && ev.data?.type === "raw") continue;
@@ -18523,12 +18535,20 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     }
     return "normal";
   }, [events]);
-  const effMode = modePick || (isNew ? "normal" : threadMode);
+  const pickedMode = modePick || (isNew ? "normal" : threadMode);
 
   // The checks the footer control shows, and whether they are a STAGED change
   // this thread can't take. `pendingGuards` only exists on a running thread;
   // an empty shell edits the sticky preference directly.
   const effGuards = isNew ? { ...chatGuards, ...judgePick } : (pendingGuards || runGuards || GUARD_SPAWN_DEFAULTS);
+  // Auto needs a judge: one set up for the text tier, and typed judgment on
+  // for this chat (either switch, the chat's own choice else Settings). null
+  // while the status loads, which keeps an Auto thread on Auto rather than
+  // flashing it to Normal. Turned off, an Auto thread reads (and sends) as
+  // Normal until the user picks again.
+  const autoAvailable = !judgeStatus ? null : !!(judgeStatus.text
+    && (chatJudgeOn(effGuards, "judgeText", judgeDefaults) || chatJudgeOn(effGuards, "judgeImage", judgeDefaults)));
+  const effMode = pickedMode === "auto" && autoAvailable === false ? "normal" : pickedMode;
   const guardsChanged = !isNew && !!pendingGuards
                         && !sameChatGuards(pendingGuards, runGuards || GUARD_SPAWN_DEFAULTS, judgeDefaults);
   // The isNew spawn path. The composer calls onStartNewChat(body) with no
@@ -18776,6 +18796,8 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
               value=${effMode}
               onChange=${setModePick}
               openUp=${true}
+              autoAvailable=${autoAvailable}
+              onOpen=${() => setJudgeTick(t => t + 1)}
             />
           `}
           <${ChatOrchestratorsChip} orchestrators=${orchestrators}/>
@@ -24672,9 +24694,14 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
       // Plan / Triage are per message, so a thread can switch between them:
       // the mode each message ran in is marked on its bubble (Normal is the
       // default and stays unmarked).
-      const mode = block.data.mode === "plan" || block.data.mode === "triage" ? chatModeOption(block.data.mode) : null;
+      // An Auto message shows what the judge picked and why.
+      const auto = block.data.modePick === "auto";
+      const mode = auto || block.data.mode === "plan" || block.data.mode === "triage" ? chatModeOption(block.data.mode) : null;
+      const modeTip = !mode ? "" : auto
+        ? `Auto picked ${mode.label}: ${block.data.autoWhy || "no reason recorded"}.`
+        : mode.label + " mode: " + mode.hint;
       return html`<div className="chat-bubble chat-bubble-user">${
-        mode ? html`<span className="chat-bubble-prefix chat-bubble-mode" title=${mode.label + " mode: " + mode.hint}><${Icon[mode.icon]}/>${mode.label}</span> ` : ""
+        mode ? html`<span className="chat-bubble-prefix chat-bubble-mode" title=${modeTip}><${Icon[mode.icon]}/>${auto ? "Auto: " + mode.label : mode.label}</span> ` : ""
       }${
         block.data.auto ? html`<span className="chat-bubble-prefix">auto:</span> ` : ""
       }<${Markdown} text=${stripChatPreamble(block.data.text)} inline=${true}/></div>`;

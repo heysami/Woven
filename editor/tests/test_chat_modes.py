@@ -89,13 +89,13 @@ class ThreadModeTests(unittest.TestCase):
     def test_a_message_without_a_mode_keeps_the_threads(self):
         # a card answer, a daemon nudge: no `mode` on the body
         send, mode = serve._mode_send(fake_state(modes=("triage",)), "[decision:x] a", None)
-        self.assertEqual(mode, "triage")
+        self.assertEqual(mode, {"mode": "triage"})
         self.assertIn("TRIAGE - report only", send)
 
     def test_switching_mid_thread(self):
         st = fake_state(modes=("triage",))
         send, mode = serve._mode_send(st, "now build it", "normal")
-        self.assertEqual(mode, "normal")
+        self.assertEqual(mode, {"mode": "normal"})
         self.assertIn("switched back from Triage", send)
 
 

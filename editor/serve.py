@@ -10136,7 +10136,7 @@ def _queue_drain_maybe(state, mode: str = "stdin") -> None:
                             ok = True
                     if ok:
                         echo = {"text": head.get("text") or text, "queued": True, "queueId": head.get("id"),
-                                "mode": chat_mode}
+                                **chat_mode}
                         if head.get("auto"):
                             echo["auto"] = head["auto"]
                         state.append("user_message", echo)
@@ -10163,13 +10163,16 @@ def _user_echo(text: str, auto: str = "", queue_id: str = "", mode=None) -> dict
     the echo arrives: its queue reads can land out of order (an /enqueue
     reply built before the drain thread removed the entry), and a stale one
     used to pin a sent message on screen as "queued" until a refresh.
-    `mode` is the chat mode the message ran in (see _mode_send)."""
+    `mode` is the chat mode the message ran in, or the whole field set
+    _mode_send returns (mode plus the Auto pick's reason)."""
     d = {"text": text}
     if auto:
         d["auto"] = auto
     if queue_id:
         d["queueId"] = queue_id
-    if mode:
+    if isinstance(mode, dict):
+        d.update(mode)
+    elif mode:
         d["mode"] = mode
     return d
 
@@ -15195,11 +15198,108 @@ def _mode_text(mode, prev_mode, text: str) -> str:
         return text
 
 
+def _norm_mode_pick(raw):
+    """What the composer may PICK: one of the three modes, or "auto"."""
+    if isinstance(raw, str) and raw.strip().lower() == "auto":
+        return "auto"
+    return _norm_chat_mode(raw)
+
+
+def _last_mode_echo(state):
+    """The latest user-message echo that carries a mode, or None."""
+    try:
+        with state.lock:
+            for ev in reversed(state.events):
+                d = ev.get("data")
+                if ev.get("type") == "user_message" and isinstance(d, dict) and _norm_chat_mode(d.get("mode")):
+                    return dict(d)
+    except Exception:
+        pass
+    return None
+
+
+def _auto_context(state):
+    """What an Auto pick reads besides the new message: (the user's previous
+    message, the agent's reply to it, the mode the work is in). The mode skips
+    back over a question-only turn, so answering a triage after asking it a
+    clarifying question still reads as answering the triage. Subagent text
+    (sidechain) is not part of the reply."""
+    import auto_mode
+    earlier, mode = None, None
+    deltas, texts = [], []
+    try:
+        with state.lock:
+            evs = list(state.events[-6000:])
+    except Exception:
+        return None, None, None
+    for ev in reversed(evs):
+        d = ev.get("data") if isinstance(ev.get("data"), dict) else {}
+        if ev.get("type") == "user_message":
+            if earlier is None:
+                earlier = d.get("text") if isinstance(d.get("text"), str) else ""
+            m = _norm_chat_mode(d.get("mode"))
+            if m and d.get("autoWhy") != auto_mode.QUESTION_WHY:
+                mode = m
+                break
+            continue
+        if earlier is None and not d.get("sidechain"):
+            if d.get("type") == "text_delta":
+                deltas.append(d.get("delta") or "")
+            elif d.get("type") == "text" and isinstance(d.get("text"), str):
+                texts.append(d["text"])
+    reply = "".join(reversed(deltas or texts)).strip()
+    return earlier, reply or None, mode
+
+
+def _auto_judge(guards):
+    """typed_judge.judge bound for the Auto pick (text tier, any set-up judge),
+    or None when typed judgment is off for this chat: Auto is offered only
+    while one of the two switches is on (the thread's own choice, else
+    Settings), and the daemon holds to the same rule."""
+    cfg = dict(_compact_config())
+    for k, switch in _JUDGE_GUARD_SWITCH.items():
+        v = (guards or {}).get(k)
+        if isinstance(v, bool):
+            cfg[switch] = v
+    if not (cfg.get("jevJudge") or cfg.get("typedJudgeVisual")):
+        return None
+    return lambda state, questions: typed_judge.judge(
+        state, questions, tier="text", kind="auto_mode",
+        resolve_key=_resolve_provider_key, timeout=15, max_retries=1)
+
+
+def _mode_fields(pick, text, guards, prev_echo=None, context=None, prev_mode="normal") -> dict:
+    """The echo fields for one message: `mode` (what it runs in) and, for an
+    Auto pick, `modePick: "auto"` plus the judge's reason (`autoWhy`) and
+    name (`autoJudge`). No pick (a card answer, a nudge) keeps the thread's
+    mode AND its Auto pick: a plan's Execute click must stay in Plan, never
+    be re-judged as a one-word message."""
+    if pick == "auto":
+        import auto_mode
+        earlier, reply, work_mode = context or (None, None, None)
+        r = auto_mode.classify(text, _auto_judge(guards), earlier=earlier, last_reply=reply,
+                               prev_mode=work_mode or (prev_mode if context else None))
+        out = {"mode": r["mode"], "modePick": "auto", "autoWhy": r["why"]}
+        if r.get("judge"):
+            out["autoJudge"] = r["judge"]
+        return out
+    if pick:
+        return {"mode": pick}
+    out = {"mode": prev_mode}
+    if prev_echo and prev_echo.get("modePick") == "auto":
+        out["modePick"] = "auto"
+    return out
+
+
 def _mode_send(state, text: str, raw_mode):
-    """(the text the agent receives, the mode to stamp on the echo)."""
+    """(the text the agent receives, the fields to stamp on the echo)."""
     prev = _thread_chat_mode(state)
-    mode = _norm_chat_mode(raw_mode) or prev
-    return _mode_text(mode, prev, text), mode
+    pick = _norm_mode_pick(raw_mode)
+    fields = _mode_fields(pick, text, getattr(state, "guards", None),
+                          prev_echo=_last_mode_echo(state),
+                          context=_auto_context(state) if pick == "auto" else None,
+                          prev_mode=prev)
+    return _mode_text(fields["mode"], prev, text), fields
 
 
 def _apply_guard_env(env: dict, guards: dict) -> dict:
@@ -35871,11 +35971,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         # one (see _mode_send), never in the system prompt. A `guards.plan`
         # from a client that predates per-message modes becomes Plan mode the
         # same way, so a new thread never carries the spawn-time plan gate.
-        _chat_mode = _norm_chat_mode(body.get("mode")) if kind == "freeform" else None
+        _chat_pick = _norm_mode_pick(body.get("mode")) if kind == "freeform" else None
         if _chat_guards.get("plan"):
-            if kind == "freeform" and _chat_mode is None:
-                _chat_mode = "plan"
+            if kind == "freeform" and _chat_pick is None:
+                _chat_pick = "plan"
             _chat_guards = dict(_chat_guards, plan=False)
+        _chat_mode_fields = _mode_fields(_chat_pick, user_prompt, _chat_guards) if _chat_pick else {}
+        _chat_mode = _chat_mode_fields.get("mode")
         if _chat_mode:
             prompt_text = _mode_text(_chat_mode, "normal", prompt_text)
         spawn_args = list(defs["args"])
@@ -36085,7 +36187,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         # (edits-apply, regenerate) wrap the user's intent in a system-style
         # instruction; we keep those out of the chat log so it stays clean.
         if kind == "freeform" and user_prompt:
-            state.append("user_message", _user_echo(user_prompt, mode=_chat_mode))
+            state.append("user_message", _user_echo(user_prompt, mode=_chat_mode_fields or None))
 
         with RUNS_LOCK:
             RUNS[run_id] = state
@@ -36719,7 +36821,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             state.turn_done = False
             state.stop_reason = None
         # Echo into the event log so the UI shows the message in-thread.
-        state.append("user_message", {"text": text, "mode": chat_mode})
+        state.append("user_message", {"text": text, **chat_mode})
         return self._reply(200, {"ok": True})
 
     # ── message queue ─────────────────────────────────────────────────
@@ -36762,8 +36864,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             "at": time.time(),
         }
         # The mode picked when it was typed, applied when it is delivered.
-        if _norm_chat_mode(body.get("mode")):
-            entry["mode"] = _norm_chat_mode(body.get("mode"))
+        if _norm_mode_pick(body.get("mode")):
+            entry["mode"] = _norm_mode_pick(body.get("mode"))
         with _QUEUE_LOCK:
             q = list(getattr(state, "msg_queue", None) or [])
             q.append(entry)
