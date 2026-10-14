@@ -15124,8 +15124,10 @@ function VisualQaReport({ id }) {
               <span className=${"th-vqa-o th-vqa-o-" + (f.confirmed === false ? "unsure" : "sure-no")}>${f.kind}</span>
               <span className="th-tasks-row-main">
                 <span className="th-tasks-row-label">${f.label}${f.count > 1 ? ` · x${f.count}` : ""}</span>
-                <span className="th-plan-verdict">${[f.within, f.measured,
-                  f.judged || (f.candidates || []).map(c => "." + c.key + ": " + (c.answer || "-")).join(" · ")]
+                <span className="th-plan-verdict">${[f.within,
+                  Array.isArray(f.measured) ? f.measured.join("; ") : f.measured,
+                  f.score != null ? "judge " + Number(f.score).toFixed(2)
+                    : f.judged || (f.candidates || []).map(c => "." + c.key + ": " + (c.answer || "-")).join(" · ")]
                   .filter(Boolean).join(" · ")}</span>
               </span>
             </div>`)}

@@ -769,18 +769,23 @@ TYPED_KIND = "frame_check"
 MAX_CHECKS = 64
 # The element passes (--typed-elements): every distinct screen the QA
 # reaches (at most MAX_SCREENS), judged JUDGE_WORKERS calls at a time.
-#   page - code finds literal defects where the change reaches (text cut off
-#          or covered, a part spilling out, uneven gaps) and the judge
-#          confirms each on its crop; at most MAX_DEFECT_CALLS calls a page.
-#          (Letting the judge walk the regions itself failed, 2026-10-14: as a
-#          choice it favoured the first part, scored per part it flagged
-#          warning icons and error ink on a clean page.)
+#   page - the region drill. CODE ONLY SCOPES: the part of each screen the
+#          change reaches, as a tree of regions. THE JUDGE JUDGES: each part of
+#          a region scored on its own (a choice over the parts favoured the
+#          first one, 2026-10-14) plus how they sit together; a part scoring
+#          DRILL_NOUL or more is gone into, down to a primitive or a DS
+#          component; at most MAX_DRILL_CALLS calls a page. A region taller
+#          than TALL_PX is split without being asked (the judge cannot read
+#          it shrunk). It flags too much (warning icons, error ink): the
+#          visual-qa agent reads every finding with its evidence and drops the
+#          non-issues.
 #   ds   - the elements the design system does not recognise: listed, then
 #          compared with the components the ds-compare subagent shortlists
 #          for them (shortlist_compare).
 MAX_SCREENS = 8
-MAX_DEFECT_CALLS = 60
-CONFIRM_PER_GROUP = 2
+MAX_DRILL_CALLS = 60
+DRILL_NOUL = 0.5
+TALL_PX = 1600
 JUDGE_WORKERS = 6
 _CHECK_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _CAPTURE = re.compile(r"^(page|screen:\d+|idle:(start|end|motion|\d+)|(before|after):.+)$")
@@ -1260,6 +1265,9 @@ _COMP_JS = """
     }
     return null;
   };
+  // A container (a card, a nav, a field) holds other DS components; a leaf
+  // holds none.
+  const leafComp = el => ![...el.querySelectorAll('[class]')].some(d => compOf(d));
   const CLEAR = /^(transparent|rgba\\(0, 0, 0, 0\\))$/;
   const backdropOf = el => {
     for (let p = el.parentElement; p; p = p.parentElement) {
@@ -1353,9 +1361,121 @@ _TEXT_JS = """
   };
 """
 
-# The page QA's candidates, found by CODE in the part of the screen the change
-# impacts (_IMPACT_JS; the whole screen without a scope). Each is a literal
-# defect the image judge then only has to confirm on its crop:
+# The screen (or, with a.changed, the part of it the change impacts) as a
+# tree of REGIONS read from the code: each node is an element on screen (or
+# a run of similar siblings), its children the visible blocks it is made of.
+# Wrappers with one child are skipped, a long list is cut into runs of at
+# most maxKids, and a node stops at a primitive (text, image, control) or a
+# design-system component that holds no other. Inside the impacted part,
+# only the children on the way to something impacted are shown; inside an
+# impacted element, all of them. The page QA asks the judge which child of a
+# node has a defect and goes down only where it says so. Breadth first.
+_REGIONS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + _DOM_JS + _COMP_JS + _IMPACT_JS + _TEXT_JS + """
+  const MAX_KIDS = a.maxKids || 10, MAX_NODES = a.maxNodes || 4000, MAX_DEPTH = a.maxDepth || 16;
+  const SKIP = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|LINK|META|BR|WBR)$/;
+  const PRIM = /^(IMG|SVG|INPUT|SELECT|TEXTAREA|CANVAS|VIDEO|AUDIO|IFRAME|HR|PICTURE|PROGRESS|METER|OBJECT|EMBED)$/i;
+  const imp = (a.changed && a.changed.length) ? impactOf(a.changed) : null;
+  if (a.changed && a.changed.length && !imp) return {nodes: [], scoped: true, impact: null};
+  const top = imp ? imp.root : document.body;
+  // A container's code is its opening tag and the start of its text; the
+  // whole outerHTML of a big container is the whole page again.
+  const codeOfBlock = el => {
+    if (!el.children.length) return evidenceOf(el, path).code;
+    const h = el.outerHTML, open = h.slice(0, Math.min(h.indexOf('>') + 1 || 200, 200));
+    const t = textOf(el, 100);
+    return open + (t ? ' ' + t.slice(0, 100) + (t.length > 100 ? '...' : '') : '') + ' </' + el.tagName.toLowerCase() + '>';
+  };
+  const ownText = el => [...el.childNodes].some(n => n.nodeType === 3 && /\\S/.test(n.nodeValue));
+  const kidsOf = el => {
+    const out = [];
+    const walk = p => {
+      for (const c of p.children) {
+        if (SKIP.test(c.tagName)) continue;
+        const st = getComputedStyle(c);
+        if (st.display === 'none' || st.visibility === 'hidden') continue;
+        if (st.display === 'contents') { walk(c); continue; }
+        if (seenBox(c, 6)) out.push(c);
+        else if (c.children.length) walk(c);
+      }
+    };
+    walk(el);
+    // In the impacted part, a container shows only what leads to the change.
+    if (imp && (el === top || imp.onPath.has(el)) && !imp.hot.has(el))
+      return out.filter(k => imp.hot.has(k) || imp.onPath.has(k));
+    return out;
+  };
+  // Text with inline markup (a sentence with a link in it) is one thing.
+  const isPrimitive = el => PRIM.test(el.tagName) || (ownText(el) && [...el.children].every(k =>
+    /^inline/.test(getComputedStyle(k).display) && !k.children.length));
+  const labelOf = el => {
+    const c = compOf(el);
+    const cls = [...el.classList].filter(x => !/^(is|has|js)-/.test(x))[0];
+    const kind = c ? c.title : el.getAttribute('aria-label') ? '' : cls ? cls.replace(/[-_]+/g, ' ')
+      : el.tagName.toLowerCase();
+    const h = el.matches('h1,h2,h3,h4,h5,h6,legend,th,label') ? el
+      : el.querySelector('h1,h2,h3,h4,h5,h6,legend,[role=heading],caption');
+    const words = (el.getAttribute('aria-label') || (h && textOf(h, 60)) || textOf(el, 60)).trim();
+    const quote = words ? '"' + (words.length > 40 ? words.slice(0, 40) + '...' : words) + '"' : '';
+    return (kind && quote ? kind + ' ' + quote : kind || quote || el.tagName.toLowerCase()).slice(0, 72);
+  };
+  const nodes = [];
+  const add = (el, depth, parent) => {
+    const n = {i: nodes.length, parent: parent, depth: depth, sel: path(el), box: seenBox(el, 1) || box(el),
+               label: labelOf(el), kids: [], hot: !!(imp && imp.hot.has(el)), ev: null};
+    nodes.push(n);
+    return n;
+  };
+  const union = list => {
+    const x1 = Math.min(...list.map(n => n.box.x)), y1 = Math.min(...list.map(n => n.box.y));
+    const x2 = Math.max(...list.map(n => n.box.x + n.box.width)), y2 = Math.max(...list.map(n => n.box.y + n.box.height));
+    return {x: x1, y: y1, width: x2 - x1, height: y2 - y1};
+  };
+  // A long list is cut into runs: the judge is shown at most MAX_KIDS boxes.
+  const runsOf = (members, parent, depth) => {
+    if (members.length <= MAX_KIDS) return members;
+    const size = Math.ceil(members.length / MAX_KIDS), out = [];
+    for (let s = 0; s < members.length; s += size) {
+      const part = members.slice(s, s + size);
+      if (part.length === 1) { out.push(part[0]); continue; }
+      const g = {i: nodes.length, parent: parent, depth: depth, sel: part[0].sel, box: union(part),
+                 label: 'items ' + (s + 1) + '-' + (s + part.length) + ' of ' + members.length + ' (' + part[0].label + ' ...)',
+                 kids: [], group: [part[0].sel, part[part.length - 1].sel], ev: null};
+      nodes.push(g);
+      for (const m of runsOf(part, g.i, depth + 1)) { m.parent = g.i; g.kids.push(m.i); }
+      out.push(g);
+    }
+    return out;
+  };
+  const root = add(top, 0, null);
+  if (top === document.body) root.label = 'the whole screen';
+  root.ev = {code: codeOfBlock(top), style: '', coveredBy: null, clipped: false};
+  const queue = [[root, top]];
+  while (queue.length) {
+    const [n, el] = queue.shift();
+    let host = el, kids = kidsOf(host);
+    // A wrapper around one block is that block.
+    while (kids.length === 1 && !compOf(kids[0]) && !isPrimitive(kids[0])) { host = kids[0]; kids = kidsOf(host); }
+    const members = [];
+    for (const k of kids) {
+      if (nodes.length >= MAX_NODES) break;
+      const kn = add(k, n.depth + 1, n.i);
+      const kc = compOf(k);
+      kn.ev = evidenceOf(k, path);
+      if (k.children.length) kn.ev.code = codeOfBlock(k);
+      if (kc) kn.comp = {cls: kc.cls, title: kc.title, leaf: leafComp(k)};
+      members.push(kn);
+      if (!((kc && kn.comp.leaf) || isPrimitive(k) || n.depth + 1 >= MAX_DEPTH)) queue.push([kn, k]);
+    }
+    for (const m of runsOf(members, n.i, n.depth + 1)) n.kids.push(m.i);
+  }
+  return {nodes: nodes, truncated: nodes.length >= MAX_NODES, scoped: !!imp,
+          impact: imp ? {changed: imp.changed, moved: imp.moved, root: path(top)} : null};
+}"""
+
+# EVIDENCE for the page QA's findings, measured by code in the part of the
+# screen the change impacts (_IMPACT_JS; the whole screen without a scope).
+# It never makes or drops a finding (the image judge does): a finding at or
+# around one of these carries its measurement for the agent that reads it:
 #   cut-off      text that is clipped (overflow, ellipsis, line clamp) or cut
 #                by a container that hides its overflow (a scroller is not:
 #                its content can be scrolled to);
@@ -1673,7 +1793,11 @@ class ScreenCollector:
         try:
             probe = dict(self.plan, changed=[str(c) for c in changed if str(c).strip()]
                          if changed is not None else self.changed)
-            found = (detect_off_system(page, probe) if self.what == "ds" else detect_defects(page, probe)) or {}
+            if self.what == "ds":
+                found = detect_off_system(page, probe) or {}
+            else:
+                found = detect_regions(page, probe) or {}
+                found["measured"] = (detect_defects(page, probe) or {}).get("defects") or []
             page.screenshot(path=path, full_page=vp is None)
         except Exception as exc:
             log("screen capture %s failed (%s)" % (label, exc))
@@ -1685,7 +1809,7 @@ class ScreenCollector:
                 except Exception:
                     pass
         boxes: Dict[str, Any] = {}
-        for item in (found.get("off") or []) + (found.get("defects") or []):
+        for item in found.get("off") or []:
             if item.get("selector") and item.get("box"):
                 boxes[item["selector"]] = item["box"]
         screen = {"n": n, "label": label, "path": path, "found": found, "boxes": boxes}
@@ -1703,9 +1827,19 @@ def detect_off_system(page: Any, plan: Optional[Dict[str, Any]]) -> Optional[Dic
         return None
 
 
+def detect_regions(page: Any, plan: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The rendered screen (or the part the change impacts) as a region tree
+    (see _REGIONS_JS). None when the probe fails."""
+    try:
+        return page.evaluate(_REGIONS_JS, plan or {})
+    except Exception as exc:
+        log("region map of the rendered page failed (%s)" % exc)
+        return None
+
+
 def detect_defects(page: Any, plan: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """The page QA's candidate defects on the rendered screen (see
-    _DEFECTS_JS). None when the probe fails."""
+    """What code measures as wrong on the rendered screen (see _DEFECTS_JS),
+    evidence for the judge's findings. None when the probe fails."""
     try:
         return page.evaluate(_DEFECTS_JS, plan or {})
     except Exception as exc:
@@ -1945,118 +2079,169 @@ def _numbered_crop(path: str, box: Dict[str, float], kids: List[Dict[str, float]
     return buf.getvalue()
 
 
+def _trail(nodes: List[Dict[str, Any]], n: Dict[str, Any]) -> str:
+    """Where a region sits, from the top: "main column > register table > items 1-10"."""
+    out: List[str] = []
+    p = n.get("parent")
+    while p is not None and p > 0:
+        out.insert(0, nodes[p]["label"])
+        p = nodes[p].get("parent")
+    return " > ".join(out)
+
+
+def _region_finding(sc: Dict[str, Any], nodes: List[Dict[str, Any]], n: Dict[str, Any],
+                    kind: str, score: Optional[float], call: Optional[int]) -> Dict[str, Any]:
+    """One finding of the page QA: what the judge flagged, at the most
+    specific level it flagged. `kind`:
+      element      - the smallest part the judge was shown flagged: a
+                     primitive (text, image, control) or a DS component;
+      arrangement  - the judge said the parts of this region sit badly
+                     together (gaps, overlap, alignment between them);
+      region       - the judge flagged this region, but none of its parts
+                     nor their arrangement on a closer look;
+      unexamined   - flagged, but the budget of judge calls ran out first."""
+    ev = n.get("ev")
+    if ev is None and n.get("parent") is not None:
+        ev = nodes[n["parent"]].get("ev")
+    out = {"id": "s%d_r%d" % (sc["n"], n["i"]), "screen": "screen %d (%s)" % (sc["n"] + 1, sc.get("label")),
+           "kind": kind, "label": n["label"], "within": _trail(nodes, n),
+           "selector": ("%s ... %s" % tuple(n["group"])) if n.get("group") else n["sel"],
+           "score": round(score, 3) if score is not None else None, "call": call,
+           "evidence": dict(ev or {})}
+    if n.get("comp"):
+        out["component"] = n["comp"].get("title")
+    # What code measured at or inside this element, as evidence for whoever
+    # reads the finding; it never makes or drops one.
+    base = out["selector"].split(" ... ")[0]
+    measured = [d.get("measured") for d in (sc.get("measured") or [])
+                if d.get("measured") and (d.get("selector") == base or str(d.get("selector")).startswith(base + " > "))]
+    if measured:
+        out["measured"] = measured[:3]
+    return out
+
+
 _NTH = re.compile(r":nth-of-type\(\d+\)")
 
 
-def _defect_groups(screens: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """The candidates, one group per defect: the same kind on the same kind of
-    element with the same text, caused by the same kind of thing (the same
-    overflow in forty rows of a table, or on two screens, is one defect),
-    counted, in order."""
-    groups: Dict[str, Dict[str, Any]] = {}
-    for sc in screens:
-        for d in (sc.get("found") or {}).get("defects") or []:
-            cause = d.get("coveredBy") or d.get("cutBy") or (d.get("container") or {}).get("selector") or ""
-            key = "|".join([d.get("kind") or "", _NTH.sub("", d.get("selector") or ""),
-                            re.sub(r"\s+", " ", d.get("text") or "")[:60], _NTH.sub("", cause)])
-            g = groups.get(key)
-            if g is None:
-                g = groups[key] = {"id": "s%d_d%d" % (sc["n"], len(groups) + 1), "screen": sc, "items": []}
-            g["items"].append(d)
-    return list(groups.values())
+def _group_findings(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The same flag on the same kind of element with the same text (forty
+    rows of one table, or one element on two screens) is one finding,
+    counted; the first keeps its evidence and call."""
+    out: List[Dict[str, Any]] = []
+    seen: Dict[str, Dict[str, Any]] = {}
+    for f in findings:
+        key = "|".join([f.get("kind") or "", _NTH.sub("", f.get("selector") or ""), f.get("label") or ""])
+        g = seen.get(key)
+        if g is None:
+            g = seen[key] = dict(f, count=1)
+            out.append(g)
+            continue
+        g["count"] += 1
+        if (f.get("score") or 0) > (g.get("score") or 0):
+            g["score"] = f.get("score")
+    return out
 
 
-def page_defects(screens: List[Dict[str, Any]], calls: JudgeCalls, viewport_w: int) -> List[Dict[str, Any]]:
-    """The page QA. Code found each candidate defect on the rendered screen
-    (_DEFECTS_JS, inside what the change impacts) and measured it; the same
-    defect repeated is one group (_defect_groups). The judge is asked ONE
-    literal, positive claim (visual_checks: whole_text, uncovered, inside,
-    even_gaps) on the crops of up to CONFIRM_PER_GROUP of its instances. A
-    "no" on any of them confirms the group. A group nobody confirmed is still
-    reported, marked unconfirmed, with what the code measured: on the
-    Bursary register the judge saw 6 of 9 real text overlaps (2026-10-14).
-    At most MAX_DEFECT_CALLS a page. Returns one finding per group."""
+def region_drill(screens: List[Dict[str, Any]], calls: JudgeCalls, viewport_w: int) -> List[Dict[str, Any]]:
+    """The page QA, one level at a time. Each screen starts as one region (the
+    part the change impacts, or the whole screen). Its parts (read from the
+    code by _REGIONS_JS) are outlined and numbered on its crop, and one call
+    scores each part on its own (box_N) and the parts as they sit together
+    (layout). Every part scoring DRILL_NOUL or more is gone into the same way,
+    down to a primitive or a DS component. What is reported is the most
+    specific thing found:
+      element      - a primitive or a DS component that scored;
+      arrangement  - the parts of a region sit badly together (layout);
+      region       - a region that scored while none of its parts or their
+                     layout did on a closer look;
+      unexamined   - scored, but the screen's share of the judge calls
+                     (MAX_DRILL_CALLS split across the screens) ran out first.
+    A region too tall to read on one image (over TALL_PX) is not asked: its
+    parts are each looked at instead. Returns the findings."""
     vc = _editor_module("visual_checks")
-    jobs: List[Dict[str, Any]] = []
-    asked: List[Tuple[Dict[str, Any], Dict[str, Any], str, Dict[str, Any], str]] = []
-    groups = _defect_groups(screens)
-    for g in groups:
-        sc = g["screen"]
-        for j, d in enumerate(g["items"][:CONFIRM_PER_GROUP]):
-            if len(jobs) >= MAX_DEFECT_CALLS:
-                break
-            kind, text = d.get("kind"), re.sub(r"\s+", " ", d.get("text") or "").strip()
-            if kind in ("cut-off", "covered"):
-                img = _crop(sc["path"], d["box"], viewport_w)
-                if kind == "cut-off" and text:
-                    check = ({"shape": "whole_text", "x": text} if len(text) <= 60 else
-                             {"shape": "whole_text_start", "x": text[:50].rsplit(" ", 1)[0] or text[:50]})
-                else:
-                    check = {"shape": "uncovered", "x": ("The text \"%s\"" % text[:60]) if text else
-                             "The %s" % d.get("label")}
-                state = "A crop of one element on a web page."
-            elif kind == "spill":
-                c = d.get("container") or {}
-                img = _numbered_crop(sc["path"], c.get("box") or d["box"], [d["box"]], viewport_w)
-                check = {"shape": "inside", "x": d.get("label") or "the element"}
-                state = "A part of a web page (%s); box 1 marks one element inside it." % c.get("label")
-            elif kind == "uneven-gaps":
-                img = _numbered_crop(sc["path"], d["box"], d.get("parts") or [], viewport_w)
-                check = {"shape": "even_gaps", "x": d.get("label") or "this part"}
-                state = "A part of a web page (%s); its parts are numbered." % d.get("label")
-            else:
-                continue
-            if img is None:
-                continue
-            try:
-                q, _n = vc.question(check)
-            except ValueError:
-                continue
-            rid = "%s_%d" % (g["id"], j + 1)
-            jobs.append({"state": state, "questions": {rid: q}, "images": [img],
-                         "sources": [{"capture": sc["path"], "box": d["box"], "selector": d["selector"],
-                                      "label": "screen %d (%s) cropped to %s" % (sc["n"] + 1, sc.get("label"),
-                                                                                d.get("label"))}]})
-            asked.append((g, d, rid, q, check["shape"]))
-    seen: Dict[str, List[Dict[str, Any]]] = {}
-    for (g, d, rid, q, shape), (answers, th, exc, call) in zip(asked, calls.ask(jobs)):
-        sc = g["screen"]
-        row: Dict[str, Any] = {"id": rid, "shape": shape, "x": d.get("label"), "at": "screen:%d" % sc["n"],
-                               "call": call["n"], "question": q, "claim": q["instructions"],
-                               "selector": d["selector"], "source": "found in the code: %s" % d.get("kind"),
-                               "images": [im.get("label") for im in call["images"]], "evidence": d.get("ev")}
-        if exc is not None:
-            row.update(status="unavailable", message=str(exc)[:200], passed=None, band=None)
-        else:
-            v = vc.verdict(q, answers.get(rid), th)
-            row.update({"status": "answered" if v["answer"] is not None else "no-answer", "answer": v["answer"],
-                        "noul": v.get("noul"), "passed": v["passed"], "confidence": v["confidence"],
-                        "band": v["band"]})
-        calls.rows.append(row)
-        seen.setdefault(g["id"], []).append(row)
     findings: List[Dict[str, Any]] = []
-    for g in groups:
-        d, sc, rows = g["items"][0], g["screen"], seen.get(g["id"]) or []
-        yes = [r for r in rows if r.get("passed") is False]
-        f: Dict[str, Any] = {"id": g["id"], "kind": d.get("kind"), "count": len(g["items"]),
-                             "screen": "screen %d (%s)" % (sc["n"] + 1, sc.get("label")),
-                             "label": d.get("label"), "within": d.get("within"), "selector": d["selector"],
-                             "confirmed": bool(yes), "judged": "%d of %d crops show it" % (len(yes), len(rows))
-                             if rows else "not asked", "evidence": dict(d.get("ev") or {})}
-        if yes:
-            f["call"] = yes[0]["call"]
-            f["score"] = round(1 - float(yes[0].get("noul") or 0), 3)
-        elif rows:
-            f["call"] = rows[0]["call"]
-        for k in ("cutBy", "coveredBy", "gaps"):
-            if d.get(k) is not None:
-                f[k] = d[k]
-        if d.get("container"):
-            f["container"] = d["container"].get("selector")
-        if d.get("measured"):
-            f["measured"] = d["measured"]
-        findings.append(f)
+    # The budget is shared out: every screen the scope names gets its turn
+    # (the first one used all 60 calls on a long register, 2026-10-14).
+    drilled = [sc for sc in screens if ((sc.get("regions") or {}).get("nodes") or [])]
+    share = max(12, MAX_DRILL_CALLS // max(1, len(drilled)))
+    for sc in drilled:
+        nodes = sc["regions"]["nodes"]
+        start = len(calls.calls)
+        # (node, score its parent's call gave it, that call's number)
+        frontier: List[Tuple[Dict[str, Any], Optional[float], Optional[int]]] = [(nodes[0], None, None)]
+        while frontier:
+            if calls.stopped():
+                break
+            jobs, asked, nxt = [], [], []
+            for n, p, by in frontier:
+                if not n["kids"]:
+                    if p is not None:
+                        findings.append(_region_finding(sc, nodes, n, "element", p, by))
+                    continue
+                kids = [nodes[k] for k in n["kids"]]
+                if n["box"]["height"] > TALL_PX:
+                    nxt += [(k, p, by) for k in kids]
+                    continue
+                if len(calls.calls) - start + len(jobs) >= share:
+                    findings.append(_region_finding(sc, nodes, n, "unexamined", p, by))
+                    continue
+                img = _numbered_crop(sc["path"], n["box"], [k["box"] for k in kids], viewport_w)
+                if img is None:
+                    continue
+                qs = vc.region_questions([k["label"] for k in kids])
+                rid = "s%d_r%d" % (sc["n"], n["i"])
+                where = ("the whole screen" if n["label"] == "the whole screen"
+                         else "one part of a web page (%s)" % n["label"])
+                jobs.append({"state": "A screenshot of %s. Each numbered coloured box marks one of its parts."
+                                      % where,
+                             "questions": {"%s__%s" % (rid, k): q for k, q in qs.items()}, "images": [img],
+                             "sources": [{"capture": sc["path"], "box": n["box"], "selector": n["sel"],
+                                          "label": "screen %d (%s), %s" % (sc["n"] + 1, sc.get("label"),
+                                                                          n["label"])}]})
+                asked.append((n, p, by, kids, rid, qs))
+            for (n, p, by, kids, rid, qs), (answers, th, exc, call) in zip(asked, calls.ask(jobs)):
+                shown = {"type": "parts", "instructions": "Which numbered part has a visual defect?",
+                         "criteria": {k: q["instructions"] for k, q in qs.items()}}
+                row: Dict[str, Any] = {"id": rid, "shape": "region", "x": n["label"], "at": "screen:%d" % sc["n"],
+                                       "call": call["n"], "question": shown, "claim": shown["instructions"],
+                                       "selector": n["sel"], "source": "page regions",
+                                       "images": [im.get("label") for im in call["images"]],
+                                       "noul": None, "passed": None, "confidence": None, "band": None}
+                if exc is not None:
+                    row.update(status="unavailable", message=str(exc)[:200])
+                    calls.rows.append(row)
+                    findings.append(_region_finding(sc, nodes, n, "unexamined", p, by))
+                    continue
+                scores = {k: tj_noul(answers.get("%s__%s" % (rid, k))) for k in qs}
+                if any(v is None for v in scores.values()):
+                    row.update(status="no-answer", probabilities=scores)
+                    calls.rows.append(row)
+                    continue
+                flagged = [(k, scores["box_%d" % (i + 1)]) for i, k in enumerate(kids)
+                           if scores["box_%d" % (i + 1)] >= DRILL_NOUL]
+                layout = scores["layout"] >= DRILL_NOUL
+                top = max(scores.values())
+                row.update({"status": "answered", "probabilities": scores, "noul": round(top, 4),
+                            "answer": ", ".join(["box_%d" % (kids.index(k) + 1) for k, _s in flagged]
+                                                + (["layout"] if layout else [])) or "none",
+                            "passed": not (flagged or layout),
+                            "confidence": round(abs(top - 0.5) * 2, 4) if (flagged or layout)
+                            else round(1 - top, 4),
+                            "flagged": ["box_%d" % (kids.index(k) + 1) for k, _s in flagged]})
+                row["band"] = "act" if row["confidence"] >= 0.6 else "escalate"
+                calls.rows.append(row)
+                nxt += [(k, s, call["n"]) for k, s in flagged]
+                if layout:
+                    findings.append(_region_finding(sc, nodes, n, "arrangement", scores["layout"], call["n"]))
+                elif not flagged and p is not None:
+                    findings.append(_region_finding(sc, nodes, n, "region", p, by))
+            frontier = nxt
     return findings
+
+
+def tj_noul(answer: Any) -> Optional[float]:
+    v = _typed_judge_module().noul_value(answer)
+    return None if v is None else float(v)
 
 
 def _pair_questions(rid: str) -> Dict[str, Any]:
@@ -2328,8 +2513,8 @@ def element_pass(context: Any, mode: str, screens: List[Dict[str, Any]], plan: O
     still open (the DS links re-shoot the gallery). Returns {mode, calls,
     rows, findings, unrecognised?, unmatched, message, provider, model};
     never raises.
-      page - page_defects: what code finds wrong where the change reaches,
-             each confirmed by the judge;
+      page - region_drill: the judge walks the part of each screen the
+             change reaches, from the region down to what it flags;
       ds   - without scope.compare: the unrecognised elements, listed for
              the ds-compare subagent to shortlist (no judge call); with it:
              each beside its shortlisted components (shortlist_compare)."""
@@ -2340,7 +2525,7 @@ def element_pass(context: Any, mode: str, screens: List[Dict[str, Any]], plan: O
     except Exception as exc:
         out["message"] = "typed judge unavailable: %s" % exc
         return out
-    calls = JudgeCalls(judge_fn or tj.judge, tj, viewport_w, "page" if mode == "page" else "ds")
+    calls = JudgeCalls(judge_fn or tj.judge, tj, viewport_w, "drill" if mode == "page" else "ds")
     gallery = (plan or {}).get("gallery")
     findings: List[Dict[str, Any]] = []
     notes: List[str] = []
@@ -2350,7 +2535,10 @@ def element_pass(context: Any, mode: str, screens: List[Dict[str, Any]], plan: O
             notes.append("%s: none of the changed elements is on it" % sc.get("label"))
     try:
         if mode == "page":
-            findings = page_defects(screens, calls, viewport_w)
+            for sc in screens:  # the tree reads it; the findings carry it
+                sc["measured"] = (sc.get("found") or {}).get("measured")
+                sc["regions"] = sc.get("found")
+            findings = _group_findings(region_drill(screens, calls, viewport_w))
         elif not gallery:
             out["message"] = "no design system is bound to this page"
             return out
@@ -2416,7 +2604,8 @@ def typed_pass_for(context: Any, url: str, args: argparse.Namespace, settle_ms: 
         tp["elements"] = element_pass(context, mode, tp.get("screens") or [], plan, settle_ms, out_dir, vw,
                                       judge_fn, getattr(args, "scope_doc", None))
         for sc in tp.get("screens") or []:
-            sc.pop("found", None)
+            for k in ("found", "regions", "measured"):
+                sc.pop(k, None)
     return tp
 
 

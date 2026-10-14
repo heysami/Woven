@@ -832,14 +832,29 @@ class P8VisualChecks(unittest.TestCase):
         self.assertEqual(sizes, [1, 2])
         self.assertEqual(report["typedChecks"]["requests"], 2)
 
-    def test_criteria_steps_and_page_defects_run_on_their_own_pass(self):
+    def test_criteria_steps_and_the_region_drill_run_on_their_own_pass(self):
         """Criteria steps click on a FRESH page after the main QA, so they can
-        never move its verdict. Nothing is explored. The page QA asks the
-        judge only about what code found wrong: one literal claim per defect,
-        the same defect repeated (three rows) asked on two crops, reported once."""
+        never move its verdict. Nothing is explored. Code only scopes (the
+        region tree); the judge judges: it scores each numbered part, the
+        drill goes into what it flags, and the flagged element is reported
+        with what code measured there as evidence."""
         from types import SimpleNamespace
         png = typed_judge.solid_png((30, 120, 200), size=200)
         clicked = []
+        box = lambda y: {"x": 10, "y": y, "width": 150, "height": 20}
+        tree = {"nodes": [
+            {"i": 0, "parent": None, "depth": 0, "sel": "#grid", "box": {"x": 0, "y": 0, "width": 180, "height": 90},
+             "label": "Data grid", "kids": [1, 2], "ev": {"code": "<table id=grid>"}},
+            {"i": 1, "parent": 0, "depth": 1, "sel": "#grid > tr:nth-of-type(1)", "box": box(10), "label": "tr row 1",
+             "kids": [3], "ev": {"code": "<tr>"}},
+            {"i": 2, "parent": 0, "depth": 1, "sel": "#grid > tr:nth-of-type(2)", "box": box(40), "label": "tr row 2",
+             "kids": [], "ev": {"code": "<tr>"}},
+            {"i": 3, "parent": 1, "depth": 2, "sel": "#grid > tr:nth-of-type(1) > td:nth-of-type(5)", "box": box(10),
+             "label": 'fm fail "No bursary awarded"', "kids": [], "ev": {"code": "<span class=fm-fail>"}}],
+            "scoped": True, "impact": {"changed": 2, "moved": 9, "root": "#grid"}}
+        measured = [{"kind": "covered", "selector": "#grid > tr:nth-of-type(1) > td:nth-of-type(5)",
+                     "measured": "it and the next cell overlap by 24x18px"},
+                    {"kind": "cut-off", "selector": "#elsewhere", "measured": "never flagged by the judge"}]
 
         class Page:
             def goto(self, *a, **k): pass
@@ -850,19 +865,13 @@ class P8VisualChecks(unittest.TestCase):
             def click(self, sel, **kw):
                 clicked.append(sel)
             def evaluate(self, js, arg=None):
-                box = {"x": 20, "y": 20, "width": 60, "height": 40}
                 if js == visual_qa._SCREEN_SIG_JS:
                     return "screen after %d clicks" % len(clicked)
+                if js == visual_qa._REGIONS_JS:
+                    return json.loads(json.dumps(tree))
                 if js == visual_qa._DEFECTS_JS:
-                    return {"defects": [{"kind": "covered", "selector": "tr:nth-of-type(%d) > td:nth-of-type(5) > span" % i,
-                                         "box": box, "label": "fm fail \"No bursary awarded\"",
-                                         "text": "No bursary awarded", "within": "Data grid",
-                                         "coveredBy": "tr:nth-of-type(%d) > td:nth-of-type(6) > span" % i,
-                                         "measured": "it and the next cell overlap by 24x18px",
-                                         "ev": {"code": "<span class=\"fm-fail\">No bursary awarded</span>"}}
-                                        for i in (1, 2, 3)],
-                            "scoped": False, "impact": None}
-                return {s: box for s in arg} if isinstance(arg, list) else {}
+                    return {"defects": measured, "scoped": True, "impact": None}
+                return {s: box(10) for s in arg} if isinstance(arg, list) else {}
             def locator(self, sel):
                 class Loc:
                     first = None
@@ -885,22 +894,24 @@ class P8VisualChecks(unittest.TestCase):
 
         def judge(state, questions, **kw):
             asked.append(questions)
-            return {"answers": {q: {"noul": 0.1 if q.startswith("s0_d") else 0.97} for q in questions},
-                    "provider": "clef", "model": "clef", "thresholds": typed_judge.thresholds("frame_check", "clef")}
+            # The judge flags row 1 at the top, then the cell inside it.
+            out = {q: {"noul": 0.9 if q.endswith("__box_1") else 0.1} for q in questions}
+            out.update({q: {"noul": 0.97} for q in questions if not q.startswith("s")})
+            return {"answers": out, "provider": "clef", "model": "clef",
+                    "thresholds": typed_judge.thresholds("frame_check", "clef")}
         block = visual_qa.typed_checks_on_page(SimpleNamespace(new_page=Page), "file:///x", args, 0,
                                                self.tmp, judge)
         self.assertEqual(clicked, ["#sponsorYes"], "the criteria step, and no exploration")
-        rows = {r["id"]: r for r in block["checks"]}
-        self.assertEqual(sorted(rows), ["org_field", "s0_d1_1", "s0_d1_2"],
-                         "the repeated overlap is asked on two of its crops")
-        self.assertEqual(rows["s0_d1_1"]["question"]["instructions"],
-                         "The text 'No bursary awarded' is fully visible, with nothing lying on top of any part of it.")
+        drill = [q for q in asked if any(k.endswith("__layout") for k in q)]
+        self.assertEqual(len(drill), 4, "the grid and row 1, on both screens")
+        self.assertIn("Box 1 (tr row 1) has a visual defect", drill[0]["s0_r0__box_1"]["instructions"])
         (f,) = block["findings"]
-        self.assertEqual((f["kind"], f["count"], f["confirmed"], f["judged"]),
-                         ("covered", 6, True, "2 of 2 crops show it"),
-                         "three rows on the page and again on the step's screen: one defect")
-        self.assertEqual(f["measured"], "it and the next cell overlap by 24x18px")
-        self.assertTrue(all(len(q) == 1 for q in asked), "one literal claim per call")
+        self.assertEqual((f["kind"], f["count"], f["label"]), ("element", 2, 'fm fail "No bursary awarded"'),
+                         "the same flag on the page and on the step's screen is one finding")
+        self.assertEqual(f["measured"], ["it and the next cell overlap by 24x18px"],
+                         "what code measured rides as evidence")
+        self.assertNotIn("never flagged by the judge", json.dumps(block["findings"]),
+                         "code only scopes: a measurement the judge did not flag is not a finding")
 
     def test_every_named_state_is_captured_even_when_its_headings_match(self):
         """Edit and read-only of one tab show the same headings: the screen
@@ -918,32 +929,14 @@ class P8VisualChecks(unittest.TestCase):
             def evaluate(self, js, arg=None):
                 if js == visual_qa._SCREEN_SIG_JS:
                     return "/x|H1:Scheme version"
+                if js == visual_qa._REGIONS_JS:
+                    return {"nodes": [], "scoped": False, "impact": None}
                 return {"defects": [], "scoped": False, "impact": None} if js == visual_qa._DEFECTS_JS else {}
         scope = {"states": [{"label": s, "query": "v=%d" % i, "steps": [{"type": "click", "selector": "#tab"}]}
                             for i, s in enumerate(("edit", "overridden", "read-only"))]}
         tp = visual_qa.typed_capture_pass(SimpleNamespace(new_page=Page), "file:///x", 0, self.tmp, [], [],
                                           what="page", scope=scope)
         self.assertEqual([sc["label"] for sc in tp["screens"]], ["the page", "edit", "overridden", "read-only"])
-
-    def test_a_defect_the_judge_does_not_see_stays_with_its_measurement(self):
-        """On the Bursary register the judge saw 6 of 9 real overlaps. A group
-        nobody confirmed is reported unconfirmed, with what code measured."""
-        shot = Path(self.tmp) / "s.png"
-        shot.write_bytes(typed_judge.solid_png((200, 200, 200), size=200))
-        d = {"kind": "cut-off", "selector": "#t", "box": {"x": 10, "y": 10, "width": 80, "height": 20},
-             "label": "cell sub", "text": "FAD-PTUG-SPO-2512-008074, Part-time undergraduate",
-             "cutBy": "its own box", "measured": "its text needs 210x60px and shows 194x40px", "ev": {}}
-        screens = [{"n": 0, "label": "the page", "path": str(shot), "found": {"defects": [d]}}]
-        tj = typed_judge
-        calls = visual_qa.JudgeCalls(lambda s, q, **k: {"answers": {x: {"noul": 0.8} for x in q}, "provider": "clef",
-                                                        "model": "clef", "thresholds": tj.thresholds("frame_check", "clef")},
-                                     tj, 200, "page")
-        (f,) = visual_qa.page_defects(screens, calls, 200)
-        self.assertEqual((f["confirmed"], f["judged"], f["measured"]),
-                         (False, "0 of 1 crops show it", "its text needs 210x60px and shows 194x40px"))
-        self.assertEqual(calls.rows[0]["question"]["instructions"],
-                         'The image shows the whole text "FAD-PTUG-SPO-2512-008074, Part-time undergraduate", '
-                         'with none of it cut off or hidden.')
 
     def test_unrecognised_elements_are_found_on_the_rendered_page(self):
         """Most screens are drawn by JavaScript: the HTML file is a shell. What
@@ -986,8 +979,8 @@ class P8VisualChecks(unittest.TestCase):
         self.assertEqual([u["source"] for u in scoped["off"]], ["<style> .promo"],
                          "with a scope, only what the change reaches")
 
-    def test_code_finds_defects_only_where_the_change_reaches(self):
-        """Impact is measured: the changed elements are hidden for a moment and
+    def test_code_measures_evidence_only_where_the_change_reaches(self):
+        """The evidence the page QA's findings carry. Impact is measured: the changed elements are hidden for a moment and
         whatever moves inside its container or changes size with them is in
         scope. A text running past its cell over the next one is covered, a
         clamped text is cut off, a wide table in a scroller is not, and like

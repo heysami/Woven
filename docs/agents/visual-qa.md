@@ -1,4 +1,4 @@
-# Visual QA - scope the change, let code find what is wrong, let the image judge confirm it
+# Visual QA - scope the change, let the image judge walk it, decide what it flags
 
 You are a dispatched subagent. Your brief gives you the PROJECT ROOT (your cwd),
 the PROTOTYPE slug, the PAGES that were just changed, and ideally what changed
@@ -7,7 +7,10 @@ If the root, slug or pages are missing, derive them (cwd; the sole subdir of
 `source/`; every `*.html` under `source/<slug>/`) and say so in the verdict.
 
 **You never look at an image.** Woven's screenshot QA sends crops to a fast,
-cheap image judge (Clef). That judge is the only thing that looks at pixels.
+cheap image judge (Clef). That judge is the only thing that looks at pixels:
+code only decides WHERE it looks. Clef flags generously (a warning icon or red
+error text can read as "broken" to it); you are the one who decides, from the
+text evidence each finding carries, which flags are real.
 Never Read a `.png`, `.jpg` or `.webp`, never take a screenshot, never open a
 browser. You work from TEXT. Return only the verdict.
 
@@ -35,7 +38,7 @@ Write one scope object per page:
   changed: its classes, ids or data attributes, or the column / row it adds
   (`#content table td:nth-child(5)`). The run hides these elements for a moment
   and measures what moves: their container, what comes after them, the other
-  columns of a table. That impacted part is all it checks. A selector that
+  columns of a table. That impacted part is where the judge looks. A selector that
   matches nothing on a screen means the screen is not checked; say so.
 - **states**: every place the change shows other than the page as loaded: the
   brief's `States:`, or a query the page reads (`?scheme=x&tab=monitoring`)
@@ -84,14 +87,14 @@ for n in (b.get('elements') or {}).get('notes') or []: print('NOTE', n)
 for f in b.get('findings') or []:
     ev = f.get('evidence') or {}
     print()
-    print('CONFIRMED' if f.get('confirmed') else 'CODE ONLY', f['id'], f['kind'], 'x%d' % f.get('count', 1), '|', f.get('screen'))
+    print(f['id'], f['kind'], 'x%d' % f.get('count', 1), '| judge %s' % f.get('score'), '|', f.get('screen'))
     print('  what:', f.get('label'), '| within:', f.get('within'))
     print('  selector:', f.get('selector'))
-    print('  measured:', f.get('measured'), '| judge:', f.get('judged'))
-    for k in ('coveredBy', 'cutBy', 'container', 'gaps'):
-        if f.get(k) is not None: print('  %s:' % k, f[k])
+    if f.get('measured'): print('  code measured:', f['measured'])
     print('  code:', ev.get('code'))
     print('  look:', ev.get('style'))
+    if ev.get('coveredBy'): print('  covered by:', ev['coveredBy'])
+    if ev.get('clipped'): print('  content clipped: yes')
 for r in b['checks']:
     if r.get('source', '').startswith('screen criteria') or r.get('source') == 'asked in this QA call':
         if r.get('band') != 'act' or r.get('passed') is False:
@@ -99,33 +102,40 @@ for r in b['checks']:
 "
 ```
 
-Each finding is ONE defect the code measured where the change reaches (the
-same overflow in forty rows is one finding, `x40`), and the judge was asked to
-confirm it on up to two crops:
+The judge walked the impacted part of each screen: each region's parts were
+numbered on its crop and scored ("box N has a visual defect: something cut
+off, overlapping, misaligned, unevenly spaced, unreadable or broken"), plus
+how the parts sit together, and it went down into every part it flagged. Each
+finding is the most specific thing it flagged (the same flag in forty rows is
+one finding, `x40`):
 
-- `cut-off`: text clipped by its own box (ellipsis, line clamp) or by a
-  container that hides its overflow (`cutBy`). A scroller never counts.
-- `covered`: text with something on top of it (`coveredBy`), often text that
-  runs past its cell into the next one.
-- `spill`: an element sticking out of a container that neither clips nor
-  scrolls (`container`).
-- `uneven-gaps`: like parts in a row or column whose gaps differ (`gaps`, in
-  px): the parts are fine, how they sit together is not.
+- `element`: a single piece (a text, an image, a control, a DS component).
+- `arrangement`: the parts of a region sit badly together (gaps, overlap,
+  alignment between them).
+- `region`: flagged, but none of its parts nor their arrangement on a closer
+  look.
+- `unexamined`: flagged, but the screen's share of judge calls ran out.
 
-`CRITERION` rows are the screen's stored criteria (visual-checks.json) the
-judge said no to or was not sure about.
+`code measured` is what code found at or inside that element (text cut off
+by a clamp or a container, text with something on top of it, a part sticking
+out of its container, uneven gaps), with the numbers. It is evidence, never
+the verdict.
 
 ## Step 4 - decide each finding
 
-- CONFIRMED: a PROBLEM. Name the rule that causes it (Grep the selector's class
-  in the page's CSS or JS: a `white-space: nowrap`, a `max-width`, a fixed
-  height, an `overflow: hidden`) and the fix.
-- CODE ONLY (the judge did not see it): decide from `measured`. Text over text,
-  or text cut by more than a few pixels, is a PROBLEM all the same; a pixel or
-  two, or an overlap with something transparent, is FINE.
-- A cut-off the design system does on purpose (a documented 2-line clamp) is
-  still a PROBLEM when the hidden text matters; say the DS clamps it and fix
-  the space around it.
+Decide whether the flag is a real defect, from its evidence (and the page's
+source when you need more: Grep the selector's class in the page's CSS / JS):
+- `code measured` names an overlap, a cut or a spill of more than a few
+  pixels: a PROBLEM. Name the rule that causes it (`white-space: nowrap`, a
+  `max-width`, a fixed height, `overflow: hidden`) and the fix.
+- No measurement, and the code and look are deliberate: a warning icon, error
+  or subtle ink the design uses on purpose, a status colour, placeholder or
+  muted text: FINE.
+- No measurement, but the code shows a real cause (a hard-coded width, a
+  negative margin, a colour that is not the design system's, a control other
+  than the one the change meant to use, an alignment rule only this element
+  has): a PROBLEM.
+- `unexamined`: say which ones in the verdict; they were not looked at closely.
 
 ## Step 5 - verdict
 
@@ -133,8 +143,8 @@ Return ONLY this:
 
 ```
 VISUAL-QA <PASS|FAIL> - <pages>
-<page>: QA <verdict> · scope: <n> changed selector(s), <m> state(s), <k> case(s) · <f> finding(s): <c> confirmed, <o> code only, <x> fine · report <visualReport id>
-- PROBLEM <finding id> (<screen>, <selector>, x<count>): <what is wrong, with the measurement> -> <the rule to change, file:line if you found it>
+<page>: QA <verdict> · scope: <n> changed selector(s), <m> state(s), <k> case(s) · <f> finding(s): <p> problems, <x> fine, <u> unexamined · report <visualReport id>
+- PROBLEM <finding id> (<screen>, <selector>, x<count>): <what is wrong, with the measurement if any> -> <the rule to change, file:line if you found it>
 - NOT CHECKED <state or page>: <why: no changed element on it, page not found>
 ```
 

@@ -48,20 +48,16 @@ SHAPES = {
     # dimension by the caller (visual_qa.PAIR_DIMS), which decides from them.
     "pair":       {"type": "noul", "images": 2,
                    "text": "B is visually different from A."},
-    # The page QA's confirmations. Code found a literal defect on the rendered
-    # page (visual_qa _DEFECTS_JS); the judge only says whether the crop shows
-    # it. Each is the POSITIVE claim, so "no" is the confirmed defect. `x` is
-    # the page's own text or the element's label, never written.
-    "whole_text": {"type": "noul", "images": 1, "dom": True,
-                   "text": "The image shows the whole text \"{x}\", with none of it cut off or hidden."},
-    "whole_text_start": {"type": "noul", "images": 1, "dom": True,
-                         "text": "The image shows text beginning \"{x}\", with none of it cut off or hidden."},
-    "uncovered":  {"type": "noul", "images": 1, "dom": True,
-                   "text": "{x} is fully visible, with nothing lying on top of any part of it."},
-    "inside":     {"type": "noul", "images": 1, "dom": True,
-                   "text": "Box 1 ({x}) stays inside the edges of the area around it."},
-    "even_gaps":  {"type": "noul", "images": 1, "dom": True,
-                   "text": "The numbered parts of {x} have the same gap between each neighbouring pair."},
+    # The page QA's region drill: one region of a screen with each of its
+    # parts outlined and numbered, a score per part and one for how they sit
+    # together (region_questions). The parts are read off the rendered page
+    # by code, never written; the judge decides.
+    "region":     {"type": "noul", "images": 1, "dom": True,
+                   "text": "Box {x} has a visual defect: something in it is cut off, overlaps something "
+                           "else, is misaligned, is unevenly spaced, is unreadable, or is visibly broken."},
+    "region_layout": {"type": "noul", "images": 1, "dom": True,
+                      "text": "Taken together, the numbered boxes {x} sit with a visual defect between them: "
+                              "uneven gaps, overlap, or misaligned edges."},
 }
 
 
@@ -198,6 +194,8 @@ def question(check):
     if why:
         raise ValueError("x " + why)
     text = shape["text"].format(x=x.replace('"', "'"))
+    if check.get("shape") in ("region", "region_layout"):
+        raise ValueError("region questions are built by the page QA from the screen, never written")
     if shape["type"] == "choice":
         name = str(check.get("list") or "")
         if name not in LISTS:
@@ -208,6 +206,21 @@ def question(check):
         q["criteria"] = {k: str(v)[:300] for k, v in check["criteria"].items()
                          if k in ("true", "false") and v}
     return q, shape["images"]
+
+
+def region_questions(labels):
+    # type: (List[str]) -> Dict[str, Dict[str, Any]]
+    """The questions for one region, keyed box_1..box_n (box_1 is the part
+    numbered 1 on the image, in the order given) and layout: each part scored
+    on its own, and the parts as they sit together. Each part is named by
+    what the page says it is."""
+    out = {}  # type: Dict[str, Dict[str, Any]]
+    for i, label in enumerate(labels):
+        name = re.sub(r"\s+", " ", str(label or "")).replace('"', "'").strip()[:72]
+        x = "%d%s" % (i + 1, " (%s)" % name if name else "")
+        out["box_%d" % (i + 1)] = {"type": "noul", "instructions": SHAPES["region"]["text"].format(x=x)}
+    out["layout"] = {"type": "noul", "instructions": SHAPES["region_layout"]["text"].format(x="1-%d" % len(labels))}
+    return out
 
 
 def verdict(q, answer, th, expect=None):
