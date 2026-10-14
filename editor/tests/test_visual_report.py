@@ -71,7 +71,6 @@ class CallRecord(unittest.TestCase):
                          "a frame sent unchanged is its own capture file")
         self.assertIn("A screenshot of a web page", page_call["state"])
         self.assertEqual(block["pageShot"], str(self.shot))
-        self.assertEqual(block["dsFound"]["offSystem"][0]["selector"], "#bar")
         rows = {r["id"]: r for r in block["checks"]}
         self.assertEqual(rows["menu"]["call"], crop_call["n"])
         self.assertNotIn("call", rows["gone"], "a check with nothing to crop is never sent")

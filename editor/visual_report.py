@@ -44,7 +44,8 @@ def save(report, out_dir, project=None, page=None, root=None):
     """Copy one run's typed checks and the images they used out of the QA
     temp dir; returns the report id, or None when the run asked nothing."""
     block = report.get("typedChecks")
-    if not isinstance(block, dict) or not (block.get("checks") or block.get("rejected") or block.get("measured")):
+    if not isinstance(block, dict) or not (block.get("checks") or block.get("rejected") or block.get("measured")
+                                           or block.get("elements")):
         return None
     root = root or REPORTS_DIR
     rid = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)

@@ -1203,7 +1203,7 @@ def run_jev_pass(contract, units, findings, index, log=None, project=None):
     return status
 
 
-def visual_plan(project_root, proto, page_path, max_off=12, max_comp=16):
+def visual_plan(project_root, proto, page_path, max_off=12, max_comp=400):
     # type: (str, str, str, int, int) -> Optional[Dict[str, object]]
     """What the design system's visual checks need for ONE page. The elements
     themselves are found in the BROWSER on the rendered page (most screens

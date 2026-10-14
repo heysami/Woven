@@ -15116,6 +15116,20 @@ function VisualQaReport({ id }) {
         <span className="th-vqa-o th-vqa-o-unsure">${count("unsure")} unsure</span>
         <span className="th-vqa-o th-vqa-o-sure-yes">${count("sure-yes")} sure yes</span>
       </div>
+      ${(block.findings || []).length > 0 && html`
+        <div className="th-vqa-findings">
+          ${block.findings.map(f => html`
+            <div className="th-tasks-row th-vqa-finding" key=${f.id}>
+              <span className="runs-row-dot" data-status=${f.confirmed === false ? "waiting" : "fail"}/>
+              <span className=${"th-vqa-o th-vqa-o-" + (f.confirmed === false ? "unsure" : "sure-no")}>${f.kind}</span>
+              <span className="th-tasks-row-main">
+                <span className="th-tasks-row-label">${f.label}${f.count > 1 ? ` · x${f.count}` : ""}</span>
+                <span className="th-plan-verdict">${[f.within, f.measured,
+                  f.judged || (f.candidates || []).map(c => "." + c.key + ": " + (c.answer || "-")).join(" · ")]
+                  .filter(Boolean).join(" · ")}</span>
+              </span>
+            </div>`)}
+        </div>`}
       ${(block.calls || []).map(call => {
         const mine = shown.filter(r => r.call === call.n)
           .sort((x, y) => VQA_ORDER[visualQaOutcome(x)] - VQA_ORDER[visualQaOutcome(y)]);
@@ -15151,7 +15165,7 @@ function VisualQaReport({ id }) {
                   <span className=${"th-vqa-o th-vqa-o-" + o}>${o.replace("-", " ")}</span>
                   <span className="th-tasks-row-main">
                     <span className="th-tasks-row-label">${pair
-                      ? `${r.x || "Component"}: is B (on the page) visually the same as A (the design system's)?`
+                      ? `${r.x || "Component"}: is B (on the page) visually the same as A (the design system's)?${r.chain ? " A given B's words and backdrop." : ""}`
                       : (q.instructions || r.claim || r.id)}</span>
                     ${scored.length > 0 && html`<span className="th-plan-verdict">${scored.map(([d, v], i) =>
                       html`<span key=${d}>${i ? " · " : ""}${d} ${Number(v).toFixed(2)}</span>`)}</span>`}

@@ -27306,7 +27306,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             raise _QAResolveError(400, {"error": "missing ?node=<nodeId> or "
                                         "?page=<slug | relative source path>"})
         if page:
-            return self._qa_resolve_page(project_root, project_id, page)
+            return self._qa_resolve_page(project_root, project_id, page,
+                                         (_qs_get(qs, "query") or "").strip())
         wf, _nodes_by_id, wf_path, wf_err = _load_workflow_nodes(project_root)
         if wf_err is not None:
             raise _QAResolveError(500, {"error": "workflow.json unreadable: " + str(wf_err)})
@@ -27362,7 +27363,13 @@ class H(http.server.SimpleHTTPRequestHandler):
     # the whole surface (chrome + DS shells + the piece in place) exactly as the
     # user sees it. Served via /source/** with ?project= so the design-system
     # @imports resolve (a raw file:// or unstamped load 404s them -> unstyled).
-    def _qa_resolve_page(self, project_root, project_id, page):
+    def _qa_resolve_page(self, project_root, project_id, page, query=""):
+        # The state a page is checked in: "page=<slug>/x.html?scheme=a&v=2"
+        # (or &query=scheme%3Da...) loads x.html?scheme=a&v=2. The query and
+        # #hash ride on the URL; only the path is looked up on disk.
+        page, _sep, frag = page.partition("#")
+        page, _sep, inline_q = page.partition("?")
+        query = "&".join(q for q in (inline_q.strip("&"), query.lstrip("?").strip("&")) if q)
         rel = page.lstrip("/")
         # Normalise to a "source/..." relative path.
         if not rel.startswith("source/"):
@@ -27393,10 +27400,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                           "if it does not exist yet."),
             })
         url = "http://127.0.0.1:" + str(PORT) + "/" + urllib.parse.quote(rel)
-        if project_id:
-            url += "?project=" + urllib.parse.quote(project_id)
+        params = ["project=" + urllib.parse.quote(project_id)] if project_id else []
+        params += [q for q in query.split("&") if q and not q.startswith("project=")]
+        if params:
+            url += "?" + "&".join(params)
+        if frag:
+            url += "#" + frag
         return {
             "target":      "page",
+            "query":       query or None,
             "node":        None,
             "page":        rel,
             "kind":        "page",
@@ -27416,8 +27428,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(e.code, e.payload)
         return self._reply(200, info)
 
-    # GET /__qa/run?project=<id>&node=<nodeId> | &page=<slug|path>
+    # GET /__qa/run?project=<id>&node=<nodeId> | &page=<slug|path>[?query]
     #   [&judge=<text>] [&checks=<json>] [&mode=interactive|render] [&nointeract=1] [&cases=0]
+    #   [&typed=page|ds] [&scope=<json {states, changed, cases, compare}>]
     # When a test-cases.json sits next to the target, cases mode runs by
     # default (&cases=0 opts out and forces the generic battery).
     def _qa_run(self, qs):
@@ -27469,6 +27482,42 @@ class H(http.server.SimpleHTTPRequestHandler):
                     break
         cases_qs = (_qs_get(qs, "cases") or "").strip().lower()
         use_cases = bool(cases_path) and cases_qs not in ("0", "false", "no")
+        # A test-cases.json names the page it was planned for (`target`):
+        # its cases run on that page, never on a sibling that happens to sit
+        # in the same folder (they "pass" there and prove nothing).
+        if use_cases and info.get("target") == "page":
+            try:
+                with open(cases_path, "r", encoding="utf-8") as f:
+                    _ct = json.load(f).get("target")
+                if isinstance(_ct, str) and _ct.strip():
+                    _want = os.path.normpath(_ct.strip().lstrip("/").split("?")[0])
+                    _have = os.path.normpath(info.get("page") or "")
+                    if not (_have == _want or _have.endswith(os.sep + _want)
+                            or ("source" + os.sep + _want) == _have):
+                        use_cases = False
+            except (OSError, ValueError, AttributeError):
+                pass
+        # The element pass: &typed=1 or &typed=page is the page QA (the region
+        # drill), &typed=ds the design-system comparison. The DS comparison is
+        # about the screens' components only: it never runs the test cases.
+        typed_qs = (_qs_get(qs, "typed") or "").strip().lower()
+        typed_mode = {"1": "page", "true": "page", "yes": "page", "page": "page", "ds": "ds"}.get(typed_qs)
+        if typed_mode == "ds":
+            use_cases = False
+        # The caller's scoping (&scope=<json>): the states the change shows in,
+        # the change's own selectors, the test cases it touches. A scoped run
+        # explores nothing and runs only those cases (none listed: none run).
+        scope_raw = (_qs_get(qs, "scope") or "").strip()
+        scope_doc = None
+        if scope_raw:
+            try:
+                scope_doc = json.loads(scope_raw)
+            except ValueError as e:
+                return self._reply(400, {"error": "scope must be JSON: %s" % e})
+            if not isinstance(scope_doc, dict):
+                return self._reply(400, {"error": "scope must be an object {states, changed, cases, compare}"})
+            if not scope_doc.get("cases"):
+                use_cases = False
         out_dir = tempfile.mkdtemp(prefix="woven-qa-")
         revision_root = os.path.dirname(abs_target) if abs_target else None
         revision_before = review_evidence.source_revision(revision_root)
@@ -27477,6 +27526,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                "--mode", mode]
         if use_cases:
             cmd += ["--cases", cases_path]
+        if scope_doc is not None:
+            scope_path = os.path.join(out_dir, "scope.json")
+            with open(scope_path, "w", encoding="utf-8") as f:
+                json.dump(scope_doc, f)
+            cmd += ["--scope", scope_path]
         if judge:
             cmd += ["--judge", judge]
             # Route the frame-judge through THIS daemon's /__llm_run so it can
@@ -27523,6 +27577,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                                    for c in _page_visual_checks(cand, abs_target)]
                     page_steps = _page_visual_steps(cand, abs_target)
                     break
+        # The screen's criteria are the page QA's; the DS comparison asks only
+        # about the design system's components.
+        if typed_mode == "ds":
+            page_checks, page_steps = [], []
         if checks_raw:
             try:
                 extra = json.loads(checks_raw)
@@ -27538,11 +27596,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         # linter's detection (ds_lint.visual_plan) plus the DS gallery to
         # compare components with. Pages only: a node is one piece, not a screen.
         ds_plan_path = None
-        # The full visual pass (explore every screen, ask the judge about every
-        # element) is minutes and many judge calls: only the visual-qa
-        # subagent asks for it, with &typed=1. Every other /__qa/run (a
-        # ds-guardian or verifier render check) stays the quick check it was.
-        want_typed = (_qs_get(qs, "typed") or "").strip().lower() in ("1", "true", "yes")
+        # The element passes (explore every screen, then the page drill or the
+        # DS comparison) take a minute or two and many judge calls: only the
+        # visual-qa subagent (&typed=page) and the ds-compare subagent
+        # (&typed=ds) ask for them. Every other /__qa/run (a ds-guardian or
+        # verifier render check) stays the quick check it was.
+        want_typed = typed_mode is not None
         if _tcfg.get("typedJudgeVisual") and want_typed and abs_target and info.get("target") == "page":
             try:
                 _proj_root = resolve_project_root(qs)
@@ -27564,7 +27623,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         if _tcfg.get("typedJudgeVisual") and (want_typed or checks_raw) and \
                 (checks_path or ds_plan_path or page_steps or want_typed):
             if want_typed:
-                cmd += ["--typed-elements"]
+                cmd += ["--typed-elements", typed_mode]
             if checks_path:
                 cmd += ["--checks", checks_path]
             if ds_plan_path:

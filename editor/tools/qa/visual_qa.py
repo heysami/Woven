@@ -767,11 +767,20 @@ def _finish_judge(judge: Dict[str, Any], res: Dict[str, Any]) -> Dict[str, Any]:
 
 TYPED_KIND = "frame_check"
 MAX_CHECKS = 64
-# The per-element pass: every distinct screen the QA reaches (at most
-# MAX_SCREENS), every element worth judging on it, at most MAX_ELEMENT_CHECKS
-# questions a page, asked JUDGE_WORKERS calls at a time.
-MAX_SCREENS = 12
-MAX_ELEMENT_CHECKS = 240
+# The element passes (--typed-elements): every distinct screen the QA
+# reaches (at most MAX_SCREENS), judged JUDGE_WORKERS calls at a time.
+#   page - code finds literal defects where the change reaches (text cut off
+#          or covered, a part spilling out, uneven gaps) and the judge
+#          confirms each on its crop; at most MAX_DEFECT_CALLS calls a page.
+#          (Letting the judge walk the regions itself failed, 2026-10-14: as a
+#          choice it favoured the first part, scored per part it flagged
+#          warning icons and error ink on a clean page.)
+#   ds   - the elements the design system does not recognise: listed, then
+#          compared with the components the ds-compare subagent shortlists
+#          for them (shortlist_compare).
+MAX_SCREENS = 8
+MAX_DEFECT_CALLS = 60
+CONFIRM_PER_GROUP = 2
 JUDGE_WORKERS = 6
 _CHECK_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _CAPTURE = re.compile(r"^(page|screen:\d+|idle:(start|end|motion|\d+)|(before|after):.+)$")
@@ -871,30 +880,42 @@ _BOXES_JS = """(sels) => Object.fromEntries(sels.map(s => {
 }))"""
 
 
+def _with_query(url: str, query: str) -> str:
+    """url with `query` ("a=1&b=2", a leading ? is fine) added before any #hash."""
+    query = query.lstrip("?").strip("&")
+    if not query:
+        return url
+    base, sep, frag = url.partition("#")
+    return base + ("&" if "?" in base else "?") + query + sep + frag
+
+
 def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
                        steps: List[Dict[str, Any]], selectors: List[str],
                        gallery_url: Optional[str] = None,
                        ref_classes: Optional[List[str]] = None,
                        ds_plan: Optional[Dict[str, Any]] = None,
                        collector: Optional["ScreenCollector"] = None,
-                       explore: bool = True) -> Dict[str, Any]:
+                       what: str = "page", scope: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The captures the typed checks are asked on, taken on a FRESH page after
     the main QA so nothing here can touch its verdict: the settled screen as a
     full-page screenshot, then each criteria step with a before/after (all with
-    every check's element box, in page coordinates). Every distinct screen
-    among them joins the screens the case runner already collected, each with
-    every element worth judging on it; then one crop per design-system
-    component (and part) from the DS gallery. Never raises."""
-    out: Dict[str, Any] = {"settled": None, "interactions": [], "refs": {}, "ds": None, "screens": []}
-    collector = collector or ScreenCollector(out_dir, ds_plan)
+    every check's element box, in page coordinates), then each state the
+    scope names (`states`: a query and/or click steps from the page, each on
+    a fresh page). Nothing is explored: the scope says which screens the
+    change shows on. Every distinct screen joins the screens the case runner
+    already collected (with what the element pass `what` reads off each);
+    then one crop from the DS gallery per component a stored criterion
+    compares with. Never raises."""
+    out: Dict[str, Any] = {"settled": None, "interactions": [], "refs": {}, "screens": []}
+    scope = scope or {}
+    collector = collector or ScreenCollector(out_dir, ds_plan, what=what, changed=scope.get("changed"))
     selectors = sorted(set(selectors))
     ref_classes = list(ref_classes or [])
     page = context.new_page()
     try:
         page.goto(url, wait_until="load", timeout=30000)
         page.wait_for_timeout(settle_ms)
-        first = collector.capture(page, "the page")
-        out["ds"] = (first or (collector.screens[0] if collector.screens else {})).get("found")
+        collector.capture(page, "the page")
         path = os.path.join(out_dir, "typed_page.png")
         page.screenshot(path=path, full_page=True)
         out["settled"] = {"t": 0.0, "path": path, "diffFromPrev": None,
@@ -919,12 +940,26 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
         log("typed capture pass failed (%s)" % exc)
     finally:
         page.close()
-    if explore:
-        explore_screens(context, url, settle_ms, collector)
+    for i, st in enumerate(scope.get("states") or []):
+        if not isinstance(st, dict) or not (st.get("query") or st.get("steps")):
+            continue
+        label = str(st.get("label") or "state %d" % (i + 1))[:60]
+        page = context.new_page()
+        try:
+            page.goto(_with_query(url, str(st.get("query") or "")), wait_until="load", timeout=30000)
+            page.wait_for_timeout(settle_ms)
+            for idx, step in enumerate(st.get("steps") or []):
+                try:
+                    run_step(page, step)
+                except Exception as exc:
+                    log("scope state %s: step %s failed (%s)" % (label, step_label(step, idx), exc))
+                page.wait_for_timeout(int(step.get("settleMs", 400)) if isinstance(step, dict) else 400)
+            collector.capture(page, label, st.get("changed") if isinstance(st.get("changed"), list) else None)
+        except Exception as exc:
+            log("scope state %s not captured (%s)" % (label, exc))
+        finally:
+            page.close()
     out["screens"] = collector.screens
-    for sc in collector.screens:
-        for c in (sc.get("found") or {}).get("comps") or []:
-            ref_classes.append(_comp_key(c))
     ref_classes = sorted(set(ref_classes))
     if gallery_url and ref_classes:
         g = context.new_page()
@@ -1098,7 +1133,14 @@ _GALLERY_PICK_JS = """(parts) => {""" + _STATE_JS + _EVIDENCE_JS + """
   if (!all.some(el => boxOf(el))) {
     for (let i = wantState.length - 1; i >= 0; i--) if (CHECK.has(wantState[i])) wantState.splice(i, 1);
   }
-  const mods = el => [...el.classList].filter(c => c.indexOf(base + '--') === 0).sort().join(' ');
+  // A part's variant includes its root's modifiers (_COMP_JS variantOf).
+  const root = base.indexOf('__') > 0 ? base.slice(0, base.indexOf('__')) : null;
+  const mods = el => {
+    const out = [...el.classList].filter(c => c.indexOf(base + '--') === 0);
+    const r = root && el.closest('.' + CSS.escape(root));
+    if (r) out.push(...[...r.classList].filter(c => c.indexOf(root + '--') === 0));
+    return out.sort().join(' ');
+  };
   for (const variant of [true, false]) {
     const pool = variant ? all.filter(el => mods(el) === want) : all;
     let el = pool.find(sameState), set = false;
@@ -1111,23 +1153,37 @@ _GALLERY_PICK_JS = """(parts) => {""" + _STATE_JS + _EVIDENCE_JS + """
   return {stateMismatch: true, seen: [...new Set(all.map(el => stateOf(el).join(' ') || 'default'))]};
 }"""
 
+# The second link of a design-system comparison: the gallery's own component
+# given the page's words and icon (when every class inside them is the DS's)
+# and set on the colour the page's sits on, so what is left to differ is the
+# component's own style. _GALLERY_RESTORE_JS puts the gallery back.
+_GALLERY_NORMALISE_JS = """(a) => {
+  const el = document.querySelector(a.selector);
+  if (!el) return false;
+  const saved = {el: el, html: el.innerHTML, styles: []};
+  if (a.html != null) el.innerHTML = a.html;
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    saved.styles.push([p, p.style.getPropertyValue('background'), p.style.getPropertyPriority('background')]);
+    p.style.setProperty('background', 'transparent', 'important');
+  }
+  document.documentElement.style.setProperty('background', a.backdrop || '#fff', 'important');
+  window.__wovenNormalised = saved;
+  return true;
+}"""
+_GALLERY_RESTORE_JS = """() => {
+  const s = window.__wovenNormalised;
+  if (!s) return;
+  s.el.innerHTML = s.html;
+  for (const [p, v, pr] of s.styles) {
+    if (v) p.style.setProperty('background', v, pr); else p.style.removeProperty('background');
+  }
+  window.__wovenNormalised = null;
+}"""
 
-# Found on the RENDERED screen, in the browser, with each element's box in page
-# coordinates (for the full-page screenshot):
-#   comps - EVERY visible instance of a documented design-system component and
-#           of its parts (".section-card__icon"), with its variant and state;
-#   off   - every visible element that gets its own skin (background, border,
-#           shadow, outline, backdrop) from a stylesheet that is not the design
-#           system's, or from an inline style, and carries no DS class;
-#   texts - every piece of visible text, at its outermost element that holds
-#           exactly that text (a button, a link, a heading).
-# Without a design system only `texts` is filled.
-_RENDERED_DS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + """
-  const dsClasses = new Set(a.dsClasses || []);
-  const titles = {};
-  for (const c of a.components || []) titles[c.cls] = c.title;
-  const SKIN = /^(background|border|box-shadow|outline|backdrop-filter)/;
-  const EMPTY = /^(none|transparent|0|0px|initial|inherit|unset|rgba\\(0, 0, 0, 0\\)|0px none.*)$/;
+
+# Shared by the in-browser probes below: where an element is, whether it is
+# on screen, and its selector.
+_DOM_JS = """
   const visible = (el, min) => {
     if (el.checkVisibility && !el.checkVisibility({opacityProperty: true, visibilityProperty: true}))
       return false;
@@ -1150,7 +1206,25 @@ _RENDERED_DS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + """
     const r = el.getBoundingClientRect();
     return {x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height};
   };
-  const hasDs = el => el.classList && [...el.classList].some(c => dsClasses.has(c));
+  // The part of an element that is on screen: its box cut by every clipping
+  // ancestor (a wide table in a scroller shows only the scroller's width).
+  // Null when less than min px of it shows.
+  const seenBox = (el, min) => {
+    if (el.checkVisibility && !el.checkVisibility({opacityProperty: true, visibilityProperty: true}))
+      return null;
+    const r = el.getBoundingClientRect();
+    let x1 = r.left, y1 = r.top, x2 = r.right, y2 = r.bottom;
+    for (let p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) {
+      const st = getComputedStyle(p);
+      if (st.overflowX === 'visible' && st.overflowY === 'visible') continue;
+      const pr = p.getBoundingClientRect();
+      if (st.overflowX !== 'visible') { x1 = Math.max(x1, pr.left); x2 = Math.min(x2, pr.right); }
+      if (st.overflowY !== 'visible') { y1 = Math.max(y1, pr.top); y2 = Math.min(y2, pr.bottom); }
+    }
+    const m = min || 6;
+    if (x2 - x1 < m || y2 - y1 < m) return null;
+    return {x: x1 + window.scrollX, y: y1 + window.scrollY, width: x2 - x1, height: y2 - y1};
+  };
   const path = el => {
     const parts = [];
     while (el && el.nodeType === 1 && el !== document.body) {
@@ -1162,6 +1236,328 @@ _RENDERED_DS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + """
     }
     return 'body > ' + parts.join(' > ');
   };
+"""
+
+# A design-system component (or part) on the page, as everything its
+# comparison needs. Its variant counts the root's modifiers for a part: the
+# title inside `.blank-slate--noresults` is the noresults title, not the
+# plain one. `content` is its inner HTML when every class inside it is the
+# design system's (so the DS's own copy can carry the same words and icon);
+# `backdrop` is the colour it sits on.
+_COMP_JS = """
+  const dsClasses = new Set(a.dsClasses || []);
+  const titles = {};
+  for (const c of a.components || []) titles[c.cls] = c.title;
+  const partRoot = c => {
+    const i = c.indexOf('__');
+    return i > 0 && c.indexOf('--') < 0 && dsClasses.has(c) && titles[c.slice(0, i)] ? c.slice(0, i) : null;
+  };
+  const compOf = el => {
+    if (!el.classList || !dsClasses.size) return null;
+    for (const c of el.classList) if (titles[c]) return {cls: c, title: titles[c], root: null};
+    for (const c of el.classList) {
+      const r = partRoot(c);
+      if (r) return {cls: c, title: titles[r] + ' ' + c.slice(r.length + 2).replace(/[-_]+/g, ' '), root: r};
+    }
+    return null;
+  };
+  // A container (a card, a nav, a field) holds other DS components: its look
+  // depends on its content, so its parts are compared, not it.
+  const leafComp = el => ![...el.querySelectorAll('[class]')].some(d => compOf(d));
+  const variantOf = (el, c) => {
+    const out = [...el.classList].filter(x => dsClasses.has(x) && x.indexOf(c.cls + '--') === 0);
+    if (c.root) {
+      const r = el.closest('.' + CSS.escape(c.root));
+      if (r) out.push(...[...r.classList].filter(x => dsClasses.has(x) && x.indexOf(c.root + '--') === 0));
+    }
+    return out.sort();
+  };
+  const CLEAR = /^(transparent|rgba\\(0, 0, 0, 0\\))$/;
+  const backdropOf = el => {
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      const b = getComputedStyle(p).backgroundColor;
+      if (b && !CLEAR.test(b)) return b;
+    }
+    return 'rgb(255, 255, 255)';
+  };
+  const contentOf = el => {
+    const html = el.innerHTML;
+    const own = d => [...d.classList].every(x => dsClasses.has(x) || /^(is|has|js)-/.test(x));
+    return html.length <= 6000 && [...el.querySelectorAll('[class]')].every(own) ? html : null;
+  };
+  const compInfo = (el, c) => ({
+    cls: c.cls, title: c.title, selector: path(el), state: stateOf(el), box: box(el), leaf: leafComp(el),
+    ev: evidenceOf(el, path), props: propsOf(el), variant: variantOf(el, c),
+    backdrop: backdropOf(el), clearFill: CLEAR.test(getComputedStyle(el).backgroundColor),
+    content: contentOf(el)});
+"""
+
+# What a change touches, MEASURED rather than guessed: the changed elements
+# (a.changed, selectors from the change's own code) are hidden for a moment
+# and every box on the page is measured before and after. An element that
+# moves inside its container (what comes after it in a column, a flex row),
+# that gets narrower or wider (the other columns of a table: their content
+# reflows), or that gets taller with something inside it moving is impacted;
+# one that only stretched to a taller container (a sidebar beside a longer
+# page) is not. The smallest container holding
+# all of it is where the checks start. Null when no selector matches.
+_IMPACT_JS = """
+  const impactOf = sels => {
+    const changed = [];
+    for (const s of sels || []) {
+      let found = [];
+      try { found = [...document.querySelectorAll(s)]; } catch (e) { continue; }
+      for (const el of found) if (seenBox(el, 2)) changed.push(el);
+    }
+    const top = changed.filter(el => !changed.some(c => c !== el && c.contains(el)));
+    if (!top.length) return null;
+    const inChanged = el => top.some(c => c === el || c.contains(el));
+    const all = [...document.body.querySelectorAll('*')].slice(0, 25000).filter(el => !inChanged(el));
+    const rect = el => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; };
+    const before = all.map(rect);
+    const saved = top.map(el => [el, el.style.getPropertyValue('display'), el.style.getPropertyPriority('display')]);
+    for (const el of top) el.style.setProperty('display', 'none', 'important');
+    const after = all.map(rect);
+    for (const [el, v, p] of saved) { if (v) el.style.setProperty('display', v, p); else el.style.removeProperty('display'); }
+    const at = new Map(all.map((el, i) => [el, i]));
+    const above = new Set();
+    for (const c of top) for (let p = c.parentElement; p; p = p.parentElement) above.add(p);
+    const shifted = new Set(), resized = new Set();
+    all.forEach((el, i) => {
+      if (above.has(el)) return;
+      const b = before[i], f = after[i];
+      if (!b[2] && !b[3] && !f[2] && !f[3]) return;
+      const pi = el.parentElement ? at.get(el.parentElement) : undefined;
+      const pb = pi === undefined ? [0, 0] : before[pi], pf = pi === undefined ? [0, 0] : after[pi];
+      if (Math.abs((b[0] - pb[0]) - (f[0] - pf[0])) > 1 || Math.abs((b[1] - pb[1]) - (f[1] - pf[1])) > 1) shifted.add(el);
+      else if (Math.abs(b[2] - f[2]) > 1) shifted.add(el);  // narrower or wider: its content reflows
+      else if (Math.abs(b[3] - f[3]) > 1) resized.add(el);
+    });
+    const moved = new Set(shifted);
+    for (const el of resized) {
+      // Only taller or shorter: impacted when something inside it moved or it
+      // is a text box, not when it only stretched to a taller container.
+      if (!el.children.length || [...shifted, ...resized].some(d => d !== el && el.contains(d))) moved.add(el);
+    }
+    const hot = top.concat([...moved].filter(el => !(el.parentElement && moved.has(el.parentElement))));
+    let lca = null;
+    for (const el of hot) {
+      const chain = [];
+      for (let p = el; p; p = p.parentElement) chain.unshift(p);
+      if (!lca) { lca = chain; continue; }
+      let i = 0;
+      while (i < lca.length && i < chain.length && lca[i] === chain[i]) i++;
+      lca = lca.slice(0, i);
+    }
+    let root = lca[lca.length - 1];
+    // A lone changed element is judged with what is around it.
+    if (hot.includes(root) && root.parentElement && root !== document.body) root = root.parentElement;
+    if (root === document.documentElement) root = document.body;
+    const onPath = new Set();
+    for (const el of hot) for (let p = el.parentElement; p && p !== root; p = p.parentElement) onPath.add(p);
+    return {root: root, hot: new Set(hot), onPath: onPath, changed: top.length, moved: moved.size, changedEls: top};
+  };
+"""
+
+# Text as it reads, words apart (textContent runs "Home" and "Students"
+# together), cut early so a big container costs nothing.
+_TEXT_JS = """
+  const textOf = (el, max) => {
+    const out = [];
+    let n = 0;
+    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let t;
+    while ((t = w.nextNode()) && n < (max || 60)) {
+      const s = (t.nodeValue || '').replace(/\\s+/g, ' ').trim();
+      if (s) { out.push(s); n += s.length + 1; }
+    }
+    return out.join(' ');
+  };
+"""
+
+# The page QA's candidates, found by CODE in the part of the screen the change
+# impacts (_IMPACT_JS; the whole screen without a scope). Each is a literal
+# defect the image judge then only has to confirm on its crop:
+#   cut-off      text that is clipped (overflow, ellipsis, line clamp) or cut
+#                by a container that hides its overflow (a scroller is not:
+#                its content can be scrolled to);
+#   covered      text with something else on top of it (not an open dialog
+#                over the page: that covers by design);
+#   spill        an in-flow element that sticks out of a container that does
+#                not clip or scroll;
+#   uneven-gaps  three or more similar siblings in a row or column whose gaps
+#                differ - the parts are fine, how they sit together is not.
+# Each comes with where it sits (`within`: the labelled blocks above it) and
+# its code and look as evidence.
+_DEFECTS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + _DOM_JS + _COMP_JS + _IMPACT_JS + _TEXT_JS + """
+  const MAX = a.maxDefects || 40;
+  const imp = (a.changed && a.changed.length) ? impactOf(a.changed) : null;
+  if (a.changed && a.changed.length && !imp) return {defects: [], scoped: true, impact: null};
+  const root = imp ? imp.root : document.body;
+  const hotList = imp ? [...imp.hot] : null;
+  const inScope = el => !imp || hotList.some(h => h === el || h.contains(el));
+  const opens = el => !imp || el === root || imp.onPath.has(el) || inScope(el);
+  const SKIP = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|LINK|META|BR|WBR|SVG|PATH|G|USE|OPTION)$/i;
+  const ownText = el => [...el.childNodes].some(n => n.nodeType === 3 && /\\S/.test(n.nodeValue));
+  const tidy = s => (s || '').replace(/\\s+/g, ' ').trim();
+  const labelOf = el => {
+    const c = compOf(el);
+    const cls = [...el.classList].filter(x => !/^(is|has|js)-/.test(x))[0];
+    const kind = c ? c.title : cls ? cls.replace(/[-_]+/g, ' ') : el.tagName.toLowerCase();
+    const words = tidy(el.getAttribute('aria-label') || textOf(el, 60));
+    return (words ? kind + ' "' + (words.length > 40 ? words.slice(0, 40) + '...' : words) + '"' : kind).slice(0, 72);
+  };
+  // Where it sits: the nearest blocks above it that are worth a name (a DS
+  // component, a landmark, a heading's section), outermost first.
+  const within = el => {
+    const out = [];
+    for (let p = el.parentElement; p && p !== document.body && out.length < 3; p = p.parentElement) {
+      if (compOf(p) || /^(MAIN|NAV|ASIDE|HEADER|FOOTER|SECTION|TABLE|FORM|DIALOG|UL|OL)$/.test(p.tagName)
+          || p.getAttribute('role') || p.id) out.unshift(labelOf(p));
+      if (p === root) break;
+    }
+    return out.join(' > ');
+  };
+  const overlayOf = el => el.closest('[role=dialog],[aria-modal=true],dialog,[class*=slideout],[class*=modal]');
+  // Cut by a container that hides its overflow. Per axis, the NEAREST
+  // container that clips the element decides: a scroller (auto / scroll)
+  // means the rest can be scrolled to, which is no defect.
+  const hiddenCut = el => {
+    const r = el.getBoundingClientRect();
+    let doneX = false, doneY = false;
+    for (let p = el.parentElement; p && p !== document.documentElement && !(doneX && doneY); p = p.parentElement) {
+      const st = getComputedStyle(p), pr = p.getBoundingClientRect();
+      const outX = r.left < pr.left - 1 || r.right > pr.right + 1, outY = r.top < pr.top - 1 || r.bottom > pr.bottom + 1;
+      if (!doneX && st.overflowX !== 'visible' && outX) {
+        if (/hidden|clip/.test(st.overflowX)) return path(p);
+        doneX = true;
+      }
+      if (!doneY && st.overflowY !== 'visible' && outY) {
+        if (/hidden|clip/.test(st.overflowY)) return path(p);
+        doneY = true;
+      }
+    }
+    return null;
+  };
+  const clampCut = el => {
+    const st = getComputedStyle(el);
+    const clips = /hidden|clip/.test(st.overflow + ' ' + st.overflowX + ' ' + st.overflowY)
+      || st.textOverflow === 'ellipsis' || (st.webkitLineClamp && st.webkitLineClamp !== 'none');
+    return clips && (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1);
+  };
+  // What lies on top of the part of el that is on screen (coverOf samples
+  // its whole box, which for a cell in a scrolled table is partly elsewhere).
+  const coverSeen = el => {
+    const sb = seenBox(el, 2);
+    if (!sb) return null;
+    const x1 = sb.x - window.scrollX, y1 = sb.y - window.scrollY;
+    for (const [x, y] of [[x1 + sb.width / 2, y1 + sb.height / 2], [x1 + 4, y1 + sb.height / 2],
+                          [x1 + sb.width - 4, y1 + sb.height / 2]]) {
+      const hit = document.elementFromPoint(x, y);
+      if (hit && hit !== el && !el.contains(hit) && !hit.contains(el)) return path(hit);
+    }
+    return null;
+  };
+  const out = [];
+  const seen = new Set();
+  const push = (kind, el, extra) => {
+    if (out.length >= MAX || seen.has(kind + path(el))) return;
+    seen.add(kind + path(el));
+    const sb = seenBox(el, 2);
+    if (!sb) return;
+    out.push(Object.assign({kind: kind, selector: path(el), box: sb, label: labelOf(el), within: within(el),
+                            text: textOf(el, 80), ev: evidenceOf(el, path)}, extra || {}));
+  };
+  const els = [...root.querySelectorAll('*')].slice(0, 12000);
+  for (const el of els) {
+    if (out.length >= MAX) break;
+    if (SKIP.test(el.tagName) || !seenBox(el, 4)) continue;
+    const st = getComputedStyle(el);
+    if (inScope(el)) {
+      if (ownText(el)) {
+        const r = el.getBoundingClientRect();
+        if (clampCut(el)) {
+          push('cut-off', el, {cutBy: 'its own box', measured: 'its text needs ' + el.scrollWidth + 'x' + el.scrollHeight
+                               + 'px and shows ' + el.clientWidth + 'x' + el.clientHeight + 'px'});
+        } else {
+          const cut = hiddenCut(el);
+          if (cut) {
+            const cr = document.querySelector(cut).getBoundingClientRect();
+            const px = Math.round(Math.max(cr.left - r.left, r.right - cr.right, cr.top - r.top, r.bottom - cr.bottom));
+            push('cut-off', el, {cutBy: cut, measured: 'it runs ' + px + 'px past the edge of ' + cut + ', which hides its overflow'});
+          }
+        }
+        const hit = coverSeen(el);
+        if (hit) {
+          const hitEl = document.querySelector(hit);
+          const ov = hitEl && overlayOf(hitEl);
+          if (!(ov && !ov.contains(el))) {
+            const hr = hitEl.getBoundingClientRect();
+            const w = Math.round(Math.min(r.right, hr.right) - Math.max(r.left, hr.left));
+            const h = Math.round(Math.min(r.bottom, hr.bottom) - Math.max(r.top, hr.top));
+            let blk = el.parentElement;
+            while (blk && /^inline/.test(getComputedStyle(blk).display)) blk = blk.parentElement;
+            const past = blk && !blk.contains(hitEl) ? Math.round(r.right - blk.getBoundingClientRect().right) : 0;
+            push('covered', el, {coveredBy: hit, measured: 'it and ' + hit + ' overlap by ' + w + 'x' + h + 'px'
+                                 + (past > 0 ? '; it runs ' + past + 'px past the right edge of ' + path(blk) : '')});
+          }
+        }
+      }
+      const p = el.parentElement;
+      if (p && p !== document.body && !/absolute|fixed|sticky/.test(st.position) && st.display !== 'contents') {
+        const ps = getComputedStyle(p);
+        if (ps.overflowX === 'visible' && ps.overflowY === 'visible' && !/^(TR|TBODY|THEAD|TABLE)$/.test(p.tagName)) {
+          const r = el.getBoundingClientRect(), pr = p.getBoundingClientRect();
+          const out_ = Math.max(pr.left - r.left, r.right - pr.right, pr.top - r.top, r.bottom - pr.bottom);
+          // Text that runs out of its container over something else is
+          // already a cover, which says how far it runs.
+          if (out_ > 2 && !seen.has('covered' + path(el))
+              && (ownText(el) || st.backgroundColor !== 'rgba(0, 0, 0, 0)' || st.borderTopStyle !== 'none'))
+            push('spill', el, {container: {selector: path(p), box: seenBox(p, 2) || box(p), label: labelOf(p)},
+                               measured: 'it sticks out ' + Math.round(out_) + 'px past ' + path(p)});
+        }
+      }
+    }
+    // Uneven gaps between similar siblings, in a container the change reaches.
+    if (opens(el) && el.children.length >= 3 && !/^(TABLE|TBODY|THEAD|TR|SELECT)$/.test(el.tagName)) {
+      const kids = [...el.children].filter(k => !SKIP.test(k.tagName) && seenBox(k, 4)
+        && !/absolute|fixed/.test(getComputedStyle(k).position));
+      const sig = k => k.tagName + '.' + ([...k.classList].filter(x => !/^(is|has|js)-/.test(x))[0] || '');
+      if (kids.length >= 3 && kids.every(k => sig(k) === sig(kids[0]))) {
+        const rs = kids.map(k => k.getBoundingClientRect());
+        const row = rs.every(r => Math.abs(r.top - rs[0].top) < 2);
+        const col = rs.every(r => Math.abs(r.left - rs[0].left) < 2);
+        if (row || col) {
+          const gaps = [];
+          for (let i = 1; i < rs.length; i++) gaps.push(row ? rs[i].left - rs[i - 1].right : rs[i].top - rs[i - 1].bottom);
+          const sorted = [...gaps].sort((x, y) => x - y), med = sorted[Math.floor(sorted.length / 2)];
+          const worst = gaps.reduce((m, g) => Math.max(m, Math.abs(g - med)), 0);
+          if (worst > Math.max(4, Math.abs(med) * 0.5))
+            push('uneven-gaps', el, {gaps: gaps.map(g => Math.round(g)),
+                                     parts: kids.slice(0, 10).map(k => seenBox(k, 1) || box(k))});
+        }
+      }
+    }
+  }
+  return {defects: out, scoped: !!imp, impact: imp ? {changed: imp.changed, moved: imp.moved, root: path(root)} : null};
+}"""
+
+# The elements a design system does not recognise: each visible element that
+# gets its own skin (background, border, shadow, outline, backdrop) from a
+# stylesheet that is not the design system's, or from an inline style, and
+# carries no DS class. Code written with the DS's classes is correct by
+# construction and is not looked at; these are what may be a hand-made copy
+# of a DS component, or a new pattern. With a.changed, only those inside
+# what the change impacts.
+_OFF_SYSTEM_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + _DOM_JS + _COMP_JS + _IMPACT_JS + _TEXT_JS + """
+  const SKIN = /^(background|border|box-shadow|outline|backdrop-filter)/;
+  const EMPTY = /^(none|transparent|0|0px|initial|inherit|unset|rgba\\(0, 0, 0, 0\\)|0px none.*)$/;
+  const imp = (a.changed && a.changed.length) ? impactOf(a.changed) : null;
+  if (a.changed && a.changed.length && !imp) return {off: [], scoped: true, impact: null};
+  // Only what the change wrote: an unrecognised element that merely moved
+  // because of it is older code.
+  const within = el => !imp || imp.changedEls.some(h => h === el || h.contains(el));
+  const hasDs = el => el.classList && [...el.classList].some(c => dsClasses.has(c));
   const skinOf = st => {
     const out = [];
     for (let i = 0; i < st.length; i++) {
@@ -1172,30 +1568,13 @@ _RENDERED_DS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + """
     }
     return out;
   };
-  const comps = [];
-  if (dsClasses.size) {
-    for (const el of document.querySelectorAll('[class]')) {
-      if (comps.length >= (a.maxComp || 80)) break;
-      let base = null, title = null;
-      for (const c of el.classList) if (titles[c]) { base = c; title = titles[c]; break; }
-      if (!base) for (const c of el.classList) {
-        const i = c.indexOf('__');
-        if (i > 0 && c.indexOf('--') < 0 && dsClasses.has(c) && titles[c.slice(0, i)]) {
-          base = c; title = titles[c.slice(0, i)] + ' ' + c.slice(i + 2).replace(/[-_]+/g, ' ');
-          break;
-        }
-      }
-      if (!base || !visible(el, 8)) continue;
-      // A container (a card, a nav, a field) holds other DS components: its
-      // look depends on its content, so its parts are compared, not it.
-      const leaf = ![...el.querySelectorAll('[class]')].some(d => [...d.classList].some(c => titles[c]
-        || (c.indexOf('__') > 0 && c.indexOf('--') < 0 && dsClasses.has(c) && titles[c.slice(0, c.indexOf('__'))])));
-      comps.push({cls: base, title: title, selector: path(el), state: stateOf(el), box: box(el), leaf: leaf,
-                  ev: evidenceOf(el, path), props: propsOf(el),
-                  variant: [...el.classList].filter(x => dsClasses.has(x) && x.indexOf(base + '--') === 0).sort()});
-    }
-  }
   const off = new Map();
+  const take = (el, source, skin) => {
+    if (off.has(el) || hasDs(el) || !visible(el, 8) || !within(el)) return;
+    off.set(el, {selector: path(el), source: source, skin: skin, box: box(el), ev: evidenceOf(el, path),
+                 props: propsOf(el), text: !!textOf(el, 4), backdrop: backdropOf(el), content: null,
+                 clearFill: CLEAR.test(getComputedStyle(el).backgroundColor)});
+  };
   const visit = (rules, sheet) => {
     for (const rule of rules) {
       if (!rule.selectorText) {
@@ -1209,11 +1588,7 @@ _RENDERED_DS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + """
         if (!sel || /^(html|body|\\*|:root)$/i.test(sel)) continue;
         let els = [];
         try { els = [...document.querySelectorAll(sel)]; } catch (e) { continue; }
-        for (const el of els) {
-          if (off.has(el) || hasDs(el) || !visible(el, 8)) continue;
-          off.set(el, {selector: path(el), source: sheet + ' ' + sel, count: 1, skin: skin, box: box(el),
-                       ev: evidenceOf(el, path)});
-        }
+        for (const el of els) take(el, sheet + ' ' + sel, skin);
       }
     }
   };
@@ -1226,42 +1601,12 @@ _RENDERED_DS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + """
     }
     for (const el of document.querySelectorAll('[style]')) {
       const skin = skinOf(el.style);
-      if (!skin.length || off.has(el) || hasDs(el) || !visible(el, 8)) continue;
-      off.set(el, {selector: path(el), source: 'inline style on <' + el.tagName.toLowerCase() + '>',
-                   count: 1, skin: skin, box: box(el), ev: evidenceOf(el, path)});
+      if (skin.length) take(el, 'inline style on <' + el.tagName.toLowerCase() + '>', skin);
     }
   }
-  const texts = [];
-  const seen = new Set();
-  const SKIP = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|OPTION|TITLE|HEAD)$/;
-  const norm = t => (t || '').replace(/\\s+/g, ' ').trim();
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  let node;
-  while ((node = walker.nextNode()) && texts.length < (a.maxText || 80)) {
-    const own = norm(node.nodeValue);
-    if (own.length < 2 || !/[A-Za-z0-9]/.test(own)) continue;
-    let el = node.parentElement;
-    if (!el || SKIP.test(el.tagName) || !visible(el, 4)) continue;
-    let text = norm(el.innerText);
-    if (!text || text.length > 200) { text = own; }
-    else {
-      for (let up = el.parentElement, n = 0; up && up !== document.body && n < 3; up = up.parentElement, n++) {
-        if (norm(up.innerText) !== text) break;
-        el = up;
-      }
-    }
-    const key = text + '|' + path(el);
-    if (seen.has(text) || seen.has(key)) continue;
-    seen.add(text);
-    const ev = evidenceOf(el, path);
-    // What covers the text itself, not the wrapper it was cropped by (the
-    // wrapper may hold the very thing on top of it).
-    ev.coveredBy = coverOf(node.parentElement, path);
-    texts.push({text: text.slice(0, 200), selector: path(el), box: box(el), ev: ev});
-  }
-  return {off: [...off.values()].slice(0, a.maxOff || 60), comps: comps, texts: texts};
+  return {off: [...off.values()].slice(0, a.maxOff || 60), scoped: !!imp,
+          impact: imp ? {changed: imp.changed, moved: imp.moved, root: path(imp.root)} : null};
 }"""
-
 
 # A screen's identity: the visible headings, dialogs and the URL hash. Two
 # moments with the same identity are the same screen, captured once.
@@ -1271,64 +1616,6 @@ _SCREEN_SIG_JS = """() => {
     .filter(vis).map(e => e.tagName + ':' + (e.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 60));
   return location.pathname + location.hash + '|' + heads.join('|');
 }"""
-
-
-# What can be clicked on the current screen, for the exploration: buttons,
-# tabs, in-page links, checkboxes, the first radio of each group, summaries.
-# Never a log-out, never a link that leaves the page.
-_CLICKABLES_JS = """(max) => {
-  const vis = e => {
-    if (e.checkVisibility && !e.checkVisibility({opacityProperty: true, visibilityProperty: true})) return false;
-    const r = e.getBoundingClientRect();
-    return r.width >= 6 && r.height >= 6;
-  };
-  const path = el => {
-    const parts = [];
-    while (el && el.nodeType === 1 && el !== document.body) {
-      if (el.id) { parts.unshift('#' + CSS.escape(el.id)); return parts.join(' > '); }
-      let i = 1, s = el;
-      while ((s = s.previousElementSibling)) if (s.tagName === el.tagName) i++;
-      parts.unshift(el.tagName.toLowerCase() + ':nth-of-type(' + i + ')');
-      el = el.parentElement;
-    }
-    return 'body > ' + parts.join(' > ');
-  };
-  // Most likely to open another screen first: steps, tabs and forward
-  // buttons, then other buttons and in-page links, then choices. Controls
-  // that look alike (five "pick this card" boxes) are tried once.
-  const GO = /\\b(next|continue|proceed|start|begin|review|submit|open|view|details|add|edit|step)\\b/i;
-  // A forward button that is disabled waits for a choice: choices first then.
-  const blocked = [...document.querySelectorAll('button:disabled, [aria-disabled=true]')]
-    .some(b => vis(b) && GO.test(b.innerText || b.getAttribute('aria-label') || ''));
-  const rank = (el, label) => el.tagName === 'INPUT' ? (blocked ? 0 : 3)
-    : el.getAttribute('role') === 'tab' || GO.test(label) ? 0
-    : (el.tagName === 'BUTTON' || el.getAttribute('role') === 'button') ? 1 : 2;
-  const found = [], radios = new Set(), alike = new Set();
-  const sel = 'button, [role=button], [role=tab], a[href^="#"], a:not([href]), input[type=checkbox], input[type=radio], summary';
-  for (const el of document.querySelectorAll(sel)) {
-    if (!vis(el) || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
-    if (el.type === 'radio') { if (el.name && radios.has(el.name)) continue; radios.add(el.name); }
-    const own = el.tagName === 'INPUT' ? '' : (el.innerText || '').trim();
-    const label = (own || el.getAttribute('aria-label') || el.title
-                   || (el.labels && el.labels[0] && el.labels[0].innerText.trim())
-                   || (el.tagName === 'INPUT' ? el.type : el.value) || el.tagName.toLowerCase())
-      .replace(/\\s+/g, ' ').trim().slice(0, 40);
-    if (/\\b(log ?out|sign ?out)\\b/i.test(label)) continue;
-    const kind = el.tagName + '.' + el.className + (el.tagName === 'INPUT' ? '' : '|' + label);
-    if (alike.has(kind)) continue;
-    alike.add(kind);
-    found.push({selector: path(el), label: label, r: rank(el, label)});
-  }
-  return found.sort((x, y) => x.r - y.r).slice(0, max).map(c => ({selector: c.selector, label: c.label}));
-}"""
-
-# What a click can change without changing the screen: checked boxes,
-# selections, disabled buttons. A click that changes it (picking a card)
-# is kept, so the next click (Continue) can reach the step it unlocks.
-_STATE_HASH_JS = """() => ({
-  disabled: document.querySelectorAll('button:disabled, [aria-disabled=true]').length,
-  state: [...document.querySelectorAll('input:checked, [aria-checked=true], [aria-selected=true], [aria-expanded=true]')]
-    .map(e => e.id || e.className || e.tagName).join(',') + '|' + location.hash})"""
 
 
 # Has the screen stopped moving? Finite animations still running, the scroll
@@ -1359,17 +1646,23 @@ def _settle_screen(page: Any, timeout_ms: int = 3000) -> None:
 
 class ScreenCollector:
     """Every distinct screen the QA reaches, captured once: a full-page
-    screenshot plus every element worth judging on it (detect_rendered_ds),
-    each with its box. Fed by the typed capture pass (the settled page, each
-    criteria step) and by the case runner (each case's end state). Never
+    screenshot plus what its element pass reads from the code on the same
+    layout - the candidate defects for the page QA (`what` page), the
+    elements the design system does not recognise for the DS check (`what`
+    ds) - each with its box. Fed by the typed capture pass (the settled page, each criteria step,
+    the exploration) and by the case runner (each case's end state). Never
     raises: a failed capture is a screen not judged, not a failed QA."""
 
-    def __init__(self, out_dir: str, plan: Optional[Dict[str, Any]], cap: int = MAX_SCREENS):
-        self.out_dir, self.plan, self.cap = out_dir, plan or {}, cap
+    def __init__(self, out_dir: str, plan: Optional[Dict[str, Any]], cap: int = MAX_SCREENS,
+                 what: str = "page", changed: Optional[List[str]] = None):
+        self.out_dir, self.plan, self.cap, self.what = out_dir, plan or {}, cap, what
+        # The change's own selectors: each screen is read from where they
+        # impact it (_IMPACT_JS), not as a whole.
+        self.changed = [str(c) for c in (changed or []) if str(c).strip()]
         self.screens: List[Dict[str, Any]] = []
         self.seen: set = set()
 
-    def capture(self, page: Any, label: str) -> Optional[Dict[str, Any]]:
+    def capture(self, page: Any, label: str, changed: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
         if len(self.screens) >= self.cap:
             return None
         try:
@@ -1394,8 +1687,11 @@ class ScreenCollector:
             _settle_screen(page, 1500)
         except Exception:
             vp = None
+        found: Dict[str, Any] = {}
         try:
-            found = detect_rendered_ds(page, self.plan) or {}
+            probe = dict(self.plan, changed=[str(c) for c in changed if str(c).strip()]
+                         if changed is not None else self.changed)
+            found = (detect_off_system(page, probe) if self.what == "ds" else detect_defects(page, probe)) or {}
             page.screenshot(path=path, full_page=vp is None)
         except Exception as exc:
             log("screen capture %s failed (%s)" % (label, exc))
@@ -1407,7 +1703,7 @@ class ScreenCollector:
                 except Exception:
                     pass
         boxes: Dict[str, Any] = {}
-        for item in (found.get("comps") or []) + (found.get("off") or []) + (found.get("texts") or []):
+        for item in (found.get("off") or []) + (found.get("defects") or []):
             if item.get("selector") and item.get("box"):
                 boxes[item["selector"]] = item["box"]
         screen = {"n": n, "label": label, "path": path, "found": found, "boxes": boxes}
@@ -1415,100 +1711,23 @@ class ScreenCollector:
         return screen
 
 
-def explore_screens(context: Any, url: str, settle_ms: int, collector: "ScreenCollector",
-                    max_clicks: int = 60, max_depth: int = 4, budget_s: float = 150.0,
-                    per_screen: int = 15) -> int:
-    """Reach the screens a page hides behind clicks (wizard steps, tabs,
-    dialogs) and capture each new one. Every probe is a FRESH browser context
-    (no state carried between probes): load, replay the click path, click one
-    candidate. A click that shows a new screen is captured and explored from;
-    the first click on a screen that only changes its state (a picked card) is
-    kept as a path to explore from too. A click that leaves the page is
-    dropped. Returns the clicks made; never raises."""
+def detect_off_system(page: Any, plan: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The elements on the rendered screen the design system does not
+    recognise (see _OFF_SYSTEM_JS). None when the probe fails."""
     try:
-        browser = context.browser
-        vp = (context.pages[0].viewport_size if context.pages else None) or {"width": 1280, "height": 720}
-    except Exception:
-        return 0
-    settle = min(int(settle_ms), 800)
-    started, clicks = time.time(), 0
-    queue: List[List[Dict[str, str]]] = [[]]
-    unlocks: Dict[str, int] = {}
-
-    def fresh(seq: List[Dict[str, str]]) -> Tuple[Any, Any]:
-        ctx = browser.new_context(viewport=vp)
-        page = ctx.new_page()
-        page.goto(url, wait_until="load", timeout=20000)
-        page.wait_for_timeout(settle)
-        for c in seq:
-            page.click(c["selector"], timeout=2000)
-            page.wait_for_timeout(300)
-        return ctx, page
-
-    while queue and clicks < max_clicks and time.time() - started < budget_s \
-            and len(collector.screens) < collector.cap:
-        seq = queue.pop(0)
-        if len(seq) >= max_depth:
-            continue
-        try:
-            ctx, page = fresh(seq)
-            try:
-                cands = page.evaluate(_CLICKABLES_JS, per_screen) or []
-            finally:
-                ctx.close()
-        except Exception:
-            continue
-        for cand in cands:
-            if clicks >= max_clicks or time.time() - started >= budget_s:
-                break
-            clicks += 1
-            try:
-                ctx, page = fresh(seq)
-            except Exception:
-                continue
-            try:
-                where = page.evaluate("location.pathname")
-                before = page.evaluate(_STATE_HASH_JS)
-                page.click(cand["selector"], timeout=2000)
-                page.wait_for_timeout(400)
-                if page.evaluate("location.pathname") != where:
-                    continue
-                path = seq + [cand]
-                sig = str(page.evaluate(_SCREEN_SIG_JS))
-                after = page.evaluate(_STATE_HASH_JS)
-                if sig not in collector.seen:
-                    if collector.capture(page, "after " + " > ".join(c["label"] for c in path)):
-                        queue.append(path)
-                elif after["disabled"] < before["disabled"] and unlocks.get(sig, 0) < 2:
-                    # It enabled a button (a picked card unlocks Continue).
-                    unlocks[sig] = unlocks.get(sig, 0) + 1
-                    queue.insert(0, path)
-                elif after["state"] != before["state"] and unlocks.get("state:" + sig, 0) < 3:
-                    # A choice made (a picked card, a checked box) is explored
-                    # first: forward buttons usually need one.
-                    unlocks["state:" + sig] = unlocks.get("state:" + sig, 0) + 1
-                    if "input" in cand["selector"]:
-                        queue.insert(0, path)
-                    else:
-                        queue.append(path)
-            except Exception:
-                pass
-            finally:
-                try:
-                    ctx.close()
-                except Exception:
-                    pass
-    log("explored %d click(s), %d screen(s)" % (clicks, len(collector.screens)))
-    return clicks
-
-
-def detect_rendered_ds(page: Any, plan: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """Every element worth judging on the rendered screen (see _RENDERED_DS_JS);
-    with no design system, its text only. None when the probe fails."""
-    try:
-        return page.evaluate(_RENDERED_DS_JS, plan or {})
+        return page.evaluate(_OFF_SYSTEM_JS, plan or {})
     except Exception as exc:
-        log("design-system detection on the rendered page failed (%s)" % exc)
+        log("off-system detection on the rendered page failed (%s)" % exc)
+        return None
+
+
+def detect_defects(page: Any, plan: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The page QA's candidate defects on the rendered screen (see
+    _DEFECTS_JS). None when the probe fails."""
+    try:
+        return page.evaluate(_DEFECTS_JS, plan or {})
+    except Exception as exc:
+        log("defect search on the rendered page failed (%s)" % exc)
         return None
 
 
@@ -1626,77 +1845,564 @@ def _side_by_side(a: Any, b: Any) -> Optional[bytes]:
     return buf.getvalue()
 
 
-def _text_check(t: Dict[str, Any]) -> Dict[str, Any]:
-    text = t["text"]
-    if len(text) <= 60:
-        return {"shape": "text", "x": text}
-    cut = text[:50].rsplit(" ", 1)[0] or text[:50]
-    return {"shape": "text_start", "x": cut}
+# ---------------------------------------------------------------------------
+# The element passes. Each is a CHAIN: the judge's answer to one call decides
+# the next call, so only what it flagged is looked at more closely, and only
+# the most specific thing that is wrong ends up in the report.
+# ---------------------------------------------------------------------------
+
+_BOX_COLOURS = [(220, 20, 60), (0, 120, 215), (16, 150, 72), (235, 120, 0), (140, 40, 190),
+                (0, 150, 160), (200, 0, 140), (110, 90, 0), (30, 30, 140), (150, 30, 30)]
 
 
-def screen_checks(screens: List[Dict[str, Any]], plan: Optional[Dict[str, Any]],
-                  limit: int = MAX_ELEMENT_CHECKS,
-                  refs: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """The questions every captured screen calls for, built by code from what
-    the browser found on it, never written:
-      - each visible text: it shows on its element's crop, exactly as written,
-        readable and not covered;
-      - each SMALL design-system component or part (one with no DS component
-        inside it), like for like (the gallery shows the same variant and
-        state): a PAIR comparison, the gallery's (A) and the page's (B) side
-        by side in one image, scored as a whole and per dimension (see
-        PAIR_DIMS). A container is not compared: its look depends on its
-        content, and its parts are compared one by one.
-    An element seen on an earlier screen (same element, same text) is asked
-    once. Every check is optional: an element gone by the time of the crop is
-    "not visible", never a failure."""
-    raw: List[Dict[str, Any]] = []
-    asked: set = set()
-    ids: set = set()
+def _quota_refusal(exc: Any) -> bool:
+    return getattr(exc, "status", None) in (402, 429) or "allocation" in str(exc) or "quota" in str(exc).lower()
 
-    def uid(base: str) -> str:
-        base = re.sub(r"[^\w-]", "_", base)[:56]
-        out, i = base, 2
-        while out in ids:
-            out, i = "%s_%d" % (base, i), i + 1
-        ids.add(out)
+
+class JudgeCalls:
+    """Every judge call one element pass makes: numbered, recorded with its
+    images exactly as sent (files named <prefix>_NN_K), asked JUDGE_WORKERS at
+    a time. A quota refusal stops every call after it; a judge that is not
+    set up stops the pass."""
+
+    def __init__(self, judge_fn: Any, tj: Any, viewport_w: int, prefix: str):
+        self.judge_fn, self.tj, self.vw, self.prefix = judge_fn, tj, viewport_w, prefix
+        self.calls: List[Dict[str, Any]] = []
+        self.rows: List[Dict[str, Any]] = []
+        self.refused: Any = None
+        self.unavailable: Any = None
+        self.provider: Optional[str] = None
+        self.model: Optional[str] = None
+
+    def stopped(self) -> bool:
+        return self.refused is not None or self.unavailable is not None
+
+    def ask(self, jobs: List[Dict[str, Any]]) -> List[Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]],
+                                                           Any, Dict[str, Any]]]:
+        """jobs: [{state, questions, images, sources}] -> [(answers, thresholds,
+        error, call record)] in the same order."""
+        recs = []
+        for j in jobs:
+            n = len(self.calls) + 1
+            call = {"n": n, "state": j["state"], "questions": list(j["questions"]),
+                    "images": _sent_images(self.tj, j["images"], j["sources"], n, self.vw, self.prefix)}
+            self.calls.append(call)
+            recs.append(call)
+
+        def one(j: Dict[str, Any]) -> Tuple[Any, Any, int]:
+            if self.stopped():
+                return None, self.refused or self.unavailable, 0
+            t0 = time.time()
+            try:
+                return (self.judge_fn(j["state"], j["questions"], tier="image", images=j["images"],
+                                      kind=TYPED_KIND), None, int((time.time() - t0) * 1000))
+            except Exception as exc:
+                if _quota_refusal(exc):
+                    self.refused = exc
+                elif getattr(exc, "reason", None) in ("off", "no-key", "no-image-judge"):
+                    self.unavailable = exc
+                return None, exc, int((time.time() - t0) * 1000)
+
+        if len(jobs) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=JUDGE_WORKERS) as pool:
+                outs = list(pool.map(one, jobs))
+        else:
+            outs = [one(j) for j in jobs]
+        results = []
+        for call, (res, exc, ms) in zip(recs, outs):
+            call["ms"] = ms
+            if exc is not None:
+                call["error"] = str(exc)[:300]
+                results.append((None, None, exc, call))
+                continue
+            self.provider, self.model = res.get("provider"), res.get("model")
+            call.update({"provider": res.get("provider"), "model": res.get("model"),
+                         "thresholds": res.get("thresholds")})
+            results.append((res.get("answers") or {}, res.get("thresholds") or {}, None, call))
+        return results
+
+
+def _numbered_crop(path: str, box: Dict[str, float], kids: List[Dict[str, float]],
+                   viewport_w: int) -> Optional[bytes]:
+    """One region's crop with each of its parts outlined in its own colour and
+    numbered 1..n at its top-left corner, as PNG bytes. None without Pillow or
+    for an empty box."""
+    if not _PIL_OK:
+        return None
+    import io
+    from PIL import ImageDraw
+    img = Image.open(path).convert("RGB")
+    scale = img.width / float(viewport_w or img.width)
+    l = max(0, int((box["x"] - _CROP_PAD) * scale))
+    t = max(0, int((box["y"] - _CROP_PAD) * scale))
+    r = min(img.width, int((box["x"] + box["width"] + _CROP_PAD) * scale))
+    b = min(img.height, int((box["y"] + box["height"] + _CROP_PAD) * scale))
+    if r - l < 4 or b - t < 4:
+        return None
+    crop = img.crop((l, t, r, b))
+    draw = ImageDraw.Draw(crop)
+    # Numbers stay legible after the judge shrinks a tall crop.
+    size = max(14, min(160, int(max(crop.width, crop.height) / 40)))
+    font = _label_font(size)
+    line = max(2, size // 8)
+    for i, kb in enumerate(kids):
+        col = _BOX_COLOURS[i % len(_BOX_COLOURS)]
+        x1, y1 = kb["x"] * scale - l, kb["y"] * scale - t
+        x2, y2 = x1 + kb["width"] * scale, y1 + kb["height"] * scale
+        draw.rectangle([x1, y1, x2, y2], outline=col, width=line)
+        tag = str(i + 1)
+        try:
+            tw = draw.textlength(tag, font=font)
+        except Exception:
+            tw = size * 0.6 * len(tag)
+        draw.rectangle([x1, y1, x1 + tw + size * 0.5, y1 + size * 1.25], fill=col)
+        draw.text((x1 + size * 0.25, y1 + size * 0.05), tag, fill=(255, 255, 255), font=font)
+    buf = io.BytesIO()
+    crop.save(buf, "PNG")
+    return buf.getvalue()
+
+
+_NTH = re.compile(r":nth-of-type\(\d+\)")
+
+
+def _defect_groups(screens: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The candidates, one group per defect: the same kind on the same kind of
+    element with the same text, caused by the same kind of thing (the same
+    overflow in forty rows of a table, or on two screens, is one defect),
+    counted, in order."""
+    groups: Dict[str, Dict[str, Any]] = {}
+    for sc in screens:
+        for d in (sc.get("found") or {}).get("defects") or []:
+            cause = d.get("coveredBy") or d.get("cutBy") or (d.get("container") or {}).get("selector") or ""
+            key = "|".join([d.get("kind") or "", _NTH.sub("", d.get("selector") or ""),
+                            re.sub(r"\s+", " ", d.get("text") or "")[:60], _NTH.sub("", cause)])
+            g = groups.get(key)
+            if g is None:
+                g = groups[key] = {"id": "s%d_d%d" % (sc["n"], len(groups) + 1), "screen": sc, "items": []}
+            g["items"].append(d)
+    return list(groups.values())
+
+
+def page_defects(screens: List[Dict[str, Any]], calls: JudgeCalls, viewport_w: int) -> List[Dict[str, Any]]:
+    """The page QA. Code found each candidate defect on the rendered screen
+    (_DEFECTS_JS, inside what the change impacts) and measured it; the same
+    defect repeated is one group (_defect_groups). The judge is asked ONE
+    literal, positive claim (visual_checks: whole_text, uncovered, inside,
+    even_gaps) on the crops of up to CONFIRM_PER_GROUP of its instances. A
+    "no" on any of them confirms the group. A group nobody confirmed is still
+    reported, marked unconfirmed, with what the code measured: on the
+    Bursary register the judge saw 6 of 9 real text overlaps (2026-10-14).
+    At most MAX_DEFECT_CALLS a page. Returns one finding per group."""
+    vc = _editor_module("visual_checks")
+    jobs: List[Dict[str, Any]] = []
+    asked: List[Tuple[Dict[str, Any], Dict[str, Any], str, Dict[str, Any], str]] = []
+    groups = _defect_groups(screens)
+    for g in groups:
+        sc = g["screen"]
+        for j, d in enumerate(g["items"][:CONFIRM_PER_GROUP]):
+            if len(jobs) >= MAX_DEFECT_CALLS:
+                break
+            kind, text = d.get("kind"), re.sub(r"\s+", " ", d.get("text") or "").strip()
+            if kind in ("cut-off", "covered"):
+                img = _crop(sc["path"], d["box"], viewport_w)
+                if kind == "cut-off" and text:
+                    check = ({"shape": "whole_text", "x": text} if len(text) <= 60 else
+                             {"shape": "whole_text_start", "x": text[:50].rsplit(" ", 1)[0] or text[:50]})
+                else:
+                    check = {"shape": "uncovered", "x": ("The text \"%s\"" % text[:60]) if text else
+                             "The %s" % d.get("label")}
+                state = "A crop of one element on a web page."
+            elif kind == "spill":
+                c = d.get("container") or {}
+                img = _numbered_crop(sc["path"], c.get("box") or d["box"], [d["box"]], viewport_w)
+                check = {"shape": "inside", "x": d.get("label") or "the element"}
+                state = "A part of a web page (%s); box 1 marks one element inside it." % c.get("label")
+            elif kind == "uneven-gaps":
+                img = _numbered_crop(sc["path"], d["box"], d.get("parts") or [], viewport_w)
+                check = {"shape": "even_gaps", "x": d.get("label") or "this part"}
+                state = "A part of a web page (%s); its parts are numbered." % d.get("label")
+            else:
+                continue
+            if img is None:
+                continue
+            try:
+                q, _n = vc.question(check)
+            except ValueError:
+                continue
+            rid = "%s_%d" % (g["id"], j + 1)
+            jobs.append({"state": state, "questions": {rid: q}, "images": [img],
+                         "sources": [{"capture": sc["path"], "box": d["box"], "selector": d["selector"],
+                                      "label": "screen %d (%s) cropped to %s" % (sc["n"] + 1, sc.get("label"),
+                                                                                d.get("label"))}]})
+            asked.append((g, d, rid, q, check["shape"]))
+    seen: Dict[str, List[Dict[str, Any]]] = {}
+    for (g, d, rid, q, shape), (answers, th, exc, call) in zip(asked, calls.ask(jobs)):
+        sc = g["screen"]
+        row: Dict[str, Any] = {"id": rid, "shape": shape, "x": d.get("label"), "at": "screen:%d" % sc["n"],
+                               "call": call["n"], "question": q, "claim": q["instructions"],
+                               "selector": d["selector"], "source": "found in the code: %s" % d.get("kind"),
+                               "images": [im.get("label") for im in call["images"]], "evidence": d.get("ev")}
+        if exc is not None:
+            row.update(status="unavailable", message=str(exc)[:200], passed=None, band=None)
+        else:
+            v = vc.verdict(q, answers.get(rid), th)
+            row.update({"status": "answered" if v["answer"] is not None else "no-answer", "answer": v["answer"],
+                        "noul": v.get("noul"), "passed": v["passed"], "confidence": v["confidence"],
+                        "band": v["band"]})
+        calls.rows.append(row)
+        seen.setdefault(g["id"], []).append(row)
+    findings: List[Dict[str, Any]] = []
+    for g in groups:
+        d, sc, rows = g["items"][0], g["screen"], seen.get(g["id"]) or []
+        yes = [r for r in rows if r.get("passed") is False]
+        f: Dict[str, Any] = {"id": g["id"], "kind": d.get("kind"), "count": len(g["items"]),
+                             "screen": "screen %d (%s)" % (sc["n"] + 1, sc.get("label")),
+                             "label": d.get("label"), "within": d.get("within"), "selector": d["selector"],
+                             "confirmed": bool(yes), "judged": "%d of %d crops show it" % (len(yes), len(rows))
+                             if rows else "not asked", "evidence": dict(d.get("ev") or {})}
+        if yes:
+            f["call"] = yes[0]["call"]
+            f["score"] = round(1 - float(yes[0].get("noul") or 0), 3)
+        elif rows:
+            f["call"] = rows[0]["call"]
+        for k in ("cutBy", "coveredBy", "gaps"):
+            if d.get(k) is not None:
+                f[k] = d[k]
+        if d.get("container"):
+            f["container"] = d["container"].get("selector")
+        if d.get("measured"):
+            f["measured"] = d["measured"]
+        findings.append(f)
+    return findings
+
+
+def _pair_questions(rid: str) -> Dict[str, Any]:
+    vc = _editor_module("visual_checks")
+    q, _n = vc.question({"shape": "pair", "x": "component"})
+    out = {rid: q}
+    for d, text in PAIR_DIMS.items():
+        out["%s__%s" % (rid, d)] = {"type": "noul", "instructions": text}
+    return out
+
+
+def _png_bytes(path: str) -> Optional[bytes]:
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _open_gallery(context: Any, gallery_url: str, settle_ms: int) -> Any:
+    g = context.new_page()
+    try:
+        g.goto(gallery_url, wait_until="load", timeout=30000)
+        g.wait_for_timeout(settle_ms)
+    except Exception:
+        g.close()
+        raise
+    return g
+
+
+def _ring_colour(path: str, box: Dict[str, float], viewport_w: int) -> Optional[str]:
+    """The colour an element sits on, read off the screenshot: the most common
+    colour in the band just outside its box (a sidebar painted with an image
+    or a gradient has no background-color to read). None without Pillow."""
+    if not _PIL_OK:
+        return None
+    try:
+        img = Image.open(path).convert("RGB")
+        scale = img.width / float(viewport_w or img.width)
+        l, t = int(box["x"] * scale), int(box["y"] * scale)
+        r, b = int((box["x"] + box["width"]) * scale), int((box["y"] + box["height"]) * scale)
+        d = max(2, int(4 * scale))
+        counts: Dict[Tuple[int, int, int], int] = {}
+        for x0, y0, x1, y1 in ((l - d, t - d, r + d, t), (l - d, b, r + d, b + d),
+                               (l - d, t, l, b), (r, t, r + d, b)):
+            x0, y0, x1, y1 = max(0, x0), max(0, y0), min(img.width, x1), min(img.height, y1)
+            if x1 - x0 < 1 or y1 - y0 < 1:
+                continue
+            for n, c in (img.crop((x0, y0, x1, y1)).getcolors(1 << 20) or []):
+                counts[c] = counts.get(c, 0) + n
+        if not counts:
+            return None
+        c = max(counts, key=counts.get)
+        return "rgb(%d, %d, %d)" % c
+    except Exception:
+        return None
+
+
+def _diffs(page_props: Dict[str, Any], ds_props: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: {"page": v, "designSystem": ds_props.get(k)} for k, v in (page_props or {}).items()
+            if (ds_props or {}).get(k) not in (None, v)}
+
+
+def pair_chain(g: Any, pairs: List[Dict[str, Any]], calls: JudgeCalls, out_dir: str,
+               viewport_w: int) -> Dict[str, Dict[str, Any]]:
+    """The chained comparison of a page element (B) with a design-system
+    component (A), for each pair {id, title, a: {selector, path, label, props,
+    style}, b: {screen, box, selector, props, content, backdrop}}:
+      1. A beside B in one image, scored as a whole and per dimension
+         (PAIR_DIMS -> pair_verdict). Words, icon and arrangement are
+         content and never fail it.
+      2. Only when a style dimension (colour, border, shape, font) scored
+         PAIR_CLEAR or more: A is re-shot with B's words and icon (when they
+         are written in the DS's own classes) and on the colour B sits on, so
+         a transparent component on a coloured bar and the gallery's sample
+         text stop counting, and the dimensions are asked again. That answer
+         decides.
+    Rows go to calls.rows; returns {pair id: result}."""
+    out: Dict[str, Dict[str, Any]] = {}
+
+    def job(p: Dict[str, Any], a_path: str, rid: str, note: str) -> Optional[Dict[str, Any]]:
+        b, sc = p["b"], p["b"]["screen"]
+        crop = _crop(sc["path"], b["box"], viewport_w)
+        a = _png_bytes(a_path)
+        both = _side_by_side(a, crop) if (a and crop) else None
+        if both is None:
+            return None
+        return {"state": ("One image with two UI components side by side: A on the left is the design "
+                          "system's own %s, B on the right is one on the page.%s" % (p["title"], note)),
+                "questions": _pair_questions(rid), "images": [both],
+                "sources": [{"capture": sc["path"], "box": b["box"], "selector": b["selector"],
+                             "label": "A: %s; B: screen %d (%s) cropped to %s"
+                                      % (p["a"]["label"], sc["n"] + 1, sc.get("label"), b["selector"])}]}
+
+    def record(p: Dict[str, Any], rid: str, answers: Any, exc: Any, call: Dict[str, Any],
+               chain: bool) -> Dict[str, Any]:
+        row: Dict[str, Any] = {"id": rid, "shape": "pair", "x": "%s component" % p["title"], "chain": chain,
+                               "at": "screen:%d" % p["b"]["screen"]["n"], "call": call["n"],
+                               "selector": p["b"]["selector"], "claim": "B is visually different from A.",
+                               "question": {"type": "noul", "instructions": "B is visually different from A."},
+                               "source": p.get("source") or "design system", "images":
+                               [im.get("label") for im in call["images"]]}
+        if exc is not None:
+            row.update(status="unavailable", message=str(exc)[:200], passed=None, band=None)
+        else:
+            v = pair_verdict(answers, rid)
+            row.update({"answer": v["answer"], "noul": v["noul"], "dims": v["dims"], "passed": v["passed"],
+                        "confidence": v["confidence"], "band": v["band"], "probabilities": None,
+                        "status": "answered" if v["noul"] is not None else "no-answer"})
+        calls.rows.append(row)
+        return row
+
+    jobs, asked = [], []
+    for p in pairs:
+        rid = re.sub(r"[^\w.-]", "_", p["id"])[:84]
+        j = job(p, p["a"]["path"], rid, "")
+        if j:
+            jobs.append(j)
+            asked.append((p, rid))
+    first: Dict[str, Dict[str, Any]] = {}
+    for (p, rid), (answers, _th, exc, call) in zip(asked, calls.ask(jobs)):
+        first[p["id"]] = record(p, rid, answers, exc, call, False)
+    jobs2, asked2 = [], []
+    for p, rid in asked:
+        dims = first[p["id"]].get("dims") or {}
+        if not any((dims.get(d) or 0) >= PAIR_CLEAR for d in PAIR_STYLE):
+            continue
+        b = p["b"]
+        path = os.path.join(out_dir, "ref_%s__as_%s.png" % (re.sub(r"[^\w-]", "_", p["a"]["key"]), rid))
+        backdrop = _ring_colour(b["screen"]["path"], b["box"], viewport_w) or b.get("backdrop") or "rgb(255, 255, 255)"
+        note = " A has been given B's words and icon," if b.get("content") is not None else " A has been"
+        note += " placed on the colour B sits on (%s)" % backdrop
+        try:
+            if not g.evaluate(_GALLERY_NORMALISE_JS, {"selector": p["a"]["selector"], "html": b.get("content"),
+                                                      "backdrop": backdrop}):
+                continue
+            g.wait_for_timeout(120)
+            _ref_shot(g, g.locator(p["a"]["selector"]).first, path)
+        except Exception as exc:
+            log("chained comparison for %s skipped (%s)" % (p["id"], exc))
+            continue
+        finally:
+            try:
+                g.evaluate(_GALLERY_RESTORE_JS)
+            except Exception:
+                pass
+        j = job(p, path, rid + "_chain", note + ", so only the component's own style can differ.")
+        if j:
+            jobs2.append(j)
+            asked2.append((p, rid + "_chain", note.strip()))
+    second: Dict[str, Dict[str, Any]] = {}
+    for (p, rid, note), (answers, _th, exc, call) in zip(asked2, calls.ask(jobs2)):
+        second[p["id"]] = dict(record(p, rid, answers, exc, call, True), note=note)
+    for p, _rid in asked:
+        a, b = first[p["id"]], second.get(p["id"])
+        final = b if (b and b.get("status") == "answered") else a
+        out[p["id"]] = {"answer": final.get("answer"), "passed": final.get("passed"), "band": final.get("band"),
+                        "confidence": final.get("confidence"), "call": final.get("call"),
+                        "scores": a.get("dims"), "chainScores": (b or {}).get("dims"),
+                        "chain": (b or {}).get("note"), "differences": _diffs(p["b"].get("props"), p["a"]["props"]),
+                        "dsStyle": p["a"].get("style")}
+    return out
+
+
+def _unrecognised(screens: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The elements the design system does not recognise (_OFF_SYSTEM_JS) on
+    the screens, one per rule and look however often it repeats, counted.
+    Each comes as text: its code, the rule that styles it, its look."""
+    seen: Dict[str, Dict[str, Any]] = {}
+    for sc in screens:
+        for el in (sc.get("found") or {}).get("off") or []:
+            sig = el.get("source", "") + "|" + json.dumps(el.get("props") or {}, sort_keys=True)
+            if sig in seen:
+                seen[sig]["count"] += 1
+                continue
+            ev = el.get("ev") or {}
+            seen[sig] = {"id": "s%d_u%d" % (sc["n"], len(seen) + 1), "count": 1,
+                         "screen": sc.get("label"), "selector": el["selector"], "source": el.get("source"),
+                         "size": "%dx%d" % (round((el.get("box") or {}).get("width", 0)),
+                                            round((el.get("box") or {}).get("height", 0))),
+                         "code": ev.get("code"), "look": ev.get("style"), "props": el.get("props"),
+                         "_el": el, "_screen": sc}
+    return list(seen.values())
+
+
+def shortlist_compare(context: Any, gallery_url: str, plan: Dict[str, Any], items: List[Dict[str, Any]],
+                      compare: List[Dict[str, Any]], calls: JudgeCalls, settle_ms: int, out_dir: str,
+                      viewport_w: int) -> Dict[str, Any]:
+    """The second step of the design-system check. The ds-compare subagent
+    read the unrecognised elements (_unrecognised) against the design
+    system's catalog and shortlisted, for each, the components it may be a
+    hand-made copy of: compare = [{selector, screen?, candidates: ["btn",
+    "btn.btn--primary", ...]}]. The judge decides nothing here: each element
+    (B) is put beside each candidate (A, the gallery's own of that variant)
+    and scored (pair_chain). Returns {findings, unmatched}."""
+    titles = {c["cls"]: c["title"] for c in (plan.get("components") or [])}
+    out: Dict[str, Any] = {"findings": [], "unmatched": {}}
+    todo = []
+    for entry in compare or []:
+        if not isinstance(entry, dict):
+            continue
+        sel, scr = str(entry.get("selector") or ""), entry.get("screen")
+        it = next((i for i in items if i["selector"] == sel and (not scr or i["screen"] == scr)), None)
+        keys = [re.sub(r"\s+", "", str(k)).lstrip(".") for k in entry.get("candidates") or [] if str(k).strip()][:3]
+        if it is None:
+            out["unmatched"][sel] = "not among the unrecognised elements on %s" % (scr or "the screens")
+            continue
+        if keys:
+            todo.append((it, keys))
+    if not todo:
         return out
-    for sc in screens or []:
-        at, n, found = "screen:%d" % sc["n"], sc["n"], sc.get("found") or {}
-        for c in found.get("comps") or []:
-            key = _comp_key(c)
-            ref = (refs or {}).get(key)
-            if not c.get("leaf") or ("cmp", key, c["selector"]) in asked:
+    try:
+        g = _open_gallery(context, gallery_url, settle_ms)
+    except Exception as exc:
+        out["error"] = "design-system gallery unavailable (%s)" % exc
+        return out
+    try:
+        refs: Dict[str, Optional[Dict[str, Any]]] = {}
+        for key in sorted({k for _it, ks in todo for k in ks}):
+            parts = key.split(".")
+            shown, _state = _ref_name(key)
+            try:
+                pick = g.evaluate(_GALLERY_PICK_JS, parts)
+            except Exception as exc:
+                pick = None
+                out["unmatched"][key] = "the gallery could not be read (%s)" % exc
+            if not pick or pick.get("stateMismatch"):
+                out["unmatched"].setdefault(key, "the gallery shows no .%s" % shown)
+                refs[key] = None
                 continue
-            if refs is not None and (not ref or not ref.get("exactVariant")):
-                continue  # no like-for-like example in the gallery
-            asked.add(("cmp", key, c["selector"]))
-            shown, state = _ref_name(key)
-            ev = dict(c.get("ev") or {})
-            if ref and ref.get("props") and c.get("props"):
-                ev["differences"] = {k: {"page": v, "designSystem": ref["props"].get(k)}
-                                     for k, v in c["props"].items() if ref["props"].get(k) not in (None, v)}
-            raw.append({"id": uid("s%d_%s" % (n, key)), "shape": "pair", "x": "%s component" % c["title"],
-                        "at": at, "compare": "ref:%s" % key, "selector": c["selector"], "optional": True,
-                        "source": "design system: .%s%s" % (shown, " (%s)" % state if state else ""),
-                        "evidence": ev})
-        for i, t in enumerate(found.get("texts") or []):
-            if ("txt", t["text"]) in asked:
+            p = os.path.join(out_dir, "ref_%s.png" % re.sub(r"[^\w-]", "_", key))
+            try:
+                _ref_shot(g, g.locator(pick["selector"]).first, p)
+            except Exception as exc:
+                out["unmatched"][key] = "the gallery's .%s could not be shot (%s)" % (shown, exc)
+                refs[key] = None
                 continue
-            asked.add(("txt", t["text"]))
-            raw.append(dict(_text_check(t), id=uid("s%d_txt_%d" % (n, i + 1)), at=at,
-                            selector=t["selector"], optional=True, source="text on the screen",
-                            evidence=t.get("ev")))
-    checks, _rejected = parse_checks(raw, limit)
-    return checks
+            refs[key] = {"key": key, "selector": pick["selector"], "path": p, "props": pick.get("props"),
+                         "style": pick.get("style"), "exact": pick.get("exact"),
+                         "label": "the design system's own .%s%s" % (
+                             shown, "" if pick.get("exact") else " (base: the gallery has no such variant)")}
+        pairs = []
+        for it, keys in todo:
+            for k in keys:
+                if refs.get(k):
+                    pairs.append({"id": "%s_vs_%s" % (it["id"], re.sub(r"[^\w-]", "_", k)),
+                                  "title": titles.get(k.split(".")[0]) or k.split(".")[0],
+                                  "source": "shortlisted: .%s" % k, "a": refs[k],
+                                  "b": dict(it["_el"], screen=it["_screen"]), "_item": it["id"], "_key": k})
+        res = pair_chain(g, pairs, calls, out_dir, viewport_w)
+        for it, keys in todo:
+            mine = [p for p in pairs if p["_item"] == it["id"]]
+            out["findings"].append({
+                "id": it["id"], "kind": "shortlisted", "label": it.get("source"), "count": it["count"],
+                "screen": it["screen"], "selector": it["selector"], "source": it.get("source"),
+                "evidence": {"code": it.get("code"), "style": it.get("look")},
+                "candidates": [dict(res.get(p["id"]) or {"answer": None}, key=p["_key"], title=p["title"],
+                                    exactVariant=bool(p["a"].get("exact"))) for p in mine],
+                "call": next((res[p["id"]]["call"] for p in mine if p["id"] in res), None)})
+    finally:
+        g.close()
+    return out
 
 
-def ds_visual_checks(found: Optional[Dict[str, Any]], plan: Optional[Dict[str, Any]]
-                     ) -> List[Dict[str, Any]]:
-    """screen_checks for one screen's findings, as screen 0 (the settled page)."""
-    if not found:
-        return []
-    return screen_checks([{"n": 0, "found": found}], plan)
+def element_pass(context: Any, mode: str, screens: List[Dict[str, Any]], plan: Optional[Dict[str, Any]],
+                 settle_ms: int, out_dir: str, viewport_w: int, judge_fn: Any = None,
+                 scope: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Run one element pass on the captured screens, while the browser is
+    still open (the DS links re-shoot the gallery). Returns {mode, calls,
+    rows, findings, unrecognised?, unmatched, message, provider, model};
+    never raises.
+      page - page_defects: what code finds wrong where the change reaches,
+             each confirmed by the judge;
+      ds   - without scope.compare: the unrecognised elements, listed for
+             the ds-compare subagent to shortlist (no judge call); with it:
+             each beside its shortlisted components (shortlist_compare)."""
+    out: Dict[str, Any] = {"mode": mode, "calls": [], "rows": [], "findings": [], "unmatched": {},
+                           "message": None, "provider": None, "model": None}
+    try:
+        tj = _typed_judge_module()
+    except Exception as exc:
+        out["message"] = "typed judge unavailable: %s" % exc
+        return out
+    calls = JudgeCalls(judge_fn or tj.judge, tj, viewport_w, "page" if mode == "page" else "ds")
+    gallery = (plan or {}).get("gallery")
+    findings: List[Dict[str, Any]] = []
+    notes: List[str] = []
+    for sc in screens:
+        info = sc.get("found") or {}
+        if info.get("scoped") and not info.get("impact"):
+            notes.append("%s: none of the changed elements is on it" % sc.get("label"))
+    try:
+        if mode == "page":
+            findings = page_defects(screens, calls, viewport_w)
+        elif not gallery:
+            out["message"] = "no design system is bound to this page"
+            return out
+        else:
+            items = _unrecognised(screens)
+            compare = (scope or {}).get("compare")
+            if not isinstance(compare, list):
+                out["unrecognised"] = [{k: v for k, v in it.items() if not k.startswith("_")} for it in items]
+                out["message"] = ("%d unrecognised element(s): shortlist the design-system components each may "
+                                  "copy, then run again with scope.compare" % len(items))
+            else:
+                ds = shortlist_compare(context, gallery, plan or {}, items, compare, calls, settle_ms, out_dir,
+                                       viewport_w)
+                findings = ds["findings"]
+                out["unmatched"] = ds["unmatched"]
+                if ds.get("error"):
+                    out["message"] = ds["error"]
+    except Exception as exc:
+        log("element pass failed (%s)" % exc)
+        out["message"] = "element pass failed: %s" % exc
+    out.update({"calls": calls.calls, "rows": calls.rows, "findings": findings,
+                "provider": calls.provider, "model": calls.model})
+    if notes:
+        out["notes"] = notes
+    if calls.refused is not None:
+        out["refused"] = _refusal_text(calls.refused)
+    if calls.unavailable is not None and not calls.provider:
+        out["message"] = "typed judge unavailable: %s" % calls.unavailable
+    elif not out["message"]:
+        out["message"] = "%d judge call(s)%s: %d finding(s)" % (
+            len(calls.calls), " via %s" % calls.provider if calls.provider else "", len(findings))
+        if out.get("refused"):
+            out["message"] += "; the judge refused the rest: %s" % out["refused"]
+    return out
 
 
 def typed_checks_on_page(context: Any, url: str, args: argparse.Namespace,
@@ -1704,30 +2410,42 @@ def typed_checks_on_page(context: Any, url: str, args: argparse.Namespace,
     """Every typed check for a page asked on a typed capture pass. Used where
     the battery does not run (cases mode)."""
     checks, rejected = getattr(args, "parsed_checks", None) or load_checks(getattr(args, "checks", None))
-    tp = typed_pass_for(context, url, args, settle_ms, out_dir, checks)
-    if _full_pass(args):
-        checks = checks + screen_checks(tp.get("screens") or [], getattr(args, "ds_plan", None),
-                                        refs=tp.get("refs") or {})
+    tp = typed_pass_for(context, url, args, settle_ms, out_dir, checks, judge_fn)
     report = {"idleFrames": [], "interactions": [], "typedPass": tp}
     vw = int((getattr(args, "viewport", None) or (1280, 720))[0])
     return run_visual_checks(report, checks, rejected, args.typed_judge, vw, judge_fn)
 
 
 def typed_pass_for(context: Any, url: str, args: argparse.Namespace, settle_ms: int,
-                   out_dir: str, checks: List[Dict[str, Any]]) -> Dict[str, Any]:
+                   out_dir: str, checks: List[Dict[str, Any]], judge_fn: Any = None) -> Dict[str, Any]:
+    """The typed captures, then (with --typed-elements) the element pass on
+    them while the browser is still open. The screens' region trees and
+    component lists stay out of the report: the findings carry what they need."""
     plan = getattr(args, "ds_plan", None) or {}
     refs = sorted({c["compare"][4:] for c in checks if str(c.get("compare") or "").startswith("ref:")})
-    return typed_capture_pass(context, url, settle_ms, out_dir, getattr(args, "typed_steps_list", None) or [],
-                              sorted({c["selector"] for c in checks if c.get("selector")}),
-                              plan.get("gallery"), refs, plan or None,
-                              getattr(args, "screen_collector", None),
-                              explore=_full_pass(args))
+    mode = _full_pass(args)
+    tp = typed_capture_pass(context, url, settle_ms, out_dir, getattr(args, "typed_steps_list", None) or [],
+                            sorted({c["selector"] for c in checks if c.get("selector")}),
+                            plan.get("gallery"), refs, plan or None,
+                            getattr(args, "screen_collector", None),
+                            what=mode or "page", scope=getattr(args, "scope_doc", None))
+    if mode:
+        vw = int((getattr(args, "viewport", None) or (1280, 720))[0])
+        tp["elements"] = element_pass(context, mode, tp.get("screens") or [], plan, settle_ms, out_dir, vw,
+                                      judge_fn, getattr(args, "scope_doc", None))
+        for sc in tp.get("screens") or []:
+            sc.pop("found", None)
+    return tp
 
 
-def _full_pass(args: argparse.Namespace) -> bool:
-    """The full visual pass (every screen, every element) was asked for.
-    Programmatic callers that build args by hand get it by default."""
-    return bool(getattr(args, "typed_elements", True))
+def _full_pass(args: argparse.Namespace) -> Optional[str]:
+    """Which element pass was asked for: "page" (the region drill) or "ds"
+    (the design-system comparison), else None. Programmatic callers that
+    build args by hand get the page pass by default."""
+    v = getattr(args, "typed_elements", "page")
+    if v is True:
+        return "page"
+    return v if v in ("page", "ds") else None
 
 
 def _comp_key(c: Dict[str, Any]) -> str:
@@ -1859,7 +2577,7 @@ def _one_colour_share(data: bytes) -> Optional[float]:
 
 
 def _sent_images(tj: Any, images: List[Any], sources: List[Dict[str, Any]], call_n: int,
-                 viewport_w: int) -> List[Dict[str, Any]]:
+                 viewport_w: int, prefix: str = "sent") -> List[Dict[str, Any]]:
     """Each image of one judge call as the judge receives it: load_image is
     what judge() runs (a tall full-page shot may be downscaled there), so the
     bytes saved here are the bytes sent. A crop is written next to its
@@ -1885,7 +2603,7 @@ def _sent_images(tj: Any, images: List[Any], sources: List[Dict[str, Any]], call
                 path = img["path"]
             else:
                 path = os.path.join(os.path.dirname(src.get("capture") or "."),
-                                    "sent_%02d_%d.%s" % (call_n, i + 1, "jpg" if kind == "jpeg" else kind))
+                                    "%s_%02d_%d.%s" % (prefix, call_n, i + 1, "jpg" if kind == "jpeg" else kind))
                 with open(path, "wb") as f:
                     f.write(data)
             rec.update({"path": path, "width": size[0], "height": size[1], "bytes": len(data),
@@ -1908,12 +2626,27 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
     tp = report.get("typedPass") or {}
     if (tp.get("settled") or {}).get("path"):
         block["pageShot"] = tp["settled"]["path"]
-    if isinstance(tp.get("ds"), dict):
-        # What the browser found on the rendered page, for the report.
-        block["dsFound"] = {"offSystem": list(tp["ds"].get("off") or [])[:64],
-                            "components": list(tp["ds"].get("comps") or [])[:64]}
+    # The element pass (page drill or DS comparison) already asked its own
+    # calls: they come first, its rows join the checks, its findings are the
+    # report's findings.
+    el = tp.get("elements") or {}
+    el_rows: List[Dict[str, Any]] = list(el.get("rows") or [])
+    if el:
+        block["calls"] = list(el.get("calls") or [])
+        block["findings"] = list(el.get("findings") or [])
+        block["elements"] = {k: el.get(k) for k in ("mode", "message", "unmatched", "refused", "notes")
+                             if el.get(k) not in (None, {}, [])}
+        if "unrecognised" in el:
+            block["unrecognised"] = el["unrecognised"]
+        if el.get("provider"):
+            block.update({"available": True, "provider": el["provider"], "model": el.get("model")})
+            block["requests"] = sum(1 for c in block["calls"] if not c.get("error"))
     if not checks:
-        block["message"] = "no checks to run" + (" (%d rejected)" % len(rejected) if rejected else "")
+        block["checks"] = el_rows
+        block["message"] = el.get("message") if el else (
+            "no checks to run" + (" (%d rejected)" % len(rejected) if rejected else ""))
+        if el_rows:
+            block["summary"] = _typed_summary(el_rows)
         return block
     try:
         tj = _typed_judge_module()
@@ -2073,21 +2806,28 @@ def run_visual_checks(report: Dict[str, Any], checks: List[Dict[str, Any]],
         for _k, r in order:
             if r["status"] is None:
                 r["status"] = "unavailable"
-        block["checks"] = [r for _k, r in order]
+        block["checks"] = el_rows + [r for _k, r in order]
         return block
-    block["checks"] = [r for _k, r in order]
-    answered = [r for r in block["checks"] if r["status"] == "answered"]
-    block["summary"] = {
-        "confidentPass": sum(1 for r in answered if r["passed"] is True and r["band"] == "act"),
-        "confidentFail": sum(1 for r in answered if r["passed"] is False and r["band"] == "act"),
-        "unsure": sum(1 for r in answered if r["band"] != "act"),
-        "elementMissing": sum(1 for r in block["checks"] if r["status"] == "element-missing"),
-        "notAsked": sum(1 for r in block["checks"] if r["status"] not in ("answered",)),
-    }
+    block["checks"] = el_rows + [r for _k, r in order]
+    answered = [r for _k, r in order if r["status"] == "answered"]
+    block["summary"] = _typed_summary(block["checks"])
     block["message"] = "%d check(s) answered via %s" % (len(answered), block["provider"])
     if block.get("refused"):
         block["message"] += "; the judge refused the rest: %s" % block["refused"]
+    if el.get("message"):
+        block["message"] += "; %s" % el["message"]
     return block
+
+
+def _typed_summary(rows: List[Dict[str, Any]]) -> Dict[str, int]:
+    answered = [r for r in rows if r.get("status") == "answered"]
+    return {
+        "confidentPass": sum(1 for r in answered if r.get("passed") is True and r.get("band") == "act"),
+        "confidentFail": sum(1 for r in answered if r.get("passed") is False and r.get("band") == "act"),
+        "unsure": sum(1 for r in answered if r.get("band") != "act"),
+        "elementMissing": sum(1 for r in rows if r.get("status") == "element-missing"),
+        "notAsked": sum(1 for r in rows if r.get("status") != "answered"),
+    }
 
 
 def _refusal_text(exc: Any) -> str:
@@ -3000,6 +3740,12 @@ def run_cases(args: argparse.Namespace) -> int:
     cases: List[Dict[str, Any]] = list(doc.get("cases") or [])
     cases += _expand_matrix_cases(doc)
     cases += _expand_abuse_cases(doc, (vw, vh))
+    # A scoped run asks only for the cases the change touches.
+    scoped_ids = (getattr(args, "scope_doc", None) or {}).get("cases")
+    if isinstance(scoped_ids, list):
+        want = {str(i) for i in scoped_ids}
+        cases = [c for c in cases if str(c.get("id")) in want]
+        log("scope: %d of the planned case(s)" % len(cases))
 
     report: Dict[str, Any] = {
         "url": url,
@@ -3055,7 +3801,8 @@ def run_cases(args: argparse.Namespace) -> int:
         if getattr(args, "typed_judge", None):
             prepare_typed(args)
             if _full_pass(args):
-                args.screen_collector = ScreenCollector(out_dir, args.ds_plan)
+                args.screen_collector = ScreenCollector(out_dir, args.ds_plan, what=_full_pass(args) or "page",
+                                                        changed=(getattr(args, "scope_doc", None) or {}).get("changed"))
         collector = getattr(args, "screen_collector", None)
         for i, case in enumerate(cases):
             entry = _run_one_case(context, url, case, base_ctx, settle_ms,
@@ -3064,8 +3811,8 @@ def run_cases(args: argparse.Namespace) -> int:
             log("case %d/%d %s: %s" % (i + 1, len(cases),
                                        entry.get("id"), entry["verdict"]))
 
-        report["soak"] = _run_soak(context, url, doc, base_ctx, settle_ms,
-                                   out_dir)
+        report["soak"] = (None if isinstance(scoped_ids, list) else
+                          _run_soak(context, url, doc, base_ctx, settle_ms, out_dir))
         if report["soak"]:
             log("soak: %s (%d injections)"
                 % (report["soak"]["verdict"], report["soak"]["injected"]))
@@ -3379,10 +4126,6 @@ def run(args: argparse.Namespace) -> int:
         if getattr(args, "typed_judge", None):
             report["typedPass"] = typed_pass_for(context, url, args, settle_ms, out_dir,
                                                  args.parsed_checks[0])
-            el_checks = screen_checks(report["typedPass"].get("screens") or [], args.ds_plan,
-                                      refs=report["typedPass"].get("refs") or {}) if _full_pass(args) else []
-            if el_checks:
-                args.parsed_checks = (args.parsed_checks[0] + el_checks, args.parsed_checks[1])
 
         context.close()
         browser.close()
@@ -3578,10 +4321,21 @@ def build_parser() -> argparse.ArgumentParser:
                         "nothing; flag also adds a typed-judge finding per confident "
                         "failure. Never changes the verdict or the exit code. The "
                         "daemon passes this when typed judgment for visual checks is on.")
-    p.add_argument("--typed-elements", action="store_true",
-                   help="With --typed-judge: the full visual pass. Explore the page's "
-                        "screens and ask the judge about every element on them (texts, "
-                        "design-system components). Without it only the --checks run.")
+    p.add_argument("--typed-elements", nargs="?", const="page", default=None, choices=["page", "ds"],
+                   help="With --typed-judge: an element pass over every screen the QA "
+                        "reaches (the settled page, its test cases' end states, an "
+                        "exploration of its clicks). page: the region drill (which part "
+                        "of the screen has a visual defect, then which part of that, down "
+                        "to a primitive or a DS component). ds: every distinct design-"
+                        "system component beside the DS gallery's own, chained. Without "
+                        "it only the --checks run.")
+    p.add_argument("--scope", default=None, metavar="SCOPE_JSON",
+                   help="What the change touches, from the caller's scoping: {states: "
+                        "[{label, query?, steps?}], changed: [selectors from the change's "
+                        "code], cases: [test case ids]}. The element pass captures the page "
+                        "and those states only (no exploration), reads each screen from "
+                        "where the changed elements impact it, and the cases mode runs only "
+                        "the listed cases (no soak).")
     p.add_argument("--judge-model", default=None, metavar="MODEL",
                    help="Vision model id (default %s for the direct API; the "
                         "daemon picks its own default if omitted)."
@@ -3592,6 +4346,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    args.scope_doc = None
+    if args.scope:
+        try:
+            with open(args.scope, "r") as f:
+                args.scope_doc = json.load(f)
+        except Exception as exc:
+            log("could not read scope %s (%s)" % (args.scope, exc))
     if args.out is None:
         args.out = os.path.join(os.getcwd(), "qa-out")
     if args.cases:

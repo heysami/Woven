@@ -832,10 +832,11 @@ class P8VisualChecks(unittest.TestCase):
         self.assertEqual(sizes, [1, 2])
         self.assertEqual(report["typedChecks"]["requests"], 2)
 
-    def test_criteria_steps_and_design_system_checks_run_on_their_own_pass(self):
+    def test_criteria_steps_and_page_defects_run_on_their_own_pass(self):
         """Criteria steps click on a FRESH page after the main QA, so they can
-        never move its verdict; the design system's checks are built by code
-        from the linter's plan and compared with the DS gallery's own render."""
+        never move its verdict. Nothing is explored. The page QA asks the
+        judge only about what code found wrong: one literal claim per defect,
+        the same defect repeated (three rows) asked on two crops, reported once."""
         from types import SimpleNamespace
         png = typed_judge.solid_png((30, 120, 200), size=200)
         clicked = []
@@ -852,25 +853,19 @@ class P8VisualChecks(unittest.TestCase):
                 box = {"x": 20, "y": 20, "width": 60, "height": 40}
                 if js == visual_qa._SCREEN_SIG_JS:
                     return "screen after %d clicks" % len(clicked)
-                if js == visual_qa._RENDERED_DS_JS:
-                    return {"off": [{"selector": "#bar", "source": "<style> .sp-bar", "count": 1,
-                                     "skin": ["border"], "box": box}],
-                            "comps": [{"cls": "btn", "title": "Button", "selector": "#b1", "variant": [],
-                                       "box": box, "leaf": True},
-                                      {"cls": "modal", "title": "Popup / Modal", "selector": "#m",
-                                       "variant": [], "leaf": True}],
-                            "texts": [{"text": "Sponsored by an organisation?", "selector": "#q", "box": box}]}
-                if js == visual_qa._GALLERY_PICK_JS:
-                    return {"selector": "#gallery-" + arg[0], "exact": True}
-                box = {"x": 20, "y": 20, "width": 60, "height": 40}
-                return {s: (None if s == "#m" else box) for s in arg}
+                if js == visual_qa._DEFECTS_JS:
+                    return {"defects": [{"kind": "covered", "selector": "tr:nth-of-type(%d) > td:nth-of-type(5) > span" % i,
+                                         "box": box, "label": "fm fail \"No bursary awarded\"",
+                                         "text": "No bursary awarded", "within": "Data grid",
+                                         "coveredBy": "tr:nth-of-type(%d) > td:nth-of-type(6) > span" % i,
+                                         "measured": "it and the next cell overlap by 24x18px",
+                                         "ev": {"code": "<span class=\"fm-fail\">No bursary awarded</span>"}}
+                                        for i in (1, 2, 3)],
+                            "scoped": False, "impact": None}
+                return {s: box for s in arg} if isinstance(arg, list) else {}
             def locator(self, sel):
-                page = self
-
                 class Loc:
                     first = None
-                    def count(self): return 1
-                    def is_visible(self): return True
                     def screenshot(self, path, **kw): Path(path).write_bytes(png)
                 loc = Loc()
                 loc.first = loc
@@ -883,57 +878,54 @@ class P8VisualChecks(unittest.TestCase):
         steps_file = Path(self.tmp) / "steps.json"
         steps_file.write_text(json.dumps({"steps": [{"label": "pick_yes", "type": "click",
                                                      "selector": "#sponsorYes"}]}))
-        plan_file = Path(self.tmp) / "plan.json"
-        plan_file.write_text(json.dumps({
-            "dsId": "suss", "names": "Button (.btn), Popup / Modal (.modal)",
-            "gallery": "http://127.0.0.1:1/design-systems/suss/gallery.html",
-            "dsPath": "/design-systems/suss/", "dsClasses": ["btn", "modal"],
-            "componentRoots": ["btn", "modal"],
-            "components": [{"cls": "btn", "title": "Button"}, {"cls": "modal", "title": "Popup / Modal"}]}))
-        args = SimpleNamespace(checks=str(checks_file), ds_visual=str(plan_file),
-                               typed_steps=str(steps_file), typed_judge="flag", viewport=(200, 200))
+        args = SimpleNamespace(checks=str(checks_file), typed_steps=str(steps_file), typed_judge="flag",
+                               viewport=(200, 200), typed_elements="page")
         visual_qa.prepare_typed(args)
-        self.assertEqual([c["id"] for c in args.parsed_checks[0]], ["org_field"],
-                         "design-system checks come from the rendered page, not up front")
         asked = []
 
         def judge(state, questions, **kw):
-            asked.append((state, questions, len(kw["images"])))
-            out = {}
-            for qid, q in questions.items():
-                # A pair: B's border is what differs; everything else is the same.
-                out[qid] = {"noul": 0.9 if qid.endswith("__border") or qid == "s0_btn" else
-                            0.1 if "__" in qid else 0.97}
-            return {"answers": out, "provider": "clef", "model": "clef",
-                    "thresholds": typed_judge.thresholds("frame_check", "clef")}
+            asked.append(questions)
+            return {"answers": {q: {"noul": 0.1 if q.startswith("s0_d") else 0.97} for q in questions},
+                    "provider": "clef", "model": "clef", "thresholds": typed_judge.thresholds("frame_check", "clef")}
         block = visual_qa.typed_checks_on_page(SimpleNamespace(new_page=Page), "file:///x", args, 0,
                                                self.tmp, judge)
+        self.assertEqual(clicked, ["#sponsorYes"], "the criteria step, and no exploration")
         rows = {r["id"]: r for r in block["checks"]}
-        self.assertEqual(sorted(rows), ["org_field", "s0_btn", "s0_modal", "s0_txt_1"],
-                         "the step's screen repeats screen 0's elements, so they are asked once")
-        self.assertEqual(clicked, ["#sponsorYes"])
-        self.assertEqual(rows["org_field"]["status"], "answered")
-        self.assertEqual(rows["org_field"]["images"], ["after pick_yes cropped to #orgFollowUp"])
-        self.assertEqual((rows["s0_btn"]["answer"], rows["s0_btn"]["passed"], rows["s0_btn"]["band"]),
-                         ("differs in border", False, "act"), "the dimension that scored high is what is wrong")
-        btn_call = next(c for c in block["calls"] if c["questions"] == ["s0_btn"])
-        self.assertEqual(len(btn_call["images"]), 1, "A and B go to the judge as ONE image")
-        self.assertIn("A on the left is the design system's own Button component", btn_call["state"])
-        self.assertEqual(rows["s0_btn"]["images"][1], "screen 1 (the page) cropped to #b1")
-        self.assertEqual(rows["s0_modal"]["status"], "not-visible", "a hidden modal is skipped")
-        self.assertEqual(rows["s0_txt_1"]["question"]["instructions"],
-                         'The image shows the text "Sponsored by an organisation?", fully readable and not covered.')
-        btn_qs = [qs for _st, qs, _n in asked if "s0_btn" in qs][0]
-        self.assertEqual(sorted(btn_qs), sorted(["s0_btn"] + ["s0_btn__" + d for d in visual_qa.PAIR_DIMS]),
-                         "one call: as a whole and per dimension")
-        report = {"typedChecks": block}
-        visual_qa._flag_and_log(report, block, "flag", args, lambda e: None)
-        self.assertEqual([f["check"] for f in report.get("findings", [])], ["s0_btn"],
-                         "only the component that differs is a finding; the hidden modal is not")
+        self.assertEqual(sorted(rows), ["org_field", "s0_d1_1", "s0_d1_2"],
+                         "the repeated overlap is asked on two of its crops")
+        self.assertEqual(rows["s0_d1_1"]["question"]["instructions"],
+                         "The text 'No bursary awarded' is fully visible, with nothing lying on top of any part of it.")
+        (f,) = block["findings"]
+        self.assertEqual((f["kind"], f["count"], f["confirmed"], f["judged"]),
+                         ("covered", 6, True, "2 of 2 crops show it"),
+                         "three rows on the page and again on the step's screen: one defect")
+        self.assertEqual(f["measured"], "it and the next cell overlap by 24x18px")
+        self.assertTrue(all(len(q) == 1 for q in asked), "one literal claim per call")
 
-    def test_design_system_elements_are_found_on_the_rendered_page(self):
-        """Most screens are drawn by JavaScript: the HTML file is a shell. The
-        design system's elements are found in the browser, after render."""
+    def test_a_defect_the_judge_does_not_see_stays_with_its_measurement(self):
+        """On the Bursary register the judge saw 6 of 9 real overlaps. A group
+        nobody confirmed is reported unconfirmed, with what code measured."""
+        shot = Path(self.tmp) / "s.png"
+        shot.write_bytes(typed_judge.solid_png((200, 200, 200), size=200))
+        d = {"kind": "cut-off", "selector": "#t", "box": {"x": 10, "y": 10, "width": 80, "height": 20},
+             "label": "cell sub", "text": "FAD-PTUG-SPO-2512-008074, Part-time undergraduate",
+             "cutBy": "its own box", "measured": "its text needs 210x60px and shows 194x40px", "ev": {}}
+        screens = [{"n": 0, "label": "the page", "path": str(shot), "found": {"defects": [d]}}]
+        tj = typed_judge
+        calls = visual_qa.JudgeCalls(lambda s, q, **k: {"answers": {x: {"noul": 0.8} for x in q}, "provider": "clef",
+                                                        "model": "clef", "thresholds": tj.thresholds("frame_check", "clef")},
+                                     tj, 200, "page")
+        (f,) = visual_qa.page_defects(screens, calls, 200)
+        self.assertEqual((f["confirmed"], f["judged"], f["measured"]),
+                         (False, "0 of 1 crops show it", "its text needs 210x60px and shows 194x40px"))
+        self.assertEqual(calls.rows[0]["question"]["instructions"],
+                         'The image shows the whole text "FAD-PTUG-SPO-2512-008074, Part-time undergraduate", '
+                         'with none of it cut off or hidden.')
+
+    def test_unrecognised_elements_are_found_on_the_rendered_page(self):
+        """Most screens are drawn by JavaScript: the HTML file is a shell. What
+        the design system does not recognise is found in the browser, after
+        render; elements written with DS classes are not listed at all."""
         try:
             from playwright.sync_api import sync_playwright
         except Exception:
@@ -961,114 +953,89 @@ class P8VisualChecks(unittest.TestCase):
             browser, _label = visual_qa.launch_browser(pw)
             page = browser.new_page()
             page.goto(page_html.as_uri())
-            found = visual_qa.detect_rendered_ds(page, plan)
+            found = visual_qa.detect_off_system(page, plan)
+            scoped = visual_qa.detect_off_system(page, dict(plan, changed=["#root"]))
             browser.close()
         sources = sorted(u["source"] for u in found["off"])
         self.assertEqual(sources, ["<style> .promo", "inline style on <span>"],
                          "the JS-made .promo is found; DS rules and DS-class selectors are not")
-        self.assertEqual([c["cls"] for c in found["comps"]], ["card"], "the closed modal is not on screen")
+        self.assertNotIn("comps", found, "DS components are correct by construction: not listed")
+        self.assertEqual([u["source"] for u in scoped["off"]], ["<style> .promo"],
+                         "with a scope, only what the change reaches")
 
-    def test_every_element_worth_judging_is_found_on_every_screen(self):
-        """The user's complaint: a page of cards, icons, icon tiles, a title and
-        a coloured hero, and the judge saw five crops. Every instance of every
-        documented component AND its parts, every element styled outside the
-        design system (also inside a component), and every visible text."""
+    def test_code_finds_defects_only_where_the_change_reaches(self):
+        """Impact is measured: the changed elements are hidden for a moment and
+        whatever moves inside its container or changes size with them is in
+        scope. A text running past its cell over the next one is covered, a
+        clamped text is cut off, a wide table in a scroller is not, and like
+        parts with one odd gap sit unevenly. The same defects elsewhere on the
+        page are not looked at."""
         try:
             from playwright.sync_api import sync_playwright
         except Exception:
             self.skipTest("Playwright not installed")
-        root = Path(self.tmp) / "every"
-        (root / "design-systems" / "x").mkdir(parents=True, exist_ok=True)
-        (root / "design-systems" / "x" / "styles.css").write_text(
-            ".card{border:1px solid #ccc;padding:12px}.card__icon{background:#eef;display:inline-block;"
-            "width:24px;height:24px}")
-        page_html = root / "p.html"
+        page_html = Path(self.tmp) / "defects.html"
+        block = ('<div class="%s" style="display:flex;width:300px">'
+                 '<div class="c" style="flex:1 1 0;min-width:0"><span style="white-space:nowrap">No bursary awarded at all</span></div>'
+                 '<div class="c" style="flex:1 1 0;min-width:0"><span style="background:#fff;position:relative">Next cell</span></div>'
+                 '<div class="c new" style="flex:1 1 0;min-width:0">Bursary</div></div>')
         page_html.write_text(
-            '<link rel="stylesheet" href="design-systems/x/styles.css">'
-            "<style>.hero{background:#0af;padding:20px}.card .tag{background:#efe;border-radius:6px}</style>"
-            '<section class="hero"><h1>Choose the support you need</h1></section>'
-            '<div style="max-height:0;overflow:hidden"><p>Inside a collapsed panel</p></div>'
-            '<div style="position:relative"><p id="under">Applications close soon</p>'
-            '<div id="over" style="position:absolute;left:0;top:0;right:0;bottom:0;background:#000"></div></div>'
-            + "".join('<div class="card"><span class="card__icon"></span><h3>Card %d</h3>'
-                      '<span class="tag">Closes 30 June</span></div>' % i for i in range(3)))
-        plan = {"dsPath": "/design-systems/x/", "dsClasses": ["card", "card__icon"], "componentRoots": ["card"],
-                "components": [{"cls": "card", "title": "Card"}]}
+            '<body style="margin:0;font:16px sans-serif">' + block % "row changed-area" +
+            '<p class="clamp" style="width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+            'A long reference that does not fit</p>'
+            '<div style="overflow-x:auto;width:200px"><div style="width:600px">wide but scrollable</div></div>'
+            '<ul style="list-style:none;margin:0;padding:0"><li class="i" style="margin-bottom:8px">a</li>'
+            '<li class="i" style="margin-bottom:8px">b</li><li class="i" style="margin-bottom:30px">c</li>'
+            '<li class="i">d</li></ul>' + block % "row elsewhere" + '</body>')
         with sync_playwright() as pw:
             browser, _label = visual_qa.launch_browser(pw)
-            page = browser.new_page()
+            page = browser.new_page(viewport={"width": 800, "height": 900})
             page.goto(page_html.as_uri())
-            collector = visual_qa.ScreenCollector(self.tmp, plan)
-            first = collector.capture(page, "the page")
-            again = collector.capture(page, "after a case that changed nothing")
+            everywhere = visual_qa.detect_defects(page, {})
+            scoped = visual_qa.detect_defects(page, {"changed": [".changed-area .new"]})
+            nothing = visual_qa.detect_defects(page, {"changed": [".not-on-this-screen"]})
             browser.close()
-        self.assertIsNone(again, "the same screen is captured once")
-        found = first["found"]
-        self.assertEqual([c["title"] for c in found["comps"]], ["Card", "Card icon"] * 3,
-                         "every card and every icon tile, not the first of each")
-        self.assertEqual(sorted({u["source"] for u in found["off"]}),
-                         ["<style> .card .tag", "<style> .hero", "inline style on <div>"],
-                         "page styling inside a component counts too")
-        self.assertEqual(len(found["off"]), 5, "the hero, each of the three tags, the overlay")
-        texts = [t["text"] for t in found["texts"]]
-        self.assertIn("Choose the support you need", texts)
-        title = next(t for t in found["texts"] if t["text"] == "Choose the support you need")
-        self.assertIn("<h1>Choose the support you need</h1>", title["ev"]["code"])
-        self.assertIn("font ", title["ev"]["style"])
-        self.assertIsNone(title["ev"]["coveredBy"])
-        under = next(t for t in found["texts"] if t["text"] == "Applications close soon")
-        self.assertEqual(under["ev"]["coveredBy"], "#over", "what sits on top of the text, by selector")
-        card = next(c for c in found["comps"] if c["title"] == "Card")
-        self.assertIn("border 1px solid", card["ev"]["style"], "the element's computed look, as text")
-        self.assertEqual(texts.count("Closes 30 June"), 1, "a repeated text is one check")
-        self.assertNotIn("Inside a collapsed panel", texts, "text clipped away by its container is not on screen")
-        checks = visual_qa.screen_checks(collector.screens, dict(plan, names="Card (.card)"))
-        kinds = {}
-        for c in checks:
-            kinds[c["shape"]] = kinds.get(c["shape"], 0) + 1
-        self.assertEqual(kinds, {"pair": 3, "text": 6},
-                         "each icon tile is compared; the card holding one is not (a container)")
-        self.assertTrue(all(c.get("evidence", {}).get("code") for c in checks), "every question carries its element")
-        self.assertTrue(all(c["at"] == "screen:0" and c["selector"] in first["boxes"] for c in checks))
+        kinds = sorted(d["kind"] for d in everywhere["defects"])
+        self.assertEqual(kinds, ["covered", "covered", "cut-off", "uneven-gaps"],
+                         "both rows' overlaps, the clamp, the odd gap; never the scroller")
+        cov = next(d for d in everywhere["defects"] if d["kind"] == "covered")
+        self.assertIn("overlap by", cov["measured"])
+        self.assertEqual([d["kind"] for d in scoped["defects"]], ["covered"],
+                         "only the row the change sits in")
+        self.assertTrue(scoped["scoped"] and scoped["impact"]["changed"] == 1)
+        self.assertEqual((nothing["defects"], nothing["impact"]), ([], None),
+                         "a screen the change is not on is not checked")
 
     def test_the_gallery_example_matches_the_page_element_state(self):
         """A checked gallery checkbox against an unchecked one on the page is a
         state difference, not a style one (Clef said "not the same" at 0.98
-        on exactly that). The page element's state is recorded, the gallery
-        example is picked (or, for a native checkbox, set) to match, and a
-        state the gallery cannot show is not asked."""
+        on exactly that): the gallery example is picked (or, for a native
+        checkbox, set) to match, and a state the gallery cannot show is not
+        asked. A part's variant is its root's: the title inside
+        .blank-slate--noresults is the noresults title."""
         try:
             from playwright.sync_api import sync_playwright
         except Exception:
             self.skipTest("Playwright not installed")
-        root = Path(self.tmp) / "state"
-        root.mkdir(exist_ok=True)
-        page_html = root / "page.html"
-        page_html.write_text('<input type="checkbox" class="checkbox" id="c">'
-                             '<span class="chip">plain chip</span>')
-        gallery = root / "gallery.html"
+        gallery = Path(self.tmp) / "gallery.html"
         gallery.write_text('<input type="checkbox" class="checkbox" checked>'
-                           '<span class="chip is-active">active chip</span>')
-        plan = {"dsPath": "/nowhere/", "dsClasses": ["checkbox", "chip"], "componentRoots": [],
-                "components": [{"cls": "checkbox", "title": "Checkbox"}, {"cls": "chip", "title": "Chip"}]}
+                           '<span class="chip is-active">active chip</span>'
+                           '<div class="blank-slate"><div class="blank-slate__title">plain</div></div>'
+                           '<div class="blank-slate blank-slate--noresults" id="nr">'
+                           '<div class="blank-slate__title">none found</div></div>')
         with sync_playwright() as pw:
             browser, _label = visual_qa.launch_browser(pw)
-            page = browser.new_page()
-            page.goto(page_html.as_uri())
-            found = visual_qa.detect_rendered_ds(page, plan)
             g = browser.new_page()
             g.goto(gallery.as_uri())
             box = g.evaluate(visual_qa._GALLERY_PICK_JS, ["checkbox", "state-unchecked"])
             still = g.evaluate("document.querySelector('.checkbox').checked")
             chip = g.evaluate(visual_qa._GALLERY_PICK_JS, ["chip"])
+            title = g.evaluate(visual_qa._GALLERY_PICK_JS, ["blank-slate__title", "blank-slate--noresults"])
             browser.close()
-        states = {c["cls"]: c["state"] for c in found["comps"]}
-        self.assertEqual(states, {"checkbox": ["unchecked"], "chip": []})
-        self.assertEqual([visual_qa._comp_key(c) for c in found["comps"]],
-                         ["checkbox.state-unchecked", "chip"])
         self.assertTrue(box["set"] and box["exact"], "the gallery checkbox is unchecked to match")
         self.assertFalse(still)
         self.assertEqual(chip, {"stateMismatch": True, "seen": ["active"]})
+        self.assertTrue(title["exact"] and title["selector"].startswith("#nr"))
 
     def test_a_state_the_gallery_cannot_show_is_not_asked(self):
         report = {"typedPass": {"settled": {"path": self.report["idleFrames"][0]["path"],
@@ -1076,10 +1043,9 @@ class P8VisualChecks(unittest.TestCase):
                                 "refs": {}, "refNotes": {"chip": "the design-system gallery shows no .chip "
                                                                  "in the state default (it shows: active), so the "
                                                                  "comparison was not asked"}}}
-        checks = visual_qa.ds_visual_checks({"off": [], "comps": [{"cls": "chip", "title": "Chip",
-                                                                   "selector": "#chip", "state": [],
-                                                                   "leaf": True}]},
-                                            {"names": ""})
+        checks, rejected = visual_qa.parse_checks([{"id": "chip", "shape": "pair", "x": "Chip component",
+                                                    "at": "page", "compare": "ref:chip", "selector": "#chip"}])
+        self.assertEqual(rejected, [])
         asked = []
         block = visual_qa.run_visual_checks(report, checks, [], "shadow", 200,
                                             lambda *a, **k: asked.append(a))
@@ -1087,6 +1053,23 @@ class P8VisualChecks(unittest.TestCase):
         self.assertEqual(asked, [])
         self.assertEqual(row["status"], "no-capture")
         self.assertIn("gallery shows no .chip", row["message"])
+
+    def test_the_ds_check_lists_first_and_compares_only_what_was_shortlisted(self):
+        """The image judge decides nothing: the ds-compare subagent shortlists
+        the components an unrecognised element may copy. Without a shortlist
+        the pass only lists (one per rule and look, counted) and asks nothing."""
+        shot = Path(self.tmp) / "d.png"
+        shot.write_bytes(typed_judge.solid_png((13, 70, 191), size=200))
+        el = {"selector": "#role", "source": "<style> .fa-role__btn", "box": {"x": 10, "y": 10, "width": 80, "height": 30},
+              "props": {"fill": "rgba(0, 0, 0, 0)"}, "ev": {"code": "<button class=\"fa-role__btn\">", "style": "radius 8px"}}
+        screens = [{"n": 0, "label": "the page", "path": str(shot), "found": {"off": [el, dict(el, selector="#role2")]}}]
+        asked = []
+        out = visual_qa.element_pass(None, "ds", screens, {"gallery": "http://x/gallery.html"}, 0, self.tmp, 200,
+                                     lambda *a, **k: asked.append(a), {"states": []})
+        self.assertEqual(asked, [])
+        (u,) = out["unrecognised"]
+        self.assertEqual((u["source"], u["count"], u["code"]), ("<style> .fa-role__btn", 2, "<button class=\"fa-role__btn\">"))
+        self.assertIn("shortlist", out["message"])
 
     def test_a_missing_element_is_reported_without_a_model_call(self):
         calls = []

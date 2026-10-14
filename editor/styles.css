@@ -5164,6 +5164,10 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-vqa-state .th-tasks-agent-pre { max-height: 140px; overflow: auto; }
 .th-vqa-row { grid-template-columns: auto auto 1fr auto; align-items: start; }
 .th-vqa-row .runs-row-dot { margin-top: 5px; }
+/* The findings of an element pass (page defects, DS candidates), above the calls. */
+.th-vqa-findings { display: flex; flex-direction: column; gap: 2px; padding: 4px 0 6px; border-bottom: 1px solid var(--border); }
+.th-vqa-finding { grid-template-columns: auto auto 1fr; align-items: start; }
+.th-vqa-finding .runs-row-dot { margin-top: 5px; }
 .th-vqa-o { font-family: var(--font-mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); white-space: nowrap; padding-top: 2px; }
 .th-vqa-o-sure-no { color: var(--danger); }
 .th-vqa-o-sure-yes { color: var(--success); }

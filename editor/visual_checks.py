@@ -48,13 +48,22 @@ SHAPES = {
     # dimension by the caller (visual_qa.PAIR_DIMS), which decides from them.
     "pair":       {"type": "noul", "images": 2,
                    "text": "B is visually different from A."},
-    # Text read off the rendered page (never written by anyone): the crop of
-    # the element that holds it shows that text, legible and not covered.
-    "text":       {"type": "noul", "images": 1, "dom": True,
-                   "text": "The image shows the text \"{x}\", fully readable and not covered."},
-    "text_start": {"type": "noul", "images": 1, "dom": True,
-                   "text": "The image shows text that begins \"{x}\", readable and not covered."},
+    # The page QA's confirmations. Code found a literal defect on the rendered
+    # page (visual_qa _DEFECTS_JS); the judge only says whether the crop shows
+    # it. Each is the POSITIVE claim, so "no" is the confirmed defect. `x` is
+    # the page's own text or the element's label, never written.
+    "whole_text": {"type": "noul", "images": 1, "dom": True,
+                   "text": "The image shows the whole text \"{x}\", with none of it cut off or hidden."},
+    "whole_text_start": {"type": "noul", "images": 1, "dom": True,
+                         "text": "The image shows text beginning \"{x}\", with none of it cut off or hidden."},
+    "uncovered":  {"type": "noul", "images": 1, "dom": True,
+                   "text": "{x} is fully visible, with nothing lying on top of any part of it."},
+    "inside":     {"type": "noul", "images": 1, "dom": True,
+                   "text": "Box 1 ({x}) stays inside the edges of the area around it."},
+    "even_gaps":  {"type": "noul", "images": 1, "dom": True,
+                   "text": "The numbered parts of {x} have the same gap between each neighbouring pair."},
 }
+
 
 # ── Option lists (choice) ───────────────────────────────────────────────────
 LISTS = {

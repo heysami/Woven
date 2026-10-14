@@ -39,7 +39,9 @@ const report = {
         question: { type: 'noul', instructions: 'The image shows the text "Choose the support you need", fully readable and not covered.' } },
       { id: 's0_gone', status: 'not-visible', message: '#toast is not visible' },
     ],
-    dsFound: { components: [{ cls: 'btn' }], offSystem: [] },
+    elements: { mode: 'page', message: '2 judge call(s) via clef: 1 finding(s)' },
+    findings: [{ id: 's0_d1', kind: 'covered', count: 9, confirmed: true, label: 'fm fail "No bursary awarded"',
+                 within: 'Data grid', measured: 'it and the next cell overlap by 24x18px', judged: '2 of 2 crops show it' }],
   },
 };
 
@@ -94,6 +96,8 @@ const report = {
     assert.equal(await rows.count(), 2, 'only the sure no and the unsure are listed');
     const text = await page.locator('.th-vqa').innerText();
     assert.match(text, /Applications close 30 June 2026/);
+    assert.match(text, /covered\s*fm fail "No bursary awarded" · x9/i, 'each finding, counted, above the calls');
+    assert.match(text, /overlap by 24x18px · 2 of 2 crops show it/);
     assert.match(text, /same Button component/);
     assert.match(text, /Looked: meets it, same primary button/);
     assert.doesNotMatch(text, /Choose the support you need/, 'a sure yes is never listed');

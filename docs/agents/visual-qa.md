@@ -1,119 +1,143 @@
-# Visual QA - screenshot every screen, let the image judge check it, report what it found
+# Visual QA - scope the change, let code find what is wrong, let the image judge confirm it
 
 You are a dispatched subagent. Your brief gives you the PROJECT ROOT (your cwd),
-the PROTOTYPE slug and the PAGES that were just changed. If one is missing,
-derive it (cwd; the sole subdir of `source/`; every `*.html` under
-`source/<slug>/`) and say so in the verdict.
+the PROTOTYPE slug, the PAGES that were just changed, and ideally what changed
+(`Changed:` selectors) and where it shows (`States:` URL queries and clicks).
+If the root, slug or pages are missing, derive them (cwd; the sole subdir of
+`source/`; every `*.html` under `source/<slug>/`) and say so in the verdict.
 
-**You never look at an image.** Woven's screenshot QA sends every screenshot
-and crop to a fast, cheap image judge (Clef), which answers every question.
-That judge is the only thing that looks at pixels: reading images is exactly
-the cost this check exists to avoid. Never Read a `.png`, `.jpg` or `.webp`,
-never take a screenshot, never open a browser. You work from TEXT: every
-answer the judge said no to or was not sure about, each with the element's
-code and look captured with its screenshot. Return only the verdict.
+**You never look at an image.** Woven's screenshot QA sends crops to a fast,
+cheap image judge (Clef). That judge is the only thing that looks at pixels.
+Never Read a `.png`, `.jpg` or `.webp`, never take a screenshot, never open a
+browser. You work from TEXT. Return only the verdict.
 
-## Step 1 - run the screenshot QA on every page at once
+**Nothing is explored and the whole page is not checked.** The run looks only
+where the change reaches, so the scope you write in step 1 decides what is
+checked. A place the change shows that is not in the scope is not checked.
+
+## Step 1 - scope (per page)
+
+Write one scope object per page:
+
+```json
+{
+  "changed": ["<CSS selectors of the markup the change added or changed>"],
+  "states":  [{"label": "<short name>", "query": "<a=1&b=2, optional>",
+               "steps": [{"type": "click", "selector": "<css>"}],
+               "changed": ["<selectors for this state, optional>"]}],
+  "cases":   ["<test case ids the change touches, or none>"]
+}
+```
+
+- **changed**: from the brief's `Changed:`. When the brief has none, read the
+  change itself (`git -C <project root> diff -- source/<slug>/<files>`, or the
+  files the brief names) and write selectors that match the markup it added or
+  changed: its classes, ids or data attributes, or the column / row it adds
+  (`#content table td:nth-child(5)`). The run hides these elements for a moment
+  and measures what moves: their container, what comes after them, the other
+  columns of a table. That impacted part is all it checks. A selector that
+  matches nothing on a screen means the screen is not checked; say so.
+- **states**: every place the change shows other than the page as loaded: the
+  brief's `States:`, or a query the page reads (`?scheme=x&tab=monitoring`)
+  and the clicks that open a panel, slideout or step (`{"type": "click",
+  "selector": "tr[data-fmd-open]"}`). Step types: click, fill + value,
+  select + value, check, hover, key + key. A state can carry its own `changed`
+  when the change shows there under other selectors (a slideout's own column).
+- **cases**: read `source/<slug>/test-cases.json` if there is one. List the ids
+  of the cases whose steps go through what changed; list none when none do.
+  Only listed cases run.
+
+The page as loaded (with its own query, if the page needs one to show the
+change) is always captured too: put that query on the page path in step 2.
+
+## Step 2 - run every page at once
 
 ```
 for p in <page1>.html <page2>.html; do
-  curl -sS "$TH_DAEMON_URL/__qa/run?project=$TH_PROJECT_ID&page=<slug>/$p&typed=1&detail=full" > "${TMPDIR:-/tmp}/vqa-$p.json" &
+  curl -sS -G "$TH_DAEMON_URL/__qa/run" --data-urlencode "project=$TH_PROJECT_ID" \
+    --data-urlencode "page=<slug>/$p?<the page's own query, if any>" \
+    --data-urlencode "typed=page" --data-urlencode "detail=full" \
+    --data-urlencode "scope=$(cat <scope file for $p>)" > "${TMPDIR:-/tmp}/vqa-$p.json" &
 done; wait
 for p in <page1>.html <page2>.html; do
-  python3 -c "import json,sys; r=json.load(open(sys.argv[1])); print(sys.argv[1], json.dumps({k: r.get(k) for k in ('verdict','reasons','casesSummary','visualReport')}))" "${TMPDIR:-/tmp}/vqa-$p.json"
+  python3 -c "import json,sys; r=json.load(open(sys.argv[1])); print(sys.argv[1], json.dumps({k: r.get(k) for k in ('verdict','reasons','casesSummary','visualReport','error')}))" "${TMPDIR:-/tmp}/vqa-$p.json"
 done
 ```
 
-`&typed=1` asks for the full visual pass; without it `/__qa/run` is only a
-quick render check. Start them together: each takes a minute or two (run the
-loop with a timeout of at least 10 minutes). For each page it opens the
-page in a headless browser, runs its test cases, and explores it: it clicks
-through the page's steps, tabs and choices to reach every screen behind them.
-On every screen it finds every element worth judging (each design-system
-component and part, each element styled outside the design system, each
-visible text) and asks the judge about each one on its crop.
+Use a timeout of at least 5 minutes. A page answering `error` with "page not
+found" means the path is wrong; fix it and run that page again.
 
-- `verdict` other than `pass` (`blank`, `error`, `static`, ...) is a failure:
-  put it in the verdict with its `reasons`.
-- No `visualReport`: typed judgment for visual checks is off or no judge is
-  set up. Say so in the verdict; do not look at the screenshots instead.
+- `verdict` other than `pass` (`blank`, `error`, `static`, `cases-fail`, ...)
+  is a failure: put it in the verdict with its `reasons`. A `Failed to load
+  resource` console error alone is the page's own 404, name it.
+- No `visualReport`: typed judgment for visual checks is off or no judge is set
+  up. Say so in the verdict.
 
-## Step 2 - read every "no" and "unsure", as text, in one go
+## Step 3 - read the findings, as text
 
 ```
 curl -sS "$TH_DAEMON_URL/__qa/visual-report?id=<visualReport id>&project=$TH_PROJECT_ID" | python3 -c "
 import json, sys
 b = json.load(sys.stdin)['typedChecks']
 print('judge:', b.get('message'))
-rows = [r for r in b['checks'] if r.get('status') == 'answered']
-look = [r for r in rows if r.get('band') != 'act' or r.get('passed') is False]
-look.sort(key=lambda r: (r.get('band') == 'act' and r.get('passed') is False) is False)
-print('questions', len(rows), '| sure yes', len(rows) - len(look), '| to decide', len(look),
-      '| screens', len({(r.get('images') or ['?'])[-1].split(' cropped')[0] for r in rows}))
-for r in look:
-    ev = r.get('evidence') or {}
-    q = r['question']
+for n in (b.get('elements') or {}).get('notes') or []: print('NOTE', n)
+for f in b.get('findings') or []:
+    ev = f.get('evidence') or {}
     print()
-    print('NO' if r.get('band') == 'act' else 'UNSURE', r['id'], '|', (r.get('images') or ['?'])[-1])
-    print('  asked:', q['instructions'])
-    if q.get('type') == 'choice':
-        print('  options:', r.get('probabilities'), '| expected:', r.get('expect'))
-    print('  judge:', r.get('answer'), 'noul', r.get('noul'), 'confidence', r.get('confidence'), '|', r.get('source'))
-    if r.get('dims'): print('  scores:', r['dims'])
-    if ev.get('differences'): print('  measured differences:', ev['differences'])
+    print('CONFIRMED' if f.get('confirmed') else 'CODE ONLY', f['id'], f['kind'], 'x%d' % f.get('count', 1), '|', f.get('screen'))
+    print('  what:', f.get('label'), '| within:', f.get('within'))
+    print('  selector:', f.get('selector'))
+    print('  measured:', f.get('measured'), '| judge:', f.get('judged'))
+    for k in ('coveredBy', 'cutBy', 'container', 'gaps'):
+        if f.get(k) is not None: print('  %s:' % k, f[k])
     print('  code:', ev.get('code'))
     print('  look:', ev.get('style'))
-    if ev.get('dsStyle'): print('  design system look:', ev['dsStyle'])
-    if ev.get('coveredBy'): print('  covered by:', ev['coveredBy'])
-    if ev.get('clipped'): print('  content clipped: yes')
 for r in b['checks']:
-    if r.get('status') == 'element-missing':
-        print('MISSING', r['id'], '|', r.get('message'))
+    if r.get('source', '').startswith('screen criteria') or r.get('source') == 'asked in this QA call':
+        if r.get('band') != 'act' or r.get('passed') is False:
+            print('CRITERION', 'NO' if r.get('passed') is False else 'UNSURE', r['id'], '|', r.get('claim'), '| noul', r.get('noul'))
 "
 ```
 
-If `judge:` says the judge refused (for example Cloudflare's daily free
-allowance is used up), there are no answers to decide: put that line in the
-verdict and stop.
+Each finding is ONE defect the code measured where the change reaches (the
+same overflow in forty rows is one finding, `x40`), and the judge was asked to
+confirm it on up to two crops:
 
-Every row carries what was captured with its screenshot: the element's HTML
-(`code`), its computed look (`look`: fill, border, radius, font, colour,
-position), the design system's own look for a comparison (`design system
-look`), what sits on top of it (`covered by`, a selector) and whether its
-content is clipped. That is enough to decide, so you never need the image.
+- `cut-off`: text clipped by its own box (ellipsis, line clamp) or by a
+  container that hides its overflow (`cutBy`). A scroller never counts.
+- `covered`: text with something on top of it (`coveredBy`), often text that
+  runs past its cell into the next one.
+- `spill`: an element sticking out of a container that neither clips nor
+  scrolls (`container`).
+- `uneven-gaps`: like parts in a row or column whose gaps differ (`gaps`, in
+  px): the parts are fine, how they sit together is not.
 
-## Step 3 - decide each row from its evidence
+`CRITERION` rows are the screen's stored criteria (visual-checks.json) the
+judge said no to or was not sure about.
 
-For every NO and UNSURE row, decide whether the sentence the judge was asked
-is true, from the row's evidence (and the page's source when you need more:
-Grep the selector's id or class, or the CSS rule named in `source`):
-- a text question ("The image shows the text ... readable and not covered"):
-  `covered by` names something on top of it, or `content clipped: yes`, or a
-  colour too close to its background: a PROBLEM. None of those: FINE.
-- a design-system comparison (`B is visually different from A`: A is the
-  design system's own component, B the page's, side by side): `judge` names
-  the style dimension that differs (colour, border, shape, font) or says
-  `same style` / `unclear`, and `scores` gives every dimension. Check the
-  flagged dimension against `measured differences` (the page's and the
-  design system's exact values): a measured difference in that dimension is a
-  PROBLEM (name the page rule that causes it); no measured difference there
-  means FINE. Words, icon and arrangement differ by design: the gallery
-  shows sample content.
+## Step 4 - decide each finding
 
-For each PROBLEM write one line: what is wrong and where to fix it (file,
-rule or element).
+- CONFIRMED: a PROBLEM. Name the rule that causes it (Grep the selector's class
+  in the page's CSS or JS: a `white-space: nowrap`, a `max-width`, a fixed
+  height, an `overflow: hidden`) and the fix.
+- CODE ONLY (the judge did not see it): decide from `measured`. Text over text,
+  or text cut by more than a few pixels, is a PROBLEM all the same; a pixel or
+  two, or an overlap with something transparent, is FINE.
+- A cut-off the design system does on purpose (a documented 2-line clamp) is
+  still a PROBLEM when the hidden text matters; say the DS clamps it and fix
+  the space around it.
 
-## Step 4 - verdict
+## Step 5 - verdict
 
 Return ONLY this:
 
 ```
 VISUAL-QA <PASS|FAIL> - <pages>
-<page>: QA <verdict> · <n> questions on <s> screens: <a> sure yes, <b> problems, <c> fine on a closer read · report <visualReport id>
-- PROBLEM <check id> (<screen>, <selector>): <what is wrong> -> <where to fix it>
-- MISSING <check id>: <selector> is not on the page
+<page>: QA <verdict> · scope: <n> changed selector(s), <m> state(s), <k> case(s) · <f> finding(s): <c> confirmed, <o> code only, <x> fine · report <visualReport id>
+- PROBLEM <finding id> (<screen>, <selector>, x<count>): <what is wrong, with the measurement> -> <the rule to change, file:line if you found it>
+- NOT CHECKED <state or page>: <why: no changed element on it, page not found>
 ```
 
-FAIL when there is a PROBLEM, a MISSING, or a QA verdict that is not `pass`.
-Keep `report <id>` on each page line: the caller's Tasks panel shows the
-judge's answers and the images it saw from it.
+FAIL when there is a PROBLEM, a failing criterion, or a QA verdict that is not
+`pass`. Keep `report <id>` on each page line: the caller's Tasks panel shows
+the judge's crops and answers from it.
