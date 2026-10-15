@@ -12204,9 +12204,11 @@ const CHAT_GUARD_OPTIONS = [
    request, plan it and then build it in ONE thread, switching as they go.
    The thread's current mode is the mode its latest message ran in (stamped on
    the echo), which is what the picker shows when a thread is reopened.
-   NOT STICKY ACROSS THREADS: never written to settings, and a new chat always
-   starts on Normal, so arming Plan or Triage is always a deliberate act for
-   the request in front of you. Dispatched and split threads never inherit it:
+   NOT STICKY ACROSS THREADS: a pick is never written to settings. A new chat
+   starts on the DEFAULT mode from Settings (Normal, or Auto when a judge is
+   set up - see loadChatDefaultMode), never on Plan or Triage, so arming those
+   is always a deliberate act for the request in front of you. Dispatched and
+   split threads never inherit it:
    they were opened to build, and a child that stopped to plan or triage would
    hang the parent waiting on it (serve.py _delegated_context). */
 const CHAT_MODE_OPTIONS = [
@@ -12225,6 +12227,20 @@ const CHAT_MODE_OPTIONS = [
 ];
 function chatModeOption(value) {
   return CHAT_MODE_OPTIONS.find(o => o.value === value) || CHAT_MODE_OPTIONS[0];
+}
+// The mode a NEW chat starts on, set in Settings > Preferences: Normal or
+// Auto only (a default of Plan or Triage would quietly stop every new chat
+// from building). Auto still needs a judge at send time: without one the
+// chat falls back to Normal (ChatDrawer effMode), so a saved "auto" is never
+// a dead end when a key is removed.
+const CHAT_DEFAULT_MODES = ["normal", "auto"];
+function loadChatDefaultMode() {
+  const v = loadSettings().chatDefaultMode;
+  return CHAT_DEFAULT_MODES.includes(v) ? v : "normal";
+}
+function saveChatDefaultMode(v) {
+  saveSettings({ chatDefaultMode: CHAT_DEFAULT_MODES.includes(v) ? v : "normal" });
+  try { window.dispatchEvent(new CustomEvent("th:chat-default-mode-changed")); } catch {}
 }
 // Everything the composer stages onto a SPAWN: the checks only. The mode is
 // not here on purpose - it rides on each message instead (see above). Use this
@@ -12574,7 +12590,7 @@ function ChatWorkModePicker({ value, onChange, openUp, autoAvailable, onOpen }) 
               </span>
             </button>
           `)}
-          <div className="perm-menu-foot">Switch at any time, even mid-thread: each message runs in the mode picked when you send it. A new chat starts on Normal.</div>
+          <div className="perm-menu-foot">Switch at any time, even mid-thread: each message runs in the mode picked when you send it. A new chat starts on the default mode set in Settings.</div>
         </div>
       `, document.body)}
     </div>
@@ -17662,9 +17678,15 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // thread's own (the mode its latest message ran in - see threadMode). This
   // component outlives the run it shows (the drawer is not keyed on the
   // thread), so the pick is cleared on every run change: another thread
-  // shows ITS mode, and a fresh "new chat" shell starts on Normal.
+  // shows ITS mode, and a fresh "new chat" shell starts on the default mode.
   const [modePick, setModePick] = useState(null);
   useEffect(() => { setModePick(null); }, [run?.runId, run?.isNew]);
+  const [defaultMode, setDefaultMode] = useState(loadChatDefaultMode);
+  useEffect(() => {
+    const on = () => setDefaultMode(loadChatDefaultMode());
+    window.addEventListener("th:chat-default-mode-changed", on);
+    return () => window.removeEventListener("th:chat-default-mode-changed", on);
+  }, []);
   // The persona critique the user armed in the footer ({personas, how}), or
   // null to follow the thread's own (stamped on its latest message, see
   // threadCritic). Per message like the mode; a new chat starts unarmed.
@@ -18549,7 +18571,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     }
     return "normal";
   }, [events]);
-  const pickedMode = modePick || (isNew ? "normal" : threadMode);
+  const pickedMode = modePick || (isNew ? defaultMode : threadMode);
   // The thread's armed persona critique: the latest message that carried one
   // (an empty list = switched off). Messages without it (card answers) keep it.
   const threadCritic = useMemo(() => {
@@ -102647,6 +102669,19 @@ function WorkflowSendKeySection() {
     window.addEventListener("th:perm-mode-changed", on);
     return () => window.removeEventListener("th:perm-mode-changed", on);
   }, []);
+  // The mode a new chat starts on (loadChatDefaultMode). Auto is offered only
+  // while a judge is set up for the text tier and typed judgment is on, the
+  // same rule the composer's mode picker follows.
+  const [defMode, setDefMode] = useState(loadChatDefaultMode);
+  useEffect(() => {
+    const on = () => setDefMode(loadChatDefaultMode());
+    window.addEventListener("th:chat-default-mode-changed", on);
+    return () => window.removeEventListener("th:chat-default-mode-changed", on);
+  }, []);
+  const judgeStatus = useJudgeStatus([]);
+  const autoReady = !!(judgeStatus && judgeStatus.text && judgeStatus.enabled
+    && (judgeStatus.enabled.text || judgeStatus.enabled.image));
+  const pickDefMode = (v) => { saveChatDefaultMode(v); setDefMode(v); };
   const pick = (v) => { saveSendOnEnter(v); setSendOnEnter(v); };
   const pickPermMode = (v) => { savePermissionMode(v); setPermMode(v); };
   const pickSimplify = (v) => { saveNodeSimplify(v); setSimplify(v); };
@@ -102723,6 +102758,32 @@ function WorkflowSendKeySection() {
             </button>
           `)}
         </div>
+      </div>
+      <div className="workflow-settings-section">
+        <div className="onboarding-sendkey-head">
+          <span className="onboarding-sendkey-title">Default chat mode</span>
+          <span className="onboarding-sendkey-desc">The mode a new chat starts on. Any chat can switch from the mode picker next to the composer, even mid-thread.</span>
+        </div>
+        <div className="onboarding-sendkey-seg" role="radiogroup" aria-label="Default chat mode">
+          <button type="button" role="radio" aria-checked=${defMode === "normal"}
+            className="onboarding-sendkey-opt" data-active=${defMode === "normal"}
+            onClick=${() => pickDefMode("normal")}>
+            <span className="onboarding-sendkey-keys">Normal</span>
+            <span className="onboarding-sendkey-sub">The agent does what you ask straight away</span>
+          </button>
+          <button type="button" role="radio" aria-checked=${defMode === "auto"}
+            className="onboarding-sendkey-opt" data-active=${defMode === "auto"}
+            disabled=${!autoReady && defMode !== "auto"}
+            onClick=${() => pickDefMode("auto")}>
+            <span className="onboarding-sendkey-keys">Auto</span>
+            <span className="onboarding-sendkey-sub">${autoReady
+              ? `${judgeStatus.text.name} picks Normal, Plan or Triage for each message`
+              : "Needs typed judgment: a judge under Model Config, API keys, turned on under Context and cost"}</span>
+          </button>
+        </div>
+        ${defMode === "auto" && judgeStatus && !autoReady && html`
+          <span className="onboarding-sendkey-desc">Auto is not available right now, so new chats start on Normal until a judge is set up and typed judgment is on.</span>
+        `}
       </div>
       <div className="workflow-settings-section">
         <div className="onboarding-sendkey-head">

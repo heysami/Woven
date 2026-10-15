@@ -18933,6 +18933,9 @@ a.ds-badge:hover, button.ds-badge:hover {
   transition: border-color .12s, background .12s;
 }
 .onboarding-sendkey-opt:hover { border-color: color-mix(in oklab, var(--accent) 40%, var(--border)); }
+/* An option that needs something not set up yet (Auto without a judge). */
+.onboarding-sendkey-opt:disabled { opacity: 0.55; cursor: not-allowed; }
+.onboarding-sendkey-opt:disabled:hover { border-color: var(--border); }
 .onboarding-sendkey-opt[data-active="true"] {
   border-color: var(--accent);
   background: color-mix(in oklab, var(--accent) 8%, var(--surface));
