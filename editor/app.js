@@ -15292,9 +15292,10 @@ function VisualQaReport({ id }) {
           <div className="th-vqa-call" key=${call.n}>
             <div className="th-vqa-imgs">
               ${(call.images || []).filter(im => im.file).map((im, i) => html`
-                <a key=${i} href=${file(im.file)} target="_blank" rel="noopener" title="Open this image at full size">
+                <button key=${i} type="button" className="th-vqa-img" title="Zoom this image"
+                  onClick=${() => dispatchChatImageZoom(file(im.file), `Image ${i + 1} sent to the judge`)}>
                   <img src=${file(im.file)} alt=${`Image ${i + 1} sent to the judge`}/>
-                </a>`)}
+                </button>`)}
             </div>
             <details className="th-vqa-state">
               <summary>Text sent</summary>
@@ -19543,9 +19544,23 @@ function PickerPreview({ item }) {
     const t = setTimeout(() => setArmed(true), PICKER_PREVIEW_SETTLE_MS);
     return () => clearTimeout(t);
   }, [kind, src, target]);
+  // Click a loaded preview to open it in the zoomable lightbox: a page opens
+  // live at full size, framed on the same element. Mousedown keeps the
+  // composer focused, so the menu (or hover card) is still there after.
+  const zoomable = state === "ready" && (kind === "image" || !!fit);
+  const zoomProps = zoomable ? {
+    title: "Click to zoom",
+    onMouseDown: (e) => e.preventDefault(),
+    onClick: (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (kind === "page") dispatchPageZoom({ src, el: (item.preview && item.preview.el) || null, anchor }, item.name);
+      else dispatchChatImageZoom(apiUrl(src), item.name);
+    },
+  } : {};
   if (kind === "page" && src && state !== "noel") {
     return html`
-      <div className="chat-slash-detail-frame" ref=${holderRef} data-state=${state} data-kind="page">
+      <div className=${"chat-slash-detail-frame" + (zoomable ? " is-zoomable" : "")} ref=${holderRef} data-state=${state} data-kind="page" ...${zoomProps}>
         ${armed && html`<iframe
           className="chat-slash-detail-iframe"
           src=${apiUrl(src)}
@@ -19581,7 +19596,7 @@ function PickerPreview({ item }) {
   }
   if (kind === "image" && src) {
     return html`
-      <div className="chat-slash-detail-frame" data-state=${state} data-kind="image">
+      <div className=${"chat-slash-detail-frame" + (zoomable ? " is-zoomable" : "")} data-state=${state} data-kind="image" ...${zoomProps}>
         <img
           className="chat-slash-detail-img"
           data-kind=${item.kind}
@@ -19709,14 +19724,32 @@ function __pointPickerItem(p) {
     token: "[" + p.n + "]", insertText: "[" + p.n + "] ", point: p, preview,
   };
 }
+// A hover card that survives the trip from its trigger to the card: drop()
+// closes after a short delay (once, never re-armed by more mouse moves) and
+// hold() cancels it, so entering the card keeps it open.
+function useHoverHold(close, ms = 220) {
+  const timer = useRef(0);
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const hold = useCallback(() => { clearTimeout(timer.current); timer.current = 0; }, []);
+  const drop = useCallback(() => {
+    if (timer.current) return;
+    timer.current = setTimeout(() => { timer.current = 0; closeRef.current(); }, ms);
+  }, [ms]);
+  return { hold, drop };
+}
 // Hover card over a point chip: preview above, "{n} {label} {where}" below.
-function PointChipHoverCard({ point, rect }) {
+// The owner closes it on a short delay (useHoverHold) and onEnter cancels
+// that, so the pointer can cross the gap and click the preview to zoom.
+function PointChipHoverCard({ point, rect, onEnter, onLeave }) {
   const item = __pointPickerItem(point);
   const W = 280;
   const left = Math.max(8, Math.min(window.innerWidth - W - 8, rect.left - 16));
   const bottom = Math.max(8, window.innerHeight - rect.top + 14);
   return createPortal(html`
-    <div className="wf-point-hover" style=${{ left: left + "px", bottom: bottom + "px", width: W + "px" }} role="tooltip">
+    <div className="wf-point-hover" style=${{ left: left + "px", bottom: bottom + "px", width: W + "px" }} role="tooltip"
+      onMouseEnter=${onEnter} onMouseLeave=${onLeave} onMouseDown=${(e) => e.preventDefault()}>
       <${PickerPreview} key=${item.slug + ":" + (item.preview ? item.preview.src : "")} item=${item}/>
       <div className="wf-point-hover-foot">
         <span className="wf-point-num">${point.n}</span>
@@ -19770,6 +19803,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const refList = useReferences({ refresh: false });
   const lastCaretRef = useRef(null);
   const [pointHover, setPointHover] = useState(null);   // { n, rect } while the pointer is over a point chip
+  const pointHoverHold = useHoverHold(() => setPointHover(null));
   // Viewport-fixed anchor for the slash menu portal - see the measuring
   // useLayoutEffect below (it must be declared AFTER the textarea auto-grow
   // effect so it measures the post-growth rect).
@@ -20302,11 +20336,12 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       const r = sp.getBoundingClientRect();
       if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
         const n = Number(sp.getAttribute("data-point-n"));
+        pointHoverHold.hold();
         if (!pointHover || pointHover.n !== n) setPointHover({ n, rect: { left: r.left, top: r.top, width: r.width } });
         return;
       }
     }
-    if (pointHover) setPointHover(null);
+    if (pointHover) pointHoverHold.drop();
   };
 
   // Auto-grow textarea up to a cap so the composer doesn't take over the drawer.
@@ -21251,7 +21286,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           onInput=${(e) => { setText(e.target.value); updateSlashMenu(e.target.value, e.target.selectionStart); }}
           onSelect=${(e) => { lastCaretRef.current = e.target.selectionStart; }}
           onMouseMove=${WP ? onPointHoverMove : undefined}
-          onMouseLeave=${WP ? (() => { if (pointHover) setPointHover(null); }) : undefined}
+          onMouseLeave=${WP ? (() => { if (pointHover) pointHoverHold.drop(); }) : undefined}
           onKeyDown=${onKeyDown}
           onScroll=${() => { if (mirrorRef.current && taRef.current) mirrorRef.current.scrollTop = taRef.current.scrollTop; }}
           onPaste=${onPaste}
@@ -21513,7 +21548,8 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       </div>
       ${error && html`<div className="chat-composer-error">${error}</div>`}
       ${pointHover && WP && pointThreadKey && WP.get(pointThreadKey, pointHover.n) && html`
-        <${PointChipHoverCard} point=${WP.get(pointThreadKey, pointHover.n)} rect=${pointHover.rect}/>
+        <${PointChipHoverCard} point=${WP.get(pointThreadKey, pointHover.n)} rect=${pointHover.rect}
+          onEnter=${pointHoverHold.hold} onLeave=${pointHoverHold.drop}/>
       `}
     </div>
   `;
@@ -25075,12 +25111,21 @@ function __pointsInMessage(text) {
 // the composer chip shows (the store's copy first, the block's as fallback).
 function PointNumBadge({ n, point }) {
   const [rect, setRect] = useState(null);
+  const hover = useHoverHold(() => setRect(null));
+  // The card is a React child (portalled), so entering it also fires this
+  // span's onMouseEnter: keep the rect the span measured first.
   return html`
     <span
       className="wf-point-num wf-point-num-inline wf-point-num-hoverable"
-      onMouseEnter=${(e) => { const r = e.currentTarget.getBoundingClientRect(); setRect({ left: r.left, top: r.top, width: r.width }); }}
-      onMouseLeave=${() => setRect(null)}
-    >${n}${rect && point && html`<${PointChipHoverCard} point=${point} rect=${rect}/>`}</span>
+      onMouseEnter=${(e) => {
+        hover.hold();
+        if (e.currentTarget.contains(e.target) && !rect) {
+          const r = e.currentTarget.getBoundingClientRect();
+          setRect({ left: r.left, top: r.top, width: r.width });
+        }
+      }}
+      onMouseLeave=${hover.drop}
+    >${n}${rect && point && html`<${PointChipHoverCard} point=${point} rect=${rect} onEnter=${hover.hold} onLeave=${hover.drop}/>`}</span>
   `;
 }
 // Draw [n] in a sent bubble as the orange point number (top-level text runs
@@ -110912,52 +110957,266 @@ async function saveFile(suggestedName, contents, mime = "application/octet-strea
   return { cancelled: false, path: "Downloads/" + suggestedName, picker: false };
 }
 
-/* Global lightbox for any image rendered inside chat (tool-result images,
-   decision-card previews, etc.). Listen for `th:chat-image-zoom` window
-   events with detail = { src, alt? }. Click anywhere on the overlay or
-   press Esc to dismiss. Portals to document.body so it escapes all
-   transforms / overflow contexts. */
+/* Global zoomable lightbox for any image shown in the chat or its panels
+   (tool-result images, decision-card previews, the judge's images in a visual
+   QA report, picker and point-chip previews). Listen for `th:chat-image-zoom`
+   window events with detail = { src, alt? } for an image, or
+   { page: { src, el?, anchor? }, alt? } for a live page framed on one
+   element, which is what PickerPreview shows, at full size.
+   Pinch or Cmd/Ctrl+scroll zooms at the pointer and scroll or drag pans (the
+   canvas convention); double-click zooms in at the pointer (actual size
+   for a large image, else 2x) and back to fit; the bar and the keys
+   + - 0 1 zoom, fit and show actual size. A click on the backdrop or Esc closes. Mousedown
+   never takes focus, so a composer menu it was opened from stays open behind
+   it. Portals to document.body so it escapes all transforms / overflow
+   contexts. */
 function dispatchChatImageZoom(src, alt) {
   if (!src) return;
   window.dispatchEvent(new CustomEvent("th:chat-image-zoom", { detail: { src, alt } }));
 }
+function dispatchPageZoom(page, alt) {
+  if (!page || !page.src) return;
+  window.dispatchEvent(new CustomEvent("th:chat-image-zoom", { detail: { page, alt } }));
+}
+const LIGHTBOX_PAD = 32;    // kept clear around a fitted image
+const LIGHTBOX_BAR = 64;    // room for the zoom bar under it
+const LIGHTBOX_MAX = 12;
+function lightboxFit(n) {
+  const W = window.innerWidth, H = window.innerHeight;
+  const s = Math.max(0.01, Math.min((W - LIGHTBOX_PAD * 2) / n.w, (H - LIGHTBOX_PAD * 2 - LIGHTBOX_BAR) / n.h, 1));
+  return { s, x: (W - n.w * s) / 2, y: (H - LIGHTBOX_BAR - n.h * s) / 2 };
+}
 function ChatImageLightbox() {
   const [target, setTarget] = useState(null);
+  const [nat, setNat] = useState(null);      // content size at 100%: { w, h }
+  const [view, setView] = useState(null);    // { s, x, y }: scale, top-left in the viewport
+  const [state, setState] = useState("loading");
+  const [dragging, setDragging] = useState(false);
+  const stageRef = useRef(null);
+  const viewRef = useRef(null);
+  const natRef = useRef(null);
+  const targetRef = useRef(null);
+  const dragRef = useRef(null);
+  const touchedRef = useRef(false);          // the user zoomed or panned: no auto re-framing
+  viewRef.current = view;
+  natRef.current = nat;
+  targetRef.current = target;
   useEffect(() => {
     const onZoom = (ev) => {
       const d = ev?.detail || {};
-      if (d.src) setTarget({ src: d.src, alt: d.alt || "" });
+      if (!d.src && !(d.page && d.page.src)) return;
+      const page = d.page || null;
+      const n = page ? { w: PICKER_PAGE_W, h: PICKER_PAGE_H } : null;
+      setTarget({ src: d.src || null, page, alt: d.alt || "" });
+      setNat(n);
+      setView(n ? lightboxFit(n) : null);
+      setState("loading");
+      setDragging(false);
+      dragRef.current = null;
+      touchedRef.current = false;
     };
     window.addEventListener("th:chat-image-zoom", onZoom);
     return () => window.removeEventListener("th:chat-image-zoom", onZoom);
   }, []);
+  const close = () => setTarget(null);
+  // Reads refs only, so the listeners bound once per open see current values.
+  const moveTo = (v) => { touchedRef.current = true; setView(v); };
+  const zoomAt = (next, cx, cy) => {
+    const v = viewRef.current, n = natRef.current;
+    if (!v || !n) return;
+    const s = __clamp(next, Math.min(lightboxFit(n).s, 1) / 2, LIGHTBOX_MAX);
+    const k = s / v.s;
+    moveTo({ s, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k });
+  };
+  const zoomAtCenter = (next) => zoomAt(next, window.innerWidth / 2, (window.innerHeight - LIGHTBOX_BAR) / 2);
+  const fitAll = () => { const n = natRef.current; if (n) moveTo(lightboxFit(n)); };
   useEffect(() => {
-    if (!target) return;
-    const onKey = (e) => { if (e.key === "Escape") setTarget(null); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const el = stageRef.current;
+    if (!target || !el) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      const v = viewRef.current;
+      if (!v) return;
+      if (e.ctrlKey || e.metaKey) zoomAt(v.s * Math.exp(-__clamp(e.deltaY, -60, 60) * 0.01), e.clientX, e.clientY);
+      else moveTo({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY });
+    };
+    // Capture phase, so a focused composer behind the overlay never gets
+    // these keys (Esc would close its menu, "+" would type).
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); return; }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const v = viewRef.current;
+      if (!v) return;
+      const act = {
+        "+": () => zoomAtCenter(v.s * 1.25), "=": () => zoomAtCenter(v.s * 1.25),
+        "-": () => zoomAtCenter(v.s / 1.25), "_": () => zoomAtCenter(v.s / 1.25),
+        "0": fitAll, "1": () => zoomAtCenter(1),
+        ArrowLeft: () => moveTo({ ...v, x: v.x + 80 }), ArrowRight: () => moveTo({ ...v, x: v.x - 80 }),
+        ArrowUp: () => moveTo({ ...v, y: v.y + 80 }), ArrowDown: () => moveTo({ ...v, y: v.y - 80 }),
+      }[e.key];
+      if (!act) return;
+      e.preventDefault();
+      e.stopPropagation();
+      act();
+    };
+    const onResize = () => { const n = natRef.current; if (n) setView(lightboxFit(n)); };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("resize", onResize);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("resize", onResize);
+    };
   }, [target]);
+  const onImgLoad = (e) => {
+    const n = { w: e.target.naturalWidth || 1, h: e.target.naturalHeight || 1 };
+    setNat(n);
+    setView(lightboxFit(n));
+    setState("ready");
+  };
+  // A page opens framed on its element the way the small preview was: the
+  // element scrolled into the 1280x900 screen, then scaled to fill the
+  // viewport (at most 2x, never smaller than the whole screen). Fit (0) shows
+  // the whole screen. Galleries that paint from JS get two retries, and one
+  // re-frame once fonts have settled unless the user has already moved.
+  const framePage = (frame, attempt) => {
+    if (!frame || !targetRef.current) return;
+    const n = { w: PICKER_PAGE_W, h: PICKER_PAGE_H };
+    const done = (v) => { if (!touchedRef.current) setView(v); setState("ready"); };
+    let doc = null;
+    try { doc = frame.contentDocument; } catch { /* torn down */ }
+    if (!doc || !doc.body) return done(lightboxFit(n));
+    const p = targetRef.current.page || {};
+    const fallback = p.anchor ? "#" + escAttr(p.anchor) : null;
+    const sel = p.el || fallback;
+    if (!sel) return done(lightboxFit(n));
+    const seeable = (q) => {
+      try {
+        const nd = q ? doc.querySelector(q) : null;
+        const b = nd && nd.getBoundingClientRect();
+        return b && b.width && b.height ? nd : null;
+      } catch { return null; }
+    };
+    const el = seeable(sel) || (fallback && fallback !== sel ? seeable(fallback) : null);
+    if (!el) {
+      if (attempt < 2) { setTimeout(() => framePage(frame, attempt + 1), 450); return; }
+      return done(lightboxFit(n));
+    }
+    const sc = doc.scrollingElement || doc.documentElement;
+    let r = el.getBoundingClientRect();
+    const tall = r.height + PICKER_FIT_PAD * 2 > PICKER_PAGE_H;
+    sc.scrollTop = __clamp(
+      tall ? r.top + sc.scrollTop - PICKER_FIT_PAD * 2 : r.top + sc.scrollTop + r.height / 2 - PICKER_PAGE_H / 2,
+      0, Math.max(0, (sc.scrollHeight || PICKER_PAGE_H) - PICKER_PAGE_H));
+    r = el.getBoundingClientRect();
+    const W = window.innerWidth, H = window.innerHeight;
+    const aw = W - LIGHTBOX_PAD * 2, ah = H - LIGHTBOX_PAD * 2 - LIGHTBOX_BAR;
+    const pad = PICKER_FIT_PAD * 2;
+    const s = Math.max(lightboxFit(n).s, Math.min(aw / (r.width + pad * 2), ah / (r.height + pad * 2), 2));
+    done({
+      s,
+      x: W / 2 - (r.left + r.width / 2) * s,
+      y: (r.height + pad * 2) * s > ah
+        ? LIGHTBOX_PAD - (r.top - pad) * s
+        : (H - LIGHTBOX_BAR) / 2 - (r.top + r.height / 2) * s,
+    });
+    if (attempt === 0) setTimeout(() => framePage(frame, 2), 600);
+  };
+  const onPointerDown = (e) => {
+    if (e.button !== 0 || e.target.closest(".chat-image-lightbox-bar, .chat-image-lightbox-close")) return;
+    const v = viewRef.current;
+    if (!v) return;
+    dragRef.current = { id: e.pointerId, x0: e.clientX, y0: e.clientY, v0: v, moved: false,
+                        onContent: !!e.target.closest(".chat-image-lightbox-content") };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+  };
+  const onPointerMove = (e) => {
+    const d = dragRef.current;
+    if (!d || d.id !== e.pointerId) return;
+    const dx = e.clientX - d.x0, dy = e.clientY - d.y0;
+    if (!d.moved && Math.hypot(dx, dy) < 4) return;
+    if (!d.moved) { d.moved = true; setDragging(true); }
+    moveTo({ ...d.v0, x: d.v0.x + dx, y: d.v0.y + dy });
+  };
+  const onPointerUp = (e, cancelled) => {
+    const d = dragRef.current;
+    if (!d || d.id !== e.pointerId) return;
+    dragRef.current = null;
+    setDragging(false);
+    if (!cancelled && !d.moved && !d.onContent) close();
+  };
+  // Pointer capture retargets the dblclick, so hit-test the content box.
+  const onDoubleClick = (e) => {
+    const v = viewRef.current, n = natRef.current;
+    if (!v || !n) return;
+    if (e.clientX < v.x || e.clientX > v.x + n.w * v.s || e.clientY < v.y || e.clientY > v.y + n.h * v.s) return;
+    const f = lightboxFit(n);
+    if (Math.abs(v.s - f.s) < 0.01) zoomAt(f.s <= 0.5 ? 1 : f.s * 2, e.clientX, e.clientY);
+    else moveTo(f);
+  };
   if (!target) return null;
+  const v = view;
+  const box = v && nat
+    ? { left: v.x + "px", top: v.y + "px", width: nat.w * v.s + "px", height: nat.h * v.s + "px" }
+    : {};
   return createPortal(html`
     <div
-      className="chat-image-lightbox"
+      ref=${stageRef}
+      className=${"chat-image-lightbox" + (dragging ? " is-dragging" : "")}
       role="dialog"
       aria-modal="true"
-      aria-label="Image preview"
-      onClick=${() => setTarget(null)}
+      aria-label=${target.alt ? "Preview: " + target.alt : "Image preview"}
+      onMouseDown=${(e) => e.preventDefault()}
+      onPointerDown=${onPointerDown}
+      onPointerMove=${onPointerMove}
+      onPointerUp=${(e) => onPointerUp(e, false)}
+      onPointerCancel=${(e) => onPointerUp(e, true)}
+      onDoubleClick=${onDoubleClick}
     >
-      <img
-        className="chat-image-lightbox-img"
-        src=${target.src}
-        alt=${target.alt}
-        onClick=${(e) => e.stopPropagation()}
-      />
+      <div
+        className="chat-image-lightbox-content"
+        data-kind=${target.page ? "page" : "image"}
+        style=${{ ...box, visibility: state === "ready" && v ? "visible" : "hidden" }}
+      >
+        ${target.page
+          ? html`<iframe
+              className="chat-image-lightbox-frame"
+              src=${apiUrl(target.page.src)}
+              title=${target.alt || "Page preview"}
+              sandbox="allow-same-origin allow-scripts"
+              scrolling="no"
+              style=${{ transform: `scale(${v ? v.s : 1})` }}
+              onLoad=${(e) => framePage(e.target, 0)}
+              onError=${() => setState("error")}
+            />`
+          : html`<img
+              className="chat-image-lightbox-img"
+              src=${target.src}
+              alt=${target.alt}
+              draggable=${false}
+              style=${v && v.s > 2 ? { imageRendering: "pixelated" } : null}
+              onLoad=${onImgLoad}
+              onError=${() => setState("error")}
+            />`}
+      </div>
+      ${state !== "ready" && html`<div className="chat-image-lightbox-status">${
+        state === "error" ? "This preview could not be loaded" : "Loading…"}</div>`}
+      <div className="chat-image-lightbox-bar" role="toolbar" aria-label="Zoom">
+        <button type="button" title="Zoom out (-)" aria-label="Zoom out" onClick=${() => v && zoomAtCenter(v.s / 1.25)}><${Icon.Minus}/></button>
+        <span className="chat-image-lightbox-pct">${v ? Math.round(v.s * 100) + "%" : ""}</span>
+        <button type="button" title="Zoom in (+)" aria-label="Zoom in" onClick=${() => v && zoomAtCenter(v.s * 1.25)}><${Icon.Plus}/></button>
+        <span className="chat-image-lightbox-sep" aria-hidden="true"/>
+        <button type="button" title="Fit to screen (0)" aria-label="Fit to screen" onClick=${fitAll}><${Icon.FitReset}/></button>
+        <button type="button" className="chat-image-lightbox-1x" title="Actual size (1)" aria-label="Actual size" onClick=${() => zoomAtCenter(1)}>1:1</button>
+      </div>
       <button
         className="chat-image-lightbox-close"
         type="button"
-        aria-label="Close (Esc)"
-        onClick=${() => setTarget(null)}
-      >×</button>
+        title="Close (Esc)"
+        aria-label="Close"
+        onClick=${close}
+      ><${Icon.X}/></button>
     </div>
   `, document.body);
 }

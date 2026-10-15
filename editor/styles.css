@@ -5159,6 +5159,8 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-vqa-call:first-of-type { border-top: 0; }
 .th-vqa-imgs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 8px; }
 .th-vqa-imgs img { display: block; max-width: 220px; max-height: 140px; min-width: 32px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.th-vqa-img { display: block; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.th-vqa-img:hover img { border-color: var(--text-faint); }
 .th-vqa-state { padding: 0 8px; font-size: 10.5px; color: var(--text-faint); }
 .th-vqa-state summary { cursor: pointer; }
 .th-vqa-state .th-tasks-agent-pre { max-height: 140px; overflow: auto; }
@@ -14868,6 +14870,9 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
   border-radius: 0;
 }
 .chat-slash-detail-frame[data-state="error"] .chat-slash-detail-img { display: none; }
+/* A loaded page or image preview opens the zoomable lightbox on click. */
+.chat-slash-detail-frame.is-zoomable { cursor: zoom-in; }
+.chat-slash-detail-frame.is-zoomable:hover { border-color: var(--text-faint); }
 .chat-slash-detail-skel {
   position: absolute;
   inset: 0;
@@ -31198,49 +31203,124 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 }
 .chat-decision-preview-img:hover { filter: brightness(1.04); }
 
-/* Full-screen image lightbox for chat images. Mounted at document.body so
-   it escapes every transform / overflow context. Click anywhere to close. */
+/* Full-screen zoomable lightbox (ChatImageLightbox). Mounted at
+   document.body so it escapes every transform / overflow context. The content
+   box is placed and sized from the zoom state in JS (left/top/width/height);
+   a live page inside it renders at 1280x900 and is scaled, inert, like the
+   small preview it came from. A click on the backdrop closes. */
 .chat-image-lightbox {
   position: fixed;
   inset: 0;
   z-index: 10000;
   background: rgba(8, 8, 12, 0.86);
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  animation: chatLightboxIn 0.16s ease-out both;
+}
+.chat-image-lightbox.is-dragging,
+.chat-image-lightbox.is-dragging * { cursor: grabbing !important; }
+@keyframes chatLightboxIn { from { opacity: 0; } to { opacity: 1; } }
+.chat-image-lightbox-content {
+  position: absolute;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+  cursor: grab;
+}
+.chat-image-lightbox-content[data-kind="image"] { background: transparent; }
+.chat-image-lightbox-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  -webkit-user-drag: none;
+}
+.chat-image-lightbox-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1280px;
+  height: 900px;
+  border: 0;
+  background: #fff;
+  transform-origin: top left;
+  pointer-events: none;
+}
+.chat-image-lightbox-status {
+  position: absolute;
+  inset: 0 0 64px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
-  animation: chatLightboxIn 0.16s ease-out both;
-  cursor: zoom-out;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  pointer-events: none;
 }
-@keyframes chatLightboxIn { from { opacity: 0; } to { opacity: 1; } }
-.chat-image-lightbox-img {
-  max-width: min(96vw, 1800px);
-  max-height: 92vh;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  border-radius: 6px;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
-  cursor: default;
+.chat-image-lightbox-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(24, 24, 30, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fff;
 }
-.chat-image-lightbox-close {
-  position: fixed;
-  top: 14px;
-  right: 18px;
-  width: 40px;
-  height: 40px;
+.chat-image-lightbox-bar button {
+  width: 30px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 50%;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
   cursor: pointer;
-  line-height: 1;
 }
-.chat-image-lightbox-close:hover { background: rgba(255, 255, 255, 0.22); }
+.chat-image-lightbox-bar button:hover { background: rgba(255, 255, 255, 0.14); }
+.chat-image-lightbox-bar .chat-image-lightbox-1x {
+  width: auto;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.chat-image-lightbox-pct {
+  min-width: 48px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.chat-image-lightbox-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.chat-image-lightbox-close {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #fff;
+  background: rgba(24, 24, 30, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.chat-image-lightbox-close:hover { background: rgba(60, 60, 70, 0.95); }
 
 /* Grouped multi-pick: stack groups vertically; each group's options sit in
    a horizontal row when there are 2-3 of them, else wrap. */
@@ -35711,7 +35791,8 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 }
 .composer-chip.composer-chip-point.is-lost .composer-chip-point-n { background: oklch(60% 0.02 60); }
 
-/* Chip hover card: preview above, "{n} {label} {where}" below. */
+/* Chip hover card: preview above, "{n} {label} {where}" below. It stays open
+   while the pointer is on it, so its preview can be clicked to zoom. */
 .wf-point-hover {
   position: fixed;
   z-index: 8000;
@@ -35720,7 +35801,6 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
-  pointer-events: none;
   box-sizing: border-box;
 }
 .wf-point-hover-foot {
