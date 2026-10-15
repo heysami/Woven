@@ -625,7 +625,7 @@ VISUAL_DELEGATION_DISCIPLINE = """
 
 ### Visual verification + bulk retrieval - ALWAYS delegate to a subagent (mandatory procedure)
 Images and bulk tool payloads ingested into THIS conversation poison its prompt cache later (each image past the harness's ~10-image cap forces a full re-upload of the conversation; bulk dumps rush the context ceiling). You cannot know at ingest time whether this thread stays short, so these rules are unconditional - no session-length judgment call, ever:
-  - VISUAL VERIFICATION: you MUST NOT take a browser screenshot or Read an image file to check or judge work yourself - not once, not "just a quick look". Whenever you need to LOOK at anything (browser state after an edit, `/__qa/run` idleFrames, a rendered page, THE WORKFLOW CANVAS after you created or rearranged nodes, before/after comparisons, generated plates or candidates), dispatch a `Task` subagent to do the whole look-loop (the `visual-verifier` agent type exists for exactly this; on runtimes without a Task tool, dispatch type `visual-verifier` through the planner-dispatch bridge). It screenshots as freely as QA needs in its own throwaway context and returns a text verdict; your context keeps only the verdict. The subagent does NOT get this preamble, so write a SELF-CONTAINED brief: the exact URL(s) or file paths, what must be true visually, which interactions to try, and that it must report pass/fail with specifics. Visual QA rigor is unchanged - same checks, same screenshots, different context.
+  - VISUAL VERIFICATION: you MUST NOT take a browser screenshot or Read an image file to check or judge work yourself - not once, not "just a quick look". Whenever you need to LOOK at anything (browser state after an edit, `/__qa/run` idleFrames, a rendered page, THE WORKFLOW CANVAS after you created or rearranged nodes, before/after comparisons, generated plates or candidates), dispatch a `Task` subagent to do the whole look-loop (the `visual-verifier` agent type exists for exactly this; on runtimes without a Task tool, dispatch type `visual-verifier` through the planner-dispatch bridge). It screenshots as freely as QA needs in its own throwaway context and returns a text verdict; your context keeps only the verdict. The subagent does NOT get this preamble, so write a SELF-CONTAINED brief: the exact URL(s) or file paths, what must be true visually, which interactions to try, and that it must report pass/fail with specifics. When you ADDED something into an existing group (a card, list, table, form), name that group and say WHAT you added (labels, values), never HOW it looks: the verifier compares new entries with their neighbours itself, and a brief that states the new look as the target makes it grade your build against your own description. Visual QA rigor is unchanged - same checks, same screenshots, different context.
   - FIGMA / BULK RETRIEVAL: you MUST NOT call Figma MCP document/node-dump tools (or any tool returning a bulk single-use payload - large API responses, log dumps) directly in this chat. Dispatch a `Task` subagent that fetches the payload, extracts exactly what the task needs (tokens, measurements, component structure, layout spec), and returns it as structured text. If you later need a detail the brief missed, re-dispatch - never hold the raw dump here.
   - USER-PASTED images are the one exception physics forces: they are already in your context before you act. View each ONCE, write down what you concluded, and never Read that image again - your recorded observation is durable, the pixels are dead weight."""
 
@@ -775,7 +775,7 @@ The tooling stays available for when the user DOES ask to check something: `GET 
 # exactly one block.
 def end_checks_block(slug: Optional[str] = None, ds_subagents: bool = False) -> str:
     rows = ["  - `woven:visual-qa` - the screenshot QA. Its brief and how to act on its `VISUAL-QA` verdict: \"Verify your visual work\" above.",
-            "  - `woven:visual-verifier` - the look-loop for what this change must show, with a self-contained brief (the block above)."]
+            "  - `woven:visual-verifier` - the look-loop for what this change must show, with a self-contained brief (the block above; name the group anything new was added into)."]
     if ds_subagents:
         rows.append("  - `woven:ds-guardian` and `woven:ds-compare` - the design-system gate (DS GUARD above).")
     text = """
@@ -957,6 +957,12 @@ JEV_FAST_PATH_STUB = typed_judgment_block({"text": "TypeSafe Jev", "image": None
 # The gate is ONE button, "Execute the plan". It used to offer "Review the
 # plan first" too, which only made the agent ask what to change; a revision is
 # now just a chat reply (GATE_REPLY_RULE).
+#
+# THIRD (the neighbours' pattern) is the suss-cal 2026-10-15 miss: "put it as a
+# toggle" in a card of on/off switch rows was planned with a Yes/No radio
+# helper the planner found by grep, the wireframe drew switch-like rows while
+# the brief named the radio helper, and every check after it graded the build
+# against that brief, so nothing caught it.
 PLAN_MODE_STUB = """
 
 ### PLAN FIRST - mandatory gate (the user turned "Plan first" ON for this thread)
@@ -969,11 +975,14 @@ FIRST, ENUMERATE THE REQUEST. Before you plan or read any file, list every DISCR
 
 SECOND, ESTABLISH WHAT ALREADY EXISTS, PER ITEM, BY LOOKING. For each enumerated item, decide NEW vs UPDATE by OPENING the screen's file and reading the region it names. GREP IS FOR LOCATING, NOT FOR CONCLUDING: a term you cannot grep may still be on screen under a different label, built from a variable, rendered by a shared component, or spelled differently in markup than in the user's words - and "no grep hit" is NOT evidence that something is absent. Never decide NEW from a failed search. If after reading you still cannot tell, say "could not confirm" for that item rather than guessing; a wrong NEW silently rebuilds something that exists.
 
+THIRD, FOR ANYTHING ADDED INTO SOMETHING THAT EXISTS, TAKE ITS NEIGHBOURS' PATTERN. When an item adds a control, row, field, column or option into an existing card, table, list, form, toolbar or menu, read the code that renders THAT container's current entries (the function or markup block that builds them) and plan the new entry the same way: the same kind of control, the same row shape, the same helper. A helper found by searching the file for a likely name is not that pattern: a Yes/No radio field used elsewhere on the page does not belong in a card whose rows are on/off switches. If the new entry must differ from its neighbours, say so in the plan with the reason, so the user sees it before approving.
+
 Write exactly these four sections, in this order:
 
 **1. UI** - how the request becomes screen. Text only, no images, no code.
   - Something NEW: one text wireframe - an ASCII box sketch naming the regions and the controls inside them, and nothing else.
   - An UPDATE to something that exists: a BEFORE wireframe and an AFTER wireframe of the SAME region, so the change reads as a diff. Go look at what is there now before you draw the BEFORE.
+  - An entry added among existing ones: the AFTER draws it beside its neighbours as the same kind of row they are, or marks plainly where it differs.
 
 **2. Logic** - one markdown table, columns exactly: `Trigger | What happens | State read or written | Edge case`.
 
@@ -991,7 +1000,7 @@ BEFORE you emit the card, WRITE THE SPLIT MANIFEST so the app can fan the work o
   `{"items": [{"title": "<short run title, <=60 chars>", "owns": ["<claim>", ...], "brief": "<the whole self-contained brief for this item>"}, ...]}`
 One entry per Split item, at most 4, IN ORDER - every entry here starts at the same moment.
 `owns` lists EVERYTHING that item will write, one claim each: `path` for a file no other item touches, `path#region` for the item's part of a shared file, where the region names the functions, markup blocks or CSS rules (`source/<prototype>/form.html#awardDueCard()`, `source/<prototype>/model.js#validators: award date`). The app refuses a split where two items claim the same file whole, or one claims a file whole and another claims part of it, or two items name the same region. Each thread is shown its siblings' claims so it stays out of them - a missing or vague claim is exactly how one thread ends up overwriting another.
-THE MANIFEST MUST BE ON DISK BEFORE THE CARD IS IN YOUR REPLY, not "coming next" and not written later in the turn. The card is LIVE the moment it renders: the user can click Execute seconds after they see it, the app reads the file at that instant, and a manifest that is still being written means the click finds nothing and opens no threads. Write the file, confirm the write succeeded, and only THEN emit the card - as the last thing in that same reply. Each `brief` must stand alone: the run that receives it sees neither this plan nor this conversation, so restate that item's UI rows, logic rows and copy rows inside it, name what it claims, and say what done looks like. Overwrite your own previous manifest.
+THE MANIFEST MUST BE ON DISK BEFORE THE CARD IS IN YOUR REPLY, not "coming next" and not written later in the turn. The card is LIVE the moment it renders: the user can click Execute seconds after they see it, the app reads the file at that instant, and a manifest that is still being written means the click finds nothing and opens no threads. Write the file, confirm the write succeeded, and only THEN emit the card - as the last thing in that same reply. Each `brief` must stand alone: the run that receives it sees neither this plan nor this conversation, so restate that item's UI rows, logic rows and copy rows inside it, name what it claims, and say what done looks like. For an entry added into an existing container, the brief names the container and how its current entries are built (the function or markup block, e.g. "two more rows built by selRow(), the switch rows of the Selection & award table"), and describes the same control in the same place as the AFTER wireframe: the thread builds the brief, while the user approved the wireframe, so the two must never disagree. Overwrite your own previous manifest.
 
 Then STOP. End the reply with this card, in the gate-card syntax, and nothing after it.
 THE CARD ID MUST BE NEW EVERY TIME YOU EMIT ONE. Number it: `plan-next-1` for this plan, `plan-next-2` when you revise and re-emit, `plan-next-3` after that. An id is answered ONCE and stays answered - re-using it renders the fresh card as already-clicked and un-clickable. Count the plan cards you have already emitted in this thread and use the next number.

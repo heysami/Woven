@@ -154,6 +154,19 @@ class GroupReadyTests(unittest.TestCase):
         self.assertNotIn("its brief: <<<\nrename", text)
         self.assertLess(len(text), 12000)              # a long report is truncated
 
+    def test_check_holds_the_build_against_the_wireframe_too(self):
+        # 2026-10-15: a brief named a radio helper while the approved wireframe
+        # drew switch rows; checking the brief alone passed the build.
+        text = plan_split.check_brief(split(0), [], plan_split.plan_snapshot(PLAN_EVENTS))
+        self.assertIn("AFTER wireframes", text)
+        self.assertIn("the user approved the wireframe, never the brief", text)
+        self.assertIn("WAITING", text)
+
+    def test_split_thread_flags_a_brief_that_breaks_its_neighbours(self):
+        text = plan_split.sibling_block(split(0))
+        self.assertIn("current entries are built another way", text)
+        self.assertIn("decision card naming both ways", text)
+
 
 class GuardHookTests(unittest.TestCase):
     BLOCKED = [
@@ -398,6 +411,13 @@ class WiringTests(unittest.TestCase):
         self.assertEqual(stub.count("PLAN_SPLIT.json"), 1)   # only the "never write it" warning
         self.assertIn("NEVER write `PLAN_SPLIT.json`", stub)
         self.assertIn("plan-splits/", serve._GITIGNORE_LOCAL)
+
+    def test_plan_takes_the_neighbours_pattern(self):
+        stub = caps.PLAN_MODE_STUB
+        self.assertIn("TAKE ITS NEIGHBOURS' PATTERN", stub)
+        self.assertIn("not that pattern", stub)
+        self.assertIn("the two must never disagree", stub)
+        self.assertNotIn("suss-cal", stub)               # incident history stays in comments
 
 
 if __name__ == "__main__":

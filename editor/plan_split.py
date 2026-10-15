@@ -158,6 +158,11 @@ def sibling_block(split: dict) -> str:
         "making it: a plan-check thread runs after every item finishes and picks it up.",
         "- A subagent you dispatch (ds-guardian, visual-verifier) works in this same tree. If "
         "it reports touching something outside your claims, report that; never revert it.",
+        "- Your brief was written by a planner that read less of the code than you will. If "
+        "it names a control, helper or layout for something you add into an existing card, "
+        "table, list or form, and that container's current entries are built another way, "
+        "do not follow it silently: build the rest, leave that part, and end your reply "
+        "with a decision card naming both ways (the neighbours' and the brief's).",
     ]
     return "\n\n" + "\n".join(lines)
 
@@ -289,18 +294,25 @@ def check_brief(split: dict, members: List[dict], snapshot: Optional[dict]) -> s
         "HOW TO CHECK. A report that says done is a claim; the files are the evidence.",
         "1. For each item that was not stopped, open what it claims and confirm every UI, "
         "Logic and Copy row of its brief is on disk NOW.",
-        "2. A row that was built and is gone was overwritten by another thread: that is "
+        "2. Then hold each item's UI against the PLAN's UI section above (its AFTER "
+        "wireframes), not only against its brief: the same control, in the same place, "
+        "beside the same neighbours. Read the markup that renders it; when the code cannot "
+        "settle what it looks like or where it sits, dispatch a visual-verifier with that "
+        "AFTER wireframe in its brief. Built as the brief says but not as the wireframe "
+        "shows is DRIFT: the user approved the wireframe, never the brief.",
+        "3. A row that was built and is gone was overwritten by another thread: that is "
         "UNDONE, not MISSING. The thread's report and the file tell them apart.",
-        "3. Check coverage too: anything the user asked for that no item carried is MISSING.",
-        "4. One verdict per item: DONE, MISSING (never built), UNDONE (built, then "
-        "overwritten) or DRIFT (built differently from the plan).",
-        "5. Re-apply MISSING and UNDONE rows yourself with targeted edits, touching only "
+        "4. Check coverage too: anything the user asked for that no item carried is MISSING.",
+        "5. One verdict per item: DONE, MISSING (never built), UNDONE (built, then "
+        "overwritten), DRIFT (built differently from the plan) or WAITING (its report "
+        "left a part for the user's decision; never build that part).",
+        "6. Re-apply MISSING and UNDONE rows yourself with targeted edits, touching only "
         "those rows. DRIFT, or anything that needs a judgment call, goes to the user as a "
         "decision card: never silently rebuild it to match the plan.",
-        "6. Never run `git checkout`, `git restore`, `git stash`, `git reset --hard` or "
+        "7. Never run `git checkout`, `git restore`, `git stash`, `git reset --hard` or "
         "`git clean`. Changes in `git status` that belong to no item are other threads' "
         "work; leave them.",
-        "7. Run any subagent in the foreground (run_in_background: false) and do not end "
+        "8. Run any subagent in the foreground (run_in_background: false) and do not end "
         "this turn before the verdicts are written.",
         "Finish with one line per item: its title, its verdict, and what you fixed.",
     ]
