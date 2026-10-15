@@ -922,6 +922,63 @@ class P8VisualChecks(unittest.TestCase):
         self.assertNotIn("never flagged by the judge", json.dumps(block["findings"]),
                          "code only scopes: a measurement the judge did not flag is not a finding")
 
+    def test_a_long_list_is_read_in_short_runs_and_unsure_rows_on_their_own(self):
+        """On a crop of 8 look-alike rows the judge left most truncated rows
+        unsure (0.2-0.5); on 4 rows it flagged more, and on a row's own crop
+        it named the cut cell (suss-cal, 2026-10-15). A long list's runs are
+        read short when the share pays for them twice; a row of a run the
+        judge is unsure of is looked at on its own, and only what that look
+        flags is reported."""
+        png = Path(self.tmp) / "screen.png"
+        png.write_bytes(typed_judge.solid_png((240, 240, 240), size=1800))
+        nodes = [{"i": 0, "parent": None, "depth": 0, "sel": "#rows", "label": "tbody", "say": "the table body",
+                  "box": {"x": 0, "y": 0, "width": 400, "height": 1700}, "kids": [], "ev": None}]
+
+        def add(n):
+            n.update(i=len(nodes), ev=None)
+            nodes.append(n)
+            return n["i"]
+        row = lambda r: {"x": 0, "y": 100 * r, "width": 400, "height": 100}
+        rows = []
+        for r in range(16):
+            cell = add({"parent": None, "depth": 3, "sel": "#c%d" % r, "box": row(r), "label": "td",
+                        "say": "the text 'cell %d'" % r, "kids": []})
+            rows.append(add({"parent": None, "depth": 2, "sel": "#r%d" % r, "box": row(r), "label": "tr %d" % r,
+                             "say": "the table row for 'Row %d'" % r, "kids": [cell]}))
+        for c in range(4):
+            part = rows[4 * c:4 * c + 4]
+            run = lambda ids: {"parent": 0, "depth": 1, "sel": "#run%d" % ids[0], "kids": list(ids),
+                               "box": dict(row(4 * c), height=100 * len(ids)), "label": "items", "say": "the rows",
+                               "group": ["a", "b"]}
+            short = [add(run(part[:2])), add(run(part[2:]))]
+            nodes[0]["kids"].append(add(dict(run(part), short=short)))
+        asked = []
+
+        def judge(state, questions, **kw):
+            asked.append(questions)
+            say = lambda q: q["instructions"]
+            # Rows 1 and 2 leave the judge unsure; on its own crop it flags row 1's cell.
+            return {"answers": {k: {"noul": 0.35 if ("'Row 1'" in say(q) or "'Row 2'" in say(q)) else
+                                        0.9 if "'cell 1'" in say(q) else 0.05} for k, q in questions.items()},
+                    "provider": "clef", "model": "clef", "thresholds": typed_judge.thresholds("frame_check", "clef")}
+        screen = {"n": 0, "label": "the page", "path": str(png), "regions": {"nodes": nodes}, "measured": []}
+        named = lambda q: sorted(re.findall(r"'(Row \d+)'", json.dumps(q)))
+        for budget, per_call in ((60, 2), (12, 4)):
+            del asked[:]
+            old, visual_qa.MAX_DRILL_CALLS = visual_qa.MAX_DRILL_CALLS, budget
+            try:
+                calls = visual_qa.JudgeCalls(judge, typed_judge, 400, "drill")
+                findings = visual_qa.region_drill([json.loads(json.dumps(screen))], calls, 400)
+            finally:
+                visual_qa.MAX_DRILL_CALLS = old
+            runs = [q for q in asked if len(named(q)) > 1]
+            self.assertEqual({len(named(q)) for q in runs}, {per_call},
+                             "short runs at a %d-call share" % budget if per_call == 2 else "long runs when short ones do not fit")
+            alone = [named(q) for q in asked if any("'cell" in json.dumps(v) for v in q.values())]
+            self.assertEqual(alone, [["Row 1"], ["Row 2"]], "rows 1 and 2, each on its own crop")
+            self.assertEqual([(f["kind"], f["selector"]) for f in findings], [("element", "#c1")],
+                             "only what the closer look flags is reported")
+
     def test_every_named_state_is_captured_even_when_its_headings_match(self):
         """Edit and read-only of one tab show the same headings: the screen
         signature took them for one screen and two of three named states were

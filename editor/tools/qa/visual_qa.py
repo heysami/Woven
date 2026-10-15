@@ -774,9 +774,10 @@ MAX_CHECKS = 64
 #          a region scored on its own (a choice over the parts favoured the
 #          first one, 2026-10-14) plus how they sit together; a part scoring
 #          DRILL_NOUL or more is gone into, down to a primitive or a DS
-#          component; at most MAX_DRILL_CALLS calls a page. A region taller
-#          than TALL_PX is split without being asked (the judge cannot read
-#          it shrunk). It flags too much (warning icons, error ink): the
+#          component, and so is a part of a run (a cut of a long list) the
+#          judge is unsure of; at most MAX_DRILL_CALLS calls a page. A region
+#          taller than TALL_PX is split without being asked (the judge cannot
+#          read it shrunk). It flags too much (warning icons, error ink): the
 #          visual-qa agent reads every finding with its evidence and drops the
 #          non-issues.
 #   ds   - the elements the design system does not recognise: listed, then
@@ -1365,13 +1366,16 @@ _TEXT_JS = """
 # tree of REGIONS read from the code: each node is an element on screen (or
 # a run of similar siblings), its children the visible blocks it is made of.
 # Wrappers with one child are skipped, a long list is cut into runs of at
-# most maxKids, and a node stops at a primitive (text, image, control) or a
+# most maxKids (a run taller than runPx also into short runs, `short`, which
+# the drill reads instead when it can pay for them), and a node stops at a
+# primitive (text, image, control) or a
 # design-system component that holds no other. Inside the impacted part,
 # only the children on the way to something impacted are shown; inside an
 # impacted element, all of them. The page QA asks the judge which child of a
 # node has a defect and goes down only where it says so. Breadth first.
 _REGIONS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + _DOM_JS + _COMP_JS + _IMPACT_JS + _TEXT_JS + """
   const MAX_KIDS = a.maxKids || 10, MAX_NODES = a.maxNodes || 4000, MAX_DEPTH = a.maxDepth || 16;
+  const RUN_PX = a.runPx || 500;
   const SKIP = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|LINK|META|BR|WBR)$/;
   const PRIM = /^(IMG|SVG|INPUT|SELECT|TEXTAREA|CANVAS|VIDEO|AUDIO|IFRAME|HR|PICTURE|PROGRESS|METER|OBJECT|EMBED)$/i;
   const imp = (a.changed && a.changed.length) ? impactOf(a.changed) : null;
@@ -1502,20 +1506,39 @@ _REGIONS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + _DOM_JS + _COMP_JS + _
     const x2 = Math.max(...list.map(n => n.box.x + n.box.width)), y2 = Math.max(...list.map(n => n.box.y + n.box.height));
     return {x: x1, y: y1, width: x2 - x1, height: y2 - y1};
   };
+  const runOf = (part, s, of, parent, depth) => {
+    const g = {i: nodes.length, parent: parent, depth: depth, sel: part[0].sel, box: union(part),
+               label: 'items ' + (s + 1) + '-' + (s + part.length) + ' of ' + of + ' (' + part[0].label + ' ...)',
+               say: 'the ' + (part[0].say.indexOf('the table row') === 0 ? 'table rows ' : 'items ') + (s + 1) + ' to '
+                 + (s + part.length) + ' of ' + of + ' (from ' + part[0].say + ')',
+               kids: [], group: [part[0].sel, part[part.length - 1].sel], ev: null};
+    nodes.push(g);
+    return g;
+  };
   // A long list is cut into runs: the judge is shown at most MAX_KIDS boxes.
+  // A run taller than RUN_PX is also cut into short runs: on 8 rows of a
+  // 79-row table (1000px) the judge flagged 4 of 18 truncated rows, on 4
+  // rows (500px) 8 (suss-cal, 2026-10-15). They cost twice the calls, so
+  // they are an alternative (`short`) the drill takes when it can pay.
   const runsOf = (members, parent, depth) => {
     if (members.length <= MAX_KIDS) return members;
     const size = Math.ceil(members.length / MAX_KIDS), out = [];
     for (let s = 0; s < members.length; s += size) {
       const part = members.slice(s, s + size);
       if (part.length === 1) { out.push(part[0]); continue; }
-      const g = {i: nodes.length, parent: parent, depth: depth, sel: part[0].sel, box: union(part),
-                 label: 'items ' + (s + 1) + '-' + (s + part.length) + ' of ' + members.length + ' (' + part[0].label + ' ...)',
-                 say: 'the ' + (part[0].say.indexOf('the table row') === 0 ? 'table rows ' : 'items ') + (s + 1) + ' to '
-                   + (s + part.length) + ' of ' + members.length + ' (from ' + part[0].say + ')',
-                 kids: [], group: [part[0].sel, part[part.length - 1].sel], ev: null};
-      nodes.push(g);
+      const g = runOf(part, s, members.length, parent, depth);
       for (const m of runsOf(part, g.i, depth + 1)) { m.parent = g.i; g.kids.push(m.i); }
+      const cuts = Math.ceil(g.box.height / RUN_PX), step = Math.ceil(part.length / cuts);
+      if (cuts > 1 && part.length <= MAX_KIDS) {
+        g.short = [];
+        for (let t = 0; t < part.length; t += step) {
+          const sub = part.slice(t, t + step);
+          if (sub.length === 1) { g.short.push(sub[0].i); continue; }
+          const h = runOf(sub, s + t, members.length, parent, depth);
+          h.kids = sub.map(m => m.i);
+          g.short.push(h.i);
+        }
+      }
       out.push(g);
     }
     return out;
@@ -2232,8 +2255,14 @@ def region_drill(screens: List[Dict[str, Any]], calls: JudgeCalls, viewport_w: i
     the crop goes as rendered with nothing drawn on it, and one call scores
     each named part on its own (box_N) and the parts as they sit together
     (layout). Every part scoring DRILL_NOUL or more is gone into the same way,
-    down to a primitive or a DS component. What is reported is the most
-    specific thing found:
+    down to a primitive or a DS component. So is a part of a run the judge is
+    unsure of (its answer in the escalate band): on a crop of many look-alike
+    rows it left 10 of 18 truncated rows there, and on its own crop it named
+    the cut cell of every one (suss-cal, 2026-10-15). Only what that closer
+    look flags is reported. A long list is read in short runs (a run's
+    `short`) when the screen's share pays for them twice, once to read them
+    and once to look closer at what they flag; otherwise in the long ones.
+    What is reported is the most specific thing found:
       element      - a primitive or a DS component that scored;
       arrangement  - the parts of a region sit badly together (layout);
       region       - a region that scored while none of its parts or their
@@ -2248,9 +2277,13 @@ def region_drill(screens: List[Dict[str, Any]], calls: JudgeCalls, viewport_w: i
     # (the first one used all 60 calls on a long register, 2026-10-14).
     drilled = [sc for sc in screens if ((sc.get("regions") or {}).get("nodes") or [])]
     share = max(12, MAX_DRILL_CALLS // max(1, len(drilled)))
+    tj = _typed_judge_module()
     for sc in drilled:
         nodes = sc["regions"]["nodes"]
         start = len(calls.calls)
+        # 79 rows at a 60-call share: long runs found 14 of 18, short 17; at
+        # 30, 14 and 12 (the short runs left no calls to look closer).
+        short = share >= 2 * sum(len(n.get("short") or []) for n in nodes)
         # (node, score its parent's call gave it, that call's number)
         frontier: List[Tuple[Dict[str, Any], Optional[float], Optional[int]]] = [(nodes[0], None, None)]
         while frontier:
@@ -2259,15 +2292,19 @@ def region_drill(screens: List[Dict[str, Any]], calls: JudgeCalls, viewport_w: i
             jobs, asked, nxt = [], [], []
             for n, p, by in frontier:
                 if not n["kids"]:
-                    if p is not None:
+                    if p is not None and p >= DRILL_NOUL:
                         findings.append(_region_finding(sc, nodes, n, "element", p, by))
                     continue
                 kids = [nodes[k] for k in n["kids"]]
                 if n["box"]["height"] > TALL_PX:
                     nxt += [(k, p, by) for k in kids]
                     continue
+                if short and n.get("short"):
+                    nxt += [(nodes[k], p, by) for k in n["short"]]
+                    continue
                 if len(calls.calls) - start + len(jobs) >= share:
-                    findings.append(_region_finding(sc, nodes, n, "unexamined", p, by))
+                    if p is None or p >= DRILL_NOUL:  # an unsure part is no finding by itself
+                        findings.append(_region_finding(sc, nodes, n, "unexamined", p, by))
                     continue
                 img = _region_crop(sc["path"], n["box"], viewport_w)
                 if img is None:
@@ -2306,6 +2343,9 @@ def region_drill(screens: List[Dict[str, Any]], calls: JudgeCalls, viewport_w: i
                     continue
                 flagged = [(k, scores["box_%d" % (i + 1)]) for i, k in enumerate(kids)
                            if scores["box_%d" % (i + 1)] >= DRILL_NOUL]
+                unsure = [(k, scores["box_%d" % (i + 1)]) for i, k in enumerate(kids)
+                          if n.get("group") and k["kids"] and scores["box_%d" % (i + 1)] < DRILL_NOUL
+                          and tj.noul_verdict(answers.get("%s__box_%d" % (rid, i + 1)), th)["band"] == "escalate"]
                 layout = scores["layout"] >= DRILL_NOUL
                 top = max(scores.values())
                 # Shown by the part's name: there are no numbers on the image.
@@ -2321,10 +2361,10 @@ def region_drill(screens: List[Dict[str, Any]], calls: JudgeCalls, viewport_w: i
                             "flagged": ["box_%d" % (kids.index(k) + 1) for k, _s in flagged]})
                 row["band"] = "act" if row["confidence"] >= 0.6 else "escalate"
                 calls.rows.append(row)
-                nxt += [(k, s, call["n"]) for k, s in flagged]
+                nxt += [(k, s, call["n"]) for k, s in flagged + unsure]
                 if layout:
                     findings.append(_region_finding(sc, nodes, n, "arrangement", scores["layout"], call["n"]))
-                elif not flagged and p is not None:
+                elif not flagged and p is not None and p >= DRILL_NOUL:
                     findings.append(_region_finding(sc, nodes, n, "region", p, by))
             frontier = nxt
     return findings
