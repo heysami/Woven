@@ -68616,7 +68616,10 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     onSavePending: () => saveToDisk(),
     onDiscardPending: () => discardChanges(),
     onSourcesChanged: reloadFromDisk,
-  }), [branch, filePath, dirty, opHistory.length, saveToDisk, discardChanges, reloadFromDisk]);
+    // A match on another page: edit that page instead (same as drilling into
+    // a component); the remounted panel then selects the match.
+    openPage: onSwitchTarget ? (path) => { onSwitchTarget(path, branch); return true; } : null,
+  }), [branch, filePath, dirty, opHistory.length, saveToDisk, discardChanges, reloadFromDisk, onSwitchTarget]);
 
   // ─── Save + agent ────────────────────────────────────────────────────
   // Same hand-off as the canvas select mode's pill: the save lands the edits
@@ -74054,7 +74057,32 @@ function WorkflowPickedInspectorDock({
       }
       onClose && onClose();
     },
-  }), [pendingEdits, pickerIframeRef, hostId, onClose]);
+    // A match on another page: load it in this frame (drafts hold one page,
+    // so they don't). Once pick mode has isolated it, pick its body so the
+    // panel has the page; the panel then selects the match itself.
+    openPage: hostId.includes(":") ? null : (path) => {
+      let ifr = pickerIframeRef.current;
+      if (!wfPickHostAlive(ifr)) ifr = wfFindPickHost(hostId);
+      if (!ifr) return false;
+      ifr.setAttribute("src", apiUrl("/" + path.split("/").map(encodeURIComponent).join("/")));
+      ifr.removeAttribute("srcdoc");
+      const started = Date.now();
+      const poll = () => {
+        if (!ifr.isConnected || Date.now() - started > 20000) return;
+        let doc = null;
+        try { doc = ifr.contentDocument; } catch {}
+        const marked = doc && doc.querySelector('meta[name="woven-authoring"]')?.content;
+        if (marked && wovenFindSamePath(marked, path) && doc.body && doc.body.classList.contains("th-pick-mode")) {
+          pickerIframeRef.current = ifr;
+          navigateTo(doc.body);
+          return;
+        }
+        setTimeout(poll, 100);
+      };
+      poll();
+      return true;
+    },
+  }), [pendingEdits, pickerIframeRef, hostId, onClose, navigateTo]);
 
   // React-rendered banner stays suppressed: the downstream pipeline
   // handles React reconciliation, so the inspector must not warn that DOM

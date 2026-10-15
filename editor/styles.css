@@ -35668,8 +35668,11 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 .woven-find-file-row:hover { background: var(--surface-2); }
 .woven-find-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .woven-find-count { color: var(--text-faint); }
-.woven-find-hit { display: flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 4px 0 8px; border-radius: 4px; cursor: default; }
+.woven-find-hit { display: flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 4px 0 8px; border-radius: 4px; cursor: pointer; }
 .woven-find-hit:hover { background: var(--surface-2); }
+.woven-find-hit.is-current { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--accent); }
+.woven-find-hit.is-current .woven-find-snippet { color: var(--text); }
+.woven-find-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .woven-find-hit > svg { flex: 0 0 12px; width: 12px; height: 12px; color: var(--accent-text); }
 .woven-find-line { flex: 0 0 28px; text-align: right; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .woven-find-snippet { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }

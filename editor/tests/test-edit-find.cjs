@@ -6,8 +6,8 @@ const assert = require('node:assert/strict');
 
 const context = vm.createContext({});
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'edit-controls.js'), 'utf8') +
-  '\n;globalThis.api={wovenFindInSource,wovenFindApply,wovenRecordApply,wovenFindPattern,wovenFindLiteral};', context);
-const { wovenFindInSource, wovenFindApply, wovenRecordApply, wovenFindLiteral } = context.api;
+  '\n;globalThis.api={wovenFindInSource,wovenFindApply,wovenRecordApply,wovenFindPattern,wovenFindLiteral,wovenFindRefs,wovenFindPagesFor,wovenFindInHead,wovenFindContext,wovenFindTagAt};', context);
+const { wovenFindInSource, wovenFindApply, wovenRecordApply, wovenFindLiteral, wovenFindRefs, wovenFindPagesFor, wovenFindInHead, wovenFindContext, wovenFindTagAt } = context.api;
 // Arrays built inside the vm context belong to another realm; compare plain copies.
 const plain = v => JSON.parse(JSON.stringify(v));
 
@@ -117,5 +117,34 @@ assert.equal(wovenFindInSource('source/demo/app.js', "x = 'SUBMIT'", 'Submit', t
 found = wovenFindInSource('source/demo/users.json', '{"users":[{"name":"Ada","role":"admin"}]}', 'Ada', true);
 assert.equal(found.records[0].data, true);
 assert.equal(found.records[0].where, 'users[0]');
+
+// 7. Which screen shows a hit: files a page or script names (script src,
+//    imports, fetches), resolved against the scanned set.
+const known = new Set(['source/p/a.html', 'source/p/b.html', 'source/p/c.html', 'source/p/nav.js', 'source/p/lib/data.js', 'source/p/rows.json', 'source/p/unused.js']);
+assert.deepEqual(plain(wovenFindRefs('source/p/a.html', '<script src="nav.js?v=2"></script><script src="https://cdn.x/nav.js"></script>', known)), ['source/p/nav.js']);
+assert.deepEqual(plain(wovenFindRefs('source/p/nav.js', "import d from './lib/data.js'; fetch('/source/p/rows.json'); const x = 'missing.js';", known)), ['source/p/lib/data.js', 'source/p/rows.json']);
+const refs = {
+  'source/p/a.html': ['source/p/nav.js'],
+  'source/p/c.html': ['source/p/nav.js', 'source/p/lib/data.js'],
+  'source/p/b.html': ['source/p/nav.js'],
+  'source/p/nav.js': ['source/p/lib/data.js', 'source/p/rows.json'],
+};
+assert.deepEqual(plain(wovenFindPagesFor('source/p/nav.js', refs)), ['source/p/a.html', 'source/p/b.html', 'source/p/c.html']);
+assert.deepEqual(plain(wovenFindPagesFor('source/p/lib/data.js', refs)), ['source/p/c.html', 'source/p/a.html', 'source/p/b.html'], 'direct loaders before pages that load it through a script');
+assert.deepEqual(plain(wovenFindPagesFor('source/p/unused.js', refs)), []);
+const titled = '<!doctype html><html><head><title>Portal - Under review</title></head><body><h1>Under review</h1><p>Under review</p></body></html>';
+found = wovenFindInSource('source/p/a.html', titled, 'Under review', true);
+assert.equal(found.hits.length, 3);
+assert.deepEqual(plain(found.hits.map(h => wovenFindInHead(titled, h))), [true, false, false], 'the title is in the head, not on screen');
+assert.equal(wovenFindContext(found.hits[1]), wovenFindContext(found.hits[2]), 'identical text is told apart by source order');
+
+// 8. The source element a markup hit sits in tells same-text hits apart on screen.
+const crumbs = '<body><nav class="crumbs"><a href="/">Home</a><br/><span class="sep">/</span><span class="current">Under review</span></nav>\n<div id="t" class="title page">Under review<img alt="Under review"></div></body>';
+found = wovenFindInSource('source/p/a.html', crumbs, 'Under review', true);
+assert.deepEqual(plain(found.hits.map(h => wovenFindTagAt(crumbs, h))), [
+  { tag: 'span', classes: ['current'], id: '' },
+  { tag: 'div', classes: ['title', 'page'], id: 't' },
+  { tag: 'img', classes: [], id: '' },
+]);
 
 console.log('edit-find: ok');
