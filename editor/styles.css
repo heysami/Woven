@@ -7068,12 +7068,7 @@ body:has(.workflow-body[data-view="proto"]) .canvas-ctxmenu {
 .personas-help { font-size: 10.5px; color: var(--text-faint); line-height: 1.4; }
 .personas-know-row { cursor: default; }
 .personas-know-row .pv-file-name { flex: 1 1 0; }
-.personas-browser {
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--surface);
-  overflow: hidden;
-}
+.personas-browser { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .personas-browser-head {
   display: flex;
   align-items: center;
@@ -7084,7 +7079,6 @@ body:has(.workflow-body[data-view="proto"]) .canvas-ctxmenu {
   min-width: 0;
   flex-wrap: wrap;
 }
-.personas-browser-spacer { flex: 1; }
 .personas-crumb {
   border: 0;
   background: transparent;
@@ -7096,10 +7090,28 @@ body:has(.workflow-body[data-view="proto"]) .canvas-ctxmenu {
 }
 .personas-crumb:hover { color: var(--text); background: var(--surface-3, var(--surface)); }
 .personas-crumb-sep { color: var(--text-faint); font-size: 11px; }
-.personas-browser-list { max-height: 220px; overflow-y: auto; padding: 4px; }
+.personas-browser-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 6px; }
 .personas-browser-row[data-muted="true"] { opacity: 0.5; }
 .personas-browser-row .pv-file-open:disabled { cursor: default; }
+.personas-browser-chev { display: inline-flex; margin-left: auto; color: var(--text-faint); transform: rotate(-90deg); }
 .personas-grant[data-on="true"] { color: var(--accent-text); }
+.personas-field-tools { display: inline-flex; gap: 2px; }
+.personas-know-row[data-missing="true"] .pv-file-glyph,
+.personas-know-row[data-missing="true"] .pv-file-name { color: var(--danger); }
+/* Picker popup (persona What they know / Taste, a reference's project path):
+   the dialog chrome at a fixed height, so switching tabs or folders never
+   resizes it. */
+.modal.source-picker { width: 460px; height: min(520px, 86vh); grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.modal.source-picker:focus { outline: none; }
+.source-picker .modal-head { align-items: center; padding: 12px 14px 10px; }
+.source-picker-tabs { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+/* Tabs keep their width when the New reference tool comes and goes. */
+.source-picker-tabs .th-tasks-filter-btn { flex: 0 0 auto; padding: 3px 10px; }
+.source-picker-body { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.source-picker-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 6px; }
+.source-picker-row[data-muted="true"] { opacity: 0.5; cursor: default; }
+.source-picker .modal-foot { align-items: center; padding: 10px 14px; }
+.source-picker-foot { flex: 1; min-width: 0; font-size: 11px; color: var(--text-faint); line-height: 1.4; }
 .personas-actions { display: flex; align-items: center; gap: 8px; }
 .personas-actions .personas-help { flex: 1; }
 .personas-foot {

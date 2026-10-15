@@ -25,6 +25,7 @@ serve.py injects the model calls, the page resolver and the event sink
 """
 from __future__ import annotations  # keep annotations 3.9-safe (daemon runs system py)
 
+import hashlib
 import json
 import os
 import re
@@ -33,7 +34,12 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from html.parser import HTMLParser
+
+import references as _references
 
 _LOCK = threading.Lock()
 
@@ -51,7 +57,8 @@ MAX_KNOWLEDGE = 24
 
 # Taste: images of apps, styles and products the persona likes or feels at
 # home with. Uploaded into personas/taste/ (synced with the project), each
-# file prefixed with its persona's id so a delete can take its files along.
+# file prefixed with its persona's id so a delete can take its files along,
+# or picked like What they know: project images and folders, and references.
 TASTE_DIR = "personas/taste"
 TASTE_EXTS = {"png": "png", "jpeg": "jpg", "jpg": "jpg", "webp": "webp", "gif": "gif"}
 TASTE_BYTES = 5 * 1024 * 1024
@@ -70,6 +77,15 @@ KNOW_FILE_CAP = 12000
 KNOW_TOTAL_CAP = 40000
 KNOW_IMAGES = 4
 KNOW_IMAGE_BYTES = 3 * 1024 * 1024
+
+# An entry of What they know or Taste is a project path, or "ref:<id>": one of
+# the project's references (editor/references.py), looked up when it is read,
+# so a reference can be an online location and an edit to it reaches every
+# persona using it. Personas have no tools: the daemon opens a link for them.
+REF_RE = re.compile(r"^ref:(r_[a-z0-9]{4,24})$")
+LINK_BYTES = 3 * 1024 * 1024
+LINK_TIMEOUT = 20
+LINK_WORKERS = 4
 
 MAX_PAGES = 4
 MAX_TASKS = 8
@@ -207,6 +223,13 @@ def _clean_rel(p):
     return p.rstrip("/") or None
 
 
+def _clean_entry(p):
+    """A granted entry: "ref:<id>" as is, otherwise a project path, or None."""
+    if isinstance(p, str) and p.strip().startswith("ref:"):
+        return p.strip() if REF_RE.match(p.strip()) else None
+    return _clean_rel(p)
+
+
 def normalize(raw, prev=None):
     """A persona record from the panel, validated. Raises ValueError."""
     if not isinstance(raw, dict):
@@ -224,14 +247,15 @@ def normalize(raw, prev=None):
            "profile": text}
     know = []
     for p in raw.get("knowledge") or []:
-        c = _clean_rel(p)
+        c = _clean_entry(p)
         if c and c not in know:
             know.append(c)
     out["knowledge"] = know[:MAX_KNOWLEDGE]
+    # Another persona's uploads are not grantable: its delete sweeps them.
     taste = []
     for p in raw.get("taste") or []:
-        c = _clean_rel(p)
-        if c and c.startswith(TASTE_DIR + "/" + pid + "-") and c not in taste:
+        c = _clean_entry(p)
+        if c and (not c.startswith(TASTE_DIR + "/") or c.startswith(TASTE_DIR + "/" + pid + "-")) and c not in taste:
             taste.append(c)
     out["taste"] = taste[:MAX_TASTE]
     now = int(time.time() * 1000)
@@ -380,15 +404,151 @@ def _ext(path):
     return path.rsplit(".", 1)[-1].lower() if "." in os.path.basename(path) else ""
 
 
-def knowledge_bundle(root, paths):
-    """(text, image_paths, notes) for the files and folders a persona was
-    granted. Documents only; code is refused even inside a granted folder."""
-    root_real = os.path.realpath(root)
-    files, notes = [], []
-    for rel in paths or []:
-        c = _clean_rel(rel)
+def resolve_entries(root, entries):
+    """What each entry points at now, with the name the persona sees:
+    {"path": rel} | {"link": url} | {"missing": why}. References are read
+    fresh from references.json on every call."""
+    refs, out = None, []
+    for raw in entries or []:
+        c = _clean_entry(raw)
         if not c:
             continue
+        m = REF_RE.match(c)
+        if not m:
+            out.append({"path": c, "name": c})
+            continue
+        if refs is None:
+            refs = {r["id"]: r for r in _references.load(root)}
+        r = refs.get(m.group(1))
+        if not r:
+            out.append({"missing": "a reference that was removed", "name": "a removed reference"})
+        elif re.match(r"^https?://", r["location"], re.I):
+            out.append({"link": r["location"], "name": r["name"]})
+        else:
+            out.append({"path": r["location"], "name": r["name"]})
+    return out
+
+
+def _export_url(url):
+    """A shared Google Doc, Sheet or Slides link, as its plain export: the
+    viewer page itself is a script shell with no readable text."""
+    m = re.match(r"^https://docs\.google\.com/(document|spreadsheets|presentation)/d/([\w-]+)", url)
+    if not m:
+        return url
+    kind, did = m.groups()
+    if kind == "spreadsheets":
+        g = re.search(r"[#&?]gid=(\d+)", url)
+        return "https://docs.google.com/spreadsheets/d/%s/export?format=csv%s" % (did, "&gid=" + g.group(1) if g else "")
+    return "https://docs.google.com/%s/d/%s/export?format=txt" % (kind, did)
+
+
+class _PageText(HTMLParser):
+    """The readable text of a web page: no scripts, styles or markup."""
+    SKIP = {"script", "style", "noscript", "svg", "template", "head"}
+    BLOCK = {"p", "div", "br", "li", "tr", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6", "section",
+             "article", "header", "footer", "main", "nav", "aside", "blockquote", "pre", "dt", "dd", "figcaption"}
+
+    def __init__(self):
+        HTMLParser.__init__(self, convert_charrefs=True)
+        self.parts, self.title, self._skip, self._in_title = [], "", 0, False
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "title":
+            self._in_title = True
+        elif tag in self.SKIP:
+            self._skip += 1
+        if tag in self.BLOCK:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag == "title":
+            self._in_title = False
+        elif tag in self.SKIP and self._skip:
+            self._skip -= 1
+        if tag in self.BLOCK:
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        if self._in_title:
+            self.title += data
+        elif not self._skip:
+            self.parts.append(data)
+
+    def text(self):
+        lines = [re.sub(r"[ \t\r\f\v]+", " ", l).strip() for l in "".join(self.parts).split("\n")]
+        return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+_SIGNIN_RE = re.compile(r"^https?://(accounts\.google\.com|login\.microsoftonline\.com|[^/]+/(login|signin|sign-in|sign_in|auth)\b)", re.I)
+_LINK_HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                               "(KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+                 "Accept": "text/html,text/plain,text/csv,application/json,image/*;q=0.9,*/*;q=0.5"}
+
+
+def fetch_link(url, scratch):
+    """Open a reference link as a signed-out visitor, fresh (never from an
+    older copy). {"text": ...} for a document or page, {"image": path} for an
+    image (saved under scratch), {"error": why} otherwise."""
+    try:
+        req = urllib.request.Request(_export_url(url), headers=_LINK_HEADERS)
+        with urllib.request.urlopen(req, timeout=LINK_TIMEOUT) as r:
+            final = r.geturl() or url
+            ctype = (r.headers.get_content_type() or "").lower()
+            charset = r.headers.get_content_charset() or "utf-8"
+            data = r.read(LINK_BYTES + 1)
+    except urllib.error.HTTPError as e:
+        return {"error": "could not open it (HTTP %d)%s" % (
+            e.code, ": it may need a sign-in, share it publicly" if e.code in (401, 403) else "")}
+    except Exception as e:
+        return {"error": "could not open it (%s)" % str(getattr(e, "reason", None) or e)[:120]}
+    if _SIGNIN_RE.match(final):
+        return {"error": "it needs a sign-in: share it publicly or add a copy to the project"}
+    if ctype.startswith("image/"):
+        ext = TASTE_EXTS.get(ctype.split("/", 1)[1])
+        if not ext:
+            return {"error": "a %s image, only png, jpg, webp or gif are read" % ctype.split("/", 1)[1]}
+        if len(data) > KNOW_IMAGE_BYTES:
+            return {"error": "the image is over 3 MB"}
+        os.makedirs(scratch, exist_ok=True)
+        path = os.path.join(scratch, "link-%s.%s" % (hashlib.sha1(url.encode("utf-8")).hexdigest()[:12], ext))
+        with open(path, "wb") as f:
+            f.write(data)
+        return {"image": path}
+    if ctype in ("text/javascript", "application/javascript", "text/css") or (
+            ctype != "text/html" and _ext(final.split("?", 1)[0]) in CODE_EXTS):
+        return {"error": "it is code, which personas never read"}
+    if not (ctype.startswith("text/") or ctype in ("application/json", "application/xhtml+xml")):
+        return {"error": "a %s file: personas read web pages, text documents and images" % (ctype or "unknown")}
+    body = data[:LINK_BYTES].decode(charset, errors="replace")
+    if ctype in ("text/html", "application/xhtml+xml"):
+        p = _PageText()
+        try:
+            p.feed(body)
+            p.close()
+        except Exception:
+            pass
+        body = p.text()
+    body = body.strip()
+    if not body:
+        return {"error": "the page has no readable text"}
+    return {"text": body}
+
+
+def knowledge_bundle(root, entries, links=None, scratch=None):
+    """(text, image_paths, notes) for what a persona was granted: project
+    files and folders, and references, whose links are opened fresh (`links`
+    holds the ones a critique run already opened). Documents only; code is
+    refused even inside a granted folder."""
+    root_real = os.path.realpath(root)
+    files, linked, notes = [], [], []
+    for ent in resolve_entries(root, entries):
+        if "missing" in ent:
+            notes.append("%s, skipped" % ent["missing"])
+            continue
+        if "link" in ent:
+            linked.append(ent)
+            continue
+        c = ent["path"]
         absolute = os.path.realpath(os.path.join(root, c))
         if absolute != root_real and not absolute.startswith(root_real + os.sep):
             notes.append("%s: outside the project, skipped" % c)
@@ -413,6 +573,14 @@ def knowledge_bundle(root, paths):
             notes.append("%s: not found" % c)
     text_parts, images, used = [], [], 0
     code_skipped = 0
+
+    def add_text(title, chunk):
+        nonlocal used
+        cut = len(chunk) > KNOW_FILE_CAP
+        chunk = chunk[:min(KNOW_FILE_CAP, KNOW_TOTAL_CAP - used)]
+        used += len(chunk)
+        text_parts.append("#### %s\n%s%s" % (title, chunk, "\n[... cut short]" if cut else ""))
+
     for path in files:
         ext = _ext(path)
         rel = os.path.relpath(path, root).replace(os.sep, "/")
@@ -439,17 +607,78 @@ def knowledge_bundle(root, paths):
                 chunk = f.read(KNOW_FILE_CAP + 1)
         except OSError:
             continue
-        cut = len(chunk) > KNOW_FILE_CAP
-        chunk = chunk[:min(KNOW_FILE_CAP, KNOW_TOTAL_CAP - used)]
-        used += len(chunk)
         # The title is the document's own name, never its folder path: a path
         # tells the persona how the project is built.
-        title = os.path.splitext(os.path.basename(path))[0].replace("-", " ").replace("_", " ")
-        text_parts.append("#### %s\n%s%s" % (title, chunk, "\n[... cut short]" if cut else ""))
+        add_text(os.path.splitext(os.path.basename(path))[0].replace("-", " ").replace("_", " "), chunk)
+    for ent in linked:
+        got = (links or {}).get(ent["link"])
+        if got is None:
+            got = fetch_link(ent["link"], scratch or os.path.join(critiques_dir(root), "_links"))
+        if got.get("error"):
+            notes.append("%s: %s" % (ent["name"], got["error"]))
+        elif got.get("image"):
+            if len(images) < KNOW_IMAGES:
+                images.append(got["image"])
+            else:
+                notes.append("%s: image skipped (limit %d images)" % (ent["name"], KNOW_IMAGES))
+        elif used >= KNOW_TOTAL_CAP:
+            notes.append("%s: skipped, the knowledge budget is spent" % ent["name"])
+        else:
+            # A reference is titled by its own name, never its address.
+            add_text(ent["name"], got.get("text") or "")
     if code_skipped:
         notes.append("%d code file%s in granted folders skipped (personas never read code)"
                      % (code_skipped, "" if code_skipped == 1 else "s"))
     return "\n\n".join(text_parts), images, notes
+
+
+def fetch_links(root, persona_rows, scratch, walker):
+    """Open every link the chosen personas use, once per critique run, so
+    two personas sharing a reference cost one fetch. What they know reads a
+    link as text; Taste keeps an image link as it is and screenshots any
+    other page, since how it LOOKS is the point. Returns (know, taste), each
+    {url: fetch_link result}."""
+    know, taste = [], []
+    for p in persona_rows:
+        for key, acc in (("knowledge", know), ("taste", taste)):
+            for ent in resolve_entries(root, p.get(key)):
+                if "link" in ent and ent["link"] not in acc:
+                    acc.append(ent["link"])
+    if not know and not taste:
+        return {}, {}
+    both = know + [u for u in taste if u not in know]
+    with ThreadPoolExecutor(max_workers=min(LINK_WORKERS, len(both))) as ex:
+        got = dict(zip(both, ex.map(lambda u: fetch_link(u, scratch), both)))
+    know_res = {u: got[u] for u in know}
+    taste_res, pages = {}, []
+    for u in taste:
+        if got[u].get("image"):
+            taste_res[u] = got[u]
+        elif "sign-in" in (got[u].get("error") or ""):
+            taste_res[u] = got[u]
+        else:
+            pages.append({"key": "T%d" % (len(pages) + 1), "url": u})
+    if pages:
+        shots_dir = os.path.join(scratch, "taste")
+        os.makedirs(shots_dir, exist_ok=True)
+        plan = os.path.join(shots_dir, "pages.json")
+        with open(plan, "w", encoding="utf-8") as f:
+            json.dump({"pages": pages}, f)
+        res = walker(["survey", "--plan", plan, "--out", shots_dir, "--device", "desktop"]) or {}
+        try:
+            with open(os.path.join(shots_dir, "survey.json"), "r", encoding="utf-8") as f:
+                shot_pages = {sp.get("key"): sp for sp in (json.load(f).get("pages") or [])}
+        except (OSError, ValueError):
+            shot_pages = {}
+        for pg in pages:
+            sp = shot_pages.get(pg["key"]) or {}
+            shot = os.path.join(shots_dir, sp.get("shot") or "")
+            if sp.get("shot") and os.path.isfile(shot):
+                taste_res[pg["url"]] = {"image": shot}
+            else:
+                taste_res[pg["url"]] = {"error": "could not take a picture of the page (%s)" % _short(
+                    sp.get("error") or res.get("error") or "the browser opened nothing", 120)}
+    return know_res, taste_res
 
 
 # ── prompts ───────────────────────────────────────────────────────────────
@@ -490,15 +719,57 @@ def persona_system(p):
                       text, "", "## Device you are using", "a phone" if device == "mobile" else "a computer"])
 
 
-def taste_images(root, p):
-    """The persona's taste images that are still on disk."""
-    out = []
-    for rel in (p.get("taste") or [])[:MAX_TASTE]:
-        c = _clean_rel(rel)
-        path = os.path.join(root, c) if c else None
-        if path and os.path.isfile(path):
+def taste_images(root, p, links=None):
+    """(image paths, notes): the persona's taste, at most MAX_TASTE images -
+    uploads, project images, the images inside a project folder, and
+    references (`links` holds what fetch_links made of a link: the image, or
+    a screenshot of the page)."""
+    root_real = os.path.realpath(root)
+    out, notes = [], []
+
+    def add(path):
+        if path not in out:
             out.append(path)
-    return out
+
+    for ent in resolve_entries(root, p.get("taste")):
+        if len(out) >= MAX_TASTE:
+            notes.append("taste: more than %d images, the rest skipped" % MAX_TASTE)
+            break
+        if "missing" in ent:
+            notes.append("taste: %s, skipped" % ent["missing"])
+            continue
+        if "link" in ent:
+            got = (links or {}).get(ent["link"]) or {"error": "not opened"}
+            if got.get("image"):
+                add(got["image"])
+            else:
+                notes.append("taste, %s: %s" % (ent["name"], got.get("error") or "no picture of it"))
+            continue
+        absolute = os.path.realpath(os.path.join(root, ent["path"]))
+        if absolute != root_real and not absolute.startswith(root_real + os.sep):
+            notes.append("taste, %s: outside the project, skipped" % ent["path"])
+        elif os.path.isdir(absolute):
+            for dirpath, dirnames, filenames in os.walk(absolute):
+                dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS)
+                for name in sorted(filenames):
+                    if len(out) >= MAX_TASTE:
+                        break
+                    path = os.path.join(dirpath, name)
+                    try:
+                        if _ext(name) in IMAGE_EXTS and not name.startswith(".") and os.path.getsize(path) <= TASTE_BYTES:
+                            add(path)
+                    except OSError:
+                        pass
+                if len(out) >= MAX_TASTE:
+                    break
+        elif os.path.isfile(absolute):
+            if _ext(absolute) in IMAGE_EXTS:
+                add(absolute)
+            else:
+                notes.append("taste, %s: not an image, skipped" % ent["name"])
+        else:
+            notes.append("taste, %s: not found" % ent["name"])
+    return out[:MAX_TASTE], notes
 
 
 def strip_json(text):
@@ -798,18 +1069,23 @@ def _run(job, persona_rows, req, deps):
                 for d, fut in futs.items():
                     walks[d] = fut.result()
             _update(job, deps, walks=walks, stage="critiquing")
-        # 4. Every persona, isolated and in parallel.
+        # 4. Every persona, isolated and in parallel. Links among their
+        # references are opened first, once for all of them.
+        links_dir = os.path.join(out_dir, "links")
+        know_links, taste_links = fetch_links(root, persona_rows, links_dir, deps["walker"])
+
         def one(p):
             _set_persona(job, p["id"], status="running")
             _update(job, deps)
             try:
-                know_text, know_images, know_notes = knowledge_bundle(root, p.get("knowledge"))
+                know_text, know_images, know_notes = knowledge_bundle(root, p.get("knowledge"), know_links, links_dir)
                 content = []
                 if know_text or know_images:
                     content.append({"type": "text", "text": "## What you know\n" + (know_text or "(images only)")})
                     for img in know_images:
                         content.append({"type": "image", "path": img})
-                taste = taste_images(root, p)
+                taste, taste_notes = taste_images(root, p, taste_links)
+                know_notes = know_notes + taste_notes
                 if taste:
                     content.append({"type": "text", "text": "## Your taste\nThese images show apps, styles and "
                                     "products you like and feel at home with. They shape what feels right or off "
@@ -877,8 +1153,10 @@ DRAFT_SYSTEM = """You turn research into one user persona for a product team. An
 Use only what the research supports; where it is silent, leave the section out rather than invent. Plain words, short lines, no paragraphs."""
 
 
-def draft_blocks(root, paths, notes_text, hint):
-    know_text, images, notes = knowledge_bundle(root, paths)
+def draft_blocks(root, paths, notes_text, hint, scratch=None):
+    """The draft call's blocks; a linked image lands in `scratch`, which the
+    caller removes once the call is done."""
+    know_text, images, notes = knowledge_bundle(root, paths, None, scratch)
     blocks = []
     if hint:
         blocks.append({"type": "text", "text": "The team's current draft (keep what the research does not contradict):\n" + hint})

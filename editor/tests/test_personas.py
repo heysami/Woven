@@ -88,7 +88,7 @@ class PersonaStore(unittest.TestCase):
         self.assertIn("Device: phone", row["profile"])
         self.assertIn('> "Keep it simple"', row["profile"])
 
-    def test_taste_images_belong_to_their_persona(self):
+    def test_taste_uploads_belong_to_their_persona(self):
         pid = "p_abcd1234"
         kept = personas.save_taste(self.root, pid, b"\x89PNG fake", "png")
         dropped = personas.save_taste(self.root, pid, b"\x89PNG fake", "png")
@@ -96,8 +96,11 @@ class PersonaStore(unittest.TestCase):
         with self.assertRaises(ValueError):
             personas.save_taste(self.root, pid, b"x", "svg+xml")
         rec, _ = personas.upsert(self.root, {"id": pid, "profile": "# Ana",
-                                             "taste": [kept, "personas/taste/p_other-1.png", "docs/x.png"]})
-        self.assertEqual(rec["taste"], [kept])                 # only its own uploads
+                                             "taste": [kept, "personas/taste/p_other-1.png", "docs/x.png",
+                                                       "ref:r_abcd1234", "ref:bad", "../out.png"]})
+        # Its own uploads, project paths and references; never another
+        # persona's uploads (that persona's delete sweeps them).
+        self.assertEqual(rec["taste"], [kept, "docs/x.png", "ref:r_abcd1234"])
         self.assertTrue(os.path.isfile(os.path.join(self.root, kept)))
         self.assertFalse(os.path.isfile(os.path.join(self.root, dropped)))   # removed on save
         personas.delete(self.root, pid)
@@ -175,6 +178,51 @@ class Knowledge(unittest.TestCase):
         self.assertNotIn("research/", text)          # titles never leak the project's paths
         self.assertTrue(any("code file" in n for n in notes))
         self.assertEqual(images, [])
+
+    def test_references_are_read_fresh(self):
+        import references
+        folder, _ = references.upsert(self.root, {"name": "Interview folder", "location": "research/deep"})
+        link, _ = references.upsert(self.root, {"name": "Market study", "location": "https://example.com/study"})
+        gone = "ref:r_dead0000"
+        entries = ["ref:" + folder["id"], "ref:" + link["id"], gone]
+        # A critique run opens each link once and hands the result over.
+        text, images, notes = personas.knowledge_bundle(
+            self.root, entries, {"https://example.com/study": {"text": "Most buy on a phone."}})
+        self.assertIn("Phone first.", text)
+        self.assertIn("#### Market study\nMost buy on a phone.", text)   # titled by the reference's name
+        self.assertNotIn("example.com", text)
+        self.assertTrue(any("removed" in n for n in notes))
+        # An edited reference moves every persona using it.
+        references.upsert(self.root, dict(folder, location="research/interviews.md"))
+        text, _, _ = personas.knowledge_bundle(self.root, entries[:1])
+        self.assertIn("They hate long forms.", text)
+        self.assertNotIn("Phone first.", text)
+        # A link that cannot be opened is a note, never an invented document.
+        _, _, notes = personas.knowledge_bundle(
+            self.root, entries[1:2], {"https://example.com/study": {"error": "it needs a sign-in"}})
+        self.assertEqual(notes, ["Market study: it needs a sign-in"])
+
+    def test_taste_from_folders_files_and_links(self):
+        import references
+        shots = os.path.join(self.root, "moodboard")
+        os.makedirs(shots)
+        for name in ("a.png", "b.jpg", "c.js"):
+            with open(os.path.join(shots, name), "wb") as f:
+                f.write(b"x")
+        site, _ = references.upsert(self.root, {"name": "A site they love", "location": "https://example.com"})
+        shot = os.path.join(self.root, "shot.jpg")
+        p = {"taste": ["moodboard", "research/interviews.md", "ref:" + site["id"]]}
+        images, notes = personas.taste_images(self.root, p, {"https://example.com": {"image": shot}})
+        self.assertEqual([os.path.basename(i) for i in images], ["a.png", "b.jpg", "shot.jpg"])
+        self.assertTrue(any("not an image" in n for n in notes))
+
+    def test_page_text(self):
+        parser = personas._PageText()
+        parser.feed("<html><head><title>T</title><script>var x</script></head><body><h1>Guide</h1>"
+                    "<p>Compare &amp; save</p><style>.a{}</style><div>More</div></body></html>")
+        self.assertEqual(parser.text(), "Guide\n\nCompare & save\n\nMore")
+        self.assertEqual(personas._export_url("https://docs.google.com/spreadsheets/d/Ab-1/edit#gid=7"),
+                         "https://docs.google.com/spreadsheets/d/Ab-1/export?format=csv&gid=7")
 
 
 class Parsers(unittest.TestCase):

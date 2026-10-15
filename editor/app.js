@@ -63577,12 +63577,58 @@ function personaMeta(p) {
   return [p.role, p.device === "mobile" ? "phone" : null].filter(Boolean).join(" · ");
 }
 
-/* Grant files or folders of the project as what a persona knows: a one-level
-   listing with drill-down (/__fs_list). Code files are listed but cannot be
-   granted, and the daemon skips them inside a granted folder too.
-   Also the project picker of the reference editor, which passes its own
-   `accept` (any file or folder) and `verb` ("Use"). */
-function PersonaKnowledgeBrowser({ granted, onGrant, onClose, accept, verb = "Grant" }) {
+/* A picker popup on the dialog chrome (above every panel): rows toggle in
+   place; Done, Escape or a click outside close it. `tabs` adds a tab row
+   under the title with `tool` at its right. The persona grants and the
+   reference editor's project path both pick through it. */
+function SourcePickerModal({ title, tabs, tab, onTab, tool, foot, onClose, children }) {
+  const ref = useRef(null);
+  useEffect(() => { try { ref.current && ref.current.focus(); } catch {} }, []);
+  // Escape with focus inside is the dialog's own onKeyDown (an inner form
+  // claims it first with preventDefault). Focus can also fall to the body,
+  // e.g. when the folder row just clicked is replaced by its contents.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented || (ref.current && ref.current.contains(e.target))) return;
+      e.preventDefault();
+      closeRef.current();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+  return createPortal(html`
+    <div className="modal-scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div ref=${ref} className="modal source-picker" role="dialog" aria-modal="true" aria-label=${title} tabIndex="-1"
+        onKeyDown=${(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); } }}>
+        <div className="modal-head">
+          <div className="modal-title">${title}</div>
+          <button type="button" className="modal-x" onClick=${onClose} aria-label="Close">×</button>
+        </div>
+        ${tabs ? html`<div className="source-picker-tabs">
+          <div className="pv-panel-tabs" role="tablist" aria-label=${title}>
+            ${tabs.map(t => html`
+              <button key=${t.key} type="button" role="tab" aria-selected=${tab === t.key} title=${t.tip || ""}
+                className=${"th-tasks-filter-btn" + (tab === t.key ? " is-active" : "")} onClick=${() => onTab(t.key)}
+              >${t.label}${t.count != null && html`<span className="pv-panel-tab-count">${t.count}</span>`}</button>`)}
+          </div>
+          ${tool}
+        </div>` : html`<div/>`}
+        <div className="source-picker-body">${children}</div>
+        <div className="modal-foot">
+          <span className="source-picker-foot">${foot}</span>
+          <button type="button" className="tbtn tbtn-primary" onClick=${onClose}>Done</button>
+        </div>
+      </div>
+    </div>`, document.body);
+}
+
+/* A one-level listing of the project with drill-down (/__fs_list): the Files
+   tab of the persona picker, and the reference editor's path picker, which
+   passes its own `accept` (any file or folder) and `verb` ("Use"). A row
+   `accept` refuses is listed dimmed with `refuse` as the reason. */
+function PersonaKnowledgeBrowser({ granted, onGrant, accept, verb = "Add", refuse = "not a document; personas never read code" }) {
   const [dir, setDir] = useState("");
   const [entries, setEntries] = useState(null);
   useEffect(() => {
@@ -63601,8 +63647,6 @@ function PersonaKnowledgeBrowser({ granted, onGrant, onClose, accept, verb = "Gr
         <button type="button" className="personas-crumb" onClick=${() => setDir("")}>project</button>
         ${crumbs.map((c, i) => html`<${React.Fragment} key=${i}><span className="personas-crumb-sep">/</span>
           <button type="button" className="personas-crumb" onClick=${() => setDir(crumbs.slice(0, i + 1).join("/"))}>${c}</button><//>`)}
-        <span className="personas-browser-spacer"/>
-        <button type="button" className="pv-panel-close" title="Done" aria-label="Close the file list" onClick=${onClose}>×</button>
       </div>
       <div className="personas-browser-list">
         ${entries === null && html`<div className="pv-panel-empty">Loading…</div>`}
@@ -63613,19 +63657,152 @@ function PersonaKnowledgeBrowser({ granted, onGrant, onClose, accept, verb = "Gr
           const has = granted.includes(e.rel);
           return html`
             <div key=${e.rel} className="pv-file-row personas-browser-row" data-muted=${!isDoc}
-              title=${isDoc ? e.rel : e.rel + " - not a document; personas never read code"}>
+              title=${isDoc ? e.rel : e.rel + " - " + refuse}>
               <button type="button" className="pv-file-open" disabled=${!isDir}
                 onClick=${() => isDir && setDir(e.rel)}>
-                <span className="pv-file-glyph">${isDir ? html`<${Icon.Folder}/>` : PERSONA_DOC_EXTS.has(e.ext) && /^(png|jpe?g|webp|gif)$/.test(e.ext) ? html`<${Icon.Image}/>` : isDoc ? html`<${Icon.NotesDoc}/>` : html`<${Icon.Code}/>`}</span>
+                <span className="pv-file-glyph">${isDir ? html`<${Icon.Folder}/>` : /^(png|jpe?g|webp|gif)$/.test(e.ext || "") ? html`<${Icon.Image}/>` : PERSONA_DOC_EXTS.has(e.ext) ? html`<${Icon.NotesDoc}/>` : html`<${Icon.Code}/>`}</span>
                 <span className="pv-file-name">${e.name}</span>
+                ${isDir && html`<span className="personas-browser-chev"><${Icon.Chev}/></span>`}
               </button>
               ${isDoc && html`<button type="button" className="pv-rowbtn personas-grant" data-on=${has}
-                title=${has ? (verb === "Grant" ? "Granted - click to remove" : "Chosen") : (isDir ? verb + " this folder" : verb + " this file")}
-                aria-label=${has ? "Remove " + e.name : "Grant " + e.name}
+                title=${has ? (verb === "Use" ? "Chosen" : "Added - click to remove") : (isDir ? verb + " this folder" : verb + " this file")}
+                aria-label=${has ? "Remove " + e.name : verb + " " + e.name}
                 onClick=${() => onGrant(e.rel, !has)}>${has ? html`<${Icon.Check}/>` : html`<${Icon.Plus}/>`}</button>`}
             </div>`;
         })}
       </div>
+    </div>`;
+}
+
+// What they know and Taste hold project paths and "ref:<id>" entries: one of
+// the project's references (a link, file or folder), read fresh each time;
+// personas.py opens a link for the persona (Taste screenshots a web page).
+const PERSONA_KNOWLEDGE_MAX = 24;
+const PERSONA_IMAGE_RE = /\.(png|jpe?g|webp|gif)$/i;
+function personaRefId(entry) {
+  const m = /^ref:(r_[a-z0-9]{4,24})$/.exec(entry || "");
+  return m ? m[1] : null;
+}
+const PERSONA_PICK = {
+  knowledge: {
+    title: "What they know",
+    max: PERSONA_KNOWLEDGE_MAX,
+    foot: "Documents, images and web pages. Never code.",
+    file: (e) => e.kind === "dir" || PERSONA_DOC_EXTS.has(e.ext),
+    ref: (r) => r.kind !== "missing",
+    refuse: "not a document; personas never read code",
+  },
+  taste: {
+    title: "Taste",
+    max: PERSONA_TASTE_MAX,
+    foot: "Images, folders of images or links. A web page is shown to them as a screenshot.",
+    file: (e) => e.kind === "dir" || /^(png|jpe?g|webp|gif)$/.test(e.ext || ""),
+    ref: (r) => r.kind === "link" || r.kind === "folder" || (r.kind === "file" && PERSONA_IMAGE_RE.test(r.location)),
+    refuse: "not an image",
+  },
+};
+
+/* Add to What they know or Taste: the project's references (where an online
+   location lives; a new one can be added here and lands in References too)
+   or files and folders of the project. `onPick` returns an error or null. */
+function PersonaSourcePicker({ field, picked, onPick, onClose }) {
+  const cfg = PERSONA_PICK[field];
+  const refList = useReferences();
+  const [tab, setTab] = useState("references");
+  const [adding, setAdding] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const toggle = (entry, on) => setErr(onPick(entry, on) || null);
+  const addRef = async () => {
+    const location = (adding.location || "").trim();
+    if (!location) { setErr("Paste a link or type a project path."); return; }
+    const looksLink = /^(https?:\/\/)?[^/\s]+\.[a-z]{2,}(:\d+)?(\/|$)/i.test(location);
+    const name = (adding.name.trim() || (looksLink
+      ? referenceWhere({ kind: "link", location: /^https?:\/\//i.test(location) ? location : "https://" + location })
+      : location.replace(/\/+$/, "").split("/").pop())).slice(0, 80);
+    setBusy(true); setErr(null);
+    try {
+      const j = await referencesPost({ op: "upsert", reference: { name, location, note: "" } });
+      setAdding(null);
+      if (j.reference && cfg.ref(j.reference)) toggle("ref:" + j.reference.id, true);
+      else if (j.reference) setErr(`Added to References, but ${field === "taste" ? "it is not an image, a folder or a link" : "it was not found"}.`);
+    } catch (e) { setErr(e.message || String(e)); }
+    finally { setBusy(false); }
+  };
+  const n = (refList || []).length;
+  const tabs = [
+    { key: "references", label: "References", count: refList ? n : null, tip: "The project's references: links, files and folders" },
+    { key: "files", label: "Project files", tip: "Files and folders of the project" },
+  ];
+  const tool = tab === "references" && !adding && html`<${HoverTip} className="pv-panel-tool" tip="New reference: a link or a project path"
+    ariaLabel="New reference" onClick=${() => { setErr(null); setAdding({ name: "", location: "" }); }}><${Icon.Plus}/><//>`;
+  const foot = err ? html`<span className="personas-error">${err}</span>` : cfg.foot;
+  let body;
+  if (tab === "files") {
+    body = html`<${PersonaKnowledgeBrowser} granted=${picked} onGrant=${toggle} accept=${cfg.file} refuse=${cfg.refuse}/>`;
+  } else if (adding) {
+    body = html`
+      <div className="personas-form source-picker-form" onKeyDown=${(e) => {
+        if (e.key === "Enter" && !busy) { e.preventDefault(); addRef(); }
+        else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setAdding(null); setErr(null); }
+      }}>
+        <label className="personas-field"><span>Link or project path</span>
+          <input autoFocus value=${adding.location} placeholder="docs.google.com/... or research/interviews"
+            onInput=${(e) => { const v = e.target.value; setAdding(a => ({ ...a, location: v })); }}/></label>
+        <label className="personas-field"><span>Name</span>
+          <input value=${adding.name} placeholder="Optional, taken from the link"
+            onInput=${(e) => { const v = e.target.value; setAdding(a => ({ ...a, name: v })); }}/></label>
+        <div className="personas-help">It joins the project's References, so chats can use it too. A private link must be shared for it to be read.</div>
+        <div className="personas-actions">
+          <span className="personas-help"/>
+          <button type="button" className="personas-btn personas-btn-ghost" onClick=${() => { setAdding(null); setErr(null); }}>Cancel</button>
+          <button type="button" className="personas-btn personas-btn-primary" disabled=${busy} onClick=${addRef}>${busy ? "Adding…" : "Add"}</button>
+        </div>
+      </div>`;
+  } else {
+    body = html`
+      <div className="pv-panel-list source-picker-list">
+        ${refList === null && html`<div className="pv-panel-empty">Loading…</div>`}
+        ${refList !== null && n === 0 && html`<div className="pv-panel-empty">
+          No references yet. Add a link, such as a research doc or a site they like, or pick from Project files.
+          <div className="personas-empty-act"><button type="button" className="personas-btn" onClick=${() => setAdding({ name: "", location: "" })}>New reference</button></div>
+        </div>`}
+        ${(refList || []).map(r => {
+          const ok = cfg.ref(r);
+          const has = picked.includes("ref:" + r.id);
+          return html`
+            <div key=${r.id} className="pv-file-row personas-row source-picker-row" data-muted=${!ok}
+              title=${r.location + (ok ? "" : " - " + (r.kind === "missing" ? "not found" : cfg.refuse))}
+              onClick=${() => ok && toggle("ref:" + r.id, !has)}>
+              <span className="pv-file-glyph">${referenceGlyph(r.kind)}</span>
+              <span className="personas-row-name">${r.name}</span>
+              <span className="personas-row-meta">${referenceWhere(r)}</span>
+              ${ok && html`<button type="button" className="pv-rowbtn personas-grant" data-on=${has}
+                title=${has ? "Added - click to remove" : "Add"} aria-label=${(has ? "Remove " : "Add ") + r.name}
+                onClick=${(e) => { e.stopPropagation(); toggle("ref:" + r.id, !has); }}>${has ? html`<${Icon.Check}/>` : html`<${Icon.Plus}/>`}</button>`}
+            </div>`;
+        })}
+      </div>`;
+  }
+  return html`<${SourcePickerModal} title=${"Add to " + cfg.title} tabs=${tabs} tab=${tab}
+    onTab=${(k) => { setTab(k); setAdding(null); setErr(null); }} tool=${tool} foot=${foot} onClose=${onClose}>${body}<//>`;
+}
+
+// One granted entry: a project file or folder, or a reference (by its name;
+// the tooltip holds where it points).
+function PersonaGrantRow({ entry, refs, onRemove }) {
+  const rid = personaRefId(entry);
+  const r = rid && refs ? refs.find(x => x.id === rid) : null;
+  const gone = !!rid && refs !== null && !r;
+  const name = rid ? (r ? r.name : gone ? "Removed reference" : "Reference") : entry;
+  const glyph = rid ? (r ? referenceGlyph(r.kind) : html`<${gone ? Icon.Alert : Icon.Link}/>`)
+    : !/\.[a-z0-9]+$/i.test(entry) ? html`<${Icon.Folder}/>`
+    : PERSONA_IMAGE_RE.test(entry) ? html`<${Icon.Image}/>` : html`<${Icon.NotesDoc}/>`;
+  return html`
+    <div className="pv-file-row personas-know-row" data-missing=${gone}>
+      <span className="pv-file-glyph">${glyph}</span>
+      <span className="pv-file-name" title=${r ? r.name + " (reference): " + r.location : gone ? "This reference was removed from the project" : entry}>${name}</span>
+      <button type="button" className="pv-rowbtn" title="Remove" aria-label=${"Remove " + name} onClick=${onRemove}><${Icon.X}/></button>
     </div>`;
 }
 
@@ -63636,7 +63813,8 @@ function PersonaEditor({ initial, onDone, onClose }) {
   }));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
-  const [browse, setBrowse] = useState(false);
+  const [picker, setPicker] = useState(null);   // "knowledge" | "taste" while the picker popup is open
+  const refList = useReferences({ refresh: false });
   const [draftOpen, setDraftOpen] = useState(false);
   const [notes, setNotes] = useState("");
   const [drafting, setDrafting] = useState(false);
@@ -63652,9 +63830,17 @@ function PersonaEditor({ initial, onDone, onClose }) {
     el.setSelectionRange(2, 6);
     el.scrollTop = 0;
   }, []);
-  const grant = (rel, on) => setP(o => ({
-    ...o, knowledge: on ? (o.knowledge.includes(rel) ? o.knowledge : [...o.knowledge, rel]) : o.knowledge.filter(k => k !== rel),
-  }));
+  // Add or remove one entry of What they know / Taste. Returns why not, or null.
+  const pick = (field, entry, on) => {
+    const max = PERSONA_PICK[field].max;
+    if (on && !p[field].includes(entry) && p[field].length + (field === "taste" ? uploading : 0) >= max) {
+      return field === "taste" ? `Up to ${max} taste items per persona.` : `Up to ${max} items per persona.`;
+    }
+    setP(o => ({
+      ...o, [field]: on ? (o[field].includes(entry) ? o[field] : [...o[field], entry]) : o[field].filter(k => k !== entry),
+    }));
+    return null;
+  };
   const save = async () => {
     const nm = personaNameOf(p.profile);
     if (!nm || nm === "Name") { setErr("Put the persona's name on the first line, in place of \"Name\"."); return; }
@@ -63664,14 +63850,15 @@ function PersonaEditor({ initial, onDone, onClose }) {
     finally { setSaving(false); }
   };
   // Taste: images of apps, styles or products this person likes or feels at
-  // home with. Each uploads straight away (filed under the persona's id) and
-  // joins the record on Save.
+  // home with. Each upload is stored straight away (filed under the
+  // persona's id) and joins the record on Save; references and project
+  // images or folders are picked like What they know.
   const addTaste = async (files) => {
     const imgs = Array.from(files || []).filter(f => /^image\/(png|jpe?g|webp|gif)$/.test(f.type));
     if (!imgs.length) { setErr("Taste images must be png, jpg, webp or gif."); return; }
     setErr(null);
     const room = PERSONA_TASTE_MAX - p.taste.length - uploading;
-    if (imgs.length > room) setErr(`Up to ${PERSONA_TASTE_MAX} taste images per persona.`);
+    if (imgs.length > room) setErr(`Up to ${PERSONA_TASTE_MAX} taste items per persona.`);
     for (const f of imgs.slice(0, Math.max(0, room))) {
       if (f.size > 5 * 1024 * 1024) { setErr(`${f.name} is over 5 MB.`); continue; }
       setUploading(n => n + 1);
@@ -63697,6 +63884,10 @@ function PersonaEditor({ initial, onDone, onClose }) {
     } catch (e) { setErr(e.message || String(e)); }
     finally { setDrafting(false); }
   };
+  // Images (uploads and project images) show as thumbnails; folders and
+  // references as rows under them.
+  const tasteThumbs = p.taste.filter(t => !personaRefId(t) && PERSONA_IMAGE_RE.test(t));
+  const tasteRows = p.taste.filter(t => !tasteThumbs.includes(t));
   return html`
     <div className="pv-panel personas-panel">
       <div className="pv-panel-head">
@@ -63715,15 +63906,10 @@ function PersonaEditor({ initial, onDone, onClose }) {
         <div className="personas-pair">
           <div className="personas-field">
             <div className="personas-field-head"><span>What they know</span>
-              <${HoverTip} className="pv-panel-tool" tip="Grant a file or folder of the project" ariaLabel="Grant a file or folder"
-                onClick=${() => setBrowse(b => !b)}><${Icon.Plus}/><//></div>
-            ${p.knowledge.length === 0 && html`<div className="personas-help">Research notes, briefs or reference documents they would know. Code is never read.</div>`}
-            ${p.knowledge.map(k => html`
-              <div key=${k} className="pv-file-row personas-know-row">
-                <span className="pv-file-glyph">${/\.[a-z0-9]+$/i.test(k) ? html`<${Icon.NotesDoc}/>` : html`<${Icon.Folder}/>`}</span>
-                <span className="pv-file-name" title=${k}>${k}</span>
-                <button type="button" className="pv-rowbtn" title="Remove" aria-label=${"Remove " + k} onClick=${() => grant(k, false)}><${Icon.X}/></button>
-              </div>`)}
+              <${HoverTip} className="pv-panel-tool" tip="Add from references or project files" ariaLabel="Add to what they know"
+                onClick=${() => setPicker("knowledge")}><${Icon.Plus}/><//></div>
+            ${p.knowledge.length === 0 && html`<div className="personas-help">Research notes, briefs or reference documents they would know, from the project or its references, links included. Code is never read.</div>`}
+            ${p.knowledge.map(k => html`<${PersonaGrantRow} key=${k} entry=${k} refs=${refList} onRemove=${() => pick("knowledge", k, false)}/>`)}
           </div>
           <div className="personas-field personas-taste" tabIndex="0" data-drop=${dropOn}
             onDragOver=${(e) => { if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) { e.preventDefault(); setDropOn(true); } }}
@@ -63731,24 +63917,30 @@ function PersonaEditor({ initial, onDone, onClose }) {
             onDrop=${(e) => { e.preventDefault(); setDropOn(false); addTaste(e.dataTransfer && e.dataTransfer.files); }}
             onPaste=${(e) => { const f = e.clipboardData && e.clipboardData.files; if (f && f.length) { e.preventDefault(); addTaste(f); } }}>
             <div className="personas-field-head"><span>Taste</span>
-              <${HoverTip} className="pv-panel-tool" tip="Add images of apps, styles or products they like" ariaLabel="Add taste images"
-                onClick=${() => fileRef.current && fileRef.current.click()}><${Icon.Image}/><//></div>
+              <div className="personas-field-tools">
+                <${HoverTip} className="pv-panel-tool" tip="Upload images of apps, styles or products they like" ariaLabel="Upload taste images"
+                  onClick=${() => fileRef.current && fileRef.current.click()}><${Icon.Image}/><//>
+                <${HoverTip} className="pv-panel-tool" tip="Add from references or project files" ariaLabel="Add to taste"
+                  onClick=${() => setPicker("taste")}><${Icon.Plus}/><//>
+              </div></div>
             <input ref=${fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden
               onChange=${(e) => { addTaste(e.target.files); e.target.value = ""; }}/>
-            ${p.taste.length === 0 && !uploading && html`<div className="personas-help">Apps, styles or products they like or feel at home with. Drop, paste or add images.</div>`}
-            ${(p.taste.length > 0 || uploading > 0) && html`
+            ${p.taste.length === 0 && !uploading && html`<div className="personas-help">Apps, styles or products they like or feel at home with. Drop, paste or upload images, or add links, project images and folders.</div>`}
+            ${(tasteThumbs.length > 0 || uploading > 0) && html`
               <div className="personas-taste-grid">
-                ${p.taste.map(t => html`
-                  <div key=${t} className="personas-taste-thumb">
+                ${tasteThumbs.map(t => html`
+                  <div key=${t} className="personas-taste-thumb" title=${t.startsWith("personas/taste/") ? "" : t}>
                     <img src=${apiUrl("/" + t)} alt="" loading="lazy"/>
                     <button type="button" className="pv-rowbtn personas-taste-x" title="Remove" aria-label="Remove image"
-                      onClick=${() => setP(o => ({ ...o, taste: o.taste.filter(x => x !== t) }))}><${Icon.X}/></button>
+                      onClick=${() => pick("taste", t, false)}><${Icon.X}/></button>
                   </div>`)}
                 ${Array.from({ length: uploading }, (_, i) => html`<div key=${"up" + i} className="personas-taste-thumb is-loading"><span className="chat-active-agent-spin"/></div>`)}
               </div>`}
+            ${tasteRows.map(t => html`<${PersonaGrantRow} key=${t} entry=${t} refs=${refList} onRemove=${() => pick("taste", t, false)}/>`)}
           </div>
         </div>
-        ${browse && html`<${PersonaKnowledgeBrowser} granted=${p.knowledge} onGrant=${grant} onClose=${() => setBrowse(false)}/>`}
+        ${picker && html`<${PersonaSourcePicker} field=${picker} picked=${p[picker]}
+          onPick=${(entry, on) => pick(picker, entry, on)} onClose=${() => setPicker(null)}/>`}
         <div className="personas-field">
           <div className="personas-field-head"><span>Draft from research</span>
             <${HoverTip} className="pv-panel-tool" tip=${draftOpen ? "Hide" : "Write the profile from the granted documents and pasted notes"}
@@ -64299,8 +64491,11 @@ function ReferenceEditor({ initial, onDone, onClose }) {
               onClick=${() => setBrowse(b => !b)}><${Icon.Folder}/><//></div>
           <input value=${r.location} placeholder="drive.google.com/... or docs/data-dictionary.xlsx"
             onInput=${(e) => set("location", e.target.value)}/>
-          ${browse && html`<${PersonaKnowledgeBrowser} granted=${[r.location]} verb="Use" accept=${() => true}
-            onGrant=${(rel) => { set("location", rel); setBrowse(false); }} onClose=${() => setBrowse(false)}/>`}
+          ${browse && html`<${SourcePickerModal} title="Pick a file or folder" onClose=${() => setBrowse(false)}
+            foot="Agents open it fresh each time they need it.">
+            <${PersonaKnowledgeBrowser} granted=${[r.location]} verb="Use" accept=${() => true}
+              onGrant=${(rel) => { set("location", rel); setBrowse(false); }}/>
+          <//>`}
         </div>
         <label className="personas-field"><span>Source of truth for</span>
           <textarea rows="2" value=${r.note} placeholder="Field names, types and allowed values"

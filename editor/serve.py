@@ -28446,14 +28446,17 @@ class H(http.server.SimpleHTTPRequestHandler):
         paths = [p for p in (body.get("paths") or []) if isinstance(p, str)][:_personas.MAX_KNOWLEDGE]
         notes_text = body.get("notes") if isinstance(body.get("notes"), str) else ""
         hint = body.get("hint").strip()[:_personas.PROFILE_CAP] if isinstance(body.get("hint"), str) else ""
-        blocks, notes, has = _personas.draft_blocks(root, paths, notes_text.strip(), hint)
-        if not has:
-            return self._reply(400, {"error": "add a research document under What they know, or paste research notes", "notes": notes})
-        _fast, profile = self._persona_profiles(None)
-        try:
-            text = _multimodal_complete(profile, _personas.DRAFT_SYSTEM, blocks, timeout=240)
-        except Exception as e:
-            return self._reply(502, {"error": "the draft failed: %s" % str(e)[:300], "notes": notes})
+        # A reference link is opened fresh for the draft; an image it points
+        # at lands in a scratch folder that goes when the call is done.
+        with tempfile.TemporaryDirectory(prefix="woven-persona-draft-") as scratch:
+            blocks, notes, has = _personas.draft_blocks(root, paths, notes_text.strip(), hint, scratch)
+            if not has:
+                return self._reply(400, {"error": "add a research document under What they know, or paste research notes", "notes": notes})
+            _fast, profile = self._persona_profiles(None)
+            try:
+                text = _multimodal_complete(profile, _personas.DRAFT_SYSTEM, blocks, timeout=240)
+            except Exception as e:
+                return self._reply(502, {"error": "the draft failed: %s" % str(e)[:300], "notes": notes})
         return self._reply(200, {"draft": _personas.parse_draft(text), "notes": notes})
 
     def _critic_run(self, qs):
