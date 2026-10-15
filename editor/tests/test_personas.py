@@ -45,24 +45,53 @@ class PersonaStore(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.root, ignore_errors=True)
 
-    def test_upsert_normalizes_and_persists(self):
-        rec, rows = personas.upsert(self.root, {"name": " Maya ", "basis": "nope", "device": "mobile",
+    def test_profile_is_one_markdown_text(self):
+        text = "# Maya R.\nFirst-year student, works part time\n\n## Goals\n- rent money fast\n\nDevice: phone"
+        rec, rows = personas.upsert(self.root, {"profile": text,
                                                 "knowledge": ["./docs/a.md", "../escape", "docs/a.md", "/abs/x"]})
         self.assertTrue(personas.ID_RE.match(rec["id"]))
-        self.assertEqual(rec["name"], "Maya")
-        self.assertEqual(rec["basis"], "assumption")
+        self.assertEqual(rec["name"], "Maya R.")
+        self.assertEqual(rec["role"], "First-year student, works part time")
         self.assertEqual(rec["device"], "mobile")
+        self.assertEqual(rec["profile"], text)
         self.assertEqual(rec["knowledge"], ["docs/a.md", "abs/x"])
-        self.assertEqual([p["id"] for p in personas.load(self.root)], [rec["id"]])
-        rec2, rows = personas.upsert(self.root, dict(rec, role="Student"))
+        rec2, rows = personas.upsert(self.root, dict(rec, profile=text.replace("Device: phone", "Device: laptop")))
         self.assertEqual(len(rows), 1)
+        self.assertEqual(rec2["device"], "desktop")
         self.assertEqual(rec2["createdAt"], rec["createdAt"])
-        self.assertEqual(personas.load(self.root)[0]["role"], "Student")
+        self.assertIn("rent money fast", personas.persona_system(rec2))
         self.assertEqual(personas.delete(self.root, rec["id"]), [])
 
     def test_name_required(self):
         with self.assertRaises(ValueError):
-            personas.upsert(self.root, {"name": "  "})
+            personas.upsert(self.root, {"profile": "   \n  "})
+
+    def test_first_form_records_still_load(self):
+        personas._write(self.root, [{"id": "p_old1", "name": "Tom K.", "role": "Mature student",
+                                     "goals": "- finish", "device": "mobile", "quote": "Keep it simple"}])
+        row = personas.load(self.root)[0]
+        self.assertTrue(row["profile"].startswith("# Tom K.\nMature student"))
+        self.assertIn("Device: phone", row["profile"])
+        self.assertIn('> "Keep it simple"', row["profile"])
+
+    def test_taste_images_belong_to_their_persona(self):
+        pid = "p_abcd1234"
+        kept = personas.save_taste(self.root, pid, b"\x89PNG fake", "png")
+        dropped = personas.save_taste(self.root, pid, b"\x89PNG fake", "png")
+        self.assertTrue(kept.startswith("personas/taste/p_abcd1234-"))
+        with self.assertRaises(ValueError):
+            personas.save_taste(self.root, pid, b"x", "svg+xml")
+        rec, _ = personas.upsert(self.root, {"id": pid, "profile": "# Ana",
+                                             "taste": [kept, "personas/taste/p_other-1.png", "docs/x.png"]})
+        self.assertEqual(rec["taste"], [kept])                 # only its own uploads
+        self.assertTrue(os.path.isfile(os.path.join(self.root, kept)))
+        self.assertFalse(os.path.isfile(os.path.join(self.root, dropped)))   # removed on save
+        personas.delete(self.root, pid)
+        self.assertFalse(os.path.isfile(os.path.join(self.root, kept)))      # goes with the persona
+
+    def test_draft_is_markdown(self):
+        out = personas.parse_draft("```markdown\n# Lee\nNurse \u2014 nights\n```")
+        self.assertEqual(out["profile"], "# Lee\nNurse - nights")
 
 
 class CriticOnMessage(unittest.TestCase):

@@ -114,6 +114,7 @@ import voicekit as _voicekit  # runtime voice core (dynamic TTS/STT) - daemon + 
 import stories as _stories  # user-story sheet (docs/user-stories.xlsx) + prototype location map
 import xlsx_io as _xlsx_io  # dependency-free .xlsx read/write (user-story sheet)
 import personas as _personas  # simulated personas: research profiles + isolated critique runs
+import references as _references  # project references: the sources of truth agents read first
 
 
 def _pick_port() -> int:
@@ -15388,7 +15389,55 @@ def _mode_send(state, text: str, raw_mode, raw_critic=None):
         critic = _thread_critic(state)
     else:
         fields = dict(fields, critic=critic)
-    return _critic_send(state, _mode_text(fields["mode"], prev, text), critic), fields
+    send = _critic_send(state, _mode_text(fields["mode"], prev, text), critic)
+    if getattr(state, "kind", None) == "freeform":
+        send, refs = _refs_send(send, fields["mode"], _thread_refs_digest(state),
+                                getattr(state, "project_root", None))
+        if refs is not None:
+            fields = dict(fields, refs=refs)
+    return send, fields
+
+
+# ── Project references (editor/references.py) ─────────────────────────────
+# The sources of truth the user listed for the project ride on a chat message,
+# not in the system prompt: the list changes mid-thread, and a preamble change
+# would hand the thread off. The echo is the record again: each message that
+# carried the list stamps `refs` = the list's digest, so the next message only
+# repeats it when the list changed since. Plan and Triage get it every time,
+# because those modes judge against history and the list is what outranks it.
+_REFS_EVERY_MESSAGE = ("plan", "triage")
+
+
+def _thread_refs_digest(state):
+    """The digest the thread was last told (None = never told, "" = told
+    that there are none)."""
+    try:
+        with state.lock:
+            for ev in reversed(state.events):
+                d = ev.get("data")
+                if ev.get("type") == "user_message" and isinstance(d, dict) and "refs" in d:
+                    return d.get("refs") if isinstance(d.get("refs"), str) else None
+    except Exception:
+        pass
+    return None
+
+
+def _refs_send(send: str, mode, told, project_root):
+    """(text, digest to stamp or None). Appends the project's references
+    when this thread has not been told the current list, or on a Plan or
+    Triage message. A list that went empty is announced once."""
+    if not project_root:
+        return send, None
+    try:
+        rows = _references.load(project_root)
+    except Exception:
+        return send, None
+    cur = _references.digest(rows)
+    if not rows and not told:
+        return send, None
+    if rows and mode not in _REFS_EVERY_MESSAGE and told == cur:
+        return send, None
+    return send + _references.agent_block(project_root, rows), cur
 
 
 def _thread_critic(state):
@@ -16222,8 +16271,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._stories_validate(qs)
             if parsed.path == "/__personas":
                 return self._personas_post(qs)
+            if parsed.path == "/__references":
+                return self._references_post(qs)
             if parsed.path == "/__personas/draft":
                 return self._personas_draft(qs)
+            if parsed.path == "/__personas/taste":
+                return self._personas_taste(qs)
             if parsed.path == "/__critic/run":
                 return self._critic_run(qs)
             if parsed.path == "/__ds/validate":
@@ -16669,6 +16722,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._qa_visual_report_file(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__personas":
             return self._personas_get(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__references":
+            return self._references_get(urllib.parse.parse_qs(parsed.query))
         m_cr = re.match(r"^/__critic/(c_[a-f0-9]{10})(/shot)?$", url_path)
         if m_cr:
             if m_cr.group(2):
@@ -28116,10 +28171,58 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    # ── Project references (editor/references.py) ──────────────────────
+    # GET  /__references?project=[&format=text]  -> {references} | the agent's text
+    # POST /__references?project= {op: upsert, reference} | {op: delete, id}
+    #                             | {op: move, id, dir: -1|1}
+    def _references_get(self, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        if (qs.get("format") or [""])[0] == "text":
+            body = (_references.text_listing(root) + "\n").encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        return self._reply(200, {"references": _references.listing(root)})
+
+    def _references_post(self, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+            body = self._read_json_body(max_bytes=64 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        op = body.get("op")
+        rid = body.get("id")
+        try:
+            if op == "upsert":
+                rec, _rows = _references.upsert(root, body.get("reference"))
+                return self._reply(200, {"reference": dict(rec, kind=_references.kind_of(root, rec["location"])),
+                                         "references": _references.listing(root)})
+            if op in ("delete", "move"):
+                if not isinstance(rid, str) or not _references.ID_RE.match(rid):
+                    return self._reply(400, {"error": "id must be a reference id"})
+                if op == "delete":
+                    _references.delete(root, rid)
+                else:
+                    _references.move(root, rid, -1 if body.get("dir") == -1 else 1)
+                return self._reply(200, {"references": _references.listing(root)})
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        except OSError as e:
+            return self._reply(500, {"error": "could not save references: %s" % e})
+        return self._reply(400, {"error": "op must be upsert, delete or move"})
+
     # ── Simulated personas + persona critique (editor/personas.py) ────────
     # GET  /__personas?project=                 -> {personas}
     # POST /__personas?project= {op: upsert, persona} | {op: delete, id}
-    # POST /__personas/draft?project= {paths, notes, basis, hint} -> {draft, notes}
+    # POST /__personas/draft?project= {paths, notes, hint} -> {draft: {profile}, notes}
+    # POST /__personas/taste?project= {id, data: <image data URL>} -> {path}
     # POST /__critic/run?project=&run= {personas, how, change, pages?, flow?}
     #      -> {id, status, text}; blocks up to &wait= seconds (default 100,
     #      under an agent shell's 2-minute default), then the caller polls
@@ -28172,6 +28275,26 @@ class H(http.server.SimpleHTTPRequestHandler):
         persona = model_routing.resolve("inherit", runtime, inherited, cfg, role="agent")
         return fast, persona
 
+    def _personas_taste(self, qs):
+        """Store one taste image (an app, style or product the persona likes)
+        under personas/taste/. The persona's record lists it once saved."""
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+            body = self._read_json_body(max_bytes=8 * 1024 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        m = re.match(r"^data:image/([a-z]+);base64,(.+)$", body.get("data") or "", re.S)
+        if not m:
+            return self._reply(400, {"error": "data must be an image data URL"})
+        try:
+            data = base64.b64decode(m.group(2), validate=False)
+            rel = _personas.save_taste(root, body.get("id"), data, m.group(1))
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        except OSError as e:
+            return self._reply(500, {"error": "could not save the image: %s" % e})
+        return self._reply(200, {"path": rel})
+
     def _personas_draft(self, qs):
         try:
             root = resolve_project_root(qs, require_explicit=True)
@@ -28180,9 +28303,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._reply(400, {"error": str(e)})
         paths = [p for p in (body.get("paths") or []) if isinstance(p, str)][:_personas.MAX_KNOWLEDGE]
         notes_text = body.get("notes") if isinstance(body.get("notes"), str) else ""
-        blocks, notes, has = _personas.draft_blocks(root, paths, notes_text.strip(),
-                                                    body.get("basis"), (body.get("hint") or "").strip()[:400]
-                                                    if isinstance(body.get("hint"), str) else "")
+        hint = body.get("hint").strip()[:_personas.PROFILE_CAP] if isinstance(body.get("hint"), str) else ""
+        blocks, notes, has = _personas.draft_blocks(root, paths, notes_text.strip(), hint)
         if not has:
             return self._reply(400, {"error": "add a research document under What they know, or paste research notes", "notes": notes})
         _fast, profile = self._persona_profiles(None)
@@ -36289,6 +36411,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         if _chat_critic:
             prompt_text = _critic_send(None, prompt_text, _chat_critic, project_root=project_root)
             _chat_mode_fields = dict(_chat_mode_fields, critic=_chat_critic)
+        # The project's references ride the first message the same way.
+        if kind == "freeform":
+            prompt_text, _refs_told = _refs_send(prompt_text, _chat_mode, None, project_root)
+            if _refs_told is not None:
+                _chat_mode_fields = dict(_chat_mode_fields, refs=_refs_told)
         spawn_args = list(defs["args"])
         # Claude Code 2.1.163 split the bypass into TWO
         # flags. --dangerously-skip-permissions alone no longer skips

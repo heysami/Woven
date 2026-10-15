@@ -176,6 +176,9 @@ class QaCancelTests(unittest.TestCase):
         # A lens a subagent dispatched belongs to that subagent's loop.
         self.assertNotIn("qaCheck", run_jobs.observe({}, self._tool_use("craft-lens", sidechain=True), "claude"))
         self.assertEqual(run_jobs.qa_check("ds-guardian"), "DS guard")
+        # The screenshot QA and the DS compare are checks too, like their siblings.
+        self.assertEqual(run_jobs.observe({}, self._tool_use("woven:visual-qa"), "claude")["qaCheck"], "visual QA")
+        self.assertEqual(run_jobs.qa_check("woven:ds-compare"), "DS compare")
 
     def test_waived_stop_is_not_a_failed_worker(self):
         jobs = {}

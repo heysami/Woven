@@ -760,6 +760,33 @@ The user has switched the mandatory visual-verification gate off for this chat, 
 The tooling stays available for when the user DOES ask to check something: `GET $TH_DAEMON_URL/__qa/run?project=$TH_PROJECT_ID&page=<slug>` (composed page) or `&node=<nodeId>` (one baked interactive piece), plus the `mcp__claude_preview__*` browser tools. Screenshots you take land in THIS conversation, so take the fewest that answer the question."""
 
 
+# The end-of-turn checks, named together at the END of the preamble, right
+# after the delegation block. The visual-qa rule used to live only inside the
+# verify section (about 15% into a ~45K-token preamble) while the last block
+# the agent reads named only the visual-verifier, so threads ran the verifier
+# and skipped the screenshot QA (suss-cal, 2026-10-15). The verify section and
+# the DS GUARD block keep the HOW (briefs, verdicts); this is the WHEN and the
+# whole set, built from the thread's own toggles.
+#
+# "No change is too small" lives in typed_judgment_block, not here: it holds
+# only while typed judgment is on (the user keeps project rules like
+# suss-cal's AGENTS.md "no verification screenshots on narrow edits", a
+# token-cost rule, for threads without it), and P5 lets that toggle change
+# exactly one block.
+def end_checks_block(slug: Optional[str] = None, ds_subagents: bool = False) -> str:
+    rows = ["  - `woven:visual-qa` - the screenshot QA. Its brief and how to act on its `VISUAL-QA` verdict: \"Verify your visual work\" above.",
+            "  - `woven:visual-verifier` - the look-loop for what this change must show, with a self-contained brief (the block above)."]
+    if ds_subagents:
+        rows.append("  - `woven:ds-guardian` and `woven:ds-compare` - the design-system gate (DS GUARD above).")
+    text = """
+
+### The checks before you say a changed screen is done (mandatory)
+A reply that changed what a page under `source/%s/` shows (its markup, copy, CSS, or the page JS and data it renders) dispatches these subagents together, in ONE message, covering every page that reply changed:
+%s
+Then act on each verdict the way its block above says, before you tell the user it is done. Codex / opencode: the same types through the planner-dispatch bridge.""" % (slug or "<slug>", "\n".join(rows))
+    return text
+
+
 # Rides on the interactive tiers ONLY when the user ticks it on (default off).
 # The failure it targets is the one no visual check and no linter can see: the
 # build is rendered, styled and internally consistent, and it quietly says
@@ -885,6 +912,8 @@ Judges on this install: text checks -> %s; visual checks -> %s.
 Question types: `noul` (a yes/no statement, optional `criteria.true`/`criteria.false`, returns `noul` 0-1), `choice` (a `criteria` map of optionId to rubric, 2-255 options, returns the FULL `probabilities` map plus `confidence`), `score` (an ordered `criteria` array of 2-10 levels). The reply is `{ok, answers, thresholds, provider, model, tier}`; `thresholds` is the calibrated `{low, high, noul}` band for that judge and the `kind` you named - route with those numbers, never with one you invented. A 503 names its `reason` (off, no-key, no-image-judge): run the check the way you would without it.
 
 WHERE IT APPLIES. %s
+
+SMALL CHANGES GET THE CHECKS TOO. While typed judgment is on, no change is too small for the end-of-turn checks (the checks list at the end of these instructions, when the visual check is on): a label, a copy fix, sample data a screen renders, made with Edit, Write, sed, perl or a script, all count. A project instruction that says to skip verification on narrow or small edits (to save tokens, for example) does not cover those checks while typed judgment is on.
 
 HOW TO USE IT WITHOUT GETTING IT WRONG:
 - **It narrows what you CONSIDER, never what you CONCLUDE.** A ranked shortlist feeds the same composition step you would have run anyway. Branching straight off a probability into a committed decision is the one thing that makes this path produce a different product from the path without it.
@@ -2201,7 +2230,7 @@ The canvas Run reads these, injects the matching directive into the prompt, and 
 
 You CANNOT see what you built by reading the source you wrote. "I wrote the HTML/CSS, so it works" and "the file looks right" are NOT verification - they are how a broken page ships. Before you claim a visual or interactive deliverable is done, RENDER it and look at the result. There is one easy call for this; use it instead of a self-certified "done" or a hand-rolled preview server.
 
-**Screens you changed: dispatch the `visual-qa` subagent, in the SAME message as the `visual-verifier` and the `ds-guardian` (and `ds-compare` on a prototype bound to a design system), so they all run at once.** Brief (it does not see this preamble): "Project root: <absolute cwd>. Prototype: <slug>. Pages: <the exact page files you changed>. Changed: <per page, CSS selectors of the markup you added or changed, e.g. `.fm-col-bursary` or `#content table td:nth-child(5)`>. States: <how to reach each place the change shows: a URL query such as `?scheme=x&tab=monitoring` and/or clicks such as `click tr[data-fmd-open]`>." From that it scopes the check (the test cases the change touches, the screens it shows on, and the part of each screen it impacts, measured by hiding the changed elements and seeing what moves); the cheap image judge then walks that part region by region, scoring each numbered part and how they sit together, down to what it flags; the subagent decides each flag from the element's code, look and what code measured there (it never looks at an image itself), and returns a `VISUAL-QA` verdict. Nothing else on the page is checked and nothing is explored, so name every place the change shows. Its run is those pages' final `/__qa/run` gate: do not run it yourself for the same pages, and never open its images. Then ACT on the verdict: fix every `PROBLEM` and `MISSING` line, and dispatch it again for the pages you fixed. Relay its summary line to the user, and if it FAILED and you did not fix it, say so instead of claiming done. One dispatch per reply, covering every page that reply changed (codex / opencode: type `visual-qa` through the planner-dispatch bridge).
+**Screens you changed: the `visual-qa` subagent.** When to dispatch it, and what goes in the same message, is the checks list at the end of these instructions. Brief (it does not see this preamble): "Project root: <absolute cwd>. Prototype: <slug>. Pages: <the exact page files you changed>. Changed: <per page, CSS selectors of the markup you added or changed, e.g. `.fm-col-bursary` or `#content table td:nth-child(5)`>. States: <how to reach each place the change shows: a URL query such as `?scheme=x&tab=monitoring` and/or clicks such as `click tr[data-fmd-open]`>." From that it scopes the check (the test cases the change touches, the screens it shows on, and the part of each screen it impacts, measured by hiding the changed elements and seeing what moves); the cheap image judge then walks that part region by region, scoring each numbered part and how they sit together, down to what it flags; the subagent decides each flag from the element's code, look and what code measured there (it never looks at an image itself), and returns a `VISUAL-QA` verdict. Nothing else on the page is checked and nothing is explored, so name every place the change shows. Its run is those pages' final `/__qa/run` gate: do not run it yourself for the same pages, and never open its images. Then ACT on the verdict: fix every `PROBLEM` and `MISSING` line, and dispatch it again for the pages you fixed. Relay its summary line to the user, and if it FAILED and you did not fix it, say so instead of claiming done. One dispatch per reply, covering every page that reply changed (codex / opencode: type `visual-qa` through the planner-dispatch bridge).
 
 **The preview MCP (`mcp__claude_preview__*` / `preview_start` etc.) IS wired into this runtime** - a local Playwright-Chrome stdio server (WebGL-capable via SwiftShader), registered as `claude_preview` in mcp-config. Use it for interactive self-tests during a build: `preview_start` a URL (a daemon path starting with `/` resolves against `$TH_DAEMON_URL`, so serve your artefact through the daemon and keep `?project` stamping working), then `preview_eval` / `preview_console_logs` / `preview_inspect` / `preview_screenshot` / `preview_click` / `preview_fill`. Do NOT hand-roll headless-Chrome self-tests. Hard rule: if ANY preview/verification tool call errors or has not returned in ~60s, abandon that path and use the `/__qa/run` endpoint below (it needs nothing but HTTP). Either way `/__qa/run` remains the canonical FINAL gate - a preview self-test informs your iteration, it does not replace the gate.
 
@@ -3468,6 +3497,12 @@ Rule of thumb: when in doubt, `curl $TH_DAEMON_URL/__capabilities` before saying
     else:
         _tj_state = None
     _jev_block = typed_judgment_block(_tj_state) if _tj_state else ""
+    # The visual gate on: the checks list closes the delegation block. A
+    # component DS checks itself through the write hook, so only a classic
+    # bound DS adds its two subagents.
+    if _g["visual"]:
+        _ds_subagents = bool(_ds_block) and not (_ds_bound and _ds_bound.get("kind") == "component")
+        _visual_block = VISUAL_DELEGATION_DISCIPLINE + end_checks_block(prototype, _ds_subagents)
     # Accept the legacy cost-name aliases full/slim for the setup/leaf paths.
     if tier == "full":
         tier = "setup"

@@ -63308,39 +63308,50 @@ async function personasPost(path, body) {
   if (Array.isArray(j.personas)) personasStore(j.personas);
   return j;
 }
-const PERSONA_BASES = [
-  { value: "user-research",   label: "User research",   hint: "Built from interviews, tests or analytics with real users" },
-  { value: "market-research", label: "Market research", hint: "Built from segment, survey or competitor research" },
-  { value: "assumption",      label: "Assumption",      hint: "The team's best guess, not yet backed by research" },
-];
-const PERSONA_TECH = [{ value: "low", label: "Low" }, { value: "medium", label: "Medium" }, { value: "high", label: "High" }];
-const PERSONA_DEVICES = [{ value: "desktop", label: "Computer" }, { value: "mobile", label: "Phone" }];
-const PERSONA_AREAS = [
-  { key: "demographics", label: "About them",         ph: "Age band, situation, where they are",            rows: 2 },
-  { key: "goals",        label: "Goals",              ph: "- what they are trying to get done",             rows: 3 },
-  { key: "frustrations", label: "Frustrations",       ph: "- what gets in their way today",                 rows: 3 },
-  { key: "behaviours",   label: "Habits and context", ph: "- devices, when and where they use it, routines", rows: 3 },
-];
+// The profile is ONE free markdown text. Only two things are read out of it
+// (editor/personas.py): the name, its first line, and the device, a
+// "Device: phone" line that makes a simulation use a phone screen.
+const PERSONA_TEMPLATE = `# Maya R.
+First-year student, works part time, applies between lectures.
+
+## About
+- 19, lives in halls, money is tight at the end of the month
+
+## Goals
+- Get money for rent fast
+
+## Frustrations
+- Long forms and jargon
+- Not knowing whether an application went through
+
+## Habits and context
+- Does everything on her phone, usually in a hurry
+
+Comfort with tech: medium
+Device: phone
+
+> "I just need to know if I got it, I don't have time to dig."`;
+const PERSONA_TASTE_MAX = 8;
 // The app's own data at the project root, never something a user would know.
 const PERSONA_HIDDEN_ROOTS = new Set(["editor", "workflow", "personas", "plan-splits", "usertesting", "share"]);
 // Mirrors personas.py: documents only, code is never read.
 const PERSONA_DOC_EXTS = new Set(["md", "markdown", "txt", "csv", "tsv", "json", "yaml", "yml", "png", "jpg", "jpeg", "webp", "gif"]);
+// Mirrors personas.py profile_name.
+function personaNameOf(text) {
+  for (const line of String(text || "").split("\n")) {
+    const t = line.trim().replace(/^#+/, "").trim().replace(/^[*_]+|[*_]+$/g, "").trim();
+    if (t) return t.slice(0, 80);
+  }
+  return "";
+}
+// A new persona gets its id up front: taste images upload before the first
+// save and are filed under it.
 function personaBlank() {
-  return { name: "", role: "", basis: "user-research", source: "", demographics: "", goals: "", frustrations: "",
-           behaviours: "", quote: "", techComfort: "medium", device: "desktop", knowledge: [] };
+  const hex = Array.from(crypto.getRandomValues(new Uint8Array(4)), b => b.toString(16).padStart(2, "0")).join("");
+  return { id: "p_" + hex, profile: "", knowledge: [], taste: [] };
 }
 function personaMeta(p) {
-  const basis = PERSONA_BASES.find(b => b.value === p.basis);
-  return [p.role, basis && basis.label, p.device === "mobile" ? "phone" : null].filter(Boolean).join(" · ");
-}
-
-function PersonaSegmented({ value, options, onChange, label }) {
-  return html`
-    <div className="personas-seg" role="radiogroup" aria-label=${label}>
-      ${options.map(o => html`<button key=${o.value} type="button" role="radio" aria-checked=${value === o.value}
-        className="personas-seg-btn" data-on=${value === o.value} title=${o.hint || o.label}
-        onClick=${() => onChange(o.value)}>${o.label}</button>`)}
-    </div>`;
+  return [p.role, p.device === "mobile" ? "phone" : null].filter(Boolean).join(" · ");
 }
 
 /* Grant files or folders of the project as what a persona knows: a one-level
@@ -63394,39 +63405,59 @@ function PersonaKnowledgeBrowser({ granted, onGrant, onClose }) {
 }
 
 function PersonaEditor({ initial, onDone, onClose }) {
-  const [p, setP] = useState(() => ({ ...personaBlank(), ...initial, knowledge: [...((initial && initial.knowledge) || [])] }));
+  const [p, setP] = useState(() => ({
+    ...initial, profile: (initial && initial.profile) || "",
+    knowledge: [...((initial && initial.knowledge) || [])], taste: [...((initial && initial.taste) || [])],
+  }));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
   const [browse, setBrowse] = useState(false);
   const [draftOpen, setDraftOpen] = useState(false);
   const [notes, setNotes] = useState("");
   const [drafting, setDrafting] = useState(false);
-  const set = (k, v) => setP(o => ({ ...o, [k]: v }));
+  const [uploading, setUploading] = useState(0);
+  const [dropOn, setDropOn] = useState(false);
+  const fileRef = useRef(null);
   const grant = (rel, on) => setP(o => ({
     ...o, knowledge: on ? (o.knowledge.includes(rel) ? o.knowledge : [...o.knowledge, rel]) : o.knowledge.filter(k => k !== rel),
   }));
   const save = async () => {
-    if (!p.name.trim()) { setErr("Give the persona a name."); return; }
+    if (!personaNameOf(p.profile)) { setErr("Start the profile with the persona's name on the first line."); return; }
     setSaving(true); setErr(null);
     try { await personasPost("/__personas", { op: "upsert", persona: p }); onDone(); }
     catch (e) { setErr(e.message || String(e)); }
     finally { setSaving(false); }
   };
-  // Fill the profile from research: the granted documents plus pasted notes.
-  // Only fields the draft actually filled are replaced, then the user edits.
+  // Taste: images of apps, styles or products this person likes or feels at
+  // home with. Each uploads straight away (filed under the persona's id) and
+  // joins the record on Save.
+  const addTaste = async (files) => {
+    const imgs = Array.from(files || []).filter(f => /^image\/(png|jpe?g|webp|gif)$/.test(f.type));
+    if (!imgs.length) { setErr("Taste images must be png, jpg, webp or gif."); return; }
+    setErr(null);
+    const room = PERSONA_TASTE_MAX - p.taste.length - uploading;
+    if (imgs.length > room) setErr(`Up to ${PERSONA_TASTE_MAX} taste images per persona.`);
+    for (const f of imgs.slice(0, Math.max(0, room))) {
+      if (f.size > 5 * 1024 * 1024) { setErr(`${f.name} is over 5 MB.`); continue; }
+      setUploading(n => n + 1);
+      try {
+        const data = await new Promise((res, rej) => {
+          const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f);
+        });
+        const j = await personasPost("/__personas/taste", { id: p.id, data });
+        setP(o => (o.taste.length >= PERSONA_TASTE_MAX || o.taste.includes(j.path) ? o : { ...o, taste: [...o.taste, j.path] }));
+      } catch (e) { setErr(e.message || String(e)); }
+      finally { setUploading(n => n - 1); }
+    }
+  };
+  // Fill the profile from research: the granted documents plus pasted notes,
+  // starting from what is already written. Review before saving.
   const draft = async () => {
     setDrafting(true); setErr(null);
     try {
-      const j = await personasPost("/__personas/draft",
-        { paths: p.knowledge, notes, basis: p.basis, hint: [p.name, p.role].filter(Boolean).join(", ") });
-      const d = j.draft || {};
-      setP(o => {
-        const next = { ...o };
-        for (const k of ["name", "role", "source", "demographics", "goals", "frustrations", "behaviours", "quote", "techComfort", "device"]) {
-          if (typeof d[k] === "string" && d[k].trim()) next[k] = d[k];
-        }
-        return next;
-      });
+      const j = await personasPost("/__personas/draft", { paths: p.knowledge, notes, hint: p.profile });
+      const md = j.draft && j.draft.profile;
+      if (md) setP(o => ({ ...o, profile: md }));
       setDraftOpen(false);
     } catch (e) { setErr(e.message || String(e)); }
     finally { setDrafting(false); }
@@ -63436,56 +63467,61 @@ function PersonaEditor({ initial, onDone, onClose }) {
       <div className="pv-panel-head">
         <${HoverTip} className="pv-panel-tool" tip="Back to the list" ariaLabel="Back to the list" onClick=${onDone}><${Icon.Back}/><//>
         <div className="pv-panel-title-wrap">
-          <div className="pv-panel-title">${initial && initial.id ? "Edit persona" : "New persona"}</div>
-          <div className="pv-panel-sub">Knows only this profile, the files below and the screens it is shown</div>
+          <div className="pv-panel-title">${initial && initial.createdAt ? "Edit persona" : "New persona"}</div>
+          <div className="pv-panel-sub">Knows only this profile, what is granted below and the screens it is shown</div>
         </div>
         <button type="button" className="pv-panel-close" title="Close" aria-label="Close panel" onClick=${onClose}>×</button>
       </div>
       <div className="personas-form">
-        <div className="personas-row2">
-          <label className="personas-field"><span>Name</span>
-            <input value=${p.name} placeholder="Maya R." onInput=${(e) => set("name", e.target.value)}/></label>
-          <label className="personas-field"><span>Who they are</span>
-            <input value=${p.role} placeholder="First-year student, works part time" onInput=${(e) => set("role", e.target.value)}/></label>
+        <textarea className="personas-profile" aria-label="Profile" value=${p.profile} placeholder=${PERSONA_TEMPLATE}
+          onInput=${(e) => setP(o => ({ ...o, profile: e.target.value }))}/>
+        <div className="personas-help">Markdown, written however you like. The first line is the name; "Device: phone" makes simulations use a phone screen.</div>
+        <div className="personas-pair">
+          <div className="personas-field">
+            <div className="personas-field-head"><span>What they know</span>
+              <${HoverTip} className="pv-panel-tool" tip="Grant a file or folder of the project" ariaLabel="Grant a file or folder"
+                onClick=${() => setBrowse(b => !b)}><${Icon.Plus}/><//></div>
+            ${p.knowledge.length === 0 && html`<div className="personas-help">Research notes, briefs or reference documents they would know. Code is never read.</div>`}
+            ${p.knowledge.map(k => html`
+              <div key=${k} className="pv-file-row personas-know-row">
+                <span className="pv-file-glyph">${/\.[a-z0-9]+$/i.test(k) ? html`<${Icon.NotesDoc}/>` : html`<${Icon.Folder}/>`}</span>
+                <span className="pv-file-name" title=${k}>${k}</span>
+                <button type="button" className="pv-rowbtn" title="Remove" aria-label=${"Remove " + k} onClick=${() => grant(k, false)}><${Icon.X}/></button>
+              </div>`)}
+          </div>
+          <div className="personas-field personas-taste" tabIndex="0" data-drop=${dropOn}
+            onDragOver=${(e) => { if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) { e.preventDefault(); setDropOn(true); } }}
+            onDragLeave=${() => setDropOn(false)}
+            onDrop=${(e) => { e.preventDefault(); setDropOn(false); addTaste(e.dataTransfer && e.dataTransfer.files); }}
+            onPaste=${(e) => { const f = e.clipboardData && e.clipboardData.files; if (f && f.length) { e.preventDefault(); addTaste(f); } }}>
+            <div className="personas-field-head"><span>Taste</span>
+              <${HoverTip} className="pv-panel-tool" tip="Add images of apps, styles or products they like" ariaLabel="Add taste images"
+                onClick=${() => fileRef.current && fileRef.current.click()}><${Icon.Image}/><//></div>
+            <input ref=${fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden
+              onChange=${(e) => { addTaste(e.target.files); e.target.value = ""; }}/>
+            ${p.taste.length === 0 && !uploading && html`<div className="personas-help">Apps, styles or products they like or feel at home with. Drop, paste or add images.</div>`}
+            ${(p.taste.length > 0 || uploading > 0) && html`
+              <div className="personas-taste-grid">
+                ${p.taste.map(t => html`
+                  <div key=${t} className="personas-taste-thumb">
+                    <img src=${apiUrl("/" + t)} alt="" loading="lazy"/>
+                    <button type="button" className="pv-rowbtn personas-taste-x" title="Remove" aria-label="Remove image"
+                      onClick=${() => setP(o => ({ ...o, taste: o.taste.filter(x => x !== t) }))}><${Icon.X}/></button>
+                  </div>`)}
+                ${Array.from({ length: uploading }, (_, i) => html`<div key=${"up" + i} className="personas-taste-thumb is-loading"><span className="chat-active-agent-spin"/></div>`)}
+              </div>`}
+          </div>
         </div>
-        <div className="personas-field"><span>Based on</span>
-          <${PersonaSegmented} label="Based on" value=${p.basis} options=${PERSONA_BASES} onChange=${(v) => set("basis", v)}/></div>
-        <label className="personas-field"><span>Source</span>
-          <input value=${p.source} placeholder="12 student interviews, Oct 2026" onInput=${(e) => set("source", e.target.value)}/></label>
-        ${PERSONA_AREAS.map(a => html`
-          <label key=${a.key} className="personas-field"><span>${a.label}</span>
-            <textarea rows=${a.rows} value=${p[a.key]} placeholder=${a.ph} onInput=${(e) => set(a.key, e.target.value)}/></label>`)}
-        <label className="personas-field"><span>In their words</span>
-          <input value=${p.quote} placeholder="I just need to know if I got it, I don't have time to dig." onInput=${(e) => set("quote", e.target.value)}/></label>
-        <div className="personas-row2">
-          <div className="personas-field"><span>Comfort with tech</span>
-            <${PersonaSegmented} label="Comfort with tech" value=${p.techComfort} options=${PERSONA_TECH} onChange=${(v) => set("techComfort", v)}/></div>
-          <div className="personas-field"><span>Uses a</span>
-            <${PersonaSegmented} label="Device" value=${p.device} options=${PERSONA_DEVICES} onChange=${(v) => set("device", v)}/></div>
-        </div>
-        <div className="personas-field">
-          <div className="personas-field-head"><span>What they know</span>
-            <${HoverTip} className="pv-panel-tool" tip="Grant a file or folder of the project" ariaLabel="Grant a file or folder"
-              onClick=${() => setBrowse(b => !b)}><${Icon.Plus}/><//></div>
-          ${p.knowledge.length === 0 && !browse && html`<div className="personas-help">Nothing beyond the profile. Grant research notes, briefs or reference images they would know.</div>`}
-          ${p.knowledge.map(k => html`
-            <div key=${k} className="pv-file-row personas-know-row">
-              <span className="pv-file-glyph">${/\.[a-z0-9]+$/i.test(k) ? html`<${Icon.NotesDoc}/>` : html`<${Icon.Folder}/>`}</span>
-              <span className="pv-file-name" title=${k}>${k}</span>
-              <button type="button" className="pv-rowbtn" title="Remove" aria-label=${"Remove " + k} onClick=${() => grant(k, false)}><${Icon.X}/></button>
-            </div>`)}
-          ${browse && html`<${PersonaKnowledgeBrowser} granted=${p.knowledge} onGrant=${grant} onClose=${() => setBrowse(false)}/>`}
-          <div className="personas-help">Documents and images only. Code is never read, not even inside a granted folder.</div>
-        </div>
+        ${browse && html`<${PersonaKnowledgeBrowser} granted=${p.knowledge} onGrant=${grant} onClose=${() => setBrowse(false)}/>`}
         <div className="personas-field">
           <div className="personas-field-head"><span>Draft from research</span>
-            <${HoverTip} className="pv-panel-tool" tip=${draftOpen ? "Hide" : "Fill this profile from the granted documents and pasted notes"}
+            <${HoverTip} className="pv-panel-tool" tip=${draftOpen ? "Hide" : "Write the profile from the granted documents and pasted notes"}
               ariaLabel="Draft from research" onClick=${() => setDraftOpen(o => !o)}><${Icon.Spark}/><//></div>
           ${draftOpen && html`<${React.Fragment}>
             <textarea rows="4" value=${notes} placeholder="Paste interview notes, survey results or a segment description (optional when documents are granted above)"
               onInput=${(e) => setNotes(e.target.value)}/>
             <div className="personas-actions">
-              <span className="personas-help">Replaces the fields the research covers; review before saving.</span>
+              <span className="personas-help">Rewrites the profile box from the research; review before saving.</span>
               <button type="button" className="personas-btn" disabled=${drafting || (!notes.trim() && !p.knowledge.length)} onClick=${draft}>
                 ${drafting ? "Drafting…" : "Draft profile"}</button>
             </div><//>`}
@@ -63494,7 +63530,7 @@ function PersonaEditor({ initial, onDone, onClose }) {
       <div className="personas-foot">
         ${err ? html`<span className="personas-error">${err}</span>` : html`<span className="personas-foot-spacer"/>`}
         <button type="button" className="personas-btn personas-btn-ghost" onClick=${onDone}>Cancel</button>
-        <button type="button" className="personas-btn personas-btn-primary" disabled=${saving} onClick=${save}>${saving ? "Saving…" : "Save"}</button>
+        <button type="button" className="personas-btn personas-btn-primary" disabled=${saving || uploading > 0} onClick=${save}>${saving ? "Saving…" : "Save"}</button>
       </div>
     </div>`;
 }

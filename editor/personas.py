@@ -41,17 +41,21 @@ ID_RE = re.compile(r"^p_[a-z0-9]{4,24}$")
 CRITIQUE_ID_RE = re.compile(r"^c_[a-f0-9]{10}$")
 HOWS = ("text", "simulate")
 DEVICES = ("desktop", "mobile")
-BASES = ("user-research", "market-research", "assumption")
-TECH = ("low", "medium", "high")
 
-# The profile, in the order a research persona sheet reads. Every field is
-# free text the user (or the research draft) fills; none is required but the
-# name.
-TEXT_FIELDS = ("name", "role", "source", "demographics", "goals",
-               "frustrations", "behaviours", "quote")
-FIELD_CAP = 4000
+# The profile is ONE free markdown text. Only two things are read out of it:
+# the name (its first line) and the device (a "Device: phone" line makes a
+# simulation use a phone screen). Everything else goes to the persona as is.
+PROFILE_CAP = 20000
 MAX_PERSONAS = 40
 MAX_KNOWLEDGE = 24
+
+# Taste: images of apps, styles and products the persona likes or feels at
+# home with. Uploaded into personas/taste/ (synced with the project), each
+# file prefixed with its persona's id so a delete can take its files along.
+TASTE_DIR = "personas/taste"
+TASTE_EXTS = {"png": "png", "jpeg": "jpg", "jpg": "jpg", "webp": "webp", "gif": "gif"}
+TASTE_BYTES = 5 * 1024 * 1024
+MAX_TASTE = 8
 
 # Granted knowledge: documents only. A persona never reads code, so markup,
 # scripts and styles are refused even inside a granted folder.
@@ -94,7 +98,70 @@ def load(root):
     except (OSError, ValueError):
         return []
     rows = doc.get("personas") if isinstance(doc, dict) else None
-    return [p for p in (rows or []) if isinstance(p, dict) and ID_RE.match(str(p.get("id") or ""))]
+    out = []
+    for p in rows or []:
+        if isinstance(p, dict) and ID_RE.match(str(p.get("id") or "")):
+            if not isinstance(p.get("profile"), str) or not p["profile"].strip():
+                p = dict(p, profile=_legacy_profile(p))
+            out.append(p)
+    return out
+
+
+_LEGACY = (("demographics", "About"), ("goals", "Goals"), ("frustrations", "Frustrations"),
+           ("behaviours", "Habits and context"))
+
+
+def _legacy_profile(raw):
+    """A persona saved by the first, field-by-field form, as one markdown text."""
+    def txt(k):
+        v = raw.get(k)
+        return v.strip() if isinstance(v, str) else ""
+    lines = ["# " + txt("name")] if txt("name") else []
+    if txt("role"):
+        lines.append(txt("role"))
+    for key, head in _LEGACY:
+        if txt(key):
+            lines += ["", "## " + head, txt(key)]
+    tail = []
+    if raw.get("techComfort") in ("low", "medium", "high"):
+        tail.append("Comfort with tech: " + raw["techComfort"])
+    if raw.get("device") == "mobile":
+        tail.append("Device: phone")
+    if tail:
+        lines += [""] + tail
+    if txt("quote"):
+        lines += ["", '> "%s"' % txt("quote").strip('"')]
+    return "\n".join(lines)
+
+
+_DEVICE_RE = re.compile(r"^[ \t>*-]*device\s*:\s*(.+)$", re.I | re.M)
+
+
+def profile_name(text):
+    """The persona's name: the profile's first line, heading marks dropped."""
+    for line in (text or "").splitlines():
+        t = line.strip().lstrip("#").strip().strip("*_").strip()
+        if t:
+            return t[:80]
+    return ""
+
+
+def profile_summary(text):
+    """Who they are, in one line, for list rows and the critique card: the
+    first plain line after the name."""
+    lines = [l.strip() for l in (text or "").splitlines() if l.strip()]
+    for t in lines[1:]:
+        if t.startswith("#") or t.startswith(">") or _DEVICE_RE.match(t):
+            continue
+        t = re.sub(r"^[-*]\s+", "", t).strip("*_ ")
+        if t:
+            return t[:120]
+    return ""
+
+
+def profile_device(text):
+    m = _DEVICE_RE.search(text or "")
+    return "mobile" if m and re.search(r"\b(phone|mobile|iphone|android|smartphone)\b", m.group(1), re.I) else "desktop"
 
 
 def _write(root, rows):
@@ -120,26 +187,32 @@ def _clean_rel(p):
 
 
 def normalize(raw, prev=None):
-    """A persona record from the panel's form, validated. Raises ValueError."""
+    """A persona record from the panel, validated. Raises ValueError."""
     if not isinstance(raw, dict):
         raise ValueError("persona must be an object")
-    out = {}
-    for k in TEXT_FIELDS:
-        v = raw.get(k)
-        out[k] = v.strip()[:FIELD_CAP] if isinstance(v, str) else ""
-    if not out["name"]:
-        raise ValueError("a persona needs a name")
-    out["basis"] = raw.get("basis") if raw.get("basis") in BASES else "assumption"
-    out["techComfort"] = raw.get("techComfort") if raw.get("techComfort") in TECH else "medium"
-    out["device"] = raw.get("device") if raw.get("device") in DEVICES else "desktop"
+    text = raw.get("profile") if isinstance(raw.get("profile"), str) else ""
+    if not text.strip():
+        text = _legacy_profile(raw)
+    text = _DASH_RE.sub(" - ", text).strip()[:PROFILE_CAP]
+    name = profile_name(text)
+    if not name:
+        raise ValueError("start the profile with the persona's name on the first line")
+    pid = raw.get("id")
+    pid = pid if isinstance(pid, str) and ID_RE.match(pid) else "p_" + secrets.token_hex(4)
+    out = {"id": pid, "name": name, "role": profile_summary(text), "device": profile_device(text),
+           "profile": text}
     know = []
     for p in raw.get("knowledge") or []:
         c = _clean_rel(p)
         if c and c not in know:
             know.append(c)
     out["knowledge"] = know[:MAX_KNOWLEDGE]
-    pid = raw.get("id")
-    out["id"] = pid if isinstance(pid, str) and ID_RE.match(pid) else "p_" + secrets.token_hex(4)
+    taste = []
+    for p in raw.get("taste") or []:
+        c = _clean_rel(p)
+        if c and c.startswith(TASTE_DIR + "/" + pid + "-") and c not in taste:
+            taste.append(c)
+    out["taste"] = taste[:MAX_TASTE]
     now = int(time.time() * 1000)
     out["createdAt"] = (prev or {}).get("createdAt") or now
     out["updatedAt"] = now
@@ -158,6 +231,7 @@ def upsert(root, raw):
                 raise ValueError("at most %d personas per project" % MAX_PERSONAS)
             rows.append(rec)
         _write(root, rows)
+        _sweep_taste(root, rows)
         return rec, rows
 
 
@@ -165,7 +239,55 @@ def delete(root, pid):
     with _LOCK:
         rows = [p for p in load(root) if p.get("id") != pid]
         _write(root, rows)
+        _sweep_taste(root, rows, gone=pid)
         return rows
+
+
+def save_taste(root, pid, data, mime_ext):
+    """Store one taste image for a persona (saved or about to be). Returns its
+    project-relative path."""
+    if not ID_RE.match(pid or ""):
+        raise ValueError("id must be a persona id")
+    ext = TASTE_EXTS.get((mime_ext or "").lower())
+    if not ext:
+        raise ValueError("taste images must be png, jpg, webp or gif")
+    if not data or len(data) > TASTE_BYTES:
+        raise ValueError("a taste image must be under 5 MB")
+    d = os.path.join(root, TASTE_DIR)
+    os.makedirs(d, exist_ok=True)
+    name = "%s-%s.%s" % (pid, secrets.token_hex(4), ext)
+    with open(os.path.join(d, name), "wb") as f:
+        f.write(data)
+    return TASTE_DIR + "/" + name
+
+
+def _sweep_taste(root, rows, gone=None):
+    """Drop taste images nothing points at: a removed image of a saved persona
+    at once, a deleted persona's all, and a day-old upload from an editor that
+    was never saved."""
+    d = os.path.join(root, TASTE_DIR)
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return
+    kept = {t for p in rows for t in (p.get("taste") or [])}
+    ids = {p.get("id") for p in rows}
+    now = time.time()
+    for name in names:
+        pid = name.split("-", 1)[0]
+        rel = TASTE_DIR + "/" + name
+        if rel in kept:
+            continue
+        path = os.path.join(d, name)
+        try:
+            stale = now - os.path.getmtime(path) > 86400
+        except OSError:
+            continue
+        if pid == gone or pid in ids or stale:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
 
 # ── the critique request riding on a message ──────────────────────────────
@@ -340,26 +462,22 @@ PERSONA_OUTPUT = """Answer with ONE JSON object and nothing else (no prose, no c
  "suggestions": [{"title": "<short imperative>", "why": "<one sentence, tied to who you are>", "priority": "high|medium|low", "step": <step number or null>}]}
 "steps" has one entry per step shown (empty when there are no steps). At most %d suggestions, most important first; each one concrete enough to act on. Only suggest what this person would actually care about.""" % MAX_SUGGESTIONS
 
-_BASIS_LABEL = {"user-research": "user research", "market-research": "market research",
-                "assumption": "the team's assumptions"}
-
-
 def persona_system(p):
-    label = _BASIS_LABEL.get(p.get("basis"), "the team's assumptions")
-    lines = [PERSONA_RULES, "", "## Your profile",
-             "You are %s%s. This profile comes from %s%s." % (
-                 p.get("name") or "a participant",
-                 (", " + p["role"]) if p.get("role") else "",
-                 label,
-                 (" (" + p["source"] + ")") if p.get("source") else "")]
-    for key, head in (("demographics", "About you"), ("goals", "Your goals"),
-                      ("frustrations", "What frustrates you"), ("behaviours", "Your habits and context"),
-                      ("quote", "In your words")):
-        if p.get(key):
-            lines += ["", "### " + head, p[key]]
-    lines += ["", "### Comfort with technology", p.get("techComfort") or "medium",
-              "", "### Device you are using", "a phone" if p.get("device") == "mobile" else "a computer"]
-    return "\n".join(lines)
+    text = p.get("profile") or _legacy_profile(p)
+    device = p.get("device") or profile_device(text)
+    return "\n".join([PERSONA_RULES, "", "## Your profile", "You are the person this profile describes.", "",
+                      text, "", "## Device you are using", "a phone" if device == "mobile" else "a computer"])
+
+
+def taste_images(root, p):
+    """The persona's taste images that are still on disk."""
+    out = []
+    for rel in (p.get("taste") or [])[:MAX_TASTE]:
+        c = _clean_rel(rel)
+        path = os.path.join(root, c) if c else None
+        if path and os.path.isfile(path):
+            out.append(path)
+    return out
 
 
 def strip_json(text):
@@ -670,6 +788,13 @@ def _run(job, persona_rows, req, deps):
                     content.append({"type": "text", "text": "## What you know\n" + (know_text or "(images only)")})
                     for img in know_images:
                         content.append({"type": "image", "path": img})
+                taste = taste_images(root, p)
+                if taste:
+                    content.append({"type": "text", "text": "## Your taste\nThese images show apps, styles and "
+                                    "products you like and feel at home with. They shape what feels right or off "
+                                    "to you; you do not talk about them as pictures, you simply have this taste."})
+                    for img in taste:
+                        content.append({"type": "image", "path": img})
                 content.append({"type": "text", "text": "## What changed in the product\n"
                                 + "\n".join("- " + s for s in summary)})
                 steps = []
@@ -722,35 +847,34 @@ def _run(job, persona_rows, req, deps):
 
 # ── research draft (fills the profile form from granted documents) ────────
 
-DRAFT_SYSTEM = """You turn research into one user persona for a product team. You answer with ONE JSON object and nothing else.
-Use only what the research supports; where it is silent, leave the field empty rather than invent. Plain words, short lines, bullets as "- " lines inside a field. No paragraphs.
-{"name": "<a realistic first name and last initial>", "role": "<who they are, one line>", "source": "<which research this comes from, one line>",
- "demographics": "<age band, situation, location if known>", "goals": "- ...", "frustrations": "- ...", "behaviours": "- habits, devices, context of use",
- "techComfort": "low|medium|high", "device": "desktop|mobile", "quote": "<one line they might say>"}"""
+DRAFT_SYSTEM = """You turn research into one user persona for a product team. Answer with the persona as markdown and nothing else: no code fence, no preamble.
+- First line: "# " and a realistic first name and last initial.
+- Second line: who they are, in one line.
+- Then short "## " sections with "- " bullets: About, Goals, Frustrations, Habits and context.
+- Then the lines "Comfort with tech: low|medium|high" and "Device: phone|computer".
+- Last: one line they might say, as "> ".
+Use only what the research supports; where it is silent, leave the section out rather than invent. Plain words, short lines, no paragraphs."""
 
 
-def draft_blocks(root, paths, notes_text, basis, hint):
+def draft_blocks(root, paths, notes_text, hint):
     know_text, images, notes = knowledge_bundle(root, paths)
-    blocks = [{"type": "text", "text": "Kind of research: %s." % _BASIS_LABEL.get(basis, "user research")}]
+    blocks = []
     if hint:
-        blocks.append({"type": "text", "text": "Which persona the team wants: " + hint})
+        blocks.append({"type": "text", "text": "The team's current draft (keep what the research does not contradict):\n" + hint})
     if notes_text:
         blocks.append({"type": "text", "text": "Research notes pasted by the team:\n" + notes_text[:KNOW_TOTAL_CAP]})
     if know_text:
         blocks.append({"type": "text", "text": "Research documents:\n" + know_text})
     for img in images:
         blocks.append({"type": "image", "path": img})
-    blocks.append({"type": "text", "text": "Answer with the JSON object only."})
+    blocks.append({"type": "text", "text": "Answer with the persona in markdown only."})
     return blocks, notes, bool(know_text or images or notes_text)
 
 
 def parse_draft(text):
-    doc = strip_json(text) or {}
-    out = {k: (_DASH_RE.sub(" - ", doc.get(k)).strip()[:FIELD_CAP] if isinstance(doc.get(k), str) else "")
-           for k in TEXT_FIELDS}
-    out["techComfort"] = doc.get("techComfort") if doc.get("techComfort") in TECH else "medium"
-    out["device"] = doc.get("device") if doc.get("device") in DEVICES else "desktop"
-    return out
+    t = (text or "").strip()
+    t = re.sub(r"^```(?:markdown|md)?\s*|\s*```$", "", t).strip()
+    return {"profile": _DASH_RE.sub(" - ", t)[:PROFILE_CAP]}
 
 
 # ── walker subprocess (tools/qa/persona_walk.py) ──────────────────────────

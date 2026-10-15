@@ -12,7 +12,9 @@ ACTIVE = frozenset(("pending", "running", "unknown"))
 # from. A plain queued reply does not.
 QA_CHECK_AGENTS = {
     "visual-verifier": "visual verification",
+    "visual-qa": "visual QA",
     "ds-guardian": "DS guard",
+    "ds-compare": "DS compare",
     "craft-lens": "craft lens",
     "aesthetic-lens": "aesthetic lens",
     "concept-lens": "concept lens",
