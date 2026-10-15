@@ -14975,14 +14975,35 @@ function OrchestrationPlanView() {
 /* TasksSubagentsPanel - the second right-rail panel. Three tabs: Orchestration
    Plan (the locked pipeline.json), Subagents, and Tasks. Subagents + Tasks
    hydrate each run's transcript (/__chat) and list every dispatch + Task,
-   grouped by run, newest first, FINISHED ones included. Read-only. */
+   grouped by run, newest first, FINISHED ones included. The Plan tab only
+   exists once the project has locked a plan. Read-only. */
 function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagent, onOpenTask, embedded }) {
   // Per-run extracted { subagents, tasks }, keyed by runId.
   const [byRun, setByRun] = useState({});
   const [loading, setLoading] = useState(true);
   // "plan" | "subagents" | "tasks" - which view is active. Defaults to the
   // orchestration plan so a resumed run lands on "what's still owed" first.
-  const [filter, setFilter] = useState("plan");
+  const [tab, setFilter] = useState("plan");
+  // Whether this project has ever locked a plan (current or archived). The
+  // Plan tab is hidden until it has, rather than showing an empty state.
+  // null = not known yet (tab stays, so a project with a plan never flickers).
+  const [hasPlan, setHasPlan] = useState(null);
+  useEffect(() => {
+    if (hasPlan) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await fetch(apiUrl("/__pipelines"), { cache: "no-store" });
+        const j = r.ok ? await r.json() : null;
+        if (!cancelled) setHasPlan(!!(j && Array.isArray(j.plans) && j.plans.length));
+      } catch {}
+    };
+    load();
+    // A plan is locked mid-build, so keep checking until one shows up.
+    const timer = setInterval(load, 10000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [hasPlan]);
+  const filter = tab === "plan" && hasPlan === false ? "subagents" : tab;
 
   const capped = (runs || []).slice(0, TASKS_PANEL_RUN_CAP);
   const overflow = Math.max(0, (runs || []).length - capped.length);
@@ -15056,7 +15077,7 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagen
         <span className="th-tasks-count">${totalAgents} agent${totalAgents===1?'':'s'} · ${totalTasks} task${totalTasks===1?'':'s'}</span>
       </div>
       <div className="th-tasks-filter" role="tablist" aria-label="View">
-        ${[["plan","Orchestration Plan"],["subagents","Subagents"],["tasks","Tasks"]].map(([k, lbl]) => html`
+        ${[["plan","Orchestration Plan"],["subagents","Subagents"],["tasks","Tasks"]].filter(([k]) => k !== "plan" || hasPlan !== false).map(([k, lbl]) => html`
           <button
             key=${k}
             role="tab"
