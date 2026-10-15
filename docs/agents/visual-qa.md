@@ -107,7 +107,7 @@ for f in b.get('findings') or []:
 for r in b['checks']:
     if r.get('source', '').startswith('screen criteria') or r.get('source') == 'asked in this QA call':
         if r.get('band') != 'act' or r.get('passed') is False:
-            print('CRITERION', 'NO' if r.get('passed') is False else 'UNSURE', r['id'], '|', r.get('claim'), '| noul', r.get('noul'))
+            print('CRITERION', 'NO' if r.get('passed') is False else 'UNSURE', r['id'], '|', r.get('source'), '|', r.get('claim'), '| answer', r.get('answer'), r.get('confidence'))
 "
 ```
 
@@ -155,6 +155,13 @@ in the page's CSS / JS):
   has): a PROBLEM.
 - `unexamined`: say which ones in the verdict; they were not looked at closely.
 
+Then the `CRITERION` lines: the screen's stored criteria the judge answered no
+or was unsure about. A `CRITERION NO` is a PROBLEM: the screen fails a check
+written for it. One whose source names a plan (`screen criteria: plan <run>
+item <n>`) is the approved wireframe: the build differs from the drawing, so
+say so, and never suggest rewording the check to fit the build. A
+`CRITERION UNSURE` is listed as unsure, with its claim.
+
 ## Step 5 - verdict
 
 Return ONLY this:
@@ -165,6 +172,7 @@ VISUAL-QA <PASS|FAIL> - <pages>
 - PROBLEM <finding id> (<screen>, <selector>, x<count>): judge: "<judge asked>" (<score>). <what is wrong, with the measurement if any> -> <the rule to change, file:line if you found it>
 - FINE <finding id> (<screen>, <selector>, x<count>): judge: "<judge asked>" (<score>). <why it is not a defect: what the code and look show, and that nothing was measured there>
 - UNEXAMINED <finding id> (<screen>, <selector>, x<count>): judge: "<judge asked>" (<score>), not looked at closely
+- CRITERION <NO|UNSURE> <check id> (<source>): "<claim>", judge answered <answer>. <for NO: what the screen shows instead, from the code>
 - NOT CHECKED <state or page>: <why: no changed element on it, page not found>
 - EDITED DURING CAPTURE <screen>: <files> kept changing while it was taken (only for `clean: false`)
 ```

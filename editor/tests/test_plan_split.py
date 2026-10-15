@@ -162,10 +162,85 @@ class GroupReadyTests(unittest.TestCase):
         self.assertIn("the user approved the wireframe, never the brief", text)
         self.assertIn("WAITING", text)
 
+    def test_split_thread_stores_the_plans_wireframe_checks(self):
+        text = plan_split.sibling_block(split(1))
+        self.assertIn("plan-splits/plan1.json` (items[1]", text)
+        self.assertIn("visual-checks.json", text)
+        self.assertIn('"screen criteria: plan plan1 item 2"', text)
+        self.assertIn("Never reword a check to fit what you built", text)
+
+    def test_check_asks_the_stored_wireframe_checks(self):
+        text = plan_split.check_brief(split(0), [], {})
+        self.assertIn("plan-splits/plan1.json", text)
+        self.assertIn('checks=[]', text)
+        self.assertIn("`passed` false with `band` act is a sure no: DRIFT", text)
+        self.assertIn("No `visualReport` in the answer means the image judge is off", text)
+
     def test_split_thread_flags_a_brief_that_breaks_its_neighbours(self):
         text = plan_split.sibling_block(split(0))
         self.assertIn("current entries are built another way", text)
         self.assertIn("decision card naming both ways", text)
+
+
+GOOD_CHECKS = [
+    {"id": "laptop-in-list", "page": "fa-scheme-version.html", "query": "scheme=a&v=v2&clone=1",
+     "where": "Eligibility tab, the list holding the row 'Bond Required'",
+     "shape": "shows", "x": "a row labelled 'Funds A Laptop'"},
+    {"id": "laptop-control", "page": "fa-scheme-version.html",
+     "where": "Eligibility tab, the row 'Funds A Laptop'",
+     "shape": "which", "list": "control_kind", "x": "the control on the row 'Funds A Laptop'",
+     "expect": "switch"},
+]
+
+
+class ManifestCheckTests(unittest.TestCase):
+
+    def manifest(self, checks):
+        return {"items": [{"title": "Scheme config", "brief": "b",
+                           "owns": ["source/prototype/fa-scheme-version.html#selection card"],
+                           "checks": checks}]}
+
+    def test_literal_wireframe_checks_pass(self):
+        self.assertEqual(plan_split.check_manifest(self.manifest(GOOD_CHECKS)), [])
+        self.assertEqual(plan_split.check_manifest({"items": [{"title": "t", "brief": "b"}]}), [])
+
+    def test_a_claim_about_the_drawing_or_intent_is_refused(self):
+        # The user's rule: never "does it follow the wireframe", always what
+        # the screen shows.
+        for x in ("the card follows the wireframe", "a layout that matches the design"):
+            out = plan_split.check_manifest(self.manifest([dict(GOOD_CHECKS[0], x=x)]))
+            self.assertTrue(any("instead of what the screen shows" in o for o in out), out)
+        out = plan_split.check_manifest(self.manifest([
+            {"id": "c", "page": "a.html", "where": "w", "statement": "The row works correctly."}]))
+        self.assertTrue(any("restates intent" in o for o in out), out)
+
+    def test_choices_need_an_expect_from_their_list(self):
+        bad = dict(GOOD_CHECKS[1], expect="toggle")
+        out = plan_split.check_manifest(self.manifest([bad]))
+        self.assertTrue(any("expect must be options of list control_kind" in o for o in out), out)
+        out = plan_split.check_manifest(self.manifest([{k: v for k, v in GOOD_CHECKS[1].items()
+                                                          if k != "expect"}]))
+        self.assertTrue(any("needs expect" in o for o in out), out)
+
+    def test_page_where_ids_and_two_image_shapes(self):
+        out = plan_split.check_manifest(self.manifest(GOOD_CHECKS + [GOOD_CHECKS[0]]))
+        self.assertTrue(any("used twice" in o for o in out), out)
+        out = plan_split.check_manifest(self.manifest([dict(GOOD_CHECKS[0], page="fa.js", where="")]))
+        self.assertTrue(any("page must be" in o for o in out) and any("where must" in o for o in out), out)
+        out = plan_split.check_manifest(self.manifest([dict(GOOD_CHECKS[0], shape="same_as")]))
+        self.assertTrue(any("two images" in o for o in out), out)
+
+    def test_cli_prints_ok_or_every_problem(self):
+        with tempfile.TemporaryDirectory() as d:
+            good, bad = os.path.join(d, "good.json"), os.path.join(d, "bad.json")
+            Path(good).write_text(json.dumps(self.manifest(GOOD_CHECKS)))
+            Path(bad).write_text(json.dumps(self.manifest([dict(GOOD_CHECKS[1], expect="toggle")])))
+            script = str(Path(plan_split.__file__))
+            ok = subprocess.run([sys.executable, script, "--check", good], capture_output=True, text=True)
+            self.assertEqual((ok.returncode, ok.stdout.strip()), (0, "OK: 1 item(s), 2 wireframe check(s)"))
+            no = subprocess.run([sys.executable, script, "--check", bad], capture_output=True, text=True)
+            self.assertEqual(no.returncode, 1)
+            self.assertIn("expect must be options", no.stdout)
 
 
 class GuardHookTests(unittest.TestCase):
@@ -418,6 +493,14 @@ class WiringTests(unittest.TestCase):
         self.assertIn("not that pattern", stub)
         self.assertIn("the two must never disagree", stub)
         self.assertNotIn("suss-cal", stub)               # incident history stays in comments
+
+    def test_plan_writes_wireframe_checks_and_validates_them(self):
+        stub = caps.PLAN_MODE_STUB
+        self.assertIn('"checks": [<wireframe checks>]', stub)
+        self.assertIn('"list": "control_kind"', stub)
+        self.assertIn('"list": "label_place"', stub)
+        self.assertIn("plan_split.py\" --check plan-splits/$TH_RUN_ID.json", stub)
+        self.assertIn("the crop is the CONTAINER the drawing puts it in", stub)
 
 
 if __name__ == "__main__":

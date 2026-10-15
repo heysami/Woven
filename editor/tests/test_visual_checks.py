@@ -31,6 +31,17 @@ class Shapes(unittest.TestCase):
         self.assertEqual((q["type"], n), ("choice", 1))
         self.assertEqual(set(q["criteria"]), set(vc.LISTS["direction"]))
 
+    def test_control_kind_and_label_place_are_closed_choices(self):
+        # The two facts a plan's wireframe commits for an added entry: a Yes/No
+        # radio pair and an On/Off switch both answer yes or no, only the look
+        # tells them apart.
+        q, n = vc.question({"shape": "which", "list": "control_kind",
+                            "x": "the control on the row 'Funds A Laptop'"})
+        self.assertEqual((q["type"], n), ("choice", 1))
+        self.assertTrue({"switch", "radio", "checkbox", "dropdown", "text"} <= set(q["criteria"]))
+        q, _ = vc.question({"shape": "which", "list": "label_place", "x": "the entry 'Funds A Laptop'"})
+        self.assertEqual(set(q["criteria"]), {"same_line", "label_above", "label_after"})
+
     def test_a_pair_branches_on_its_style_scores(self):
         sys.path.insert(0, str(EDITOR / "tools" / "qa"))
         import visual_qa

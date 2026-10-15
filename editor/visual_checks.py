@@ -90,6 +90,27 @@ LISTS = {
         "off": "It is switched off, unselected or unchecked.",
         "disabled": "It is greyed out and cannot be used.",
     },
+    # What KIND of control an entry uses, and where its label sits: the two
+    # facts a plan's wireframe commits for an entry added among others
+    # (plan_split check manifests). A Yes/No radio pair and an On/Off switch
+    # both "answer yes or no", so only the look tells them apart.
+    "control_kind": {
+        "switch": "It is a switch: a sliding toggle, or one rounded bar holding two choices side by "
+                  "side (such as On and Off) with the chosen one filled in.",
+        "radio": "It is a set of radio buttons: small circles, each with its own label beside it, "
+                 "the chosen one with a dot inside.",
+        "checkbox": "It is a checkbox: a small square, ticked or empty, beside its label.",
+        "dropdown": "It is a dropdown: a box showing one value, with a downward arrow at its right end.",
+        "text_field": "It is a text field: a box to type into, empty or holding typed text.",
+        "button": "It is a button: one labelled shape to press.",
+        "text": "It is plain text with no control around it: a value to read, not to change.",
+    },
+    "label_place": {
+        "same_line": "Its label and its control sit on one line, the label at the left and the "
+                     "control at the right.",
+        "label_above": "Its label sits on a line of its own, above its control.",
+        "label_after": "Its control comes first, with its label right after it on the same line.",
+    },
     "ds_origin": {
         "ds-copy": "It rebuilds by hand a component the design system already provides: one of "
                    "the components named in the state, under a different name or with its own "

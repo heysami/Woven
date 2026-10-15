@@ -18,7 +18,13 @@ So a split is a GROUP:
     on the spawned event) and snapshots the approved plan onto item 0;
   - when every thread has finished or been stopped, the daemon opens a
     SEPARATE plan-check thread (`check_brief`). Not the planning thread: that
-    one may be stopped, and the user stopping it must stay stopped.
+    one may be stopped, and the user stopping it must stay stopped;
+  - an item may carry WIREFRAME CHECKS: its AFTER drawings as literal
+    questions for the image judge (`check_manifest` validates them). The
+    split thread stores them in visual-checks.json with the selectors it
+    built, and the plan check asks them, so a build that follows its brief
+    but not the drawing the user approved is DRIFT (suss-cal 2026-10-15: a
+    "toggle" drawn as switch rows shipped as Yes/No radios).
 
 Pure functions only: serve.py owns RUNS and spawning, this owns the shapes and
 the words. Python 3.9-safe (the daemon runs 3.9).
@@ -126,6 +132,101 @@ def overlaps(items: List[dict]) -> List[dict]:
     return out
 
 
+# ── Wireframe checks ────────────────────────────────────────────────────────
+# A check is a visual_checks shape (shows, which + list + expect) or a literal
+# statement, plus `page`, `where` (the tab or panel it is on and the box to
+# crop, in words: the split thread turns it into a selector) and `query`. It
+# may name only what the screen shows: "follows the wireframe" is the intent
+# the judge cannot answer, so naming the drawing is refused.
+MAX_CHECKS = 24
+CHECK_SOURCE = "screen criteria: plan %s item %d"
+_DRAWING_RE = re.compile(r"\b(wireframes?|drawings?|mock-?ups?|sketch(es)?|the plan|the design|"
+                         r"the brief|as drawn|as planned)\b", re.I)
+_CHECK_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
+
+def _check_problems(c, seen: set) -> List[str]:
+    """Why one manifest check cannot be asked; [] when it can."""
+    import visual_checks
+    if not isinstance(c, dict):
+        return ["a check is an object"]
+    out = []
+    cid = c.get("id")
+    if not isinstance(cid, str) or not _CHECK_ID_RE.match(cid):
+        out.append("id must be letters, digits, _ . - (max 64)")
+    elif cid in seen:
+        out.append("id %s is used twice" % cid)
+    else:
+        seen.add(cid)
+    page = _clean_path(c.get("page"))
+    if not page or not page.endswith(".html"):
+        out.append("page must be the screen's .html file")
+    where = c.get("where")
+    if not isinstance(where, str) or not where.strip() or len(where) > 200:
+        out.append("where must say in a short phrase which tab or panel the screen is on "
+                   "and which box to crop")
+    query = c.get("query")
+    if query is not None and (not isinstance(query, str) or len(query) > 300 or "\n" in query):
+        out.append("query must be a URL query such as scheme=x&v=v1")
+    m = _DRAWING_RE.search(" ".join(str(c.get(k) or "") for k in ("x", "statement")))
+    if m:
+        out.append("names %r instead of what the screen shows: say the row, control or place "
+                   "the judge must see" % m.group(0))
+    if c.get("compare"):
+        out.append("a wireframe check looks at one screen: drop compare")
+        return out
+    try:
+        q, need = visual_checks.question(c)
+    except ValueError as exc:
+        return out + [str(exc)]
+    if need != 1:
+        out.append("this shape compares two images: use shows, which or a statement")
+    elif q["type"] == "choice":
+        exp = c.get("expect")
+        exp = [exp] if isinstance(exp, str) else exp
+        if not isinstance(exp, list) or not exp:
+            out.append("a which check needs expect: the option the AFTER wireframe shows")
+        elif not set(exp) <= set(q["criteria"]):
+            out.append("expect must be options of list %s: %s"
+                       % (c.get("list"), ", ".join(q["criteria"])))
+    return out
+
+
+def check_manifest(doc) -> List[str]:
+    """Every problem with a split manifest, one line each; [] when it opens.
+    The planner runs this (`plan_split.py --check`) before it shows the card."""
+    if not isinstance(doc, dict) or not isinstance(doc.get("items"), list):
+        return ['the manifest must be {"items": [...]}']
+    items = [it for it in doc["items"] if isinstance(it, dict)]
+    out = []
+    if not items:
+        out.append("no items")
+    if len(items) > MAX_ITEMS:
+        out.append("%d items, but only the first %d open" % (len(items), MAX_ITEMS))
+    seen = set()  # type: set
+    for i, it in enumerate(items[:MAX_ITEMS]):
+        name = 'item %d "%s"' % (i + 1, str(it.get("title") or "")[:60])
+        if not str(it.get("brief") or "").strip():
+            out.append(name + ": no brief")
+        checks = it.get("checks")
+        if checks is None:
+            continue
+        if not isinstance(checks, list):
+            out.append(name + ": checks must be a list")
+            continue
+        if len(checks) > MAX_CHECKS:
+            out.append("%s: %d checks, at most %d" % (name, len(checks), MAX_CHECKS))
+        for j, c in enumerate(checks[:MAX_CHECKS]):
+            label = c.get("id") if isinstance(c, dict) and c.get("id") else "#%d" % (j + 1)
+            out += ["%s, check %s: %s" % (name, label, why) for why in _check_problems(c, seen)]
+    owned = [{"title": str(it.get("title") or ""),
+              "owns": [x for x in (_clean_claim(o) for o in (it.get("owns") or [])) if x]}
+             for it in items[:MAX_ITEMS]]
+    out += ["%s is claimed by %s" % (o["path"], " and ".join('"%s"' % t for t in o["titles"]))
+            for o in overlaps(owned)]
+    return out
+
+
 def _owns_line(owns: List[str]) -> str:
     return ", ".join(owns) if owns else "(not declared - see the brief)"
 
@@ -164,6 +265,25 @@ def sibling_block(split: dict) -> str:
         "do not follow it silently: build the rest, leave that part, and end your reply "
         "with a decision card naming both ways (the neighbours' and the brief's).",
     ]
+    if split.get("parent"):
+        lines.append(
+            "- WIREFRAME CHECKS. If your item in `plan-splits/%s.json` (items[%d], \"%s\") has "
+            "`checks`, they are the plan's AFTER drawing as literal questions for the image "
+            "judge. Once your build is in place, store each one in "
+            "`source/<prototype>/visual-checks.json` under `pages[\"<its page>\"]` (create the "
+            "file or the entry if missing, keep what is there, replace an entry with the same "
+            "id). Copy `id`, `shape`, `x`, `list`, `expect` or `statement` as written, "
+            "correcting only a quoted label to the text the screen renders. Add `selector`: "
+            "the element its `where` names in the markup you built (the entry's own row for a "
+            "control or label check; for a placement check the container the drawing puts it "
+            "in, even when you built the entry outside it). When `where` needs clicks "
+            "first (a tab, a slideout), the page entry becomes {\"steps\": [...], \"checks\": "
+            "[...]}: add a step {\"label\", \"type\": \"click\", \"selector\"} and set `at` to "
+            "`after:<label>`; otherwise `at` is `page`. Set `source` to \"%s\" and `query` to "
+            "the URL query that shows that screen. Your visual-qa run then asks them. Never "
+            "reword a check to fit what you built: one your build fails means the brief and "
+            "the drawing disagree, so raise it with a decision card as above."
+            % (split["parent"], me, items[me]["title"], CHECK_SOURCE % (split["parent"], me + 1)))
     return "\n\n" + "\n".join(lines)
 
 
@@ -259,6 +379,7 @@ def check_brief(split: dict, members: List[dict], snapshot: Optional[dict]) -> s
     the work. `members` rows: {"index", "runId", "status", "stopped", "brief",
     "report"}."""
     snapshot = snapshot or {}
+    parent = split.get("parent") or "<planning run id>"
     by_index = {}
     for m in members:
         by_index.setdefault(m.get("index"), m)
@@ -296,10 +417,27 @@ def check_brief(split: dict, members: List[dict], snapshot: Optional[dict]) -> s
         "Logic and Copy row of its brief is on disk NOW.",
         "2. Then hold each item's UI against the PLAN's UI section above (its AFTER "
         "wireframes), not only against its brief: the same control, in the same place, "
-        "beside the same neighbours. Read the markup that renders it; when the code cannot "
-        "settle what it looks like or where it sits, dispatch a visual-verifier with that "
-        "AFTER wireframe in its brief. Built as the brief says but not as the wireframe "
-        "shows is DRIFT: the user approved the wireframe, never the brief.",
+        "beside the same neighbours. Built as the brief says but not as the wireframe shows "
+        "is DRIFT: the user approved the wireframe, never the brief.",
+        "   a. WIREFRAME CHECKS. Each item's `checks` (item N is items[N-1] in "
+        "`plan-splits/%s.json`) are those drawings as literal questions. Each must be stored in "
+        "`source/<prototype>/visual-checks.json` under its page with a `selector` and "
+        "`source` \"%s\": store a missing one yourself (find the selector in the markup). "
+        "Then, per page and query, ask them: `curl -sS -G \"$TH_DAEMON_URL/__qa/run\" "
+        "--data-urlencode \"project=$TH_PROJECT_ID\" --data-urlencode \"run=$TH_RUN_ID\" "
+        "--data-urlencode \"page=<slug>/<page>?<query>\" --data-urlencode \"checks=[]\"` "
+        "(an empty `checks` asks the screen's stored criteria and nothing else; allow 7 "
+        "minutes), then read `typedChecks.checks` from `GET "
+        "$TH_DAEMON_URL/__qa/visual-report?id=<visualReport>&project=$TH_PROJECT_ID`, the "
+        "rows whose `source` names this plan. `passed` false with `band` act is a sure no: "
+        "DRIFT, and its decision card quotes the claim and the judge's answer. An unsure "
+        "answer (`band` escalate) or `element-missing` goes to b for that check."
+        % (parent, CHECK_SOURCE.replace("%d", "<N>") % parent),
+        "   b. No `visualReport` in the answer means the image judge is off for this thread or "
+        "not set up. Then, and for unsure checks or an item with no `checks`, read the markup "
+        "that renders it, and when the code cannot settle what it looks like or where it "
+        "sits, dispatch a visual-verifier with that AFTER wireframe and the checks' claims "
+        "in its brief.",
         "3. A row that was built and is gone was overwritten by another thread: that is "
         "UNDONE, not MISSING. The thread's report and the file tell them apart.",
         "4. Check coverage too: anything the user asked for that no item carried is MISSING.",
@@ -317,3 +455,26 @@ def check_brief(split: dict, members: List[dict], snapshot: Optional[dict]) -> s
         "Finish with one line per item: its title, its verdict, and what you fixed.",
     ]
     return "\n".join(out)
+
+
+if __name__ == "__main__":
+    # python3 editor/plan_split.py --check plan-splits/<run id>.json
+    import json
+    import sys
+    if len(sys.argv) != 3 or sys.argv[1] != "--check":
+        print("usage: plan_split.py --check plan-splits/<run id>.json")
+        sys.exit(2)
+    try:
+        with open(sys.argv[2], "r", encoding="utf-8") as f:
+            _doc = json.load(f)
+    except Exception as exc:
+        print("cannot read %s: %s" % (sys.argv[2], exc))
+        sys.exit(1)
+    _problems = check_manifest(_doc)
+    for _p in _problems:
+        print("- " + _p)
+    if _problems:
+        sys.exit(1)
+    print("OK: %d item(s), %d wireframe check(s)" % (
+        len(_doc["items"]), sum(len(it.get("checks") or []) for it in _doc["items"]
+                                if isinstance(it, dict))))
