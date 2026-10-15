@@ -101845,6 +101845,7 @@ function RuntimeModelSettings({ config, save, disabled }) {
     <div className="workflow-settings-section-group-sub">Connection changes apply to new conversations. Existing conversations retain their connection. Persistent Codex sessions support steering; OpenCode uses queued follow-ups.</div>
     <div className="workflow-settings-section-group-sub">
       Choose the model used by the economy preset for each runtime. Exact IDs are passed unchanged.
+      The visual QA and design-system compare checks run on it.
       OpenCode uses provider/model IDs. Its default follows OpenCode's configuration until you choose an economy model.
     </div>
     ${["claude", "codex", "opencode"].map(id => html`<div key=${id} className="workflow-default-provider-row">

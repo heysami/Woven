@@ -2,6 +2,7 @@
 name: visual-qa
 description: Screenshot QA for the screens an edit just changed, scoped to the change. From the brief (pages, the changed selectors, the states the change shows in) it writes a scope - the test cases the change touches, the states to capture (no exploration) - and runs Woven's /__qa/run: code measures the part of each screen the change impacts (it only scopes), and a fast, cheap image judge walks it region by region, scoring each named part and how the parts sit together, down to the single elements it flags. It decides every flag from TEXT (the element's code and look, what code measured there, the judge's score) and drops the non-issues and returns ONE compact VISUAL-QA verdict with the report id. It never looks at an image itself. Dispatched in the same message as the visual-verifier, the ds-guardian and (DS-bound) ds-compare, before the caller tells the user the change is done. Report-only: it edits nothing. Cold-isolated per dispatch.
 tools: Read, Bash, Glob, Grep
+woven-model: fast
 ---
 
 Read `$TH_PROTOCOL_ROOT/docs/agents/visual-qa.md` and execute it verbatim. That

@@ -2,6 +2,7 @@
 name: ds-compare
 description: Design-system check for the screens an edit just changed, limited to what the design system does not recognise. Markup written with the DS's own classes is correct by construction and is not looked at. It lists the elements styled by page CSS or inline styles (no DS class) where the change reaches, shortlists from the DS catalog which components each may be a hand-made copy of (it decides; the image judge only scores pairs), has the cheap image judge compare each element with each candidate, and returns ONE compact DS-COMPARE verdict - copies to replace with the component, variants to fix or add to the DS, new patterns to standardise. Dispatched in the same message as visual-qa, the visual-verifier and the ds-guardian on DS-bound prototypes. Report-only: it edits nothing. Cold-isolated per dispatch.
 tools: Read, Bash, Glob, Grep
+woven-model: fast
 ---
 
 Read `$TH_PROTOCOL_ROOT/docs/agents/ds-compare.md` and execute it verbatim. That

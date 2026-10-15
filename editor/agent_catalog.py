@@ -1,7 +1,101 @@
 """Expose each Woven plugin agent once without changing its playbook or scope."""
+import hashlib
 import json
+import os
 from pathlib import Path
 import re
+
+FRONTMATTER = re.compile(r"\A---\s*\n(.*?)\n---(?:\s|$)", re.S)
+WOVEN_MODEL = re.compile(r"^woven-model:[ \t]*([^\r\n]*?)[ \t]*$", re.M)
+
+
+def declared_model(text):
+    """The model setting an agent file declares with `woven-model:`, or "".
+
+    It takes the values of the model rows in Settings > Context and cost:
+    `fast` (that runtime's economy preset), `inherit`, or an exact ID. Claude
+    Code ignores the key; the daemon resolves it per spawn, so Settings stays
+    the one place the model is chosen.
+    """
+    match = FRONTMATTER.match(text or "")
+    value = WOVEN_MODEL.search(match.group(1)) if match else None
+    return value.group(1).strip("\"'") if value else ""
+
+
+def model_settings(plugin_dir):
+    """{agent file path relative to agents/: declared setting} for the plugin."""
+    root = Path(plugin_dir or "") / "agents"
+    out = {}
+    if not plugin_dir or not root.is_dir():
+        return out
+    for path in sorted(root.rglob("*.md")):
+        try:
+            with path.open() as handle:
+                setting = declared_model(handle.read(65536))
+        except (OSError, UnicodeError):
+            continue
+        if setting:
+            out[path.relative_to(root).as_posix()] = setting
+    return out
+
+
+def _with_model(text, model):
+    match = FRONTMATTER.match(text)
+    fields = re.sub(r"^model:[^\r\n]*(\r?\n|\Z)", "", match.group(1), flags=re.M).rstrip("\n")
+    return text[:match.start(1)] + fields + "\nmodel: " + model + text[match.end(1):]
+
+
+def _place(dest, write):
+    """Replace dest atomically, so a concurrent spawn never reads a gap."""
+    temp = dest.with_name(".%s.%d.tmp" % (dest.name, os.getpid()))
+    if temp.is_symlink() or temp.exists():
+        temp.unlink()
+    write(temp)
+    os.replace(temp, dest)
+
+
+def with_models(plugin_dir, models, cache_root):
+    """The plugin as Claude should load it, with `model:` set on some agents.
+
+    models maps an agent file (relative to agents/) to an exact model ID. Those
+    agents become copies carrying that ID; every other file is a symlink to its
+    source, so playbook edits still reach spawns unchanged. The copy lives under
+    cache_root, keyed by the mapping, and is re-synced on every call. With no
+    models, or on any filesystem error, the plugin is returned as it is and the
+    agents run on the thread's model.
+    """
+    source = Path(plugin_dir or "")
+    if not models or not plugin_dir or not (source / "agents").is_dir():
+        return plugin_dir
+    key = hashlib.sha1(json.dumps([str(source.resolve()), models], sort_keys=True).encode()).hexdigest()[:12]
+    root = Path(cache_root) / key
+    try:
+        (root / "agents").mkdir(parents=True, exist_ok=True)
+        manifest = root / ".claude-plugin"
+        if not manifest.is_symlink():
+            _place(manifest, lambda t: t.symlink_to((source / ".claude-plugin").resolve(), target_is_directory=True))
+        agents = (source / "agents").resolve()
+        wanted = set()
+        for path in sorted(agents.rglob("*.md")):
+            rel = path.relative_to(agents).as_posix()
+            dest = root / "agents" / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            wanted.add(rel)
+            if rel in models:
+                text = path.read_text()
+                if FRONTMATTER.match(text):
+                    body = _with_model(text, models[rel])
+                    if dest.is_symlink() or not dest.exists() or dest.read_text() != body:
+                        _place(dest, lambda t, body=body: t.write_text(body))
+                    continue
+            if not (dest.is_symlink() and os.readlink(dest) == str(path)):
+                _place(dest, lambda t, path=path: t.symlink_to(path))
+        for path in sorted((root / "agents").rglob("*.md"), reverse=True):
+            if path.relative_to(root / "agents").as_posix() not in wanted:
+                path.unlink()
+    except (OSError, UnicodeError, ValueError):
+        return plugin_dir
+    return str(root)
 
 
 def plugin_spawn_args(plugin_dir):
@@ -32,7 +126,7 @@ def plugin_spawn_args(plugin_dir):
                 text = handle.read(65536)
         except (OSError, UnicodeError):
             continue
-        frontmatter = re.match(r"\A---\s*\n(.*?)\n---(?:\s|$)", text, re.S)
+        frontmatter = FRONTMATTER.match(text)
         if not frontmatter:
             continue
         fields = frontmatter.group(1)

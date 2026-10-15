@@ -7864,9 +7864,24 @@ def _agents_plugin_spawn_args() -> list:
     aliases, discovered through .claude/agents, are excluded from the prompt by
     the same launch arguments on chat, planner, node, and resume paths. Full
     playbooks remain in place for direct reads and non-Claude runtimes.
+
+    An agent that declares `woven-model:` (visual-qa and ds-compare: `fast`)
+    runs on that setting resolved against Settings > Context and cost, so the
+    economy preset there is the one place their model is chosen. Claude reads
+    `model:` from the definition, so those agents load from a derived copy of
+    the plugin that carries the resolved ID.
     """
-    from agent_catalog import plugin_spawn_args
-    return plugin_spawn_args(AGENTS_PLUGIN_DIR)
+    from agent_catalog import model_settings, plugin_spawn_args, with_models
+    cfg, models = _compact_config(), {}
+    for rel, setting in model_settings(AGENTS_PLUGIN_DIR).items():
+        try:
+            profile = model_routing.resolve(setting, "claude", None, cfg)
+        except ValueError:
+            continue
+        if profile["runtime"] == "claude" and profile["model"]:
+            models[rel] = profile["model"]
+    return plugin_spawn_args(with_models(AGENTS_PLUGIN_DIR, models,
+                                         os.path.join(MEDIA_CONFIG_DIR, "agents-plugin")))
 
 
 def _mcp_config_spawn_args() -> list:
@@ -25001,9 +25016,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         # Resolve explicit overrides before selecting the binary. An absent
         # selected runtime is an error, not permission to use another model.
         want = _planner_context.get("runtime") or _agent_default_runtime()
+        from agent_catalog import declared_model
         selected = (body.get("model")
                     or _subagent_override_model_for_node(planner_type, planner_type, brief)
-                    or _orch_override_model_for_node(planner_type, planner_type))
+                    or _orch_override_model_for_node(planner_type, planner_type)
+                    or declared_model(planner_md))
         inherited = _planner_context.get("model")
         if not _planner_context.get("parent"):
             selected = selected or _agent_default_model()
