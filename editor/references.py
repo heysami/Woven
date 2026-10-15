@@ -222,9 +222,10 @@ def text_listing(root, rows=None):
 # The rules ride WITH the list so a thread that only ever saw the block (an
 # old preamble, a codex runtime) still knows what to do with it.
 _RULES = (
-    "How to use them: when what you are working on touches what a reference covers, open that reference FRESH "
-    "before you rely on anything else (fetch a link, read the project file or folder now), never from memory, an "
-    "earlier conversation or an older copy in the project. Where a reference disagrees with an earlier decision, "
+    "How to use them: when what you are working on touches what a reference covers, open that reference FIRST, "
+    "before you read anything else about it (project files, version history, earlier conversations), and open it "
+    "fresh (fetch a link, read the project file or folder now), never from memory or an older copy in the "
+    "project. Where a reference disagrees with an earlier decision, "
     "an older file or your own assumption, the reference wins; when the disagreement looks deliberate (the user "
     "decided otherwise later), name both sides and ask instead of picking. A link you cannot open (sign-in wall, "
     "error): say so and ask the user for access or an export, and never fall back to a stale copy without saying "

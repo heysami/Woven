@@ -23,6 +23,15 @@ If the brief names no change, do not guess one: return
 
 Never use em dashes anywhere you write.
 
+## Step 0 - open the references first
+
+When the brief names REFERENCES, open each one before anything else, and
+fresh (fetch a link, read a project path), then read the parts that cover what
+changed. A reference is how the product should be, so it outranks the
+prototype's own records and any older copy in the project. If one cannot be
+opened (sign-in wall, error), say so under `notes` and carry on without it;
+never check against an older copy instead.
+
 ## Step 1 - write down what the change took away
 
 For every CHANGED entry, list the handles the rest of the prototype could have
@@ -72,13 +81,6 @@ handle from Step 1 (exact strings; label text case-insensitively) across:
   text search on the field or status is the only way to find them.
 - **Records about the prototype**: `source/<slug>/test-cases.json`,
   `source/<slug>/visual-checks.json`, `docs/story-map.json`, `NOTES.md`.
-
-- **References** named in the brief: open each one FRESH (fetch a link, read
-  a project path) and read the parts that cover what changed. A reference is
-  how the product should be, so it outranks the prototype's own records and
-  any older copy in the project. If one cannot be opened (sign-in wall,
-  error), say so under `notes` and carry on without it; never check against
-  an older copy instead.
 
 For each hit OUTSIDE the change itself, read enough around it to know what it
 does with the thing. Skip hits that are the change's own new code. A CSS rule

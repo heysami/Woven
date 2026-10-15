@@ -27,7 +27,8 @@ the parts the task touches: build the checklist from what the task asks for,
 and take its exact terms, rules and facts from the source. An item of a bigger
 document that the task did not ask for is never MISSING.
 
-Project references are sources of truth. Open a link fresh, every time: never
+Project references are sources of truth. Open them first, before any other
+source and before the build, and open a link fresh, every time: never
 check against a copy of it in the project, or against what an earlier
 conversation said it contains. If one cannot be opened (sign-in wall, error),
 say so under `notes` and check only against what you could read; do not

@@ -20096,7 +20096,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
       for (const r of srcRefs) {
         lines.push("  • " + r.name + " → " + r.path + (r.label ? " (source of truth for: " + r.label + ")" : ""));
       }
-      lines.push("Open each one fresh now (fetch a link, read a project file or folder) and treat it as authoritative over earlier conversations, older copies and memory."
+      lines.push("Open each one FIRST, fresh, before you read anything else for this message (fetch a link, read a project file or folder), and treat it as authoritative over earlier conversations, older copies and memory."
         + " If one cannot be opened, say so and ask for access or an export; never fall back to an older copy without saying so.");
     }
     if (projRefs.length) {
@@ -58465,16 +58465,20 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   // stage the first click just reopens the last-viewed file (the viewer
   // remembers it); only once a file is showing does the icon (now a tree
   // glyph) open the files panel. An open panel always toggles closed.
+  // The Files panel's tab (References | Files). It opens on References every
+  // time; the composer's ">>" menu also opens it there from either view,
+  // switching to Preview because the panel lives there.
+  const [pvFilesTab, setPvFilesTab] = useState("references");
+  // The panel always opens on References (the sources of truth come first);
+  // an empty stage also gets its last file back, as before.
   const onRailPreviewFiles = useCallback(() => {
     dismissNodeChats();
     if (leftPanel === "pv-files") { setLeftPanel(null); return; }
-    if (!protoViewerPath) {
-      window.dispatchEvent(new CustomEvent("th:proto-open-last"));
-      return;
-    }
+    if (!protoViewerPath) window.dispatchEvent(new CustomEvent("th:proto-open-last"));
     toggleWbMode(false);   // wb tools may still own the column from canvas mode
+    setPvFilesTab("references");
     setLeftPanel("pv-files");
-  }, [leftPanel, protoViewerPath, toggleWbMode, dismissNodeChats]);
+  }, [leftPanel, protoViewerPath, toggleWbMode, dismissNodeChats, setPvFilesTab]);
   const onRailPreviewAssets = useCallback(() => {
     dismissNodeChats();
     toggleWbMode(false);
@@ -58495,16 +58499,6 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     window.addEventListener("th:open-personas", open);
     return () => window.removeEventListener("th:open-personas", open);
   }, [embedded, toggleWbMode, dismissNodeChats]);
-  // The Files panel's tab (References | Files), remembered per browser. The
-  // composer's ">>" menu opens the panel straight onto References from either
-  // view, switching to Preview because the panel lives there.
-  const [pvFilesTab, setPvFilesTabState] = useState(() => {
-    try { return localStorage.getItem("th.pvFilesTab") === "references" ? "references" : "files"; } catch { return "files"; }
-  });
-  const setPvFilesTab = useCallback((t) => {
-    setPvFilesTabState(t);
-    try { localStorage.setItem("th.pvFilesTab", t); } catch {}
-  }, []);
   useEffect(() => {
     if (embedded) return;
     const open = () => {
@@ -60277,10 +60271,10 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
               <${HoverTip}
                 placement="right"
                 className=${"workflow-nav-rail-btn workflow-nav-rail-btn-preview" + (leftPanel === "pv-files" ? " is-active" : "")}
-                ariaLabel=${protoViewerPath ? "References and files" : "Open last file"}
+                ariaLabel="References and files"
                 tip=${protoViewerPath
                   ? "References and files - the project's sources of truth, and the prototype's pages"
-                  : "Files - reopen your last file"}
+                  : "References and files - also reopens your last file"}
                 onClick=${onRailPreviewFiles}
               >${html`<${Icon.Folder}/>`}<//>
               <${HoverTip}
