@@ -40485,9 +40485,10 @@ function _resolvePatchOpCancellations(ops) {
   return out;
 }
 
-/* Brief for "Save + agent": the canvas select-mode save persists edits as a
-   `data-th-patch` replay block (see _injectInspectorPatch below). This asks an
-   agent to make them real source and retire the ops it implemented. */
+/* Brief for "Save + agent" (canvas select mode and preview edit mode): the save
+   persists edits as a `data-th-patch` replay block (see _injectInspectorPatch
+   below). This asks an agent to make them real source and retire the ops it
+   implemented. */
 function inspectorEditsAgentPrompt(entries) {
   const clip = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
   const brief = op => {
@@ -40503,7 +40504,7 @@ function inspectorEditsAgentPrompt(entries) {
     return ["  - " + op.type + (target ? " `" + target + "`" : "") + (detail ? ": " + detail : "")];
   };
   const lines = [
-    "Implement the visual edits the user just saved from the canvas select mode, so they live in real source instead of a runtime patch.",
+    "Implement the visual edits the user just saved from Woven's visual editor, so they live in real source instead of a runtime patch.",
     "",
     "How they were saved: each file below now carries a `<script data-th-patch=\"1\">` block whose `OPS` array re-applies the edits after the page loads (style / text / insert / delete / reorder / replace / attribute ops, keyed by CSS selector). The user sees the result, but it is fragile: a regenerate, a re-render or a markup change orphans the ops.",
     "",
@@ -51838,8 +51839,11 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
   //     this listener → target cleared → Cmd+V goes to Path B.
   useEffect(() => {
     if (!pickModeNodeId) return;
-    const onDown = () => {
+    const onDown = (e) => {
       if (!pickedDomRef.current && !pickedElement) return;
+      // A modal dialog (e.g. the Find tab's Replace confirm) is answered on
+      // top of the pick, not a click on the canvas: keep the target.
+      if (e && e.target && e.target.closest && e.target.closest(".modal-scrim")) return;
       // Strip the red .th-pick-selected outline inside the source iframe so
       // the user sees that no target is currently picked - Cmd+V will export
       // to the canvas, not paste into the iframe.
@@ -62438,6 +62442,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
           }}
           seedHtml=${zoomTarget.seedHtml}
           pageQuery=${zoomTarget.pageQuery}
+          onStartChatWithPrompt=${onStartChatWithPrompt}
           onSwitchTarget=${(filePath, branch, seedHtml, pageQuery) => {
             // Drill-into-component keeps the viewer in sync: the new target
             // opens as a tab too, so closing the overlay lands on it.
@@ -67813,7 +67818,7 @@ function ZoomSlotPopover({ at, picked, onPick, onClose }) {
   `;
 }
 
-function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onRevealInCode, onSwitchTarget, seedHtml, pageQuery }) {
+function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onRevealInCode, onSwitchTarget, seedHtml, pageQuery, onStartChatWithPrompt }) {
   const [tool, setTool] = useState("select");
   // Interact tool: the frame shows the LIVE page (scripts on) instead of the
   // script-free authoring copy; leaving it re-isolates whatever state the
@@ -68571,6 +68576,54 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     setHistoryIdx(-1);
     showToast("Discarded unsaved changes");
   }, [dirty, replaceDocFromHtml, showToast]);
+
+  // ─── Find tab (Layers panel) ─────────────────────────────────────────
+  // A Find replace or record save writes files directly: this page, data.js,
+  // other pages. The authoring copy is a script-free snapshot, so it cannot
+  // re-render from new data; rebuild it from a fresh live load instead. The
+  // panel only writes while nothing here is unsaved.
+  const reloadFromDisk = useCallback(() => {
+    if (dirty) return;
+    try { WovenEdit.forget(filePath, apiUrl); } catch {}
+    seedRef.current = null;
+    if (iframeRef.current) iframeRef.current.removeAttribute("srcdoc");
+    setIframeNonce(n => n + 1);
+  }, [dirty, filePath]);
+  const findContext = useMemo(() => ({
+    branch, path: filePath,
+    pendingCount: dirty ? Math.max(1, opHistory.length) : 0,
+    onSavePending: () => saveToDisk(),
+    onDiscardPending: () => discardChanges(),
+    onSourcesChanged: reloadFromDisk,
+  }), [branch, filePath, dirty, opHistory.length, saveToDisk, discardChanges, reloadFromDisk]);
+
+  // ─── Save + agent ────────────────────────────────────────────────────
+  // Same hand-off as the canvas select mode's pill: the save lands the edits
+  // as replay ops, then a chat agent implements them in real source and
+  // retires the ops. The ops are read BEFORE the save, which clears history.
+  // The overlay closes so the user sees the chat (and does not keep editing a
+  // file the agent is about to rewrite).
+  const saveWithAgent = useCallback(async () => {
+    if (!dirty || !onStartChatWithPrompt) return;
+    const entries = [], seen = new Set();
+    for (const d of [docRef.current, ...nestedDocsRef.current]) {
+      const state = d && WovenEdit.state(d);
+      if (!state || !state.dirty || seen.has(state)) continue;
+      seen.add(state);
+      const ops = state.history.slice(0, state.cursor + 1).map(e => e && e.op).filter(Boolean);
+      if (ops.length) entries.push({ path: state.path, ops });
+    }
+    if (!entries.length) return;
+    await saveToDisk();
+    // A failed save leaves the session dirty; saveToDisk's toast says why.
+    if (WovenEdit.state(docRef.current)?.dirty || nestedDirtyPathsRef.current.size) return;
+    try {
+      await onStartChatWithPrompt(inspectorEditsAgentPrompt(entries), { prototype: branch });
+      onClose && onClose();
+    } catch (err) {
+      showToast("Saved, but the agent could not start: " + (err.message || err));
+    }
+  }, [dirty, onStartChatWithPrompt, saveToDisk, branch, onClose, showToast]);
 
   // Capture the rich `picked` payload - mirrors the editor canvas's
   // onPick(info) so the same Inspector + SlotPicker + SlotPopover can run
@@ -69551,6 +69604,15 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
           ? "Save " + opHistory.length + " change" + (opHistory.length === 1 ? "" : "s") + " to disk (⌘S)"
           : "No unsaved changes"}</span>
       </button>
+      ${onStartChatWithPrompt && html`<button
+        className="zoom-tool"
+        data-disabled=${!dirty ? "true" : "false"}
+        data-tip-host="true"
+        aria-label="Save + agent"
+        onClick=${() => dirty && saveWithAgent()}
+      ><span className="zoom-tool-glyph"><${Icon.Bot}/></span><span className="tab-tip tab-tip-right">${dirty
+        ? "Save + agent - save, then have an agent implement these edits in the real source (markup, DS styles, data) instead of the runtime patch"
+        : "Save + agent - no unsaved changes"}</span></button>`}
       <button
         className="zoom-tool"
         data-disabled=${!dirty ? "true" : "false"}
@@ -69626,18 +69688,18 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     </div>
   `);
 
-  if (tool === "select" && ready && docRef.current) {
+  if ((tool === "select" || tool === "text") && ready && docRef.current) {
     const selectedElement = selectedId ? zoomFindById(docRef.current, selectedId) : null;
     overlayChildren.push(html`<aside key="layers" className="woven-layers-panel" aria-label="Layers"
       onMouseDown=${e => e.stopPropagation()} onClick=${e => e.stopPropagation()} onWheel=${e => e.stopPropagation()}>
-      <${WovenLayersPanel} element=${selectedElement || docRef.current.body} onNavigate=${target => {
+      <${WovenLayersPanel} element=${selectedElement || docRef.current.body} find=${findContext} onNavigate=${target => {
         zoomTagAll(target.ownerDocument);
         setSelectedId(target.getAttribute(ZOOM_ID_ATTR));
         const info = _capturePicked(target);
         if (info) { setPicked(info); setSelectionRect(info.rect); }
       }}/>
     </aside>`);
-    if (!selectionRect) overlayChildren.push(html`<aside key="properties-empty" className="zoom-inspector-panel woven-inspector" aria-label="Design properties">
+    if (tool === "select" && !selectionRect) overlayChildren.push(html`<aside key="properties-empty" className="zoom-inspector-panel woven-inspector" aria-label="Design properties">
       <div className="woven-inspector-header"><strong>Design</strong></div><p className="woven-empty-selection">Select a layer to edit its properties.</p>
     </aside>`);
   }
@@ -73943,6 +74005,36 @@ function WorkflowPickedInspectorDock({
     return result;
   }, [pickedElement, node.id, onStageInspectorEdit, navigateTo, onClose]);
 
+  // Find tab (Layers panel). Its writes land on disk while pick mode holds
+  // this frame as a script-free snapshot, and a node in pick mode ignores
+  // file events, so reload the frame from disk (pick mode re-isolates it on
+  // load) and drop the pick, whose element belonged to the old document.
+  // Drafts are left alone: Find never writes their dot-prefixed clone.
+  const [pendingEdits, setPendingEdits] = useState(() => (window.__thPendingInspectorEdits && window.__thPendingInspectorEdits.total) || 0);
+  useEffect(() => {
+    const onPending = (e) => setPendingEdits((e.detail && e.detail.total) || 0);
+    window.addEventListener("th:pending-inspector-edits-changed", onPending);
+    return () => window.removeEventListener("th:pending-inspector-edits-changed", onPending);
+  }, []);
+  const findContext = useMemo(() => ({
+    pendingCount: pendingEdits,
+    onSavePending: () => window.dispatchEvent(new CustomEvent("th:staged-inspector-save")),
+    onDiscardPending: () => window.dispatchEvent(new CustomEvent("th:staged-inspector-revert")),
+    onSourcesChanged: () => {
+      const ifr = pickerIframeRef.current;
+      if (ifr && ifr.isConnected && !hostId.includes(":")) {
+        const path = WovenEdit.sourcePath(ifr);
+        try { if (path) WovenEdit.forget(path, apiUrl); } catch {}
+        ifr.removeAttribute("srcdoc");
+        try {
+          const src = (ifr.getAttribute("src") || "").replace(/([?&])_findrep=\d+/g, "$1").replace(/[?&]$/, "");
+          ifr.setAttribute("src", src + (src.includes("?") ? "&" : "?") + "_findrep=" + Date.now());
+        } catch {}
+      }
+      onClose && onClose();
+    },
+  }), [pendingEdits, pickerIframeRef, hostId, onClose]);
+
   // React-rendered banner stays suppressed: the downstream pipeline
   // handles React reconciliation, so the inspector must not warn that DOM
   // edits won't survive reload (they do, via the pipeline). The variable
@@ -73965,7 +74057,7 @@ function WorkflowPickedInspectorDock({
       data-scroll-internally="true"
       style=${{ left: (frameLeft - 248) + "px", top: top + "px", width: "240px", height: height + "px" }}
       onMouseDown=${e => e.stopPropagation()} onClick=${e => e.stopPropagation()} onWheel=${e => e.stopPropagation()}>
-      <${WovenLayersPanel} element=${pickedDomRef.current} onNavigate=${navigateTo}/>
+      <${WovenLayersPanel} element=${pickedDomRef.current} onNavigate=${navigateTo} find=${findContext}/>
     </aside>
     <div
       className=${"workflow-inspector-panel" + (closing ? " is-closing" : "")}

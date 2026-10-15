@@ -35626,15 +35626,66 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 .woven-layer-chevron:disabled { visibility: hidden; }
 .woven-layers :is(input, button, [role="treeitem"]):focus-visible { outline: 2px solid var(--accent-text); outline-offset: -2px; }
 .woven-layer-tree > small { display: block; padding: 12px; color: var(--text-muted); }
-/* Interact shares Select's stage box so the frame holds still while the user flips between them. */
-.zoom-overlay:is([data-tool="select"], [data-tool="interact"]) .zoom-iframe-host { left: 288px; right: 288px; top: 48px; }
+/* Layers panel tabs: Layers | Find (find & replace across the prototype). */
+.woven-layers-header[role="tablist"] { gap: 12px; }
+.woven-layers-tab { align-self: stretch; padding: 0; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+.woven-layers-tab:hover { color: var(--text); }
+.woven-layers-tab[aria-selected="true"] { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
+.woven-find { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.woven-find-fields { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-bottom: 1px solid var(--border); }
+.woven-find-row { display: flex; align-items: center; gap: 4px; }
+.woven-find-row > input { flex: 1; min-width: 0; height: 28px; border: 1px solid transparent; border-radius: 5px; padding: 4px 8px; font: inherit; background: var(--surface-2); color: var(--text); }
+.woven-find-toggle { flex: 0 0 26px; height: 26px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); font: inherit; font-weight: 600; cursor: pointer; }
+.woven-find-toggle:hover { background: var(--surface-2); color: var(--text); }
+.woven-find-toggle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+.woven-find-action { flex: 0 0 auto; height: 26px; padding: 0 9px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); font: inherit; font-weight: 500; white-space: nowrap; cursor: pointer; }
+.woven-find-action:hover:not(:disabled) { background: var(--surface-2); }
+.woven-find-action:disabled { opacity: .45; cursor: default; }
+.woven-find-meta { justify-content: space-between; min-height: 26px; color: var(--text-faint); }
+.woven-find-link { padding: 0; border: 0; background: transparent; color: var(--accent-text); font: inherit; cursor: pointer; }
+.woven-find-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 8px 0; padding: 6px 8px; border-radius: 5px; background: var(--surface-2); color: var(--text-muted); }
+.woven-find-notice > span { flex: 1 1 100%; min-width: 0; }
+.woven-find-notice.is-error { background: var(--danger-soft); color: var(--danger); }
+.woven-find-results { flex: 1; min-height: 0; overflow: auto; padding: 0 4px 8px; }
+.woven-find-summary { margin: 0; padding: 8px 8px 0; color: var(--text-faint); }
+.woven-find-heading { display: flex; align-items: center; gap: 6px; padding: 10px 8px 4px; color: var(--text-muted); }
+.woven-find-heading > span { margin-left: auto; color: var(--text-faint); }
+.woven-find-record { margin: 4px; padding: 6px 8px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.woven-find-record.is-data { border-color: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.woven-find-record-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.woven-find-record-head > svg { flex: 0 0 14px; color: var(--accent-text); }
+.woven-find-record-head > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.woven-find-record-where { margin: 1px 0 4px 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-faint); }
+.woven-find-field { display: flex; align-items: center; gap: 6px; min-height: 26px; }
+.woven-find-field > span { flex: 0 0 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
+.woven-find-field > :is(input, select) { flex: 1; min-width: 0; height: 24px; border: 1px solid transparent; border-radius: 4px; padding: 2px 6px; font: inherit; background: var(--surface-2); color: var(--text); text-overflow: ellipsis; }
+.woven-find-field.is-hit > span { color: var(--accent-text); font-weight: 600; }
+.woven-find-field.is-hit > :is(input, select) { border-color: var(--accent); }
+.woven-find-more { display: block; padding: 2px 0; color: var(--text-faint); }
+.woven-find-record-foot { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.woven-find-record-foot > span { flex: 1; min-width: 0; color: var(--text-faint); font-size: 10.5px; }
+.woven-find-file-row { display: flex; align-items: center; gap: 4px; height: 26px; padding: 0 4px; border-radius: 4px; cursor: pointer; user-select: none; }
+.woven-find-file-row:hover { background: var(--surface-2); }
+.woven-find-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.woven-find-count { color: var(--text-faint); }
+.woven-find-hit { display: flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 4px 0 8px; border-radius: 4px; cursor: default; }
+.woven-find-hit:hover { background: var(--surface-2); }
+.woven-find-hit > svg { flex: 0 0 12px; width: 12px; height: 12px; color: var(--accent-text); }
+.woven-find-line { flex: 0 0 28px; text-align: right; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.woven-find-snippet { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
+.woven-find-snippet mark { background: var(--accent-soft); color: var(--accent-text); border-radius: 2px; }
+.woven-find :is(input[type="checkbox"]) { flex: 0 0 auto; margin: 0; }
+/* Interact and Text share Select's stage box so the frame holds still while the user flips between them. */
+.zoom-overlay:is([data-tool="select"], [data-tool="interact"], [data-tool="text"]) .zoom-iframe-host { left: 288px; right: 288px; top: 48px; }
 .zoom-overlay .woven-layers-panel { left: 48px; top: 48px; bottom: 48px; max-height: none; border-radius: 0; border-width: 1px 1px 0 0; box-shadow: none; }
+/* The tool rail's tooltips open rightward over the Layers panel. */
+.zoom-overlay .zoom-toolbar { z-index: 8; }
 .zoom-overlay .zoom-inspector-panel { right: 0; top: 48px; bottom: 48px; max-height: none; border-radius: 0; border-width: 1px 0 0 1px; box-shadow: none; }
 .woven-empty-selection { padding: 12px; color: var(--text-muted); }
 @media (max-width: 900px) {
   .zoom-overlay .woven-layers-panel { width: 190px; }
   .zoom-overlay .zoom-inspector-panel { width: 264px; }
-  .zoom-overlay:is([data-tool="select"], [data-tool="interact"]) .zoom-iframe-host { left: 238px; right: 264px; }
+  .zoom-overlay:is([data-tool="select"], [data-tool="interact"], [data-tool="text"]) .zoom-iframe-host { left: 238px; right: 264px; }
 }
 
 /* ── Point tool (editor/points.js) ─────────────────────────────────────────
