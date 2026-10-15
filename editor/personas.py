@@ -146,17 +146,38 @@ def profile_name(text):
     return ""
 
 
+_META_RE = re.compile(r"^\s*(?:device|comfort with tech)\s*:", re.I)
+_EMPTY_LINE_RE = re.compile(r"^\s*[-*>]?\s*$")
+_HEADING_RE = re.compile(r"^\s*#{1,6}\s")
+
+
 def profile_summary(text):
     """Who they are, in one line, for list rows and the critique card: the
-    first plain line after the name."""
+    first written line after the name (empty skeleton bullets skipped)."""
     lines = [l.strip() for l in (text or "").splitlines() if l.strip()]
     for t in lines[1:]:
-        if t.startswith("#") or t.startswith(">") or _DEVICE_RE.match(t):
+        if t.startswith("#") or t.startswith(">") or _META_RE.match(t):
             continue
-        t = re.sub(r"^[-*]\s+", "", t).strip("*_ ")
-        if t:
+        t = re.sub(r"^[-*]\s*", "", t).strip("*_ ")
+        if re.search(r"\w", t):
             return t[:120]
     return ""
+
+
+def profile_clean(text):
+    """The profile as the persona reads it: the editor's skeleton bullets and
+    headings that were left empty are dropped."""
+    lines = [l for l in (text or "").splitlines() if not (l.strip() and _EMPTY_LINE_RE.match(l))]
+    out = []
+    for i, line in enumerate(lines):
+        if _HEADING_RE.match(line) and i > 0:
+            j = i + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            if j >= len(lines) or _HEADING_RE.match(lines[j]):
+                continue
+        out.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
 
 
 def profile_device(text):
@@ -463,7 +484,7 @@ PERSONA_OUTPUT = """Answer with ONE JSON object and nothing else (no prose, no c
 "steps" has one entry per step shown (empty when there are no steps). At most %d suggestions, most important first; each one concrete enough to act on. Only suggest what this person would actually care about.""" % MAX_SUGGESTIONS
 
 def persona_system(p):
-    text = p.get("profile") or _legacy_profile(p)
+    text = profile_clean(p.get("profile") or _legacy_profile(p))
     device = p.get("device") or profile_device(text)
     return "\n".join([PERSONA_RULES, "", "## Your profile", "You are the person this profile describes.", "",
                       text, "", "## Device you are using", "a phone" if device == "mobile" else "a computer"])

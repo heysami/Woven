@@ -62,6 +62,20 @@ class PersonaStore(unittest.TestCase):
         self.assertIn("rent money fast", personas.persona_system(rec2))
         self.assertEqual(personas.delete(self.root, rec["id"]), [])
 
+    def test_untouched_skeleton_never_reaches_the_persona(self):
+        text = ("# Ana\n\n## Who they are\n- Night-shift nurse\n\n## About\n- \n\n## Goals\n- \n\n"
+                "## In their words\n> \n\n## Using the product\nComfort with tech: low\nDevice: phone\n")
+        rec, _ = personas.upsert(self.root, {"profile": text})
+        self.assertEqual(rec["profile"], text.strip())          # the box keeps its structure
+        self.assertEqual(rec["role"], "Night-shift nurse")
+        self.assertEqual(rec["device"], "mobile")
+        clean = personas.profile_clean(rec["profile"])
+        self.assertEqual(clean, "# Ana\n\n## Who they are\n- Night-shift nurse\n\n"
+                                "## Using the product\nComfort with tech: low\nDevice: phone")
+        self.assertIn(clean, personas.persona_system(rec))
+        skeleton_only = personas.upsert(self.root, {"profile": "# Lee\n\n## Goals\n- \n\nDevice: computer"})[0]
+        self.assertEqual(skeleton_only["role"], "")
+
     def test_name_required(self):
         with self.assertRaises(ValueError):
             personas.upsert(self.root, {"profile": "   \n  "})

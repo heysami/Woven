@@ -63431,27 +63431,34 @@ async function personasPost(path, body) {
 }
 // The profile is ONE free markdown text. Only two things are read out of it
 // (editor/personas.py): the name, its first line, and the device, a
-// "Device: phone" line that makes a simulation use a phone screen.
-const PERSONA_TEMPLATE = `# Maya R.
-First-year student, works part time, applies between lectures.
+// "Device: phone" line that makes a simulation use a phone screen. A new
+// persona STARTS with this skeleton in the box (not as a placeholder, which
+// vanished at the first keystroke and took the structure with it). Headings
+// left empty never reach the persona (personas.py profile_clean).
+const PERSONA_SKELETON = `# Name
+
+## Who they are
+- 
 
 ## About
-- 19, lives in halls, money is tight at the end of the month
+- 
 
 ## Goals
-- Get money for rent fast
+- 
 
 ## Frustrations
-- Long forms and jargon
-- Not knowing whether an application went through
+- 
 
 ## Habits and context
-- Does everything on her phone, usually in a hurry
+- 
 
+## In their words
+> 
+
+## Using the product
 Comfort with tech: medium
-Device: phone
-
-> "I just need to know if I got it, I don't have time to dig."`;
+Device: computer
+`;
 const PERSONA_TASTE_MAX = 8;
 // The app's own data at the project root, never something a user would know.
 const PERSONA_HIDDEN_ROOTS = new Set(["editor", "workflow", "personas", "plan-splits", "usertesting", "share", "references.json"]);
@@ -63469,7 +63476,7 @@ function personaNameOf(text) {
 // save and are filed under it.
 function personaBlank() {
   const hex = Array.from(crypto.getRandomValues(new Uint8Array(4)), b => b.toString(16).padStart(2, "0")).join("");
-  return { id: "p_" + hex, profile: "", knowledge: [], taste: [] };
+  return { id: "p_" + hex, profile: PERSONA_SKELETON, knowledge: [], taste: [] };
 }
 function personaMeta(p) {
   return [p.role, p.device === "mobile" ? "phone" : null].filter(Boolean).join(" · ");
@@ -63541,11 +63548,21 @@ function PersonaEditor({ initial, onDone, onClose }) {
   const [uploading, setUploading] = useState(0);
   const [dropOn, setDropOn] = useState(false);
   const fileRef = useRef(null);
+  // A fresh skeleton opens with "Name" selected, ready to type over.
+  const textRef = useRef(null);
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el || p.profile !== PERSONA_SKELETON) return;
+    el.focus();
+    el.setSelectionRange(2, 6);
+    el.scrollTop = 0;
+  }, []);
   const grant = (rel, on) => setP(o => ({
     ...o, knowledge: on ? (o.knowledge.includes(rel) ? o.knowledge : [...o.knowledge, rel]) : o.knowledge.filter(k => k !== rel),
   }));
   const save = async () => {
-    if (!personaNameOf(p.profile)) { setErr("Start the profile with the persona's name on the first line."); return; }
+    const nm = personaNameOf(p.profile);
+    if (!nm || nm === "Name") { setErr("Put the persona's name on the first line, in place of \"Name\"."); return; }
     setSaving(true); setErr(null);
     try { await personasPost("/__personas", { op: "upsert", persona: p }); onDone(); }
     catch (e) { setErr(e.message || String(e)); }
@@ -63596,9 +63613,10 @@ function PersonaEditor({ initial, onDone, onClose }) {
         <button type="button" className="pv-panel-close" title="Close" aria-label="Close panel" onClick=${onClose}>×</button>
       </div>
       <div className="personas-form">
-        <textarea className="personas-profile" aria-label="Profile" value=${p.profile} placeholder=${PERSONA_TEMPLATE}
-          onInput=${(e) => setP(o => ({ ...o, profile: e.target.value }))}/>
-        <div className="personas-help">Markdown, written however you like. The first line is the name; "Device: phone" makes simulations use a phone screen.</div>
+        <textarea ref=${textRef} className="personas-profile" aria-label="Profile" value=${p.profile} spellCheck=${true}
+          placeholder="# Name, then whatever you know about them"
+          onInput=${(e) => { const v = e.target.value; setP(o => ({ ...o, profile: v })); setErr(null); }}/>
+        <div className="personas-help">Markdown. Fill what you know, leave or delete the rest: empty headings are skipped. The first line is the name; "Device: phone" makes simulations use a phone screen.</div>
         <div className="personas-pair">
           <div className="personas-field">
             <div className="personas-field-head"><span>What they know</span>
