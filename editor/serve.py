@@ -115,6 +115,7 @@ import stories as _stories  # user-story sheet (docs/user-stories.xlsx) + protot
 import xlsx_io as _xlsx_io  # dependency-free .xlsx read/write (user-story sheet)
 import personas as _personas  # simulated personas: research profiles + isolated critique runs
 import references as _references  # project references: the sources of truth agents read first
+import agent_browser as _agent_browser  # signed-in Chrome agents read login-walled references in
 
 
 def _pick_port() -> int:
@@ -7874,10 +7875,34 @@ def _mcp_config_spawn_args() -> list:
     Called by every claude spawn site (chat /__run, node ▶ Run, planner).
     Silently skips when the file is absent so installs without MCP servers
     wired don't fail with "config file not found" at spawn-time.
+    With the agent browser on, the path is a machine-local copy that also
+    carries the `reference_browser` server (see _mcp_servers_for_spawn).
     """
+    servers = _mcp_servers_for_spawn()
+    if _agent_browser.SERVER_ID in servers:
+        path = _agent_browser.write_spawn_config(servers)
+        if path:
+            return ["--mcp-config", path]
     if AGENT_MCP_CONFIG and os.path.isfile(AGENT_MCP_CONFIG):
         return ["--mcp-config", AGENT_MCP_CONFIG]
     return []
+
+
+def _mcp_servers_for_spawn() -> dict:
+    """What a spawned agent gets: the configured servers, plus the signed-in
+    agent browser (`reference_browser`) when the user turned it on in
+    Preview > References. Starting the Woven browser when it is down happens
+    here, at spawn, never on a listing. The plain `chrome` server stays
+    isolated either way."""
+    servers = dict(_mcp_servers_from_config())
+    try:
+        spec = _agent_browser.mcp_server_spec()
+        if spec and _agent_browser.SERVER_ID not in servers:
+            servers[_agent_browser.SERVER_ID] = spec
+            _agent_browser.ensure_running()
+    except Exception:
+        pass
+    return servers
 
 
 def _mcp_servers_from_config() -> dict:
@@ -7941,7 +7966,7 @@ def _codex_mcp_spawn_args(visual_deny=False) -> list:
     its own environment down to MCP server processes. visual_deny: pass True
     for MAIN CHAT spawns only (see _mcp_server_env)."""
     args = []
-    for sid, spec in _mcp_servers_from_config().items():
+    for sid, spec in _mcp_servers_for_spawn().items():
         translated = mcp_routing.translate(spec, "codex", _mcp_server_env(spec, visual_deny=visual_deny))
         for key, value in translated.items():
             args += ["-c", "mcp_servers.%s.%s=%s" % (json.dumps(sid), key, mcp_routing.toml(value))]
@@ -8091,7 +8116,7 @@ def _ensure_opencode_mcp_config(visual_deny=False):
     SEPARATE file (.opencode-config-chat.json) so a concurrent subagent
     spawn using the permissive variant never races the chat's deny variant
     on the same path."""
-    servers = _mcp_servers_from_config()
+    servers = _mcp_servers_for_spawn()
     merged = {"$schema": "https://opencode.ai/config.json"}
     for cand in ("~/.config/opencode/opencode.json",
                  "~/.config/opencode/opencode.jsonc"):
@@ -8308,7 +8333,7 @@ def _spawn_runtime_process(agent_id, argv, resume_id=None, driver_mode=None, **k
     # Correct project/run scope and guard policy reach every managed MCP process.
     if runtime == "codex":
         additions = []
-        for sid, spec in _mcp_servers_from_config().items():
+        for sid, spec in _mcp_servers_for_spawn().items():
             if not spec.get("command"):
                 continue
             values = {k: env[k] for k in ("TH_PROJECT_ROOT", "TH_PROJECT_ID", "TH_RUN_ID", "TH_VISUAL_GUARD", "TH_VISUAL_DENY") if k in env}
@@ -8329,7 +8354,7 @@ def _spawn_runtime_process(agent_id, argv, resume_id=None, driver_mode=None, **k
             except (OSError, ValueError):
                 pass
         effective = {**effective, **existing.get("mcp", {})}
-        for sid, spec in _mcp_servers_from_config().items():
+        for sid, spec in _mcp_servers_for_spawn().items():
             base = effective.get(sid) or mcp_routing.translate(spec, "opencode", _mcp_server_env(spec))
             if base.get("type") == "local":
                 values = {k: env[k] for k in ("TH_PROJECT_ROOT", "TH_PROJECT_ID", "TH_RUN_ID", "TH_VISUAL_GUARD", "TH_VISUAL_DENY") if k in env}
@@ -15430,14 +15455,15 @@ def _refs_send(send: str, mode, told, project_root):
         return send, None
     try:
         rows = _references.load(project_root)
+        browser = _agent_browser.load_mode()
     except Exception:
         return send, None
-    cur = _references.digest(rows)
+    cur = _references.digest(rows, browser)
     if not rows and not told:
         return send, None
     if rows and mode not in _REFS_EVERY_MESSAGE and told == cur:
         return send, None
-    return send + _references.agent_block(project_root, rows), cur
+    return send + _references.agent_block(project_root, rows, browser), cur
 
 
 def _thread_critic(state):
@@ -16273,6 +16299,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._personas_post(qs)
             if parsed.path == "/__references":
                 return self._references_post(qs)
+            if parsed.path == "/__agent_browser":
+                return self._agent_browser_post()
+            if parsed.path == "/__agent_browser/open":
+                return self._agent_browser_open()
             if parsed.path == "/__personas/draft":
                 return self._personas_draft(qs)
             if parsed.path == "/__personas/taste":
@@ -16724,6 +16754,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._personas_get(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__references":
             return self._references_get(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__agent_browser":
+            return self._reply(200, _agent_browser.status())
         m_cr = re.match(r"^/__critic/(c_[a-f0-9]{10})(/shot)?$", url_path)
         if m_cr:
             if m_cr.group(2):
@@ -28217,6 +28249,55 @@ class H(http.server.SimpleHTTPRequestHandler):
         except OSError as e:
             return self._reply(500, {"error": "could not save references: %s" % e})
         return self._reply(400, {"error": "op must be upsert, delete or move"})
+
+    # ── Agent browser (editor/agent_browser.py) ─────────────────────────
+    # GET  /__agent_browser                 -> {mode, installed, woven, chrome}
+    # POST /__agent_browser {mode}          -> off | woven | chrome, then status
+    # POST /__agent_browser/open {url?}     -> woven: start it / open url in it
+    #                                          chrome: open the remote-debugging page
+    def _agent_browser_post(self):
+        try:
+            body = self._read_json_body(max_bytes=4096)
+            _agent_browser.save_mode(body.get("mode"))
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        except OSError as e:
+            return self._reply(500, {"error": "could not save: %s" % e})
+        return self._reply(200, _agent_browser.status())
+
+    def _agent_browser_open(self):
+        try:
+            body = self._read_json_body(max_bytes=8192)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        url = body.get("url")
+        if url is not None and not (isinstance(url, str) and re.match(r"^https?://\S+$", url)):
+            return self._reply(400, {"error": "url must be an http(s) link"})
+        mode = _agent_browser.load_mode()
+        if mode == "off":
+            return self._reply(409, {"error": "the agent browser is off"})
+        if mode == "chrome":
+            # The user's own Chrome: show them where remote debugging is
+            # switched on. A link opens in their Chrome as any link would.
+            target = url or _agent_browser.REMOTE_DEBUG_URL
+            err = None
+            try:
+                if sys.platform == "darwin":
+                    subprocess.Popen(["open", "-a", "Google Chrome", target], stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    binary = _agent_browser.chrome_binary()
+                    if not binary:
+                        raise OSError("Google Chrome is not installed")
+                    subprocess.Popen([binary, target], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL, start_new_session=True)
+            except OSError as e:
+                err = str(e)
+        else:
+            err = _agent_browser.launch(url=url)
+        if err:
+            return self._reply(500, {"error": err})
+        return self._reply(200, _agent_browser.status())
 
     # ── Simulated personas + persona critique (editor/personas.py) ────────
     # GET  /__personas?project=                 -> {personas}

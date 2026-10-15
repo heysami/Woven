@@ -6957,6 +6957,12 @@ body:has(.workflow-body[data-view="proto"]) .canvas-ctxmenu {
 .references-row[data-missing="true"] .personas-row-meta,
 .references-row[data-missing="true"] .pv-file-glyph { color: var(--danger); }
 .references-help { padding: 8px 6px 2px; }
+/* "Links that need a sign-in": which browser agents use for them. */
+.references-browser { margin: 12px 4px 4px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.references-browser-modes { padding: 0; border-bottom: 0; }
+.references-browser-modes .th-tasks-filter-btn { flex: 0 1 auto; white-space: nowrap; padding: 3px 9px; }
+.references-browser .personas-field-head > .references-browser-state { font-weight: 500; color: var(--text-faint); }
+.references-browser .personas-field-head > .references-browser-state[data-ok="true"] { color: var(--success); }
 .personas-panel { border-right: 0; }
 .personas-row .personas-row-name {
   flex: 0 1 auto;

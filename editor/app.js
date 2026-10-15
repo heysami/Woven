@@ -21332,7 +21332,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                       onMouseEnter=${() => setSlashIndex(i)}
                     ><${Icon.Crosshair}/><span>Click a node or element to point at it</span></span>
                   `;
-                  if (row.item.kind === "reference") return html`
+                  if (row.item?.kind === "reference") return html`
                     <button
                       key=${rowKey(row, i)}
                       type="button"
@@ -21343,7 +21343,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                       onMouseDown=${(e) => { e.preventDefault(); insertSlashSkill(row.item); }}
                     ><span className="chat-slash-item-token chat-slash-item-kind-reference">${row.item.name}</span><span className="chat-slash-item-sub">${referenceWhere(row.item.reference)}</span></button>
                   `;
-                  if (row.item.kind === "point") return html`
+                  if (row.item?.kind === "point") return html`
                     <button
                       key=${rowKey(row, i)}
                       type="button"
@@ -64040,7 +64040,14 @@ function referenceWhere(r) {
     return u.host.replace(/^www\./, "") + (tail ? " / " + decodeURIComponent(tail) : "");
   } catch { return r.location; }
 }
-function openReference(r) {
+// With the Woven agent browser on, a link opens THERE: that is where the user
+// signs in once for the agents. Otherwise it opens like any link.
+function openReference(r, browserMode) {
+  if (r.kind === "link" && browserMode === "woven") {
+    agentBrowserPost("/__agent_browser/open", { url: r.location })
+      .catch(e => uiAlert(e.message || String(e), { title: "Could not open the Woven browser" }));
+    return;
+  }
   if (r.kind === "link") { window.open(r.location, "_blank", "noopener"); return; }
   if (r.kind === "file") {
     window.dispatchEvent(new CustomEvent("th:proto-open-tab",
@@ -64050,8 +64057,93 @@ function openReference(r) {
   revealInFinder(r.location);
 }
 
+/* The agent browser: how agents read a reference behind a sign-in. Off (public
+   links only), the Woven browser (a separate Chrome profile the user signs
+   into once) or the user's own Chrome (remote debugging switched on). Per
+   machine, stored by the daemon in ~/.woven (editor/agent_browser.py). */
+async function agentBrowserPost(path, body) {
+  const r = await fetch(apiUrl(path), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+function useAgentBrowser() {
+  const [st, setSt] = useState(null);
+  const load = useCallback(() => {
+    fetch(apiUrl("/__agent_browser"))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j && j.mode) setSt(j); })
+      .catch(() => {});
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  // While a browser is in play, follow it starting up / remote debugging
+  // being switched on.
+  const mode = st && st.mode;
+  useEffect(() => {
+    if (!mode || mode === "off") return;
+    const t = setInterval(load, 4000);
+    return () => clearInterval(t);
+  }, [mode, load]);
+  return [st, setSt];
+}
+const AGENT_BROWSER_MODES = [
+  { value: "off",    label: "Off",           hint: "Agents read public links only" },
+  { value: "woven",  label: "Woven browser", hint: "A separate Chrome window you sign into once; agents use its logins" },
+  { value: "chrome", label: "My Chrome",     hint: "Your own Chrome, already signed in; agents attach to it" },
+];
+function AgentBrowserSetup({ st, setSt, firstLink }) {
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  if (!st) return null;
+  const run = async (fn) => {
+    setBusy(true); setErr(null);
+    try { setSt(await fn()); } catch (e) { setErr(e.message || String(e)); } finally { setBusy(false); }
+  };
+  const pick = (mode) => mode !== st.mode && run(() => agentBrowserPost("/__agent_browser", { mode }));
+  const open = () => run(() => agentBrowserPost("/__agent_browser/open", st.mode === "woven" && firstLink ? { url: firstLink } : {}));
+  const m = st.mode;
+  const line = m !== "off" && !st.installed
+    ? "Google Chrome is not installed on this computer."
+    : m === "off"
+    ? "Agents read public links only. A link behind a sign-in is reported as unreadable."
+    : m === "woven"
+    ? (st.woven.running
+        ? "The Woven browser is open. Sign in to each reference site there once (the open button on a reference opens it there); agents reuse those logins."
+        : "A separate Chrome window agents attach to; it starts when an agent needs it. Open it once and sign in to your reference sites.")
+    : (st.chrome.debugging
+        ? "Agents attach to your Chrome. Chrome asks you to allow an agent the first time it connects; keep Chrome open."
+        : "In Chrome, open " + st.remoteDebugUrl + " and tick Enable remote debugging, then keep Chrome open.");
+  const btn = !st.installed ? null
+    : m === "woven" ? (st.woven.running ? "Bring it forward" : "Open Woven browser")
+    : m === "chrome" && !st.chrome.debugging ? "Open that Chrome page"
+    : null;
+  return html`
+    <div className="references-browser">
+      <div className="personas-field-head"><span>Links that need a sign-in</span>
+        ${m !== "off" && st.installed && html`<span className="references-browser-state" data-ok=${m === "woven" ? st.woven.running : st.chrome.debugging}>
+          ${(m === "woven" ? st.woven.running : st.chrome.debugging) ? "ready" : "not connected"}</span>`}
+      </div>
+      <div className="th-tasks-filter references-browser-modes" role="radiogroup" aria-label="Browser agents use for links that need a sign-in">
+        ${AGENT_BROWSER_MODES.map(o => html`
+          <button key=${o.value} type="button" role="radio" aria-checked=${m === o.value} title=${o.hint} disabled=${busy}
+            className=${"th-tasks-filter-btn" + (m === o.value ? " is-active" : "")} onClick=${() => pick(o.value)}>${o.label}</button>`)}
+      </div>
+      <div className="personas-help">${line}</div>
+      ${err && html`<div className="personas-error">${err}</div>`}
+      ${m !== "off" && html`<div className="personas-help">Agents use your logins there only to read references: no typing, posting or changes.</div>`}
+      ${btn && html`<div className="personas-actions">
+        <span className="personas-help"/>
+        <button type="button" className="personas-btn" disabled=${busy} onClick=${open}>${btn}</button>
+      </div>`}
+    </div>`;
+}
+
 function ReferencesList({ list, onEdit }) {
   const [err, setErr] = useState(null);
+  const [browser, setBrowser] = useAgentBrowser();
+  const browserMode = browser ? browser.mode : "off";
   const remove = async (r) => {
     if (!(await uiConfirm(`Remove the reference "${r.name}"? Agents stop treating it as a source of truth; the document itself is not touched.`))) return;
     try { await referencesPost({ op: "delete", id: r.id }); } catch (e) { setErr(e.message || String(e)); }
@@ -64075,8 +64167,9 @@ function ReferencesList({ list, onEdit }) {
           <span className="personas-row-name">${r.name}</span>
           <span className="personas-row-meta">${referenceWhere(r)}</span>
           <span className="pv-row-actions">
-            ${r.kind !== "missing" && html`<button type="button" className="pv-rowbtn" title=${r.kind === "link" ? "Open the link" : r.kind === "folder" ? "Reveal in Finder" : "Open the file"}
-              aria-label=${"Open " + r.name} onClick=${(e) => { e.stopPropagation(); openReference(r); }}><${Icon.External}/></button>`}
+            ${r.kind !== "missing" && html`<button type="button" className="pv-rowbtn"
+              title=${r.kind === "link" ? (browserMode === "woven" ? "Open in the Woven browser - sign in there once" : "Open the link") : r.kind === "folder" ? "Reveal in Finder" : "Open the file"}
+              aria-label=${"Open " + r.name} onClick=${(e) => { e.stopPropagation(); openReference(r, browserMode); }}><${Icon.External}/></button>`}
             ${i > 0 && html`<button type="button" className="pv-rowbtn" title="Move up - agents read the list top first"
               aria-label=${"Move " + r.name + " up"} onClick=${(e) => { e.stopPropagation(); moveUp(r); }}><${Icon.ArrowUp}/></button>`}
             <button type="button" className="pv-rowbtn" title="Edit" aria-label=${"Edit " + r.name}
@@ -64085,7 +64178,9 @@ function ReferencesList({ list, onEdit }) {
               onClick=${(e) => { e.stopPropagation(); remove(r); }}><${Icon.Trash}/></button>
           </span>
         </div>`)}
-      ${n > 0 && html`<div className="personas-help references-help">Every chat is told this list and opens a reference fresh when its work touches it. Type >> in the chat to name one for a message.</div>`}
+      ${n > 0 && html`<div className="personas-help references-help">Every chat is told this list and opens a reference first, fresh, when its work touches it. Type >> in the chat to name one for a message.</div>`}
+      <${AgentBrowserSetup} st=${browser} setSt=${setBrowser}
+        firstLink=${((list || []).find(r => r.kind === "link") || {}).location || null}/>
     </div>`;
 }
 

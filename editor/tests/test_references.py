@@ -19,6 +19,7 @@ import unittest
 
 EDITOR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(EDITOR))
+import agent_browser
 import references
 import serve
 
@@ -93,13 +94,34 @@ class Store(unittest.TestCase):
             self.assertNotIn(d, text)
 
 
-class Riding(unittest.TestCase):
+class _BrowserSandbox(unittest.TestCase):
+    """Point the agent-browser state at a temp folder and never start Chrome."""
     def setUp(self):
+        self.home = tempfile.mkdtemp(prefix="refs-home-")
+        self._saved = (agent_browser.STATE_PATH, agent_browser.PROFILE_DIR,
+                       agent_browser.SPAWN_CONFIG_PATH, agent_browser.launch)
+        agent_browser.STATE_PATH = os.path.join(self.home, "agent-browser.json")
+        agent_browser.PROFILE_DIR = os.path.join(self.home, "agent-browser", "profile")
+        agent_browser.SPAWN_CONFIG_PATH = os.path.join(self.home, "agent-browser", "mcp-config.json")
+        self.launches = []
+        agent_browser.launch = lambda url=None, background=False: self.launches.append((url, background))
+        agent_browser._last_launch["t"] = 0.0
+
+    def tearDown(self):
+        (agent_browser.STATE_PATH, agent_browser.PROFILE_DIR,
+         agent_browser.SPAWN_CONFIG_PATH, agent_browser.launch) = self._saved
+        shutil.rmtree(self.home, ignore_errors=True)
+
+
+class Riding(_BrowserSandbox):
+    def setUp(self):
+        super().setUp()
         self.root = tempfile.mkdtemp(prefix="refs-ride-")
         references.upsert(self.root, {"name": "Dictionary", "location": "https://drive.google.com/d/1"})
 
     def tearDown(self):
         shutil.rmtree(self.root, ignore_errors=True)
+        super().tearDown()
 
     def test_told_once_then_on_change(self):
         st = fake_state(self.root)
@@ -145,10 +167,85 @@ class Riding(unittest.TestCase):
         finally:
             shutil.rmtree(empty, ignore_errors=True)
 
+    def test_browser_mode_rides_with_the_list(self):
+        st = fake_state(self.root)
+        send, _ = say(st, "first")
+        self.assertIn("no signed-in browser", send)
+        self.assertNotIn("reference_browser", send)
+        send, _ = say(st, "second")
+        self.assertNotIn("REFERENCES", send)
+        agent_browser.save_mode("woven")
+        send, fields = say(st, "third")
+        self.assertIn("mcp__reference_browser__", send)
+        self.assertIn("Woven agent browser", send)
+        self.assertIn("never type into", send)
+        self.assertEqual(fields["refs"], references.digest(references.load(self.root), "woven"))
+        agent_browser.save_mode("chrome")
+        send, _ = say(st, "fourth")
+        self.assertIn("own running Chrome", send)
+        for d in DASHES:
+            self.assertNotIn(d, send)
+
     def test_node_runs_never_get_it(self):
         send, fields = say(fake_state(self.root, kind="node-agent"), "run it")
         self.assertNotIn("REFERENCES", send)
         self.assertNotIn("refs", fields)
+
+
+class AgentBrowser(_BrowserSandbox):
+    def test_mode_store(self):
+        self.assertEqual(agent_browser.load_mode(), "off")
+        agent_browser.save_mode("chrome")
+        self.assertEqual(agent_browser.load_mode(), "chrome")
+        with self.assertRaises(ValueError):
+            agent_browser.save_mode("firefox")
+        self.assertEqual(agent_browser.status()["mode"], "chrome")
+
+    def test_server_spec_per_mode(self):
+        self.assertIsNone(agent_browser.mcp_server_spec("off"))
+        woven = agent_browser.mcp_server_spec("woven")["args"]
+        self.assertIn("--autoConnect", woven)
+        self.assertEqual(woven[woven.index("--userDataDir") + 1], agent_browser.PROFILE_DIR)
+        mine = agent_browser.mcp_server_spec("chrome")["args"]
+        self.assertIn("--autoConnect", mine)
+        self.assertNotIn("--userDataDir", mine)
+        self.assertNotIn("--isolated", mine)
+
+    def test_spawn_gets_a_separate_server(self):
+        base = serve._mcp_servers_from_config()
+        self.assertNotIn(agent_browser.SERVER_ID, serve._mcp_servers_for_spawn())
+        self.assertEqual(self.launches, [])
+        agent_browser.save_mode("woven")
+        servers = serve._mcp_servers_for_spawn()
+        self.assertIn(agent_browser.SERVER_ID, servers)
+        # The general chrome server is untouched: still isolated.
+        for sid, spec in base.items():
+            self.assertEqual(servers[sid], spec)
+        self.assertEqual(self.launches, [(None, True)])      # started in the background, once
+        serve._mcp_servers_for_spawn()
+        self.assertEqual(len(self.launches), 1)               # rate-limited
+        args = serve._mcp_config_spawn_args()
+        self.assertEqual(args, ["--mcp-config", agent_browser.SPAWN_CONFIG_PATH])
+        import json
+        with open(agent_browser.SPAWN_CONFIG_PATH) as f:
+            self.assertIn(agent_browser.SERVER_ID, json.load(f)["mcpServers"])
+        agent_browser.save_mode("chrome")
+        serve._mcp_servers_for_spawn()
+        self.assertEqual(len(self.launches), 1)               # never launches the user's own Chrome
+
+    def test_status_probe_needs_a_listener(self):
+        os.makedirs(agent_browser.PROFILE_DIR)
+        Path(agent_browser.PROFILE_DIR, "DevToolsActivePort").write_text("1\n/devtools/browser/x\n")
+        self.assertFalse(agent_browser.status()["woven"]["running"])
+        import socket
+        srv = socket.socket()
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        try:
+            Path(agent_browser.PROFILE_DIR, "DevToolsActivePort").write_text("%d\n/devtools/browser/x\n" % srv.getsockname()[1])
+            self.assertTrue(agent_browser.status()["woven"]["running"])
+        finally:
+            srv.close()
 
 
 if __name__ == "__main__":
