@@ -1418,10 +1418,82 @@ _REGIONS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + _DOM_JS + _COMP_JS + _
     const quote = words ? '"' + (words.length > 40 ? words.slice(0, 40) + '...' : words) + '"' : '';
     return (kind && quote ? kind + ' ' + quote : kind || quote || el.tagName.toLowerCase()).slice(0, 72);
   };
+  // What the JUDGE is told a part is: its role in plain words and the words
+  // it shows, never a class name ("fa ref tail" means nothing on a
+  // screenshot). The crop carries no marks, so this name is all it has to
+  // find the part by (labelOf stays the code-side name for the agent).
+  const ROLES = [
+    ['th,[role=columnheader]', 'column header'], ['[role=rowheader]', 'row header'],
+    ['thead', 'table header row'], ['tbody', 'table body'], ['tfoot', 'table footer'], ['caption', 'table caption'],
+    ['table,[role=table],[role=grid]', 'table'],
+    ['button,[role=button],input[type=button],input[type=submit]', 'button'], ['a[href],[role=link]', 'link'],
+    ['input[type=checkbox],[role=checkbox]', 'checkbox'], ['input[type=radio],[role=radio]', 'radio button'],
+    ['select,[role=combobox],[role=listbox]', 'dropdown'], ['textarea,input', 'input field'],
+    ['img,picture,canvas,video', 'image'], ['svg', 'icon'], ['h1,h2,h3,h4,h5,h6,[role=heading]', 'heading'],
+    ['label', 'label'], ['legend', 'legend'], ['nav,[role=navigation]', 'navigation'], ['[role=tablist]', 'tab bar'],
+    ['[role=tab]', 'tab'], ['dialog,[role=dialog]', 'dialog'], ['form', 'form'], ['li,[role=listitem]', 'list item'],
+    ['ul,ol,[role=list]', 'list'], ['header', 'header'], ['footer', 'footer'], ['aside', 'side panel'],
+    ['p', 'paragraph'], ['hr', 'divider'], ['progress,meter,[role=progressbar]', 'progress bar']];
+  const roleOf = el => { for (const [s, w] of ROLES) if (el.matches(s)) return w; return ''; };
+  // Only what is ON SCREEN names a part: an aria-label or alt is not
+  // visible, and a name cut short with "..." reads as text cut off on the
+  // page (it drew false "cut off" flags on whole references, 2026-10-15).
+  const seenText = el => (el.matches('input,select,textarea') ? (el.value || el.getAttribute('placeholder') || '')
+    : textOf(el, 120)).replace(/ +/g, ' ').trim();
+  const quoted = s => {
+    if (s.length <= 48) return "'" + s + "'";
+    const cut = s.slice(0, 48), sp = cut.lastIndexOf(' ');
+    return "'" + (sp > 16 ? cut.slice(0, sp) : cut) + "' (first words)";
+  };
+  const isBlock = k => !/^inline/.test(getComputedStyle(k).display);
+  // The visible texts a part shows, one per block inside it: a cell with a
+  // name over a reference shows 'Loh Sok Cheng' and 'FAD-PTUG-FAS- 2026-06-07001'.
+  const piecesOf = el => {
+    const blocks = [...el.children].filter(k => isBlock(k) && seenText(k));
+    return (blocks.length > 1 ? blocks.map(seenText) : [seenText(el)]).filter(Boolean);
+  };
+  const showing = el => {
+    const p = piecesOf(el);
+    if (!p.length) return '';
+    return p.length === 1 ? quoted(p[0]) : p.length === 2 ? quoted(p[0]) + ' and ' + quoted(p[1])
+      : quoted(p[0]) + ', ' + quoted(p[1]) + ' and more';
+  };
+  const article = w => (/^[aeiou]/.test(w) ? 'an ' : 'a ') + w;
+  // A part with no visible words is named by what it holds: "a checkbox".
+  const holdsOf = el => {
+    const d = el.querySelector('input,select,textarea,button,a[href],img,svg,canvas,video,[role]');
+    const r = d ? roleOf(d) : '';
+    return r ? article(r) : '';
+  };
+  // The column a cell sits in, after its own words: the header is often not
+  // in the cell's crop, so it is context, never how the cell is found.
+  const columnOf = el => {
+    const t = el.closest('table');
+    const h = t && t.tHead && t.tHead.rows.length ? t.tHead.rows[0].cells[el.cellIndex] : null;
+    const w = h ? seenText(h) : '';
+    return w ? ' (the ' + quoted(w) + ' column)' : '';
+  };
+  // Text broken into inline pieces (spans around parts of a reference) still
+  // reads as one text.
+  const inlineOnly = el => el.children.length > 0 && [...el.children].every(k =>
+    /^inline/.test(getComputedStyle(k).display) && !k.children.length);
+  const nameOf = el => {
+    const shows = showing(el), holds = shows ? '' : holdsOf(el);
+    const tail = shows ? ' showing ' + shows : holds ? ' holding ' + holds : '';
+    if (el.matches('td')) return 'the table cell' + tail + columnOf(el);
+    if (el.matches('tr,[role=row]')) {
+      const cell = [...el.children].find(k => piecesOf(k).length);
+      return 'the table row' + (cell ? ' for ' + quoted(piecesOf(cell)[0]) : '');
+    }
+    const c = compOf(el), role = roleOf(el);
+    if (c || role) return 'the ' + (c ? c.title.toLowerCase() : role) + (shows ? ' ' + shows : holds ? ' holding ' + holds : '');
+    if (shows && (ownText(el) || isPrimitive(el) || inlineOnly(el))) return 'the text ' + shows;
+    return 'the area' + tail;
+  };
   const nodes = [];
   const add = (el, depth, parent) => {
     const n = {i: nodes.length, parent: parent, depth: depth, sel: path(el), box: seenBox(el, 1) || box(el),
-               label: labelOf(el), kids: [], hot: !!(imp && imp.hot.has(el)), ev: null};
+               label: labelOf(el), say: nameOf(el), kids: [], hot: !!(imp && imp.hot.has(el)), ev: null};
     nodes.push(n);
     return n;
   };
@@ -1439,6 +1511,8 @@ _REGIONS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + _DOM_JS + _COMP_JS + _
       if (part.length === 1) { out.push(part[0]); continue; }
       const g = {i: nodes.length, parent: parent, depth: depth, sel: part[0].sel, box: union(part),
                  label: 'items ' + (s + 1) + '-' + (s + part.length) + ' of ' + members.length + ' (' + part[0].label + ' ...)',
+                 say: 'the ' + (part[0].say.indexOf('the table row') === 0 ? 'table rows ' : 'items ') + (s + 1) + ' to '
+                   + (s + part.length) + ' of ' + members.length + ' (from ' + part[0].say + ')',
                  kids: [], group: [part[0].sel, part[part.length - 1].sel], ev: null};
       nodes.push(g);
       for (const m of runsOf(part, g.i, depth + 1)) { m.parent = g.i; g.kids.push(m.i); }
@@ -1447,7 +1521,7 @@ _REGIONS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + _DOM_JS + _COMP_JS + _
     return out;
   };
   const root = add(top, 0, null);
-  if (top === document.body) root.label = 'the whole screen';
+  if (top === document.body) root.label = root.say = 'the whole screen';
   root.ev = {code: codeOfBlock(top), style: '', coveredBy: null, clipped: false};
   const queue = [[root, top]];
   while (queue.length) {
@@ -1967,10 +2041,6 @@ def _side_by_side(a: Any, b: Any) -> Optional[bytes]:
 # the most specific thing that is wrong ends up in the report.
 # ---------------------------------------------------------------------------
 
-_BOX_COLOURS = [(220, 20, 60), (0, 120, 215), (16, 150, 72), (235, 120, 0), (140, 40, 190),
-                (0, 150, 160), (200, 0, 140), (110, 90, 0), (30, 30, 140), (150, 30, 30)]
-
-
 def _quota_refusal(exc: Any) -> bool:
     return getattr(exc, "status", None) in (402, 429) or "allocation" in str(exc) or "quota" in str(exc).lower()
 
@@ -2039,15 +2109,16 @@ class JudgeCalls:
         return results
 
 
-def _numbered_crop(path: str, box: Dict[str, float], kids: List[Dict[str, float]],
-                   viewport_w: int) -> Optional[bytes]:
-    """One region's crop with each of its parts outlined in its own colour and
-    numbered 1..n at its top-left corner, as PNG bytes. None without Pillow or
-    for an empty box."""
+def _region_crop(path: str, box: Dict[str, float], viewport_w: int) -> Optional[bytes]:
+    """One region's crop exactly as rendered, as PNG bytes: nothing is drawn
+    on it. Its parts used to be outlined and numbered on the crop, and the
+    judge read a number tag over a part's first letter as text cut off and
+    outlines meeting as a layout defect (suss-cal, 2026-10-15: 12 of 27 flags
+    on a clean page). The questions name each part instead (nameOf in
+    _REGIONS_JS). None without Pillow or for an empty box."""
     if not _PIL_OK:
         return None
     import io
-    from PIL import ImageDraw
     img = Image.open(path).convert("RGB")
     scale = img.width / float(viewport_w or img.width)
     l = max(0, int((box["x"] - _CROP_PAD) * scale))
@@ -2056,27 +2127,32 @@ def _numbered_crop(path: str, box: Dict[str, float], kids: List[Dict[str, float]
     b = min(img.height, int((box["y"] + box["height"] + _CROP_PAD) * scale))
     if r - l < 4 or b - t < 4:
         return None
-    crop = img.crop((l, t, r, b))
-    draw = ImageDraw.Draw(crop)
-    # Numbers stay legible after the judge shrinks a tall crop.
-    size = max(14, min(160, int(max(crop.width, crop.height) / 40)))
-    font = _label_font(size)
-    line = max(2, size // 8)
-    for i, kb in enumerate(kids):
-        col = _BOX_COLOURS[i % len(_BOX_COLOURS)]
-        x1, y1 = kb["x"] * scale - l, kb["y"] * scale - t
-        x2, y2 = x1 + kb["width"] * scale, y1 + kb["height"] * scale
-        draw.rectangle([x1, y1, x2, y2], outline=col, width=line)
-        tag = str(i + 1)
-        try:
-            tw = draw.textlength(tag, font=font)
-        except Exception:
-            tw = size * 0.6 * len(tag)
-        draw.rectangle([x1, y1, x1 + tw + size * 0.5, y1 + size * 1.25], fill=col)
-        draw.text((x1 + size * 0.25, y1 + size * 0.05), tag, fill=(255, 255, 255), font=font)
     buf = io.BytesIO()
-    crop.save(buf, "PNG")
+    img.crop((l, t, r, b)).save(buf, "PNG")
     return buf.getvalue()
+
+
+_ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"]
+
+
+def _part_names(kids: List[Dict[str, Any]]) -> List[str]:
+    """The name each part is asked about: its semantic name, and where two
+    parts share one, which of them it is in reading order ("from the top"
+    when they stack, "from the left" when they sit in a row)."""
+    names = [str(k.get("say") or k.get("label") or "the part") for k in kids]
+    out = list(names)
+    for name in set(names):
+        idx = [i for i, n in enumerate(names) if n == name]
+        if len(idx) < 2:
+            continue
+        boxes = [kids[i]["box"] for i in idx]
+        ys = sorted((b["y"], b["y"] + b["height"]) for b in boxes)
+        stacked = all(ys[j + 1][0] >= ys[j][1] - 2 for j in range(len(ys) - 1))
+        key = (lambda i: kids[i]["box"]["y"]) if stacked else (lambda i: kids[i]["box"]["x"])
+        for rank, i in enumerate(sorted(idx, key=key)):
+            nth = _ORDINALS[rank] if rank < len(_ORDINALS) else "number %d" % (rank + 1)
+            out[i] = "%s (the %s of them from the %s)" % (name, nth, "top" if stacked else "left")
+    return out
 
 
 def _trail(nodes: List[Dict[str, Any]], n: Dict[str, Any]) -> str:
@@ -2110,6 +2186,13 @@ def _region_finding(sc: Dict[str, Any], nodes: List[Dict[str, Any]], n: Dict[str
            "evidence": dict(ev or {})}
     if n.get("comp"):
         out["component"] = n["comp"].get("title")
+    # The sentence the judge scored, so whoever decides the finding reads
+    # what the judge was actually asked (an arrangement is about the region's
+    # own parts; the rest about the part as its parent's call named it).
+    if kind == "arrangement":
+        out["asked"] = _editor_module("visual_checks").region_claim(n.get("say") or n["label"], layout=True)
+    else:
+        out["asked"] = _editor_module("visual_checks").region_claim(n.get("asked") or n.get("say") or n["label"])
     # What code measured at or inside this element, as evidence for whoever
     # reads the finding; it never makes or drops one.
     base = out["selector"].split(" ... ")[0]
@@ -2145,8 +2228,9 @@ def _group_findings(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def region_drill(screens: List[Dict[str, Any]], calls: JudgeCalls, viewport_w: int) -> List[Dict[str, Any]]:
     """The page QA, one level at a time. Each screen starts as one region (the
     part the change impacts, or the whole screen). Its parts (read from the
-    code by _REGIONS_JS) are outlined and numbered on its crop, and one call
-    scores each part on its own (box_N) and the parts as they sit together
+    code by _REGIONS_JS) are named by what they are and the words they show,
+    the crop goes as rendered with nothing drawn on it, and one call scores
+    each named part on its own (box_N) and the parts as they sit together
     (layout). Every part scoring DRILL_NOUL or more is gone into the same way,
     down to a primitive or a DS component. What is reported is the most
     specific thing found:
@@ -2185,22 +2269,25 @@ def region_drill(screens: List[Dict[str, Any]], calls: JudgeCalls, viewport_w: i
                 if len(calls.calls) - start + len(jobs) >= share:
                     findings.append(_region_finding(sc, nodes, n, "unexamined", p, by))
                     continue
-                img = _numbered_crop(sc["path"], n["box"], [k["box"] for k in kids], viewport_w)
+                img = _region_crop(sc["path"], n["box"], viewport_w)
                 if img is None:
                     continue
-                qs = vc.region_questions([k["label"] for k in kids])
+                names = _part_names(kids)
+                for k, name in zip(kids, names):
+                    k["asked"] = name
+                where = n.get("say") or n["label"]
+                qs = vc.region_questions(names, where)
                 rid = "s%d_r%d" % (sc["n"], n["i"])
-                where = ("the whole screen" if n["label"] == "the whole screen"
-                         else "one part of a web page (%s)" % n["label"])
-                jobs.append({"state": "A screenshot of %s. Each numbered coloured box marks one of its parts."
-                                      % where,
+                jobs.append({"state": "A screenshot of %s on a web page, exactly as rendered: nothing is drawn "
+                                      "on it. Each question names one of its parts by what it is and the words "
+                                      "it shows." % where,
                              "questions": {"%s__%s" % (rid, k): q for k, q in qs.items()}, "images": [img],
                              "sources": [{"capture": sc["path"], "box": n["box"], "selector": n["sel"],
                                           "label": "screen %d (%s), %s" % (sc["n"] + 1, sc.get("label"),
                                                                           n["label"])}]})
                 asked.append((n, p, by, kids, rid, qs))
             for (n, p, by, kids, rid, qs), (answers, th, exc, call) in zip(asked, calls.ask(jobs)):
-                shown = {"type": "parts", "instructions": "Which numbered part has a visual defect?",
+                shown = {"type": "parts", "instructions": "Which of its parts has a visual defect?",
                          "criteria": {k: q["instructions"] for k, q in qs.items()}}
                 row: Dict[str, Any] = {"id": rid, "shape": "region", "x": n["label"], "at": "screen:%d" % sc["n"],
                                        "call": call["n"], "question": shown, "claim": shown["instructions"],
@@ -2221,9 +2308,13 @@ def region_drill(screens: List[Dict[str, Any]], calls: JudgeCalls, viewport_w: i
                            if scores["box_%d" % (i + 1)] >= DRILL_NOUL]
                 layout = scores["layout"] >= DRILL_NOUL
                 top = max(scores.values())
-                row.update({"status": "answered", "probabilities": scores, "noul": round(top, 4),
-                            "answer": ", ".join(["box_%d" % (kids.index(k) + 1) for k, _s in flagged]
-                                                + (["layout"] if layout else [])) or "none",
+                # Shown by the part's name: there are no numbers on the image.
+                said = dict(zip(["box_%d" % (i + 1) for i in range(len(kids))], [k["asked"] for k in kids]),
+                            layout="how its parts sit together")
+                row.update({"status": "answered", "noul": round(top, 4),
+                            "probabilities": {said.get(k, k): v for k, v in scores.items()},
+                            "answer": "; ".join([k["asked"] for k, _s in flagged]
+                                                + ([said["layout"]] if layout else [])) or "none",
                             "passed": not (flagged or layout),
                             "confidence": round(abs(top - 0.5) * 2, 4) if (flagged or layout)
                             else round(1 - top, 4),

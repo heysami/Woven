@@ -72,7 +72,11 @@ Use a timeout of at least 5 minutes. A page answering `error` with "page not
 found" means the path is wrong; fix it and run that page again.
 
 - `verdict` other than `pass` (`blank`, `error`, `static`, `cases-fail`, ...)
-  is a failure: put it in the verdict with its `reasons`. A `Failed to load
+  is a failure: put it in the verdict with its `reasons`. `stale` is not about
+  the page: a file in the prototype's folder changed while the run was on
+  (another thread editing the same prototype), so the screenshots may predate
+  the latest code. Run that page once more; if it is `stale` again, say so in
+  plain words and decide the findings anyway. A `Failed to load
   resource` console error alone is the page's own 404, name it.
 - No `visualReport`: typed judgment for visual checks is off (for this thread,
   or in Settings) or no judge is set up. Say so in the verdict.
@@ -89,6 +93,7 @@ for f in b.get('findings') or []:
     ev = f.get('evidence') or {}
     print()
     print(f['id'], f['kind'], 'x%d' % f.get('count', 1), '| judge %s' % f.get('score'), '|', f.get('screen'))
+    print('  judge asked:', f.get('asked'))
     print('  what:', f.get('label'), '| within:', f.get('within'))
     print('  selector:', f.get('selector'))
     if f.get('measured'): print('  code measured:', f['measured'])
@@ -103,8 +108,10 @@ for r in b['checks']:
 "
 ```
 
-The judge walked the impacted part of each screen: each region's parts were
-numbered on its crop and scored ("box N has a visual defect: something cut
+The judge walked the impacted part of each screen: each region went to it as
+rendered, with nothing drawn on it, and each of its parts was NAMED by what it
+is and the words it shows and scored ("the table cell in the 'Application'
+column showing '...' has a visual defect: something cut
 off, overlapping, misaligned, unevenly spaced, unreadable or broken"), plus
 how the parts sit together, and it went down into every part it flagged. Each
 finding is the most specific thing it flagged (the same flag in forty rows is
@@ -124,8 +131,10 @@ the verdict.
 
 ## Step 4 - decide each finding
 
-Decide whether the flag is a real defect, from its evidence (and the page's
-source when you need more: Grep the selector's class in the page's CSS / JS):
+Decide whether the flag is a real defect. Start from `judge asked`: the
+sentence the judge scored yes, naming the part as the judge saw it. Then its
+evidence (and the page's source when you need more: Grep the selector's class
+in the page's CSS / JS):
 - `code measured` names an overlap, a cut or a spill of more than a few
   pixels: a PROBLEM. Name the rule that causes it (`white-space: nowrap`, a
   `max-width`, a fixed height, `overflow: hidden`) and the fix.
@@ -145,9 +154,15 @@ Return ONLY this:
 ```
 VISUAL-QA <PASS|FAIL> - <pages>
 <page>: QA <verdict> · scope: <n> changed selector(s), <m> state(s), <k> case(s) · <f> finding(s): <p> problems, <x> fine, <u> unexamined · report <visualReport id>
-- PROBLEM <finding id> (<screen>, <selector>, x<count>): <what is wrong, with the measurement if any> -> <the rule to change, file:line if you found it>
+- PROBLEM <finding id> (<screen>, <selector>, x<count>): judge: "<judge asked>" (<score>). <what is wrong, with the measurement if any> -> <the rule to change, file:line if you found it>
+- FINE <finding id> (<screen>, <selector>, x<count>): judge: "<judge asked>" (<score>). <why it is not a defect: what the code and look show, and that nothing was measured there>
+- UNEXAMINED <finding id> (<screen>, <selector>, x<count>): judge: "<judge asked>" (<score>), not looked at closely
 - NOT CHECKED <state or page>: <why: no changed element on it, page not found>
 ```
+
+Every finding gets its line, the FINE ones too: the caller acts on your
+verdict without the report, so it must see what the judge flagged and why you
+kept or dropped each flag, not only the count.
 
 FAIL when there is a PROBLEM, a failing criterion, or a QA verdict that is not
 `pass`. Keep `report <id>` on each page line: the caller's Tasks panel shows

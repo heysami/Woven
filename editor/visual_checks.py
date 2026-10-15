@@ -48,15 +48,17 @@ SHAPES = {
     # dimension by the caller (visual_qa.PAIR_DIMS), which decides from them.
     "pair":       {"type": "noul", "images": 2,
                    "text": "B is visually different from A."},
-    # The page QA's region drill: one region of a screen with each of its
-    # parts outlined and numbered, a score per part and one for how they sit
-    # together (region_questions). The parts are read off the rendered page
-    # by code, never written; the judge decides.
+    # The page QA's region drill: one region of a screen, untouched, a score
+    # per part and one for how they sit together (region_questions). Each
+    # part is NAMED by what it is and the words it shows: nothing is drawn on
+    # the image (numbered boxes drawn over the page were read as defects).
+    # The parts are read off the rendered page by code, never written; the
+    # judge decides.
     "region":     {"type": "noul", "images": 1, "dom": True,
-                   "text": "Box {x} has a visual defect: something in it is cut off, overlaps something "
+                   "text": "{x} has a visual defect: something in it is cut off, overlaps something "
                            "else, is misaligned, is unevenly spaced, is unreadable, or is visibly broken."},
     "region_layout": {"type": "noul", "images": 1, "dom": True,
-                      "text": "Taken together, the numbered boxes {x} sit with a visual defect between them: "
+                      "text": "Taken together, the parts of {x} sit with a visual defect between them: "
                               "uneven gaps, overlap, or misaligned edges."},
 }
 
@@ -208,18 +210,32 @@ def question(check):
     return q, shape["images"]
 
 
-def region_questions(labels):
-    # type: (List[str]) -> Dict[str, Dict[str, Any]]
-    """The questions for one region, keyed box_1..box_n (box_1 is the part
-    numbered 1 on the image, in the order given) and layout: each part scored
-    on its own, and the parts as they sit together. Each part is named by
-    what the page says it is."""
+def _spoken(name):
+    # type: (Any) -> str
+    return re.sub(r"\s+", " ", str(name or "")).replace('"', "'").strip()[:140]
+
+
+def region_claim(name, layout=False):
+    # type: (Any, bool) -> str
+    """The sentence the judge scores about one named part (or, with layout,
+    about how the parts of a named region sit together)."""
+    x = _spoken(name) or ("this part of the page" if layout else "This part")
+    if layout:
+        return SHAPES["region_layout"]["text"].format(x=x)
+    return SHAPES["region"]["text"].format(x=x[:1].upper() + x[1:])
+
+
+def region_questions(names, whole=None):
+    # type: (List[str], Optional[str]) -> Dict[str, Dict[str, Any]]
+    """The questions for one region, keyed box_1..box_n (in the order given)
+    and layout: each part scored on its own, and the parts as they sit
+    together. The image carries no marks, so each question names its part by
+    what it is and the words it shows (`names`, unique within the region),
+    and the layout question names the region (`whole`)."""
     out = {}  # type: Dict[str, Dict[str, Any]]
-    for i, label in enumerate(labels):
-        name = re.sub(r"\s+", " ", str(label or "")).replace('"', "'").strip()[:72]
-        x = "%d%s" % (i + 1, " (%s)" % name if name else "")
-        out["box_%d" % (i + 1)] = {"type": "noul", "instructions": SHAPES["region"]["text"].format(x=x)}
-    out["layout"] = {"type": "noul", "instructions": SHAPES["region_layout"]["text"].format(x="1-%d" % len(labels))}
+    for i, name in enumerate(names):
+        out["box_%d" % (i + 1)] = {"type": "noul", "instructions": region_claim(name)}
+    out["layout"] = {"type": "noul", "instructions": region_claim(whole, layout=True)}
     return out
 
 

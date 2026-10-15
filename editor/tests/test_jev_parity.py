@@ -844,13 +844,13 @@ class P8VisualChecks(unittest.TestCase):
         box = lambda y: {"x": 10, "y": y, "width": 150, "height": 20}
         tree = {"nodes": [
             {"i": 0, "parent": None, "depth": 0, "sel": "#grid", "box": {"x": 0, "y": 0, "width": 180, "height": 90},
-             "label": "Data grid", "kids": [1, 2], "ev": {"code": "<table id=grid>"}},
+             "label": "Data grid", "say": "the table", "kids": [1, 2], "ev": {"code": "<table id=grid>"}},
             {"i": 1, "parent": 0, "depth": 1, "sel": "#grid > tr:nth-of-type(1)", "box": box(10), "label": "tr row 1",
-             "kids": [3], "ev": {"code": "<tr>"}},
+             "say": "the table row for 'Aaron Tan'", "kids": [3], "ev": {"code": "<tr>"}},
             {"i": 2, "parent": 0, "depth": 1, "sel": "#grid > tr:nth-of-type(2)", "box": box(40), "label": "tr row 2",
-             "kids": [], "ev": {"code": "<tr>"}},
+             "say": "the table row for 'Aaron Tan'", "kids": [], "ev": {"code": "<tr>"}},
             {"i": 3, "parent": 1, "depth": 2, "sel": "#grid > tr:nth-of-type(1) > td:nth-of-type(5)", "box": box(10),
-             "label": 'fm fail "No bursary awarded"', "kids": [], "ev": {"code": "<span class=fm-fail>"}}],
+             "label": 'fm fail "No bursary awarded"', "say": "the text 'No bursary awarded'", "kids": [], "ev": {"code": "<span class=fm-fail>"}}],
             "scoped": True, "impact": {"changed": 2, "moved": 9, "root": "#grid"}}
         measured = [{"kind": "covered", "selector": "#grid > tr:nth-of-type(1) > td:nth-of-type(5)",
                      "measured": "it and the next cell overlap by 24x18px"},
@@ -904,10 +904,19 @@ class P8VisualChecks(unittest.TestCase):
         self.assertEqual(clicked, ["#sponsorYes"], "the criteria step, and no exploration")
         drill = [q for q in asked if any(k.endswith("__layout") for k in q)]
         self.assertEqual(len(drill), 4, "the grid and row 1, on both screens")
-        self.assertIn("Box 1 (tr row 1) has a visual defect", drill[0]["s0_r0__box_1"]["instructions"])
+        # Nothing is drawn on the crop: each part is named by what it is and what it says,
+        # and two parts with one name are told apart by where they sit.
+        self.assertIn("The table row for 'Aaron Tan' (the first of them from the top) has a visual defect",
+                      drill[0]["s0_r0__box_1"]["instructions"])
+        self.assertIn("the parts of the table sit", drill[0]["s0_r0__layout"]["instructions"])
+        self.assertNotIn("numbered", json.dumps(drill))
+        crops = [im for c in block["calls"] for im in c["images"] if "drill" in str(im.get("path"))]
+        self.assertTrue(crops and all(im["oneColour"] == 1.0 for im in crops), "the crop is sent unmarked")
         (f,) = block["findings"]
         self.assertEqual((f["kind"], f["count"], f["label"]), ("element", 2, 'fm fail "No bursary awarded"'),
                          "the same flag on the page and on the step's screen is one finding")
+        self.assertTrue(f["asked"].startswith("The text 'No bursary awarded' has a visual defect"),
+                        "a finding carries the sentence the judge scored")
         self.assertEqual(f["measured"], ["it and the next cell overlap by 24x18px"],
                          "what code measured rides as evidence")
         self.assertNotIn("never flagged by the judge", json.dumps(block["findings"]),
