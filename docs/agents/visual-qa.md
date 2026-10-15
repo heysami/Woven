@@ -64,7 +64,7 @@ for p in <page1>.html <page2>.html; do
     --data-urlencode "scope=$(cat <scope file for $p>)" > "${TMPDIR:-/tmp}/vqa-$p.json" &
 done; wait
 for p in <page1>.html <page2>.html; do
-  python3 -c "import json,sys; r=json.load(open(sys.argv[1])); print(sys.argv[1], json.dumps({k: r.get(k) for k in ('verdict','reasons','casesSummary','visualReport','error')}))" "${TMPDIR:-/tmp}/vqa-$p.json"
+  python3 -c "import json,sys; r=json.load(open(sys.argv[1])); print(sys.argv[1], json.dumps({k: r.get(k) for k in ('verdict','reasons','casesSummary','visualReport','concurrentEdits','error')}))" "${TMPDIR:-/tmp}/vqa-$p.json"
 done
 ```
 
@@ -72,12 +72,15 @@ Use a timeout of at least 5 minutes. A page answering `error` with "page not
 found" means the path is wrong; fix it and run that page again.
 
 - `verdict` other than `pass` (`blank`, `error`, `static`, `cases-fail`, ...)
-  is a failure: put it in the verdict with its `reasons`. `stale` is not about
-  the page: a file in the prototype's folder changed while the run was on
-  (another thread editing the same prototype), so the screenshots may predate
-  the latest code. Run that page once more; if it is `stale` again, say so in
-  plain words and decide the findings anyway. A `Failed to load
+  is a failure: put it in the verdict with its `reasons`. A `Failed to load
   resource` console error alone is the page's own 404, name it.
+- `concurrentEdits`: other threads may edit the same prototype while it runs.
+  Each screen is checked against the files its page loaded, and taken again
+  when one changed while it was captured. An entry names the screen, the files
+  and how often it was retaken; `clean: true` means the last take was whole, so
+  judge it as usual. `clean: false` means a file kept changing under it: the
+  screen may show a half-made state. Say which screen and files on its page
+  line and decide its findings anyway. Never run a page again for this.
 - No `visualReport`: typed judgment for visual checks is off (for this thread,
   or in Settings) or no judge is set up. Say so in the verdict.
 
@@ -100,7 +103,7 @@ for f in b.get('findings') or []:
     print('  code:', ev.get('code'))
     print('  look:', ev.get('style'))
     if ev.get('coveredBy'): print('  covered by:', ev['coveredBy'])
-    if ev.get('clipped'): print('  content clipped: yes')
+    if ev.get('clipped'): print('  content clipped:', ev['clipped'] if isinstance(ev['clipped'], str) else 'yes')
 for r in b['checks']:
     if r.get('source', '').startswith('screen criteria') or r.get('source') == 'asked in this QA call':
         if r.get('band') != 'act' or r.get('passed') is False:
@@ -138,6 +141,11 @@ in the page's CSS / JS):
 - `code measured` names an overlap, a cut or a spill of more than a few
   pixels: a PROBLEM. Name the rule that causes it (`white-space: nowrap`, a
   `max-width`, a fixed height, `overflow: hidden`) and the fix.
+- `content clipped` is measured too: the screen shows only part of the
+  element, cut by its own box or by the container it names. When that
+  container scrolls, the rest is reachable but the screen still shows it cut:
+  if it is the change's own content, a PROBLEM, saying it scrolls and how much
+  shows, so the caller can ask whether the scroll is acceptable.
 - No measurement, and the code and look are deliberate: a warning icon, error
   or subtle ink the design uses on purpose, a status colour, placeholder or
   muted text: FINE.
@@ -158,6 +166,7 @@ VISUAL-QA <PASS|FAIL> - <pages>
 - FINE <finding id> (<screen>, <selector>, x<count>): judge: "<judge asked>" (<score>). <why it is not a defect: what the code and look show, and that nothing was measured there>
 - UNEXAMINED <finding id> (<screen>, <selector>, x<count>): judge: "<judge asked>" (<score>), not looked at closely
 - NOT CHECKED <state or page>: <why: no changed element on it, page not found>
+- EDITED DURING CAPTURE <screen>: <files> kept changing while it was taken (only for `clean: false`)
 ```
 
 Every finding gets its line, the FINE ones too: the caller acts on your

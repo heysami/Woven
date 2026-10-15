@@ -417,14 +417,17 @@ class DriverReplayTests(unittest.TestCase):
 
 class EvidenceTests(unittest.TestCase):
     def test_missing_vision_is_not_visual_pass(self):
-        report = review_evidence.attach({"verdict": "pass", "judge": {"available": False}}, "red sphere", "abc", "abc")
+        report = review_evidence.attach({"verdict": "pass", "judge": {"available": False}}, "red sphere")
         self.assertEqual(report["renderVerdict"], "pass")
         self.assertEqual(report["verdict"], "inconclusive")
         self.assertEqual(report["visualReview"]["status"], "unavailable")
 
-    def test_edit_during_review_invalidates_result(self):
-        report = review_evidence.attach({"verdict": "pass", "judge": {"available": True, "ok": True}}, "red sphere", "abc", "def")
-        self.assertEqual(report["verdict"], "stale")
+    def test_passed_review_keeps_render_verdict(self):
+        # A source change during the run is no verdict any more: the QA takes a
+        # screen again when a file its page loaded changed under it.
+        report = review_evidence.attach({"verdict": "pass", "judge": {"available": True, "ok": True}}, "red sphere")
+        self.assertEqual(report["verdict"], "pass")
+        self.assertEqual(report["visualReview"]["status"], "passed")
 
     def test_concurrent_writer_prepare_calls_share_one_completion(self):
         with tempfile.TemporaryDirectory() as root:

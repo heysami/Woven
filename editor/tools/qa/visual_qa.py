@@ -912,13 +912,19 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
     already collected (with what the element pass `what` reads off each);
     then one crop from the DS gallery per component a stored criterion
     compares with. Never raises."""
-    out: Dict[str, Any] = {"settled": None, "interactions": [], "refs": {}, "screens": []}
+    out: Dict[str, Any] = {"settled": None, "interactions": [], "refs": {}, "screens": [],
+                           "concurrentEdits": []}
     scope = scope or {}
     collector = collector or ScreenCollector(out_dir, ds_plan, what=what, changed=scope.get("changed"))
     selectors = sorted(set(selectors))
     ref_classes = list(ref_classes or [])
-    page = context.new_page()
-    try:
+    # Other threads may be editing this prototype while it is captured: each
+    # screen is checked against the files its page loaded, and taken again
+    # when one of them changed under it (watched_capture).
+    watch = SourceWatch(url)
+
+    def shoot_page(page: Any) -> None:
+        out["interactions"] = []
         page.goto(url, wait_until="load", timeout=30000)
         page.wait_for_timeout(settle_ms)
         collector.capture(page, "the page")
@@ -942,16 +948,14 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
                                         "beforeBoxes": b_boxes,
                                         "afterBoxes": capture_boxes(page, selectors, doc=True) or {}})
             collector.capture(page, "after %s" % label)
-    except Exception as exc:
-        log("typed capture pass failed (%s)" % exc)
-    finally:
-        page.close()
+
+    watched_capture(context, watch, collector, "the page", shoot_page, out["concurrentEdits"])
     for i, st in enumerate(scope.get("states") or []):
         if not isinstance(st, dict) or not (st.get("query") or st.get("steps")):
             continue
         label = str(st.get("label") or "state %d" % (i + 1))[:60]
-        page = context.new_page()
-        try:
+
+        def shoot_state(page: Any, st: Dict[str, Any] = st, label: str = label) -> None:
             page.goto(_with_query(url, str(st.get("query") or "")), wait_until="load", timeout=30000)
             page.wait_for_timeout(settle_ms)
             for idx, step in enumerate(st.get("steps") or []):
@@ -962,10 +966,8 @@ def typed_capture_pass(context: Any, url: str, settle_ms: int, out_dir: str,
                 page.wait_for_timeout(int(step.get("settleMs", 400)) if isinstance(step, dict) else 400)
             collector.capture(page, label, st.get("changed") if isinstance(st.get("changed"), list) else None,
                               named=True)
-        except Exception as exc:
-            log("scope state %s not captured (%s)" % (label, exc))
-        finally:
-            page.close()
+
+        watched_capture(context, watch, collector, label, shoot_state, out["concurrentEdits"])
     out["screens"] = collector.screens
     ref_classes = sorted(set(ref_classes))
     if gallery_url and ref_classes:
@@ -1065,22 +1067,70 @@ _EVIDENCE_JS = """
     const h = (el.outerHTML || '').replace(/\\s+/g, ' ');
     return h.length > 320 ? h.slice(0, 320) + '...' : h;
   };
-  const coverOf = (el, pathOf) => {
+  // The part of el the screen shows: its box cut by every container above it
+  // that does not let overflow show (hidden, clip, or a scroller: what lies
+  // past a scroller's edge is not on the screen either). An absolute element
+  // escapes the containers below its positioned ancestor; a fixed one escapes
+  // them all. `by` is the nearest container that cuts it, null when none does.
+  const shownOf = el => {
     const r = el.getBoundingClientRect();
-    for (const [x, y] of [[r.left + r.width / 2, r.top + r.height / 2], [r.left + 6, r.top + r.height / 2],
-                          [r.right - 6, r.top + r.height / 2]]) {
+    let L = r.left, T = r.top, R = r.right, B = r.bottom, by = null, abs = false;
+    for (let c = el, p = el.parentElement; p && p !== document.body && p !== document.documentElement;
+         c = p, p = p.parentElement) {
+      const pos = getComputedStyle(c).position;
+      if (pos === 'fixed') break;
+      if (pos === 'absolute') abs = true;
+      const ps = getComputedStyle(p);
+      if (abs) {
+        if (ps.position === 'static') continue;
+        abs = false;
+      }
+      const cx = ps.overflowX !== 'visible', cy = ps.overflowY !== 'visible';
+      if (!cx && !cy) continue;
+      const pr = p.getBoundingClientRect();
+      const pl = pr.left + p.clientLeft, pt = pr.top + p.clientTop;
+      const nL = cx ? Math.max(L, pl) : L, nR = cx ? Math.min(R, pl + p.clientWidth) : R;
+      const nT = cy ? Math.max(T, pt) : T, nB = cy ? Math.min(B, pt + p.clientHeight) : B;
+      if (!by && (nR - nL < R - L - 2 || nB - nT < B - T - 2))
+        by = {el: p, scrolls: /auto|scroll/.test((cx ? ps.overflowX : '') + ' ' + (cy ? ps.overflowY : ''))};
+      L = nL; R = nR; T = nT; B = nB;
+    }
+    return {left: L, top: T, right: R, bottom: B, width: Math.max(0, R - L), height: Math.max(0, B - T),
+            full: r, by: by};
+  };
+  // What sits on top of el, probed only where the screen shows it: a point
+  // past a container's edge belongs to whatever happens to be there.
+  const coverOf = (el, pathOf) => {
+    const s = shownOf(el);
+    if (s.width < 2 || s.height < 2) return null;
+    const my = s.top + s.height / 2;
+    for (const [x, y] of [[s.left + s.width / 2, my], [s.left + Math.min(6, s.width / 2), my],
+                          [s.right - Math.min(6, s.width / 2), my]]) {
       const hit = document.elementFromPoint(x, y);
       if (hit && hit !== el && !el.contains(hit) && !hit.contains(el)) return pathOf(hit);
     }
     return null;
   };
-  const clippedOf = el => {
+  // Whether the screen shows el's content only in part, and what cuts it:
+  // its own box (overflow, ellipsis, a line clamp), or a container above it
+  // that shows only part of it (one that hides its overflow, or a scroller
+  // whose edge it runs past). False when nothing cuts it, or when none of it
+  // is on the screen at all.
+  const clippedOf = (el, pathOf) => {
     const st = getComputedStyle(el);
-    return (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)
-      && /hidden|clip|ellipsis/.test(st.overflow + ' ' + st.overflowX + ' ' + st.textOverflow);
+    if ((el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)
+        && /hidden|clip|ellipsis/.test(st.overflow + ' ' + st.overflowX + ' ' + st.textOverflow))
+      return 'by its own box: its content needs ' + el.scrollWidth + 'x' + el.scrollHeight
+        + 'px and shows ' + el.clientWidth + 'x' + el.clientHeight + 'px';
+    const s = shownOf(el);
+    if (!s.by || s.width < 1 || s.height < 1) return false;
+    return 'by ' + pathOf(s.by.el) + (s.by.scrolls ? ' (it scrolls: the rest is past its edge)'
+                                                   : ' (it hides its overflow)')
+      + ': the screen shows ' + Math.round(s.width) + 'x' + Math.round(s.height) + 'px of its '
+      + Math.round(s.full.width) + 'x' + Math.round(s.full.height) + 'px';
   };
   const evidenceOf = (el, pathOf) => ({code: codeOf(el), style: styleOf(el), coveredBy: coverOf(el, pathOf),
-                                       clipped: clippedOf(el)});
+                                       clipped: clippedOf(el, pathOf)});
   // The look as exact values, for measuring a component against the design
   // system's own: colours, border, corners, shadow, font, spacing.
   const propsOf = el => {
@@ -1640,8 +1690,8 @@ _DEFECTS_JS = """(a) => {""" + _STATE_JS + _EVIDENCE_JS + _DOM_JS + _COMP_JS + _
       || st.textOverflow === 'ellipsis' || (st.webkitLineClamp && st.webkitLineClamp !== 'none');
     return clips && (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1);
   };
-  // What lies on top of the part of el that is on screen (coverOf samples
-  // its whole box, which for a cell in a scrolled table is partly elsewhere).
+  // What lies on top of the part of el that is on screen, by seenBox (the
+  // page-coordinate box the screenshot crops use).
   const coverSeen = el => {
     const sb = seenBox(el, 2);
     if (!sb) return null;
@@ -1856,6 +1906,18 @@ class ScreenCollector:
         self.changed = [str(c) for c in (changed or []) if str(c).strip()]
         self.screens: List[Dict[str, Any]] = []
         self.seen: set = set()
+        self.sig_of: Dict[str, Any] = {}
+
+    def drop(self, since: int) -> None:
+        """Forget the screens from index `since` on (they are taken again):
+        their signatures go, so the retake is not skipped as a repeat."""
+        for sc in self.screens[since:]:
+            self.seen.discard(self.sig_of.pop(sc["path"], None))
+            try:
+                os.remove(sc["path"])
+            except OSError:
+                pass
+        del self.screens[since:]
 
     def capture(self, page: Any, label: str, changed: Optional[List[str]] = None,
                 named: bool = False) -> Optional[Dict[str, Any]]:
@@ -1911,7 +1973,123 @@ class ScreenCollector:
                 boxes[item["selector"]] = item["box"]
         screen = {"n": n, "label": label, "path": path, "found": found, "boxes": boxes}
         self.screens.append(screen)
+        self.sig_of[path] = sig
         return screen
+
+
+# What a screen is built from: the page, its scripts and styles, the data it
+# fetches. Images and fonts are left out: threads rarely rewrite them, and
+# reading them back for every screen costs.
+_WATCH_KINDS = ("document", "script", "stylesheet", "fetch", "xhr")
+# How many times a screen is taken again when a file it loaded keeps changing
+# while it is captured.
+MAX_RETAKES = 2
+
+
+class SourceWatch:
+    """The files a page actually loaded, as the bytes it got: the page, its
+    scripts, styles and data, the design system's included. After its
+    screens are captured each file is fetched again from the daemon; one whose
+    bytes differ was changed (another thread editing the same prototype)
+    between the page's load and the capture, so those screens may show a
+    half-made state. Nothing else counts: a file the page never loaded, or one
+    saved before the page loaded, is already what the screen shows. Daemon
+    endpoints (/__*) and the editor's own files are not the prototype's."""
+
+    def __init__(self, url: str):
+        u = urllib.parse.urlparse(url)
+        self.origin = (u.scheme, u.netloc)
+        self.loads: Dict[int, List[Any]] = {}
+
+    def watch(self, page: Any) -> None:
+        got: List[Any] = []
+        self.loads[id(page)] = got
+        try:
+            # A Python function, not got.append: Playwright tags its handlers
+            # with an attribute, which a builtin method cannot carry.
+            page.on("response", lambda resp: got.append(resp))
+        except Exception as exc:
+            log("source watch off for this page (%s)" % exc)
+
+    def forget(self, page: Any) -> None:
+        self.loads.pop(id(page), None)
+
+    def changed(self, page: Any) -> List[str]:
+        """The url paths of the files this page loaded that the daemon now
+        serves differently. Never raises: a file that cannot be read back is
+        not counted as changed."""
+        latest: Dict[str, Any] = {}
+        for resp in self.loads.get(id(page)) or []:
+            try:
+                req = resp.request
+                if req.method != "GET" or resp.status != 200 or req.resource_type not in _WATCH_KINDS:
+                    continue
+                u = urllib.parse.urlparse(resp.url)
+                if (u.scheme, u.netloc) != self.origin or u.path.startswith(("/__", "/editor/")):
+                    continue
+            except Exception:
+                continue
+            latest[resp.url] = resp
+        out = set()
+        for url, resp in latest.items():
+            try:
+                had = resp.body()
+                referer = resp.request.headers.get("referer")
+            except Exception:
+                continue
+            now = self._fetch(url, referer)
+            if now is not None and now != had:
+                out.add(urllib.parse.urlparse(url).path)
+        return sorted(out)
+
+    @staticmethod
+    def _fetch(url: str, referer: Optional[str]) -> Optional[bytes]:
+        req = urllib.request.Request(url, headers={"Referer": referer} if referer else {})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.read()
+        except Exception:
+            return None
+
+
+def watched_capture(context: Any, watch: SourceWatch, collector: "ScreenCollector", label: str,
+                    shoot: Any, edits: List[Dict[str, Any]]) -> None:
+    """`shoot(page)` on a fresh page, its screens taken again (up to
+    MAX_RETAKES times) while a file the page loaded changed before they were
+    captured. Every such change is noted in `edits` for the report: which
+    screen, which files, how often it was taken again, and whether the last
+    take was clean. Never raises."""
+    entry: Optional[Dict[str, Any]] = None
+    for attempt in range(MAX_RETAKES + 1):
+        mark = len(collector.screens)
+        page = context.new_page()
+        watch.watch(page)
+        moved: List[str] = []
+        try:
+            shoot(page)
+            moved = watch.changed(page)
+        except Exception as exc:
+            log("%s not captured (%s)" % (label, exc))
+        finally:
+            watch.forget(page)
+            try:
+                page.close()
+            except Exception:
+                pass
+        if entry is not None:
+            entry["retaken"] = attempt
+        if not moved:
+            if entry is not None:
+                entry["clean"] = True
+            return
+        if entry is None:
+            entry = {"screen": label, "files": moved, "retaken": 0, "clean": False}
+            edits.append(entry)
+        else:
+            entry["files"] = sorted(set(entry["files"]) | set(moved))
+        if attempt < MAX_RETAKES:
+            log("%s: %s changed while it was captured; taking it again" % (label, ", ".join(moved)))
+            collector.drop(mark)
 
 
 def detect_off_system(page: Any, plan: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -2714,7 +2892,10 @@ def typed_checks_on_page(context: Any, url: str, args: argparse.Namespace,
     tp = typed_pass_for(context, url, args, settle_ms, out_dir, checks, judge_fn)
     report = {"idleFrames": [], "interactions": [], "typedPass": tp}
     vw = int((getattr(args, "viewport", None) or (1280, 720))[0])
-    return run_visual_checks(report, checks, rejected, args.typed_judge, vw, judge_fn)
+    block = run_visual_checks(report, checks, rejected, args.typed_judge, vw, judge_fn)
+    if isinstance(block, dict):
+        block["concurrentEdits"] = tp.get("concurrentEdits") or []
+    return block
 
 
 def typed_pass_for(context: Any, url: str, args: argparse.Namespace, settle_ms: int,
@@ -4120,6 +4301,7 @@ def run_cases(args: argparse.Namespace) -> int:
         if getattr(args, "typed_judge", None):
             try:
                 report["typedChecks"] = typed_checks_on_page(context, url, args, settle_ms, out_dir)
+                report["concurrentEdits"] = report["typedChecks"].pop("concurrentEdits", None) or []
                 _flag_and_log(report, report["typedChecks"], args.typed_judge, args, None)
             except Exception as exc:
                 report["typedChecks"] = {"message": "typed checks skipped: %s" % exc}
@@ -4421,6 +4603,7 @@ def run(args: argparse.Namespace) -> int:
         if getattr(args, "typed_judge", None):
             report["typedPass"] = typed_pass_for(context, url, args, settle_ms, out_dir,
                                                  args.parsed_checks[0])
+            report["concurrentEdits"] = report["typedPass"].get("concurrentEdits") or []
 
         context.close()
         browser.close()

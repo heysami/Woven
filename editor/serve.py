@@ -27951,8 +27951,6 @@ class H(http.server.SimpleHTTPRequestHandler):
             if not scope_doc.get("cases"):
                 use_cases = False
         out_dir = tempfile.mkdtemp(prefix="woven-qa-")
-        revision_root = os.path.dirname(abs_target) if abs_target else None
-        revision_before = review_evidence.source_revision(revision_root)
         # Run on the same interpreter that runs the daemon (system python).
         cmd = [sys.executable, qa_tool, "--url", url, "--out", out_dir,
                "--mode", mode]
@@ -28134,7 +28132,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         report["mode"] = mode
         report["exitCode"] = proc.returncode
         report["outDir"] = out_dir
-        report = review_evidence.attach(report, judge, revision_before, review_evidence.source_revision(revision_root))
+        report = review_evidence.attach(report, judge)
         # Typed visual checks leave a report page (questions, answers, the
         # images exactly as sent) outside the temp dir, linked from the reply.
         try:

@@ -85,6 +85,7 @@ def save(report, out_dir, project=None, page=None, root=None):
         "cases": {"pass": cs.get("pass", 0), "total": cs.get("total", 0)} if cs else None,
         "reasons": [str(r) for r in (report.get("reasons") or [])[:10]],
         "sizes": sizes, "typedChecks": block,
+        "concurrentEdits": report.get("concurrentEdits") or [],
     }
     with open(os.path.join(dest, "report.json"), "w", encoding="utf-8") as f:
         json.dump(data, f)
