@@ -6948,6 +6948,15 @@ body:has(.workflow-body[data-view="proto"]) .canvas-ctxmenu {
 /* ────────── Personas panel (simulated users, editor/personas.py) ──────────
    Same pv-panel shell as Files / Assets. List rows are one line: glyph,
    name, muted meta, hover actions on the right. */
+/* Files panel tabs (References | Files): the side-panel tab buttons
+   (.th-tasks-filter-btn) sitting in the panel head, tools on the right. */
+.pv-panel-head-tabs { padding-left: 8px; }
+.pv-panel-tabs { flex: 1; min-width: 0; display: flex; gap: 4px; }
+.pv-panel-tab-count { margin-left: 5px; font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.th-tasks-filter-btn.is-active .pv-panel-tab-count { color: var(--text-muted); }
+.references-row[data-missing="true"] .personas-row-meta,
+.references-row[data-missing="true"] .pv-file-glyph { color: var(--danger); }
+.references-help { padding: 8px 6px 2px; }
 .personas-panel { border-right: 0; }
 .personas-row .personas-row-name {
   flex: 0 1 auto;
@@ -14770,6 +14779,8 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 }
 /* Anchor colours for the `@` (resource) kinds, matching the `/` families. */
 .chat-slash-item-kind-file       { color: oklch(42% 0.13 250); }
+.chat-slash-item-kind-reference  { color: oklch(44% 0.11 170); }
+.chat-slash-detail-badge-reference { background: oklch(94% 0.04 170); color: oklch(40% 0.10 170); }
 /* The DS vocabulary is four deep - section (what you read), variant (one
    rendered permutation), class (one lever of the API), token (what you write
    in CSS) - so each level gets its own anchor colour inside the shared
@@ -14895,6 +14906,8 @@ body:not([data-wf-no-simplify]) .workflow-node-fmttext[data-quiet="bare"]:not(:h
 :root[data-theme="dark"] .chat-slash-item-kind-orchestrator { color: oklch(80% 0.13 140); }
 :root[data-theme="dark"] .chat-slash-item-kind-library      { color: oklch(82% 0.12 75); }
 :root[data-theme="dark"] .chat-slash-item-kind-file         { color: oklch(80% 0.10 250); }
+:root[data-theme="dark"] .chat-slash-item-kind-reference    { color: oklch(80% 0.09 170); }
+:root[data-theme="dark"] .chat-slash-detail-badge-reference { background: oklch(30% 0.05 170); color: oklch(86% 0.08 170); }
 :root[data-theme="dark"] .chat-slash-item-kind-ds-variant { color: oklch(82% 0.13 300); }
 :root[data-theme="dark"] .chat-slash-item-kind-ds-class { color: oklch(80% 0.10 300); }
 :root[data-theme="dark"] .chat-slash-item-kind-ds-token { color: oklch(80% 0.09 250); }

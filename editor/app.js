@@ -913,6 +913,8 @@ const Icon = {
   // L brackets crossing the frame). Used by the asset card's in-place crop.
   Crop:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M4.5 1.5V11a1.5 1.5 0 0 0 1.5 1.5H14"/><path d="M11.5 14.5V5a1.5 1.5 0 0 0-1.5-1.5H2"/></svg>`,
   External: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M7 3.5H4.5a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1V9"/><path d="M9.5 2.5h4v4M13.5 2.5L8 8"/></svg>`,
+  // Link: two chain links - a project reference that lives at a URL.
+  Link:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M6.8 9.2a2.6 2.6 0 003.7 0l2.2-2.2a2.6 2.6 0 00-3.7-3.7l-.9.9"/><path d="M9.2 6.8a2.6 2.6 0 00-3.7 0L3.3 9a2.6 2.6 0 003.7 3.7l.9-.9"/></svg>`,
   Plus:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M8 3v10M3 8h10"/></svg>`,
   Crosshair: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r=".6" fill="currentColor"/><path d="M8 1.5v2.5M8 12v2.5M1.5 8h2.5M12 8h2.5"/></svg>`,
   Minus:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M3 8h10"/></svg>`,
@@ -12170,8 +12172,9 @@ function ChatComposerAddMenu({ busy, attachBusy, pickBusy, uploadBusy, onAttachI
      - dsGuard  the DS-drift gate: the ds-guardian dispatch after any markup /
                 CSS edit on a DS-bound page. No-op on projects with no design
                 system bound - the preamble emits nothing there either way.
-     - reqQa    the requirement gate: a QA subagent diffs the build against the
-                requirement source it was given. Opt-in.
+     - reqQa    the requirement gate: a QA subagent diffs the build against
+                THIS thread's task (the user's requests here plus the sources
+                named for it), never the project's whole backlog. Opt-in.
      - impactQa the impact gate: a QA subagent looks for OTHER screens and
                 flows that depended on what a change removed or reshaped.
                 Opt-in, and report-only all the way to the user: the agent
@@ -12183,8 +12186,8 @@ function ChatComposerAddMenu({ busy, attachBusy, pickBusy, uploadBusy, onAttachI
 const CHAT_GUARD_OPTIONS = [
   { key: "visual",  def: true,  icon: "Eye",      label: "Visual verification", hint: "Agent renders and looks at what it built (via a throwaway verifier subagent) before saying it is done - including anything it creates on the canvas. Off: it reports without checking, and may glance inline." },
   { key: "dsGuard", def: true,  icon: "Palette",  label: "Design system guard", hint: "Includes the full bound DESIGN.md during generation and runs the DS-drift check after markup or CSS edits. Off: no full catalog injection or drift check; the design system still applies. Projects with no design system are unaffected." },
-  { key: "reqQa",   def: false, icon: "NotesDoc", label: "Requirement QA",      hint: "For work driven by a requirement doc or referenced file: a QA subagent re-reads the requirement and checks the build's terms, logic and facts against it. The agent auto-fixes hallucinated facts and mechanical drift, and brings anything needing a decision to you. Off unless the thread has a requirement to check." },
-  { key: "impactQa", def: false, icon: "Tree",    label: "Impact QA",           hint: "After a change that removes, renames, moves or reshapes something, a QA subagent looks across the rest of the prototype for screens and flows that depended on it: a step that dead-ends, a summary that reads a field nobody collects, a flow that can no longer be finished. Nothing is fixed without asking: you pick which fixes to make, since each one reaches past what you asked for." },
+  { key: "reqQa",   def: false, icon: "NotesDoc", label: "Requirement QA (this task)", hint: "Checks the work against what THIS thread was asked to do: your requests here, plus the files and >> references you pointed it at. Not the project's whole backlog: a bigger spec or reference is only checked for the parts this task touches. A QA subagent checks terms, logic and facts; the agent auto-fixes invented facts and mechanical drift, and brings anything needing a decision to you." },
+  { key: "impactQa", def: false, icon: "Tree",    label: "Impact QA",           hint: "After a change that removes, renames, moves or reshapes something, a QA subagent looks across the rest of the prototype for screens and flows that depended on it: a step that dead-ends, a summary that reads a field nobody collects, a flow that can no longer be finished, or a change that now contradicts one of the project's references. Nothing is fixed without asking: you pick which fixes to make, since each one reaches past what you asked for." },
 ];
 
 /* CHAT MODE - Normal / Plan / Triage. Its own control, sitting NEXT TO the
@@ -19655,6 +19658,20 @@ function __autoPointChips(chips, text, liveNs) {
   if (!add.length) return out.length === chips.length ? chips : out;
   return [...out, ...add];
 }
+// A project reference as a ">>" picker item. Only the NAME lands in the
+// message (as a chip); its ref (scope "reference") carries the location, which
+// composeWithAttachments spells out with the rule to open it fresh.
+function __referencePickerItem(r) {
+  return {
+    ns: "reference", kind: "reference", slug: r.id,
+    name: r.name, description: r.note || "",
+    token: ">>" + r.name, insertText: r.name + " ",
+    code: r.location,
+    ref: { path: r.location, name: r.name, scope: "reference", label: r.note || "" },
+    reference: r,
+  };
+}
+
 // A point as a picker item, so the "=" menu and the chip hover card reuse
 // PickerPreview: an element previews its page framed on the element, a node
 // that shows a page previews that page, anything else falls back to a glyph.
@@ -19726,6 +19743,9 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const pointMode = WP ? WP.mode() : null;
   const pointArmed = !!(pointMode && pointMode.armed && pointThreadKey && pointMode.threadKey === pointThreadKey);
   const threadPoints = WP && pointThreadKey ? WP.list(pointThreadKey) : [];
+  // ">>" names one of the project's references (sources of truth). Read from
+  // the session cache; opening the menu re-reads it (updateSlashMenu).
+  const refList = useReferences({ refresh: false });
   const lastCaretRef = useRef(null);
   const [pointHover, setPointHover] = useState(null);   // { n, rect } while the pointer is over a point chip
   // Viewport-fixed anchor for the slash menu portal - see the measuring
@@ -20045,7 +20065,18 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     // path has to be spelled out here or the agent is guessing. The rest are
     // OS-file-picker absolute paths outside the tree.
     const projRefs  = refs.filter(r => r.scope === "project");
-    const localRefs = refs.filter(r => r.scope !== "project");
+    const srcRefs   = refs.filter(r => r.scope === "reference");
+    const localRefs = refs.filter(r => r.scope !== "project" && r.scope !== "reference");
+    // `>>` chips: the project's sources of truth, named by name only.
+    if (srcRefs.length) {
+      lines.push("User named " + srcRefs.length + " project reference" + (srcRefs.length === 1 ? "" : "s")
+        + " with >> - sources of truth from the project's References list. The message names each by its name; here is where each one lives:");
+      for (const r of srcRefs) {
+        lines.push("  • " + r.name + " → " + r.path + (r.label ? " (source of truth for: " + r.label + ")" : ""));
+      }
+      lines.push("Open each one fresh now (fetch a link, read a project file or folder) and treat it as authoritative over earlier conversations, older copies and memory."
+        + " If one cannot be opened, say so and ask for access or an export; never fall back to an older copy without saying so.");
+    }
     if (projRefs.length) {
       if (lines.length) lines.push("");
       lines.push("User pointed at " + projRefs.length + " project resource" + (projRefs.length === 1 ? "" : "s")
@@ -20729,6 +20760,22 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   };
   const pickerRows = (() => {
     if (!slashOpen) return [];
+    // ">>" lists the project's references flat (there is one namespace),
+    // then an inert row that opens the References tab to add or edit them.
+    if (slashTrigger === ">>") {
+      if (refList === null) return [{ type: "loading", ns: { key: "reference", label: "References" } }];
+      const out = [];
+      for (const r of refList) {
+        const it = __referencePickerItem(r);
+        if (matchItem(it, slashQuery.trim().toLowerCase())) out.push({ type: "item", item: it });
+        if (out.length >= PICKER_CAP) break;
+      }
+      // A query that matches nothing shows the empty card, so Enter goes
+      // back to typing instead of opening the panel.
+      if (!out.length && slashQuery.trim() && refList.length) return [];
+      out.push({ type: "hint" });
+      return out;
+    }
     // "=" lists this thread's points (to name one again) under an inert
     // hint row: the main way to make a point is to click its target.
     if (slashTrigger === "=") {
@@ -20795,14 +20842,16 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     // "=" is the point tool's trigger, and only where the point tool exists.
     // Word-start only like "/" and "@", and a space ends the token, so
     // "a = b" or "a=b" never opens it.
+    // ">>" (two characters) names a project reference; same word-start rule.
     const m = (WP && pointThreadKey
-      ? /(^|\s)([\/@=])([A-Za-z0-9_:.\/-]*)$/
-      : /(^|\s)([\/@])([A-Za-z0-9_:.\/-]*)$/).exec(newText.slice(0, at));
+      ? /(^|\s)(>>|[\/@=])([A-Za-z0-9_:.\/-]*)$/
+      : /(^|\s)(>>|[\/@])([A-Za-z0-9_:.\/-]*)$/).exec(newText.slice(0, at));
     const pm = WP ? WP.mode() : null;
     if (m) {
       const trigger = m[2];
       const query   = m[3];
-      slashStartRef.current = at - query.length - 1;
+      slashStartRef.current = at - query.length - trigger.length;
+      if (trigger === ">>" && !slashOpen) referencesLoad();
       if (trigger === "=") {
         if (!pm.armed || !pm.oneShot || pm.insertAt !== slashStartRef.current || pm.threadKey !== pointThreadKey) {
           WP.arm({ threadKey: pointThreadKey, oneShot: true, insertAt: slashStartRef.current });
@@ -20833,7 +20882,7 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
   const replaceToken = (ins, keepOpen, chip) => {
     const start = Math.max(0, slashStartRef.current);
     const cur   = prevTextRef.current;
-    const end   = Math.min(start + 1 + slashQuery.length, cur.length);
+    const end   = Math.min(start + slashTrigger.length + slashQuery.length, cur.length);
     const before = cur.slice(0, start);
     const after  = cur.slice(end);
     const next   = before + ins + after;
@@ -20897,6 +20946,12 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
     if (!row) return;
     if (row.type === "ns") enterNamespace(row.ns);
     else if (row.type === "item") insertSlashSkill(row.item);
+    else if (row.type === "hint" && slashTrigger === ">>") openReferencesPanel();
+  };
+  // The ">>" menu's last row: drop the typed ">>…" and open the References tab.
+  const openReferencesPanel = () => {
+    replaceToken("", false);
+    try { window.dispatchEvent(new CustomEvent("th:open-references")); } catch {}
   };
   const onKeyDown = (e) => {
     // Picker key handling takes precedence when open.
@@ -21097,12 +21152,15 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           `)}
           ${fileRefs.map((r, i) => {
             // Project refs come from the `@` / `/library` picker and carry a
-            // project-relative path; the rest are absolute OS-picker paths.
-            const isProj = r.scope === "project";
+            // project-relative path; `>>` references (a queued message pulled
+            // back) carry a link or path; the rest are absolute OS-picker paths.
+            const isSrc = r.scope === "reference";
+            const isProj = r.scope === "project" || isSrc;
             return html`
             <span key=${"r"+i} className=${"chat-composer-attachment chat-composer-fileref" + (isProj ? " chat-composer-projref" : "")}
-              title=${isProj ? (r.path + (r.label ? " · " + r.label : "") + " · project resource, read in place") : (r.path + " · read in place, not copied")}>
-              <span className="chat-composer-attachment-icon"><${isProj ? Icon.NotesDoc : Icon.Clip}/></span>
+              title=${isSrc ? (r.path + (r.label ? " · " + r.label : "") + " · project reference, opened fresh")
+                : isProj ? (r.path + (r.label ? " · " + r.label : "") + " · project resource, read in place") : (r.path + " · read in place, not copied")}>
+              <span className="chat-composer-attachment-icon"><${isSrc ? Icon.Link : isProj ? Icon.NotesDoc : Icon.Clip}/></span>
               <span className="chat-composer-attachment-name">${r.name || r.path.split("/").pop()}</span>
               <button className="chat-composer-attachment-rm" onClick=${() => setFileRefs(prev => prev.filter((_, j) => j !== i))} title="Remove reference (file stays on disk)">×</button>
             </span>
@@ -21207,11 +21265,12 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           : row.type === "hint"    ? "hint"
           : row.item.ns + ":" + row.item.slug + ":" + i;
           const isPointMenu = slashTrigger === "=";
+          const isRefMenu = slashTrigger === ">>";
           // Portal to document.body so the panel columns' overflow:hidden
           // can't crop the menu (it grows wider than the chat column).
           return createPortal(html`
             <div className="chat-slash-menu" role="listbox"
-              aria-label=${isPointMenu ? "Points in this thread" : slashTrigger === "/" ? "Orchestrators, skills and design library" : "Project pages and design systems"}
+              aria-label=${isPointMenu ? "Points in this thread" : isRefMenu ? "Project references" : slashTrigger === "/" ? "Orchestrators, skills and design library" : "Project pages and design systems"}
               style=${{ left: slashPos.left + "px", bottom: slashPos.bottom + "px", minWidth: slashPos.minWidth + "px" }}>
               <div className="chat-slash-head">
                 <span className="chat-slash-head-title">
@@ -21219,6 +21278,8 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                     ? html`<code className="chat-slash-crumb">${slashTrigger}${activeNs.key}/</code><span>${activeNs.hint}</span>`
                     : (isPointMenu
                         ? "Points - what the message is about"
+                        : isRefMenu
+                        ? "References - sources of truth to open fresh"
                         : slashTrigger === "/"
                         ? "Actions - what the agent does"
                         : "Resources - what the agent reads")}
@@ -21226,6 +21287,8 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                 <span className="chat-slash-head-meta">${
                   isPointMenu
                     ? `${pickerRows.length - 1} in this thread - ↑↓ navigate, ↵ insert, Esc close`
+                    : isRefMenu
+                    ? `${pickerRows.filter(r => r.type === "item").length} of ${(refList || []).length} - ↑↓ navigate, ↵ insert, Esc close`
                     : activeNs
                     ? `${pickerRows.length} of ${(nsItems[activeNs.key] || []).length} - ↑↓ navigate, ↵ insert, ⌫ back`
                     : `${pickerRows.length} shown${pickerTotal ? ` of ${pickerTotal}` : ""} - ↑↓ navigate, ↵ open, Esc close`
@@ -21236,10 +21299,27 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                   if (row.type === "loading") return html`
                     <span key=${rowKey(row, i)} className="chat-slash-item chat-slash-item-loading">Loading ${row.ns.label.toLowerCase()}…</span>
                   `;
+                  if (row.type === "hint" && isRefMenu) return html`
+                    <button key="hint" type="button" className=${"chat-slash-item chat-slash-item-hint" + (i === activeIdx ? " is-active" : "")}
+                      onMouseEnter=${() => setSlashIndex(i)}
+                      onMouseDown=${(e) => { e.preventDefault(); openReferencesPanel(); }}
+                    >${(refList || []).length ? html`<${Icon.Pen}/><span>Edit references</span>` : html`<${Icon.Plus}/><span>Add references in Preview</span>`}</button>
+                  `;
                   if (row.type === "hint") return html`
                     <span key="hint" className=${"chat-slash-item chat-slash-item-hint" + (i === activeIdx ? " is-active" : "")}
                       onMouseEnter=${() => setSlashIndex(i)}
                     ><${Icon.Crosshair}/><span>Click a node or element to point at it</span></span>
+                  `;
+                  if (row.item.kind === "reference") return html`
+                    <button
+                      key=${rowKey(row, i)}
+                      type="button"
+                      className=${"chat-slash-item chat-slash-item-ns" + (i === activeIdx ? " is-active" : "")}
+                      role="option"
+                      aria-selected=${i === activeIdx ? "true" : "false"}
+                      onMouseEnter=${() => setSlashIndex(i)}
+                      onMouseDown=${(e) => { e.preventDefault(); insertSlashSkill(row.item); }}
+                    ><span className="chat-slash-item-token chat-slash-item-kind-reference">${row.item.name}</span><span className="chat-slash-item-sub">${referenceWhere(row.item.reference)}</span></button>
                   `;
                   if (row.item.kind === "point") return html`
                     <button
@@ -21278,7 +21358,22 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
                 })}
               </div>
               <div className="chat-slash-detail" aria-live="polite">
-                ${activeRow && activeRow.type === "hint" ? html`
+                ${activeRow && activeRow.type === "hint" && isRefMenu ? html`
+                  <div className="chat-slash-detail-head">
+                    <span className="chat-slash-detail-name">${(refList || []).length ? "Edit references" : "No references yet"}</span>
+                  </div>
+                  <div className="chat-slash-detail-glyph chat-slash-detail-glyph-ns"><${Icon.Link}/></div>
+                  <p className="chat-slash-detail-desc">References are the project's sources of truth: a link, such as a data dictionary in Drive, or a project file or folder. Every chat is told the list and opens them fresh instead of trusting older notes. ↵ opens Preview > References.</p>
+                ` : activeItem && activeItem.kind === "reference" ? html`
+                  <div className="chat-slash-detail-head">
+                    <span className="chat-slash-detail-name">${activeItem.name}</span>
+                    <span className="chat-slash-detail-badge chat-slash-detail-badge-reference">reference</span>
+                  </div>
+                  <div className="chat-slash-detail-glyph chat-slash-detail-glyph-ns">${referenceGlyph(activeItem.reference.kind)}</div>
+                  <code className="chat-slash-detail-cmd chat-slash-item-kind-reference">${activeItem.reference.location}</code>
+                  ${activeItem.description && html`<p className="chat-slash-detail-desc">Source of truth for: ${activeItem.description}</p>`}
+                  <p className="chat-slash-detail-ref">inserts a <b>${activeItem.name}</b> chip · the agent opens it fresh${activeItem.reference.kind === "missing" ? " · path not found right now" : ""}</p>
+                ` : activeRow && activeRow.type === "hint" ? html`
                   <div className="chat-slash-detail-head">
                     <span className="chat-slash-detail-name">Point at something</span>
                   </div>
@@ -21321,7 +21416,9 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           <div className="chat-slash-menu chat-slash-menu-empty"
             style=${{ left: slashPos.left + "px", bottom: slashPos.bottom + "px", minWidth: slashPos.minWidth + "px" }}>
             <div className="chat-slash-empty">${
-              activeNs
+              slashTrigger === ">>"
+                ? `No reference matches “${slashQuery}”. Esc to dismiss.`
+                : activeNs
                 ? `Nothing in ${slashTrigger}${activeNs.key}/ matches “${leafQuery}”. ⌫ to back out, Esc to dismiss.`
                 : `No namespace or entry matches “${slashQuery}”. Esc to dismiss.`
             }</div>
@@ -58376,6 +58473,29 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     window.addEventListener("th:open-personas", open);
     return () => window.removeEventListener("th:open-personas", open);
   }, [embedded, toggleWbMode, dismissNodeChats]);
+  // The Files panel's tab (References | Files), remembered per browser. The
+  // composer's ">>" menu opens the panel straight onto References from either
+  // view, switching to Preview because the panel lives there.
+  const [pvFilesTab, setPvFilesTabState] = useState(() => {
+    try { return localStorage.getItem("th.pvFilesTab") === "references" ? "references" : "files"; } catch { return "files"; }
+  });
+  const setPvFilesTab = useCallback((t) => {
+    setPvFilesTabState(t);
+    try { localStorage.setItem("th.pvFilesTab", t); } catch {}
+  }, []);
+  useEffect(() => {
+    if (embedded) return;
+    const open = () => {
+      dismissNodeChats();
+      toggleWbMode(false);
+      setProtoViewerMounted(true);
+      setMainView("proto");
+      setPvFilesTab("references");
+      setLeftPanel("pv-files");
+    };
+    window.addEventListener("th:open-references", open);
+    return () => window.removeEventListener("th:open-references", open);
+  }, [embedded, toggleWbMode, dismissNodeChats, setPvFilesTab]);
   // The prototype the user is actively PREVIEWING - derived from the VIEW, not
   // from sticky iframe interaction. Only the dedicated preview surfaces count:
   // the zoom overlay (a full-screen preview of one page) or the Preview view
@@ -60135,9 +60255,9 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
               <${HoverTip}
                 placement="right"
                 className=${"workflow-nav-rail-btn workflow-nav-rail-btn-preview" + (leftPanel === "pv-files" ? " is-active" : "")}
-                ariaLabel=${protoViewerPath ? "Files" : "Open last file"}
+                ariaLabel=${protoViewerPath ? "References and files" : "Open last file"}
                 tip=${protoViewerPath
-                  ? "Files - browse the prototype's pages"
+                  ? "References and files - the project's sources of truth, and the prototype's pages"
                   : "Files - reopen your last file"}
                 onClick=${onRailPreviewFiles}
               >${html`<${Icon.Folder}/>`}<//>
@@ -60251,7 +60371,8 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
               </div>
             </div>
             ${mainView === "proto" && leftPanel === "pv-files" && html`
-              <${PreviewFilesPanel} activePath=${protoViewerPath} onClose=${() => setLeftPanel(null)}/>
+              <${PreviewFilesPanel} activePath=${protoViewerPath} onClose=${() => setLeftPanel(null)}
+                tab=${pvFilesTab} onTab=${setPvFilesTab}/>
             `}
             ${mainView === "proto" && leftPanel === "pv-assets" && html`
               <${PreviewAssetsPanel} activePath=${protoViewerPath} onClose=${() => setLeftPanel(null)}/>
@@ -63333,7 +63454,7 @@ Device: phone
 > "I just need to know if I got it, I don't have time to dig."`;
 const PERSONA_TASTE_MAX = 8;
 // The app's own data at the project root, never something a user would know.
-const PERSONA_HIDDEN_ROOTS = new Set(["editor", "workflow", "personas", "plan-splits", "usertesting", "share"]);
+const PERSONA_HIDDEN_ROOTS = new Set(["editor", "workflow", "personas", "plan-splits", "usertesting", "share", "references.json"]);
 // Mirrors personas.py: documents only, code is never read.
 const PERSONA_DOC_EXTS = new Set(["md", "markdown", "txt", "csv", "tsv", "json", "yaml", "yml", "png", "jpg", "jpeg", "webp", "gif"]);
 // Mirrors personas.py profile_name.
@@ -63356,8 +63477,10 @@ function personaMeta(p) {
 
 /* Grant files or folders of the project as what a persona knows: a one-level
    listing with drill-down (/__fs_list). Code files are listed but cannot be
-   granted, and the daemon skips them inside a granted folder too. */
-function PersonaKnowledgeBrowser({ granted, onGrant, onClose }) {
+   granted, and the daemon skips them inside a granted folder too.
+   Also the project picker of the reference editor, which passes its own
+   `accept` (any file or folder) and `verb` ("Use"). */
+function PersonaKnowledgeBrowser({ granted, onGrant, onClose, accept, verb = "Grant" }) {
   const [dir, setDir] = useState("");
   const [entries, setEntries] = useState(null);
   useEffect(() => {
@@ -63384,7 +63507,7 @@ function PersonaKnowledgeBrowser({ granted, onGrant, onClose }) {
         ${entries !== null && entries.length === 0 && html`<div className="pv-panel-empty">Empty folder.</div>`}
         ${(entries || []).map(e => {
           const isDir = e.kind === "dir";
-          const isDoc = isDir || PERSONA_DOC_EXTS.has(e.ext);
+          const isDoc = accept ? accept(e) : (isDir || PERSONA_DOC_EXTS.has(e.ext));
           const has = granted.includes(e.rel);
           return html`
             <div key=${e.rel} className="pv-file-row personas-browser-row" data-muted=${!isDoc}
@@ -63395,7 +63518,7 @@ function PersonaKnowledgeBrowser({ granted, onGrant, onClose }) {
                 <span className="pv-file-name">${e.name}</span>
               </button>
               ${isDoc && html`<button type="button" className="pv-rowbtn personas-grant" data-on=${has}
-                title=${has ? "Granted - click to remove" : (isDir ? "Grant this folder" : "Grant this file")}
+                title=${has ? (verb === "Grant" ? "Granted - click to remove" : "Chosen") : (isDir ? verb + " this folder" : verb + " this file")}
                 aria-label=${has ? "Remove " + e.name : "Grant " + e.name}
                 onClick=${() => onGrant(e.rel, !has)}>${has ? html`<${Icon.Check}/>` : html`<${Icon.Plus}/>`}</button>`}
             </div>`;
@@ -63822,7 +63945,174 @@ function PersonaCritiqueCard({ id, status, stage }) {
     </div>`;
 }
 
-function PreviewFilesPanel({ activePath, onClose }) {
+/* ────────── Project references (the References tab of the Files panel) ──────────
+   The sources of truth the user names for the project: a link (a data
+   dictionary in Drive, a spec in Notion) or a project file or folder. The
+   daemon keeps them in <project>/references.json (editor/references.py), tells
+   every chat thread the list (serve.py _refs_send: first message, on change,
+   every Plan / Triage message), and `>>` in the composer names one for a
+   message (composeWithAttachments spells out name -> location). */
+const __referencesCache = { project: null, list: null };
+let __referencesInflight = null;
+function referencesCached() {
+  return __referencesCache.project === activeProjectId() ? __referencesCache.list : null;
+}
+function referencesStore(rows) {
+  __referencesCache.project = activeProjectId();
+  __referencesCache.list = rows;
+  try { window.dispatchEvent(new CustomEvent("th:references-changed", { detail: { references: rows } })); } catch {}
+}
+function referencesLoad() {
+  if (__referencesInflight) return __referencesInflight;
+  __referencesInflight = fetch(apiUrl("/__references"))
+    .then(r => (r.ok ? r.json() : null))
+    .then(j => referencesStore(j && Array.isArray(j.references) ? j.references : []))
+    .catch(() => { if (referencesCached() === null) referencesStore([]); })
+    .finally(() => { __referencesInflight = null; });
+  return __referencesInflight;
+}
+// `refresh: false` reads the session cache and only fetches when there is
+// none (the composer); the panel re-reads on mount so a synced edit shows.
+function useReferences({ refresh = true } = {}) {
+  const [list, setList] = useState(referencesCached);
+  useEffect(() => {
+    const on = (e) => setList(e && e.detail && Array.isArray(e.detail.references) ? e.detail.references : referencesCached());
+    window.addEventListener("th:references-changed", on);
+    if (refresh || referencesCached() === null) referencesLoad();
+    return () => window.removeEventListener("th:references-changed", on);
+  }, [refresh]);
+  return list;
+}
+async function referencesPost(body) {
+  const r = await fetch(apiUrl("/__references"), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  if (Array.isArray(j.references)) referencesStore(j.references);
+  return j;
+}
+const REFERENCE_GLYPH = { link: "Link", folder: "Folder", file: "NotesDoc", missing: "Alert" };
+function referenceGlyph(kind) {
+  const I = Icon[REFERENCE_GLYPH[kind] || "Link"];
+  return html`<${I}/>`;
+}
+// What the row shows of a location: a link's host and path tail, a path as is.
+function referenceWhere(r) {
+  if (r.kind !== "link") return r.location + (r.kind === "missing" ? " (not found)" : "");
+  try {
+    const u = new URL(r.location);
+    const tail = u.pathname.split("/").filter(Boolean).slice(-1)[0] || "";
+    return u.host.replace(/^www\./, "") + (tail ? " / " + decodeURIComponent(tail) : "");
+  } catch { return r.location; }
+}
+function openReference(r) {
+  if (r.kind === "link") { window.open(r.location, "_blank", "noopener"); return; }
+  if (r.kind === "file") {
+    window.dispatchEvent(new CustomEvent("th:proto-open-tab",
+      { detail: { path: r.location, label: r.location.split("/").pop() || r.name, kind: /\.html?$/i.test(r.location) ? undefined : "code" } }));
+    return;
+  }
+  revealInFinder(r.location);
+}
+
+function ReferencesList({ list, onEdit }) {
+  const [err, setErr] = useState(null);
+  const remove = async (r) => {
+    if (!(await uiConfirm(`Remove the reference "${r.name}"? Agents stop treating it as a source of truth; the document itself is not touched.`))) return;
+    try { await referencesPost({ op: "delete", id: r.id }); } catch (e) { setErr(e.message || String(e)); }
+  };
+  const moveUp = async (r) => {
+    try { await referencesPost({ op: "move", id: r.id, dir: -1 }); } catch (e) { setErr(e.message || String(e)); }
+  };
+  const n = (list || []).length;
+  return html`
+    <div className="pv-panel-list">
+      ${err && html`<div className="personas-error">${err}</div>`}
+      ${list === null && html`<div className="pv-panel-empty">Loading…</div>`}
+      ${list !== null && n === 0 && html`<div className="pv-panel-empty">
+        No references yet. Add the documents that are the source of truth for this project, such as a data dictionary link or a spec folder. Agents open them fresh and trust them over older notes and past chats.
+        <div className="personas-empty-act"><button type="button" className="personas-btn" onClick=${() => onEdit(referenceBlank())}>New reference</button></div>
+      </div>`}
+      ${(list || []).map((r, i) => html`
+        <div key=${r.id} className="pv-file-row personas-row references-row" data-missing=${r.kind === "missing"} onClick=${() => onEdit(r)}
+          title=${r.location + (r.note ? "\nSource of truth for: " + r.note : "")}>
+          <span className="pv-file-glyph">${referenceGlyph(r.kind)}</span>
+          <span className="personas-row-name">${r.name}</span>
+          <span className="personas-row-meta">${referenceWhere(r)}</span>
+          <span className="pv-row-actions">
+            ${r.kind !== "missing" && html`<button type="button" className="pv-rowbtn" title=${r.kind === "link" ? "Open the link" : r.kind === "folder" ? "Reveal in Finder" : "Open the file"}
+              aria-label=${"Open " + r.name} onClick=${(e) => { e.stopPropagation(); openReference(r); }}><${Icon.External}/></button>`}
+            ${i > 0 && html`<button type="button" className="pv-rowbtn" title="Move up - agents read the list top first"
+              aria-label=${"Move " + r.name + " up"} onClick=${(e) => { e.stopPropagation(); moveUp(r); }}><${Icon.ArrowUp}/></button>`}
+            <button type="button" className="pv-rowbtn" title="Edit" aria-label=${"Edit " + r.name}
+              onClick=${(e) => { e.stopPropagation(); onEdit(r); }}><${Icon.Pen}/></button>
+            <button type="button" className="pv-rowbtn" title="Remove" aria-label=${"Remove " + r.name}
+              onClick=${(e) => { e.stopPropagation(); remove(r); }}><${Icon.Trash}/></button>
+          </span>
+        </div>`)}
+      ${n > 0 && html`<div className="personas-help references-help">Every chat is told this list and opens a reference fresh when its work touches it. Type >> in the chat to name one for a message.</div>`}
+    </div>`;
+}
+
+function referenceBlank() {
+  return { name: "", location: "", note: "" };
+}
+function ReferenceEditor({ initial, onDone, onClose }) {
+  const [r, setR] = useState(() => ({ ...referenceBlank(), ...initial }));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+  const [browse, setBrowse] = useState(false);
+  const set = (k, v) => setR(o => ({ ...o, [k]: v }));
+  const save = async () => {
+    if (!r.name.trim()) { setErr("Give the reference a name."); return; }
+    if (!r.location.trim()) { setErr("Add a link or a project path."); return; }
+    setSaving(true); setErr(null);
+    try { await referencesPost({ op: "upsert", reference: r }); onDone(); }
+    catch (e) { setErr(e.message || String(e)); }
+    finally { setSaving(false); }
+  };
+  return html`
+    <div className="pv-panel personas-panel">
+      <div className="pv-panel-head">
+        <${HoverTip} className="pv-panel-tool" tip="Back to the list" ariaLabel="Back to the list" onClick=${onDone}><${Icon.Back}/><//>
+        <div className="pv-panel-title-wrap">
+          <div className="pv-panel-title">${initial && initial.id ? "Edit reference" : "New reference"}</div>
+          <div className="pv-panel-sub">A source of truth agents open fresh and trust over older notes</div>
+        </div>
+        <button type="button" className="pv-panel-close" title="Close" aria-label="Close panel" onClick=${onClose}>×</button>
+      </div>
+      <div className="personas-form" onKeyDown=${(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); } }}>
+        <label className="personas-field"><span>Name</span>
+          <input value=${r.name} placeholder="Data dictionary" onInput=${(e) => set("name", e.target.value)}/></label>
+        <div className="personas-field">
+          <div className="personas-field-head"><span>Link or project path</span>
+            <${HoverTip} className="pv-panel-tool" tip="Pick a file or folder of the project" ariaLabel="Pick a file or folder"
+              onClick=${() => setBrowse(b => !b)}><${Icon.Folder}/><//></div>
+          <input value=${r.location} placeholder="drive.google.com/... or docs/data-dictionary.xlsx"
+            onInput=${(e) => set("location", e.target.value)}/>
+          ${browse && html`<${PersonaKnowledgeBrowser} granted=${[r.location]} verb="Use" accept=${() => true}
+            onGrant=${(rel) => { set("location", rel); setBrowse(false); }} onClose=${() => setBrowse(false)}/>`}
+        </div>
+        <label className="personas-field"><span>Source of truth for</span>
+          <textarea rows="2" value=${r.note} placeholder="Field names, types and allowed values"
+            onInput=${(e) => set("note", e.target.value)}/></label>
+        <div className="personas-help">Agents open a link every time they need it, so it is never read from an old copy. A private link must be shared or exported for them to read it; if they cannot open it, they say so.</div>
+      </div>
+      <div className="personas-foot">
+        ${err ? html`<span className="personas-error">${err}</span>` : html`<span className="personas-foot-spacer"/>`}
+        <button type="button" className="personas-btn personas-btn-ghost" onClick=${onDone}>Cancel</button>
+        <button type="button" className="personas-btn personas-btn-primary" disabled=${saving} onClick=${save}>${saving ? "Saving…" : "Save"}</button>
+      </div>
+    </div>`;
+}
+
+/* Two tabs: References (the project's sources of truth) and Files (the
+   prototype's pages). The tab is owned by WorkflowSurface so the composer's
+   "Add references" can open this panel straight onto References. */
+function PreviewFilesPanel({ activePath, onClose, tab = "files", onTab }) {
+  const refList = useReferences();
+  const [editingRef, setEditingRef] = useState(null);
   const [entries, setEntries] = useState(null);   // null = loading
   const [collapsed, setCollapsed] = useState(() => new Set());
   // Search over the whole source/ tree - label + path, whitespace-separated
@@ -63964,21 +64254,38 @@ function PreviewFilesPanel({ activePath, onClose }) {
   };
   const total = (entries || []).length;
   const shown = (matched || []).length;
+  const isRefs = tab === "references";
+  if (isRefs && editingRef) {
+    return html`<${ReferenceEditor} key=${editingRef.id || "new"} initial=${editingRef} onDone=${() => setEditingRef(null)} onClose=${onClose}/>`;
+  }
+  const TABS = [
+    { key: "references", label: "References", count: refList ? refList.length : null,
+      tip: "Sources of truth agents read first: links or project files and folders" },
+    { key: "files", label: "Files", count: entries !== null ? (q ? shown : total) : null,
+      tip: "The prototype's pages under source/" },
+  ];
   return html`
     <div className="pv-panel pv-files-panel">
-      <div className="pv-panel-head">
-        <div className="pv-panel-title-wrap">
-          <div className="pv-panel-title">Files</div>
-          ${entries !== null && html`<div className="pv-panel-sub">source/ · ${q ? shown + " of " + total : total} page${(q ? shown : total) === 1 ? "" : "s"}</div>`}
+      <div className="pv-panel-head pv-panel-head-tabs">
+        <div className="pv-panel-tabs" role="tablist" aria-label="Files panel">
+          ${TABS.map(t => html`
+            <button key=${t.key} type="button" role="tab" aria-selected=${tab === t.key} title=${t.tip}
+              className=${"th-tasks-filter-btn" + (tab === t.key ? " is-active" : "")}
+              onClick=${() => onTab && onTab(t.key)}
+            >${t.label}${t.count != null && html`<span className="pv-panel-tab-count">${t.count}</span>`}</button>`)}
         </div>
-        <${HoverTip}
-          className="pv-panel-tool"
-          tip="Refresh the file list"
-          ariaLabel="Refresh files"
-          onClick=${load}
-        ><${Icon.Refresh}/><//>
+        ${isRefs
+          ? html`<${HoverTip} className="pv-panel-tool" tip="New reference" ariaLabel="New reference"
+              onClick=${() => setEditingRef(referenceBlank())}><${Icon.Plus}/><//>`
+          : html`<${HoverTip}
+              className="pv-panel-tool"
+              tip="Refresh the file list"
+              ariaLabel="Refresh files"
+              onClick=${load}
+            ><${Icon.Refresh}/><//>`}
         <button type="button" className="pv-panel-close" title="Close" aria-label="Close panel" onClick=${onClose}>×</button>
       </div>
+      ${isRefs ? html`<${ReferencesList} list=${refList} onEdit=${setEditingRef}/>` : html`<${React.Fragment}>
       <input
         className="pv-panel-filter"
         type="search"
@@ -63993,7 +64300,7 @@ function PreviewFilesPanel({ activePath, onClose }) {
         ${entries !== null && total === 0 && html`<div className="pv-panel-empty">No prototype pages under source/ yet.</div>`}
         ${entries !== null && total > 0 && shown === 0 && html`<div className="pv-panel-empty">No pages match "${filter.trim()}".</div>`}
         ${entries !== null && shown > 0 && renderDir(tree, 0)}
-      </div>
+      </div><//>`}
     </div>
   `;
 }

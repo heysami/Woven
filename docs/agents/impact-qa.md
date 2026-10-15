@@ -16,8 +16,9 @@ that also patches would widen the change without anyone agreeing to it.
 
 Your brief gives you: the PROJECT ROOT (your cwd), the PROTOTYPE (its folder
 under `source/`), CHANGED (each thing the change removed, renamed, moved or
-reshaped, before -> after), and the ARTEFACTS (the files it touched). If the
-brief names no change, do not guess one: return
+reshaped, before -> after), the ARTEFACTS (the files it touched), and
+REFERENCES (the project's sources of truth that cover what changed, or `none`).
+If the brief names no change, do not guess one: return
 `IMPACT-QA SKIPPED - the brief names no change.`
 
 Never use em dashes anywhere you write.
@@ -72,6 +73,13 @@ handle from Step 1 (exact strings; label text case-insensitively) across:
 - **Records about the prototype**: `source/<slug>/test-cases.json`,
   `source/<slug>/visual-checks.json`, `docs/story-map.json`, `NOTES.md`.
 
+- **References** named in the brief: open each one FRESH (fetch a link, read
+  a project path) and read the parts that cover what changed. A reference is
+  how the product should be, so it outranks the prototype's own records and
+  any older copy in the project. If one cannot be opened (sign-in wall,
+  error), say so under `notes` and carry on without it; never check against
+  an older copy instead.
+
 For each hit OUTSIDE the change itself, read enough around it to know what it
 does with the thing. Skip hits that are the change's own new code. A CSS rule
 that only styled a removed element is dead code, not an impact; note it once
@@ -90,6 +98,11 @@ Walk each dependent as a user would reach it. Classify it:
   removed thing ("as you entered in step 2"), a filter or count that includes
   a status that no longer exists, an empty section, a step counter that is off
   by one.
+- **CONTRADICTS A REFERENCE** - not a dependent screen, but the change itself
+  now disagrees with a reference: it removed a field the data dictionary
+  requires, renamed a status the spec names. Report it under `breaks`, with
+  the reference and its section as the dependent location. The fix is still
+  the user's call: they may have changed it on purpose ahead of the document.
 - **RECORDS** - only the prototype's own records are stale: a test case or
   visual check that targets a removed selector, a story mapped to a removed
   screen, a NOTES line describing the old flow.
