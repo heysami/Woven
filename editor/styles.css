@@ -6165,7 +6165,7 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 /* The nav rail STAYS in preview - collapsed to its chat entry plus the
    preview-scoped Files / Assets entries (every other panel is canvas-scoped).
    Same rail, same buttons, no floating chrome. */
-.workflow-body[data-view="proto"] .workflow-nav-rail-btn:not(.workflow-nav-rail-btn-chat):not(.workflow-nav-rail-btn-preview),
+.workflow-body[data-view="proto"] .workflow-nav-rail-btn:not(.workflow-nav-rail-btn-chat):not(.workflow-nav-rail-btn-preview):not(.workflow-nav-rail-btn-personas),
 .workflow-body[data-view="proto"] .workflow-nav-rail-sep:not(.workflow-nav-rail-sep-preview) {
   display: none;
 }
@@ -6659,6 +6659,16 @@ body:has(.workflow-body[data-view="proto"]) .canvas-ctxmenu {
   visibility: visible;
   width: 4px;
 }
+/* Personas panel: same slot in BOTH views (canvas and preview), a little
+   wider than a library panel so the profile form's two-up rows fit. */
+.workflow-body[data-left-panel="personas"],
+.workflow-body[data-view="proto"][data-left-panel="personas"] {
+  grid-template-columns: 48px min(max(var(--workflow-lib-width, 240px), 340px), 44vw) 4px 1fr var(--th-right-rail-w, 44px);
+}
+.workflow-body[data-view="proto"][data-left-panel="personas"] .workflow-resize-handle-lib {
+  visibility: visible;
+  width: 4px;
+}
 /* Fullscreen beats every left-panel grid variant. Without this, the
    proto+chat rule above (equal specificity, LATER in the file than the base
    fullscreen collapse) out-cascades it and the chat column keeps its width -
@@ -6670,7 +6680,8 @@ body:has(.workflow-body[data-view="proto"]) .canvas-ctxmenu {
 }
 .workflow-root[data-fullscreen="true"] .workflow-body[data-view="proto"][data-left-panel="chat"] .workflow-resize-handle-lib,
 .workflow-root[data-fullscreen="true"] .workflow-body[data-view="proto"][data-left-panel="pv-files"] .workflow-resize-handle-lib,
-.workflow-root[data-fullscreen="true"] .workflow-body[data-view="proto"][data-left-panel="pv-assets"] .workflow-resize-handle-lib {
+.workflow-root[data-fullscreen="true"] .workflow-body[data-view="proto"][data-left-panel="pv-assets"] .workflow-resize-handle-lib,
+.workflow-root[data-fullscreen="true"] .workflow-body[data-view="proto"][data-left-panel="personas"] .workflow-resize-handle-lib {
   visibility: hidden;
   width: 0;
 }
@@ -6933,6 +6944,155 @@ body:has(.workflow-body[data-view="proto"]) .canvas-ctxmenu {
   color: var(--text);
   background: color-mix(in oklab, var(--text) 12%, transparent);
 }
+
+/* ────────── Personas panel (simulated users, editor/personas.py) ──────────
+   Same pv-panel shell as Files / Assets. List rows are one line: glyph,
+   name, muted meta, hover actions on the right. */
+.personas-panel { border-right: 0; }
+.personas-row .personas-row-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.personas-row .personas-row-meta {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+.personas-empty-act { margin-top: 10px; }
+.personas-form {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.personas-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.personas-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.personas-field > span,
+.personas-field-head > span {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.personas-field-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 22px; }
+.personas-field input,
+.personas-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1.4;
+  outline: none;
+  resize: vertical;
+}
+.personas-field input:focus,
+.personas-field textarea:focus { border-color: color-mix(in oklab, var(--accent) 45%, var(--border)); }
+.personas-seg {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.personas-seg-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 3px;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.personas-seg-btn:first-child { border-left: 0; }
+.personas-seg-btn:hover { color: var(--text); }
+.personas-seg-btn[data-on="true"] { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.personas-help { font-size: 10.5px; color: var(--text-faint); line-height: 1.4; }
+.personas-know-row { cursor: default; }
+.personas-know-row .pv-file-name { flex: 1 1 0; }
+.personas-browser {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.personas-browser-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px 3px 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.personas-browser-spacer { flex: 1; }
+.personas-crumb {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 3px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.personas-crumb:hover { color: var(--text); background: var(--surface-3, var(--surface)); }
+.personas-crumb-sep { color: var(--text-faint); font-size: 11px; }
+.personas-browser-list { max-height: 220px; overflow-y: auto; padding: 4px; }
+.personas-browser-row[data-muted="true"] { opacity: 0.5; }
+.personas-browser-row .pv-file-open:disabled { cursor: default; }
+.personas-grant[data-on="true"] { color: var(--accent-text); }
+.personas-actions { display: flex; align-items: center; gap: 8px; }
+.personas-actions .personas-help { flex: 1; }
+.personas-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.personas-foot-spacer { flex: 1; }
+.personas-foot .personas-error { flex: 1; }
+.personas-error { color: var(--danger); font-size: 11px; line-height: 1.4; }
+.personas-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 11.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.personas-btn:hover:not(:disabled) { border-color: var(--border-strong); }
+.personas-btn:disabled { opacity: 0.5; cursor: default; }
+.personas-btn-ghost { background: transparent; }
+.personas-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg, #fff); font-weight: 600; }
+.personas-btn-primary:hover:not(:disabled) { border-color: var(--accent); filter: brightness(1.05); }
 /* "Open as code" preview tab - a source-editor pane in the proto viewer
    stage. Same mount/visibility contract as .workflow-proto-frame (always
    mounted, data-active toggles display) so drafts survive tab switches. */
@@ -24571,6 +24731,18 @@ a.ds-badge:hover, button.ds-badge:hover {
    lit for Plan and Triage, opening the shared perm-menu upward. Open state
    takes the same ring the other footer menus use. */
 .chat-composer-toolbar .chat-mode-picker { position: relative; }
+/* Persona critique picker - same icon-toggle trigger, lit while armed, with
+   the number of armed personas beside the glyph. */
+.chat-composer-toolbar .chat-critic-picker { position: relative; }
+.chat-critic-trigger[data-open="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.chat-critic-trigger:has(.chat-critic-count) { width: auto; padding: 0 6px 0 5px; gap: 3px; }
+.chat-critic-count { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.chat-critic-menu { max-width: calc(100vw - 16px); z-index: 9650; }
+.chat-critic-radio { border-radius: 50%; }
 .chat-mode-trigger[data-open="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);
@@ -35542,3 +35714,152 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 /* A sent bubble's [n] keeps the hover preview after its badge has left the
    canvas. */
 .wf-point-num-hoverable { cursor: default; }
+
+
+/* ────────── Persona critique card (chat thread) ──────────
+   One card per critique: what changed, the planner's task table, the step
+   screenshots (the visual digest), each persona's per-step reaction and
+   their suggestions. Text markers only - no pills. */
+.chat-critique { padding-right: 0; }
+.critique-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.critique-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  min-width: 0;
+}
+.critique-head > svg { width: 14px; height: 14px; color: var(--accent-text); flex: 0 0 auto; }
+.critique-title { font-weight: 600; }
+.critique-how { color: var(--text-muted); font-size: 11px; }
+.critique-status {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.critique-card[data-status="error"] .critique-head .critique-status { color: var(--danger); white-space: normal; }
+.critique-sec { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.critique-sec:last-child { border-bottom: 0; }
+.critique-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+}
+.critique-list { margin: 0; padding-left: 16px; }
+.critique-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.critique-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.critique-table td { padding: 3px 6px; border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent); vertical-align: top; }
+.critique-table td:first-child, .critique-table th:first-child { width: 18px; color: var(--text-muted); }
+.critique-table tr:last-child td { border-bottom: 0; }
+.critique-table tbody tr { cursor: pointer; }
+.critique-table tbody tr:hover td { background: var(--surface-2); }
+.critique-table tr[data-active="true"] td { background: var(--accent-soft); }
+.critique-table tr[data-failed="true"] td:first-child { color: var(--danger); font-weight: 600; }
+.critique-devs { margin-left: auto; display: inline-flex; gap: 2px; }
+.critique-dev {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.critique-dev[data-on="true"] { color: var(--accent-text); background: var(--accent-soft); font-weight: 600; }
+.critique-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.critique-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 96px;
+  height: 64px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-2);
+  overflow: hidden;
+  cursor: pointer;
+}
+.critique-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.critique-thumb[data-on="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.critique-thumb[data-failed="true"] { border-color: var(--danger); }
+.critique-thumb-none { font-size: 10px; color: var(--text-faint); }
+.critique-thumb-n {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--surface) 88%, transparent);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+}
+.critique-thumb-n svg { width: 10px; height: 10px; color: var(--danger); }
+.critique-step { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+.critique-step-cap { font-size: 11.5px; color: var(--text); }
+.critique-step-did { display: block; color: var(--text-muted); font-size: 11px; }
+.critique-fail { color: var(--danger); }
+.critique-step-shot { display: block; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--surface-2); }
+.critique-step-shot img { display: block; width: 100%; height: auto; max-height: 420px; object-fit: contain; object-position: top; }
+.critique-thought { display: flex; align-items: baseline; gap: 6px; font-size: 11.5px; }
+.critique-who { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; white-space: nowrap; }
+.critique-who svg { width: 12px; height: 12px; color: var(--text-muted); }
+.critique-feel { color: var(--text-muted); font-size: 10.5px; white-space: nowrap; }
+.critique-thought[data-feel="stuck"] .critique-feel { color: var(--danger); }
+.critique-thought[data-feel="unsure"] .critique-feel { color: var(--warning); }
+.critique-thought[data-feel="pleased"] .critique-feel { color: var(--success); }
+.critique-thought-text { color: var(--text); }
+.critique-persona { padding: 4px 0 6px; }
+.critique-persona + .critique-persona { border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent); padding-top: 7px; }
+.critique-persona-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.critique-persona-role { color: var(--text-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.critique-persona-head .critique-status { margin-left: auto; }
+.critique-verdict { color: var(--text-muted); font-style: italic; margin: 2px 0 4px; }
+.critique-sugg { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+.critique-sugg li { display: flex; gap: 6px; align-items: baseline; }
+.critique-prio { flex: 0 0 44px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--text-muted); }
+.critique-sugg li[data-priority="high"] .critique-prio { color: var(--danger); }
+.critique-sugg li[data-priority="medium"] .critique-prio { color: var(--warning); }
+.critique-steplink {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

@@ -113,6 +113,7 @@ import providers as _providers  # host-side connect store for backend/db provide
 import voicekit as _voicekit  # runtime voice core (dynamic TTS/STT) - daemon + share gate
 import stories as _stories  # user-story sheet (docs/user-stories.xlsx) + prototype location map
 import xlsx_io as _xlsx_io  # dependency-free .xlsx read/write (user-story sheet)
+import personas as _personas  # simulated personas: research profiles + isolated critique runs
 
 
 def _pick_port() -> int:
@@ -180,6 +181,7 @@ _GITIGNORE_LOCAL = [
     "share/thumb-*.png",        # generated share preview - regenerates on every source change (would keep the tree dirty forever); comments.json + comment-shots/ + comment-attach/ DO sync
     "/attachments/",            # chat/reference uploads (project-level dir) - machine-local, keep out of the repo
     "_attachments/",            # legacy per-branch chat uploads (source/*/_attachments/) - same policy
+    "personas/critiques/",      # persona critique reports + step screenshots - regenerated per run; personas.json DOES sync
 ]
 
 # Merge strategies the daemon pins in each project's .gitattributes (committed,
@@ -4431,6 +4433,82 @@ def _assistant_agent_complete(system, prompt, model=None, tools="none", timeout=
         if reasoning:
             extra += ["-c", "model_reasoning_effort=" + json.dumps(reasoning)]
         return _codex_cli_complete(msgs, model=None if model == "codex-default" else model,
+                                   timeout=timeout, extra_args=extra, cwd=scratch)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _multimodal_complete(profile, system, blocks, timeout=300):
+    """One-shot with NO tools, NO MCP, NO settings and an empty cwd: text and
+    images in, text out. The persona critique's isolation boundary - what a
+    persona knows is exactly `system` + `blocks`, nothing it could go and read.
+    `blocks` is [{"type": "text", "text"} | {"type": "image", "path"}].
+    Claude takes the images inline (stream-json); Codex attaches them with -i;
+    OpenCode has no image input here, so its images are named and dropped."""
+    runtime, model = profile["runtime"], profile["model"]
+    scratch = tempfile.mkdtemp(prefix="woven-persona-")
+    try:
+        if runtime == "claude":
+            bin_path = detect_agent_bin("claude")
+            if not bin_path:
+                raise FileNotFoundError("claude")
+            content = []
+            for b in blocks:
+                if b.get("type") == "image":
+                    path = b.get("path") or ""
+                    ext = path.rsplit(".", 1)[-1].lower()
+                    with open(path, "rb") as f:
+                        data = base64.b64encode(f.read()).decode("ascii")
+                    content.append({"type": "image", "source": {
+                        "type": "base64", "data": data,
+                        "media_type": {"jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp",
+                                       "gif": "image/gif"}.get(ext, "image/png")}})
+                elif b.get("text"):
+                    content.append({"type": "text", "text": b["text"]})
+            args = [bin_path, "--print", "--input-format", "stream-json", "--output-format", "stream-json",
+                    "--verbose", "--no-session-persistence", "--disable-slash-commands",
+                    "--system-prompt", system, "--tools", "", "--strict-mcp-config", "--setting-sources", ""]
+            if model and model != "claude-default":
+                args.extend(["--model", model])
+            frame = json.dumps({"type": "user", "message": {"role": "user", "content": content}})
+            result = helper_jobs.run(args, capture_output=True, text=True, timeout=timeout,
+                                    input=frame + "\n", env=_guest_cli_env("claude"), cwd=scratch)
+            final = None
+            for line in (result.stdout or "").splitlines():
+                try:
+                    frame_out = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(frame_out, dict) and frame_out.get("type") == "result":
+                    final = frame_out
+            if not final or final.get("is_error"):
+                msg = (final or {}).get("result") or result.stderr or ("exit %s" % result.returncode)
+                raise RuntimeError(str(msg).strip()[:600])
+            return (final.get("result") or "").strip()
+        texts, images = [], []
+        for b in blocks:
+            if b.get("type") == "image":
+                images.append(b.get("path"))
+                texts.append("[screen image %d attached]" % len(images) if runtime == "codex"
+                             else "[a screen image was here but could not be shown]")
+            elif b.get("text"):
+                texts.append(b["text"])
+        prompt = "\n\n".join(texts)
+        if runtime == "opencode":
+            return _opencode_text_complete(system, prompt, model=None if model == "opencode-default" else model,
+                                           timeout=timeout, cwd=scratch)
+        # Images go FIRST: -i takes several values, and the isolation flags
+        # after it end the list before the prompt can be read as a file.
+        extra = []
+        for path in images:
+            extra += ["-i", path]
+        extra += ["--skip-git-repo-check", "--ephemeral",
+                  "--disable", "shell_tool", "--disable", "apps", "--disable", "plugins",
+                  "--disable", "multi_agent", "--disable", "browser_use",
+                  "--disable", "computer_use", "--disable", "image_generation",
+                  "-c", 'web_search="disabled"', "--ignore-user-config"]
+        return _codex_cli_complete([{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+                                   model=None if model == "codex-default" else model,
                                    timeout=timeout, extra_args=extra, cwd=scratch)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
@@ -10124,7 +10202,7 @@ def _queue_drain_maybe(state, mode: str = "stdin") -> None:
             ok = False
             if mode == "stdin":
                 try:
-                    send, chat_mode = _mode_send(state, text, head.get("mode"))
+                    send, chat_mode = _mode_send(state, text, head.get("mode"), head.get("critic"))
                     # Same lock as /user-message: never write into a process
                     # the idle loop has just started parking. The message stays
                     # queued and the parked run's drain delivers it via resume.
@@ -10144,7 +10222,8 @@ def _queue_drain_maybe(state, mode: str = "stdin") -> None:
                     print(f"[queue] stdin deliver failed run={state.run_id}: {e}", flush=True)
             else:
                 ok = _queue_deliver_via_resume(state, text, auto=head.get("auto") or "",
-                                               queue_id=head.get("id") or "", mode=head.get("mode"))
+                                               queue_id=head.get("id") or "", mode=head.get("mode"),
+                                               critic=head.get("critic"))
             if ok:
                 _queue_drop(state, head.get("id"))
             # A failed delivery leaves the message at the head: the next turn
@@ -10177,7 +10256,7 @@ def _user_echo(text: str, auto: str = "", queue_id: str = "", mode=None) -> dict
     return d
 
 
-def _queue_deliver_via_resume(state, text: str, auto: str = "", queue_id: str = "", mode=None) -> bool:
+def _queue_deliver_via_resume(state, text: str, auto: str = "", queue_id: str = "", mode=None, critic=None) -> bool:
     """Respawn the run with the queued text as its next message, by POSTing our
     own /resume. Building the resume spawn inline here would mean duplicating
     the tier / prototype / guards / MCP reconstruction that handler owns, and a
@@ -10187,7 +10266,8 @@ def _queue_deliver_via_resume(state, text: str, auto: str = "", queue_id: str = 
         import urllib.request
         req = urllib.request.Request(
             f"http://127.0.0.1:{PORT}/__run/{state.run_id}/resume",
-            data=json.dumps(_user_echo(text, auto, queue_id, mode)).encode("utf-8"),
+            data=json.dumps(dict(_user_echo(text, auto, queue_id, mode),
+                                 **({"critic": critic} if isinstance(critic, dict) else {}))).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
@@ -15291,15 +15371,53 @@ def _mode_fields(pick, text, guards, prev_echo=None, context=None, prev_mode="no
     return out
 
 
-def _mode_send(state, text: str, raw_mode):
-    """(the text the agent receives, the fields to stamp on the echo)."""
+def _mode_send(state, text: str, raw_mode, raw_critic=None):
+    """(the text the agent receives, the fields to stamp on the echo).
+
+    The composer's persona critique rides the same way: `raw_critic` is the
+    picker's {personas, how} ({} = switched off). A message that carries none
+    (a card answer, a daemon nudge) keeps the thread's, like the mode does."""
     prev = _thread_chat_mode(state)
     pick = _norm_mode_pick(raw_mode)
     fields = _mode_fields(pick, text, getattr(state, "guards", None),
                           prev_echo=_last_mode_echo(state),
                           context=_auto_context(state) if pick == "auto" else None,
                           prev_mode=prev)
-    return _mode_text(fields["mode"], prev, text), fields
+    critic = _personas.norm_critic(raw_critic)
+    if critic is None:
+        critic = _thread_critic(state)
+    else:
+        fields = dict(fields, critic=critic)
+    return _critic_send(state, _mode_text(fields["mode"], prev, text), critic), fields
+
+
+def _thread_critic(state):
+    """The persona critique the thread's latest message armed ({} or None = off)."""
+    try:
+        with state.lock:
+            for ev in reversed(state.events):
+                d = ev.get("data")
+                if ev.get("type") == "user_message" and isinstance(d, dict) and "critic" in d:
+                    return _personas.norm_critic(d.get("critic")) or {}
+    except Exception:
+        pass
+    return {}
+
+
+def _critic_send(state, send: str, critic, project_root=None) -> str:
+    """Append the armed critique's instructions, naming the personas that
+    still exist in the project (a deleted one silently drops out)."""
+    if not critic or not critic.get("personas"):
+        return send
+    try:
+        rows = {p["id"]: p for p in _personas.load(project_root or getattr(state, "project_root", None) or "")}
+    except Exception:
+        rows = {}
+    ids = [i for i in critic["personas"] if i in rows]
+    if not ids:
+        return send
+    return send + _personas.critic_message(dict(critic, personas=ids),
+                                           [rows[i].get("name") or i for i in ids])
 
 
 def _apply_guard_env(env: dict, guards: dict) -> dict:
@@ -16102,6 +16220,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._stories_map_save(qs)
             if parsed.path == "/__stories/validate":
                 return self._stories_validate(qs)
+            if parsed.path == "/__personas":
+                return self._personas_post(qs)
+            if parsed.path == "/__personas/draft":
+                return self._personas_draft(qs)
+            if parsed.path == "/__critic/run":
+                return self._critic_run(qs)
             if parsed.path == "/__ds/validate":
                 return self._ds_validate(qs)
             if parsed.path == "/__ds_proposals":
@@ -16543,6 +16667,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._qa_visual_report(urllib.parse.parse_qs(parsed.query))
         if url_path == "/__qa/visual-report/file":
             return self._qa_visual_report_file(urllib.parse.parse_qs(parsed.query))
+        if url_path == "/__personas":
+            return self._personas_get(urllib.parse.parse_qs(parsed.query))
+        m_cr = re.match(r"^/__critic/(c_[a-f0-9]{10})(/shot)?$", url_path)
+        if m_cr:
+            if m_cr.group(2):
+                return self._critic_shot(m_cr.group(1), urllib.parse.parse_qs(parsed.query))
+            return self._critic_get(m_cr.group(1), urllib.parse.parse_qs(parsed.query))
         # User stories + prototype story map (editor/stories.py).
         if url_path == "/__stories":
             return self._stories_get(urllib.parse.parse_qs(parsed.query))
@@ -27985,6 +28116,178 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    # ── Simulated personas + persona critique (editor/personas.py) ────────
+    # GET  /__personas?project=                 -> {personas}
+    # POST /__personas?project= {op: upsert, persona} | {op: delete, id}
+    # POST /__personas/draft?project= {paths, notes, basis, hint} -> {draft, notes}
+    # POST /__critic/run?project=&run= {personas, how, change, pages?, flow?}
+    #      -> {id, status, text}; blocks up to &wait= seconds (default 100,
+    #      under an agent shell's 2-minute default), then the caller polls
+    # GET  /__critic/<id>?project=[&wait=][&format=text] -> report | digest
+    # GET  /__critic/<id>/shot?project=&f=<name> -> a step screenshot
+
+    def _personas_get(self, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        return self._reply(200, {"personas": _personas.load(root)})
+
+    def _personas_post(self, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+            body = self._read_json_body(max_bytes=256 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        op = body.get("op")
+        try:
+            if op == "upsert":
+                rec, rows = _personas.upsert(root, body.get("persona"))
+                return self._reply(200, {"persona": rec, "personas": rows})
+            if op == "delete":
+                pid = body.get("id")
+                if not isinstance(pid, str) or not _personas.ID_RE.match(pid):
+                    return self._reply(400, {"error": "id must be a persona id"})
+                return self._reply(200, {"personas": _personas.delete(root, pid)})
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        except OSError as e:
+            return self._reply(500, {"error": "could not save personas: %s" % e})
+        return self._reply(400, {"error": "op must be upsert or delete"})
+
+    def _persona_profiles(self, state):
+        """(planner profile, persona profile): the planner on the runtime's
+        FAST model, the personas on the thread's own model. OpenCode has no
+        image input here, so a simulation falls back to Claude or Codex."""
+        cfg = _compact_config()
+        runtime = getattr(state, "agent_id", None) or _agent_default_runtime()
+        inherited = getattr(state, "model", None) if state is not None else _agent_default_model()
+        if runtime == "opencode":
+            alt = "claude" if detect_agent_bin("claude") else ("codex" if detect_agent_bin("codex") else None)
+            if alt:
+                runtime, inherited = alt, None
+        if runtime not in model_routing.RUNTIMES:
+            runtime, inherited = "claude", None
+        fast = model_routing.resolve("fast", runtime, None, cfg, role="summary")
+        persona = model_routing.resolve("inherit", runtime, inherited, cfg, role="agent")
+        return fast, persona
+
+    def _personas_draft(self, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+            body = self._read_json_body(max_bytes=512 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        paths = [p for p in (body.get("paths") or []) if isinstance(p, str)][:_personas.MAX_KNOWLEDGE]
+        notes_text = body.get("notes") if isinstance(body.get("notes"), str) else ""
+        blocks, notes, has = _personas.draft_blocks(root, paths, notes_text.strip(),
+                                                    body.get("basis"), (body.get("hint") or "").strip()[:400]
+                                                    if isinstance(body.get("hint"), str) else "")
+        if not has:
+            return self._reply(400, {"error": "add a research document under What they know, or paste research notes", "notes": notes})
+        _fast, profile = self._persona_profiles(None)
+        try:
+            text = _multimodal_complete(profile, _personas.DRAFT_SYSTEM, blocks, timeout=240)
+        except Exception as e:
+            return self._reply(502, {"error": "the draft failed: %s" % str(e)[:300], "notes": notes})
+        return self._reply(200, {"draft": _personas.parse_draft(text), "notes": notes})
+
+    def _critic_run(self, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+            body = self._read_json_body(max_bytes=256 * 1024)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        project_id = (_qs_get(qs, "project") or "").strip()
+        critic = _personas.norm_critic(body)
+        if not critic:
+            return self._reply(400, {"error": "personas: list the persona ids to run"})
+        rows = {p["id"]: p for p in _personas.load(root)}
+        chosen = [rows[i] for i in critic["personas"] if i in rows]
+        if not chosen:
+            return self._reply(404, {"error": "none of those personas exist in this project",
+                                     "known": [{"id": p["id"], "name": p.get("name")} for p in rows.values()]})
+        change = body.get("change").strip() if isinstance(body.get("change"), str) else ""
+        if not change:
+            return self._reply(400, {"error": "change: say what changed, in a user's words"})
+        pages = body.get("pages")
+        if isinstance(pages, str):
+            pages = [pages]
+        pages = [p.strip() for p in (pages or []) if isinstance(p, str) and p.strip()][:_personas.MAX_PAGES]
+        if critic["how"] == "simulate" and not pages:
+            return self._reply(400, {"error": "pages: name the page(s) to open (a prototype slug or a path under source/)"})
+        run_id = (_qs_get(qs, "run") or (body.get("run") if isinstance(body.get("run"), str) else "") or "").strip()
+        with RUNS_LOCK:
+            state = RUNS.get(run_id) if run_id else None
+        fast, persona = self._persona_profiles(state)
+        parent = getattr(state, "run_id", None)
+
+        def caller(profile, timeout):
+            def call(system, blocks):
+                with helper_jobs.execution("persona-" + uuid.uuid4().hex[:10], parent, profile["runtime"], 4):
+                    return _multimodal_complete(profile, system, blocks, timeout=timeout)
+            return call
+
+        def resolve_page(raw):
+            try:
+                return self._qa_resolve_page(root, project_id, raw)["url"]
+            except _QAResolveError as e:
+                raise RuntimeError((e.payload or {}).get("error") or "page not found")
+
+        def emit(ev):
+            if state is not None:
+                state.append("agent", ev)
+
+        deps = {"fast_complete": caller(fast, 180), "persona_complete": caller(persona, 300),
+                "resolve_page": resolve_page, "emit": emit,
+                "walker": lambda args: _personas.run_walker(INSTALL_ROOT, args)}
+        cid = _personas.start(root, project_id, run_id or None, chosen,
+                              {"how": critic["how"], "change": change[:4000], "pages": pages,
+                               "flow": body.get("flow").strip()[:600] if isinstance(body.get("flow"), str) else ""},
+                              deps)
+        try:
+            wait_s = float(_qs_get(qs, "wait") or 100)
+        except ValueError:
+            wait_s = 100
+        _personas.wait(cid, wait_s)
+        report = _personas.get_report(root, cid) or {"id": cid, "status": "running"}
+        return self._reply(200, {"id": cid, "status": report.get("status"), "text": _personas.digest(report)})
+
+    def _critic_get(self, cid, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        try:
+            wait_s = float(_qs_get(qs, "wait") or 0)
+        except ValueError:
+            wait_s = 0
+        if wait_s > 0:
+            _personas.wait(cid, wait_s)
+        report = _personas.get_report(root, cid)
+        if not report:
+            return self._reply(404, {"error": "no such critique: " + cid})
+        if (_qs_get(qs, "format") or "") == "text":
+            return self._reply(200, {"id": cid, "status": report.get("status"), "text": _personas.digest(report)})
+        return self._reply(200, report)
+
+    def _critic_shot(self, cid, qs):
+        try:
+            root = resolve_project_root(qs, require_explicit=True)
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
+        path = _personas.shot_path(root, cid, (_qs_get(qs, "f") or "").strip())
+        if not path:
+            return self._reply(404, {"error": "no such screenshot"})
+        with open(path, "rb") as f:
+            body = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "max-age=86400")
+        self.end_headers()
+        self.wfile.write(body)
+
     # ── User stories + prototype story map ────────────────────────────────
     # Two artefacts per project, both plain files on disk (editor/stories.py):
     #   docs/user-stories.xlsx   the stories, authored in Excel, keyed by ID
@@ -35980,6 +36283,12 @@ class H(http.server.SimpleHTTPRequestHandler):
         _chat_mode = _chat_mode_fields.get("mode")
         if _chat_mode:
             prompt_text = _mode_text(_chat_mode, "normal", prompt_text)
+        # The persona critique armed in the composer rides the first message
+        # the same way (see _mode_send), stamped on its echo.
+        _chat_critic = _personas.norm_critic(body.get("critic")) if kind == "freeform" else None
+        if _chat_critic:
+            prompt_text = _critic_send(None, prompt_text, _chat_critic, project_root=project_root)
+            _chat_mode_fields = dict(_chat_mode_fields, critic=_chat_critic)
         spawn_args = list(defs["args"])
         # Claude Code 2.1.163 split the bypass into TWO
         # flags. --dangerously-skip-permissions alone no longer skips
@@ -36798,7 +37107,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "error": "agent process is not running - resume to continue",
                 "needsResume": True,
             })
-        send, chat_mode = _mode_send(state, text, body.get("mode"))
+        send, chat_mode = _mode_send(state, text, body.get("mode"), body.get("critic"))
         # Under _PARK_LOCK so the idle loop cannot park between our checks
         # and the write: it re-checks turn_done under the same lock.
         with _PARK_LOCK:
@@ -36866,6 +37175,9 @@ class H(http.server.SimpleHTTPRequestHandler):
         # The mode picked when it was typed, applied when it is delivered.
         if _norm_mode_pick(body.get("mode")):
             entry["mode"] = _norm_mode_pick(body.get("mode"))
+        # Same for the persona critique armed when it was typed.
+        if _personas.norm_critic(body.get("critic")) is not None:
+            entry["critic"] = _personas.norm_critic(body.get("critic"))
         with _QUEUE_LOCK:
             q = list(getattr(state, "msg_queue", None) or [])
             q.append(entry)
@@ -37331,7 +37643,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             state.session_id = None
         # What the agent receives (the mode's rules folded in) vs what the
         # thread echoes (the user's words, stamped with the mode).
-        send, chat_mode = _mode_send(state, text, body.get("mode"))
+        send, chat_mode = _mode_send(state, text, body.get("mode"), body.get("critic"))
         # Codex/opencode resume. Neither has Claude's stream-json
         # --resume <session-id> protocol; each `codex exec` / `opencode run`
         # is a fresh session. We fake resume by reconstructing the prior

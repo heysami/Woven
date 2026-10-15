@@ -941,6 +941,9 @@ const Icon = {
   // not radial spokes - spokes read as a sun.
   Gear:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M9.5 1.7l.5 1.6 1.5.6 1.4-.7 1 1-.7 1.4.6 1.5 1.6.5v1.4l-1.6.5-.6 1.5.7 1.4-1 1-1.4-.7-1.5.6-.5 1.6H6.5l-.5-1.6-1.5-.6-1.4.7-1-1 .7-1.4-.6-1.5-1.6-.5V7.3l1.6-.5.6-1.5-.7-1.4 1-1 1.4.7 1.5-.6.5-1.6z"/><circle cx="8" cy="8" r="2.2"/></svg>`,
   User:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5c0-2.5 2.2-4 5-4s5 1.5 5 4"/></svg>`,
+  // Simulated personas (rail) and the persona critique (composer).
+  Personas: () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="6" cy="5.5" r="2.2"/><path d="M1.8 13.2c0-2.3 1.9-3.7 4.2-3.7s4.2 1.4 4.2 3.7"/><path d="M10.4 3.6a2 2 0 110 3.8M12.2 9.7c1.2.5 2 1.6 2 3.1"/></svg>`,
+  Critic:   () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="5.5" cy="7" r="2"/><path d="M1.8 13.8c0-2 1.6-3.3 3.7-3.3s3.7 1.3 3.7 3.3"/><path d="M9 2.2h5.2v3.9h-2.1L10.5 7.6V6.1H9z"/></svg>`,
   Image:    () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><rect x="2.5" y="3" width="11" height="10" rx="1"/><circle cx="6" cy="6.5" r="1"/><path d="M3 11l3-2.5 2.5 2 2-1.5L13 11.5"/></svg>`,
   Sun:      () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8h1.5M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M12.6 3.4l-1 1M4.4 11.6l-1 1"/></svg>`,
   Moon:     () => html`<svg viewBox="0 0 16 16" width="14" height="14" ...${stroke}><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z"/></svg>`,
@@ -10304,7 +10307,7 @@ function buildLottieSrcDoc(fileUrl, withDiagnostics) {
     '})();</script></body></html>';
 }
 
-async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, tier, prototype, guards, mode }) {
+async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, tier, prototype, guards, mode, critic }) {
   const project = activeProjectId();
   // Default the runtime from the user's agent-capability pick when the caller
   // didn't pass one - the server would otherwise fall back to its own
@@ -10321,7 +10324,7 @@ async function triggerRun({ branch, agentId, kind, prompt, title, meta, model, t
   const res = await fetch(apiUrl("/__run"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ branch, agentId: effAgentId, kind, prompt, title, meta, project, model: effModel, tier, prototype, guards, mode }),
+    body: JSON.stringify({ branch, agentId: effAgentId, kind, prompt, title, meta, project, model: effModel, tier, prototype, guards, mode, critic }),
   });
   let body = null;
   try { body = await res.json(); } catch {}
@@ -13961,6 +13964,8 @@ function RightRailDock({ mode }) {
       guards: (opts && opts.guards) || loadChatGuards(),
       // The footer's chat mode for this first message (never remembered).
       mode: (opts && opts.mode) || undefined,
+      // The persona critique armed in the footer for this first message.
+      critic: (opts && opts.critic) || undefined,
     });
     pendingScopedRef.current = null;
     setChatRun(run);
@@ -17657,6 +17662,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
   // shows ITS mode, and a fresh "new chat" shell starts on Normal.
   const [modePick, setModePick] = useState(null);
   useEffect(() => { setModePick(null); }, [run?.runId, run?.isNew]);
+  // The persona critique the user armed in the footer ({personas, how}), or
+  // null to follow the thread's own (stamped on its latest message, see
+  // threadCritic). Per message like the mode; a new chat starts unarmed.
+  const [criticPick, setCriticPick] = useState(null);
+  useEffect(() => { setCriticPick(null); }, [run?.runId, run?.isNew]);
   const [answers, setAnswers] = useState({});   // { toolUseId: [{ question, answer }, …] }
   // A clicked DecisionRequestCard sends a user-message shaped
   // `[decision:<id>] <v1>[,v2,…] - <label1>[; label2;…]`.
@@ -18537,6 +18547,22 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     return "normal";
   }, [events]);
   const pickedMode = modePick || (isNew ? "normal" : threadMode);
+  // The thread's armed persona critique: the latest message that carried one
+  // (an empty list = switched off). Messages without it (card answers) keep it.
+  const threadCritic = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const ev = events[i];
+      if ((ev.type === "user_message" || ev.event === "user_message") && ev.data && ev.data.critic
+          && typeof ev.data.critic === "object") return ev.data.critic;
+    }
+    return null;
+  }, [events]);
+  const effCritic = criticPick || (isNew ? null : threadCritic);
+  const criticArmed = !!(effCritic && Array.isArray(effCritic.personas) && effCritic.personas.length);
+  const threadCriticArmed = !!(threadCritic && Array.isArray(threadCritic.personas) && threadCritic.personas.length);
+  // Sent with every message while armed; one explicit "off" when the user
+  // drops a thread's critique; nothing otherwise.
+  const criticSend = criticArmed ? effCritic : (!isNew && threadCriticArmed ? { personas: [] } : undefined);
 
   // The checks the footer control shows, and whether they are a STAGED change
   // this thread can't take. `pendingGuards` only exists on a running thread;
@@ -18560,8 +18586,9 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     const o = { ...(opts || {}) };
     if (!o.guards) o.guards = effGuards;
     if (!o.mode) o.mode = effMode;
+    if (!o.critic && criticArmed) o.critic = effCritic;
     return onStartNewChat(prompt, o);
-  }, [onStartNewChat, effGuards, effMode]);
+  }, [onStartNewChat, effGuards, effMode, criticArmed, effCritic]);
 
   const stageGuards = useCallback((next) => {
     if (isNew) {
@@ -18769,6 +18796,7 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
         runId=${run?.runId}
         isNew=${isNew}
         chatMode=${effMode}
+        critic=${criticSend}
         interceptSend=${guardsChanged ? handoffSend : null}
         agentId=${run?.agentId}
         runtimeDriver=${events.find(e => e.data?.executionProfile?.driver)?.data.executionProfile.driver || run?.executionProfile?.driver}
@@ -18793,6 +18821,11 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
               locked=${!isNew && !onStartNewChat}
               judges=${judgeStatus}
               onOpen=${() => setJudgeTick(t => t + 1)}
+            />
+            <${ChatCriticPicker}
+              value=${effCritic}
+              onChange=${setCriticPick}
+              openUp=${true}
             />
             <${ChatWorkModePicker}
               value=${effMode}
@@ -19655,7 +19688,7 @@ function PointChipHoverCard({ point, rect }) {
     </div>
   `, document.body);
 }
-function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, runtimeDriver, userMsgCount, deliveredQueueIds, interceptSend, chatMode, pointTool }) {
+function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, onResumed, selectionCount, runStatus, onStop, toolbarLeft, toolbarRight, targetBar, agentId, runtimeDriver, userMsgCount, deliveredQueueIds, interceptSend, chatMode, critic, pointTool }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -20321,6 +20354,8 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
           send: composeWithAttachments(env.text || "", env.attachments || [], env.uploads || [], env.fileRefs || [], env.scratchpads || [], env.points || []),
           // The footer mode when this was typed; the daemon applies it on delivery.
           mode: chatMode || undefined,
+          // Same for the persona critique armed when it was typed.
+          critic: critic || undefined,
           meta: {
             attachments: env.attachments || [], uploads: env.uploads || [],
             fileRefs: env.fileRefs || [], scratchpads: env.scratchpads || [],
@@ -20370,7 +20405,9 @@ function ChatComposer({ runId, isNew, disabled, locked, onSent, onStartNewChat, 
         headers: { "Content-Type": "application/json" },
         // `mode` = the footer's chat mode; the daemon folds its rules into
         // what the agent receives and stamps it on the echo (_mode_send).
-        body: JSON.stringify(steer ? { text: body, steer: true, mode: chatMode || undefined } : { text: body, mode: chatMode || undefined }),
+        body: JSON.stringify(steer
+          ? { text: body, steer: true, mode: chatMode || undefined, critic: critic || undefined }
+          : { text: body, mode: chatMode || undefined, critic: critic || undefined }),
       });
       // Converge, don't one-shot. While a stopped subprocess is mid
       // shutdown the daemon's two guards flip on DIFFERENT requests: /resume
@@ -21726,6 +21763,7 @@ function buildBlocks(events) {
     }
   }
   const blocks = [];
+  const critiqueAt = new Map();   // persona critique id -> its block index
   let openText = null;
   let openThinking = null;
   let openGrid = null;
@@ -21783,6 +21821,17 @@ function buildBlocks(events) {
         // Raw token counts are not actionable in the chat view. The "done"
         // status frame already includes cost; that's the useful summary.
         // (The header context gauge folds these same events separately.)
+        continue;
+      }
+      if (d.type === "persona_critique" && d.id) {
+        // A persona critique (editor/personas.py) re-announces itself on every
+        // stage change: ONE card per critique, placed where it started and
+        // carrying the latest status (the card reads the report itself).
+        const at = critiqueAt.get(d.id);
+        if (at != null) { blocks[at] = { ...blocks[at], data: d }; continue; }
+        closeAll();
+        critiqueAt.set(d.id, blocks.length);
+        blocks.push({ kind: "critique", data: d, key: `pc-${d.id}` });
         continue;
       }
       if (d.type === "compact") {
@@ -25134,6 +25183,8 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
       return html`<div className="chat-row chat-assistant chat-tool-block"><${ToolCard} block=${block} runId=${runId} answers=${answers} onAnswered=${onAnswered}/></div>`;
     case "agent_grid":
       return html`<div className="chat-row chat-assistant chat-agent-grid"><${AgentGridCard} block=${block}/></div>`;
+    case "critique":
+      return html`<div className="chat-row chat-assistant chat-critique"><${PersonaCritiqueCard} id=${block.data.id} status=${block.data.status} stage=${block.data.stage}/></div>`;
     case "user_message": {
       // Plan / Triage are per message, so a thread can switch between them:
       // the mode each message ran in is marked on its bubble (Normal is the
@@ -25144,8 +25195,17 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
       const modeTip = !mode ? "" : auto
         ? `Auto picked ${mode.label}: ${block.data.autoWhy || "no reason recorded"}.`
         : mode.label + " mode: " + mode.hint;
+      // An armed persona critique is marked the same way.
+      const crit = block.data.critic && Array.isArray(block.data.critic.personas) && block.data.critic.personas.length
+        ? block.data.critic : null;
+      const critNames = crit ? (() => {
+        const rows = personasCached() || [];
+        return crit.personas.map(id => (rows.find(p => p.id === id) || {}).name).filter(Boolean);
+      })() : [];
       return html`<div className="chat-bubble chat-bubble-user">${
         mode ? html`<span className="chat-bubble-prefix chat-bubble-mode" title=${modeTip}><${Icon[mode.icon]}/>${auto ? "Auto: " + mode.label : mode.label}</span> ` : ""
+      }${
+        crit ? html`<span className="chat-bubble-prefix chat-bubble-mode" title=${`Persona critique armed${critNames.length ? ": " + critNames.join(", ") : ""} (${crit.how === "simulate" ? "simulated on the page" : "as text"})`}><${Icon.Critic}/>Critique ${crit.personas.length}</span> ` : ""
       }${
         block.data.auto ? html`<span className="chat-bubble-prefix">auto:</span> ` : ""
       }${(() => {
@@ -33849,6 +33909,8 @@ function WorkflowCanvas() {
       guards: (opts && opts.guards) || loadChatGuards(),
       // The footer's chat mode for this first message (never remembered).
       mode: (opts && opts.mode) || undefined,
+      // The persona critique armed in the footer for this first message.
+      critic: (opts && opts.critic) || undefined,
     });
     setChatRun(run);
     setChatRunFinished(false);
@@ -46632,6 +46694,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       if (v === "visual") return "visual";
       if (v === "library") return "library";
       if (v === "app-nodes") return "app-nodes";
+      if (v === "personas") return "personas";
       // "chat" deliberately does NOT restore: it is a session surface, not a
       // sticky panel preference - a fresh project (or reload) must not greet
       // the user with an empty chat panel. A live run re-opens it via the
@@ -58298,6 +58361,21 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
     toggleWbMode(false);
     setLeftPanel(p => (p === "pv-assets" ? null : "pv-assets"));
   }, [toggleWbMode, dismissNodeChats]);
+  // Personas live on the rail in BOTH views (canvas and preview), right under
+  // the chat entry: they are defined here and armed from the chat composer.
+  // The panel opens beside whichever view is showing and never switches it.
+  const onRailPersonas = useCallback(() => {
+    dismissNodeChats();
+    if (wbModeRef.current) { toggleWbMode(false); setLeftPanel("personas"); return; }
+    setLeftPanel(p => (p === "personas" ? null : "personas"));
+  }, [toggleWbMode, dismissNodeChats]);
+  // The composer's critic menu links here ("Define personas" / "Edit personas").
+  useEffect(() => {
+    if (embedded) return;
+    const open = () => { dismissNodeChats(); toggleWbMode(false); setLeftPanel("personas"); };
+    window.addEventListener("th:open-personas", open);
+    return () => window.removeEventListener("th:open-personas", open);
+  }, [embedded, toggleWbMode, dismissNodeChats]);
   // The prototype the user is actively PREVIEWING - derived from the VIEW, not
   // from sticky iframe interaction. Only the dedicated preview surfaces count:
   // the zoom overlay (a full-screen preview of one page) or the Preview view
@@ -60024,7 +60102,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
         data-view=${mainView}
         data-left-panel=${mainView === "canvas" && wbMode ? "whiteboard"
                           : leftPanel === "chat" ? "chat"
-                          : mainView === "proto" && (leftPanel === "pv-files" || leftPanel === "pv-assets") ? leftPanel
+                          : mainView === "proto" && (leftPanel === "pv-files" || leftPanel === "pv-assets" || leftPanel === "personas") ? leftPanel
                           : mainView === "canvas" && leftPanel && !leftPanel.startsWith("pv-") ? leftPanel : "none"}
       >
         ${runsOverlay && html`
@@ -60044,6 +60122,13 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
               : "Chat - back to your conversation"}
             onClick=${onChatIconClick}
           >${!wbMode && leftPanel === "chat" ? html`<${Icon.List}/>` : html`<${Icon.Comment}/>`}<//>
+          ${!embedded && html`<${HoverTip}
+            placement="right"
+            className=${"workflow-nav-rail-btn workflow-nav-rail-btn-personas" + (!wbMode && leftPanel === "personas" ? " is-active" : "")}
+            ariaLabel="Personas"
+            tip="Personas - simulated users who critique the work"
+            onClick=${onRailPersonas}
+          ><${Icon.Personas}/><//>`}
           ${mainView === "proto" && html`
             <${React.Fragment}>
               <div className="workflow-nav-rail-sep workflow-nav-rail-sep-preview"/>
@@ -60171,9 +60256,10 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
             ${mainView === "proto" && leftPanel === "pv-assets" && html`
               <${PreviewAssetsPanel} activePath=${protoViewerPath} onClose=${() => setLeftPanel(null)}/>
             `}
-            ${leftPanel !== "chat" && !(leftPanel || "").startsWith("pv-") && html`<${WorkflowLibrary} tab=${leftPanel || "nodes"}/>`}
+            ${leftPanel === "personas" && html`<${PersonasPanel} onClose=${() => setLeftPanel(null)}/>`}
+            ${leftPanel !== "chat" && leftPanel !== "personas" && !(leftPanel || "").startsWith("pv-") && html`<${WorkflowLibrary} tab=${leftPanel || "nodes"}/>`}
           `}
-          ${(wbMode || leftPanel !== "chat") && html`
+          ${(wbMode || (leftPanel !== "chat" && leftPanel !== "personas")) && html`
             <${WorkflowSectionsBar}
               sections=${(data.nodes || []).filter(n => n.kind === "section")}
               tables=${(data.nodes || []).filter(n => n.kind === "table")}
@@ -63177,6 +63263,529 @@ function PreviewAssetsPanel({ activePath, onClose }) {
 /* Tree of the project's prototype pages (source/ prototypes + generated HTML
    pages, the same two lists the viewer's "+" picker fetches) - clicking a
    file opens/activates it as a viewer tab. */
+/* ────────── Simulated personas (editor/personas.py) ──────────
+   Research-based user profiles kept per project in personas/personas.json.
+   Defined in the Personas panel (workflow rail, canvas AND preview, right
+   under the chat entry); armed per message from the critic icon in the chat
+   composer (ChatCriticPicker, right of the checks chip). When the agent
+   finishes the armed work it calls /__critic/run: a fast planner writes a
+   short task table, a browser walks it screenshotting each step, and every
+   persona runs as an isolated, tool-less agent that sees only its profile,
+   the documents granted to it and those screens - never code. The result
+   streams into the thread as a `persona_critique` event (PersonaCritiqueCard).
+   The cache is per project so a project switch never shows another's list. */
+const __personasCache = { project: null, list: null };
+function personasCached() {
+  return __personasCache.project === activeProjectId() ? __personasCache.list : null;
+}
+function personasStore(rows) {
+  __personasCache.project = activeProjectId();
+  __personasCache.list = rows;
+  try { window.dispatchEvent(new CustomEvent("th:personas-changed", { detail: { personas: rows } })); } catch {}
+}
+function usePersonas() {
+  const [list, setList] = useState(personasCached);
+  const load = useCallback(() => {
+    fetch(apiUrl("/__personas"))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => personasStore(j && Array.isArray(j.personas) ? j.personas : []))
+      .catch(() => setList(l => l || []));
+  }, []);
+  useEffect(() => {
+    const on = (e) => setList(e && e.detail && Array.isArray(e.detail.personas) ? e.detail.personas : personasCached());
+    window.addEventListener("th:personas-changed", on);
+    load();
+    return () => window.removeEventListener("th:personas-changed", on);
+  }, [load]);
+  return [list, load];
+}
+async function personasPost(path, body) {
+  const r = await fetch(apiUrl(path), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  if (Array.isArray(j.personas)) personasStore(j.personas);
+  return j;
+}
+const PERSONA_BASES = [
+  { value: "user-research",   label: "User research",   hint: "Built from interviews, tests or analytics with real users" },
+  { value: "market-research", label: "Market research", hint: "Built from segment, survey or competitor research" },
+  { value: "assumption",      label: "Assumption",      hint: "The team's best guess, not yet backed by research" },
+];
+const PERSONA_TECH = [{ value: "low", label: "Low" }, { value: "medium", label: "Medium" }, { value: "high", label: "High" }];
+const PERSONA_DEVICES = [{ value: "desktop", label: "Computer" }, { value: "mobile", label: "Phone" }];
+const PERSONA_AREAS = [
+  { key: "demographics", label: "About them",         ph: "Age band, situation, where they are",            rows: 2 },
+  { key: "goals",        label: "Goals",              ph: "- what they are trying to get done",             rows: 3 },
+  { key: "frustrations", label: "Frustrations",       ph: "- what gets in their way today",                 rows: 3 },
+  { key: "behaviours",   label: "Habits and context", ph: "- devices, when and where they use it, routines", rows: 3 },
+];
+// The app's own data at the project root, never something a user would know.
+const PERSONA_HIDDEN_ROOTS = new Set(["editor", "workflow", "personas", "plan-splits", "usertesting", "share"]);
+// Mirrors personas.py: documents only, code is never read.
+const PERSONA_DOC_EXTS = new Set(["md", "markdown", "txt", "csv", "tsv", "json", "yaml", "yml", "png", "jpg", "jpeg", "webp", "gif"]);
+function personaBlank() {
+  return { name: "", role: "", basis: "user-research", source: "", demographics: "", goals: "", frustrations: "",
+           behaviours: "", quote: "", techComfort: "medium", device: "desktop", knowledge: [] };
+}
+function personaMeta(p) {
+  const basis = PERSONA_BASES.find(b => b.value === p.basis);
+  return [p.role, basis && basis.label, p.device === "mobile" ? "phone" : null].filter(Boolean).join(" · ");
+}
+
+function PersonaSegmented({ value, options, onChange, label }) {
+  return html`
+    <div className="personas-seg" role="radiogroup" aria-label=${label}>
+      ${options.map(o => html`<button key=${o.value} type="button" role="radio" aria-checked=${value === o.value}
+        className="personas-seg-btn" data-on=${value === o.value} title=${o.hint || o.label}
+        onClick=${() => onChange(o.value)}>${o.label}</button>`)}
+    </div>`;
+}
+
+/* Grant files or folders of the project as what a persona knows: a one-level
+   listing with drill-down (/__fs_list). Code files are listed but cannot be
+   granted, and the daemon skips them inside a granted folder too. */
+function PersonaKnowledgeBrowser({ granted, onGrant, onClose }) {
+  const [dir, setDir] = useState("");
+  const [entries, setEntries] = useState(null);
+  useEffect(() => {
+    let dead = false;
+    setEntries(null);
+    fetch(apiUrl("/__fs_list?root=" + encodeURIComponent(dir || ".")))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (!dead) setEntries(((j && j.entries) || []).filter(e => e.rel && !(PERSONA_HIDDEN_ROOTS.has(e.rel)))); })
+      .catch(() => { if (!dead) setEntries([]); });
+    return () => { dead = true; };
+  }, [dir]);
+  const crumbs = dir ? dir.split("/") : [];
+  return html`
+    <div className="personas-browser">
+      <div className="personas-browser-head">
+        <button type="button" className="personas-crumb" onClick=${() => setDir("")}>project</button>
+        ${crumbs.map((c, i) => html`<${React.Fragment} key=${i}><span className="personas-crumb-sep">/</span>
+          <button type="button" className="personas-crumb" onClick=${() => setDir(crumbs.slice(0, i + 1).join("/"))}>${c}</button><//>`)}
+        <span className="personas-browser-spacer"/>
+        <button type="button" className="pv-panel-close" title="Done" aria-label="Close the file list" onClick=${onClose}>×</button>
+      </div>
+      <div className="personas-browser-list">
+        ${entries === null && html`<div className="pv-panel-empty">Loading…</div>`}
+        ${entries !== null && entries.length === 0 && html`<div className="pv-panel-empty">Empty folder.</div>`}
+        ${(entries || []).map(e => {
+          const isDir = e.kind === "dir";
+          const isDoc = isDir || PERSONA_DOC_EXTS.has(e.ext);
+          const has = granted.includes(e.rel);
+          return html`
+            <div key=${e.rel} className="pv-file-row personas-browser-row" data-muted=${!isDoc}
+              title=${isDoc ? e.rel : e.rel + " - not a document; personas never read code"}>
+              <button type="button" className="pv-file-open" disabled=${!isDir}
+                onClick=${() => isDir && setDir(e.rel)}>
+                <span className="pv-file-glyph">${isDir ? html`<${Icon.Folder}/>` : PERSONA_DOC_EXTS.has(e.ext) && /^(png|jpe?g|webp|gif)$/.test(e.ext) ? html`<${Icon.Image}/>` : isDoc ? html`<${Icon.NotesDoc}/>` : html`<${Icon.Code}/>`}</span>
+                <span className="pv-file-name">${e.name}</span>
+              </button>
+              ${isDoc && html`<button type="button" className="pv-rowbtn personas-grant" data-on=${has}
+                title=${has ? "Granted - click to remove" : (isDir ? "Grant this folder" : "Grant this file")}
+                aria-label=${has ? "Remove " + e.name : "Grant " + e.name}
+                onClick=${() => onGrant(e.rel, !has)}>${has ? html`<${Icon.Check}/>` : html`<${Icon.Plus}/>`}</button>`}
+            </div>`;
+        })}
+      </div>
+    </div>`;
+}
+
+function PersonaEditor({ initial, onDone, onClose }) {
+  const [p, setP] = useState(() => ({ ...personaBlank(), ...initial, knowledge: [...((initial && initial.knowledge) || [])] }));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+  const [browse, setBrowse] = useState(false);
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [drafting, setDrafting] = useState(false);
+  const set = (k, v) => setP(o => ({ ...o, [k]: v }));
+  const grant = (rel, on) => setP(o => ({
+    ...o, knowledge: on ? (o.knowledge.includes(rel) ? o.knowledge : [...o.knowledge, rel]) : o.knowledge.filter(k => k !== rel),
+  }));
+  const save = async () => {
+    if (!p.name.trim()) { setErr("Give the persona a name."); return; }
+    setSaving(true); setErr(null);
+    try { await personasPost("/__personas", { op: "upsert", persona: p }); onDone(); }
+    catch (e) { setErr(e.message || String(e)); }
+    finally { setSaving(false); }
+  };
+  // Fill the profile from research: the granted documents plus pasted notes.
+  // Only fields the draft actually filled are replaced, then the user edits.
+  const draft = async () => {
+    setDrafting(true); setErr(null);
+    try {
+      const j = await personasPost("/__personas/draft",
+        { paths: p.knowledge, notes, basis: p.basis, hint: [p.name, p.role].filter(Boolean).join(", ") });
+      const d = j.draft || {};
+      setP(o => {
+        const next = { ...o };
+        for (const k of ["name", "role", "source", "demographics", "goals", "frustrations", "behaviours", "quote", "techComfort", "device"]) {
+          if (typeof d[k] === "string" && d[k].trim()) next[k] = d[k];
+        }
+        return next;
+      });
+      setDraftOpen(false);
+    } catch (e) { setErr(e.message || String(e)); }
+    finally { setDrafting(false); }
+  };
+  return html`
+    <div className="pv-panel personas-panel">
+      <div className="pv-panel-head">
+        <${HoverTip} className="pv-panel-tool" tip="Back to the list" ariaLabel="Back to the list" onClick=${onDone}><${Icon.Back}/><//>
+        <div className="pv-panel-title-wrap">
+          <div className="pv-panel-title">${initial && initial.id ? "Edit persona" : "New persona"}</div>
+          <div className="pv-panel-sub">Knows only this profile, the files below and the screens it is shown</div>
+        </div>
+        <button type="button" className="pv-panel-close" title="Close" aria-label="Close panel" onClick=${onClose}>×</button>
+      </div>
+      <div className="personas-form">
+        <div className="personas-row2">
+          <label className="personas-field"><span>Name</span>
+            <input value=${p.name} placeholder="Maya R." onInput=${(e) => set("name", e.target.value)}/></label>
+          <label className="personas-field"><span>Who they are</span>
+            <input value=${p.role} placeholder="First-year student, works part time" onInput=${(e) => set("role", e.target.value)}/></label>
+        </div>
+        <div className="personas-field"><span>Based on</span>
+          <${PersonaSegmented} label="Based on" value=${p.basis} options=${PERSONA_BASES} onChange=${(v) => set("basis", v)}/></div>
+        <label className="personas-field"><span>Source</span>
+          <input value=${p.source} placeholder="12 student interviews, Oct 2026" onInput=${(e) => set("source", e.target.value)}/></label>
+        ${PERSONA_AREAS.map(a => html`
+          <label key=${a.key} className="personas-field"><span>${a.label}</span>
+            <textarea rows=${a.rows} value=${p[a.key]} placeholder=${a.ph} onInput=${(e) => set(a.key, e.target.value)}/></label>`)}
+        <label className="personas-field"><span>In their words</span>
+          <input value=${p.quote} placeholder="I just need to know if I got it, I don't have time to dig." onInput=${(e) => set("quote", e.target.value)}/></label>
+        <div className="personas-row2">
+          <div className="personas-field"><span>Comfort with tech</span>
+            <${PersonaSegmented} label="Comfort with tech" value=${p.techComfort} options=${PERSONA_TECH} onChange=${(v) => set("techComfort", v)}/></div>
+          <div className="personas-field"><span>Uses a</span>
+            <${PersonaSegmented} label="Device" value=${p.device} options=${PERSONA_DEVICES} onChange=${(v) => set("device", v)}/></div>
+        </div>
+        <div className="personas-field">
+          <div className="personas-field-head"><span>What they know</span>
+            <${HoverTip} className="pv-panel-tool" tip="Grant a file or folder of the project" ariaLabel="Grant a file or folder"
+              onClick=${() => setBrowse(b => !b)}><${Icon.Plus}/><//></div>
+          ${p.knowledge.length === 0 && !browse && html`<div className="personas-help">Nothing beyond the profile. Grant research notes, briefs or reference images they would know.</div>`}
+          ${p.knowledge.map(k => html`
+            <div key=${k} className="pv-file-row personas-know-row">
+              <span className="pv-file-glyph">${/\.[a-z0-9]+$/i.test(k) ? html`<${Icon.NotesDoc}/>` : html`<${Icon.Folder}/>`}</span>
+              <span className="pv-file-name" title=${k}>${k}</span>
+              <button type="button" className="pv-rowbtn" title="Remove" aria-label=${"Remove " + k} onClick=${() => grant(k, false)}><${Icon.X}/></button>
+            </div>`)}
+          ${browse && html`<${PersonaKnowledgeBrowser} granted=${p.knowledge} onGrant=${grant} onClose=${() => setBrowse(false)}/>`}
+          <div className="personas-help">Documents and images only. Code is never read, not even inside a granted folder.</div>
+        </div>
+        <div className="personas-field">
+          <div className="personas-field-head"><span>Draft from research</span>
+            <${HoverTip} className="pv-panel-tool" tip=${draftOpen ? "Hide" : "Fill this profile from the granted documents and pasted notes"}
+              ariaLabel="Draft from research" onClick=${() => setDraftOpen(o => !o)}><${Icon.Spark}/><//></div>
+          ${draftOpen && html`<${React.Fragment}>
+            <textarea rows="4" value=${notes} placeholder="Paste interview notes, survey results or a segment description (optional when documents are granted above)"
+              onInput=${(e) => setNotes(e.target.value)}/>
+            <div className="personas-actions">
+              <span className="personas-help">Replaces the fields the research covers; review before saving.</span>
+              <button type="button" className="personas-btn" disabled=${drafting || (!notes.trim() && !p.knowledge.length)} onClick=${draft}>
+                ${drafting ? "Drafting…" : "Draft profile"}</button>
+            </div><//>`}
+        </div>
+      </div>
+      <div className="personas-foot">
+        ${err ? html`<span className="personas-error">${err}</span>` : html`<span className="personas-foot-spacer"/>`}
+        <button type="button" className="personas-btn personas-btn-ghost" onClick=${onDone}>Cancel</button>
+        <button type="button" className="personas-btn personas-btn-primary" disabled=${saving} onClick=${save}>${saving ? "Saving…" : "Save"}</button>
+      </div>
+    </div>`;
+}
+
+function PersonasPanel({ onClose }) {
+  const [list] = usePersonas();
+  const [editing, setEditing] = useState(null);
+  const [err, setErr] = useState(null);
+  const remove = async (p) => {
+    if (!(await uiConfirm(`Delete the persona "${p.name}"? Threads that armed it stop asking it for critique.`))) return;
+    try { await personasPost("/__personas", { op: "delete", id: p.id }); } catch (e) { setErr(e.message || String(e)); }
+  };
+  if (editing) return html`<${PersonaEditor} key=${editing.id || "new"} initial=${editing} onDone=${() => setEditing(null)} onClose=${onClose}/>`;
+  const n = (list || []).length;
+  return html`
+    <div className="pv-panel personas-panel">
+      <div className="pv-panel-head">
+        <div className="pv-panel-title-wrap">
+          <div className="pv-panel-title">Personas</div>
+          <div className="pv-panel-sub">${list === null ? "Loading…" : n ? `${n} simulated user${n === 1 ? "" : "s"} · arm them from the chat's critic icon` : "Simulated users who critique the work"}</div>
+        </div>
+        <${HoverTip} className="pv-panel-tool" tip="New persona" ariaLabel="New persona" onClick=${() => setEditing(personaBlank())}><${Icon.Plus}/><//>
+        <button type="button" className="pv-panel-close" title="Close" aria-label="Close panel" onClick=${onClose}>×</button>
+      </div>
+      <div className="pv-panel-list">
+        ${err && html`<div className="personas-error">${err}</div>`}
+        ${list !== null && n === 0 && html`<div className="pv-panel-empty">
+          No personas yet. Define one from user or market research, then tick it under the critic icon in the chat composer to have it critique the work.
+          <div className="personas-empty-act"><button type="button" className="personas-btn" onClick=${() => setEditing(personaBlank())}>New persona</button></div>
+        </div>`}
+        ${(list || []).map(p => html`
+          <div key=${p.id} className="pv-file-row personas-row" onClick=${() => setEditing(p)}>
+            <span className="pv-file-glyph"><${Icon.User}/></span>
+            <span className="personas-row-name">${p.name}</span>
+            <span className="personas-row-meta" title=${personaMeta(p)}>${personaMeta(p)}</span>
+            <span className="pv-row-actions">
+              <button type="button" className="pv-rowbtn" title="Edit" aria-label=${"Edit " + p.name}
+                onClick=${(e) => { e.stopPropagation(); setEditing(p); }}><${Icon.Pen}/></button>
+              <button type="button" className="pv-rowbtn" title="Delete" aria-label=${"Delete " + p.name}
+                onClick=${(e) => { e.stopPropagation(); remove(p); }}><${Icon.Trash}/></button>
+            </span>
+          </div>`)}
+      </div>
+    </div>`;
+}
+
+/* Critic picker - the composer icon right of the checks chip. Same portaled
+   perm-menu shell as ChatWorkModePicker. Ticks which personas critique the
+   work this message asks for, and how: as text, or simulated on the pages.
+   PER MESSAGE like the mode (serve.py _mode_send folds the request into what
+   the agent receives), so arming or dropping it never hands a thread off. */
+const CRITIC_HOWS = [
+  { value: "text", label: "Critique as text",
+    hint: "Each persona reads what changed, in a user's words, and reacts. Quick." },
+  { value: "simulate", label: "Simulate on the page",
+    hint: "A fast planner writes a short task table, a browser walks it and screenshots every step, and each persona reacts to the screens as if using the real app." },
+];
+function ChatCriticPicker({ value, onChange, openUp }) {
+  const [list] = usePersonas();
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const ref = useRef(null);
+  const menuRef = useRef(null);
+  const place = () => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const W = 320, GAP = 8;
+    const left = Math.max(GAP, Math.min(r.left, window.innerWidth - W - GAP));
+    setPos(openUp
+      ? { left, bottom: Math.round(window.innerHeight - r.top + 6), width: W, maxHeight: Math.max(120, Math.round(r.top - 6 - GAP)) }
+      : { left, top: Math.round(r.bottom + 6), width: W, maxHeight: Math.max(120, Math.round(window.innerHeight - r.bottom - 6 - GAP)) });
+  };
+  useEffect(() => {
+    if (!open) { setPos(null); return; }
+    place();
+    const off = (e) => {
+      if (ref.current && ref.current.contains(e.target)) return;
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    const esc = (e) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
+    const reflow = () => place();
+    document.addEventListener("mousedown", off);
+    document.addEventListener("keydown", esc, true);
+    window.addEventListener("resize", reflow);
+    window.addEventListener("scroll", reflow, true);
+    return () => {
+      document.removeEventListener("mousedown", off);
+      document.removeEventListener("keydown", esc, true);
+      window.removeEventListener("resize", reflow);
+      window.removeEventListener("scroll", reflow, true);
+    };
+  }, [open]);
+  const rows = list || [];
+  const known = new Set(rows.map(p => p.id));
+  const picked = ((value && value.personas) || []).filter(id => known.has(id));
+  const how = (value && value.how) || "text";
+  const toggle = (id) => {
+    const next = picked.includes(id) ? picked.filter(x => x !== id) : [...picked, id];
+    onChange({ personas: next, how });
+  };
+  const names = rows.filter(p => picked.includes(p.id)).map(p => p.name);
+  const on = picked.length > 0;
+  const tip = on
+    ? `Persona critique armed: ${names.join(", ")} (${how === "simulate" ? "simulated on the page" : "as text"}). Runs when the agent finishes the work.`
+    : "Persona critique - pick simulated users to critique the work";
+  return html`
+    <div className="perm-picker chat-critic-picker" ref=${ref} data-up=${!!openUp}>
+      <button type="button" className="chat-composer-icon-toggle chat-critic-trigger" data-open=${open}
+        aria-haspopup="menu" aria-expanded=${open} aria-label=${on ? `Persona critique: ${picked.length} armed` : "Persona critique"}
+        title=${tip} onClick=${() => setOpen(o => !o)}
+      ><span className="chat-composer-icon-toggle-mark" data-on=${on}><${Icon.Critic}/></span>${on && html`<span className="chat-critic-count">${picked.length}</span>`}</button>
+      ${open && pos && createPortal(html`
+        <div ref=${menuRef} className="perm-menu chat-critic-menu" role="menu"
+          style=${{
+            position: "fixed",
+            top: pos.top != null ? pos.top + "px" : "auto", right: "auto",
+            bottom: pos.bottom != null ? pos.bottom + "px" : "auto",
+            left: pos.left + "px", width: pos.width + "px",
+            maxHeight: pos.maxHeight + "px", overflowY: "auto",
+          }}>
+          <div className="perm-menu-head">Persona critique</div>
+          ${list === null && html`<div className="perm-menu-foot">Loading personas…</div>`}
+          ${list !== null && rows.length === 0 && html`
+            <div className="perm-menu-foot">No personas in this project yet.
+              ${" "}<button type="button" className="chat-guards-note-undo"
+                onClick=${() => { setOpen(false); try { window.dispatchEvent(new CustomEvent("th:open-personas")); } catch {} }}>Define personas</button></div>`}
+          ${rows.map(p => html`
+            <button key=${p.id} type="button" className="perm-item" role="menuitemcheckbox" aria-checked=${picked.includes(p.id)}
+              title=${personaMeta(p)} onClick=${() => toggle(p.id)}>
+              <span className="guard-check" data-on=${picked.includes(p.id)} aria-hidden="true">${picked.includes(p.id) ? html`<${Icon.Check}/>` : null}</span>
+              <span className="perm-item-body">
+                <span className="perm-item-label">${p.name}</span>
+                ${personaMeta(p) && html`<span className="perm-item-hint">${personaMeta(p)}</span>`}
+              </span>
+            </button>`)}
+          ${rows.length > 0 && html`<${React.Fragment}>
+            <div className="perm-menu-head">How</div>
+            ${CRITIC_HOWS.map(o => html`
+              <button key=${o.value} type="button" className="perm-item" role="menuitemradio" aria-checked=${how === o.value}
+                onClick=${() => onChange({ personas: picked, how: o.value })}>
+                <span className="guard-check chat-critic-radio" data-on=${how === o.value} aria-hidden="true">${how === o.value ? html`<${Icon.Check}/>` : null}</span>
+                <span className="perm-item-body">
+                  <span className="perm-item-label">${o.label}</span>
+                  <span className="perm-item-hint">${o.hint}</span>
+                </span>
+              </button>`)}
+            <div className="perm-menu-foot">
+              Runs once the agent finishes the work. Each persona is an isolated agent that sees only its profile, the files granted to it and the screens - never code. You get suggestions; nothing is changed.
+              ${" "}<button type="button" className="chat-guards-note-undo"
+                onClick=${() => { setOpen(false); try { window.dispatchEvent(new CustomEvent("th:open-personas")); } catch {} }}>Edit personas</button>
+            </div><//>`}
+        </div>
+      `, document.body)}
+    </div>`;
+}
+
+/* The critique in the thread. The daemon appends a `persona_critique` event
+   on every stage change; the card reads the full report from /__critic/<id>
+   (screens are files, never inlined in the event log) and polls while it runs. */
+const CRITIQUE_STAGE = { planning: "Planning the session", walking: "Walking the flow", critiquing: "Personas reviewing" };
+const CRITIQUE_FEEL = { fine: "fine", unsure: "unsure", stuck: "stuck", pleased: "pleased" };
+function PersonaCritiqueCard({ id, status, stage }) {
+  const [report, setReport] = useState(null);
+  const [err, setErr] = useState(null);
+  const [device, setDevice] = useState(null);
+  const [step, setStep] = useState(null);
+  const load = useCallback(() => {
+    fetch(apiUrl(`/__critic/${encodeURIComponent(id)}`))
+      .then(r => r.json().then(j => (r.ok ? j : Promise.reject(new Error(j.error || `HTTP ${r.status}`)))))
+      .then(j => { setReport(j); setErr(null); })
+      .catch(e => setErr(e.message || String(e)));
+  }, [id]);
+  useEffect(() => { load(); }, [load, status, stage]);
+  const running = !report || report.status === "running";
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [running, load]);
+  if (!report) {
+    return html`<div className="critique-card"><div className="critique-head"><${Icon.Critic}/><span className="critique-title">Persona critique</span>
+      <span className="critique-status">${err ? "Could not load: " + err : html`<${React.Fragment}><span className="chat-active-agent-spin"/> starting<//>`}</span></div></div>`;
+  }
+  const walks = report.walks || {};
+  const devices = Object.keys(walks);
+  const dev = device && walks[device] ? device : devices[0];
+  const walk = dev ? walks[dev] : null;
+  const steps = (walk && walk.steps) || [];
+  const tasks = report.tasks || [];
+  const firstStuck = steps.find(s => !s.ok);
+  const cur = step != null ? step : (firstStuck ? firstStuck.n : (steps.length ? steps[0].n : null));
+  const curStep = steps.find(s => s.n === cur);
+  const curTask = cur ? tasks[cur - 1] : null;
+  const shot = (name) => apiUrl(`/__critic/${encodeURIComponent(id)}/shot?f=${encodeURIComponent(name)}`);
+  const personas = report.personas || [];
+  const secs = report.durationMs ? Math.round(report.durationMs / 1000) : null;
+  const statusLine = report.status === "running"
+    ? html`<${React.Fragment}><span className="chat-active-agent-spin"/> ${CRITIQUE_STAGE[report.stage] || "Working"}<//>`
+    : report.status === "error"
+      ? "Failed: " + (report.error || "unknown error")
+      : `Done${secs != null ? " in " + (secs >= 60 ? Math.floor(secs / 60) + "m " + (secs % 60) + "s" : secs + "s") : ""}`;
+  const actionText = (t) => {
+    if (!t) return "";
+    if (t.do === "open") return t.page && t.page !== "P1" ? "Open screen " + String(t.page).slice(1) : "Open the start screen";
+    if (t.do === "click") return `Click "${t.target}"`;
+    if (t.do === "fill") return `Type "${t.value}" into "${t.target}"`;
+    if (t.do === "select") return `Choose "${t.value}" in "${t.target}"`;
+    if (t.do === "press") return "Press " + (t.value || "Enter");
+    if (t.do === "scroll") return "Scroll down" + (t.target ? ` to "${t.target}"` : "");
+    return "Look at the screen";
+  };
+  return html`
+    <div className="critique-card" data-status=${report.status}>
+      <div className="critique-head">
+        <${Icon.Critic}/>
+        <span className="critique-title">Persona critique</span>
+        <span className="critique-how">${report.how === "simulate" ? "simulated on the page" : "as text"}</span>
+        <span className="critique-status">${statusLine}</span>
+      </div>
+      ${(report.summary || []).length > 0 && html`
+        <div className="critique-sec">
+          <div className="critique-sec-head">What changed</div>
+          <ul className="critique-list">${report.summary.map((s, i) => html`<li key=${i}>${s}</li>`)}</ul>
+        </div>`}
+      ${tasks.length > 0 && html`
+        <div className="critique-sec">
+          <div className="critique-sec-head">Tasks</div>
+          <table className="critique-table">
+            <thead><tr><th>#</th><th>Task</th><th>Action</th>${tasks.some(t => t.lookFor) && html`<th>Look for</th>`}</tr></thead>
+            <tbody>${tasks.map((t, i) => {
+              const s = steps.find(x => x.n === i + 1);
+              return html`<tr key=${i} data-active=${cur === i + 1} data-failed=${!!(s && !s.ok)} onClick=${() => steps.length && setStep(i + 1)}>
+                <td>${i + 1}</td><td>${t.goal}</td><td>${actionText(t)}</td>${tasks.some(x => x.lookFor) && html`<td>${t.lookFor}</td>`}</tr>`;
+            })}</tbody>
+          </table>
+        </div>`}
+      ${steps.length > 0 && html`
+        <div className="critique-sec">
+          <div className="critique-sec-head">
+            <span>Session</span>
+            ${devices.length > 1 && html`<span className="critique-devs">${devices.map(d => html`<button key=${d} type="button"
+              className="critique-dev" data-on=${d === dev} onClick=${() => setDevice(d)}>${d === "mobile" ? "Phone" : "Computer"}</button>`)}</span>`}
+          </div>
+          <div className="critique-strip">
+            ${steps.map(s => html`<button key=${s.n} type="button" className="critique-thumb" data-on=${s.n === cur} data-failed=${!s.ok}
+              title=${`Step ${s.n}: ${actionText(tasks[s.n - 1])}${s.ok ? "" : " - " + (s.error || "failed")}`} onClick=${() => setStep(s.n)}>
+              ${s.shot ? html`<img src=${shot(s.shot)} alt=${"Step " + s.n} loading="lazy"/>` : html`<span className="critique-thumb-none">no screen</span>`}
+              <span className="critique-thumb-n">${s.ok ? "" : html`<${Icon.Alert}/>`}${s.n}</span>
+            </button>`)}
+          </div>
+          ${curStep && html`
+            <div className="critique-step">
+              <div className="critique-step-cap">
+                <strong>Step ${curStep.n}</strong> · ${curTask ? (curTask.goal || actionText(curTask)) : ""}
+                <span className="critique-step-did">${actionText(curTask)}${curStep.ok ? "" : html`<${React.Fragment}> - <span className="critique-fail">${curStep.error || "could not be done"}</span><//>`}</span>
+              </div>
+              ${curStep.shot && html`<a href=${shot(curStep.shot)} target="_blank" rel="noopener" className="critique-step-shot" title="Open full size">
+                <img src=${shot(curStep.shot)} alt=${"Screen at step " + curStep.n}/></a>`}
+              ${personas.filter(p => (p.device || "desktop") === dev && (p.steps || []).some(x => x.n === curStep.n)).map(p => {
+                const r = p.steps.find(x => x.n === curStep.n);
+                return html`<div key=${p.id} className="critique-thought" data-feel=${r.feel}>
+                  <span className="critique-who"><${Icon.User}/>${p.name}</span>
+                  <span className="critique-feel">${CRITIQUE_FEEL[r.feel] || r.feel}</span>
+                  <span className="critique-thought-text">${r.thought}</span>
+                </div>`;
+              })}
+            </div>`}
+        </div>`}
+      <div className="critique-sec">
+        <div className="critique-sec-head">Suggestions</div>
+        ${personas.map(p => html`
+          <div key=${p.id} className="critique-persona" data-status=${p.status}>
+            <div className="critique-persona-head">
+              <span className="critique-who"><${Icon.User}/>${p.name}</span>
+              ${p.role && html`<span className="critique-persona-role">${p.role}</span>`}
+              ${p.status === "running" || p.status === "waiting" ? html`<span className="critique-status"><span className="chat-active-agent-spin"/> ${p.status === "waiting" ? "waiting" : "reviewing"}</span>` : null}
+            </div>
+            ${p.status === "error" && html`<div className="critique-fail">${p.error || "no answer"}</div>`}
+            ${p.verdict && html`<div className="critique-verdict">"${p.verdict}"</div>`}
+            ${(p.suggestions || []).length > 0 && html`<ul className="critique-sugg">${p.suggestions.map((s, i) => html`
+              <li key=${i} data-priority=${s.priority}>
+                <span className="critique-prio">${s.priority}</span>
+                <span><strong>${s.title}</strong>${s.why ? " - " + s.why : ""}${s.step ? html`<${React.Fragment}> <button type="button" className="critique-steplink" onClick=${() => { setDevice(p.device || "desktop"); setStep(s.step); }}>step ${s.step}</button><//>` : ""}</span>
+              </li>`)}</ul>`}
+          </div>`)}
+      </div>
+    </div>`;
+}
+
 function PreviewFilesPanel({ activePath, onClose }) {
   const [entries, setEntries] = useState(null);   // null = loading
   const [collapsed, setCollapsed] = useState(() => new Set());
@@ -104131,6 +104740,8 @@ function WorkflowAgentChatDialog({ node, wiredSystem, wiredInputs, wiredReadRoot
       prompt: fullPrompt, title, permissionMode,
       guards: (opts && opts.guards) || loadChatGuards(),
       mode: (opts && opts.mode) || undefined,
+      // The persona critique armed in the footer for this first message.
+      critic: (opts && opts.critic) || undefined,
     });
     setChatRun(run);
     onChange && onChange({ runId: run.runId, lastRunId: run.runId });
@@ -109140,6 +109751,8 @@ function App() {
       guards: (opts && opts.guards) || loadChatGuards(),
       // The footer's chat mode for this first message (never remembered).
       mode: (opts && opts.mode) || undefined,
+      // The persona critique armed in the footer for this first message.
+      critic: (opts && opts.critic) || undefined,
     });
     setChatRun(run);
     setLastRun(run);
