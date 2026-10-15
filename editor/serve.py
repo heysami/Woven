@@ -10912,6 +10912,8 @@ class _ChatFileIndex:
                     "turnsCompleted": 0,
                     "exitCode":       None,
                     "lastSeq":        -1,
+                    # what the unread dot compares - see _is_lifecycle_event
+                    "activitySeq":    -1,
                     "modifying":      False,
                     "historical":     True,
                     # "waiting on YOU to pick a card" - the only state that
@@ -10973,6 +10975,12 @@ class _ChatFileIndex:
             seq_v = rec.get("seq")
             if isinstance(seq_v, int) and seq_v > meta["lastSeq"]:
                 meta["lastSeq"] = seq_v
+            # Last line wins rather than max: a run resumed after a restart
+            # numbers new events from len(events), which can sit below seqs
+            # already on disk, and the live RunState tracks the last append.
+            if (isinstance(seq_v, int) and seq_v >= 0
+                    and not _is_lifecycle_event(rec.get("type"), rec.get("data"))):
+                meta["activitySeq"] = seq_v
         self.offset = start + len(chunk)
 
 
@@ -11018,6 +11026,8 @@ def _scan_chat_jsonl_records(candidates: list) -> dict:
                 cur["updatedAt"] = meta["updatedAt"]
             if (meta.get("lastSeq") or -1) > (cur.get("lastSeq") or -1):
                 cur["lastSeq"] = meta["lastSeq"]
+            if (meta.get("activitySeq") or -1) > (cur.get("activitySeq") or -1):
+                cur["activitySeq"] = meta["activitySeq"]
             if meta.get("done"):
                 cur["done"] = True
             if meta.get("turnDone"):
@@ -11491,6 +11501,12 @@ def _rehydrate_run_from_jsonl(run_id: str, project_root: str,
         state.exit_code = exit_code
         state.events = events
         _gate_recompute(state)
+        # Last persisted line wins, the same rule the /__runs index uses, so a
+        # rehydrated run reports the activitySeq it had as a historical row.
+        for ev in events:
+            s_v = ev.get("seq")
+            if isinstance(s_v, int) and s_v >= 0 and not _is_lifecycle_event(ev.get("type"), ev.get("data")):
+                state.activity_seq = s_v
         for event in events:
             data = event.get("data") or {}
             run_jobs.reduce_job(state.jobs, data)
@@ -11649,6 +11665,29 @@ def _gate_recompute(state) -> None:
     state.gate_tail = gate["tail"]
 
 
+# ── unread vs lifecycle bookkeeping ───────────────────────────────────────
+# The runs list lights a row when the run moved past the user's read
+# watermark. Process teardown is not something to read: the shutdown hook
+# appends `status: interrupted` and the reader thread an `end` line to every
+# run whose CLI was still alive (idle threads included), and the idle park
+# writes the same `end`. Counting those made every recently used thread come
+# back unread after a daemon restart. `activitySeq` skips them.
+_LIFECYCLE_STATUS_LABELS = ("interrupted", "resumed", "chain-dropped")
+
+
+def _is_lifecycle_event(ev_type, data) -> bool:
+    if ev_type in ("end", "__finish"):
+        return True
+    d = data if isinstance(data, dict) else {}
+    if ev_type == "status" and d.get("label") in _LIFECYCLE_STATUS_LABELS:
+        return True
+    # _drain_stdout closing out native jobs because the process went away.
+    if (ev_type == "agent" and d.get("type") == "job" and d.get("status") == "unknown"
+            and d.get("detail") == "runtime disconnected before job completion"):
+        return True
+    return False
+
+
 class RunState:
     """One spawned agent. Holds the subprocess, the append-only event log, and
     a set of `threading.Event`s waiters block on. SSE handlers register an
@@ -11674,6 +11713,10 @@ class RunState:
                  # ordinary project runs.
                  "scope", "section",
                  "started_at", "events", "lock", "waiters",
+                 # seq of the last event that is NOT lifecycle bookkeeping
+                 # (see _is_lifecycle_event). The runs list's unread dot
+                 # compares this, not lastSeq, against the read watermark.
+                 "activity_seq",
                  # wall-clock of the LAST activity on this run (any appended
                  # event, or finish()). The runs list orders by this, not by
                  # started_at, so a thread you just replied to floats to the
@@ -11812,6 +11855,7 @@ class RunState:
         self.execution_profile = None
         self.gate_pending = False
         self.gate_tail = ""
+        self.activity_seq = -1
         self.exit_settled = threading.Event()
         self.exit_settled.set()     # no drain yet; _drain_stdout clears it
         self._resume_probe = False
@@ -11944,6 +11988,8 @@ class RunState:
             gate = {"pending": self.gate_pending, "tail": self.gate_tail}
             _gate_feed(gate, ev_type, data)
             self.gate_pending, self.gate_tail = bool(gate["pending"]), gate["tail"]
+            if not _is_lifecycle_event(ev_type, data):
+                self.activity_seq = seq
             waiters = list(self.waiters)
         # Phase 5a - also persist the event to the per-branch chat JSONL so the
         # conversation survives daemon restarts. Fire-and-forget; a write
@@ -35264,6 +35310,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         for s in states:
             with s.lock:
                 last_seq = s.events[-1]["seq"] if s.events else -1
+                activity_seq = s.activity_seq
                 gate_pending = bool(s.gate_pending)
             live_ids.add(s.run_id)
             live.append({
@@ -35285,6 +35332,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 "exitCode": s.exit_code,
                 "stopReason": s.stop_reason,
                 "lastSeq": last_seq,
+                "activitySeq": activity_seq,
                 "modifying": s.modifying,
                 "touchedPaths": list(s.touched_paths),
                 "project": s.project_id,

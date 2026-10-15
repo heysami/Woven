@@ -12845,6 +12845,15 @@ function markRunsRead(pairs) {
   try { localStorage.setItem(runsReadKey(), JSON.stringify(next)); } catch {}
   try { window.dispatchEvent(new CustomEvent("woven:runs-read", { detail: { all: true } })); } catch {}
 }
+/* Unread compares the run's last real ACTIVITY, not lastSeq: a daemon restart
+   or an idle park appends `end` / `interrupted` lines to threads the user
+   already read, and those must not light the row. Watermarks still store
+   lastSeq (always >= activitySeq). Falls back to lastSeq on an older daemon. */
+function runIsUnread(r, read) {
+  const s = Number.isFinite(r.activitySeq) ? r.activitySeq
+    : (Number.isFinite(r.lastSeq) ? r.lastSeq : -1);
+  return s > (read[r.runId] ?? -1);
+}
 function forgetRunRead(runId) {
   const prev = loadRunsRead();
   if (!(runId in prev)) return;
@@ -13060,8 +13069,7 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
     if (target) target.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [unreadRows]);
   const unreadTotal = useMemo(
-    () => (runs || []).filter(
-      r => (Number.isFinite(r.lastSeq) ? r.lastSeq : -1) > (read[r.runId] ?? -1)).length,
+    () => (runs || []).filter(r => runIsUnread(r, read)).length,
     [runs, read]);
   const markAllRead = useCallback(() => {
     markRunsRead((runs || []).map(r => [r.runId, r.lastSeq]));
@@ -13196,7 +13204,7 @@ function LeftChatRunsList({ onOpenRun, onStartNewChat, onAfterPick }) {
         // Unread = this run has produced events past the watermark we stored
         // the last time it was on screen. A run we have never seen at all has
         // no entry, so anything it has ever emitted counts as new.
-        const unread = (Number.isFinite(r.lastSeq) ? r.lastSeq : -1) > (read[r.runId] ?? -1);
+        const unread = runIsUnread(r, read);
         /* The row's ONE circle, and the whole rule for it:
              live      - the agent is mid-turn RIGHT NOW (accent, pulsing)
              attention - it asked a question and is waiting on YOUR pick
