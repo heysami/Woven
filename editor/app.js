@@ -17131,8 +17131,22 @@ function GitPanel({ railTop, panelRef, onStartChatWithPrompt, embedded, urlSuffi
                   : html`<button className="th-git-pill th-git-pill-btn" onClick=${() => openDiff({ kind: "working" }, "Uncommitted changes")}
                       title="See everything changed since your last commit">${st.changedCount} changed ↗</button>`)
                 : html`<span className="th-git-pill">clean</span>`}
-              ${st.ahead > 0 && html`<span className="th-git-pill is-ahead">↑ ${st.ahead}</span>`}
-              ${st.behind > 0 && html`<span className="th-git-pill is-behind">↓ ${st.behind}</span>`}
+              ${st.ahead > 0 && html`<span className="th-git-pill is-ahead"
+                title=${st.ahead + " local commit" + (st.ahead === 1 ? "" : "s") + " not pushed to GitHub yet"}>↑ ${st.ahead}</span>`}
+              ${st.behind > 0 && html`<span className="th-git-pill is-behind"
+                title=${st.behind + " commit" + (st.behind === 1 ? "" : "s") + " on GitHub you haven't pulled yet"}>↓ ${st.behind}</span>`}
+              ${hasRemote && st.hasCommits && (() => {
+                const at = st.lastPushedAt ? new Date(st.lastPushedAt * 1000).toLocaleString() : "";
+                const label = !st.tracked ? "Not pushed yet"
+                  : st.ahead > 0 ? (at ? "Last push " + agoLabel(st.lastPushedAt) : "Not pushed")
+                  : (at ? "Pushed " + agoLabel(st.lastPushedAt) : "All pushed");
+                const tip = !st.tracked ? "This branch isn't on GitHub yet - Push to upload it"
+                  : (st.ahead > 0 ? st.ahead + " commit" + (st.ahead === 1 ? " is" : "s are") + " only on this computer. "
+                                  : "Every commit on this branch is on GitHub. ")
+                    + (at ? "Last pushed from this computer " + at : "No push from this computer recorded yet");
+                return html`<span className=${"th-git-pushed" + (st.tracked && st.ahead === 0 ? " is-synced" : "")} title=${tip}>
+                  ${st.tracked && st.ahead === 0 && html`<${Icon.Check}/>`}${label}</span>`;
+              })()}
             </div>
 
             ${!isGuest && html`

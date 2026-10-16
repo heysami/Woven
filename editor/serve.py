@@ -28825,6 +28825,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                         _gitops.ensure_gitignore(root, _GITIGNORE_LOCAL)
                         _gitops.ensure_gitattributes(root, _GITATTRIBUTES_LOCAL)
                     _gitops.heal_tracked_ignored(root)
+                    _gitops.heal_upstream_urls(root)
                 except Exception:
                     pass                          # best-effort; status must never 500 on heal
                 finally:

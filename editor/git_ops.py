@@ -127,19 +127,80 @@ def status(root):
     out["changedCount"] = len(changed)
     _c, remote, _e = _git(root, "remote", "get-url", "origin")
     out["remote"] = remote.strip() if _c == 0 else ""
-    # ahead/behind vs upstream, if any
+    # ahead/behind vs upstream, falling back to origin/<branch> when @{u}
+    # doesn't resolve (no upstream set, or one pointing at a bare URL - see
+    # heal_upstream_urls) so the count still says what isn't on GitHub.
     out["ahead"] = out["behind"] = 0
-    _c, ab, _e = _git(root, "rev-list", "--left-right", "--count", "@{u}...HEAD")
-    if _c == 0 and ab.strip():
-        try:
-            b, a = ab.split()
-            out["behind"], out["ahead"] = int(b), int(a)
-        except Exception:
-            pass
+    up = ""
+    _c, upname, _e = _git(root, "rev-parse", "--symbolic-full-name", "@{u}")
+    if _c == 0 and upname.strip():
+        up = upname.strip()
+    elif out["branch"] != "HEAD":
+        ref = "refs/remotes/origin/" + out["branch"]
+        if _git(root, "rev-parse", "--verify", "-q", ref)[0] == 0:
+            up = ref
+    out["tracked"] = bool(up)
+    if up:
+        _c, ab, _e = _git(root, "rev-list", "--left-right", "--count", up + "...HEAD")
+        if _c == 0 and ab.strip():
+            try:
+                b, a = ab.split()
+                out["behind"], out["ahead"] = int(b), int(a)
+            except Exception:
+                pass
+    out["lastPushedAt"] = (last_push_time(root, out["branch"])
+                           if out["branch"] != "HEAD" else None)
     _c, last, _e = _git(root, "log", "-1", "--pretty=%h %s")
     out["lastCommit"] = last.strip() if _c == 0 else ""
     out["hasCommits"] = _c == 0
     return out
+
+
+def last_push_time(root, branch):
+    """Unix seconds of the newest push of `branch`, read from the reflog of
+    origin/<branch>: git logs "update by push" there for a named-remote push,
+    and _record_tracking does the same for the token-URL pushes. None when
+    no push was ever recorded on this machine."""
+    code, out, _e = _git(root, "reflog", "show", "--date=unix", "--format=%gd%x09%gs",
+                         "-n", "200", "refs/remotes/origin/" + branch)
+    if code != 0:
+        return None
+    for line in out.splitlines():
+        sel, _, msg = line.partition("\t")
+        if msg.strip() == "update by push":
+            m = re.search(r"@\{(\d+)\}", sel)
+            if m:
+                return int(m.group(1))
+    return None
+
+
+def _record_tracking(root, branch, sha, msg):
+    """Point origin/<branch> at `sha` and make it the branch's upstream. A
+    named `git push -u origin` / `git fetch origin` does both by itself, but
+    the one-shot token-URL ops target an anonymous URL, so git skips them -
+    and ahead/behind plus the last-push time go stale after every
+    authenticated push or pull."""
+    sha = (sha or "").strip()
+    if not sha:
+        return
+    _git(root, "update-ref", "--create-reflog", "-m", msg,
+         "refs/remotes/origin/" + branch, sha)
+    _git(root, "config", "branch." + branch + ".remote", "origin")
+    _git(root, "config", "branch." + branch + ".merge", "refs/heads/" + branch)
+
+
+def heal_upstream_urls(root):
+    """Older publish() pushed with `-u <token URL>`, which made git record
+    that URL - token included - as branch.<b>.remote in .git/config, and
+    @{u} then never resolves (ahead stuck at 0). Point those branches back at
+    origin, scrubbing the credential."""
+    code, out, _e = _git(root, "config", "--get-regexp", r"^branch\..*\.remote$")
+    if code != 0:
+        return
+    for line in out.splitlines():
+        key, _, val = line.partition(" ")
+        if "x-access-token:" in val:
+            _git(root, "config", key, "origin")
 
 
 def draft_message(root):
@@ -301,12 +362,17 @@ def publish(root, token=None):
     push_args = ["push", "-u", "origin", branch]
     env_remote = None
     if token and remote.strip().startswith("https://"):
-        # one-shot authenticated URL; not written to config
+        # one-shot authenticated URL; not written to config. No -u here: with
+        # a URL target git would save that URL (token and all) as the
+        # branch's upstream - _record_tracking sets origin up instead.
         env_remote = remote.strip().replace("https://", f"https://x-access-token:{token}@", 1)
-        push_args = ["push", "-u", env_remote, branch]
+        push_args = ["push", env_remote, branch]
+    _c, sha, _e = _git(root, "rev-parse", "refs/heads/" + branch)
     code, out, err = _git(root, *push_args, timeout=120)
     if code != 0:
         raise RuntimeError(f"git push failed: {(err or out).strip()[:400]}")
+    if env_remote:
+        _record_tracking(root, branch, sha, "update by push")
     return {"ok": True, "branch": branch, "detail": (err or out).strip()[:400]}
 
 
@@ -330,6 +396,7 @@ def pull(root, token=None):
     # with "Need to specify how to reconcile divergent branches". We always merge
     # (host-authoritative): conflicts land in the working tree for resolve().
     pull_args = ["pull", "--no-rebase", "--no-edit", "origin", branch]
+    env_remote = None
     if token and remote.strip().startswith("https://"):
         # one-shot authenticated URL; not written to config
         env_remote = remote.strip().replace("https://", f"https://x-access-token:{token}@", 1)
@@ -338,6 +405,11 @@ def pull(root, token=None):
     conflicts = conflicted_files(root)
     if code != 0 and not conflicts:
         raise RuntimeError(f"git pull failed: {(err or out).strip()[:400]}")
+    if env_remote:
+        # The fetch landed (a conflict is a merge-stage failure): FETCH_HEAD is
+        # GitHub's tip, which a named pull would have stored as origin/<branch>.
+        _c, fsha, _e = _git(root, "rev-parse", "FETCH_HEAD")
+        _record_tracking(root, branch, fsha if _c == 0 else "", "fetch: woven pull")
     return {"ok": not conflicts, "branch": branch,
             "detail": (out or err).strip()[:400], "conflicts": conflicts}
 
@@ -417,6 +489,7 @@ def discard_to_remote(root, token=None):
     _c, branch, _e = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
     branch = branch.strip() or "main"
     fetch_args = ["fetch", "origin", branch]
+    env_remote = None
     if token and remote.strip().startswith("https://"):
         # one-shot authenticated URL; not written to config
         env_remote = remote.strip().replace("https://", f"https://x-access-token:{token}@", 1)
@@ -424,6 +497,9 @@ def discard_to_remote(root, token=None):
     code, out, err = _git(root, *fetch_args, timeout=120)
     if code != 0:
         raise RuntimeError(f"git fetch failed: {(err or out).strip()[:400]}")
+    if env_remote:
+        _c, fsha, _e = _git(root, "rev-parse", "FETCH_HEAD")
+        _record_tracking(root, branch, fsha if _c == 0 else "", "fetch: woven reset")
     # Reset to the freshly-fetched ref. FETCH_HEAD is what we just brought down
     # (origin/<branch> may not exist yet on a never-fetched repo); it points at
     # the same commit and always exists post-fetch.

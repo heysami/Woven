@@ -5579,6 +5579,11 @@ body[data-panel-resizing="true"] .dock-divider::after { background: var(--accent
 .th-git-msg:focus { outline: none; border-color: var(--accent); }
 .th-git-status { display: flex; flex-direction: column; gap: 8px; }
 .th-git-stat-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* "Pushed 5m ago" / "Last push 3h ago": right end of the stat row. */
+.th-git-pushed { margin-left: auto; display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11.5px; color: var(--text-muted); white-space: nowrap; }
+.th-git-pushed.is-synced { color: var(--success, #16A34A); }
+.th-git-pushed svg { width: 12px; height: 12px; flex: 0 0 auto; }
 .th-git-pill {
   font-family: var(--font-mono);
   font-size: 10px;
