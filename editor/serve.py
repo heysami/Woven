@@ -28365,7 +28365,8 @@ class H(http.server.SimpleHTTPRequestHandler):
     # POST /__personas?project= {op: upsert, persona} | {op: delete, id}
     # POST /__personas/draft?project= {paths, notes, hint} -> {draft: {profile}, notes}
     # POST /__personas/taste?project= {id, data: <image data URL>} -> {path}
-    # POST /__critic/run?project=&run= {personas, how, change, pages?, flow?}
+    # POST /__critic/run?project=&run= {personas, how, changes: [{change, pages?, flow?}]}
+    #      (the first form's single {change, pages?, flow?} still works)
     #      -> {id, status, text}; blocks up to &wait= seconds (default 100,
     #      under an agent shell's 2-minute default), then the caller polls
     # GET  /__critic/<id>?project=[&wait=][&format=text] -> report | digest
@@ -28401,9 +28402,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         return self._reply(400, {"error": "op must be upsert or delete"})
 
     def _persona_profiles(self, state):
-        """(planner profile, persona profile): the planner on the runtime's
-        FAST model, the personas on the thread's own model. OpenCode has no
-        image input here, so a simulation falls back to Claude or Codex."""
+        """(economy profile, thread profile): the planner and every persona on
+        the runtime's FAST (economy) model, a persona marked deep thinking on
+        the thread's own model. OpenCode has no image input here, so a
+        simulation falls back to Claude or Codex."""
         cfg = _compact_config()
         runtime = getattr(state, "agent_id", None) or _agent_default_runtime()
         inherited = getattr(state, "model", None) if state is not None else _agent_default_model()
@@ -28474,15 +28476,10 @@ class H(http.server.SimpleHTTPRequestHandler):
         if not chosen:
             return self._reply(404, {"error": "none of those personas exist in this project",
                                      "known": [{"id": p["id"], "name": p.get("name")} for p in rows.values()]})
-        change = body.get("change").strip() if isinstance(body.get("change"), str) else ""
-        if not change:
-            return self._reply(400, {"error": "change: say what changed, in a user's words"})
-        pages = body.get("pages")
-        if isinstance(pages, str):
-            pages = [pages]
-        pages = [p.strip() for p in (pages or []) if isinstance(p, str) and p.strip()][:_personas.MAX_PAGES]
-        if critic["how"] == "simulate" and not pages:
-            return self._reply(400, {"error": "pages: name the page(s) to open (a prototype slug or a path under source/)"})
+        try:
+            changes = _personas.norm_changes(body, critic["how"] == "simulate")
+        except ValueError as e:
+            return self._reply(400, {"error": str(e)})
         run_id = (_qs_get(qs, "run") or (body.get("run") if isinstance(body.get("run"), str) else "") or "").strip()
         with RUNS_LOCK:
             state = RUNS.get(run_id) if run_id else None
@@ -28505,12 +28502,18 @@ class H(http.server.SimpleHTTPRequestHandler):
             if state is not None:
                 state.append("agent", ev)
 
-        deps = {"fast_complete": caller(fast, 180), "persona_complete": caller(persona, 300),
+        # Personas review on the economy model (the planner's); one marked deep
+        # thinking reviews on the thread's own model.
+        deps = {"fast_complete": caller(fast, 180), "persona_complete": caller(fast, 300),
+                "deep_complete": caller(persona, 300),
                 "resolve_page": resolve_page, "emit": emit,
                 "walker": lambda args: _personas.run_walker(INSTALL_ROOT, args)}
+
+        def label(profile):
+            return profile.get("model") or (profile.get("runtime", "") + " default")
         cid = _personas.start(root, project_id, run_id or None, chosen,
-                              {"how": critic["how"], "change": change[:4000], "pages": pages,
-                               "flow": body.get("flow").strip()[:600] if isinstance(body.get("flow"), str) else ""},
+                              {"how": critic["how"], "changes": changes,
+                               "models": {"cheap": label(fast), "deep": label(persona)}},
                               deps)
         try:
             wait_s = float(_qs_get(qs, "wait") or 100)

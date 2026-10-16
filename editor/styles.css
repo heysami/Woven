@@ -6983,6 +6983,18 @@ body:has(.workflow-body[data-view="proto"]) .canvas-ctxmenu {
   color: var(--text-muted);
   font-size: 10.5px;
 }
+/* Deep thinking: a persona that critiques on the thread's model. Only the
+   deep ones are marked; the economy default carries no marker. */
+.persona-deep-mark {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-text);
+  white-space: nowrap;
+}
+.personas-deep-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.personas-deep-row .share-switch { flex: 0 0 auto; }
+.personas-deep-row .personas-help { flex: 1; min-width: 0; }
 .personas-empty-act { margin-top: 10px; }
 .personas-form {
   flex: 1;
@@ -35911,6 +35923,58 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
    screenshots (the visual digest), each persona's per-step reaction and
    their suggestions. Text markers only - no pills. */
 .chat-critique { padding-right: 0; }
+/* The thread keeps one line per critique (the live one is docked above the
+   composer, the report opens as a dock tile): the card's head as a button. */
+button.critique-row {
+  display: block;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.critique-row .critique-head { border-bottom: 0; }
+button.critique-row:hover .critique-head { background: var(--surface-3); }
+.critique-row-go { display: inline-flex; flex: 0 0 auto; color: var(--text-faint); transform: rotate(-90deg); }
+button.critique-row .critique-head > svg.critique-row-go { color: var(--text-faint); }
+button.critique-row:hover .critique-row-go { color: var(--text-muted); }
+.critique-head .critique-how { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The report tile (CritiquePanel): body sections are the card's, unboxed. */
+.th-critique-panel .critique-card { border: 0; border-radius: 0; background: none; overflow-y: auto; }
+.critique-notes { color: var(--text-muted); font-size: 11px; }
+.critique-change + .critique-change { border-top: 1px solid var(--border); padding-top: 10px; }
+.critique-change { display: flex; flex-direction: column; gap: 4px; }
+.critique-change-head { display: flex; align-items: baseline; gap: 6px; font-weight: 600; color: var(--text); }
+.critique-change-n {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent-text);
+}
+.critique-journeys { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.critique-journey {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.critique-journey + .critique-journey { border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent); }
+.critique-journey:hover { background: var(--surface-2); }
+.critique-journey[data-on="true"] { background: var(--accent-soft); }
+.critique-journey-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.critique-journey-who { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 11px; }
+.critique-journey-stuck { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; font-size: 10.5px; font-weight: 600; }
+.critique-journey-stuck svg { width: 11px; height: 11px; }
 .critique-card {
   border: 1px solid var(--border);
   border-radius: 8px;

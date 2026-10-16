@@ -7,15 +7,21 @@ Two halves:
      the Personas panel on the workflow rail (canvas and preview).
 
   2. CRITIQUE - the composer's critic picker arms a critique for a message.
-     When the agent finishes that work it POSTs /__critic/run with what
-     changed (in a user's words) and the pages to open. This module then:
-       - asks a FAST model for a short user-research plan (a task table),
-       - walks that plan in a real browser (tools/qa/persona_walk.py),
-         screenshotting every step, once per device the personas use,
-       - runs every persona as an ISOLATED one-shot with NO tools: its prompt
-         carries only its profile, the documents the user granted it, the
-         plain-language summary and (simulate) the step screenshots. A
-         persona never sees code, file names or the agent's transcript.
+     When the agent finishes that work it POSTs /__critic/run with the
+     CHANGES it made (each in a user's words, with the pages to open). One
+     message can carry several changes, each meets different personas, and
+     a persona can meet one change through several journeys. So, per change:
+       - a FAST model plans it: the plain-language summary, which of the
+         chosen personas it touches, and one to three JOURNEYS (task tables),
+         each naming the personas who take it,
+       - every journey is walked in a real browser (tools/qa/persona_walk.py),
+         screenshotting every step, once per device its personas use,
+       - every persona x change it touches is one REVIEW: an ISOLATED one-shot
+         with NO tools, whose prompt carries only its profile, the documents
+         the user granted it, the change's summary and (simulate) the steps of
+         its journeys through that change. A persona never sees code, file
+         names or the agent's transcript. It runs on the economy model unless
+         the persona is marked deep thinking (then the thread's own model).
      The report lives under <project>/personas/critiques/<id>/ (gitignored)
      and is streamed to the chat thread as a `persona_critique` event the
      card renders; the agent gets a text digest to turn into suggestions.
@@ -89,6 +95,9 @@ LINK_WORKERS = 4
 
 MAX_PAGES = 4
 MAX_TASKS = 8
+MAX_CHANGES = 4
+MAX_JOURNEYS = 3      # per change
+MAX_FLOWS = 8         # journeys walked per critique
 MAX_SUGGESTIONS = 5
 PERSONA_WORKERS = 4
 
@@ -258,6 +267,10 @@ def normalize(raw, prev=None):
         if c and (not c.startswith(TASTE_DIR + "/") or c.startswith(TASTE_DIR + "/" + pid + "-")) and c not in taste:
             taste.append(c)
     out["taste"] = taste[:MAX_TASTE]
+    # Deep thinking: critique on the thread's own model instead of the
+    # economy one (an expert whose judgement needs reasoning).
+    if raw.get("deep") is True:
+        out["deep"] = True
     now = int(time.time() * 1000)
     out["createdAt"] = (prev or {}).get("createdAt") or now
     out["updatedAt"] = now
@@ -351,16 +364,44 @@ def norm_critic(raw):
     return {"personas": ids[:8], "how": raw.get("how") if raw.get("how") in HOWS else "text"}
 
 
+def norm_changes(body, simulate):
+    """The changes to critique from a /__critic/run body: `changes` as
+    [{change, pages, flow}], or the first form's single {change, pages,
+    flow}. A change with no pages of its own takes the body's. Raises
+    ValueError."""
+    raw = body.get("changes")
+    if not isinstance(raw, list) or not raw:
+        raw = [body]
+    out = []
+    for c in raw[:MAX_CHANGES]:
+        if not isinstance(c, dict):
+            continue
+        text = c.get("change").strip() if isinstance(c.get("change"), str) else ""
+        if not text:
+            continue
+        pages = c.get("pages") or body.get("pages")
+        if isinstance(pages, str):
+            pages = [pages]
+        pages = [p.strip() for p in (pages or []) if isinstance(p, str) and p.strip()][:MAX_PAGES]
+        if simulate and not pages:
+            raise ValueError("pages: name the page(s) to open for every change (a prototype slug or a path under source/)")
+        flow = c.get("flow") if isinstance(c.get("flow"), str) else ""
+        out.append({"change": text[:4000], "pages": pages, "flow": flow.strip()[:600]})
+    if not out:
+        raise ValueError("changes: say what changed, in a user's words")
+    return out
+
+
 def critic_message(critic, names):
     """The block appended to a message the user armed a critique on."""
     ids = json.dumps(critic["personas"])
     who = ", ".join(names) or "the selected personas"
     sim = critic["how"] == "simulate"
-    body = {"personas": critic["personas"], "how": critic["how"],
-            "change": "<what changed, in a user's words>"}
+    one = {"change": "<one change, in a user's words>"}
     if sim:
-        body["pages"] = ["<prototype>/<page>.html"]
-        body["flow"] = "<the steps a user takes, by on-screen labels>"
+        one["pages"] = ["<prototype>/<page>.html"]
+        one["flow"] = "<the steps a user takes to meet it, by on-screen labels>"
+    body = {"personas": critic["personas"], "how": critic["how"], "changes": [one]}
     lines = [
         "",
         "",
@@ -377,12 +418,15 @@ def critic_message(critic, names):
         json.dumps(body),
         "JSON",
         "- personas = %s and how = \"%s\": exactly these, the user picked them." % (ids, critic["how"]),
+        "- changes: one entry per change a user meets on its own (a new option in a form, a renamed status on "
+        "another screen), at most %d. Which personas each change touches, and the journeys through it, are worked "
+        "out for you." % MAX_CHANGES,
         "- change: what changed, in the words of someone USING the product: what they now see, can do, and where. "
         "Never name code, files, selectors, components, settings keys or how it is built. The personas never see code.",
     ]
     if sim:
         lines += [
-            "- pages: the page(s) a user opens to meet the change, start page first (at most %d), as a prototype "
+            "- pages: the page(s) a user opens to meet that change, start page first (at most %d), as a prototype "
             "slug or a path under source/, a query allowed: \"my-app\", \"my-app/settings.html?tab=billing\"." % MAX_PAGES,
             "- flow: one line, the path from the start page to the change, by on-screen labels.",
         ]
@@ -392,8 +436,8 @@ def critic_message(critic, names):
         "",
         "Then end your reply with the personas' SUGGESTIONS: one bullet each, merged where two personas raise the same "
         "thing, each naming who raised it and how important it is. They are suggestions only: change NOTHING because of "
-        "them and put no question card on them; the user decides what to do next. The full critique (screens, steps, "
-        "reactions) already shows in the thread as a card, so do not retell it.",
+        "them and put no question card on them; the user decides what to do next. Group them by change. The full "
+        "critique (screens, journeys, reactions) already shows in the thread, so do not retell it.",
     ]
     return "\n".join(lines)
 
@@ -683,20 +727,24 @@ def fetch_links(root, persona_rows, scratch, walker):
 
 # ── prompts ───────────────────────────────────────────────────────────────
 
-PLANNER_SYSTEM = """You plan a short usability session for user research. You answer with ONE JSON object and nothing else: no prose, no code fence.
+PLANNER_SYSTEM = """You plan a short usability study of ONE change to a product. You answer with ONE JSON object and nothing else: no prose, no code fence.
 
 Words: plain words a person using the product would use. Never mention code, files, pages' file names, selectors, classes, components, settings keys or how anything is built. Every field is a short phrase, at most 12 words. No paragraphs.
 
 JSON shape:
 {"summary": ["<what changed, as a user sees it>"],
- "tasks": [{"goal": "<what the participant tries to do>", "do": "open|click|fill|select|press|scroll|look", "page": "<page key, for open>", "target": "<exact visible label>", "value": "<text to type, option to pick, or key>", "lookFor": "<what to notice>"}]}
+ "personas": ["<id of a person this change touches>"],
+ "journeys": [{"title": "<the journey, as the person would name it>", "personas": ["<id>"],
+               "tasks": [{"goal": "<what the participant tries to do>", "do": "open|click|fill|select|press|scroll|look", "page": "<page key, for open>", "target": "<exact visible label>", "value": "<text to type, option to pick, or key>", "lookFor": "<what to notice>"}]}]}
 
 summary: 1 to 3 items.
-tasks (only when asked to plan tasks): 2 to %d items, in order, the shortest path a real participant takes to meet the change and judge it. The first task is "open" on the start page.
+personas: the ids, from the people listed, of those who would meet this change in their own use of the product. Leave out anyone it does not touch; an empty list is a valid answer.
+journeys (only when asked to plan journeys): the distinct ways those people meet the change: a different starting point, goal or role that takes a different path (a new applicant filling the form, a returning one editing a saved draft, a staff member reviewing it). 1 to %d journeys. Each lists the ids of the people who take it; everyone under personas takes at least one. Two people who would take the same path share one journey.
+tasks: 2 to %d per journey, in order, the shortest path a real participant takes to meet the change and judge it. The first task is "open" on the page the journey starts from.
 - "target" is copied exactly from the page's list of labels. Labels marked (appears later) are not on screen at first: they show up after an earlier step, such as a button that reveals a form.
 - Act the way a person does: click the on-screen button rather than pressing a key; for "select", "value" is one of the listed options, copied exactly; type realistic values.
 - "goal" uses the screen's own words and adds no facts the page does not state.
-- "look" (no target) stops to judge a screen; "scroll" moves down a long screen.""" % MAX_TASKS
+- "look" (no target) stops to judge a screen; "scroll" moves down a long screen.""" % (MAX_JOURNEYS, MAX_TASKS)
 
 PERSONA_RULES = """You are a simulated participant in a usability study. Stay in character: think, feel, judge and word things the way this person would, with their goals, frustrations, habits and comfort with technology.
 
@@ -707,10 +755,10 @@ What you know is ONLY:
 You have never seen how the product is built and you never think about code, files or implementation. If something is not in your profile, your documents or on screen, you do not know it: say so rather than invent it."""
 
 PERSONA_OUTPUT = """Answer with ONE JSON object and nothing else (no prose, no code fence):
-{"steps": [{"n": <step number>, "feel": "fine|unsure|stuck|pleased", "thought": "<your first-person reaction, one sentence>"}],
+{"journeys": [{"journey": "<journey id>", "steps": [{"n": <step number>, "feel": "fine|unsure|stuck|pleased", "thought": "<your first-person reaction, one sentence>"}]}],
  "verdict": "<one sentence, in your voice>",
- "suggestions": [{"title": "<short imperative>", "why": "<one sentence, tied to who you are>", "priority": "high|medium|low", "step": <step number or null>}]}
-"steps" has one entry per step shown (empty when there are no steps). At most %d suggestions, most important first; each one concrete enough to act on. Only suggest what this person would actually care about.""" % MAX_SUGGESTIONS
+ "suggestions": [{"title": "<short imperative>", "why": "<one sentence, tied to who you are>", "priority": "high|medium|low", "journey": "<journey id or null>", "step": <step number or null>}]}
+"journeys" has one entry per journey shown, with one step entry per step (empty when there are no screens). At most %d suggestions, most important first; each one concrete enough to act on. Only suggest what this person would actually care about.""" % MAX_SUGGESTIONS
 
 def persona_system(p):
     text = profile_clean(p.get("profile") or _legacy_profile(p))
@@ -815,46 +863,94 @@ def _short(v, n=160):
     return _DASH_RE.sub(" - ", v).strip()[:n] if isinstance(v, str) else ""
 
 
-def parse_plan(text, page_keys, simulate):
+def _parse_tasks(raw, page_keys):
+    tasks = []
+    for t in (raw if isinstance(raw, list) else [])[:MAX_TASKS]:
+        if not isinstance(t, dict):
+            continue
+        do = t.get("do") if t.get("do") in ("open", "click", "fill", "select", "press", "scroll", "look") else "look"
+        task = {"goal": _short(t.get("goal"), 120), "do": do,
+                "target": _short(t.get("target"), 100), "value": _short(t.get("value"), 120),
+                "lookFor": _short(t.get("lookFor"), 120)}
+        if do == "open":
+            task["page"] = t.get("page") if t.get("page") in page_keys else (page_keys[0] if page_keys else "")
+        tasks.append(task)
+    if tasks and page_keys and tasks[0]["do"] != "open":
+        tasks.insert(0, {"goal": "Arrive on the start screen", "do": "open", "page": page_keys[0],
+                         "target": "", "value": "", "lookFor": "first impression"})
+    return tasks[:MAX_TASKS]
+
+
+def parse_plan(text, page_keys, simulate, persona_ids):
+    """{summary, personas, flows} for one change. A planner that names no
+    one leaves the change untouched by anyone; one that answers the first
+    form ({summary, tasks}) is one journey taken by everyone."""
     doc = strip_json(text) or {}
     summary = [_short(s, 200) for s in (doc.get("summary") or []) if _short(s)][:3]
-    tasks = []
+    known = list(persona_ids)
+    if isinstance(doc.get("personas"), list):
+        who = [p for p in known if p in doc["personas"]]
+    else:
+        who = list(known)
+    flows = []
     if simulate:
-        for t in (doc.get("tasks") or [])[:MAX_TASKS]:
-            if not isinstance(t, dict):
+        raw = doc.get("journeys")
+        if not isinstance(raw, list):
+            raw = doc.get("flows") if isinstance(doc.get("flows"), list) else [{"personas": who, "tasks": doc.get("tasks")}]
+        for f in raw[:MAX_JOURNEYS]:
+            if not isinstance(f, dict):
                 continue
-            do = t.get("do") if t.get("do") in ("open", "click", "fill", "select", "press", "scroll", "look") else "look"
-            task = {"goal": _short(t.get("goal"), 120), "do": do,
-                    "target": _short(t.get("target"), 100), "value": _short(t.get("value"), 120),
-                    "lookFor": _short(t.get("lookFor"), 120)}
-            if do == "open":
-                task["page"] = t.get("page") if t.get("page") in page_keys else (page_keys[0] if page_keys else "")
-            tasks.append(task)
-        if page_keys and (not tasks or tasks[0]["do"] != "open"):
-            tasks.insert(0, {"goal": "Arrive on the start screen", "do": "open", "page": page_keys[0],
-                             "target": "", "value": "", "lookFor": "first impression"})
-        tasks = tasks[:MAX_TASKS]
-    return summary, tasks
+            tasks = _parse_tasks(f.get("tasks"), page_keys)
+            if not tasks:
+                continue
+            takers = [p for p in known if p in (f.get("personas") or [])] or list(who)
+            if not takers:
+                continue
+            for p in takers:
+                if p not in who:
+                    who.append(p)
+            flows.append({"title": _short(f.get("title"), 100) or "Journey %d" % (len(flows) + 1),
+                          "personas": takers, "tasks": tasks})
+        # Everyone the change touches takes at least one journey.
+        for p in who:
+            if flows and not any(p in f["personas"] for f in flows):
+                flows[0]["personas"].append(p)
+    return {"summary": summary, "personas": who, "flows": flows}
 
 
-def parse_critique(text, n_steps):
-    doc = strip_json(text)
-    if not doc:
-        raise ValueError("the persona did not answer in the expected form")
+def _parse_steps(raw, n_steps):
     steps = []
-    for s in doc.get("steps") or []:
+    for s in raw if isinstance(raw, list) else []:
         if isinstance(s, dict) and isinstance(s.get("n"), int) and 1 <= s["n"] <= max(n_steps, 0):
             steps.append({"n": s["n"],
                           "feel": s.get("feel") if s.get("feel") in ("fine", "unsure", "stuck", "pleased") else "fine",
                           "thought": _short(s.get("thought"), 300)})
+    return steps
+
+
+def parse_critique(text, journeys):
+    """A persona's review of one change. `journeys` maps each journey id it
+    was shown to its step count ({} when there were no screens)."""
+    doc = strip_json(text)
+    if not doc:
+        raise ValueError("the persona did not answer in the expected form")
+    out_j = {}
+    for j in doc.get("journeys") or []:
+        if isinstance(j, dict) and j.get("journey") in journeys:
+            out_j[j["journey"]] = _parse_steps(j.get("steps"), journeys[j["journey"]])
+    if not out_j and len(journeys) == 1 and isinstance(doc.get("steps"), list):
+        jid = next(iter(journeys))
+        out_j[jid] = _parse_steps(doc["steps"], journeys[jid])
+    only = next(iter(journeys)) if len(journeys) == 1 else None
     sugg = []
     for s in (doc.get("suggestions") or [])[:MAX_SUGGESTIONS]:
         if isinstance(s, dict) and _short(s.get("title")):
-            step = s.get("step") if isinstance(s.get("step"), int) and 1 <= s["step"] <= max(n_steps, 0) else None
+            jid = s.get("journey") if s.get("journey") in journeys else only
+            step = s.get("step") if jid and isinstance(s.get("step"), int) and 1 <= s["step"] <= journeys[jid] else None
             sugg.append({"title": _short(s.get("title"), 140), "why": _short(s.get("why"), 300),
                          "priority": s.get("priority") if s.get("priority") in ("high", "medium", "low") else "medium",
-                         "step": step})
-    return {"steps": steps, "verdict": _short(doc.get("verdict"), 300), "suggestions": sugg}
+                         "journey": jid, "step": step})
+    return {"journeys": out_j, "verdict": _short(doc.get("verdict"), 300), "suggestions": sugg}
 
 
 def action_line(t):
@@ -902,9 +998,13 @@ def get_report(root, cid):
         return json.loads(json.dumps(job["report"]))
     try:
         with open(_report_path(root, cid), "r", encoding="utf-8") as f:
-            return json.load(f)
+            report = json.load(f)
     except (OSError, ValueError):
         return None
+    # Running on disk with no live job: the daemon stopped while it ran.
+    if report.get("status") == "running":
+        report.update(status="error", stage="done", error="stopped: the daemon restarted while it ran")
+    return report
 
 
 def wait(cid, seconds):
@@ -914,15 +1014,26 @@ def wait(cid, seconds):
         job["done"].wait(max(0.0, min(float(seconds), 590.0)))
 
 
+_SHOT_RE = re.compile(r"^(?:[ft]\d{1,2}/)?(?:[a-z]+-\d{1,2}|survey-P\d)\.jpg$")
+
+
 def shot_path(root, cid, name):
-    if not CRITIQUE_ID_RE.match(cid or "") or not re.match(r"^[a-z]+-\d{1,2}\.jpg$|^survey-P\d\.jpg$", name or ""):
+    """A step or survey screenshot. A journey's steps live in its own folder
+    (f<n>/), a change's survey in t<n>/; the first reports kept them flat."""
+    if not CRITIQUE_ID_RE.match(cid or "") or not _SHOT_RE.match(name or ""):
         return None
     p = os.path.join(critiques_dir(root), cid, name)
     return p if os.path.isfile(p) else None
 
 
+def _names(report):
+    return {p.get("id"): p.get("name") for p in report.get("personas") or []}
+
+
 def digest(report):
-    """The text the calling agent receives: suggestions to relay, no images."""
+    """The text the calling agent receives: suggestions to relay, no images.
+    Grouped by change: who it touched, the journeys walked, each persona's
+    verdict and suggestions."""
     if report.get("status") not in ("done", "error"):
         return ('PERSONA CRITIQUE %s: "status": "running" (%s). Poll again.'
                 % (report.get("id"), report.get("stage") or "working"))
@@ -930,36 +1041,57 @@ def digest(report):
              % (report["id"], "simulated on the pages" if report.get("how") == "simulate" else "as text")]
     if report.get("status") == "error":
         lines.append("FAILED: " + (report.get("error") or "unknown error"))
-    if report.get("tasks"):
-        lines.append("Tasks: " + "; ".join("%d. %s" % (i + 1, t.get("goal") or action_line(t))
-                                            for i, t in enumerate(report["tasks"])))
-    for walk in (report.get("walks") or {}).values():
-        stuck = [s for s in walk.get("steps") or [] if not s.get("ok")]
-        for s in stuck:
-            lines.append("Step %d could not be done on %s: %s" % (s["n"], walk.get("device"), s.get("error") or "failed"))
-    for p in report.get("personas") or []:
-        head = "%s%s" % (p.get("name"), (" (" + p["role"] + ")") if p.get("role") else "")
-        if p.get("status") != "done":
-            lines.append("%s: no critique (%s)" % (head, p.get("error") or p.get("status")))
+    names = _names(report)
+    roles = {p.get("id"): p.get("role") for p in report.get("personas") or []}
+    flows = report.get("flows") or []
+    reviews = report.get("reviews") or []
+    for i, ch in enumerate(report.get("changes") or []):
+        lines.append("Change %d: %s" % (i + 1, ch.get("title") or "(no summary)"))
+        if ch.get("error"):
+            lines.append("  FAILED: " + ch["error"])
             continue
-        lines.append("%s - %s" % (head, p.get("verdict") or "no verdict"))
-        for s in p.get("suggestions") or []:
-            lines.append("  - [%s] %s: %s%s" % (s.get("priority"), s.get("title"), s.get("why"),
-                                               (" (step %d)" % s["step"]) if s.get("step") else ""))
-    lines.append('The thread already shows the full critique as a card: relay the suggestions as a short merged list, '
-                 'naming who raised each.')
+        for f in (x for x in flows if x.get("change") == ch.get("id")):
+            line = '  Journey %s "%s" (%s): %d steps' % (f["id"], f.get("title"), ", ".join(names.get(p, p) for p in f.get("personas") or []),
+                                                     len(f.get("tasks") or []))
+            for w in (f.get("walks") or {}).values():
+                for s in w.get("steps") or []:
+                    if not s.get("ok"):
+                        line += "; step %d could not be done on %s: %s" % (s["n"], w.get("device"), s.get("error") or "failed")
+                if w.get("error"):
+                    line += "; the %s walk failed: %s" % (w.get("device"), w["error"])
+            lines.append(line)
+        for rv in (x for x in reviews if x.get("change") == ch.get("id")):
+            pid = rv.get("persona")
+            head = "%s%s" % (names.get(pid, pid), (" (" + roles[pid] + ")") if roles.get(pid) else "")
+            if rv.get("status") != "done":
+                lines.append("  %s: no critique (%s)" % (head, rv.get("error") or rv.get("status")))
+                continue
+            lines.append("  %s - %s" % (head, rv.get("verdict") or "no verdict"))
+            for s in rv.get("suggestions") or []:
+                where = ", ".join(x for x in (("journey " + s["journey"]) if s.get("journey") else "",
+                                              ("step %d" % s["step"]) if s.get("step") else "") if x)
+                lines.append("    - [%s] %s: %s%s" % (s.get("priority"), s.get("title"), s.get("why"),
+                                                     (" (" + where + ")") if where else ""))
+        left = [names.get(p, p) for p in names if p not in (ch.get("personas") or [])]
+        if left:
+            lines.append("  Not affected: " + ", ".join(left))
+    lines.append("The thread shows the full critique (screens, journeys, reactions): relay the suggestions as a "
+                 "short merged list per change, naming who raised each.")
     return "\n".join(lines)
 
 
 def start(root, project_id, run_id, persona_rows, req, deps):
     """Create the job and run it on a thread. Returns the report id."""
     cid = "c_" + secrets.token_hex(5)
+    models = req.get("models") or {}
     report = {
-        "id": cid, "project": project_id, "run": run_id, "createdAt": int(time.time() * 1000),
+        "id": cid, "version": 2, "project": project_id, "run": run_id, "createdAt": int(time.time() * 1000),
         "how": req["how"], "status": "running", "stage": "planning",
-        "summary": [], "tasks": [], "walks": {}, "notes": [],
+        "changes": [], "flows": [], "reviews": [], "notes": [],
         "personas": [{"id": p["id"], "name": p.get("name"), "role": p.get("role"),
-                      "device": p.get("device") or "desktop", "status": "waiting"} for p in persona_rows],
+                      "device": p.get("device") or "desktop", "deep": bool(p.get("deep")),
+                      "model": models.get("deep" if p.get("deep") else "cheap"),
+                      "status": "waiting"} for p in persona_rows],
     }
     job = {"report": report, "done": threading.Event(), "root": root}
     with _JOBS_LOCK:
@@ -973,6 +1105,7 @@ def start(root, project_id, run_id, persona_rows, req, deps):
 def _update(job, deps, **fields):
     with _JOBS_LOCK:
         job["report"].update(fields)
+        _fold_personas(job["report"])
         snap = json.loads(json.dumps(job["report"]))
     try:
         save_report(job["root"], snap)
@@ -988,14 +1121,37 @@ def _update(job, deps, **fields):
             pass
 
 
-def _set_persona(job, pid, **fields):
+def _fold_personas(report):
+    """A persona's status across its reviews (one per change it is affected
+    by). Before planning ends everyone is waiting; a persona no change
+    touches is "skipped"."""
+    if report.get("stage") == "planning":
+        return
+    for p in report["personas"]:
+        mine = [r.get("status") for r in report.get("reviews") or [] if r.get("persona") == p["id"]]
+        if not mine:
+            p["status"] = "skipped" if report.get("stage") in ("critiquing", "done") else "waiting"
+        elif "running" in mine:
+            p["status"] = "running"
+        elif all(s == "waiting" for s in mine):
+            p["status"] = "waiting"
+        elif "waiting" in mine:
+            p["status"] = "running"
+        elif "done" in mine:
+            p["status"] = "done"
+        else:
+            p["status"] = "error"
+
+
+def _set_review(job, change_id, pid, **fields):
     with _JOBS_LOCK:
-        for p in job["report"]["personas"]:
-            if p["id"] == pid:
-                p.update(fields)
+        for r in job["report"]["reviews"]:
+            if r["change"] == change_id and r["persona"] == pid:
+                r.update(fields)
 
 
-def _walk(job, deps, out_dir, pages, tasks, device):
+def _walk(deps, out_dir, pages, tasks, device):
+    os.makedirs(out_dir, exist_ok=True)
     plan_path = os.path.join(out_dir, "plan-%s.json" % device)
     with open(plan_path, "w", encoding="utf-8") as f:
         json.dump({"pages": pages, "tasks": tasks}, f)
@@ -1007,128 +1163,210 @@ def _walk(job, deps, out_dir, pages, tasks, device):
         return {"device": device, "steps": [], "error": (res or {}).get("error") or "the browser walk produced nothing"}
 
 
+def _survey_blocks(survey, sdir):
+    blocks = []
+    for sp in survey.get("pages") or []:
+        inv = "\n".join("- %s: %s%s%s" % (it.get("role"), it.get("name"),
+                                           (" (options: " + ", ".join(it["options"]) + ")") if it.get("options") else "",
+                                           " (appears later)" if it.get("later") else "")
+                        for it in (sp.get("inventory") or [])[:80])
+        blocks.append({"type": "text", "text": "Page %s%s. Visible labels:\n%s" % (
+            sp.get("key"), (' "' + sp["title"] + '"') if sp.get("title") else "", inv or "(none found)")})
+        shot = os.path.join(sdir, sp.get("shot") or "")
+        if sp.get("shot") and os.path.isfile(shot):
+            blocks.append({"type": "image", "path": shot})
+    return blocks
+
+
+def people_block(persona_rows):
+    """Who is in the study, for the planner: id, one line, device. The planner
+    decides from this who a change matters to; it never sees full profiles."""
+    rows = []
+    for p in persona_rows:
+        rows.append("- %s: %s%s, on %s" % (p["id"], p.get("name") or "?",
+                                          (" - " + p["role"]) if p.get("role") else "",
+                                          "a phone" if (p.get("device") or "desktop") == "mobile" else "a computer"))
+    return {"type": "text", "text": "People in this study (id: who):\n" + "\n".join(rows)}
+
+
+def _plan_change(job, deps, out_dir, n, ch, persona_rows, simulate):
+    """Survey one change's pages and ask the fast planner who it touches and
+    which journeys meet it. Returns (change record, pages, planned flows)."""
+    tid = "t%d" % n
+    rec = {"id": tid, "title": "", "summary": [], "personas": [], "notes": []}
+    pages, survey = [], {}
+    sdir = os.path.join(out_dir, tid)
+    if simulate:
+        for i, raw in enumerate(ch.get("pages") or []):
+            try:
+                pages.append({"key": "P%d" % (i + 1), "url": deps["resolve_page"](raw)})
+            except Exception as e:
+                rec["notes"].append("page %r: %s" % (raw, e))
+        if not pages:
+            raise RuntimeError("no page to open for this change")
+        os.makedirs(sdir, exist_ok=True)
+        pages_path = os.path.join(sdir, "pages.json")
+        with open(pages_path, "w", encoding="utf-8") as f:
+            json.dump({"pages": pages}, f)
+        res = deps["walker"](["survey", "--plan", pages_path, "--out", sdir, "--device", "desktop"])
+        try:
+            with open(os.path.join(sdir, "survey.json"), "r", encoding="utf-8") as f:
+                survey = json.load(f)
+        except (OSError, ValueError):
+            raise RuntimeError("could not open the pages in a browser: %s" % ((res or {}).get("error") or "no survey"))
+    blocks = [{"type": "text", "text": "What the builder says changed (it may use technical words; translate them):\n"
+               + (ch.get("change") or "")},
+              people_block(persona_rows)]
+    if simulate:
+        if ch.get("flow"):
+            blocks.append({"type": "text", "text": "The path a user takes, as the builder describes it: " + ch["flow"]})
+        blocks += _survey_blocks(survey, sdir)
+        blocks.append({"type": "text", "text": "Plan who this change touches and their journeys (start page is P1). "
+                       "Answer with the JSON object only."})
+    else:
+        blocks.append({"type": "text", "text": "Write the summary and who this change touches (no journeys). "
+                       "Answer with the JSON object only."})
+    plan = parse_plan(deps["fast_complete"](PLANNER_SYSTEM, blocks), [p["key"] for p in pages], simulate,
+                      [p["id"] for p in persona_rows])
+    rec["summary"] = plan["summary"] or [_short(ch.get("change"), 200)]
+    rec["title"] = rec["summary"][0]
+    rec["personas"] = plan["personas"]
+    if simulate and plan["personas"] and not plan["flows"]:
+        raise RuntimeError("the planner returned no journey for this change")
+    return rec, pages, plan["flows"]
+
+
 def _run(job, persona_rows, req, deps):
     started = time.time()
     root = job["root"]
     report = job["report"]
     out_dir = os.path.join(critiques_dir(root), report["id"])
     simulate = req["how"] == "simulate"
+    rows = {p["id"]: p for p in persona_rows}
     try:
         _update(job, deps, stage="planning")
-        # 1. Resolve and survey the pages (simulate only).
-        pages, survey = [], {}
-        if simulate:
-            for i, raw in enumerate(req.get("pages") or []):
-                try:
-                    pages.append({"key": "P%d" % (i + 1), "url": deps["resolve_page"](raw)})
-                except Exception as e:
-                    report["notes"].append("page %r: %s" % (raw, e))
-            if not pages:
-                raise RuntimeError("no page to open: pass pages (a prototype slug or a path under source/)")
-            pages_path = os.path.join(out_dir, "pages.json")
-            with open(pages_path, "w", encoding="utf-8") as f:
-                json.dump({"pages": pages}, f)
-            res = deps["walker"](["survey", "--plan", pages_path, "--out", out_dir, "--device", "desktop"])
-            try:
-                with open(os.path.join(out_dir, "survey.json"), "r", encoding="utf-8") as f:
-                    survey = json.load(f)
-            except (OSError, ValueError):
-                raise RuntimeError("could not open the pages in a browser: %s" % ((res or {}).get("error") or "no survey"))
-        # 2. The fast planner: the change in a user's words (+ the task table).
-        blocks = [{"type": "text", "text": "What the builder says changed (it may use technical words; translate them):\n"
-                   + (req.get("change") or "")}]
-        if simulate:
-            if req.get("flow"):
-                blocks.append({"type": "text", "text": "The path a user takes, as the builder describes it: " + req["flow"]})
-            for sp in survey.get("pages") or []:
-                inv = "\n".join("- %s: %s%s%s" % (it.get("role"), it.get("name"),
-                                                   (" (options: " + ", ".join(it["options"]) + ")") if it.get("options") else "",
-                                                   " (appears later)" if it.get("later") else "")
-                                for it in (sp.get("inventory") or [])[:80])
-                blocks.append({"type": "text", "text": "Page %s%s. Visible labels:\n%s" % (
-                    sp.get("key"), (' "' + sp["title"] + '"') if sp.get("title") else "", inv or "(none found)")})
-                shot = os.path.join(out_dir, sp.get("shot") or "")
-                if sp.get("shot") and os.path.isfile(shot):
-                    blocks.append({"type": "image", "path": shot})
-            blocks.append({"type": "text", "text": "Plan the tasks (start page is P1). Answer with the JSON object only."})
-        else:
-            blocks.append({"type": "text", "text": "Write only the summary (no tasks). Answer with the JSON object only."})
-        plan_text = deps["fast_complete"](PLANNER_SYSTEM, blocks)
-        summary, tasks = parse_plan(plan_text, [p["key"] for p in pages], simulate)
-        if not summary:
-            summary = [_short(req.get("change"), 200)] if not simulate else ["(the planner wrote no summary)"]
-        if simulate and len(tasks) < 1:
-            raise RuntimeError("the planner returned no tasks")
-        _update(job, deps, summary=summary, tasks=tasks, stage="walking" if simulate else "critiquing")
-        # 3. Walk the plan once per device the chosen personas use.
-        walks = {}
-        if simulate:
-            devices = sorted({p.get("device") or "desktop" for p in persona_rows})
-            with ThreadPoolExecutor(max_workers=len(devices)) as ex:
-                futs = {d: ex.submit(_walk, job, deps, out_dir, pages, tasks, d) for d in devices}
-                for d, fut in futs.items():
-                    walks[d] = fut.result()
-            _update(job, deps, walks=walks, stage="critiquing")
-        # 4. Every persona, isolated and in parallel. Links among their
-        # references are opened first, once for all of them.
-        links_dir = os.path.join(out_dir, "links")
-        know_links, taste_links = fetch_links(root, persona_rows, links_dir, deps["walker"])
+        # 1. Every change on its own: its pages surveyed, then the fast
+        # planner says who it touches and plans their journeys.
+        changes = req.get("changes") or []
+        planned = [None] * len(changes)
 
-        def one(p):
-            _set_persona(job, p["id"], status="running")
+        def plan_one(i):
+            try:
+                planned[i] = _plan_change(job, deps, out_dir, i + 1, changes[i], persona_rows, simulate)
+            except Exception as e:
+                planned[i] = ({"id": "t%d" % (i + 1), "title": _short(changes[i].get("change"), 200),
+                               "summary": [], "personas": [], "notes": [], "error": _short(str(e), 300)}, [], [])
+        with ThreadPoolExecutor(max_workers=max(1, min(PERSONA_WORKERS, len(changes)))) as ex:
+            list(ex.map(plan_one, range(len(changes))))
+        change_recs, flows, pages_of = [], [], {}
+        for rec, pages, plan_flows in planned:
+            change_recs.append(rec)
+            pages_of[rec["id"]] = pages
+            for f in plan_flows:
+                if len(flows) >= MAX_FLOWS:
+                    rec["notes"].append("more than %d journeys in this critique, the rest not walked" % MAX_FLOWS)
+                    break
+                flows.append(dict(f, id="f%d" % (len(flows) + 1), change=rec["id"], walks={}))
+        if not any(not c.get("error") for c in change_recs):
+            raise RuntimeError("; ".join("change %d: %s" % (i + 1, c["error"]) for i, c in enumerate(change_recs)))
+        reviews = [{"change": c["id"], "persona": pid, "status": "waiting"}
+                   for c in change_recs if not c.get("error") for pid in c["personas"] if pid in rows]
+        _update(job, deps, changes=change_recs, flows=flows, reviews=reviews,
+                stage="walking" if simulate and flows else "critiquing")
+        # 2. Walk every journey once per device its personas use.
+        if simulate and flows:
+            jobs = [(f, d) for f in flows for d in sorted({rows[p].get("device") or "desktop" for p in f["personas"] if p in rows})]
+            with ThreadPoolExecutor(max_workers=max(1, min(PERSONA_WORKERS, len(jobs)))) as ex:
+                futs = [(f, d, ex.submit(_walk, deps, os.path.join(out_dir, f["id"]), pages_of[f["change"]], f["tasks"], d))
+                        for f, d in jobs]
+                for f, d, fut in futs:
+                    w = fut.result()
+                    for s in w.get("steps") or []:
+                        if s.get("shot"):
+                            s["shot"] = f["id"] + "/" + s["shot"]
+                    f["walks"][d] = w
+            _update(job, deps, flows=flows, stage="critiquing")
+        # 3. Every persona x change it is affected by, isolated and in
+        # parallel: its journeys through that change, on its own device.
+        links_dir = os.path.join(out_dir, "links")
+        know_links, taste_links = fetch_links(root, [rows[pid] for pid in {r["persona"] for r in reviews}],
+                                              links_dir, deps["walker"])
+        ctx_cache, ctx_lock = {}, threading.Lock()
+
+        def persona_ctx(p):
+            with ctx_lock:
+                if p["id"] not in ctx_cache:
+                    know_text, know_images, notes = knowledge_bundle(root, p.get("knowledge"), know_links, links_dir)
+                    content = []
+                    if know_text or know_images:
+                        content.append({"type": "text", "text": "## What you know\n" + (know_text or "(images only)")})
+                        for img in know_images:
+                            content.append({"type": "image", "path": img})
+                    taste, taste_notes = taste_images(root, p, taste_links)
+                    if taste:
+                        content.append({"type": "text", "text": "## Your taste\nThese images show apps, styles and "
+                                        "products you like and feel at home with. They shape what feels right or off "
+                                        "to you; you do not talk about them as pictures, you simply have this taste."})
+                        for img in taste:
+                            content.append({"type": "image", "path": img})
+                    ctx_cache[p["id"]] = (content, notes + taste_notes)
+                return ctx_cache[p["id"]]
+
+        by_change = {c["id"]: c for c in change_recs}
+
+        def one(rv):
+            p = rows[rv["persona"]]
+            _set_review(job, rv["change"], p["id"], status="running")
             _update(job, deps)
             try:
-                know_text, know_images, know_notes = knowledge_bundle(root, p.get("knowledge"), know_links, links_dir)
-                content = []
-                if know_text or know_images:
-                    content.append({"type": "text", "text": "## What you know\n" + (know_text or "(images only)")})
-                    for img in know_images:
-                        content.append({"type": "image", "path": img})
-                taste, taste_notes = taste_images(root, p, taste_links)
-                know_notes = know_notes + taste_notes
-                if taste:
-                    content.append({"type": "text", "text": "## Your taste\nThese images show apps, styles and "
-                                    "products you like and feel at home with. They shape what feels right or off "
-                                    "to you; you do not talk about them as pictures, you simply have this taste."})
-                    for img in taste:
-                        content.append({"type": "image", "path": img})
+                prefix, notes = persona_ctx(p)
+                content = list(prefix)
+                ch = by_change[rv["change"]]
                 content.append({"type": "text", "text": "## What changed in the product\n"
-                                + "\n".join("- " + s for s in summary)})
-                steps = []
-                if simulate:
-                    walk = walks.get(p.get("device") or "desktop") or {}
-                    steps = walk.get("steps") or []
-                    # What to look for stays with the team (it is the card's
-                    # table): a moderator never tells the participant what
-                    # they are supposed to notice.
-                    content.append({"type": "text", "text": "## Your session\nYou try the product yourself, step by step. "
-                                    "Each step says what you set out to do and what happened, then shows the screen you saw."})
-                    by_n = {s.get("n"): s for s in steps}
-                    for i, t in enumerate(tasks):
-                        n = i + 1
-                        s = by_n.get(n) or {}
-                        did = action_line(t)
-                        result = "done" if s.get("ok") else ("you could not: " + (s.get("error") or "nothing happened"))
-                        content.append({"type": "text", "text": "### Step %d - %s\nYou: %s. Result: %s." % (
-                            n, t.get("goal") or did, did, result)})
-                        shot = os.path.join(out_dir, s.get("shot") or "")
-                        if s.get("shot") and os.path.isfile(shot):
-                            content.append({"type": "image", "path": shot})
+                                + "\n".join("- " + s for s in ch.get("summary") or [])})
+                device = p.get("device") or "desktop"
+                mine = [f for f in flows if f["change"] == ch["id"] and p["id"] in f["personas"]]
+                n_steps = {}
+                if simulate and mine:
+                    content.append({"type": "text", "text": "## Your sessions\nYou try the product yourself. Each journey "
+                                    "is one session: what you set out to do, step by step, what happened, then the "
+                                    "screen you saw."})
+                    for f in mine:
+                        walk = (f.get("walks") or {}).get(device) or {}
+                        by_n = {s.get("n"): s for s in walk.get("steps") or []}
+                        n_steps[f["id"]] = len(f["tasks"])
+                        content.append({"type": "text", "text": "### Journey %s: %s" % (f["id"], f.get("title"))})
+                        for i, t in enumerate(f["tasks"]):
+                            n = i + 1
+                            s = by_n.get(n) or {}
+                            did = action_line(t)
+                            result = "done" if s.get("ok") else ("you could not: " + (s.get("error") or walk.get("error") or "nothing happened"))
+                            content.append({"type": "text", "text": "#### Step %d - %s\nYou: %s. Result: %s." % (
+                                n, t.get("goal") or did, did, result)})
+                            shot = os.path.join(out_dir, s.get("shot") or "")
+                            if s.get("shot") and os.path.isfile(shot):
+                                content.append({"type": "image", "path": shot})
                 else:
                     content.append({"type": "text", "text": "There are no screens to try: judge the change from its description."})
                 content.append({"type": "text", "text": PERSONA_OUTPUT})
-                text = deps["persona_complete"](persona_system(p), content)
-                out = parse_critique(text, len(tasks) if simulate else 0)
-                _set_persona(job, p["id"], status="done", notes=know_notes, **out)
+                call = deps.get("deep_complete") if p.get("deep") and deps.get("deep_complete") else deps["persona_complete"]
+                out = parse_critique(call(persona_system(p), content), n_steps)
+                _set_review(job, rv["change"], p["id"], status="done", notes=notes, **out)
             except Exception as e:
-                _set_persona(job, p["id"], status="error", error=str(e)[:300])
+                _set_review(job, rv["change"], p["id"], status="error", error=str(e)[:300])
             _update(job, deps)
-        with ThreadPoolExecutor(max_workers=min(PERSONA_WORKERS, max(1, len(persona_rows)))) as ex:
-            list(ex.map(one, persona_rows))
-        ok = any(p.get("status") == "done" for p in report["personas"])
-        _update(job, deps, status="done" if ok else "error", stage="done",
-                error=None if ok else "no persona answered",
-                durationMs=int((time.time() - started) * 1000))
+        if reviews:
+            with ThreadPoolExecutor(max_workers=min(PERSONA_WORKERS, len(reviews))) as ex:
+                list(ex.map(one, reviews))
+        done = [r for r in report["reviews"] if r.get("status") == "done"]
+        if reviews and not done:
+            _update(job, deps, status="error", stage="done", error="no persona answered",
+                    durationMs=int((time.time() - started) * 1000))
+        else:
+            if not reviews:
+                report["notes"].append("none of the chosen personas would meet these changes")
+            _update(job, deps, status="done", stage="done", error=None,
+                    durationMs=int((time.time() - started) * 1000))
     except Exception as e:
         _update(job, deps, status="error", stage="done", error=str(e)[:400],
                 durationMs=int((time.time() - started) * 1000))

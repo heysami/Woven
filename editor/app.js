@@ -12737,6 +12737,7 @@ function RightDock({ windows, renderThread, onOpenRun, onOpenSubagent, onOpenTas
     if (w.kind === "thread")   return renderThread(w);
     if (w.kind === "subagent") return html`<${SubagentPanel} agent=${w.agent} runId=${w.runId} runTitle=${w.runTitle} />`;
     if (w.kind === "task")     return html`<${TaskPanel} task=${w.task} runTitle=${w.runTitle} />`;
+    if (w.kind === "critique") return html`<${CritiquePanel} id=${w.critiqueId} runTitle=${w.runTitle} />`;
     if (w.kind === "tasks")    return html`<${TasksSubagentsPanel} embedded=${true} runs=${runs} onOpenRun=${onOpenRun} onOpenSubagent=${onOpenSubagent} onOpenTask=${onOpenTask} />`;
     if (w.kind === "comments") return html`<${CommentsPanel} embedded=${true} onStartChatWithPrompt=${onStartChatWithPrompt} />`;
     if (w.kind === "git")      return html`<${GitPanel} embedded=${true} onStartChatWithPrompt=${onStartChatWithPrompt} />`;
@@ -13759,7 +13760,7 @@ function RightRailDock({ mode }) {
   const [dockRowSplit, setDockRowSplit] = useState(() => Number(loadDock().rowSplit) || 50);
   const dockColRef = useRef(dockColSplit); dockColRef.current = dockColSplit;
   const dockRowRef = useRef(dockRowSplit); dockRowRef.current = dockRowSplit;
-  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent" && w.kind !== "task").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
+  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent" && w.kind !== "task" && w.kind !== "critique").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
   const openWindow = useCallback((descOrKind) => {
     const desc = typeof descOrKind === "string" ? { kind: descOrKind } : descOrKind;
     setDockWindows(prev => {
@@ -13770,6 +13771,12 @@ function RightRailDock({ mode }) {
         const at = prev.findIndex(w => w.id === wid);
         if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], task: desc.task, runTitle: desc.runTitle }; }
         else { const w = { id: wid, kind: "task", task: desc.task, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      } else if (desc.kind === "critique") {
+        // A persona critique report tile - keyed by the critique id.
+        const wid = "w_crit_" + (desc.critiqueId || "x");
+        const at = prev.findIndex(w => w.id === wid);
+        if (at >= 0) next = prev;
+        else { const w = { id: wid, kind: "critique", critiqueId: desc.critiqueId, runId: desc.runId, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
       } else if (desc.kind === "subagent") {
         const wid = "w_sub_" + (desc.agent?.id || "x");
         const at = prev.findIndex(w => w.id === wid);
@@ -14443,6 +14450,26 @@ function extractRunTasks(events) {
   return order.map(id => byId.get(id)).filter(t => t.status !== "deleted");
 }
 
+/* Persona critiques in a run's events, oldest first. The daemon re-announces
+   a critique on every stage change (editor/personas.py _update), so the
+   latest event per id wins; `at` is that event's index in `events`. */
+function extractRunCritiques(events) {
+  const byId = new Map();
+  (events || []).forEach((ev, i) => {
+    const d = ev?.data;
+    if (d?.type !== "persona_critique" || !d.id) return;
+    byId.set(d.id, { ...d, personas: d.personas || [], at: i });
+  });
+  return Array.from(byId.values());
+}
+
+/* Open a critique's report in a dock tile. The chat strip, the thread row and
+   the Orchestration panel all ask through this event, so no dock handle has
+   to be threaded down to them (every dock host listens: useOpenSubagentEvent). */
+function openCritiqueTile(id, runId, runTitle) {
+  try { window.dispatchEvent(new CustomEvent("th:open-critique", { detail: { id, runId, runTitle } })); } catch {}
+}
+
 /* Map a /__chat response's JSONL rows into the { event, data } shape the
    extractors above expect (same mapping the ChatDrawer hydrate path uses). */
 // Rolling cap on the ChatDrawer's in-memory event array. A marathon run
@@ -14980,11 +15007,11 @@ function OrchestrationPlanView() {
     </div>`;
 }
 
-/* TasksSubagentsPanel - the second right-rail panel. Three tabs: Orchestration
-   Plan (the locked pipeline.json), Subagents, and Tasks. Subagents + Tasks
-   hydrate each run's transcript (/__chat) and list every dispatch + Task,
-   grouped by run, newest first, FINISHED ones included. The Plan tab only
-   exists once the project has locked a plan. Read-only. */
+/* TasksSubagentsPanel - the second right-rail panel. Four tabs: Orchestration
+   Plan (the locked pipeline.json), Subagents, Tasks and Critiques. The last
+   three hydrate each run's transcript (/__chat) and list every dispatch, Task
+   and persona critique, grouped by run, newest first, FINISHED ones included.
+   The Plan tab only exists once the project has locked a plan. Read-only. */
 function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagent, onOpenTask, embedded }) {
   // Per-run extracted { subagents, tasks }, keyed by runId.
   const [byRun, setByRun] = useState({});
@@ -15040,7 +15067,7 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagen
         const map = {};
         for (const [rid, rrows] of rowsByRun) {
           const evs = chatRowsToEvents(rrows);
-          map[rid] = { subagents: extractRunSubagents(evs), tasks: extractRunTasks(evs) };
+          map[rid] = { subagents: extractRunSubagents(evs), tasks: extractRunTasks(evs), critiques: extractRunCritiques(evs).reverse() };
         }
         if (cancelled) return;
         setByRun(map);
@@ -15062,18 +15089,20 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagen
   // Subagents + Tasks are single-kind views now (the "All" tab is gone), so
   // each shows exactly its own kind.
   const groups = capped
-    .map(r => ({ run: r, ...(byRun[r.runId] || { subagents: [], tasks: [] }) }))
+    .map(r => ({ run: r, critiques: [], ...(byRun[r.runId] || { subagents: [], tasks: [] }) }))
     .map(g => ({
       ...g,
       subagents: filter === "subagents" ? g.subagents : [],
       tasks:     filter === "tasks" ? g.tasks : [],
+      critiques: filter === "critiques" ? g.critiques : [],
     }))
-    .filter(g => g.subagents.length || g.tasks.length);
+    .filter(g => g.subagents.length || g.tasks.length || g.critiques.length);
 
   // Totals are unfiltered so the header count stays stable as the user toggles
   // the filter tabs.
   const totalAgents = capped.reduce((n, r) => n + ((byRun[r.runId]?.subagents.length) || 0), 0);
   const totalTasks  = capped.reduce((n, r) => n + ((byRun[r.runId]?.tasks.length) || 0), 0);
+  const totalCrits  = capped.reduce((n, r) => n + ((byRun[r.runId]?.critiques?.length) || 0), 0);
 
   const __node = html`
     <div
@@ -15082,10 +15111,10 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagen
       style=${!embedded && railTop != null ? { top: railTop + "px" } : null}>
       <div className="runs-panel-head">
         <span>Orchestration</span>
-        <span className="th-tasks-count">${totalAgents} agent${totalAgents===1?'':'s'} · ${totalTasks} task${totalTasks===1?'':'s'}</span>
+        <span className="th-tasks-count">${totalAgents} agent${totalAgents===1?'':'s'} · ${totalTasks} task${totalTasks===1?'':'s'}${totalCrits ? ` · ${totalCrits} critique${totalCrits===1?'':'s'}` : ""}</span>
       </div>
       <div className="th-tasks-filter" role="tablist" aria-label="View">
-        ${[["plan","Orchestration Plan"],["subagents","Subagents"],["tasks","Tasks"]].filter(([k]) => k !== "plan" || hasPlan !== false).map(([k, lbl]) => html`
+        ${[["plan","Orchestration Plan"],["subagents","Subagents"],["tasks","Tasks"],["critiques","Critiques"]].filter(([k]) => k !== "plan" || hasPlan !== false).map(([k, lbl]) => html`
           <button
             key=${k}
             role="tab"
@@ -15099,7 +15128,9 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagen
         ${filter === "plan" && html`<${OrchestrationPlanView} />`}
         ${filter !== "plan" && loading && groups.length === 0 && html`<div className="runs-empty">Loading…</div>`}
         ${filter !== "plan" && !loading && groups.length === 0 && html`
-          <div className="runs-empty">No ${filter} yet. They appear here once an agent dispatches a subagent or creates a task.</div>
+          <div className="runs-empty">${filter === "critiques"
+            ? "No critiques yet. They appear here once an agent runs a persona critique you armed from the composer's critic icon."
+            : `No ${filter} yet. They appear here once an agent dispatches a subagent or creates a task.`}</div>
         `}
         ${filter !== "plan" && groups.map(g => html`
           <div className="th-tasks-group" key=${g.run.runId}>
@@ -15129,6 +15160,25 @@ function TasksSubagentsPanel({ runs, railTop, panelRef, onOpenRun, onOpenSubagen
                 </button>
               </div>
             `)}
+            ${g.critiques.map(c => {
+              const st = c.status === "error" ? "failed" : c.status === "done" ? "done" : "running";
+              return html`
+              <button
+                className="th-tasks-row th-tasks-row-btn"
+                key=${c.id}
+                onClick=${() => openCritiqueTile(c.id, g.run.runId, g.run.title || g.run.kind)}
+                title="Open this critique's report in a panel"
+              >
+                <span className="runs-row-dot" data-status=${c.status === "error" ? "fail" : c.status === "done" ? "done" : "live"}/>
+                <${Icon.Critic}/>
+                <span className="th-tasks-row-main">
+                  <span className="th-tasks-row-type">persona critique · ${c.how === "simulate" ? "simulated" : "as text"}</span>
+                  <span className="th-tasks-row-label">${(c.personas || []).map(p => p.name).join(", ") || "Persona critique"}</span>
+                </span>
+                <span className="th-tasks-row-state">${st}</span>
+                <span className="th-tasks-row-go" aria-hidden="true"><${Icon.Chev}/></span>
+              </button>`;
+            })}
             ${g.tasks.map(t => html`
               <button
                 className="th-tasks-row th-tasks-row-btn"
@@ -15208,8 +15258,16 @@ function useOpenSubagentEvent(openWindow) {
       const d = e?.detail || {};
       if (d.agent) openWindow({ kind: "subagent", agent: d.agent, runId: d.runId, runTitle: d.runTitle });
     };
+    const onCritique = (e) => {
+      const d = e?.detail || {};
+      if (d.id) openWindow({ kind: "critique", critiqueId: d.id, runId: d.runId, runTitle: d.runTitle });
+    };
     window.addEventListener("th:open-subagent", onOpen);
-    return () => window.removeEventListener("th:open-subagent", onOpen);
+    window.addEventListener("th:open-critique", onCritique);
+    return () => {
+      window.removeEventListener("th:open-subagent", onOpen);
+      window.removeEventListener("th:open-critique", onCritique);
+    };
   }, [openWindow]);
 }
 
@@ -18505,10 +18563,24 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
     if (onClose) onClose();
   }, [tasks, clearedTaskIds, clearedTasksKey, run?.runId, run?.title, onClose]);
 
-  // Which list the sticky strip shows when BOTH tasks + agents are present.
-  // null = follow the default (agents while live, else tasks); a user click
-  // pins the choice as long as that tab still has content.
+  // Which list the sticky strip shows when more than one of tasks / agents /
+  // critique is present. null = follow the default (agents, then critique,
+  // then tasks); a user click pins the choice as long as that tab has content.
   const [stripTab, setStripTab] = useState(null);
+
+  // The thread's latest persona critique, docked in the strip like running
+  // subagents: while it runs, and once done until the user sends the next
+  // message (its report stays a click away on the thread's critique line).
+  const stripCritique = useMemo(() => {
+    const all = extractRunCritiques(events);
+    const c = all[all.length - 1];
+    if (!c) return null;
+    if (c.status === "running" && !processEnded) return c;
+    for (let i = c.at + 1; i < events.length; i++) {
+      if (events[i]?.event === "user_message") return null;
+    }
+    return c;
+  }, [events, processEnded]);
 
   // Did the agent modify files this run? Drives the auto-reload-on-done
   // decision in App. We only check WRITE-flavoured tools (Write/Edit/
@@ -18781,29 +18853,35 @@ function ChatDrawer({ run, onClose, onStop, onRunComplete, onStatusChange, permi
           <span className="chat-active-tool-name">${latestTool.name}</span>
         </div>
       `}
-      ${(tasks.length > 0 || activeAgents.length > 0) && (() => {
+      ${(tasks.length > 0 || activeAgents.length > 0 || stripCritique) && (() => {
         const showTasks  = tasks.length > 0;
         const showAgents = activeAgents.length > 0;
-        const both = showTasks && showAgents;
-        const eff = (stripTab === "tasks" && showTasks) || (stripTab === "agents" && showAgents)
+        const showCrit   = !!stripCritique;
+        const both = [showTasks, showAgents, showCrit].filter(Boolean).length > 1;
+        const eff = (stripTab === "tasks" && showTasks) || (stripTab === "agents" && showAgents) || (stripTab === "critique" && showCrit)
           ? stripTab
-          : (showAgents ? "agents" : "tasks");
+          : (showAgents ? "agents" : showCrit ? "critique" : "tasks");
         const taskMark = (s) => s === "completed" ? "✓" : s === "in_progress" ? "▸"
                               : s === "cancelled" ? "✕" : "○";
         return html`
         <div className="chat-active-agents">
           ${both && html`
             <div className="chat-active-tabs" role="tablist">
-              <button type="button" role="tab" className="chat-active-tab" data-active=${eff === "tasks"}
-                aria-selected=${eff === "tasks"} onClick=${() => setStripTab("tasks")}>Tasks ${tasks.length}</button>
-              <button type="button" role="tab" className="chat-active-tab" data-active=${eff === "agents"}
-                aria-selected=${eff === "agents"} onClick=${() => setStripTab("agents")}>Agents ${activeAgents.length}</button>
+              ${showTasks && html`<button type="button" role="tab" className="chat-active-tab" data-active=${eff === "tasks"}
+                aria-selected=${eff === "tasks"} onClick=${() => setStripTab("tasks")}>Tasks ${tasks.length}</button>`}
+              ${showAgents && html`<button type="button" role="tab" className="chat-active-tab" data-active=${eff === "agents"}
+                aria-selected=${eff === "agents"} onClick=${() => setStripTab("agents")}>Agents ${activeAgents.length}</button>`}
+              ${showCrit && html`<button type="button" role="tab" className="chat-active-tab" data-active=${eff === "critique"}
+                aria-selected=${eff === "critique"} onClick=${() => setStripTab("critique")}>Critique ${(stripCritique.personas || []).length}</button>`}
             </div>
           `}
           <div className="chat-active-list" aria-label=${eff === "agents"
             ? `${activeAgents.length} subagent${activeAgents.length === 1 ? "" : "s"} running`
+            : eff === "critique" ? "Persona critique"
             : `${tasks.length} task${tasks.length === 1 ? "" : "s"}`}>
-            ${eff === "agents"
+            ${eff === "critique"
+              ? html`<${CritiqueStripRows} ev=${stripCritique} runId=${run?.runId} runTitle=${run?.title || run?.kind}/>`
+              : eff === "agents"
               ? activeAgents.map(a => html`
                 <button type="button" className="chat-active-agent chat-active-agent-btn" key=${a.id}
                   title=${`${a.type} - ${a.task}\nOpen this subagent's details`}
@@ -25377,7 +25455,7 @@ function ChatBlock({ block, runId, answers, onAnswered, processEnded }) {
     case "agent_grid":
       return html`<div className="chat-row chat-assistant chat-agent-grid"><${AgentGridCard} block=${block}/></div>`;
     case "critique":
-      return html`<div className="chat-row chat-assistant chat-critique"><${PersonaCritiqueCard} id=${block.data.id} status=${block.data.status} stage=${block.data.stage}/></div>`;
+      return html`<div className="chat-row chat-assistant chat-critique"><${CritiqueThreadRow} ev=${block.data} runId=${runId}/></div>`;
     case "user_message": {
       // Plan / Triage are per message, so a thread can switch between them:
       // the mode each message ran in is marked on its bubble (Normal is the
@@ -33687,7 +33765,7 @@ function WorkflowCanvas() {
   const [dockRowSplit, setDockRowSplit] = useState(() => Number(loadDock().rowSplit) || 50);
   const dockColRef = useRef(dockColSplit); dockColRef.current = dockColSplit;
   const dockRowRef = useRef(dockRowSplit); dockRowRef.current = dockRowSplit;
-  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent" && w.kind !== "task").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
+  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent" && w.kind !== "task" && w.kind !== "critique").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
   const openWindow = useCallback((descOrKind) => {
     // Callers pass either a kind string (rail buttons) or a descriptor object
     // ({ kind, run }) - normalise so desc.kind is always defined.
@@ -33700,6 +33778,12 @@ function WorkflowCanvas() {
         const at = prev.findIndex(w => w.id === wid);
         if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], task: desc.task, runTitle: desc.runTitle }; }
         else { const w = { id: wid, kind: "task", task: desc.task, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      } else if (desc.kind === "critique") {
+        // A persona critique report tile - keyed by the critique id.
+        const wid = "w_crit_" + (desc.critiqueId || "x");
+        const at = prev.findIndex(w => w.id === wid);
+        if (at >= 0) next = prev;
+        else { const w = { id: wid, kind: "critique", critiqueId: desc.critiqueId, runId: desc.runId, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
       } else if (desc.kind === "subagent") {
         // A subagent detail tile - keyed by the subagent id so each opens its
         // own pane; reopening the same one refreshes its frozen snapshot.
@@ -63488,7 +63572,7 @@ function PreviewAssetsPanel({ activePath, onClose }) {
    short task table, a browser walks it screenshotting each step, and every
    persona runs as an isolated, tool-less agent that sees only its profile,
    the documents granted to it and those screens - never code. The result
-   streams into the thread as a `persona_critique` event (PersonaCritiqueCard).
+   streams into the thread as a `persona_critique` event (CritiqueThreadRow, CritiquePanel).
    The cache is per project so a project switch never shows another's list. */
 const __personasCache = { project: null, list: null };
 function personasCached() {
@@ -63903,6 +63987,16 @@ function PersonaEditor({ initial, onDone, onClose }) {
           placeholder="# Name, then whatever you know about them"
           onInput=${(e) => { const v = e.target.value; setP(o => ({ ...o, profile: v })); setErr(null); }}/>
         <div className="personas-help">Markdown. Fill what you know, leave or delete the rest: empty headings are skipped. The first line is the name; "Device: phone" makes simulations use a phone screen.</div>
+        <div className="personas-deep-row">
+          <button type="button" className=${"share-switch" + (p.deep ? " is-on" : "")} role="switch" aria-checked=${p.deep ? "true" : "false"}
+            onClick=${() => setP(o => ({ ...o, deep: !o.deep }))}>
+            <span className="share-switch-track"><span className="share-switch-knob"/></span>
+            <span className="share-switch-label">Deep thinking</span>
+          </button>
+          <span className="personas-help">${p.deep
+            ? "Critiques on the model the chat thread uses: slower and costlier, for experts whose judgement needs reasoning."
+            : "Off: critiques on the economy model from Settings, enough for an everyday user."}</span>
+        </div>
         <div className="personas-pair">
           <div className="personas-field">
             <div className="personas-field-head"><span>What they know</span>
@@ -63993,6 +64087,7 @@ function PersonasPanel({ onClose }) {
           <div key=${p.id} className="pv-file-row personas-row" onClick=${() => setEditing(p)}>
             <span className="pv-file-glyph"><${Icon.User}/></span>
             <span className="personas-row-name">${p.name}</span>
+            ${p.deep && html`<span className="persona-deep-mark" title="Critiques on the chat thread's model">deep thinking</span>`}
             <span className="personas-row-meta" title=${personaMeta(p)}>${personaMeta(p)}</span>
             <span className="pv-row-actions">
               <button type="button" className="pv-rowbtn" title="Edit" aria-label=${"Edit " + p.name}
@@ -64092,7 +64187,7 @@ function ChatCriticPicker({ value, onChange, openUp }) {
               title=${personaMeta(p)} onClick=${() => toggle(p.id)}>
               <span className="guard-check" data-on=${picked.includes(p.id)} aria-hidden="true">${picked.includes(p.id) ? html`<${Icon.Check}/>` : null}</span>
               <span className="perm-item-body">
-                <span className="perm-item-label">${p.name}</span>
+                <span className="perm-item-label">${p.name}${p.deep && html` <span className="persona-deep-mark" title="Critiques on the chat thread's model">deep thinking</span>`}</span>
                 ${personaMeta(p) && html`<span className="perm-item-hint">${personaMeta(p)}</span>`}
               </span>
             </button>`)}
@@ -64117,96 +64212,283 @@ function ChatCriticPicker({ value, onChange, openUp }) {
     </div>`;
 }
 
-/* The critique in the thread. The daemon appends a `persona_critique` event
-   on every stage change; the card reads the full report from /__critic/<id>
-   (screens are files, never inlined in the event log) and polls while it runs. */
+/* Persona critiques. The daemon appends a `persona_critique` event to the
+   thread on every stage change; the full report (screens are files, never
+   inlined in the event log) is read from /__critic/<id>. The thread keeps one
+   line per critique, the chat's sticky strip shows the live one (Critique tab
+   beside Tasks / Agents), and the report opens as a dock tile
+   (CritiquePanel), like a subagent's. */
 const CRITIQUE_STAGE = { planning: "Planning the session", walking: "Walking the flow", critiquing: "Personas reviewing" };
 const CRITIQUE_FEEL = { fine: "fine", unsure: "unsure", stuck: "stuck", pleased: "pleased" };
-function PersonaCritiqueCard({ id, status, stage }) {
-  const [report, setReport] = useState(null);
-  const [err, setErr] = useState(null);
+
+/* One fetch + poll per critique id, shared by every view of it (thread row,
+   strip, dock tile), so three views never mean three pollers. */
+const _critiqueStore = new Map();
+function _critiqueEntry(id) {
+  let e = _critiqueStore.get(id);
+  if (!e) { e = { report: null, err: null, subs: new Set(), timer: null, inflight: false }; _critiqueStore.set(id, e); }
+  return e;
+}
+function _critiqueFetch(id) {
+  const e = _critiqueEntry(id);
+  if (e.inflight) return;
+  e.inflight = true;
+  clearTimeout(e.timer); e.timer = null;
+  fetch(apiUrl(`/__critic/${encodeURIComponent(id)}`), { cache: "no-store" })
+    .then(r => r.json().then(j => (r.ok ? j : Promise.reject(new Error(j.error || `HTTP ${r.status}`)))))
+    .then(j => { e.report = j; e.err = null; }, x => { e.err = x.message || String(x); })
+    .finally(() => {
+      e.inflight = false;
+      e.subs.forEach(f => f());
+      // Poll while it runs and someone is looking. A load error stops it; the
+      // next stage event from the thread retries.
+      if (e.subs.size && e.report && e.report.status === "running" && !e.err) {
+        e.timer = setTimeout(() => _critiqueFetch(id), 3000);
+      }
+    });
+}
+function useCritiqueReport(id, bump) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    if (!id) return;
+    const e = _critiqueEntry(id);
+    const f = () => force(n => n + 1);
+    e.subs.add(f);
+    if (!e.report || e.report.status === "running") _critiqueFetch(id);
+    return () => { e.subs.delete(f); if (!e.subs.size) { clearTimeout(e.timer); e.timer = null; } };
+  }, [id]);
+  // A new stage event in the thread: re-read now rather than at the next poll.
+  useEffect(() => { if (id && bump) _critiqueFetch(id); }, [id, bump]);
+  const e = id ? _critiqueStore.get(id) : null;
+  return [e ? e.report : null, e ? e.err : null];
+}
+
+/* A report as changes -> journeys -> reviews. A message can carry several
+   changes, each touching some of the personas, and a persona can meet one
+   change through several journeys; one review is one persona on one change.
+   The first reports (one plan for everyone) read as one change with one
+   journey. */
+function critiqueModel(report) {
+  const r = report || {};
+  const personas = r.personas || [];
+  if (Array.isArray(r.changes)) return { changes: r.changes, flows: r.flows || [], reviews: r.reviews || [], personas };
+  const flow = (r.tasks || []).length > 0;
+  const ids = personas.map(p => p.id);
+  return {
+    personas,
+    changes: [{ id: "t1", title: (r.summary || [])[0] || "", summary: r.summary || [], personas: ids }],
+    flows: flow ? [{ id: "f1", change: "t1", title: "Session", personas: ids, tasks: r.tasks, walks: r.walks || {} }] : [],
+    reviews: personas.map(p => ({
+      change: "t1", persona: p.id, status: p.status, error: p.error, verdict: p.verdict,
+      journeys: flow ? { f1: p.steps || [] } : {},
+      suggestions: (p.suggestions || []).map(s => ({ ...s, journey: flow && s.step ? "f1" : null })),
+    })),
+  };
+}
+function critiqueDuration(report) {
+  const secs = report && report.durationMs ? Math.round(report.durationMs / 1000) : null;
+  return secs == null ? "" : secs >= 60 ? Math.floor(secs / 60) + "m " + (secs % 60) + "s" : secs + "s";
+}
+function critiqueSuggestionCount(report) {
+  return critiqueModel(report).reviews.reduce((n, r) => n + ((r.suggestions || []).length), 0);
+}
+/* The one-line state of a critique: report when loaded, else the thread's
+   latest event for it. */
+function critiqueState(report, ev, err) {
+  const status = report ? report.status : ev ? ev.status : err ? "error" : "running";
+  const stage = report ? report.stage : ev ? ev.stage : null;
+  if (status === "running") return { status, text: CRITIQUE_STAGE[stage] || "Starting" };
+  if (status === "error") return { status, text: "Failed" + (report && report.error ? ": " + report.error : err ? ": " + err : "") };
+  const n = critiqueSuggestionCount(report);
+  const dur = critiqueDuration(report);
+  return { status, text: ["Done" + (dur ? " in " + dur : ""), report ? n + " suggestion" + (n === 1 ? "" : "s") : null].filter(Boolean).join(" · ") };
+}
+const critiqueBump = (ev) => ev ? [ev.status, ev.stage, ...((ev.personas || []).map(p => p.status))].join(":") : "";
+const critiqueActionText = (t) => {
+  if (!t) return "";
+  if (t.do === "open") return t.page && t.page !== "P1" ? "Open screen " + String(t.page).slice(1) : "Open the start screen";
+  if (t.do === "click") return `Click "${t.target}"`;
+  if (t.do === "fill") return `Type "${t.value}" into "${t.target}"`;
+  if (t.do === "select") return `Choose "${t.value}" in "${t.target}"`;
+  if (t.do === "press") return "Press " + (t.value || "Enter");
+  if (t.do === "scroll") return "Scroll down" + (t.target ? ` to "${t.target}"` : "");
+  return "Look at the screen";
+};
+
+/* The thread's line for a critique: where it ran and how it stands. Click
+   opens the report tile. */
+function CritiqueThreadRow({ ev, runId, runTitle }) {
+  const [report, err] = useCritiqueReport(ev.id, critiqueBump(ev));
+  const st = critiqueState(report, ev, err);
+  const n = ((report && report.personas) || ev.personas || []).length;
+  const how = (report && report.how) || ev.how;
+  const changes = report ? critiqueModel(report).changes.length : 0;
+  return html`
+    <button type="button" className="critique-card critique-row" data-status=${st.status}
+      title="Open the critique report" onClick=${() => openCritiqueTile(ev.id, runId, runTitle)}>
+      <span className="critique-head">
+        <${Icon.Critic}/>
+        <span className="critique-title">Persona critique</span>
+        <span className="critique-how">${[changes > 1 ? changes + " changes" : null, n + " persona" + (n === 1 ? "" : "s"),
+          how === "simulate" ? "simulated on the page" : "as text"].filter(Boolean).join(" · ")}</span>
+        <span className="critique-status">${st.status === "running" && html`<span className="chat-active-agent-spin"/>`}${st.text}</span>
+        <span className="critique-row-go" aria-hidden="true"><${Icon.Chev}/></span>
+      </span>
+    </button>`;
+}
+
+/* The Critique tab of the chat's sticky strip: the critique's state, then one
+   row per persona (status, or what it said once it answered). Every row
+   opens the report tile. */
+function CritiqueStripRows({ ev, runId, runTitle }) {
+  const [report, err] = useCritiqueReport(ev.id, critiqueBump(ev));
+  const st = critiqueState(report, ev, err);
+  const people = (report && report.personas) || ev.personas || [];
+  const reviews = report ? critiqueModel(report).reviews : [];
+  const open = () => openCritiqueTile(ev.id, runId, runTitle);
+  const mark = (s) => s === "running" || s === "waiting"
+    ? html`<span className="chat-active-agent-spin" aria-hidden="true"/>`
+    : html`<span className="chat-active-task-mark" data-status=${s === "done" ? "completed" : s === "error" ? "cancelled" : "pending"} aria-hidden="true">${s === "done" ? "✓" : s === "error" ? "✕" : "○"}</span>`;
+  const said = (p) => {
+    const mine = reviews.filter(r => r.persona === p.id && r.status === "done");
+    const n = mine.reduce((k, r) => k + (r.suggestions || []).length, 0);
+    if (mine.length === 1 && mine[0].verdict) return `"${mine[0].verdict}"`;
+    return `${n} suggestion${n === 1 ? "" : "s"}` + (mine.length > 1 ? ` on ${mine.length} changes` : "");
+  };
+  return html`<${React.Fragment}>
+    <button type="button" className="chat-active-agent chat-active-agent-btn" title="Open the critique report" onClick=${open}>
+      ${mark(st.status === "error" ? "error" : st.status === "done" ? "done" : "running")}
+      <span className="chat-active-agent-type">persona critique</span>
+      <span className="chat-active-agent-task">${st.text}</span>
+    </button>
+    ${people.map((p, i) => html`
+      <button type="button" className="chat-active-agent chat-active-agent-btn" key=${p.id || i}
+        title=${`${p.name}\nOpen the critique report`} onClick=${open}>
+        ${mark(p.status)}
+        <span className="chat-active-agent-type">${p.name}</span>
+        <span className="chat-active-agent-task">${p.status === "done" ? said(p)
+          : p.status === "skipped" ? "not affected by these changes"
+          : p.status === "error" ? (p.error || "no answer") : p.status === "running" ? "reviewing" : "waiting"}</span>
+      </button>`)}
+  <//>`;
+}
+
+/* The critique report, a dock tile like SubagentPanel. Suggestions, grouped
+   by change, open first; Journeys holds every walked journey's step screens
+   with each persona's reaction. */
+function CritiquePanel({ id, runTitle }) {
+  const [report, err] = useCritiqueReport(id);
+  const [tab, setTab] = useState(null);
+  const [flowId, setFlowId] = useState(null);
   const [device, setDevice] = useState(null);
   const [step, setStep] = useState(null);
-  const load = useCallback(() => {
-    fetch(apiUrl(`/__critic/${encodeURIComponent(id)}`))
-      .then(r => r.json().then(j => (r.ok ? j : Promise.reject(new Error(j.error || `HTTP ${r.status}`)))))
-      .then(j => { setReport(j); setErr(null); })
-      .catch(e => setErr(e.message || String(e)));
-  }, [id]);
-  useEffect(() => { load(); }, [load, status, stage]);
-  const running = !report || report.status === "running";
-  useEffect(() => {
-    if (!running) return;
-    const t = setInterval(load, 3000);
-    return () => clearInterval(t);
-  }, [running, load]);
-  if (!report) {
-    return html`<div className="critique-card"><div className="critique-head"><${Icon.Critic}/><span className="critique-title">Persona critique</span>
-      <span className="critique-status">${err ? "Could not load: " + err : html`<${React.Fragment}><span className="chat-active-agent-spin"/> starting<//>`}</span></div></div>`;
-  }
-  const walks = report.walks || {};
+  useEffect(() => { setTab(null); setFlowId(null); setDevice(null); setStep(null); }, [id]);
+  const st = critiqueState(report, null, err);
+  const dot = st.status === "error" ? "fail" : st.status === "done" ? "done" : "live";
+  const m = critiqueModel(report);
+  const pById = Object.fromEntries(m.personas.map(p => [p.id, p]));
+  const nameOf = (pid) => (pById[pid] && pById[pid].name) || pid;
+  const flow = m.flows.find(f => f.id === flowId) || m.flows[0] || null;
+  const walks = (flow && flow.walks) || {};
   const devices = Object.keys(walks);
   const dev = device && walks[device] ? device : devices[0];
-  const walk = dev ? walks[dev] : null;
-  const steps = (walk && walk.steps) || [];
-  const tasks = report.tasks || [];
+  const walk = (dev && walks[dev]) || {};
+  const steps = walk.steps || [];
+  const tasks = (flow && flow.tasks) || [];
   const firstStuck = steps.find(s => !s.ok);
   const cur = step != null ? step : (firstStuck ? firstStuck.n : (steps.length ? steps[0].n : null));
   const curStep = steps.find(s => s.n === cur);
   const curTask = cur ? tasks[cur - 1] : null;
   const shot = (name) => apiUrl(`/__critic/${encodeURIComponent(id)}/shot?f=${encodeURIComponent(name)}`);
-  const personas = report.personas || [];
-  const secs = report.durationMs ? Math.round(report.durationMs / 1000) : null;
-  const statusLine = report.status === "running"
-    ? html`<${React.Fragment}><span className="chat-active-agent-spin"/> ${CRITIQUE_STAGE[report.stage] || "Working"}<//>`
-    : report.status === "error"
-      ? "Failed: " + (report.error || "unknown error")
-      : `Done${secs != null ? " in " + (secs >= 60 ? Math.floor(secs / 60) + "m " + (secs % 60) + "s" : secs + "s") : ""}`;
-  const actionText = (t) => {
-    if (!t) return "";
-    if (t.do === "open") return t.page && t.page !== "P1" ? "Open screen " + String(t.page).slice(1) : "Open the start screen";
-    if (t.do === "click") return `Click "${t.target}"`;
-    if (t.do === "fill") return `Type "${t.value}" into "${t.target}"`;
-    if (t.do === "select") return `Choose "${t.value}" in "${t.target}"`;
-    if (t.do === "press") return "Press " + (t.value || "Enter");
-    if (t.do === "scroll") return "Scroll down" + (t.target ? ` to "${t.target}"` : "");
-    return "Look at the screen";
-  };
+  const stuckIn = (f) => Object.values(f.walks || {}).reduce((n, w) => n + (w.steps || []).filter(s => !s.ok).length, 0);
+  const tabs = [
+    ["suggestions", "Suggestions"],
+    m.flows.length > 0 && ["journeys", `Journeys · ${m.flows.length}`],
+  ].filter(Boolean);
+  const curTab = tabs.some(([k]) => k === tab) ? tab : "suggestions";
+  const goStep = (fid, d, n) => { setFlowId(fid); setDevice(d); setStep(n); setTab("journeys"); };
+  const pickFlow = (fid) => { setFlowId(fid); setDevice(null); setStep(null); };
+  const multi = m.changes.length > 1;
   return html`
-    <div className="critique-card" data-status=${report.status}>
-      <div className="critique-head">
+    <div className="th-rail-panel th-rail-panel-embedded th-subagent-panel th-critique-panel">
+      <div className="runs-panel-head th-subagent-head">
+        <span className="runs-row-dot" data-status=${dot}/>
         <${Icon.Critic}/>
-        <span className="critique-title">Persona critique</span>
-        <span className="critique-how">${report.how === "simulate" ? "simulated on the page" : "as text"}</span>
-        <span className="critique-status">${statusLine}</span>
+        <span className="th-subagent-head-main">
+          <span className="th-tasks-row-type">persona critique${report ? (report.how === "simulate" ? " · simulated on the page" : " · as text") : ""}</span>
+          <span className="th-subagent-head-label">${m.personas.map(p => p.name).join(", ") || "Persona critique"}</span>
+        </span>
+        <span className="th-tasks-row-state" title=${st.text}>${st.status === "running" ? html`<span className="chat-active-agent-spin"/>` : null}${st.status === "error" ? "failed" : st.text}</span>
       </div>
-      ${(report.summary || []).length > 0 && html`
-        <div className="critique-sec">
-          <div className="critique-sec-head">What changed</div>
-          <ul className="critique-list">${report.summary.map((s, i) => html`<li key=${i}>${s}</li>`)}</ul>
-        </div>`}
-      ${tasks.length > 0 && html`
-        <div className="critique-sec">
-          <div className="critique-sec-head">Tasks</div>
-          <table className="critique-table">
-            <thead><tr><th>#</th><th>Task</th><th>Action</th>${tasks.some(t => t.lookFor) && html`<th>Look for</th>`}</tr></thead>
-            <tbody>${tasks.map((t, i) => {
-              const s = steps.find(x => x.n === i + 1);
-              return html`<tr key=${i} data-active=${cur === i + 1} data-failed=${!!(s && !s.ok)} onClick=${() => steps.length && setStep(i + 1)}>
-                <td>${i + 1}</td><td>${t.goal}</td><td>${actionText(t)}</td>${tasks.some(x => x.lookFor) && html`<td>${t.lookFor}</td>`}</tr>`;
-            })}</tbody>
-          </table>
-        </div>`}
-      ${steps.length > 0 && html`
-        <div className="critique-sec">
-          <div className="critique-sec-head">
-            <span>Session</span>
-            ${devices.length > 1 && html`<span className="critique-devs">${devices.map(d => html`<button key=${d} type="button"
-              className="critique-dev" data-on=${d === dev} onClick=${() => setDevice(d)}>${d === "mobile" ? "Phone" : "Computer"}</button>`)}</span>`}
+      ${report && tabs.length > 1 && html`<div className="th-tasks-filter" role="tablist" aria-label="Critique detail">
+        ${tabs.map(([k, lbl]) => html`
+          <button key=${k} role="tab" aria-selected=${curTab === k}
+            className=${"th-tasks-filter-btn" + (curTab === k ? " is-active" : "")}
+            onClick=${() => setTab(k)}>${lbl}</button>`)}
+      </div>`}
+      <div className="th-rail-panel-body th-subagent-body critique-card" role="tabpanel" data-status=${st.status}>
+        ${runTitle && html`<div className="th-subagent-run">from ${runTitle}</div>`}
+        ${!report && html`<div className="th-tasks-agent-empty">${err ? "Could not load: " + err : "Loading…"}</div>`}
+        ${report && st.status === "error" && html`<div className="critique-fail">${st.text}</div>`}
+        ${report && (report.notes || []).length > 0 && html`<div className="critique-notes">${report.notes.join(" · ")}</div>`}
+        ${report && curTab === "suggestions" && m.changes.map((ch, ci) => {
+          const left = m.personas.filter(p => !(ch.personas || []).includes(p.id));
+          const revs = m.reviews.filter(r => r.change === ch.id);
+          return html`
+          <div key=${ch.id} className="critique-change">
+            <div className="critique-change-head">
+              ${multi && html`<span className="critique-change-n">${ci + 1}</span>`}
+              <span className="critique-change-title">${ch.title || (report.status === "running" ? "Planning…" : "(no summary)")}</span>
+            </div>
+            ${(ch.summary || []).length > 1 && html`<ul className="critique-list">${ch.summary.slice(1).map((s, i) => html`<li key=${i}>${s}</li>`)}</ul>`}
+            ${ch.error && html`<div className="critique-fail">${ch.error}</div>`}
+            ${!ch.error && left.length > 0 && report.stage !== "planning" && html`<div className="critique-notes">Not affected: ${left.map(p => p.name).join(", ")}</div>`}
+            ${revs.map(rv => {
+              const p = pById[rv.persona] || {};
+              return html`
+              <div key=${rv.persona} className="critique-persona" data-status=${rv.status}>
+                <div className="critique-persona-head">
+                  <span className="critique-who"><${Icon.User}/>${p.name || rv.persona}</span>
+                  ${p.role && html`<span className="critique-persona-role">${p.role}</span>`}
+                  ${rv.status === "running" || rv.status === "waiting"
+                    ? html`<span className="critique-status"><span className="chat-active-agent-spin"/> ${rv.status === "waiting" ? "waiting" : "reviewing"}</span>`
+                    : p.model ? html`<span className="critique-status" title=${p.deep ? "Deep thinking: reviewed on the thread's model" : "Reviewed on the economy model"}>${p.deep ? "deep thinking · " : ""}${p.model}</span>` : null}
+                </div>
+                ${rv.status === "error" && html`<div className="critique-fail">${rv.error || "no answer"}</div>`}
+                ${rv.verdict && html`<div className="critique-verdict">"${rv.verdict}"</div>`}
+                ${(rv.suggestions || []).length > 0 && html`<ul className="critique-sugg">${rv.suggestions.map((s, i) => {
+                  const f = s.journey && m.flows.find(x => x.id === s.journey);
+                  return html`
+                  <li key=${i} data-priority=${s.priority}>
+                    <span className="critique-prio">${s.priority}</span>
+                    <span><strong>${s.title}</strong>${s.why ? " - " + s.why : ""}${f ? html`<${React.Fragment}> <button type="button" className="critique-steplink"
+                      onClick=${() => goStep(f.id, (f.walks || {})[p.device || "desktop"] ? (p.device || "desktop") : null, s.step || null)}>${f.title}${s.step ? ", step " + s.step : ""}</button><//>` : ""}</span>
+                  </li>`;
+                })}</ul>`}
+              </div>`;
+            })}
+          </div>`;
+        })}
+        ${report && curTab === "journeys" && flow && html`<${React.Fragment}>
+          <div className="critique-journeys" role="listbox" aria-label="Journeys">
+            ${m.flows.map(f => {
+              const ci = m.changes.findIndex(c => c.id === f.change);
+              const stuck = stuckIn(f);
+              return html`<button key=${f.id} type="button" role="option" aria-selected=${f.id === flow.id}
+                className="critique-journey" data-on=${f.id === flow.id} onClick=${() => pickFlow(f.id)}>
+                ${multi && html`<span className="critique-change-n">${ci + 1}</span>`}
+                <span className="critique-journey-title">${f.title}</span>
+                <span className="critique-journey-who">${(f.personas || []).map(nameOf).join(", ")}</span>
+                ${stuck > 0 && html`<span className="critique-fail critique-journey-stuck"><${Icon.Alert}/>${stuck}</span>`}
+              </button>`;
+            })}
           </div>
+          ${devices.length > 1 && html`<div className="critique-sec-head"><span className="critique-devs">${devices.map(d => html`<button key=${d} type="button"
+            className="critique-dev" data-on=${d === dev} onClick=${() => { setDevice(d); setStep(null); }}>${d === "mobile" ? "Phone" : "Computer"}</button>`)}</span></div>`}
+          ${walk.error && html`<div className="critique-fail">The ${dev === "mobile" ? "phone" : "computer"} walk failed: ${walk.error}</div>`}
           <div className="critique-strip">
             ${steps.map(s => html`<button key=${s.n} type="button" className="critique-thumb" data-on=${s.n === cur} data-failed=${!s.ok}
-              title=${`Step ${s.n}: ${actionText(tasks[s.n - 1])}${s.ok ? "" : " - " + (s.error || "failed")}`} onClick=${() => setStep(s.n)}>
+              title=${`Step ${s.n}: ${critiqueActionText(tasks[s.n - 1])}${s.ok ? "" : " - " + (s.error || "failed")}`} onClick=${() => setStep(s.n)}>
               ${s.shot ? html`<img src=${shot(s.shot)} alt=${"Step " + s.n} loading="lazy"/>` : html`<span className="critique-thumb-none">no screen</span>`}
               <span className="critique-thumb-n">${s.ok ? "" : html`<${Icon.Alert}/>`}${s.n}</span>
             </button>`)}
@@ -64214,38 +64496,22 @@ function PersonaCritiqueCard({ id, status, stage }) {
           ${curStep && html`
             <div className="critique-step">
               <div className="critique-step-cap">
-                <strong>Step ${curStep.n}</strong> · ${curTask ? (curTask.goal || actionText(curTask)) : ""}
-                <span className="critique-step-did">${actionText(curTask)}${curStep.ok ? "" : html`<${React.Fragment}> - <span className="critique-fail">${curStep.error || "could not be done"}</span><//>`}</span>
+                <strong>Step ${curStep.n}</strong> · ${curTask ? (curTask.goal || critiqueActionText(curTask)) : ""}
+                <span className="critique-step-did">${critiqueActionText(curTask)}${curStep.ok ? "" : html`<${React.Fragment}> - <span className="critique-fail">${curStep.error || "could not be done"}</span><//>`}</span>
               </div>
               ${curStep.shot && html`<a href=${shot(curStep.shot)} target="_blank" rel="noopener" className="critique-step-shot" title="Open full size">
                 <img src=${shot(curStep.shot)} alt=${"Screen at step " + curStep.n}/></a>`}
-              ${personas.filter(p => (p.device || "desktop") === dev && (p.steps || []).some(x => x.n === curStep.n)).map(p => {
-                const r = p.steps.find(x => x.n === curStep.n);
-                return html`<div key=${p.id} className="critique-thought" data-feel=${r.feel}>
-                  <span className="critique-who"><${Icon.User}/>${p.name}</span>
-                  <span className="critique-feel">${CRITIQUE_FEEL[r.feel] || r.feel}</span>
-                  <span className="critique-thought-text">${r.thought}</span>
+              ${m.reviews.filter(rv => rv.change === flow.change && (flow.personas || []).includes(rv.persona)
+                  && ((pById[rv.persona] || {}).device || "desktop") === dev).map(rv => {
+                const rx = ((rv.journeys || {})[flow.id] || []).find(x => x.n === curStep.n);
+                if (!rx) return null;
+                return html`<div key=${rv.persona} className="critique-thought" data-feel=${rx.feel}>
+                  <span className="critique-who"><${Icon.User}/>${nameOf(rv.persona)}</span>
+                  <span className="critique-feel">${CRITIQUE_FEEL[rx.feel] || rx.feel}</span>
+                  <span className="critique-thought-text">${rx.thought}</span>
                 </div>`;
               })}
-            </div>`}
-        </div>`}
-      <div className="critique-sec">
-        <div className="critique-sec-head">Suggestions</div>
-        ${personas.map(p => html`
-          <div key=${p.id} className="critique-persona" data-status=${p.status}>
-            <div className="critique-persona-head">
-              <span className="critique-who"><${Icon.User}/>${p.name}</span>
-              ${p.role && html`<span className="critique-persona-role">${p.role}</span>`}
-              ${p.status === "running" || p.status === "waiting" ? html`<span className="critique-status"><span className="chat-active-agent-spin"/> ${p.status === "waiting" ? "waiting" : "reviewing"}</span>` : null}
-            </div>
-            ${p.status === "error" && html`<div className="critique-fail">${p.error || "no answer"}</div>`}
-            ${p.verdict && html`<div className="critique-verdict">"${p.verdict}"</div>`}
-            ${(p.suggestions || []).length > 0 && html`<ul className="critique-sugg">${p.suggestions.map((s, i) => html`
-              <li key=${i} data-priority=${s.priority}>
-                <span className="critique-prio">${s.priority}</span>
-                <span><strong>${s.title}</strong>${s.why ? " - " + s.why : ""}${s.step ? html`<${React.Fragment}> <button type="button" className="critique-steplink" onClick=${() => { setDevice(p.device || "desktop"); setStep(s.step); }}>step ${s.step}</button><//>` : ""}</span>
-              </li>`)}</ul>`}
-          </div>`)}
+            </div>`}<//>`}
       </div>
     </div>`;
 }
@@ -110292,7 +110558,7 @@ function App() {
   const dockTotalWidth = dockWidth * dockCols;
 
   // Serialise windows for persistence (threads keep only their runId).
-  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent" && w.kind !== "task").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
+  const serializeDock = (ws) => ws.filter(w => w.kind !== "subagent" && w.kind !== "task" && w.kind !== "critique").map(w => w.kind === "thread" ? { kind: "thread", runId: w.run?.runId } : { kind: w.kind });
 
   const openWindow = useCallback((descOrKind) => {
     // Callers pass either a kind string (rail buttons) or a descriptor object
@@ -110306,6 +110572,12 @@ function App() {
         const at = prev.findIndex(w => w.id === wid);
         if (at >= 0) { next = prev.slice(); next[at] = { ...next[at], task: desc.task, runTitle: desc.runTitle }; }
         else { const w = { id: wid, kind: "task", task: desc.task, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
+      } else if (desc.kind === "critique") {
+        // A persona critique report tile - keyed by the critique id.
+        const wid = "w_crit_" + (desc.critiqueId || "x");
+        const at = prev.findIndex(w => w.id === wid);
+        if (at >= 0) next = prev;
+        else { const w = { id: wid, kind: "critique", critiqueId: desc.critiqueId, runId: desc.runId, runTitle: desc.runTitle }; next = prev.length < 4 ? [...prev, w] : [...prev.slice(0, 3), w]; }
       } else if (desc.kind === "subagent") {
         // A subagent detail tile - keyed by the subagent id so each opens its
         // own pane; reopening the same one refreshes its frozen snapshot.

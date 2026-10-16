@@ -227,39 +227,175 @@ class Knowledge(unittest.TestCase):
 
 class Parsers(unittest.TestCase):
     def test_plan(self):
-        text = 'Sure:\n```json\n{"summary": ["Shorter form"], "tasks": [{"goal": "Apply", "do": "click", "target": "Apply now", "lookFor": "fields"}]}\n```'
-        summary, tasks = personas.parse_plan(text, ["P1", "P2"], True)
-        self.assertEqual(summary, ["Shorter form"])
-        self.assertEqual(tasks[0]["do"], "open")      # the session always starts on the start screen
-        self.assertEqual(tasks[0]["page"], "P1")
-        self.assertEqual(tasks[1]["target"], "Apply now")
-        summary, tasks = personas.parse_plan(text, [], False)
-        self.assertEqual(tasks, [])
+        text = ('Sure:\n```json\n{"summary": ["Shorter form"], "personas": ["p_aaaa", "p_zzzz"], "journeys": ['
+                '{"title": "New application", "personas": ["p_aaaa"], "tasks": [{"goal": "Apply", "do": "click", "target": "Apply now"}]},'
+                '{"title": "Saved draft", "personas": ["p_bbbb"], "tasks": [{"goal": "Edit", "do": "open", "page": "P2"}]},'
+                '{"title": "Empty", "personas": ["p_aaaa"], "tasks": []}]}\n```')
+        plan = personas.parse_plan(text, ["P1", "P2"], True, ["p_aaaa", "p_bbbb", "p_cccc"])
+        self.assertEqual(plan["summary"], ["Shorter form"])
+        self.assertEqual(plan["personas"], ["p_aaaa", "p_bbbb"])   # unknown id dropped, a journey's taker joins
+        self.assertEqual([f["title"] for f in plan["flows"]], ["New application", "Saved draft"])
+        first = plan["flows"][0]["tasks"]
+        self.assertEqual(first[0]["do"], "open")                   # a journey always starts on a screen
+        self.assertEqual(first[0]["page"], "P1")
+        self.assertEqual(first[1]["target"], "Apply now")
+        self.assertEqual(plan["flows"][1]["tasks"][0]["page"], "P2")
+        self.assertEqual(personas.parse_plan(text, [], False, ["p_aaaa"])["flows"], [])
+
+    def test_plan_first_form_and_no_one_touched(self):
+        old = '{"summary": ["Shorter form"], "tasks": [{"goal": "Apply", "do": "click", "target": "Apply"}]}'
+        plan = personas.parse_plan(old, ["P1"], True, ["p_aaaa", "p_bbbb"])
+        self.assertEqual(plan["personas"], ["p_aaaa", "p_bbbb"])
+        self.assertEqual(len(plan["flows"]), 1)
+        self.assertEqual(plan["flows"][0]["personas"], ["p_aaaa", "p_bbbb"])
+        none = personas.parse_plan('{"summary": ["x"], "personas": [], "journeys": []}', ["P1"], True, ["p_aaaa"])
+        self.assertEqual((none["personas"], none["flows"]), ([], []))
 
     def test_critique(self):
         out = personas.parse_critique(json.dumps({
-            "steps": [{"n": 1, "feel": "stuck", "thought": "Where is it?"}, {"n": 9, "thought": "x"}],
-            "verdict": "Too long\u2014really.",
-            "suggestions": [{"title": "Cut a field", "why": "No time", "priority": "high", "step": 1},
-                            {"title": "", "why": "dropped"}]}), 2)
-        self.assertEqual([s["n"] for s in out["steps"]], [1])
+            "journeys": [{"journey": "f1", "steps": [{"n": 1, "feel": "stuck", "thought": "Where is it?"}, {"n": 9, "thought": "x"}]},
+                         {"journey": "f9", "steps": [{"n": 1}]}],
+            "verdict": "Too long—really.",
+            "suggestions": [{"title": "Cut a field", "why": "No time", "priority": "high", "journey": "f2", "step": 3},
+                            {"title": "Say why", "journey": "nope", "step": 1},
+                            {"title": "", "why": "dropped"}]}), {"f1": 2, "f2": 3})
+        self.assertEqual(list(out["journeys"]), ["f1"])
+        self.assertEqual([s["n"] for s in out["journeys"]["f1"]], [1])
         self.assertEqual(out["verdict"], "Too long - really.")
-        self.assertEqual(len(out["suggestions"]), 1)
+        self.assertEqual([(s["journey"], s["step"]) for s in out["suggestions"]], [("f2", 3), (None, None)])
+        one = personas.parse_critique('{"steps": [{"n": 1, "feel": "fine", "thought": "ok"}], "suggestions": [{"title": "A", "step": 1}]}', {"f4": 1})
+        self.assertEqual(one["journeys"]["f4"][0]["thought"], "ok")      # the first answer form, one journey
+        self.assertEqual(one["suggestions"][0]["journey"], "f4")
         with self.assertRaises(ValueError):
-            personas.parse_critique("no json here", 2)
+            personas.parse_critique("no json here", {"f1": 2})
 
-    def test_digest_names_who_and_priority(self):
+    def test_changes(self):
+        self.assertEqual(personas.norm_changes({"change": "Shorter form", "pages": "app"}, True),
+                         [{"change": "Shorter form", "pages": ["app"], "flow": ""}])
+        got = personas.norm_changes({"pages": ["app"], "changes": [{"change": "A"}, {"change": "B", "pages": ["app/b.html"], "flow": "x"}, {"change": " "}]}, True)
+        self.assertEqual([(c["change"], c["pages"]) for c in got], [("A", ["app"]), ("B", ["app/b.html"])])
+        with self.assertRaises(ValueError):
+            personas.norm_changes({"changes": [{"change": "A"}]}, True)        # simulate needs pages
+        with self.assertRaises(ValueError):
+            personas.norm_changes({"changes": []}, False)
+
+    def test_shot_names(self):
+        root = tempfile.mkdtemp(prefix="personas-test-")
+        try:
+            d = os.path.join(personas.critiques_dir(root), "c_0123456789", "f2")
+            os.makedirs(d)
+            open(os.path.join(d, "mobile-3.jpg"), "wb").close()
+            self.assertTrue(personas.shot_path(root, "c_0123456789", "f2/mobile-3.jpg"))
+            self.assertIsNone(personas.shot_path(root, "c_0123456789", "../f2/mobile-3.jpg"))
+            self.assertIsNone(personas.shot_path(root, "c_0123456789", "f2/../../x.jpg"))
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_digest_groups_by_change(self):
         report = {"id": "c_0123456789", "how": "simulate", "status": "done",
-                  "tasks": [{"goal": "Apply", "do": "click", "target": "Apply"}],
-                  "walks": {"desktop": {"device": "desktop", "steps": [{"n": 1, "ok": False, "error": 'could not find "Apply"'}]}},
-                  "personas": [{"name": "Maya", "role": "Student", "status": "done", "verdict": "Lost.",
-                                "suggestions": [{"title": "Show Apply", "why": "I could not find it", "priority": "high", "step": 1}]}]}
+                  "personas": [{"id": "p_m", "name": "Maya", "role": "Student"}, {"id": "p_o", "name": "Omar"}],
+                  "changes": [{"id": "t1", "title": "Guardian option on the form", "personas": ["p_m"]}],
+                  "flows": [{"id": "f1", "change": "t1", "title": "New application", "personas": ["p_m"],
+                             "tasks": [{"do": "open"}, {"do": "click", "target": "Apply"}],
+                             "walks": {"desktop": {"device": "desktop", "steps": [{"n": 2, "ok": False, "error": 'could not find "Apply"'}]}}}],
+                  "reviews": [{"change": "t1", "persona": "p_m", "status": "done", "verdict": "Lost.",
+                               "suggestions": [{"title": "Show Apply", "why": "I could not find it", "priority": "high", "journey": "f1", "step": 2}]}]}
         text = personas.digest(report)
+        self.assertIn("Change 1: Guardian option on the form", text)
         self.assertIn("Maya (Student) - Lost.", text)
-        self.assertIn("[high] Show Apply", text)
-        self.assertIn('Step 1 could not be done on desktop', text)
+        self.assertIn("[high] Show Apply: I could not find it (journey f1, step 2)", text)
+        self.assertIn("step 2 could not be done on desktop", text)
+        self.assertIn("Not affected: Omar", text)
         for d in DASHES:
             self.assertNotIn(d, text)
+
+
+class CritiqueJob(unittest.TestCase):
+    """A whole critique with fake models and a fake browser: two changes,
+    each touching different personas, one persona meeting a change through
+    two journeys, a phone user walked on a phone, a deep-thinking persona on
+    the thread's model."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="personas-test-")
+        self.maya, _ = personas.upsert(self.root, {"profile": "# Maya\nNew student"})
+        self.raj, _ = personas.upsert(self.root, {"profile": "# Raj\nEnrolled student\nDevice: phone"})
+        self.omar, _ = personas.upsert(self.root, {"profile": "# Omar\nFinancial aid officer", "deep": True})
+        self.calls = {"fast": [], "cheap": [], "deep": []}
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def walker(self, args):
+        cmd, out, device = args[0], args[args.index("--out") + 1], args[args.index("--device") + 1]
+        with open(args[args.index("--plan") + 1]) as f:
+            plan = json.load(f)
+        if cmd == "survey":
+            doc = {"pages": [{"key": p["key"], "title": "Form", "inventory": [{"role": "button", "name": "Apply"}]} for p in plan["pages"]]}
+            with open(os.path.join(out, "survey.json"), "w") as f:
+                json.dump(doc, f)
+            return {}
+        steps = []
+        for i, _t in enumerate(plan["tasks"]):
+            name = "%s-%d.jpg" % (device, i + 1)
+            open(os.path.join(out, name), "wb").close()
+            steps.append({"n": i + 1, "ok": True, "shot": name})
+        with open(os.path.join(out, "walk-%s.json" % device), "w") as f:
+            json.dump({"device": device, "steps": steps}, f)
+        return {}
+
+    def fast(self, system, blocks):
+        self.calls["fast"].append(blocks)
+        task = [{"goal": "Apply", "do": "click", "target": "Apply"}]
+        if "guardian" in blocks[0]["text"]:
+            return json.dumps({"summary": ["A guardian option on the form"], "personas": [self.maya["id"], self.raj["id"]],
+                               "journeys": [{"title": "New application", "personas": [self.maya["id"]], "tasks": task},
+                                            {"title": "Edit a saved draft", "personas": [self.maya["id"], self.raj["id"]], "tasks": task}]})
+        return json.dumps({"summary": ["Statuses read Awaiting review"], "personas": [self.omar["id"]],
+                           "journeys": [{"title": "Review the queue", "personas": [self.omar["id"]], "tasks": task}]})
+
+    def persona(self, kind):
+        def call(system, content):
+            text = "\n".join(c.get("text", "") for c in content if c["type"] == "text")
+            jids = [j for j in ("f1", "f2", "f3") if "### Journey %s:" % j in text]
+            self.calls[kind].append((system.split("## Your profile")[1][:120], jids, sum(c["type"] == "image" for c in content)))
+            return json.dumps({"journeys": [{"journey": j, "steps": [{"n": 2, "feel": "unsure", "thought": "Hm"}]} for j in jids],
+                               "verdict": "Fine.", "suggestions": [{"title": "Label it", "priority": "low", "journey": jids[0], "step": 2}]})
+        return call
+
+    def test_changes_personas_and_journeys(self):
+        events = []
+        deps = {"fast_complete": self.fast, "persona_complete": self.persona("cheap"), "deep_complete": self.persona("deep"),
+                "resolve_page": lambda raw: "http://x/" + raw, "emit": events.append, "walker": self.walker}
+        req = {"how": "simulate", "models": {"cheap": "haiku", "deep": "opus"},
+               "changes": personas.norm_changes({"changes": [{"change": "Added a guardian option", "pages": ["app"]},
+                                                              {"change": "Renamed the pending status", "pages": ["app/queue.html"]}]}, True)}
+        cid = personas.start(self.root, "proj", "r1", [self.maya, self.raj, self.omar], req, deps)
+        personas.wait(cid, 20)
+        rep = personas.get_report(self.root, cid)
+        self.assertEqual(rep["status"], "done", rep.get("error"))
+        self.assertEqual([c["personas"] for c in rep["changes"]], [[self.maya["id"], self.raj["id"]], [self.omar["id"]]])
+        self.assertEqual([(f["id"], f["change"]) for f in rep["flows"]], [("f1", "t1"), ("f2", "t1"), ("f3", "t2")])
+        self.assertEqual(sorted(rep["flows"][1]["walks"]), ["desktop", "mobile"])        # Raj is on a phone
+        self.assertEqual(rep["flows"][1]["walks"]["mobile"]["steps"][0]["shot"], "f2/mobile-1.jpg")
+        self.assertTrue(personas.shot_path(self.root, cid, "f2/mobile-1.jpg"))
+        by = {(r["change"], r["persona"]): r for r in rep["reviews"]}
+        self.assertEqual(sorted(by), sorted([("t1", self.maya["id"]), ("t1", self.raj["id"]), ("t2", self.omar["id"])]))
+        self.assertEqual(sorted(by[("t1", self.maya["id"])]["journeys"]), ["f1", "f2"])   # two journeys, one review
+        self.assertEqual(sorted(by[("t1", self.raj["id"])]["journeys"]), ["f2"])
+        who = lambda kind: sorted(n for c in self.calls[kind] for n in ("Maya", "Raj", "Omar") if "# " + n in c[0])
+        self.assertEqual(who("cheap"), ["Maya", "Raj"])
+        self.assertEqual(who("deep"), ["Omar"])
+        self.assertEqual({p["name"]: (p["deep"], p["model"], p["status"]) for p in rep["personas"]},
+                         {"Maya": (False, "haiku", "done"), "Raj": (False, "haiku", "done"), "Omar": (True, "opus", "done")})
+        self.assertIn("Not affected: Omar", personas.digest(rep))
+        self.assertEqual(events[-1]["status"], "done")
+
+    def test_orphaned_running_report_reads_as_stopped(self):
+        rep = {"id": "c_00000000aa", "status": "running", "stage": "walking", "personas": []}
+        personas.save_report(self.root, rep)
+        got = personas.get_report(self.root, "c_00000000aa")
+        self.assertEqual((got["status"], got["stage"]), ("error", "done"))
 
 
 if __name__ == "__main__":
