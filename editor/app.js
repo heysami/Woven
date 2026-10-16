@@ -62539,7 +62539,7 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
       </div>
       ${zoomTarget && html`
         <${ZoomOverlay}
-          key=${zoomTarget.filePath}
+          key=${zoomTarget.filePath + "#" + (zoomTarget.seedSeq || 0)}
           filePath=${zoomTarget.filePath}
           branch=${zoomTarget.branch}
           sourceNode=${(data.nodes || []).find(n => n.id === zoomTarget.nodeId)}
@@ -62565,7 +62565,9 @@ function WorkflowSurface({ embedded, data, setData, deletedIdsRef, deletedWbIdsR
             try {
               window.dispatchEvent(new CustomEvent("th:proto-open-tab", { detail: { path: filePath, label: null } }));
             } catch {}
-            setZoomTarget(t => ({ ...(t || {}), filePath, branch: branch || (t && t.branch) || activePrototypeSlug(), seedHtml: seedHtml || null, pageQuery: pageQuery || "" }));
+            // A new seed for the same page (Find's probe) remounts it too.
+            setZoomTarget(t => ({ ...(t || {}), filePath, branch: branch || (t && t.branch) || activePrototypeSlug(), seedHtml: seedHtml || null, pageQuery: pageQuery || "",
+              seedSeq: ((t && t.seedSeq) || 0) + (seedHtml ? 1 : 0) }));
           }}
         />
       `}
@@ -69089,8 +69091,9 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
     onDiscardPending: () => discardChanges(),
     onSourcesChanged: reloadFromDisk,
     // A match on another page: edit that page instead (same as drilling into
-    // a component); the remounted panel then selects the match.
-    openPage: onSwitchTarget ? (path) => { onSwitchTarget(path, branch); return true; } : null,
+    // a component); the remounted panel then selects the match. `live` is the
+    // state Find's probe clicked its way to, opened as the authoring seed.
+    openPage: onSwitchTarget ? (path, live) => { onSwitchTarget(path, branch, live && live.seed, live && live.query); return true; } : null,
   }), [branch, filePath, dirty, opHistory.length, saveToDisk, discardChanges, reloadFromDisk, onSwitchTarget]);
 
   // ─── Save + agent ────────────────────────────────────────────────────

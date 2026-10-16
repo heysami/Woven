@@ -499,7 +499,8 @@ function WovenLayersPanel({ element, onNavigate, find }) {
   // is filled in by the time the tab is opened. A pick the Find tab made
   // itself (stepping through on-screen hits) must not rewrite the query.
   const [, rerenderFind] = useState(0);
-  const setFind = patch => { Object.assign(wovenFindMemo, patch); rerenderFind(n => n + 1); };
+  wovenFindMemo.rerender = () => rerenderFind(n => n + 1);
+  const setFind = wovenFindSet;
   const findPick = React.useRef(null);
   useEffect(() => {
     if (!element || element === findPick.current) return;
@@ -525,7 +526,7 @@ function WovenLayersPanel({ element, onNavigate, find }) {
     const page = (find && find.path) || doc.querySelector('meta[name="woven-authoring"]')?.content || '';
     if (!wovenFindSamePath(page, target.path)) { if (Date.now() - target.at > 30000) wovenFindMemo.reveal = null; return; }
     wovenFindMemo.reveal = null;
-    wovenFindShow(doc, target, findNavigate, setFind);
+    wovenFindShow(doc, target, findNavigate, setFind, (pages, t) => wovenFindProbeReveal(pages, t, { find, pending: find && find.pendingCount }));
   }, [doc]);
   if (!doc?.body) return null;
   const names = {DIV:'Frame',MAIN:'Main',SECTION:'Section',NAV:'Navigation',HEADER:'Header',FOOTER:'Footer',BUTTON:'Button',A:'Link',P:'Text',SPAN:'Text',IMG:'Image',SVG:'Vector',IFRAME:'Embedded page',INPUT:'Input'};
@@ -1041,7 +1042,11 @@ const wovenFindContext = h => (h.before.replace(/^\.\.\./, '') + h.match + h.aft
 // `reveal` is a match waiting for the page a click opened; `revealed` the
 // last match shown, which a repeat click steps past when it was not found.
 const wovenFindMemo = { tab: 'layers', query: '', replacement: '', replaceOpen: false, matchCase: false,
-  root: '', results: null, excluded: new Set(), collapsed: new Set(), busy: false, notice: null, reveal: null, revealed: null };
+  root: '', results: null, excluded: new Set(), collapsed: new Set(), busy: false, notice: null, reveal: null, revealed: null,
+  probe: null, rerender: null };
+// The probe outlives the panel that started it: it writes through the panel
+// mounted now.
+const wovenFindSet = patch => { Object.assign(wovenFindMemo, patch); if (wovenFindMemo.rerender) wovenFindMemo.rerender(); };
 const wovenFindSamePath = (a, b) => { try { return decodeURI(a || '') === decodeURI(b || ''); } catch { return a === b; } };
 
 function wovenFindOwnText(el) {
@@ -1287,16 +1292,428 @@ function wovenFindScrollTo(el) {
 }
 /* Selects a hit on `doc` (the page `target.path` names) and reports when it
    is not there. Shared by a click on the current page and by the page a
-   click opened, which mounts a fresh panel. */
-function wovenFindShow(doc, target, navigate, setFind) {
-  const el = target.head ? null : wovenFindLocate(doc, target.hit, target.query, target.matchCase, target.nth, target.tag);
-  wovenFindMemo.revealed = { id: target.hit.id, path: target.path, found: !!el };
+   click opened, which mounts a fresh panel. When the authoring copy does not
+   show it (or hides it with no control that leads there), `probe` runs the
+   page for real to find it; a target the probe already placed is not probed
+   again, and carries the note that says how it got there. */
+function wovenFindShow(doc, target, navigate, setFind, probe) {
   const name = target.path.split('/').pop();
-  if (el) { setFind({ notice: wovenFindSelect(el, navigate) }); return el; }
-  setFind({ notice: { text: target.head ? 'That match is in the head of ' + name + ' (its title or metadata), not on the screen.'
-    : target.next ? 'Not shown on ' + name + ' as it loads. Click the match again to try ' + target.next.split('/').pop() + '.'
-    : 'Not shown on ' + name + ' as it loads. It may sit behind a tab, menu or other state.' } });
+  if (target.head) {
+    wovenFindMemo.revealed = { id: target.hit.id, path: target.path, found: false };
+    setFind({ notice: { text: 'That match is in the head of ' + name + ' (its title or metadata), not on the screen.' } });
+    return null;
+  }
+  const el = wovenFindLocate(doc, target.hit, target.query, target.matchCase, target.nth, target.tag);
+  wovenFindMemo.revealed = { id: target.hit.id, path: target.path, found: !!el };
+  const notice = el ? wovenFindSelect(el, navigate) : null;
+  if ((!el || (notice && !notice.action)) && probe && !target.probed) { probe([target.path], target); return el; }
+  setFind({ notice: notice || (target.note || !el ? { text: target.note || 'Not shown on ' + name + ' as it loads. It may sit behind a tab, menu or other state.' } : null) });
   return el;
+}
+
+/* ── Find tab: running pages to find text their scripts draw ───────────────── */
+// A script or data hit is text a page builds at run time, and the authoring
+// copy runs no scripts, so it cannot say where that text shows. The probe
+// runs each candidate page for real in a hidden frame and, with no AI, clicks
+// through what looks clickable (tabs and pane buttons first, then buttons,
+// then rows and cards styled clickable) until the text is on screen, then
+// hands that state to edit mode as its seed. The frame gets the page through
+// document.write behind a guard: storage reads fall through to the real
+// stores but writes stay in the frame, posts and beacons go nowhere, dialogs
+// answer themselves, and a move to another page is cancelled and kept as a
+// page to try next.
+const WOVEN_PROBE_GUARD = `(function () {
+  function overlay(real) {
+    var set = new Map(), gone = new Set(), cleared = false;
+    function get(k) { k = String(k); return set.has(k) ? set.get(k) : cleared || gone.has(k) ? null : real.getItem(k); }
+    function keys() {
+      var out = [];
+      if (!cleared) for (var i = 0; i < real.length; i++) { var k = real.key(i); if (!gone.has(k) && !set.has(k)) out.push(k); }
+      return out.concat(Array.from(set.keys()));
+    }
+    var api = {
+      getItem: get,
+      setItem: function (k, v) { set.set(String(k), String(v)); gone.delete(String(k)); },
+      removeItem: function (k) { k = String(k); set.delete(k); gone.add(k); },
+      clear: function () { set.clear(); gone.clear(); cleared = true; },
+      key: function (i) { var k = keys()[i]; return k === undefined ? null : k; },
+      get length() { return keys().length; }
+    };
+    return new Proxy(api, {
+      get: function (t, p) { if (p in t) return t[p]; if (typeof p !== 'string') return undefined; var v = get(p); return v === null ? undefined : v; },
+      set: function (t, p, v) { if (!(p in t)) api.setItem(p, v); return true; },
+      deleteProperty: function (t, p) { api.removeItem(p); return true; },
+      has: function (t, p) { return p in t || get(p) !== null; },
+      ownKeys: function () { return keys(); },
+      getOwnPropertyDescriptor: function (t, p) { var v = get(p); return v === null ? undefined : { value: v, writable: true, enumerable: true, configurable: true }; }
+    });
+  }
+  try { Object.defineProperty(window, 'localStorage', { value: overlay(window.localStorage), configurable: true }); } catch (e) {}
+  try { Object.defineProperty(window, 'sessionStorage', { value: overlay(window.sessionStorage), configurable: true }); } catch (e) {}
+  var moves = window.__wovenProbeNav = [];
+  function away(url) {
+    try { var u = new URL(url, location.href); if (u.origin === location.origin && (u.pathname !== location.pathname || u.search !== location.search)) moves.push(u.href); } catch (e) {}
+  }
+  // A reload would load the page again unguarded: cancelled like a move.
+  if (window.navigation) navigation.addEventListener('navigate', function (e) {
+    if (e.destination.sameDocument) return;
+    if (e.cancelable) e.preventDefault();
+    if (e.navigationType !== 'reload') away(e.destination.url);
+  });
+  // Links and forms are stopped here too, in case the event above is off.
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest && e.target.closest('a[href]');
+    if (!a || /^\\s*(#|javascript:)/i.test(a.getAttribute('href'))) return;
+    var u = new URL(a.href, location.href);
+    if (u.pathname === location.pathname && u.search === location.search) return;
+    e.preventDefault(); away(a.href);
+  }, true);
+  document.addEventListener('submit', function (e) { e.preventDefault(); }, true);
+  window.open = function (u) { if (u) away(u); return null; };
+  window.alert = window.print = function () {};
+  window.confirm = function () { return true; };
+  window.prompt = function (m, d) { return d == null ? '' : String(d); };
+  try { Object.defineProperty(window, 'parent', { value: window, configurable: true }); } catch (e) {}
+  try { Object.defineProperty(window, 'opener', { value: null, configurable: true }); } catch (e) {}
+  var fetchReal = window.fetch;
+  if (fetchReal) window.fetch = function (input, init) {
+    var m = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+    if (m === 'GET' || m === 'HEAD') return fetchReal.apply(window, arguments);
+    return Promise.resolve(new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  };
+  var xhrOpen = XMLHttpRequest.prototype.open, xhrSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function (m) { this.__wovenWrite = !/^(GET|HEAD)$/i.test(String(m)); return xhrOpen.apply(this, arguments); };
+  XMLHttpRequest.prototype.send = function () { if (!this.__wovenWrite) return xhrSend.apply(this, arguments); };
+  if (navigator.sendBeacon) navigator.sendBeacon = function () { return true; };
+  HTMLMediaElement.prototype.play = function () { return Promise.resolve(); };
+})();`;
+const wovenProbeUrl = path => apiUrl('/' + path.split('/').map(encodeURIComponent).join('/'));
+// A page's own query (a record id), minus Woven's project and cache params.
+const wovenProbeQuery = u => { const q = new URLSearchParams(u.search); for (const k of ['project', '_z', '_t', '_c']) q.delete(k); return q.toString(); };
+/* The words that name a data hit's record (its id, name, title, code): a
+   row, button or link carrying one of them leads to that record. */
+function wovenProbeAnchors(file, hit) {
+  const rec = hit.record != null && (file.records || []).find(r => r.key === hit.record);
+  if (!rec) return [];
+  return rec.fields.filter(f => /^(id|name|title|code|key|slug|label)$/i.test(String(f.key).split(/[.[]/).pop()))
+    .map(f => String(f.value == null ? '' : f.value).trim().toLowerCase()).filter(v => v.length >= 2 && v.length <= 60);
+}
+/* Loads `url` live in a fresh hidden frame behind the guard. A new frame per
+   page: document.open keeps the old window, and its globals would clash. */
+async function wovenProbeOpen(url, run) {
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error('could not load (' + r.status + ')');
+  let html = await r.text();
+  if (run.stopped) throw new Error('stopped');
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.tabIndex = -1;
+  // No top navigation, popups or downloads: the page cannot move the editor.
+  frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
+  // In the viewport (off-screen frames get throttled) but unseen and inert.
+  frame.style.cssText = 'position:fixed;left:0;top:0;width:1440px;height:900px;border:0;opacity:0;pointer-events:none;z-index:-2147483647;';
+  // A real (srcdoc) document first: the initial about:blank one has the
+  // navigation API switched off, and the guard needs its navigate event.
+  frame.srcdoc = '<!doctype html><title></title>';
+  const loaded = new Promise(resolve => { frame.addEventListener('load', resolve, { once: true }); setTimeout(resolve, 3000); });
+  document.body.appendChild(frame);
+  run.frames.push(frame);
+  await loaded;
+  if (run.stopped) throw new Error('stopped');
+  const doc = frame.contentDocument;
+  // open() gives the frame this editor's URL, so replaceState can then give
+  // it the page's own: relative links resolve and location.search reads.
+  doc.open();
+  try { frame.contentWindow.history.replaceState(null, '', url); } catch {}
+  const guard = '<script data-woven-probe>' + WOVEN_PROBE_GUARD + '<\/script>';
+  const head = /<head[^>]*>/i.exec(html);
+  html = head ? html.slice(0, head.index + head[0].length) + guard + html.slice(head.index + head[0].length) : guard + html;
+  doc.write(html);
+  doc.close();
+  await wovenProbeSettle(frame, doc, 6000, 300);
+  return { frame, doc };
+}
+/* Resolves once the page stops changing for `idle` ms (or after `max`). */
+function wovenProbeSettle(frame, doc, max, idle) {
+  return new Promise(resolve => {
+    const win = doc.defaultView, start = Date.now();
+    let last = start;
+    let mo = null;
+    try {
+      mo = new win.MutationObserver(() => { last = Date.now(); });
+      mo.observe(doc.documentElement, { subtree: true, childList: true, characterData: true, attributes: true,
+        attributeFilter: ['hidden', 'class', 'open', 'aria-hidden', 'aria-expanded', 'aria-selected'] });
+    } catch {}
+    const tick = () => {
+      const now = Date.now();
+      if (!frame.isConnected || frame.contentDocument !== doc || now - start > max || (doc.readyState === 'complete' && now - last >= idle)) {
+        if (mo) mo.disconnect();
+        resolve();
+        return;
+      }
+      setTimeout(tick, 50);
+    };
+    tick();
+  });
+}
+/* The words around a hit, flattened: the passage the click meant, so the
+   same words elsewhere on a page do not count as it. A word the snippet cut
+   short still works: the check is a substring. */
+function wovenProbeContext(hit) {
+  const flat = s => String(s || '').replace(/<[^>]*>?/g, ' ').replace(/\.\.\./g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  // Text across a tag is not one run of words on screen: stop at the tag.
+  const b = String(hit.before || '').split(/<[^>]*>?|>/).pop(), a = String(hit.after || '').split(/<|>/)[0];
+  hit = { before: b, match: hit.match, after: a };
+  const before = flat(b).split(' ').slice(-3).join(' '), after = flat(a).split(' ').slice(0, 3).join(' ');
+  const match = flat(hit.match);
+  return { lead: before ? before + (/\s$/.test(hit.before) ? ' ' : '') + match : '',
+    tail: after ? match + (/^\s/.test(hit.after) ? ' ' : '') + after : '' };
+}
+/* An element showing the query on screen: { el, exact } where exact means it
+   also shows the words around the hit (`context`), or null. Field values
+   (an edit form's input, textarea, chosen option) count as shown text. */
+function wovenProbeShows(doc, re, context) {
+  if (!doc.body) return null;
+  const flat = s => String(s || '').replace(/\s+/g, ' ').toLowerCase();
+  const exact = text => !context || (!context.lead && !context.tail) || (context.lead && flat(text).includes(context.lead)) || (context.tail && flat(text).includes(context.tail));
+  let loose = null;
+  const consider = (el, text, around) => {
+    re.lastIndex = 0;
+    if (!text || !re.test(text) || wovenFindHider(el)) return null;
+    if (exact(around)) return { el, exact: true };
+    loose = loose || { el, exact: false };
+    return null;
+  };
+  const walk = doc.createTreeWalker(doc.body, 4);
+  for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+    const host = t.parentElement;
+    if (!host || /^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT|OPTION|TEXTAREA)$/.test(host.tagName)) continue;
+    const hit = consider(host, t.nodeValue, (host.parentElement || host).textContent);
+    if (hit) return hit;
+  }
+  for (const field of doc.body.querySelectorAll('input:not([type="hidden"]), textarea, select')) {
+    const text = field.tagName === 'SELECT' ? (field.selectedOptions[0] || {}).text : field.value;
+    const hit = consider(field, text, text);
+    if (hit) return hit;
+  }
+  return loose;
+}
+const WOVEN_PROBE_FIRST = '[role="tab"], [data-tab], [data-pane], [aria-controls], [data-open-modal], [data-target], [data-toggle], summary';
+const WOVEN_PROBE_CLICKABLE = 'button, a[href], [role="button"], [role="menuitem"], [role="link"], [role="option"], [onclick], [aria-expanded], [aria-haspopup]';
+// Controls a sweep leaves alone: they end things rather than show them.
+const WOVEN_PROBE_AVOID = /\b(delete|remove|reset|clear|log ?out|sign ?out|discard|withdraw|revoke|deactivate|archive|print|download|export|upload|close|cancel|dismiss|back)\b/i;
+/* What a sweep can click on `doc`, tabs and pane buttons first, then buttons,
+   then the outermost element styled clickable (rows, cards); `hidden` ones
+   are reached through the controls that open them. Links to another page (or
+   another record) are not clicked: they come back in `pages`. */
+function wovenProbeControls(doc, anchors = []) {
+  const win = doc.defaultView, here = new URL(doc.URL), clicks = [], pages = [];
+  const names = text => { const t = String(text || '').toLowerCase(); return anchors.some(a => t.includes(a)); };
+  for (const el of doc.body.querySelectorAll('*')) {
+    if (/^(input|select|textarea|option|script|style|template|svg|path|g|use)$/i.test(el.tagName)) continue;
+    let rank = el.matches(WOVEN_PROBE_FIRST) ? 0 : el.matches(WOVEN_PROBE_CLICKABLE) ? 1 : 2;
+    if (rank === 2) {
+      if (win.getComputedStyle(el).cursor !== 'pointer') continue;
+      if (el.parentElement && win.getComputedStyle(el.parentElement).cursor === 'pointer') continue;
+    }
+    if (el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
+    const label = wovenFindName(el, false);
+    if (!label || WOVEN_PROBE_AVOID.test(label)) continue;
+    if (el.tagName === 'A' && !/^\s*(#|javascript:|$)/i.test(el.getAttribute('href') || '')) {
+      let u = null;
+      try { u = new URL(el.href); } catch {}
+      if (u && u.origin === here.origin && (u.pathname !== here.pathname || wovenProbeQuery(u) !== wovenProbeQuery(here))) {
+        let decoded = u.href;
+        try { decoded = decodeURIComponent(u.href); } catch {}
+        pages.push({ url: u.href, label, record: !!wovenProbeQuery(u), menu: !!el.closest('nav, aside, header, [role="navigation"]'), anchor: names(label) || names(decoded) });
+      }
+      continue;
+    }
+    const key = ['data-pane', 'data-tab', 'aria-controls', 'data-open-modal', 'data-target'].map(a => el.getAttribute(a) || '').join('|');
+    // A control naming the hit's record goes before everything else on screen.
+    clicks.push({ el, rank: names(label) || names(el.textContent) ? -1 : rank, label, hidden: !!wovenFindHider(el), sig: el.tagName + '|' + label + '|' + el.id + '|' + key });
+  }
+  return { clicks, pages };
+}
+/* Sweeps one page: the text on screen as it loads, else after clicking what
+   it offers (new controls a click reveals go first), up to 60 clicks. A
+   hidden control is reached by clicking the way to it first. The same words
+   without the hit's passage (`loose`) are reported once and the sweep goes
+   on looking for the passage itself. */
+async function wovenProbePage(entry, re, context, anchors, budget, run, loose) {
+  const { frame, doc } = await wovenProbeOpen(entry.url, run);
+  const win = doc.defaultView, out = { frame, doc, steps: [], pages: [] };
+  let sawLoose = false;
+  const look = steps => {
+    const seen = wovenProbeShows(doc, re, context);
+    if (seen && !seen.exact && !sawLoose) { sawLoose = true; loose(doc, steps); }
+    return seen && seen.exact ? seen.el : null;
+  };
+  const first = look([]);
+  if (first) return { ...out, el: first };
+  let scan = wovenProbeControls(doc, anchors);
+  out.pages.push(...scan.pages);
+  const order = list => list.sort((a, b) => a.hidden - b.hidden || a.rank - b.rank || !!b.fresh - !!a.fresh);
+  order(scan.clicks);
+  const done = new Set();
+  let presses = 0;
+  const press = async (el, label) => {
+    budget.clicks--; presses++;
+    const moves = (win.__wovenProbeNav || []).length;
+    try { el.click(); } catch {}
+    await wovenProbeSettle(frame, doc, 1500, 150);
+    if (frame.contentDocument !== doc) return false;
+    const named = anchors.some(a => String(label).toLowerCase().includes(a));
+    for (const url of (win.__wovenProbeNav || []).slice(moves)) {
+      let decoded = url;
+      try { decoded = decodeURIComponent(url); } catch {}
+      out.pages.push({ url, label, record: true, menu: false, anchor: named || anchors.some(a => decoded.toLowerCase().includes(a)) });
+    }
+    return true;
+  };
+  while (budget.ok() && presses < 60) {
+    const next = scan.clicks.find(c => !done.has(c.sig) && c.el.isConnected);
+    if (!next) break;
+    done.add(next.sig);
+    const steps = [];
+    const hider = wovenFindHider(next.el);
+    if (hider) {
+      const way = wovenFindWay(hider);
+      if (!way.length) continue;
+      let alive = true;
+      for (const w of way) {
+        const label = wovenFindName(w, false);
+        steps.push(label);
+        if (!(alive = await press(w, label))) break;
+      }
+      if (!alive) break;
+      if (wovenFindHider(next.el)) continue;
+    }
+    steps.push(next.label);
+    if (!(await press(next.el, next.label))) break;
+    const el = look(steps);
+    if (el) return { ...out, el, steps };
+    const known = new Set(scan.clicks.map(c => c.sig));
+    scan = wovenProbeControls(doc, anchors);
+    scan.clicks.forEach(c => { c.fresh = !known.has(c.sig); });
+    order(scan.clicks);
+    out.pages.push(...scan.pages);
+  }
+  return out;
+}
+function wovenProbeDrop(run, frame) {
+  for (const f of frame ? [frame] : run.frames.slice()) { f.remove(); run.frames.splice(run.frames.indexOf(f), 1); }
+}
+/* Candidate pages, the likeliest first: the ones whose names share words
+   with the file the hit is in (fa-scheme-config.js puts fa-scheme-version
+   before fa-announcement). Words every candidate has (a prefix) do not count;
+   ties keep their order. */
+function wovenProbeRank(pages, file) {
+  const words = p => new Set(p.split('/').pop().replace(/\.[^.]+$/, '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 1));
+  const everywhere = pages.length > 1 ? [...words(pages[0])].filter(w => pages.every(p => words(p).has(w))) : [];
+  const want = [...words(file)].filter(w => !everywhere.includes(w));
+  const score = p => { const have = words(p); return want.filter(w => have.has(w) || have.has(w.replace(/s$/, '')) || have.has(w + 's')).length; };
+  return pages.map((p, i) => ({ p, i, s: score(p) })).sort((x, y) => y.s - x.s || x.i - y.i).map(x => x.p);
+}
+/* Runs `pages` (then, one level on, the record pages they link to), three
+   at a time, until one shows `query` with the hit's passage (`context`).
+   Returns { path, query, seed, steps, exact } or null; the first page that
+   shows only the words is the answer when the passage never comes up, and
+   once one does the search gets 12 more seconds. Bounded: 24 pages, 360
+   clicks, 60 seconds. */
+async function wovenFindProbe(pages, query, matchCase, context, anchors, run, say) {
+  const re = wovenFindPattern(query, matchCase, false);
+  if (!re || !pages.length) return null;
+  const root = pages[0].split('/').slice(0, 2).join('/') + '/';
+  let until = Date.now() + 60000, fallback = null, found = null, tried = 0;
+  const budget = { clicks: 360, ok: () => !run.stopped && !found && Date.now() < until && budget.clicks > 0 };
+  const queue = pages.map(path => ({ url: wovenProbeUrl(path), path, query: '', from: null }));
+  const seen = new Set(), active = new Set();
+  const snapshot = (entry, doc, steps, exact) => {
+    doc.querySelectorAll('script[data-woven-probe]').forEach(n => n.remove());
+    const out = { path: entry.path, exact, steps: steps.map(l => '"' + l + '"'),
+      seed: typeof zoomLiveSeed === 'function' ? zoomLiveSeed(doc) : null,
+      query: typeof zoomPageQuery === 'function' ? zoomPageQuery(doc.defaultView) : '' };
+    if (entry.from) out.steps.unshift(...entry.from.via, '"' + entry.from.label + '" on ' + entry.from.path.split('/').pop());
+    return out;
+  };
+  const report = () => say('Running ' + [...active].map(p => p.split('/').pop()).join(', ') + ' and clicking through to find the text (page '
+    + tried + ' of ' + Math.min(24, tried + queue.length) + ')...');
+  const worker = async () => {
+    while (queue.length && tried < 24 && budget.ok()) {
+      const entry = queue.shift(), key = entry.path + '?' + entry.query;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      tried++;
+      active.add(entry.path);
+      report();
+      const loose = (doc, steps) => {
+        if (fallback) return;
+        try { fallback = snapshot(entry, doc, steps, false); } catch {}
+        until = Math.min(until, Date.now() + 12000);
+      };
+      let res = null;
+      try {
+        res = await wovenProbePage(entry, re, context, anchors, budget, run, loose);
+        if (res.el && !found) found = snapshot(entry, res.doc, res.steps, true);
+      } catch {}
+      if (res) wovenProbeDrop(run, res.frame);
+      active.delete(entry.path);
+      const depth = entry.from ? entry.from.depth : 0;
+      if (!res || found || depth >= 2) continue;
+      // On to the record pages this one links to, menus last: one hop, or two
+      // along links naming the hit's record, which also jump the queue.
+      const links = res.pages.filter(l => (!l.menu || l.record || l.anchor) && (!depth || l.anchor)).sort((a, b) => !!b.anchor - !!a.anchor || b.record - a.record);
+      let added = 0;
+      for (const l of links) {
+        if (added >= 4 && !l.anchor) break;
+        const u = new URL(l.url), path = decodeURIComponent(u.pathname.replace(/^\//, ''));
+        if (!/\.html?$/i.test(path) || !path.startsWith(root)) continue;
+        const via = entry.from ? entry.from.via.concat('"' + entry.from.label + '" on ' + entry.from.path.split('/').pop()) : [];
+        const next = { url: l.url, path, query: wovenProbeQuery(u), from: { label: l.label, path: entry.path, depth: depth + 1, via } };
+        if (l.anchor) queue.unshift(next); else queue.push(next);
+        added++;
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  wovenProbeDrop(run);
+  return found || fallback;
+}
+/* Runs the probe for `target` and opens what it finds (seeded with the state
+   the clicks reached), with progress and a Stop in the notice. `host`: the
+   panel's { find, pending }. */
+async function wovenFindProbeReveal(pages, target, host) {
+  const memo = wovenFindMemo;
+  if (memo.probe) memo.probe.stop();
+  if (host.pending) { wovenFindSet({ notice: { error: true, text: 'Save or discard the edits on this page first: finding it runs other pages.' } }); return; }
+  const run = { stopped: false, frames: [], stop() { run.stopped = true; wovenProbeDrop(run); if (memo.probe === run) memo.probe = null; } };
+  memo.probe = run;
+  const stop = { label: 'Stop', title: 'Stop looking', run: () => { run.stop(); wovenFindSet({ notice: { text: 'Stopped looking.' } }); } };
+  const say = text => { if (memo.probe === run) wovenFindSet({ notice: { text, action: stop } }); };
+  say('Running ' + pages[0].split('/').pop() + ' to find it...');
+  let found = null;
+  try { found = await wovenFindProbe(pages, target.query, target.matchCase, wovenProbeContext(target.hit), target.anchors || [], run, say); } catch {}
+  if (memo.probe !== run) return;
+  memo.probe = null;
+  wovenProbeDrop(run);
+  const what = pages.length > 1 ? 'the ' + pages.length + ' pages that load it' : pages[0].split('/').pop();
+  if (!found) {
+    wovenFindSet({ notice: { text: 'Not on screen on ' + what + ', even after clicking through their tabs, buttons and rows. It may need typed input or a state no click reaches.' } });
+    return;
+  }
+  const name = found.path.split('/').pop();
+  const how = found.steps.length ? ' after clicking ' + found.steps.join(', then ') : ' as it runs';
+  Object.assign(target, { path: found.path, probed: true, at: Date.now(),
+    note: found.exact ? 'Shown on ' + name + how + '.' : 'The same words show on ' + name + how + ', but not that exact passage.' });
+  if (!host.find || !host.find.openPage) { wovenFindSet({ notice: { text: target.note } }); return; }
+  memo.reveal = target;
+  memo.revealed = { id: target.hit.id, path: target.path, found: false };
+  wovenFindSet({ notice: null });
+  if (host.find.openPage(found.path, { seed: found.seed, query: found.query }) === false) {
+    memo.reveal = null;
+    wovenFindSet({ notice: { error: true, text: 'Could not open ' + name + '.' } });
+  }
 }
 async function wovenFindRead(path) {
   // HTML goes through the edit store: its version makes the write conflict-checked.
@@ -1468,32 +1885,34 @@ function WovenFindPanel({ doc, onNavigate, find, memo, setFind }) {
   };
   const toggleOpen = path => { const c = new Set(memo.collapsed); if (c.has(path)) c.delete(path); else c.add(path); setFind({ collapsed: c }); };
   // A click on a match shows it on screen. The screen is the hit's own page;
-  // for a script or data file it is this one when it shows the text, else the
-  // next page that loads the file (a repeat click moves on to the one after).
+  // for a script or data file it is this one when it shows the text, else
+  // the probe runs the pages that load the file and opens the one (and the
+  // state) that shows it.
+  const probe = (pages, target) => wovenFindProbeReveal(pages, target, { find, pending });
   const reveal = (file, hit) => {
+    if (memo.probe) memo.probe.stop();
     const like = h => wovenFindContext(h) + '|' + JSON.stringify(wovenFindTagAt(file.text, h));
-    const target = { hit, query: results.query, matchCase: results.matchCase, path: file.path, at: Date.now(), next: null,
+    const target = { hit, query: results.query, matchCase: results.matchCase, path: file.path, at: Date.now(),
       nth: file.hits.slice(0, file.hits.indexOf(hit)).filter(h => like(h) === like(hit)).length,
-      tag: wovenFindTagAt(file.text, hit), head: wovenFindInHead(file.text, hit) };
+      tag: wovenFindTagAt(file.text, hit), head: wovenFindInHead(file.text, hit), anchors: wovenProbeAnchors(file, hit) };
     if (!/\.html?$/i.test(file.path)) {
       // The same words on this screen only count when this page runs the file
       // (or nothing names it, e.g. a computed import).
       const pages = wovenFindPagesFor(file.path, results.refs), at = pages.findIndex(p => wovenFindSamePath(p, page));
       if ((at >= 0 || !pages.length) && wovenFindLocate(doc, hit, target.query, target.matchCase, target.nth)) target.path = page;
-      else {
-        const order = [...pages.slice(at + 1), ...pages.slice(0, at + 1)].filter(p => !wovenFindSamePath(p, page));
-        if (!order.length) {
-          memo.revealed = { id: hit.id, path: page, found: false };
-          setFind({ notice: { text: pages.length ? 'Not shown on this screen as it loads. It may sit behind a tab, menu or other state.'
-            : 'Not on this screen, and no page loads ' + file.path.split('/').pop() + ' by name.' } });
-          return;
-        }
-        target.path = order[0];
-        target.next = order[1] || null;
+      else if (!pages.length) {
+        memo.revealed = { id: hit.id, path: page, found: false };
+        setFind({ notice: { text: 'Not on this screen, and no page loads ' + file.path.split('/').pop() + ' by name.' } });
+        return;
+      } else {
+        memo.revealed = { id: hit.id, path: page, found: false };
+        const ranked = wovenProbeRank(pages.filter(p => !wovenFindSamePath(p, page)), file.path);
+        probe(at >= 0 ? [page, ...ranked] : ranked, target);
+        return;
       }
     }
     const name = target.path.split('/').pop();
-    if (wovenFindSamePath(target.path, page)) { wovenFindShow(doc, target, onNavigate, setFind); return; }
+    if (wovenFindSamePath(target.path, page)) { wovenFindShow(doc, target, onNavigate, setFind, probe); return; }
     if (pending) { setFind({ notice: { error: true, text: 'Save or discard the edits on this page before opening ' + name + '.' } }); return; }
     if (!find || !find.openPage) { setFind({ notice: { text: 'This match is on ' + name + '. Open that page to see it.' } }); return; }
     memo.reveal = target;
