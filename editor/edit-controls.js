@@ -567,7 +567,6 @@ function WovenLayersPanel({ element, onNavigate, find }) {
   const tabs = html`<div className="woven-layers-header" role="tablist" aria-label="Layers panel">
     ${[['layers', 'Layers'], ['find', 'Find']].map(([id, label]) => html`<button key=${id} type="button" role="tab" className="woven-layers-tab"
       aria-selected=${tab === id} onClick=${() => setFind({ tab: id })}>${label}</button>`)}
-    <span>${doc.title || 'Page'}</span>
   </div>`;
   if (tab === 'find') return html`<div className="woven-layers" ref=${ref}>${tabs}
     <${WovenFindPanel} doc=${doc} find=${find} memo=${wovenFindMemo} setFind=${setFind} onNavigate=${findNavigate}/>
@@ -1105,9 +1104,167 @@ function wovenFindLocate(doc, hit, query, matchCase, nth = 0, tag = null) {
   if (!scored.length) return null;
   const top = Math.max(...scored.map(c => c.s));
   const group = scored.filter(c => c.s === top).map(c => c.el);
-  const shown = group.filter(el => el.getClientRects().length > 0);
+  const shown = group.filter(el => !wovenFindHider(el));
   const pool = shown.length ? shown : group;
   return pool[Math.min(nth, pool.length - 1)];
+}
+/* What keeps `el` off its screen: the outermost element (itself or an
+   ancestor) that draws no box, is clipped to nothing, or set invisible or
+   fully transparent. Null when `el` shows. A closed pane, tab panel, menu or
+   modal is the usual one. */
+function wovenFindHider(el) {
+  const doc = el.ownerDocument, win = doc && doc.defaultView;
+  if (!win) return null;
+  const invisible = win.getComputedStyle(el).visibility === 'hidden';
+  let hider = null;
+  for (let n = el; n && n !== doc.body && n !== doc.documentElement; n = n.parentElement) {
+    const r = n.getBoundingClientRect(), flat = r.width < 1 || r.height < 1;
+    const cs = win.getComputedStyle(n);
+    if (!n.getClientRects().length || (n === el && flat)
+      || (flat && /hidden|clip/.test(cs.overflowX + ' ' + cs.overflowY))
+      || (invisible && cs.visibility === 'hidden') || cs.opacity === '0') hider = n;
+  }
+  return hider;
+}
+const WOVEN_FIND_STATE_VALUE = /^(true|false|on|off|yes|no|open|closed?|hidden|visible|show|hide|active|inactive|\d*)$/i;
+/* The control that opens `hider`: one that names its id (href="#id",
+   aria-controls, data-target, data-open-modal...) or carries one of its data-*
+   values (a list item and the pane it opens both say data-pane="x"), else a
+   button beside it (a dropdown's trigger). A closed <details> opens from its
+   summary, an option from its select. One on screen wins; else it may be
+   hidden itself (a modal's button inside a closed pane). */
+function wovenFindOpener(hider) {
+  const doc = hider.ownerDocument, parent = hider.parentElement;
+  const select = /^(OPTION|OPTGROUP)$/.test(hider.tagName) && hider.closest('select');
+  if (select) return select;
+  if (parent && parent.tagName === 'DETAILS' && !parent.open) {
+    const summary = parent.querySelector(':scope > summary');
+    if (summary) return summary;
+  }
+  const id = hider.id;
+  const pairs = Array.from(hider.attributes).filter(a => /^data-/.test(a.name) && a.value.length <= 80 && !WOVEN_FIND_STATE_VALUE.test(a.value.trim()));
+  let best = null, top = 0;
+  if (id || pairs.length) for (const el of doc.body.querySelectorAll('*')) {
+    if (hider.contains(el) || el.contains(hider) || el.closest('.th-inspect-overlay, [data-zoom-injected]')) continue;
+    let s = 0;
+    for (const a of el.attributes) {
+      const v = a.value.trim();
+      if (id && a.name !== 'id' && (v === id || v === '#' + id || (a.name === 'aria-controls' && v.split(/\s+/).includes(id)))) s = Math.max(s, 3);
+      else if (pairs.some(p => p.name === a.name && p.value === a.value)) s = Math.max(s, 2);
+    }
+    if (!s) continue;
+    if (/^(BUTTON|A|SUMMARY|LABEL)$/.test(el.tagName) || /^(button|tab|menuitem|link)$/.test(el.getAttribute('role') || '')) s += 1;
+    if (!wovenFindHider(el)) s += 10;
+    if (s > top) { best = el; top = s; }
+  }
+  if (best) return best;
+  const control = n => n.matches('button, summary, [role="button"], [role="combobox"], [aria-haspopup], [aria-expanded]') && !wovenFindHider(n);
+  for (let n = hider.previousElementSibling; n; n = n.previousElementSibling) if (control(n)) return n;
+  for (let n = hider.nextElementSibling; n; n = n.nextElementSibling) if (control(n)) return n;
+  return null;
+}
+/* A short name for a control or a hidden part: its title or label, else its
+   heading (a part) or first words (a control). */
+function wovenFindName(el, part) {
+  const t = s => String(s || '').replace(/\s+/g, ' ').trim();
+  let s = t(el.getAttribute('aria-label') || el.getAttribute('data-title') || el.getAttribute('title') || (el.labels && el.labels[0] && el.labels[0].textContent));
+  if (!s && part) { const head = el.querySelector('h1, h2, h3, h4, h5, h6, legend, [class*="title"]'); s = t(head && head.textContent); }
+  if (!s) {
+    const walk = el.ownerDocument.createTreeWalker(el, 4);
+    for (let n = walk.nextNode(); n && !s; n = walk.nextNode()) s = t(n.nodeValue);
+  }
+  if (!s && part) s = el.id;
+  return s.length > 40 ? s.slice(0, 39).trim() + '...' : s;
+}
+/* The controls that lead to what `hider` holds, the one on screen first: the
+   pane's button, then the one in that pane that opens the modal, at most
+   three. Empty when no way is found. */
+function wovenFindWay(hider) {
+  const steps = [];
+  let hidden = hider;
+  while (hidden && steps.length < 3) {
+    const opener = wovenFindOpener(hidden);
+    if (!opener || steps.includes(opener)) break;
+    steps.unshift(opener);
+    hidden = wovenFindHider(opener);
+  }
+  return hidden ? [] : steps;
+}
+/* Selects `el`, or, when its screen hides it, the control on screen that
+   starts the way to it. Returns the notice that names the steps, null when
+   `el` shows. */
+function wovenFindSelect(el, navigate) {
+  const hider = wovenFindHider(el);
+  if (!hider) { wovenFindScrollTo(el); navigate(el); return null; }
+  const steps = wovenFindWay(hider);
+  if (!steps.length) {
+    navigate(el);
+    const part = wovenFindName(hider, true);
+    return { text: 'On this page but hidden' + (part ? ', in ' + part : '') + '. It may show after a tab, menu or other state.' };
+  }
+  wovenFindScrollTo(steps[0]);
+  navigate(steps[0]);
+  return { text: 'Hidden until you open ' + steps.map(o => wovenFindName(o, false) || 'a control').join(', then ') + '. '
+    + (steps.length > 1 ? 'The first control is selected.' : 'The control that opens it is selected.'),
+    action: { label: 'Select it', title: 'Select the hidden match itself', run: () => navigate(el) } };
+}
+/* Paints the query on the page like a browser's find: every match on screen,
+   and, for matches a closed pane or modal holds, a dashed mark on the control
+   that leads to them. CSS Custom Highlights draw over text ranges without
+   touching the page's DOM (the authoring copy is what gets saved), and their
+   rules ride in an adopted sheet for the same reason. Returns the clean-up. */
+const WOVEN_FIND_MARK_CSS = '::highlight(woven-find-hit) { background-color: rgba(255, 196, 0, 0.55); }'
+  + ' ::highlight(woven-find-way) { background-color: rgba(255, 196, 0, 0.16); text-decoration: underline dashed rgb(214, 140, 0); }';
+function wovenFindMark(doc, query, matchCase) {
+  const win = doc && doc.defaultView;
+  const reg = win && win.CSS && win.CSS.highlights;
+  const re = wovenFindPattern(query, matchCase, false);
+  if (!reg || !win.Highlight || !win.CSSStyleSheet || !doc.body) return () => {};
+  const clear = () => { reg.delete('woven-find-hit'); reg.delete('woven-find-way'); };
+  clear();
+  if (!re) return clear;
+  if (!doc.__wovenFindMarkSheet) {
+    doc.__wovenFindMarkSheet = new win.CSSStyleSheet();
+    doc.__wovenFindMarkSheet.replaceSync(WOVEN_FIND_MARK_CSS);
+  }
+  if (!doc.adoptedStyleSheets.includes(doc.__wovenFindMarkSheet)) doc.adoptedStyleSheets = [...doc.adoptedStyleSheets, doc.__wovenFindMarkSheet];
+  const global = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+  const hits = new win.Highlight(), ways = new win.Highlight(), hiders = new Map();
+  const walk = doc.createTreeWalker(doc.body, 4);
+  for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+    const host = t.parentElement;
+    if (!host || /^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT|TEXTAREA|OPTION)$/.test(host.tagName) || host.closest('.th-inspect-overlay, [data-zoom-injected]')) continue;
+    global.lastIndex = 0;
+    const found = [];
+    for (let m; (m = global.exec(t.nodeValue));) {
+      if (!m[0]) { global.lastIndex++; continue; }
+      const r = doc.createRange();
+      r.setStart(t, m.index); r.setEnd(t, m.index + m[0].length);
+      found.push(r);
+    }
+    if (!found.length) continue;
+    const hider = wovenFindHider(host);
+    if (!hider) found.forEach(r => hits.add(r));
+    else if (!hiders.has(hider)) hiders.set(hider, wovenFindWay(hider)[0] || null);
+  }
+  // The control's label: its first words, not the whole button. One already
+  // showing a match keeps just that paint.
+  const shown = Array.from(hits);
+  for (const door of new Set(hiders.values())) {
+    if (!door || shown.some(r => door.contains(r.startContainer))) continue;
+    const words = doc.createTreeWalker(door, 4);
+    for (let t = words.nextNode(); t; t = words.nextNode()) {
+      const v = t.nodeValue, at = v.search(/\S/);
+      if (at < 0) continue;
+      const r = doc.createRange();
+      r.setStart(t, at); r.setEnd(t, v.replace(/\s+$/, '').length);
+      ways.add(r);
+      break;
+    }
+  }
+  reg.set('woven-find-hit', hits);
+  reg.set('woven-find-way', ways);
+  return clear;
 }
 /* Brings `el` to the middle of its own page when it is out of view. Only that
    document scrolls: scrollIntoView would also move the editor around it. */
@@ -1134,9 +1291,9 @@ function wovenFindScrollTo(el) {
 function wovenFindShow(doc, target, navigate, setFind) {
   const el = target.head ? null : wovenFindLocate(doc, target.hit, target.query, target.matchCase, target.nth, target.tag);
   wovenFindMemo.revealed = { id: target.hit.id, path: target.path, found: !!el };
-  if (el) { wovenFindScrollTo(el); navigate(el); }
   const name = target.path.split('/').pop();
-  setFind({ notice: el ? null : { text: target.head ? 'That match is in the head of ' + name + ' (its title or metadata), not on the screen.'
+  if (el) { setFind({ notice: wovenFindSelect(el, navigate) }); return el; }
+  setFind({ notice: { text: target.head ? 'That match is in the head of ' + name + ' (its title or metadata), not on the screen.'
     : target.next ? 'Not shown on ' + name + ' as it loads. Click the match again to try ' + target.next.split('/').pop() + '.'
     : 'Not shown on ' + name + ' as it loads. It may sit behind a tab, menu or other state.' } });
   return el;
@@ -1235,7 +1392,24 @@ function WovenFindPanel({ doc, onNavigate, find, memo, setFind }) {
   const root = slug ? 'source/' + slug : '';
   if (memo.root !== root) Object.assign(memo, { root, results: null, excluded: new Set(), collapsed: new Set(), notice: null, reveal: null, revealed: null });
   const [screenIdx, setScreenIdx] = useState(0);
-  const onScreen = useMemo(() => wovenFindOnScreen(doc, memo.query, memo.matchCase), [doc, memo.query, memo.matchCase, memo.results]);
+  // Matches this page draws, apart from the ones it holds hidden (closed
+  // panes, menus, modals): "on this screen" counts only what can be seen.
+  const onScreen = useMemo(() => {
+    const all = wovenFindOnScreen(doc, memo.query, memo.matchCase);
+    const shown = all.filter(el => !wovenFindHider(el));
+    return { shown, hidden: all.filter(el => !shown.includes(el)) };
+  }, [doc, memo.query, memo.matchCase, memo.results]);
+  // The query painted on the page while this tab is open.
+  useEffect(() => {
+    let clear = () => {};
+    const timer = setTimeout(() => { try { clear = wovenFindMark(doc, memo.query, memo.matchCase); } catch {} }, 120);
+    return () => { clearTimeout(timer); clear(); };
+  }, [doc, memo.query, memo.matchCase]);
+  const nextOnScreen = () => {
+    const list = onScreen.shown.length ? onScreen.shown : onScreen.hidden, i = screenIdx % list.length;
+    setScreenIdx(i + 1);
+    setFind({ notice: wovenFindSelect(list[i], onNavigate) });
+  };
   const pending = (find && find.pendingCount) || 0;
   const results = memo.results;
   const stale = !!results && (results.query !== memo.query.trim() || results.matchCase !== memo.matchCase);
@@ -1336,8 +1510,8 @@ function WovenFindPanel({ doc, onNavigate, find, memo, setFind }) {
       <div className="woven-find-row">
         <input type="search" aria-label="Find text in this prototype" placeholder="Find text in this prototype" value=${memo.query}
           onChange=${e => setFind({ query: e.target.value })} onKeyDown=${e => { keys(e); if (e.key === 'Enter') { e.preventDefault(); search(); } }}/>
-        <button type="button" className="woven-find-toggle" aria-pressed=${memo.matchCase} title="Match case" onClick=${() => setFind({ matchCase: !memo.matchCase })}>Aa</button>
-        <button type="button" className="woven-find-toggle" aria-pressed=${memo.replaceOpen} aria-label="Replace" title="Replace" onClick=${() => setFind({ replaceOpen: !memo.replaceOpen })}><${WovenInspectorIcon} name="replace"/></button>
+        <button type="button" className="woven-find-toggle" data-tip-host="true" aria-pressed=${memo.matchCase} aria-label="Match case" onClick=${() => setFind({ matchCase: !memo.matchCase })}>Aa<span className="tab-tip">Match case</span></button>
+        <button type="button" className="woven-find-toggle" data-tip-host="true" aria-pressed=${memo.replaceOpen} aria-label="Replace" onClick=${() => setFind({ replaceOpen: !memo.replaceOpen })}><${WovenInspectorIcon} name="replace"/><span className="tab-tip">Replace</span></button>
       </div>
       ${memo.replaceOpen && html`<div className="woven-find-row">
         <input aria-label="Replace with" placeholder="Replace with" value=${memo.replacement} onChange=${e => setFind({ replacement: e.target.value })} onKeyDown=${keys}/>
@@ -1345,8 +1519,11 @@ function WovenFindPanel({ doc, onNavigate, find, memo, setFind }) {
           title=${stale ? 'Search first' : 'Write the ticked matches to their files'} onClick=${replace}>Replace${chosenCount && !stale ? ' ' + chosenCount : ''}</button>
       </div>`}
       <div className="woven-find-row woven-find-meta">
-        ${onScreen.length
-          ? html`<button type="button" className="woven-find-link" title="Select the next one on this screen" onClick=${() => { const i = screenIdx % onScreen.length; setScreenIdx(i + 1); onNavigate(onScreen[i]); }}>${onScreen.length} on this screen</button>`
+        ${onScreen.shown.length
+          ? html`<button type="button" className="woven-find-link" onClick=${nextOnScreen}
+              title=${'Select the next one on this screen' + (onScreen.hidden.length ? ' (' + onScreen.hidden.length + ' more on this page, hidden)' : '')}>${onScreen.shown.length} on this screen</button>`
+          : onScreen.hidden.length
+          ? html`<button type="button" className="woven-find-link" title="On this page behind a tab, menu or other state. Select the next one" onClick=${nextOnScreen}>${onScreen.hidden.length} hidden here</button>`
           : html`<span>${memo.query.trim() ? 'Not on this screen' : ''}</span>`}
         <button type="button" className="woven-find-action" disabled=${!memo.query.trim() || !root || memo.busy} onClick=${() => search()}>${memo.busy ? 'Working...' : 'Search prototype'}</button>
       </div>
@@ -1356,7 +1533,10 @@ function WovenFindPanel({ doc, onNavigate, find, memo, setFind }) {
       ${find.onSavePending && html`<button type="button" className="woven-find-action" onClick=${find.onSavePending}>Save</button>`}
       ${find.onDiscardPending && html`<button type="button" className="woven-find-action" onClick=${find.onDiscardPending}>Discard</button>`}
     </div>`}
-    ${memo.notice && html`<div className=${'woven-find-notice' + (memo.notice.error ? ' is-error' : '')}><span>${memo.notice.text}</span></div>`}
+    ${memo.notice && html`<div className=${'woven-find-notice' + (memo.notice.error ? ' is-error' : '')}><span>${memo.notice.text}</span>
+      ${memo.notice.action && html`<button type="button" className="woven-find-action" title=${memo.notice.action.title}
+        onClick=${() => { const run = memo.notice.action.run; setFind({ notice: null }); run(); }}>${memo.notice.action.label}</button>`}
+    </div>`}
     <div className="woven-find-results">
       ${!root && html`<p className="woven-find-summary">Find works on prototype pages, under source/.</p>`}
       ${results && html`<p className="woven-find-summary">${stale ? 'The text changed. Search again.'

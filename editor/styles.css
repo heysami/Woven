@@ -28301,6 +28301,7 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 }
 .zoom-tool-glyph svg { width: 16px; height: 16px; }
 .zoom-toolbar-spacer { flex: 1 1 auto; }
+.zoom-toolbar-sep { flex: none; width: 22px; height: 1px; margin: 2px 0; background: var(--border); }
 
 /* Iframe host - scrollable container so a 1920×1440 prototype can be
    panned around at native resolution while the toolbar / footer stay
@@ -35662,12 +35663,15 @@ button.chat-active-agent-btn:hover .chat-active-agent-task { color: var(--text);
 .woven-find-toggle { flex: 0 0 26px; height: 26px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); font: inherit; font-weight: 600; cursor: pointer; }
 .woven-find-toggle:hover { background: var(--surface-2); color: var(--text); }
 .woven-find-toggle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+/* The toggles sit at the panel's right edge, which clips: tips hang leftward. */
+.woven-find-toggle > .tab-tip { left: auto; right: 0; transform: none; font-weight: 500; }
+.woven-find-toggle > .tab-tip::before { left: auto; right: 10px; transform: rotate(45deg); }
 .woven-find-action { flex: 0 0 auto; height: 26px; padding: 0 9px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); font: inherit; font-weight: 500; white-space: nowrap; cursor: pointer; }
 .woven-find-action:hover:not(:disabled) { background: var(--surface-2); }
 .woven-find-action:disabled { opacity: .45; cursor: default; }
 .woven-find-meta { justify-content: space-between; min-height: 26px; color: var(--text-faint); }
 .woven-find-link { padding: 0; border: 0; background: transparent; color: var(--accent-text); font: inherit; cursor: pointer; }
-.woven-find-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 8px 0; padding: 6px 8px; border-radius: 5px; background: var(--surface-2); color: var(--text-muted); }
+.woven-find-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px; padding: 6px 8px; border-radius: 5px; background: var(--surface-2); color: var(--text-muted); }
 .woven-find-notice > span { flex: 1 1 100%; min-width: 0; }
 .woven-find-notice.is-error { background: var(--danger-soft); color: var(--danger); }
 .woven-find-results { flex: 1; min-height: 0; overflow: auto; padding: 0 4px 8px; }

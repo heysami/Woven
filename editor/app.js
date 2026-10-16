@@ -70028,9 +70028,10 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
   const chooseToolRef = useRef(chooseTool);
   chooseToolRef.current = chooseTool;
 
+  // Interact leads, set apart by a rule: it uses the page, the rest edit it.
   const TOOLS = [
+    { id: "interact", glyph: html`<${Icon.Play}/>`,     title: "Interact - use the live page (tabs, menus, links), then pick Select to edit the state you reached (I)", sepAfter: true },
     { id: "select",  glyph: html`<${Icon.Cursor}/>`,    title: "Select - pick an element, ⌫ delete, ⌘D duplicate (V)" },
-    { id: "interact", glyph: html`<${Icon.Play}/>`,     title: "Interact - use the live page (tabs, menus, links), then pick Select to edit the state you reached (I)" },
     { id: "text",    glyph: html`<${Icon.Text}/>`,      title: "Text - click an element to edit its text inline (T)" },
     { id: "comment", glyph: html`<${Icon.Comment}/>`,   title: "Comment - pin annotations to elements (C)" },
     { id: "sketch",  glyph: html`<${Icon.Pen}/>`,       title: "Sketch - free-draw on top of the prototype (S)" },
@@ -70084,6 +70085,7 @@ function ZoomOverlay({ filePath, branch, sourceNode, data, setData, onClose, onR
           <span className="zoom-tool-glyph">${t.glyph}</span>
           <span className="tab-tip tab-tip-right">${t.title}</span>
         </button>
+        ${t.sepAfter && html`<div key=${t.id + "-sep"} className="zoom-toolbar-sep" role="separator"/>`}
       `)}
       <div className="zoom-toolbar-spacer"/>
       <button
