@@ -186,6 +186,28 @@ class Riding(_BrowserSandbox):
         for d in DASHES:
             self.assertNotIn(d, send)
 
+    def test_sign_in_claims_need_a_try(self):
+        agent_browser.save_mode("woven")
+        send, _ = say(fake_state(self.root), "check the spec", "triage")
+        self.assertIn("unless you tried to open it in this turn", send)
+        self.assertIn("sharepoint.com", send)
+        self.assertIn("docs/agents/signed-in-references.md", send)
+        self.assertIn("never by an id from an earlier one", send)
+        doc = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "agents", "signed-in-references.md")
+        self.assertTrue(os.path.isfile(doc))
+
+    def test_rules_change_reaches_a_told_thread_once(self):
+        st = fake_state(self.root)
+        say(st, "first")
+        self.assertNotIn("REFERENCES", say(st, "second")[0])
+        saved = references._RULES
+        references._RULES = saved + " One more rule."
+        try:
+            self.assertIn("One more rule.", say(st, "third")[0])
+            self.assertNotIn("REFERENCES", say(st, "fourth")[0])
+        finally:
+            references._RULES = saved
+
     def test_node_runs_never_get_it(self):
         send, fields = say(fake_state(self.root, kind="node-agent"), "run it")
         self.assertNotIn("REFERENCES", send)

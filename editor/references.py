@@ -197,13 +197,15 @@ def listing(root):
 
 def digest(rows, browser="off") -> str:
     """Changes whenever what an agent is told changes (name, place, note,
-    order, and which browser opens sign-in links) - the per-thread "already
-    told" stamp compares this."""
+    order, which browser opens sign-in links, and the rules that ride with
+    the list) - the per-thread "already told" stamp compares this, so a
+    rules change reaches every thread once, on its next message."""
     if not rows:
         return ""
     raw = json.dumps([[r.get("name"), r.get("location"), r.get("note") or ""] for r in rows], ensure_ascii=False)
     if browser and browser != "off":
         raw += "|" + browser
+    raw += "|" + _RULES + _SIGNED_IN + _NO_BROWSER
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
 
 
@@ -230,10 +232,12 @@ _RULES = (
     "fresh (fetch a link, read the project file or folder now), never from memory or an older copy in the "
     "project. Where a reference disagrees with an earlier decision, "
     "an older file or your own assumption, the reference wins; when the disagreement looks deliberate (the user "
-    "decided otherwise later), name both sides and ask instead of picking. A link you cannot open at all (an error, or a "
-    "sign-in wall the browser below cannot get past): say so and ask the user for access or an export, and never "
-    "fall back to a stale copy without saying so (Google Docs and Sheets shared by link often open at "
-    ".../export?format=txt or .../export?format=csv). "
+    "decided otherwise later), name both sides and ask instead of picking. Never say a reference is unreadable, needs "
+    "a sign-in or could not be opened unless you tried to open it in this turn the way the rules below say, and then "
+    "say what came back (the error, or the sign-in page it showed): the address alone proves nothing, because the "
+    "user may have signed the browser in. A link you truly cannot open: say so and ask the user for access or an "
+    "export, and never fall back to a stale copy without saying so (Google Docs and Sheets shared by link often open "
+    "at .../export?format=txt or .../export?format=csv). "
     "Say which reference you used, and name the references a subagent or a QA check needs in its brief. "
     "The current list, any time: curl -s \"$TH_DAEMON_URL/__references?project=$TH_PROJECT_ID&format=text\""
 )
@@ -243,12 +247,17 @@ _RULES = (
 # signed-in browser carries the user's own logins, so it is for reading
 # references and nothing else.
 _SIGNED_IN = (
-    "Links behind a sign-in: try WebFetch first; when it lands on a sign-in page, open the link with the "
-    "`mcp__reference_browser__*` tools, which drive %s. That browser acts with the user's own logins, so: open only "
-    "the project's references and links inside them; only read (navigate, read the page text, take a snapshot; for "
-    "a Google Doc or Sheet, reading its .../export?format=txt or csv from the page is quickest); never type into, "
-    "submit, post, share, edit, delete, accept, or change a setting, and never sign in or out; close every tab you "
-    "opened when done. If it shows a sign-in page anyway, stop and ask the user to sign in there, then retry."
+    "Links behind a sign-in: open them with the `mcp__reference_browser__*` tools, which drive %s. Links on "
+    "sharepoint.com, onedrive, office.com or Teams always stop WebFetch at a sign-in, so open those in that browser "
+    "straight away; for other links try WebFetch first and switch to that browser when it lands on a sign-in page. "
+    "SharePoint and OneDrive viewer pages (Excel, Word, PowerPoint) show those tools no content, so read the file "
+    "itself, or a folder's file list, by following $TH_PROTOCOL_ROOT/docs/agents/signed-in-references.md. That "
+    "browser acts with the user's own logins, so: open only the project's references and links inside them; only "
+    "read (navigate, read the page text, take a snapshot, run a read-only script, save a reference's own file to read "
+    "it; for a Google Doc or Sheet, reading its .../export?format=txt or csv from the page is quickest); never type "
+    "into, submit, post, share, edit, delete, accept, or change a setting, and never sign in or out; when done, close "
+    "only the tabs you opened, picked by their address in a fresh page list, never by an id from an earlier one. If it "
+    "shows a sign-in page anyway, stop and ask the user to sign in there, then retry."
 )
 _BROWSERS = {
     "woven": "the Woven agent browser, a Chrome profile the user signs into (Woven starts it when it is not running)",
@@ -256,8 +265,9 @@ _BROWSERS = {
               "connect, ask them to keep Chrome open with remote debugging on at chrome://inspect/#remote-debugging)",
 }
 _NO_BROWSER = (
-    "Links behind a sign-in: you have no signed-in browser, so you cannot read them. Say which reference was "
-    "unreadable, and tell the user they can set up a signed-in agent browser under Preview > References."
+    "Links behind a sign-in: you have no signed-in browser, so you cannot read them. A link is behind a sign-in only "
+    "when WebFetch lands on a sign-in page, so try it first. Say which reference was unreadable, and tell the user "
+    "they can set up a signed-in agent browser under Preview > References."
 )
 
 
